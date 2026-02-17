@@ -52,7 +52,7 @@ var _ = Describe("Hash", func() {
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       "none",
+					TopologyManagerPolicy:       to.Ptr("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
 					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),

@@ -335,8 +335,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={restricted,best-effort,none,single-numa-node}
 	// +default="none"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
+	TopologyManagerPolicy *string `json:"topologyManagerPolicy,omitempty"`
 	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
 	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
