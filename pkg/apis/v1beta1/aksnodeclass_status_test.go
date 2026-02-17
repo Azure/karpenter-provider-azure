@@ -45,7 +45,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
@@ -140,7 +140,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
@@ -184,7 +184,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
@@ -235,7 +235,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),

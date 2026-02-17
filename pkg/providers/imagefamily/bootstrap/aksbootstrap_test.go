@@ -134,7 +134,7 @@ func TestGetCredentialProviderURL(t *testing.T) {
 func TestKubeletConfigMap(t *testing.T) {
 	kubeletConfiguration := KubeletConfiguration{
 		KubeletConfiguration: v1beta1.KubeletConfiguration{
-			CPUManagerPolicy:            "static",
+			CPUManagerPolicy:            to.Ptr("static"),
 			CPUCFSQuota:                 lo.ToPtr(true),
 			CPUCFSQuotaPeriod:           metav1.Duration{},
 			ImageGCHighThresholdPercent: lo.ToPtr[int32](42),

@@ -575,7 +575,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should configure all kubelet settings correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:            "static",
+				CPUManagerPolicy:            to.Ptr("static"),
 				CPUCFSQuota:                 lo.ToPtr(true),
 				TopologyManagerPolicy:       to.Ptr("single-numa-node"),
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
@@ -603,7 +603,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should handle empty/nil values correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:     "",              // Empty string should be nil
+				CPUManagerPolicy:     to.Ptr(""),      // Empty string should be nil
 				CPUCFSQuota:          lo.ToPtr(false), // False should be preserved
 				AllowedUnsafeSysctls: []string{},      // Empty slice should be nil
 				ContainerLogMaxSize:  nil,             // nil should stay nil

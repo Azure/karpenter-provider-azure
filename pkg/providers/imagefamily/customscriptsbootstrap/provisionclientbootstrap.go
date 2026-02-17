@@ -176,8 +176,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		if p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String() != "0s" {
 			provisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod = lo.ToPtr(p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String())
 		}
-		if p.KubeletConfig.CPUManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = lo.ToPtr(p.KubeletConfig.CPUManagerPolicy)
+		if p.KubeletConfig.CPUManagerPolicy != nil && *p.KubeletConfig.CPUManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = p.KubeletConfig.CPUManagerPolicy
 		}
 		if p.KubeletConfig.TopologyManagerPolicy != nil && *p.KubeletConfig.TopologyManagerPolicy != "" {
 			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = p.KubeletConfig.TopologyManagerPolicy

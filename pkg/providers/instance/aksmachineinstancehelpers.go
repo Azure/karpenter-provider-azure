@@ -309,8 +309,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig := &armcontainerservice.KubeletConfig{}
 
 	// Map from v1beta1.KubeletConfiguration to AKS machine KubeletConfig
-	if nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
-		kubeletConfig.CPUManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.CPUManagerPolicy)
+	if nodeClass.Spec.Kubelet.CPUManagerPolicy != nil && *nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
+		kubeletConfig.CPUManagerPolicy = nodeClass.Spec.Kubelet.CPUManagerPolicy
 	}
 
 	kubeletConfig.CPUCfsQuota = nodeClass.Spec.Kubelet.CPUCFSQuota

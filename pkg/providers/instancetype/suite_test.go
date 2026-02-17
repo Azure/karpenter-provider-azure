@@ -1123,7 +1123,7 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("Nodepool with KubeletConfig", func() {
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
@@ -1199,7 +1199,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
@@ -1242,7 +1242,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),

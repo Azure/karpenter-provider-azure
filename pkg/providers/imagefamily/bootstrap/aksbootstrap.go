@@ -401,8 +401,8 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
 	}
-	if kubeletConfig.CPUManagerPolicy != "" {
-		args["--cpu-manager-policy"] = kubeletConfig.CPUManagerPolicy
+	if kubeletConfig.CPUManagerPolicy != nil && *kubeletConfig.CPUManagerPolicy != "" {
+		args["--cpu-manager-policy"] = *kubeletConfig.CPUManagerPolicy
 	}
 	if kubeletConfig.TopologyManagerPolicy != nil && *kubeletConfig.TopologyManagerPolicy != "" {
 		args["--topology-manager-policy"] = *kubeletConfig.TopologyManagerPolicy

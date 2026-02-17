@@ -577,7 +577,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubeletConfig: &bootstrap.KubeletConfiguration{
 					MaxPods: int32(110),
 					KubeletConfiguration: v1beta1.KubeletConfiguration{
-						CPUManagerPolicy:            "static",
+						CPUManagerPolicy:            to.Ptr("static"),
 						CPUCFSQuota:                 lo.ToPtr(true),
 						CPUCFSQuotaPeriod:           metav1.Duration{Duration: 100 * time.Millisecond},
 						TopologyManagerPolicy:       to.Ptr("single-numa-node"),
