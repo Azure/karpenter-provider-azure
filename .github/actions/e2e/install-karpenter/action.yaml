@@ -1,13 +1,13 @@
 name: InstallKarpenter
 description: 'Installs Karpenter on the aks cluster'
 inputs:
-  client-id:
+  client_id:
     description: "ID of the client to install Karpenter with"
     required: true
-  tenant-id:
+  tenant_id:
     description: "ID of the tenant containing the cluster to install Karpenter into"
     required: true
-  subscription-id:
+  subscription_id:
     description: "ID of the subscription containing the cluster to install Karpenter into"
     required: true
   # region:
@@ -40,13 +40,13 @@ runs:
   - name: az login
     uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
     with:
-      client-id: ${{ inputs.client-id }}
-      tenant-id: ${{ inputs.tenant-id }}
-      subscription-id: ${{ inputs.subscription-id }}
+      client-id: ${{ inputs.client_id }}
+      tenant-id: ${{ inputs.tenant_id }}
+      subscription-id: ${{ inputs.subscription_id }}
   - name: az set sub
     shell: bash
     env:
-      SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
     run: az account set --subscription "$SUBSCRIPTION_ID"
   - name: configure Helm chart values
     shell: bash
