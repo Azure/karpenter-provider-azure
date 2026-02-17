@@ -221,3 +221,91 @@ func createZonalLocation(name string, zones []string) armsubscriptions.Location 
 		AvailabilityZoneMappings: zoneMappings,
 	}
 }
+
+func TestProvider_GetAvailableZones_ReturnsZones(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.Locations.Store("eastus", createZonalLocation("eastus", []string{"1", "2", "3"}))
+	fakeAPI.Locations.Store("westus2", createZonalLocation("westus2", []string{"1", "2"}))
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// Test zonal regions return their zones
+	zones := provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(ConsistOf("1", "2", "3"))
+
+	zones = provider.GetAvailableZones(ctx, "westus2")
+	g.Expect(zones).To(ConsistOf("1", "2"))
+}
+
+func TestProvider_GetAvailableZones_ReturnsNilForNonZonalRegion(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API with a non-zonal region
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.Locations.Store("canadaeast", armsubscriptions.Location{
+		Name:                     lo.ToPtr("canadaeast"),
+		AvailabilityZoneMappings: nil,
+	})
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// Test non-zonal region returns nil
+	zones := provider.GetAvailableZones(ctx, "canadaeast")
+	g.Expect(zones).To(BeNil())
+
+	// Test unknown region returns nil
+	zones = provider.GetAvailableZones(ctx, "unknownregion")
+	g.Expect(zones).To(BeNil())
+}
+
+func TestProvider_GetAvailableZones_ReturnsNilOnAPIError(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API with error
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.NewListLocationsPagerBehavior.Error.Set(errors.New("API error"))
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// Test that API error results in nil zones (no fallback for zone list)
+	zones := provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(BeNil())
+
+	// But SupportsZones still works with fallback
+	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+}
+
+func TestProvider_GetAvailableZones_Caching(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.Locations.Store("eastus", createZonalLocation("eastus", []string{"1", "2", "3"}))
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// First call should trigger API call
+	zones := provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(ConsistOf("1", "2", "3"))
+	g.Expect(fakeAPI.NewListLocationsPagerBehavior.Calls()).To(Equal(1))
+
+	// Second call should use cached data
+	zones = provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(ConsistOf("1", "2", "3"))
+	g.Expect(fakeAPI.NewListLocationsPagerBehavior.Calls()).To(Equal(1))
+}
