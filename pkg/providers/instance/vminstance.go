@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -217,6 +218,14 @@ func (p *DefaultVMProvider) BeginCreate(
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
 	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
+	// Pre-launch filter: re-check instance types against the live ICE cache.
+	// This acts as a circuit breaker during large-scale scheduling — if parallel NodeClaims
+	// have already failed and updated the cache, we skip those SKUs immediately.
+	instanceTypes = offerings.PreLaunchFilter(ctx, instanceTypes, offerings.NewLiveCacheAvailabilityCheck(
+		ctx, p.errorHandling.UnavailableOfferings, func(ctx context.Context, name string) (*skewer.SKU, error) {
+			return p.instanceTypeProvider.Get(ctx, nodeClass, name)
+		},
+	))
 	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		// There may be orphan NICs (created before promise started)

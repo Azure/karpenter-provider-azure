@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -175,6 +176,12 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 		return nil, fmt.Errorf("failed to generate AKS machine name from NodeClaim name %q: %w", nodeClaim.Name, err)
 	}
 	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
+	// Pre-launch filter: re-check instance types against the live ICE cache.
+	instanceTypes = offerings.PreLaunchFilter(ctx, instanceTypes, offerings.NewLiveCacheAvailabilityCheck(
+		ctx, p.errorHandling.UnavailableOfferings, func(ctx context.Context, name string) (*skewer.SKU, error) {
+			return p.instanceTypeProvider.Get(ctx, nodeClass, name)
+		},
+	))
 
 	aksMachinePromise, err := p.beginCreateMachine(ctx, nodeClass, nodeClaim, instanceTypes, aksMachineName)
 	if err != nil {
