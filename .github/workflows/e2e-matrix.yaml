@@ -26,12 +26,57 @@ on:
 permissions:
   contents: read
 
+# Test sources:
+#   - azure: Tests specific to Azure provider (test/suites/*)
+#   - upstream: Tests from upstream (sigs.k8s.io/karpenter/test/suites)
+#   - all: Run both azure and upstream tests for the suite
+#
+# Azure-only suites: ACR, BYOK, Consolidation, GPU, InPlaceUpdate, KubernetesUpgrade, Scheduling, Spot, Subnet, Utilization
+# Upstream-only suites: Chaos, Expiration, StaticCapacity, Termination
+# Both (prefer upstream for generic tests): Drift, Integration, NodeClaim
 jobs:
   e2e:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ACR, BYOK, Chaos, Consolidation, Drift, GPU, InPlaceUpdate, Integration, KubernetesUpgrade, NodeClaim, Scheduling, Spot, Subnet, Utilization]
+        suite:
+          # Azure-specific suites (no upstream equivalent)
+          - name: ACR
+            source: azure
+          - name: BYOK
+            source: azure
+          - name: Consolidation
+            source: azure
+          - name: GPU
+            source: azure
+          - name: InPlaceUpdate
+            source: azure
+          - name: KubernetesUpgrade
+            source: azure
+          - name: Scheduling
+            source: azure
+          - name: Spot
+            source: azure
+          - name: Subnet
+            source: azure
+          - name: Utilization
+            source: azure
+          # Suites with both azure and upstream tests
+          - name: Drift
+            source: all       # Run both; Azure has provider-specific drift tests
+          - name: Integration
+            source: all       # Run both; Azure has provider-specific integration tests
+          - name: NodeClaim
+            source: all       # Run both; Azure has provider-specific NodeClaim tests
+          # Upstream-only suites
+          - name: Chaos
+            source: upstream
+          - name: Expiration
+            source: upstream
+          #- name: StaticCapacity
+          #  source: upstream
+          - name: Termination
+            source: upstream
     permissions:
       contents: read
       id-token: write
@@ -39,7 +84,8 @@ jobs:
     uses: ./.github/workflows/e2e.yaml
     with:
       git_ref: ${{ inputs.git_ref }}
-      suite: ${{ matrix.suite }}
+      suite: ${{ matrix.suite.name }}
+      source: ${{ matrix.suite.source }}
       location: ${{ inputs.location }}
       provisionmode: ${{ inputs.provisionmode || 'aksscriptless' }}
       k8s_version: ${{ inputs.k8s_version }}
