@@ -28,6 +28,13 @@ inputs:
   location:
     description: "The azure location to run the e2e test in"
     default: "eastus"
+  provision_mode:
+    description: "The karpenter provisioning mode to run the e2e test in"
+    default: "aksscriptless"
+  identity_type:
+    description: "The type of managed identity for the cluster (SystemAssigned or UserAssigned)"
+    required: false
+    default: "SystemAssigned"
 runs:
   using: "composite"
   steps:
@@ -45,41 +52,30 @@ runs:
       env:
         SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
       run: az account set --subscription "$SUBSCRIPTION_ID"
-    - name: create workload msi
-      shell: bash
-      env:
-        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-        AZURE_LOCATION: ${{ inputs.location }}
-      run: make az-create-workload-msi
     - name: create cluster
       shell: bash
       env:
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+        AZURE_CLIENT_ID: ${{ inputs.client-id }}
+        AZURE_TENANT_ID: ${{ inputs.tenant-id }}
         AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
         AZURE_VM_SIZE: Standard_D4ds_v5 # We have more quota for this VM size so force it to avoid quota errors
         K8S_VERSION: ${{ inputs.k8s_version }}
-      run: make az-mkaks-cilium
+        PROVISION_MODE: ${{ inputs.provision_mode }}
+      run: |
+        if [ "${{ inputs.identity_type }}" = "UserAssigned" ]; then
+          echo "Creating cluster with user-assigned managed identity"
+          make ci-mkcluster-all-userassigned
+        else
+          echo "Creating cluster with system-assigned managed identity"
+          make ci-mkcluster-all
+        fi
     - name: az login 2
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
       with:
         client-id: ${{ inputs.client_id }}
         tenant-id: ${{ inputs.tenant_id }}
         subscription-id: ${{ inputs.subscription_id }}
-    - name: create federated cred
-      shell: bash
-      env:
-        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
-        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-      run: make az-create-federated-cred
-    - name: update azure perms
-      shell: bash
-      env:
-        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
-        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-        AZURE_LOCATION: ${{ inputs.location }}
-        AZURE_ACR_NAME: ${{ inputs.acr_name }}
-      run: |
-        make az-perm
-        make az-perm-acr
