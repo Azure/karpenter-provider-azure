@@ -55,9 +55,9 @@ runs:
     - name: create cluster
       shell: bash
       env:
-        AZURE_SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
-        AZURE_CLIENT_ID: ${{ inputs.client-id }}
-        AZURE_TENANT_ID: ${{ inputs.tenant-id }}
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+        AZURE_CLIENT_ID: ${{ inputs.client_id }}
+        AZURE_TENANT_ID: ${{ inputs.tenant_id }}
         AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
