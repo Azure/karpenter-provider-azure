@@ -52,7 +52,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
 	DescribeTable("should provision one GPU node and one GPU Pod",
-		Label("GPU", "runner"),
+		Label("GPU"),
 		func(nodeClass *v1beta1.AKSNodeClass) {
 			// Enable NodeRepair feature gate if running in-cluster
 			if env.InClusterController {
