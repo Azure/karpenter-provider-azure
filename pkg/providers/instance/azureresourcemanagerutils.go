@@ -69,7 +69,7 @@ func deleteVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAP
 
 func createVirtualMachineExtension(
 	ctx context.Context,
-	client VirtualMachineExtensionsAPI,
+	client azclient.VirtualMachineExtensionsAPI,
 	rg string,
 	vmName string,
 	extensionName string,
