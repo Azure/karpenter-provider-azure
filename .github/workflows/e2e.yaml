@@ -11,7 +11,7 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "westus3"
-      provisionmode:
+      provision_mode:
         type: string
         description: "the karpenter provisioning mode to run the e2e test in"
         default: "aksscriptless"
@@ -50,14 +50,13 @@ on:
         type: choice
         description: "Azure location to run the e2e test in"
         default: westus3
+        # Limiting to a subset of regions to give a nice dropdown and also
+        # ensure the regions are configured to pass with all of our tests (capacity, etc)
         options:
           - westus3
           - southcentralus
           - eastus
-      provisionmode:
-        type: string
-        description: "the karpenter provisioning mode to run the e2e test in"
-        default: "aksscriptless"
+          - westus2  # This is staging in our sub
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"
@@ -71,6 +70,13 @@ on:
           - "1.33"
           - "1.34"
           - "1.35"
+      provision_mode:
+        type: choice
+        description: "Karpenter provisioning mode"
+        default: aksscriptless
+        options:
+          - aksscriptless
+          - aksmachineapi
 
 permissions:
   contents: read
@@ -204,11 +210,8 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
           k8s_version: ${{ inputs.k8s_version }}
-      - name: build and publish karpenter
-        shell: bash
-        env:
-          AZURE_ACR_NAME: ${{ env.ACR_NAME }}
-        run: make az-build
+          provision_mode: ${{ inputs.provision_mode }}
+          identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
@@ -220,7 +223,13 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
-          provisionmode: ${{ inputs.provisionmode }}
+          provision_mode: ${{ inputs.provision_mode }}
+      - name: az login (refresh token before tests)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       - name: run the ${{ inputs.suite }} test suite
         env:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
@@ -230,7 +239,7 @@ jobs:
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
-          PROVISION_MODE: ${{ inputs.provisionmode }}
+          PROVISION_MODE: ${{ inputs.provision_mode }}
         run: |
           make az-creds
           make e2etests
