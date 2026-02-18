@@ -135,6 +135,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.AKSLabelMode:                      "system",
 				v1beta1.AKSLabelScaleSetPriority:          "regular",
 				v1beta1.AKSLabelOSSKU:                     "Ubuntu",
+				v1beta1.AKSLabelFIPSEnabled:               "false",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {

@@ -111,6 +111,7 @@ func Get(
 	labels[v1beta1.AKSLabelScaleSetPriority] = v1beta1.ScaleSetPriorityRegular
 	// Add os-sku label based on imageFamily
 	labels[v1beta1.AKSLabelOSSKU] = v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
+	labels[v1beta1.AKSLabelFIPSEnabled] = lo.Ternary(lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS, "true", "false")
 	// Add os-sku-requested label that exactly matches the imageFamily specified on the NodeClass
 	labels[v1beta1.AKSLabelOSSKURequested] = lo.FromPtr(nodeClass.Spec.ImageFamily)
 	// nil static parameters here is safe only because we're not using the resulting imageFamily for anything except to get its name
