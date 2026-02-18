@@ -65,7 +65,7 @@ var nodePool *karpv1.NodePool
 var nodeClass *v1beta1.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
-var virtualMachineGCController *garbagecollection.VirtualMachine
+var InstanceGCController *garbagecollection.Instance
 var inPlaceUpdateController *inplaceupdate.Controller
 var networkInterfaceGCController *garbagecollection.NetworkInterface
 var prov *provisioning.Provisioner
@@ -83,9 +83,9 @@ var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	virtualMachineGCController = garbagecollection.NewVirtualMachine(env.Client, cloudProvider)
-	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider)
+	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider)
 	networkInterfaceGCController = garbagecollection.NewNetworkInterface(env.Client, azureEnv.VMInstanceProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
@@ -127,7 +127,7 @@ var _ = AfterEach(func() {
 // TODO: move before/after each into the tests (see AWS)
 // review tests themselves (very different from AWS?)
 // (e.g. AWS has not a single ExpectPRovisioned? why?)
-var _ = Describe("VirtualMachine Garbage Collection", func() {
+var _ = Describe("Instance Garbage Collection", func() {
 	var vm *armcompute.VirtualMachine
 	var providerID string
 	var err error
@@ -159,7 +159,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 				})
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-				ExpectSingletonReconciled(ctx, virtualMachineGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err := cloudProvider.Get(ctx, providerID)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -187,7 +187,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 						ids = append(ids, *vm.ID)
 					}
 				}
-				ExpectSingletonReconciled(ctx, virtualMachineGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 
 				wg := sync.WaitGroup{}
 				for _, id := range ids {
@@ -235,7 +235,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 						nodeClaims = append(nodeClaims, nodeClaim)
 					}
 				}
-				ExpectSingletonReconciled(ctx, virtualMachineGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 
 				wg := sync.WaitGroup{}
 				for _, id := range ids {
@@ -259,7 +259,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 				vm.Properties.TimeCreated = lo.ToPtr(time.Now())
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-				ExpectSingletonReconciled(ctx, virtualMachineGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err := cloudProvider.Get(ctx, providerID)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -278,7 +278,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 				})
 				ExpectApplied(ctx, env.Client, nodeClaim, node)
 
-				ExpectSingletonReconciled(ctx, virtualMachineGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err := cloudProvider.Get(ctx, providerID)
 				Expect(err).ToNot(HaveOccurred())
 				ExpectExists(ctx, env.Client, node)
@@ -297,7 +297,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 				}
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-				ExpectSingletonReconciled(ctx, virtualMachineGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).To(HaveOccurred())
 				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -313,7 +313,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 				})
 				ExpectApplied(ctx, env.Client, node)
 
-				ExpectSingletonReconciled(ctx, virtualMachineGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).To(HaveOccurred())
 				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -379,7 +379,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 			})
 			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 			managedVM := test.VirtualMachine(test.VirtualMachineOptions{Name: lo.FromPtr(managedNic.Name), NodepoolName: nodePool.Name})
-			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
 			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 			// We should still have a network interface here
 			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
@@ -399,14 +399,14 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 16)), // Needs to be older than the nodeclaim registration ttl
 				},
 			})
-			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
 			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 			// We should still have a network interface here
 			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(nicsAfterGC)).To(Equal(1))
 
-			ExpectSingletonReconciled(ctx, virtualMachineGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 			nicsAfterVMReconciliation, err := azureEnv.VMInstanceProvider.ListNics(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(nicsAfterVMReconciliation)).To(Equal(0))

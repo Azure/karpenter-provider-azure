@@ -1,17 +1,16 @@
 name: CreateCluster
 description: 'Installs Go Downloads and installs Karpenter Dependencies'
 inputs:
-  # k8s_version:
-  #   description: 'Version of Kubernetes to use for the launched cluster'
-  #   required: false
-  #   default: "1.27"
-  client-id:
+  k8s_version:
+    description: "Version of Kubernetes to use for the launched cluster (e.g., 1.30). If empty, uses AKS default."
+    required: false
+  client_id:
     description: "ID of the client to create the cluster with"
     required: true
-  tenant-id:
+  tenant_id:
     description: "ID of the tenant to create the cluster in"
     required: true
-  subscription-id:
+  subscription_id:
     description: "ID of the subscription to create the cluster in"
     required: true
   resource_group:
@@ -32,19 +31,19 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         ref: ${{ inputs.git_ref }}
     - name: az login
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
       with:
-        client-id: ${{ inputs.client-id }}
-        tenant-id: ${{ inputs.tenant-id }}
-        subscription-id: ${{ inputs.subscription-id }}
+        client-id: ${{ inputs.client_id }}
+        tenant-id: ${{ inputs.tenant_id }}
+        subscription-id: ${{ inputs.subscription_id }}
     - name: az set sub
       shell: bash
       env:
-        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+        SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
       run: az account set --subscription "$SUBSCRIPTION_ID"
     - name: create workload msi
       shell: bash
@@ -60,13 +59,14 @@ runs:
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
         AZURE_VM_SIZE: Standard_D4ds_v5 # We have more quota for this VM size so force it to avoid quota errors
+        K8S_VERSION: ${{ inputs.k8s_version }}
       run: make az-mkaks-cilium
     - name: az login 2
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
       with:
-        client-id: ${{ inputs.client-id }}
-        tenant-id: ${{ inputs.tenant-id }}
-        subscription-id: ${{ inputs.subscription-id }}
+        client-id: ${{ inputs.client_id }}
+        tenant-id: ${{ inputs.tenant_id }}
+        subscription-id: ${{ inputs.subscription_id }}
     - name: create federated cred
       shell: bash
       env:

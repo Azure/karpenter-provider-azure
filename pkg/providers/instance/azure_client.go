@@ -138,7 +138,7 @@ func NewAZClientFromAPI(
 	}
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
 	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
@@ -160,11 +160,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
-	if o.UseSIG {
+	if o.UseSIG && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI { // Not doing this if PROVISION_MODE is aksmachineapi as Create will never use VM client, but want to allow other VM client operations
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
-		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
+		vmClientOptions.PerRetryPolicies = append(vmClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {
@@ -181,7 +181,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
-	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred, opts.Cloud)
+	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -225,7 +228,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
-	if o.ManageExistingAKSMachines {
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
 		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			return nil, err

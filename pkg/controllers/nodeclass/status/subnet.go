@@ -44,9 +44,9 @@ func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
 }
 
 const (
-	SubnetUnreadyReasonNotFound = "SubnetNotFound"
-
-	SubnetUnreadyReasonIDInvalid = "SubnetIDInvalid"
+	SubnetUnreadyReasonNotFound     = "SubnetNotFound"
+	SubnetUnreadyReasonIDInvalid    = "SubnetIDInvalid"
+	SubnetUnreadyReasonUnknownError = "SubnetUnknownError"
 )
 
 const (
@@ -83,6 +83,23 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			logger.Error(err, "failed to parse cluster subnet ID", "clusterSubnetID", clusterSubnetID)
 			return reconcile.Result{}, nil
 		}
+
+		isClusterManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, clusterSubnetID)
+		if err != nil {
+			logger.Error(err, "failed to determine if cluster VNet is managed", "clusterSubnetID", clusterSubnetID)
+			return reconcile.Result{}, nil
+		}
+
+		if isClusterManagedVNET && clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
+			logger.Error(nil, "custom subnet cannot be in the same VNet as cluster managed VNet", "subnetID", subnetID)
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeSubnetsReady,
+				SubnetUnreadyReasonIDInvalid,
+				fmt.Sprintf("custom subnet cannot be in the same VNet as cluster managed VNet: %s", subnetID),
+			)
+			return reconcile.Result{}, nil
+		}
+
 		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
 			logger.Error(nil, "subnet does not match cluster subscription, resource group, or virtual network", "subnetID", subnetID)
 			nodeClass.StatusConditions().SetFalse(
@@ -105,6 +122,11 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			)
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeSubnetsReady,
+			SubnetUnreadyReasonUnknownError,
+			fmt.Sprintf("unknown error getting subnet: %s", err.Error()),
+		)
 		logger.Error(err, "getting subnet failed during reconciliation with unknown error", "error", err.Error())
 		return reconcile.Result{}, err
 	}

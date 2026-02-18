@@ -24,11 +24,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -90,22 +92,33 @@ func Get(
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
 
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return nil, err
+	}
+
 	// Add labels that are always there
 	labels[AKSLabelRole] = "agent"
-	labels[v1beta1.AKSLabelCluster] = NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)
+	labels[v1beta1.AKSLabelCluster] = utils.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)
 	// Note that while we set the Kubelet identity label here, in bootstrap API mode, the actual kubelet identity that is set in the bootstrapping
 	// script is configured by the NPS service. That means the label can be set to the older client ID if the client ID
 	// changed recently. This is OK because drift will correct it.
 	labels[v1beta1.AKSLabelKubeletIdentityClientID] = opts.KubeletIdentityClientID
 	labels[v1beta1.AKSLabelMode] = v1beta1.ModeUser
+	// Prevent race conditions with startup taints by telling Karpenter not to sync taints from the NodeClaim to the Node
+	// See https://github.com/kubernetes-sigs/karpenter/issues/1772
+	labels[karpv1.NodeDoNotSyncTaintsLabelKey] = "true"
+	labels[v1beta1.AKSLabelScaleSetPriority] = v1beta1.ScaleSetPriorityRegular
+	// Add os-sku label based on imageFamily
+	labels[v1beta1.AKSLabelOSSKU] = v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
+	// Add os-sku-requested label that exactly matches the imageFamily specified on the NodeClass
+	labels[v1beta1.AKSLabelOSSKURequested] = lo.FromPtr(nodeClass.Spec.ImageFamily)
+	// nil static parameters here is safe only because we're not using the resulting imageFamily for anything except to get its name
+	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, nil)
+	labels[v1beta1.AKSLabelOSSKUEffective] = imageFamily.Name()
 
 	if opts.IsAzureCNIOverlay() {
 		// TODO: make conditional on pod subnet
-		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-		if err != nil {
-			return nil, err
-		}
-
 		vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID) // good
 		if err != nil {
 			return nil, err
@@ -214,24 +227,4 @@ func getLabelNamespace(key string) string {
 		return parts[0]
 	}
 	return ""
-}
-
-func NormalizeClusterResourceGroupNameForLabel(resourceGroupName string) string {
-	truncated := resourceGroupName
-	truncated = strings.ReplaceAll(truncated, "(", "-")
-	truncated = strings.ReplaceAll(truncated, ")", "-")
-	const maxLen = 63
-	if len(truncated) > maxLen {
-		truncated = truncated[0:maxLen]
-	}
-
-	if strings.HasSuffix(truncated, "-") ||
-		strings.HasSuffix(truncated, "_") ||
-		strings.HasSuffix(truncated, ".") {
-		if len(truncated) > 62 {
-			return truncated[0:len(truncated)-1] + "z"
-		}
-		return truncated + "z"
-	}
-	return truncated
 }

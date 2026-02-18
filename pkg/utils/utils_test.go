@@ -170,3 +170,103 @@ func TestExtractVersionFromVMSize(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAlphanumericHash(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should return error for non-positive length", func(t *testing.T) {
+		_, err := utils.GetAlphanumericHash("test", 0)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("length must be positive"))
+
+		_, err = utils.GetAlphanumericHash("test", -1)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("length must be positive"))
+	})
+
+	t.Run("should generate hash of correct length", func(t *testing.T) {
+		lengths := []int{1, 6, 10, 15}
+		for _, length := range lengths {
+			hash, err := utils.GetAlphanumericHash("test-input", length)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(hash).To(HaveLen(length))
+		}
+	})
+
+	t.Run("should only contain alphanumeric characters", func(t *testing.T) {
+		hash, err := utils.GetAlphanumericHash("test-input-with-special-chars!@#$%", 10)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		for _, char := range hash {
+			g.Expect(char).To(SatisfyAny(
+				BeNumerically(">=", '0'), BeNumerically("<=", '9'),
+				BeNumerically(">=", 'a'), BeNumerically("<=", 'z'),
+			))
+		}
+	})
+
+	t.Run("should be deterministic", func(t *testing.T) {
+		input := "deterministic-test-input"
+		length := 8
+
+		hash1, err1 := utils.GetAlphanumericHash(input, length)
+		hash2, err2 := utils.GetAlphanumericHash(input, length)
+
+		g.Expect(err1).ToNot(HaveOccurred())
+		g.Expect(err2).ToNot(HaveOccurred())
+		g.Expect(hash1).To(Equal(hash2))
+	})
+
+	t.Run("should produce different hashes for different inputs", func(t *testing.T) {
+		length := 6
+		hash1, err1 := utils.GetAlphanumericHash("input1", length)
+		hash2, err2 := utils.GetAlphanumericHash("input2", length)
+
+		g.Expect(err1).ToNot(HaveOccurred())
+		g.Expect(err2).ToNot(HaveOccurred())
+		g.Expect(hash1).ToNot(Equal(hash2))
+	})
+
+	t.Run("should produce different hashes for different inputs, long output", func(t *testing.T) {
+		length := 36
+		hash1, err1 := utils.GetAlphanumericHash("input1", length)
+		hash2, err2 := utils.GetAlphanumericHash("input2", length)
+
+		g.Expect(err1).ToNot(HaveOccurred())
+		g.Expect(err2).ToNot(HaveOccurred())
+		g.Expect(hash1).ToNot(Equal(hash2))
+	})
+
+	t.Run("should produce different hashes for different inputs, long input", func(t *testing.T) {
+		length := 6
+		hash1, err1 := utils.GetAlphanumericHash("this-is-a-very-long-nodepool-name-that-exceeds-the-maximum-aks-machine-name-length-limit1", length)
+		hash2, err2 := utils.GetAlphanumericHash("this-is-a-very-long-nodepool-name-that-exceeds-the-maximum-aks-machine-name-length-limit2", length)
+
+		g.Expect(err1).ToNot(HaveOccurred())
+		g.Expect(err2).ToNot(HaveOccurred())
+		g.Expect(hash1).ToNot(Equal(hash2))
+	})
+
+	t.Run("should produce different hashes for different inputs, long input 2", func(t *testing.T) {
+		length := 6
+		hash1, err1 := utils.GetAlphanumericHash("1this-is-a-very-long-nodepool-name-that-exceeds-the-maximum-aks-machine-name-length-limit", length)
+		hash2, err2 := utils.GetAlphanumericHash("2this-is-a-very-long-nodepool-name-that-exceeds-the-maximum-aks-machine-name-length-limit", length)
+
+		g.Expect(err1).ToNot(HaveOccurred())
+		g.Expect(err2).ToNot(HaveOccurred())
+		g.Expect(hash1).ToNot(Equal(hash2))
+	})
+
+	t.Run("should handle empty string input", func(t *testing.T) {
+		hash, err := utils.GetAlphanumericHash("", 6)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(hash).To(HaveLen(6))
+	})
+
+	t.Run("should handle long input strings", func(t *testing.T) {
+		longInput := "this-is-a-very-long-nodepool-name-that-exceeds-the-maximum-aks-machine-name-length-limit"
+		hash, err := utils.GetAlphanumericHash(longInput, 6)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(hash).To(HaveLen(6))
+	})
+}

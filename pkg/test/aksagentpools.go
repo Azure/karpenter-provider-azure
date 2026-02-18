@@ -19,9 +19,9 @@ package test
 import (
 	"fmt"
 
+	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 )
 

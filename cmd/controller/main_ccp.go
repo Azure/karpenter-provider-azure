@@ -32,6 +32,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider/overlay"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
@@ -53,14 +54,17 @@ func main() {
 	aksCloudProvider := cloudprovider.New(
 		op.InstanceTypesProvider,
 		op.VMInstanceProvider,
+		op.AKSMachineProvider,
 		op.EventRecorder,
 		op.GetClient(),
 		op.ImageProvider,
+		op.InstanceTypeStore,
 	)
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
 
-	cloudProvider := metrics.Decorate(aksCloudProvider)
+	overlayUndecoratedCloudProvider := metrics.Decorate(aksCloudProvider)
+	cloudProvider := overlay.Decorate(overlayUndecoratedCloudProvider, op.GetClient(), op.InstanceTypeStore)
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
 	op.
@@ -71,7 +75,9 @@ func main() {
 			op.GetClient(),
 			op.EventRecorder,
 			cloudProvider,
+			overlayUndecoratedCloudProvider,
 			clusterState,
+			op.InstanceTypeStore,
 		)...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
@@ -80,6 +86,7 @@ func main() {
 			op.EventRecorder,
 			aksCloudProvider,
 			op.VMInstanceProvider,
+			op.AKSMachineProvider,
 			// TODO: still need to refactor ImageProvider side of things.
 			op.KubernetesVersionProvider,
 			op.ImageProvider,

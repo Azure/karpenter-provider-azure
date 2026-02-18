@@ -29,12 +29,15 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
@@ -58,6 +61,21 @@ var (
 		armcompute.VirtualMachinePriorityTypesSpot:    karpv1.CapacityTypeSpot,
 		armcompute.VirtualMachinePriorityTypesRegular: karpv1.CapacityTypeOnDemand,
 	}
+	// Note that there is no ScaleSetPriorityToKarpCapacityType because the karpenter.sh/capacity-type
+	// label is the "official" label that we actually key priority off of. Selection still works though
+	// because when we list instance types on-demand offerings always have v1beta1.ScaleSetPriorityRegular
+	// and spot instances always have v1beta1.ScaleSetPrioritySpot, so the correct karpenter.sh/capacity-type
+	// label is still selected even if the user is using kubernetes.azure.com/scalesetpriority only on the NodePool.
+	VMPriorityToScaleSetPriority = map[armcompute.VirtualMachinePriorityTypes]string{
+		armcompute.VirtualMachinePriorityTypesSpot:    v1beta1.ScaleSetPrioritySpot,
+		armcompute.VirtualMachinePriorityTypesRegular: v1beta1.ScaleSetPriorityRegular,
+	}
+
+	aksIdentifyingExtensionEnvs = sets.New(
+		azclient.PublicCloud.Name,
+		azclient.ChinaCloud.Name,
+		azclient.USGovernmentCloud.Name,
+	)
 )
 
 const (
@@ -83,14 +101,20 @@ func ErrorCodeForMetrics(err error) string {
 
 // GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
 // This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
-func GetManagedExtensionNames(provisionMode string) []string {
-	result := []string{
-		aksIdentifyingExtensionName,
+func GetManagedExtensionNames(provisionMode string, env *auth.Environment) []string {
+	var result []string
+	// Only including AKS identifying extension in the clouds it is supported in
+	if isAKSIdentifyingExtensionEnabled(env) {
+		result = append(result, aksIdentifyingExtensionName)
 	}
 	if provisionMode == consts.ProvisionModeBootstrappingClient {
 		result = append(result, cseNameLinux) // TODO: Windows
 	}
 	return result
+}
+
+func isAKSIdentifyingExtensionEnabled(env *auth.Environment) bool {
+	return aksIdentifyingExtensionEnvs.Has(env.Environment.Name)
 }
 
 type Resource = map[string]interface{}
@@ -142,6 +166,7 @@ type DefaultVMProvider struct {
 	provisionMode                string
 	diskEncryptionSetID          string
 	errorHandling                *offerings.ResponseErrorHandler
+	env                          *auth.Environment
 
 	vmListQuery, nicListQuery string
 }
@@ -158,6 +183,7 @@ func NewDefaultVMProvider(
 	subscriptionID string,
 	provisionMode string,
 	diskEncryptionSetID string,
+	env *auth.Environment,
 ) *DefaultVMProvider {
 	return &DefaultVMProvider{
 		azClient:                     azClient,
@@ -170,6 +196,7 @@ func NewDefaultVMProvider(
 		subscriptionID:               subscriptionID,
 		provisionMode:                provisionMode,
 		diskEncryptionSetID:          diskEncryptionSetID,
+		env:                          env,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
@@ -181,11 +208,8 @@ func NewDefaultVMProvider(
 // BeginCreate creates an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
 // Note that the returned instance may not be finished provisioning yet.
-// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due
-// to invalid user input, and similar, will have the error returned here.
-// Errors that occur on the "async side" of the VM create (after the request is accepted, or after polling the
-// VM create and while ) will be returned
-// from the VirtualMachinePromise.Wait() function.
+// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due to invalid user input, and similar, will have the error returned here.
+// Errors that occur on the "async side" of the VM create (after the request is accepted) will be returned from VirtualMachinePromise.Wait().
 func (p *DefaultVMProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -240,7 +264,7 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 			return fmt.Errorf("updating NIC tags for %q: %w", vmName, err)
 		}
 
-		extensionNames := GetManagedExtensionNames(p.provisionMode)
+		extensionNames := GetManagedExtensionNames(p.provisionMode, p.env)
 		pollers := make(map[string]*runtime.Poller[armcompute.VirtualMachineExtensionsClientUpdateResponse], len(extensionNames))
 		// Update tags on VM extensions
 		for _, extName := range extensionNames {
@@ -270,7 +294,11 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 		}
 
 		for extName, poller := range pollers {
-			_, err := poller.PollUntilDone(ctx, nil)
+			// Poll more frequently than the default of 30s
+			opts := &runtime.PollUntilDoneOptions{
+				Frequency: 3 * time.Second,
+			}
+			_, err := poller.PollUntilDone(ctx, opts)
 			if err != nil {
 				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
 			}
@@ -685,7 +713,8 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (p *DefaultVMProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -828,10 +857,11 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					return err
 				}
 			}
-
-			err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
-			if err != nil {
-				return err
+			if isAKSIdentifyingExtensionEnabled(p.env) {
+				err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
+				if err != nil {
+					return err
+				}
 			}
 
 			return nil
@@ -986,6 +1016,13 @@ func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.Virtua
 func GetCapacityTypeFromVM(vm *armcompute.VirtualMachine) string {
 	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
 		return VMPriorityToKarpCapacityType[*vm.Properties.Priority]
+	}
+	return ""
+}
+
+func GetScaleSetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
+	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
+		return VMPriorityToScaleSetPriority[*vm.Properties.Priority]
 	}
 	return ""
 }

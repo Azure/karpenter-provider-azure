@@ -55,7 +55,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
@@ -78,7 +78,7 @@ var _ = Describe("CloudProvider", func() {
 				ctx = options.ToContext(ctx, testOptions)
 				azureEnv = test.NewEnvironment(ctx, env)
 				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 				cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 				coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
 

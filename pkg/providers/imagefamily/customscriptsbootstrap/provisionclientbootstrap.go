@@ -69,7 +69,6 @@ type ProvisionClientBootstrap struct {
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
 
-// nolint gocyclo - will be refactored later
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
 	provisionValues, err := p.ConstructProvisionValues(ctx)
 	if err != nil {
@@ -93,9 +92,10 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	return customDataHydrated, cseHydrated, nil
 }
 
-// nolint: gocyclo
 // ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 // Refactoring for code unification is not being invested immediately.
+//
+//nolint:gocyclo
 func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context) (*models.ProvisionValues, error) {
 	if p.IsWindows {
 		// TODO(Windows)

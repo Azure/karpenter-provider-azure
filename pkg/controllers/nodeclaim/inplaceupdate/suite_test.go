@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
@@ -40,6 +41,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -61,14 +63,12 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
-	// ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
-	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider)
+	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider)
 	opts = options.FromContext(ctx)
 })
 
 var _ = AfterSuite(func() {
-	//stop()
 	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })
 
@@ -104,6 +104,7 @@ var _ = Describe("Unit tests", func() {
 			Name: lo.ToPtr(vmName),
 			Tags: map[string]*string{
 				"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				"compute.aks.billing":         lo.ToPtr("linux"),
 			},
 		}
 	})
@@ -117,7 +118,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
 
-			hash1, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nil)
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			options.NodeIdentities = []string{
@@ -125,7 +126,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
-			hash2, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nil)
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			options.NodeIdentities = []string{
@@ -133,7 +134,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			hash3, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nil)
+			hash3, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(hash1).To(Equal(hash2))
@@ -156,7 +157,8 @@ var _ = Describe("Unit tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Hash should be different without NodeClass tags
-			hash2, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nil)
+			nodeClass.Spec.Tags = nil
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(hash1).ToNot(Equal(hash2))
 
@@ -184,11 +186,183 @@ var _ = Describe("Unit tests", func() {
 			hash1, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
-			hash2, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nil)
+			nodeClass.Spec.Tags = nil
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Should be different because NodeClass overrides AdditionalTags
 			Expect(hash1).ToNot(Equal(hash2))
+		})
+
+		It("should produce different hashes for AKS machines vs VMs", func() {
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "test-value",
+			}
+			options.NodeIdentities = []string{
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
+			}
+
+			// Regular VM NodeClaim
+			vmNodeClaim := coretest.NodeClaim()
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, vmNodeClaim, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			// AKS Machine NodeClaim
+			aksMachineNodeClaim := coretest.NodeClaim()
+			aksMachineNodeClaim.Annotations = map[string]string{
+				v1beta1.AnnotationAKSMachineResourceID: "/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines/test-machine",
+			}
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, aksMachineNodeClaim, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Should be different because AKS machines don't include identities in hash
+			Expect(hash1).ToNot(Equal(hash2))
+		})
+	})
+
+	Context("calculateAKSMachinePatch", func() {
+		It("should add missing tags to AKS machine when there are no existing tags", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+			// Verify original aksMachine was modified (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties.Tags).To(HaveKey("test-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+		})
+
+		It("should not update AKS machine when tags already match", func() {
+			createTimeString := instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{
+						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
+						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(createTimeString),
+						"compute.aks.billing":                              lo.ToPtr("linux"),
+						"test-tag":                                         lo.ToPtr("my-tag"),
+						"nodeclass-tag":                                    lo.ToPtr("nodeclass-value"),
+					},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeFalse())
+
+			// Verify original aksMachine tags remain unchanged
+			Expect(aksMachine.Properties.Tags).To(HaveLen(6))
+			Expect(aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
+			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(lo.ToPtr(nodeClaim.Name)))
+			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(lo.ToPtr(createTimeString)))
+			Expect(aksMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+			Expect(aksMachine.Properties.Tags["nodeclass-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
+		})
+
+		It("should handle AKS machine with nil properties", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: nil,
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+
+			// Verify original aksMachine properties were created and populated (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties).ToNot(BeNil())
+			Expect(aksMachine.Properties.Tags).To(HaveKey("test-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+		})
+
+		It("should replace existing tags with expected tags", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{
+						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
+						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
+						"old-tag": lo.ToPtr("old-value"),
+					},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"new-tag": "new-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+
+			// Verify original aksMachine tags were replaced (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties.Tags).To(HaveKey("new-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+			Expect(aksMachine.Properties.Tags).ToNot(HaveKey("old-tag"))
+		})
+
+		It("should prioritize NodeClass tags over AdditionalTags", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"conflict-tag": "additional-value",
+			}
+			nodeClass.Spec.Tags = map[string]string{
+				"conflict-tag": "nodeclass-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+
+			// Verify original aksMachine was modified with correct priority (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties.Tags["conflict-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})
 	})
 
@@ -439,7 +613,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(update).To(BeNil())
 		})
 
-		It("should add missing tags from AdditionalTags", func() {
+		It("should add missing default tags", func() {
 			currentVM.Tags = map[string]*string{
 				"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
 			}
@@ -453,6 +627,28 @@ var _ = Describe("Unit tests", func() {
 			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName), // Should always be included
+					"compute.aks.billing":         lo.ToPtr("linux"),          // Should always be included
+					"test-tag":                    lo.ToPtr("my-tag"),
+				},
+			}))
+		})
+
+		It("should add missing tags from AdditionalTags", func() {
+			currentVM.Tags = map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				"compute.aks.billing":         lo.ToPtr("linux"),
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
+
+			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName), // Should always be included
+					"compute.aks.billing":         lo.ToPtr("linux"),          // Should always be included
 					"test-tag":                    lo.ToPtr("my-tag"),
 				},
 			}))
@@ -461,6 +657,7 @@ var _ = Describe("Unit tests", func() {
 		It("should add missing tags from NodeClass", func() {
 			currentVM.Tags = map[string]*string{
 				"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				"compute.aks.billing":         lo.ToPtr("linux"),
 			}
 
 			options := test.Options()
@@ -472,6 +669,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName), // Should always be included
+					"compute.aks.billing":         lo.ToPtr("linux"),          // Should always be included
 					"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
 				},
 			}))
@@ -480,6 +678,7 @@ var _ = Describe("Unit tests", func() {
 		It("should add missing tags from NodeClass if conflicting with AdditionalTags", func() {
 			currentVM.Tags = map[string]*string{
 				"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				"compute.aks.billing":         lo.ToPtr("linux"),
 				"test-tag":                    lo.ToPtr("my-tag"),
 			}
 
@@ -495,6 +694,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName), // Should always be included
+					"compute.aks.billing":         lo.ToPtr("linux"),          // Should always be included
 					"test-tag":                    lo.ToPtr("nodeclass-value"),
 				},
 			}))
@@ -504,6 +704,7 @@ var _ = Describe("Unit tests", func() {
 		It("should remove unneeded tags", func() {
 			currentVM.Tags = map[string]*string{
 				"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				"compute.aks.billing":         lo.ToPtr("linux"),
 				"test-tag":                    lo.ToPtr("my-tag"),
 			}
 
@@ -513,6 +714,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName), // Should always be included
+					"compute.aks.billing":         lo.ToPtr("linux"),          // Should always be included
 				},
 			}))
 		})
@@ -539,6 +741,7 @@ var _ = Describe("In Place Update Controller", func() {
 				Name: lo.ToPtr(vmName),
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+					"compute.aks.billing":         lo.ToPtr("linux"),
 				},
 			}
 			nic = &armnetwork.Interface{
@@ -546,6 +749,7 @@ var _ = Describe("In Place Update Controller", func() {
 				Name: lo.ToPtr(vmName),
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+					"compute.aks.billing":         lo.ToPtr("linux"),
 				},
 			}
 			billingExt = &armcompute.VirtualMachineExtension{
@@ -553,6 +757,7 @@ var _ = Describe("In Place Update Controller", func() {
 				Name: lo.ToPtr("computeAksLinuxBilling"),
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+					"compute.aks.billing":         lo.ToPtr("linux"),
 				},
 			}
 			cseExt = &armcompute.VirtualMachineExtension{
@@ -560,6 +765,7 @@ var _ = Describe("In Place Update Controller", func() {
 				Name: lo.ToPtr("cse-agent-karpenter"),
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+					"compute.aks.billing":         lo.ToPtr("linux"),
 				},
 			}
 
@@ -687,6 +893,7 @@ var _ = Describe("In Place Update Controller", func() {
 				// Expect the tags to remain unchanged
 				Expect(updatedVM.Tags).To(Equal(map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+					"compute.aks.billing":         lo.ToPtr("linux"),
 				}))
 
 				nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
@@ -750,6 +957,7 @@ var _ = Describe("In Place Update Controller", func() {
 				// Expect the tags to remain unchanged
 				Expect(updatedVM.Tags).To(Equal(map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+					"compute.aks.billing":         lo.ToPtr("linux"),
 				}))
 
 				nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
@@ -787,8 +995,48 @@ var _ = Describe("In Place Update Controller", func() {
 					azureEnv,
 					map[string]*string{
 						"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+						"compute.aks.billing":         lo.ToPtr("linux"),
 						"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
 						"test-tag":                    lo.ToPtr("my-tag"),
+					})
+				Expect(updatedVM).ToNot(Equal(vm))
+				// Expect the identities to remain unchanged
+				Expect(updatedVM.Identity).To(BeNil())
+
+				nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+				Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+				Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+			})
+
+			It("should add new billing tag if there are missing tags", func() {
+				vm.Tags = map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				}
+				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+				nic.Tags = map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				}
+				azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+				billingExt.Tags = map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				}
+				azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(billingExt.ID), *billingExt)
+				cseExt.Tags = map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+				}
+				azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(cseExt.ID), *cseExt)
+
+				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+				// The VM should be updated
+				updatedVM := ExpectInstanceResourcesHaveTags(
+					ctx,
+					vmName,
+					azureEnv,
+					map[string]*string{
+						"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+						"compute.aks.billing":         lo.ToPtr("linux"),
 					})
 				Expect(updatedVM).ToNot(Equal(vm))
 				// Expect the identities to remain unchanged
@@ -829,6 +1077,7 @@ var _ = Describe("In Place Update Controller", func() {
 			It("should clear existing tags on VM", func() {
 				vm.Tags = map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+					"compute.aks.billing":         lo.ToPtr("linux"),
 					"test-tag":                    lo.ToPtr("my-tag"),
 					"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
 				}
@@ -851,6 +1100,7 @@ var _ = Describe("In Place Update Controller", func() {
 					azureEnv,
 					map[string]*string{
 						"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+						"compute.aks.billing":         lo.ToPtr("linux"),
 						"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
 						// "test-tag" should be removed
 					})
@@ -894,6 +1144,7 @@ var _ = Describe("In Place Update Controller", func() {
 					map[string]string{"nodeclass-tag": "nodeclass-value"},
 					map[string]*string{
 						"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+						"compute.aks.billing":         lo.ToPtr("linux"),
 						"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
 					},
 				),
@@ -902,6 +1153,7 @@ var _ = Describe("In Place Update Controller", func() {
 					map[string]string{"this/tag/has/slashes": "nodeclass-value"},
 					map[string]*string{
 						"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+						"compute.aks.billing":         lo.ToPtr("linux"),
 						"this_tag_has_slashes":        lo.ToPtr("nodeclass-value"),
 					},
 				),
@@ -944,10 +1196,12 @@ var _ = Describe("In Place Update Controller", func() {
 					azureEnv,
 					map[string]*string{
 						"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
+						"compute.aks.billing":         lo.ToPtr("linux"),
 						"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
 					})
 				Expect(updatedVM).ToNot(Equal(vm))
 			})
 		})
 	})
+
 })

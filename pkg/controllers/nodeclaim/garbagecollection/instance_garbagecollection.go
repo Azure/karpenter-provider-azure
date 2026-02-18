@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 
 	"github.com/samber/lo"
@@ -32,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -40,29 +40,29 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type VirtualMachine struct {
+type Instance struct {
 	kubeClient      client.Client
 	cloudProvider   corecloudprovider.CloudProvider
 	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
 }
 
-func NewVirtualMachine(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *VirtualMachine {
-	return &VirtualMachine{
+func NewInstance(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *Instance {
+	return &Instance{
 		kubeClient:      kubeClient,
 		cloudProvider:   cloudProvider,
 		successfulCount: 0,
 	}
 }
 
-func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
 
-	// We LIST VMs on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
+	// We LIST instances on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
 	// This works since our CloudProvider instances are deleted based on whether the NodeClaim exists or not, not vice-versa
 	cloudNodeClaims, err := c.cloudProvider.List(ctx)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("listing cloudprovider VMs, %w", err)
+		return reconciler.Result{}, fmt.Errorf("listing cloudprovider instances, %w", err)
 	}
 
 	cloudNodeClaims = lo.Filter(cloudNodeClaims, func(nc *karpv1.NodeClaim, _ int) bool {
@@ -70,11 +70,11 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 	})
 	clusterNodeClaims := &karpv1.NodeClaimList{}
 	if err = c.kubeClient.List(ctx, clusterNodeClaims); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 	nodeList := &v1.NodeList{}
 	if err := c.kubeClient.List(ctx, nodeList); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 	clusterProviderIDs := sets.New[string](lo.FilterMap(clusterNodeClaims.Items, func(n karpv1.NodeClaim, _ int) (string, bool) {
 		return n.Status.ProviderID, n.Status.ProviderID != ""
@@ -93,13 +93,13 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 		}
 	})
 	if err = multierr.Combine(errs...); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 	c.successfulCount++
-	return reconcile.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
+	return reconciler.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
 }
 
-func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
+func (c *Instance) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("providerID", nodeClaim.Status.ProviderID))
 	if err := c.cloudProvider.Delete(ctx, nodeClaim); err != nil {
 		return corecloudprovider.IgnoreNodeClaimNotFoundError(err)
@@ -118,7 +118,7 @@ func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.N
 	return nil
 }
 
-func (c *VirtualMachine) Register(_ context.Context, m manager.Manager) error {
+func (c *Instance) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("instance.garbagecollection").
 		WatchesRawSource(singleton.Source()).

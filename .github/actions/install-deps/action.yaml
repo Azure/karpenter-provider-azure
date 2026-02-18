@@ -7,7 +7,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+    - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
       id: setup-go
       with:
         go-version-file: go.mod
@@ -16,16 +16,48 @@ runs:
     # Root path permission workaround for caching https://github.com/actions/cache/issues/845#issuecomment-1252594999
     - run: sudo chown "$USER" /usr/local
       shell: bash
-    - uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+    - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       id: cache-toolchain
       with:
         path: |
           /usr/local/kubebuilder/bin
           ~/go/bin
-          /usr/bin/trivy
-        key: ${{ runner.os }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
+        # Include runner.environment in key because ~/go/bin expands differently on github-hosted vs self-hosted runners
+        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
       run: make toolchain
+    # Install trivy separately since apt installs to /usr/bin which isn't cacheable
+    - shell: bash
+      run: |
+        if ! command -v trivy &> /dev/null; then
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+        fi
+    # Install CGO cross-compilers for multi-arch builds (apt installs to /usr which isn't cacheable)
+    - shell: bash
+      run: |
+        if ! command -v aarch64-linux-gnu-gcc &> /dev/null || ! command -v x86_64-linux-gnu-gcc &> /dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
+        fi
+    # Log environment setup (useful for debugging)
+    - shell: bash
+      run: |
+        echo "=== Environment ==="
+        echo "HOME: $HOME"
+        echo "GOPATH: $(go env GOPATH)"
+        echo "PATH: $PATH"
+        echo ""
+        echo "=== Contents of $HOME/go/bin ==="
+        ls -la "$HOME/go/bin" || echo "$HOME/go/bin does not exist"
+        echo ""
+        echo "=== Contents of \$(go env GOPATH)/bin ==="
+        ls -la "$(go env GOPATH)/bin" || echo "\$(go env GOPATH)/bin does not exist"
+        echo ""
+        echo "=== Go version ==="
+        go version
