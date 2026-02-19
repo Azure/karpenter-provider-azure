@@ -742,6 +742,36 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		})
+		It("should not allow restricted kubernetes.azure.com requirements", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{"kubernetes.azure.com/some-random-label", "kubernetes.azure.com/agentpool", "kubernetes.azure.com/custom"} {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow special kubernetes.azure.com requirements", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/cluster-health-monitor-checker-synthetic",
+			} {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow agentpool requirement", func() {
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "agentpool", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
 	})
 	Context("Labels", func() {
 		It("should allow restricted domains exceptions", func() {
@@ -767,6 +797,36 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 				nodePool = oldNodePool.DeepCopy()
 			}
+		})
+		It("should not allow restricted kubernetes.azure.com labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{"kubernetes.azure.com/some-random-label", "kubernetes.azure.com/agentpool", "kubernetes.azure.com/custom"} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow special kubernetes.azure.com labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/cluster-health-monitor-checker-synthetic",
+			} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow agentpool label", func() {
+			nodePool.Spec.Template.Labels = map[string]string{
+				"agentpool": "test",
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 		})
 	})
 

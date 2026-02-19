@@ -39,6 +39,9 @@ var (
 		"x64":   karpv1.ArchitectureAmd64,
 		"Arm64": karpv1.ArchitectureArm64,
 	}
+
+	// We don't include kubernetes.azure.com here because there are labels in that domain that we allow users to set, but which are not
+	// WellKnownLabels (like kubernetes.azure.com/ebpf-dataplane). Instead we rely purely on the CEL validation restrictions.
 	RestrictedLabelDomains = []string{
 		Group,
 	}

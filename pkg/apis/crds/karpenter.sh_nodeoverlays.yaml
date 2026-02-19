@@ -105,6 +105,10 @@ spec:
                             rule: self != "kubernetes.io/hostname"
                           - message: label domain "karpenter.azure.com" is restricted
                             rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
+                          - message: label domain "kubernetes.azure.com" is restricted
+                            rule: self in [ "kubernetes.azure.com/mode", "kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/fips_enabled", "kubernetes.azure.com/os-sku", "kubernetes.azure.com/cluster", "kubernetes.azure.com/sku-cpu", "kubernetes.azure.com/sku-memory", "kubernetes.azure.com/ebpf-dataplane", "kubernetes.azure.com/cluster-health-monitor-checker-synthetic", ] || !self.find("^([^/]+)").endsWith("kubernetes.azure.com")
+                          - message: label "agentpool" is restricted
+                            rule: self != 'agentpool'
                       operator:
                         description: |-
                           Represents a key's relationship to a set of values.
