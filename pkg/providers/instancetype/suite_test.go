@@ -2313,7 +2313,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// Well known
 				{Name: v1.LabelTopologyRegion, Label: v1.LabelTopologyRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: karpv1.NodePoolLabelKey, Label: karpv1.NodePoolLabelKey, ValueFunc: func() string { return nodePool.Name }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelTopologyZone, Label: v1.LabelTopologyZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: true},
+				{Name: v1.LabelTopologyZone, Label: v1.LabelTopologyZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1.LabelInstanceTypeStable, Label: v1.LabelInstanceTypeStable, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1.LabelOSStable, Label: v1.LabelOSStable, ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1.LabelArchStable, Label: v1.LabelArchStable, ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
@@ -2365,7 +2365,7 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 				{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 				// Unsupported labels
-				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
+				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
 				// Cluster Label
 				{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			}
@@ -2411,16 +2411,20 @@ var _ = Describe("InstanceType Provider", func() {
 					node := ExpectScheduled(ctx, env.Client, detail.pod)
 					if detail.entry.ExpectedOnNode {
 						Expect(node.Labels[key]).To(Equal(detail.pod.Spec.NodeSelector[key]))
+					} else {
+						Expect(node.Labels).ToNot(HaveKey(key))
 					}
 
 					// Get the VM creation input and decode custom data
-					if detail.entry.ExpectedInKubeletLabels {
-						// Extract the vm name from the provider ID
-						vmName, err := nodeclaimutils.GetVMName(node.Spec.ProviderID)
-						Expect(err).ToNot(HaveOccurred())
+					// Extract the vm name from the provider ID
+					vmName, err := nodeclaimutils.GetVMName(node.Spec.ProviderID)
+					Expect(err).ToNot(HaveOccurred())
 
-						vm := vmInputs[vmName].VM
+					vm := vmInputs[vmName].VM
+					if detail.entry.ExpectedInKubeletLabels {
 						ExpectKubeletNodeLabelsInCustomData(&vm, detail.entry.Label, detail.entry.ValueFunc())
+					} else {
+						ExpectKubeletNodeLabelsNotInCustomData(&vm, detail.entry.Label, detail.entry.ValueFunc())
 					}
 				}
 			})
@@ -2453,14 +2457,18 @@ var _ = Describe("InstanceType Provider", func() {
 
 					if item.ExpectedOnNode {
 						Expect(node.Labels[item.Label]).To(Equal(value))
+					} else {
+						Expect(node.Labels).ToNot(HaveKey(item.Label))
 					}
 
 					// Get the VM creation input and decode custom data
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					vm := vmInput.VM
 					if item.ExpectedInKubeletLabels {
-						Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-						vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-						vm := vmInput.VM
 						ExpectKubeletNodeLabelsInCustomData(&vm, item.Label, value)
+					} else {
+						ExpectKubeletNodeLabelsNotInCustomData(&vm, item.Label, value)
 					}
 				},
 				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
@@ -2497,14 +2505,17 @@ var _ = Describe("InstanceType Provider", func() {
 
 					if item.ExpectedOnNode {
 						Expect(node.Labels[item.Label]).To(Equal(value))
+					} else {
+						Expect(node.Labels).ToNot(HaveKey(item.Label))
 					}
 
 					// Get the bootstrap API input
+					Expect(azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
+					bootstrapInput := azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
 					if item.ExpectedInKubeletLabels {
-						Expect(azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
-						bootstrapInput := azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-
 						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).To(HaveKeyWithValue(item.Label, value))
+					} else {
+						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).ToNot(HaveKeyWithValue(item.Label, value))
 					}
 				},
 				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
