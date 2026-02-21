@@ -36,6 +36,7 @@ func (o *Options) Validate() error {
 	return multierr.Combine(
 		o.validateRequiredFields(),
 		o.validateVNETGUID(),
+		o.validateKubeletIdentityClientID(),
 		o.validateEndpoint(),
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
@@ -62,6 +63,13 @@ func (o *Options) validateClusterDNSIP() error {
 func (o *Options) validateVNETGUID() error {
 	if o.VnetGUID != "" && uuid.Validate(o.VnetGUID) != nil {
 		return fmt.Errorf("vnet-guid %s is malformed", o.VnetGUID)
+	}
+	return nil
+}
+
+func (o *Options) validateKubeletIdentityClientID() error {
+	if o.KubeletIdentityClientID != "" && uuid.Validate(o.KubeletIdentityClientID) != nil {
+		return fmt.Errorf("kubelet-identity-client-id %s is malformed", o.KubeletIdentityClientID)
 	}
 	return nil
 }
