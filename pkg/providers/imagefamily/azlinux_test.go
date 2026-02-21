@@ -63,8 +63,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
-	var fipsMode *v1beta1.FIPSMode // to test with nil
-	var localDNS *v1beta1.LocalDNS // to test with nil
+	var fipsMode *v1beta1.FIPSMode                       // to test with nil
+	var localDNS *v1beta1.LocalDNS                       // to test with nil
 	var artifactStreaming *v1beta1.ArtifactStreamingMode // to test with nil
 
 	bootstrapper := azureLinux.CustomScriptsNodeBootstrapping(

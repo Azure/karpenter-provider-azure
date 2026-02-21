@@ -107,7 +107,7 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
-	// ArtifactStreaming controls whether artifact streaming is enabled for provisioned nodes.
+	// artifactStreaming controls whether artifact streaming is enabled for provisioned nodes.
 	// Artifact streaming allows container images to be streamed to nodes rather than fully downloaded before starting.
 	// When not specified (Unspecified), defaults to disabled behavior (but may change in the future).
 	// +optional

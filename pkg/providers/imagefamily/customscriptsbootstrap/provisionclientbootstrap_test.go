@@ -1148,19 +1148,19 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			
+
 			bootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
-				ClusterName:              "test-cluster",
-				KubeletConfig:            &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                 "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
-				Arch:                     tt.arch,
-				ResourceGroup:            "test-rg",
-				KubernetesVersion:        "1.31.0",
-				ImageDistro:              "test-distro",
-				IsWindows:                false,
-				StorageProfile:           consts.StorageProfileManagedDisks,
-				OSSKU:                    tt.ossku,
-				Labels:                   map[string]string{},
+				ClusterName:       "test-cluster",
+				KubeletConfig:     &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:          "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:              tt.arch,
+				ResourceGroup:     "test-rg",
+				KubernetesVersion: "1.31.0",
+				ImageDistro:       "test-distro",
+				IsWindows:         false,
+				StorageProfile:    consts.StorageProfileManagedDisks,
+				OSSKU:             tt.ossku,
+				Labels:            map[string]string{},
 				ArtifactStreaming: tt.artifactStreaming,
 				InstanceType: &cloudprovider.InstanceType{
 					Name: "Standard_D2s_v3",
