@@ -122,7 +122,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("SIG_SUBSCRIPTION_ID", "my-subscription-id")
 			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
 			os.Setenv("AZURE_NODE_RESOURCE_GROUP", "my-node-rg")
-			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "2345678-1234-1234-1234-123456789012")
+			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "12345678-1234-1234-1234-123456789012")
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
 			os.Setenv("AKS_MACHINES_POOL_NAME", "testmpool")
@@ -153,7 +153,7 @@ var _ = Describe("Options", func() {
 				SIGAccessTokenServerURL:        lo.ToPtr("http://valid-server.com"),
 				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
-				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
+				KubeletIdentityClientID:        lo.ToPtr("12345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
 				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
 				ManageExistingAKSMachines:      lo.ToPtr(true),
@@ -163,6 +163,18 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
+		It("should fail when kubelet-identity-client-id is not a uuid", func() {
+			errMsg := "kubelet-identity-client-id not-a-uuid is malformed"
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--kubelet-identity-client-id", "not-a-uuid",
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
 		It("should fail when vnet guid is not a uuid", func() {
 			errMsg := "vnet-guid null is malformed"
 			err := opts.Parse(
