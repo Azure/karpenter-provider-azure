@@ -40,8 +40,8 @@ const (
 	// ValidationFailureRequeueInterval defines how often to retry DES RBAC validation after auth failure
 	// Set to 1 minute to detect when permissions are granted without creating a high system load
 	ValidationFailureRequeueInterval = 1 * time.Minute
-	// RBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
-	RBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
+	// DiskEncryptionSetRBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
+	DiskEncryptionSetRBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
 )
 
 type ValidationReconciler struct {
@@ -101,7 +101,7 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 					"For self-hosted installations, this is the Karpenter workload identity. "+
 					"For NAP, this is the AKS cluster identity. "+
 					"See https://learn.microsoft.com/azure/aks/azure-disk-customer-managed-keys for details: %w",
-				RBACErrorMessage,
+				DiskEncryptionSetRBACErrorMessage,
 				r.parsedDiskEncryptionSetID,
 				err,
 			)

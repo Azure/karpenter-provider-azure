@@ -202,7 +202,7 @@ var _ = Describe("BYOK", func() {
 			g.Expect(err).ToNot(HaveOccurred())
 			condition := retrieved.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			g.Expect(condition.IsFalse()).To(BeTrue(), "expected ValidationSucceeded to be False when DES Reader RBAC is missing")
-			g.Expect(condition.Message).To(ContainSubstring(nodeclassstatus.RBACErrorMessage))
+			g.Expect(condition.Message).To(ContainSubstring(nodeclassstatus.DiskEncryptionSetRBACErrorMessage))
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second)
 
 		By("Phase 6: Verifying the overall Ready condition is False")
