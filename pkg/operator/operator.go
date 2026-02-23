@@ -43,6 +43,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
+
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
@@ -313,6 +315,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 	var requiredGVKs = []schema.GroupVersionKind{
 		gvk(&karpv1.NodePool{}),
 		gvk(&karpv1.NodeClaim{}),
+		gvk(&karpv1alpha1.NodeOverlay{}),
 		gvk(&v1beta1.AKSNodeClass{}),
 	}
 
