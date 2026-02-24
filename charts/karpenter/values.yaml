@@ -180,3 +180,6 @@ settings:
     # -- nodeOverlay is ALPHA and is disabled by default.
     # Setting this will allow the use of node overlay to impact scheduling decisions.
     nodeOverlay: false
+    # -- staticCapacity is ALPHA and is disabled by default.
+    # Setting this to true will enable static capacity provisioning.
+    staticCapacity: false
