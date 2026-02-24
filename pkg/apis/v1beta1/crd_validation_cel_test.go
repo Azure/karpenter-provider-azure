@@ -791,6 +791,109 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Taints", func() {
+		It("should allow taints with non-kubernetes.azure.com domains", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "example.com/custom-taint",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "company.io/another-taint",
+					Value:  "value",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should allow taints with exact allowed kubernetes.azure.com specifications", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/scalesetpriority",
+					Value:  "spot",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "kubernetes.azure.com/mode",
+					Value:  "gateway",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		DescribeTable("should reject taints with kubernetes.azure.com domain violations", func(key, value string, effect corev1.TaintEffect) {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    key,
+					Value:  value,
+					Effect: effect,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		},
+			Entry("disallowed custom key", "kubernetes.azure.com/custom-key", "value", corev1.TaintEffectNoSchedule),
+			Entry("subdomain key", "custom.kubernetes.azure.com/key", "value", corev1.TaintEffectNoSchedule),
+			Entry("scalesetpriority with wrong value", "kubernetes.azure.com/scalesetpriority", "regular", corev1.TaintEffectNoSchedule),
+			Entry("scalesetpriority with wrong effect", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectPreferNoSchedule),
+			Entry("mode with wrong value", "kubernetes.azure.com/mode", "system", corev1.TaintEffectNoSchedule),
+			Entry("mode with wrong effect", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoExecute),
+		)
+	})
+
+	Context("StartupTaints", func() {
+		It("should allow startup taints with non-kubernetes.azure.com domains", func() {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "example.com/startup-taint",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "company.io/initialization",
+					Value:  "pending",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should allow the specific egressgateway startup taint", func() {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "egressgateway.kubernetes.azure.com/cni-not-ready",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		DescribeTable("should reject startup taints with kubernetes.azure.com domain", func(key, value string, effect corev1.TaintEffect) {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    key,
+					Value:  value,
+					Effect: effect,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		},
+			Entry("disallowed key kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectNoSchedule),
+			Entry("disallowed key kubernetes.azure.com/mode", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoSchedule),
+			Entry("custom kubernetes.azure.com key", "kubernetes.azure.com/custom-startup", "value", corev1.TaintEffectPreferNoSchedule),
+			Entry("custom subdomain key", "custom.kubernetes.azure.com/startup", "value", corev1.TaintEffectNoSchedule),
+			Entry("allowed key with wrong value", "egressgateway.kubernetes.azure.com/cni-not-ready", "false", corev1.TaintEffectNoSchedule),
+			Entry("allowed key with wrong effect", "egressgateway.kubernetes.azure.com/cni-not-ready", "true", corev1.TaintEffectPreferNoSchedule),
+		)
+	})
+
 	Context("Tags", func() {
 		It("should allow tags with valid keys and values", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
