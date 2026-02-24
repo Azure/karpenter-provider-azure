@@ -80,6 +80,10 @@ type SubnetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
 }
 
+type DiskEncryptionSetsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
+}
+
 // TODO: Move this to another package that more correctly reflects its usage across multiple providers
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
@@ -89,6 +93,7 @@ type AZClient struct {
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
 	subnetsClient                  SubnetsAPI
+	diskEncryptionSetsClient       DiskEncryptionSetsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -104,6 +109,10 @@ func (c *AZClient) SubnetsClient() SubnetsAPI {
 	return c.subnetsClient
 }
 
+func (c *AZClient) DiskEncryptionSetsClient() DiskEncryptionSetsAPI {
+	return c.diskEncryptionSetsClient
+}
+
 func NewAZClientFromAPI(
 	virtualMachinesClient VirtualMachinesAPI,
 	azureResourceGraphClient AzureResourceGraphAPI,
@@ -112,6 +121,7 @@ func NewAZClientFromAPI(
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
 	subnetsClient SubnetsAPI,
+	diskEncryptionSetsClient DiskEncryptionSetsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
@@ -128,6 +138,7 @@ func NewAZClientFromAPI(
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
 		subnetsClient:                  subnetsClient,
+		diskEncryptionSetsClient:       diskEncryptionSetsClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
 		NodeBootstrappingClient:        nodeBootstrappingClient,
@@ -201,6 +212,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
+	diskEncryptionSetsClient, err := armcompute.NewDiskEncryptionSetsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
@@ -261,6 +277,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		extensionsClient,
 		interfacesClient,
 		subnetsClient,
+		diskEncryptionSetsClient,
 		loadBalancersClient,
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,
