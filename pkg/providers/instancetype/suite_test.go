@@ -140,6 +140,11 @@ var _ = Describe("InstanceType Provider", func() {
 	var nodePool *karpv1.NodePool
 
 	BeforeEach(func() {
+		// Reset testOptions and ctx in case a test edited them
+		// TODO: It would be nice to find a cleaner way to edit ctx/options in these tests...
+		testOptions = test.Options()
+		ctx = options.ToContext(ctx, testOptions)
+
 		nodeClass = test.AKSNodeClass()
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
@@ -157,7 +162,6 @@ var _ = Describe("InstanceType Provider", func() {
 			},
 		})
 
-		ctx = options.ToContext(ctx, test.Options())
 		cluster.Reset()
 		clusterNonZonal.Reset()
 		clusterBootstrap.Reset()
