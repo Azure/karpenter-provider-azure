@@ -980,6 +980,17 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              osDiskType:
+                default: Premium_LRS
+                description: osDiskType is the type of the OS disk. If not specified,
+                  defaulted to Premium_LRS.
+                enum:
+                - Premium_LRS
+                - Premium_ZRS
+                - Standard_LRS
+                - StandardSSD_LRS
+                - StandardSSD_ZRS
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields
