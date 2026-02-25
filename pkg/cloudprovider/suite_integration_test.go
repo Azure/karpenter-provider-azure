@@ -33,7 +33,6 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
-	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -43,7 +42,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -618,6 +619,11 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -639,6 +645,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -655,6 +663,11 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(true), // should not have any effect
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -676,6 +689,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -731,6 +746,8 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			AfterEach(func() {
+				// Wait for any async polling goroutines to complete before resetting
+				cloudProvider.WaitForInstancePromises()
 				cluster.Reset()
 				azureEnv.Reset()
 			})
@@ -861,6 +878,8 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			AfterEach(func() {
+				// Wait for any async polling goroutines to complete before resetting
+				cloudProvider.WaitForInstancePromises()
 				cluster.Reset()
 				azureEnv.Reset()
 			})
@@ -1036,6 +1055,11 @@ var _ = Describe("CloudProvider", func() {
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 				UseSIG:        lo.ToPtr(true),
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -1060,6 +1084,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 		})
@@ -1282,5 +1308,110 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+	})
+
+	// --- AKSScriptless mode tests (VM-based provisioning) ---
+	// These tests verify behavior when ProvisionMode = AKSScriptless.
+	// If ProvisionMode = AKSScriptless is no longer supported, these tests will be removed.
+
+	// runSharedAKSScriptlessTests generates the common tests for AKSScriptless provisioning mode.
+	// expectedListPagerCalls varies by ManageExistingAKSMachines setting (0 when false, 1 when true).
+	runSharedAKSScriptlessTests := func(expectedListPagerCalls int) {
+		It("should list nodeclaim created by the CloudProvider", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			nodeClaims, _ := cloudProvider.List(ctx)
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(expectedListPagerCalls))
+			Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1))
+			queryRequest := azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Pop().Query
+			Expect(*queryRequest.Query).To(Equal(instance.GetVMListQueryBuilder(azureEnv.AzureResourceGraphAPI.ResourceGroup).String()))
+			Expect(nodeClaims).To(HaveLen(1))
+			validateVMNodeClaim(nodeClaims[0], nodePool)
+			resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)
+			Expect(resp.VirtualMachine).ToNot(BeNil())
+		})
+
+		It("should return an ICE error when there are no instance types to launch", func() {
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"doesnotexist"},
+					},
+				},
+			}
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+			Expect(cloudProviderMachine).To(BeNil())
+		})
+
+		Context("AKS Machine API integration", func() {
+			It("should not call writes to AKS Machine API", func() {
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
+			Context("AKS Machines Pool Management", func() {
+				It("should handle AKS machines pool not found on each CloudProvider operation", func() {
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					nodeClaims, err := cloudProvider.List(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(nodeClaims).To(HaveLen(1))
+					validateVMNodeClaim(nodeClaims[0], nodePool)
+
+					err = cloudProvider.Delete(ctx, nodeClaims[0])
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+		})
+	}
+
+	setupAKSScriptless := func(manageExisting bool) {
+		testOptions = test.Options(test.OptionsFields{
+			ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
+			ManageExistingAKSMachines: lo.ToPtr(manageExisting),
+		})
+		ctx = coreoptions.ToContext(ctx, coretest.Options())
+		ctx = options.ToContext(ctx, testOptions)
+
+		azureEnv = test.NewEnvironment(ctx, env)
+		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+		cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+
+		cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+		coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+	}
+
+	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = false", func() {
+		BeforeEach(func() { setupAKSScriptless(false) })
+		AfterEach(func() {
+			cluster.Reset()
+			azureEnv.Reset()
+		})
+		runSharedAKSScriptlessTests(0) // ManageExisting=false: no list pager calls
+	})
+
+	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = true", func() {
+		BeforeEach(func() { setupAKSScriptless(true) })
+		AfterEach(func() {
+			cluster.Reset()
+			azureEnv.Reset()
+		})
+		runSharedAKSScriptlessTests(1) // ManageExisting=true: expects list pager call
 	})
 })
