@@ -17,13 +17,13 @@ limitations under the License.
 package cloudprovider
 
 import (
-	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -41,7 +41,175 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 )
+
+// runSharedDriftTests generates drift tests that apply identically to both
+// AKSMachineAPI and AKSScriptless provision modes. The only difference between
+// modes is how the NodeClaim is provisioned (BeforeEach), so getNodeClaim
+// returns the mode-specific claim.
+func runSharedDriftTests(getNodeClaim func() *karpv1.NodeClaim) {
+	It("should not fail if nodeClass does not exist", func() {
+		ExpectDeleted(ctx, env.Client, nodeClass)
+		drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(drifted).To(BeEmpty())
+	})
+
+	It("should not fail if nodePool does not exist", func() {
+		ExpectDeleted(ctx, env.Client, nodePool)
+		drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(drifted).To(BeEmpty())
+	})
+
+	It("should not return drifted if the NodeClaim is valid", func() {
+		drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(drifted).To(BeEmpty())
+	})
+
+	It("should error drift if NodeClaim doesn't have provider id", func() {
+		nc := getNodeClaim()
+		nc.Status = karpv1.NodeClaimStatus{}
+		drifted, err := cloudProvider.IsDrifted(ctx, nc)
+		Expect(err).To(HaveOccurred())
+		Expect(drifted).To(BeEmpty())
+	})
+
+	Context("Node Image Drift", func() {
+		It("should succeed with no drift when nothing changes", func() {
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		It("should succeed with no drift when ConditionTypeImagesReady is not true", func() {
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNoLongerReady", "test when images aren't ready")
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		// Note: this case shouldn't be able to happen in practice since if Images is empty ConditionTypeImagesReady should be false.
+		It("should error when Images are empty", func() {
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+			nodeClass.Status.Images = []v1beta1.NodeImage{}
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).To(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		It("should trigger drift when the image version changes", func() {
+			test.ApplyCIGImagesWithVersion(nodeClass, "202503.02.0")
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(ImageDrift))
+		})
+
+		It("should trigger drift when the image gallery changes to SIG", func() {
+			test.ApplySIGImagesWithVersion(nodeClass, "202503.02.0")
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(ImageDrift))
+		})
+	})
+
+	Context("Kubernetes Version", func() {
+		It("should succeed with no drift when nothing changes", func() {
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		It("should succeed with no drift when KubernetesVersionReady is not true", func() {
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
+		It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("")
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		It("shouldn't error or be drifted when NodeName is missing", func() {
+			nc := getNodeClaim()
+			nc.Status.NodeName = ""
+			drifted, err := cloudProvider.IsDrifted(ctx, nc)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		It("shouldn't error or be drifted when node is not found", func() {
+			nc := getNodeClaim()
+			nc.Status.NodeName = "NodeWhoDoesNotExist"
+			drifted, err := cloudProvider.IsDrifted(ctx, nc)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+		})
+
+		It("shouldn't error or be drifted when node is deleting", func() {
+			nc := getNodeClaim()
+			node := ExpectNodeExists(ctx, env.Client, nc.Status.NodeName)
+			node.Finalizers = append(node.Finalizers, test.TestingFinalizer)
+			ExpectApplied(ctx, env.Client, node)
+			Expect(env.Client.Delete(ctx, node)).ToNot(HaveOccurred())
+			drifted, err := cloudProvider.IsDrifted(ctx, nc)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(NoDrift))
+
+			// cleanup
+			node = ExpectNodeExists(ctx, env.Client, nc.Status.NodeName)
+			deepCopy := node.DeepCopy()
+			node.Finalizers = lo.Reject(node.Finalizers, func(finalizer string, _ int) bool {
+				return finalizer == test.TestingFinalizer
+			})
+			Expect(env.Client.Patch(ctx, node, client.StrategicMergeFrom(deepCopy))).NotTo(HaveOccurred())
+			ExpectDeleted(ctx, env.Client, node)
+		})
+
+		It("should succeed with drift true when KubernetesVersion is new", func() {
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+
+			semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(*nodeClass.Status.KubernetesVersion))
+			semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(semverCurrentK8sVersion.String())
+
+			ExpectApplied(ctx, env.Client, nodeClass)
+
+			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(Equal(K8sVersionDrift))
+		})
+	})
+
+	Context("Kubelet Client ID", func() {
+		It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
+			nc := getNodeClaim()
+			node := ExpectNodeExists(ctx, env.Client, nc.Status.NodeName)
+			node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = ""
+			ExpectApplied(ctx, env.Client, node)
+
+			drifted, err := cloudProvider.IsDrifted(ctx, nc)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drifted).To(BeEmpty())
+		})
+	})
+}
 
 var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPI", func() {
@@ -50,6 +218,11 @@ var _ = Describe("CloudProvider", func() {
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 				UseSIG:        lo.ToPtr(true),
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -71,6 +244,7 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
@@ -113,33 +287,10 @@ var _ = Describe("CloudProvider", func() {
 				}
 			})
 
-			It("should not fail if nodeClass does not exist", func() {
-				ExpectDeleted(ctx, env.Client, nodeClass)
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(drifted).To(BeEmpty())
-			})
+			// Shared tests across provision modes
+			runSharedDriftTests(func() *karpv1.NodeClaim { return nodeClaim })
 
-			It("should not fail if nodePool does not exist", func() {
-				ExpectDeleted(ctx, env.Client, nodePool)
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(drifted).To(BeEmpty())
-			})
-
-			It("should not return drifted if the NodeClaim is valid", func() {
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(drifted).To(BeEmpty())
-			})
-
-			It("should error drift if NodeClaim doesn't have provider id", func() {
-				nodeClaim.Status = karpv1.NodeClaimStatus{}
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-				Expect(err).To(HaveOccurred())
-				Expect(drifted).To(BeEmpty())
-			})
-
+			// AKSMachineAPI-specific: DriftAction field
 			Context("Node Image Drift", func() {
 				It("should trigger drift when DriftAction field is available", func() {
 					// Find the AKS machine that was created during BeforeEach
@@ -169,54 +320,104 @@ var _ = Describe("CloudProvider", func() {
 					Expect(drifted).To(Equal(ClusterConfigDrift))
 				})
 			})
+		})
+	})
 
-			Context("Node Image Drift", func() {
-				It("should succeed with no drift when nothing changes", func() {
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(drifted).To(Equal(NoDrift))
+	// --- AKSScriptless mode drift tests (VM-based provisioning) ---
+	// These tests verify drift behavior when ProvisionMode = AKSScriptless.
+	// If ProvisionMode = AKSScriptless is no longer supported, these tests will be removed.
+
+	Context("ProvisionMode = AKSScriptless", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSScriptless),
+			})
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+
+			azureEnv = test.NewEnvironment(ctx, env)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+		})
+
+		AfterEach(func() {
+			cluster.Reset()
+			azureEnv.Reset()
+		})
+
+		Context("Drift", func() {
+			var driftNodeClaim *karpv1.NodeClaim
+			var pod *v1.Pod
+			var node *v1.Node
+
+			BeforeEach(func() {
+				// Set up VM provisioning mode environment for drift testing
+				testOptions = test.Options()
+				ctx = coreoptions.ToContext(ctx, coretest.Options())
+				ctx = options.ToContext(ctx, testOptions)
+				azureEnv = test.NewEnvironment(ctx, env)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+				cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+				coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+
+				instanceType := "Standard_D2_v2"
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+				pod = coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node = ExpectScheduled(ctx, env.Client, pod)
+				// KubeletVersion must be applied to the node to satisfy k8s drift
+				if nodeClass.Status.KubernetesVersion != nil {
+					node.Status.NodeInfo.KubeletVersion = "v" + *nodeClass.Status.KubernetesVersion
+				}
+				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
+				// Context must have same kubelet client id
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					KubeletIdentityClientID: lo.ToPtr(node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]),
+				}))
 
-				It("should succeed with no drift when ConditionTypeImagesReady is not true", func() {
-					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNoLongerReady", "test when images aren't ready")
-					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				ExpectApplied(ctx, env.Client, node)
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				// Corresponding NodeClaim - fetch from API server so it has all status fields (including ImageID)
+				nodeClaimName := GetNodeClaimNameFromVMName(input.VMName)
+				driftNodeClaim = &karpv1.NodeClaim{}
+				Expect(env.Client.Get(ctx, types.NamespacedName{Name: nodeClaimName}, driftNodeClaim)).To(Succeed())
+				// ExpectProvisioned doesn't set Status.NodeName
+				driftNodeClaim.Status.NodeName = node.Name
+				ExpectApplied(ctx, env.Client, driftNodeClaim)
+			})
+
+			// Shared tests across provision modes
+			runSharedDriftTests(func() *karpv1.NodeClaim { return driftNodeClaim })
+
+			// AKSScriptless-specific: kubelet client ID drift
+			Context("Kubelet Client ID", func() {
+				It("should trigger drift if node kubelet client ID doesn't match options", func() {
+					ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+						KubeletIdentityClientID: lo.ToPtr("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
+					}))
+
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(drifted).To(Equal(NoDrift))
-				})
-
-				// Note: this case shouldn't be able to happen in practice since if Images is empty ConditionTypeImagesReady should be false.
-				It("should error when Images are empty", func() {
-					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					nodeClass.Status.Images = []v1beta1.NodeImage{}
-					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-					Expect(err).To(HaveOccurred())
-					Expect(drifted).To(Equal(NoDrift))
-				})
-
-				It("should trigger drift when the image version changes", func() {
-					test.ApplyCIGImagesWithVersion(nodeClass, "202503.02.0")
-					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(drifted).To(Equal(ImageDrift))
+					Expect(drifted).To(Equal(KubeletIdentityDrift))
 				})
 			})
 
-			Context("Kubernetes Version", func() {
-				It("should succeed with no drift when nothing changes", func() {
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(drifted).To(Equal(NoDrift))
-				})
-
+			// KubernetesVersion drift tests (shared across provision modes via runSharedDriftTests or mode-specific)
+			Context("KubernetesVersion", func() {
 				It("should succeed with no drift when KubernetesVersionReady is not true", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 					nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
@@ -226,36 +427,36 @@ var _ = Describe("CloudProvider", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 					nodeClass.Status.KubernetesVersion = lo.ToPtr("")
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
 
 				It("shouldn't error or be drifted when NodeName is missing", func() {
-					nodeClaim.Status.NodeName = ""
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					driftNodeClaim.Status.NodeName = ""
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
 
 				It("shouldn't error or be drifted when node is not found", func() {
-					nodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					driftNodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
 
 				It("shouldn't error or be drifted when node is deleting", func() {
-					node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+					node = ExpectNodeExists(ctx, env.Client, driftNodeClaim.Status.NodeName)
 					node.Finalizers = append(node.Finalizers, test.TestingFinalizer)
 					ExpectApplied(ctx, env.Client, node)
 					Expect(env.Client.Delete(ctx, node)).ToNot(HaveOccurred())
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 
 					// cleanup
-					node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+					node = ExpectNodeExists(ctx, env.Client, driftNodeClaim.Status.NodeName)
 					deepCopy := node.DeepCopy()
 					node.Finalizers = lo.Reject(node.Finalizers, func(finalizer string, _ int) bool {
 						return finalizer == test.TestingFinalizer
@@ -273,11 +474,12 @@ var _ = Describe("CloudProvider", func() {
 
 					ExpectApplied(ctx, env.Client, nodeClass)
 
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(K8sVersionDrift))
 				})
 			})
+
 		})
 	})
 })
