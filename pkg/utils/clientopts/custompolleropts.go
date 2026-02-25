@@ -24,9 +24,9 @@ import (
 
 func DefaultAKSMachineGetPollerOpts() aksmachinepoller.Options {
 	return aksmachinepoller.Options{
-		PollInterval:      5 * time.Second,
-		RetryDelay: 800 * time.Millisecond,
-		MaxRetryDelay:     60 * time.Second,
-		MaxRetries:        3,
+		PollInterval:  5 * time.Second,
+		RetryDelay:    800 * time.Millisecond,
+		MaxRetryDelay: 60 * time.Second,
+		MaxRetries:    3,
 	}
 }

@@ -172,10 +172,10 @@ func NewAKSMachineProvider(
 // DefaultPollerOptions returns production poller configuration.
 func DefaultPollerOptions() aksmachinepoller.Options {
 	return aksmachinepoller.Options{
-		PollInterval:      5 * time.Second,
-		RetryDelay: 1 * time.Second,
-		MaxRetryDelay:     30 * time.Second,
-		MaxRetries:        10,
+		PollInterval:  5 * time.Second,
+		RetryDelay:    1 * time.Second,
+		MaxRetryDelay: 30 * time.Second,
+		MaxRetries:    10,
 	}
 }
 
@@ -189,10 +189,10 @@ func (p *DefaultAKSMachineProvider) SetPollerOptions(opts aksmachinepoller.Optio
 // still exercising the polling code path.
 func InstantPollerOptions() aksmachinepoller.Options {
 	return aksmachinepoller.Options{
-		PollInterval:      1 * time.Millisecond,
-		RetryDelay: 1 * time.Millisecond,
-		MaxRetryDelay:     1 * time.Millisecond,
-		MaxRetries:        3,
+		PollInterval:  1 * time.Millisecond,
+		RetryDelay:    1 * time.Millisecond,
+		MaxRetryDelay: 1 * time.Millisecond,
+		MaxRetries:    3,
 	}
 }
 
