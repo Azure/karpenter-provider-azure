@@ -66,10 +66,9 @@ spec:
                   Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
                 properties:
                   mode:
-                    default: Unspecified
                     description: |-
                       mode controls whether artifact streaming is enabled for provisioned nodes.
-                      When not specified (Unspecified), defaults to disabled behavior (but may change in the future).
+                      When not specified, defaults to disabled behavior (but may change in the future).
                     enum:
                     - Unspecified
                     - Disabled
@@ -641,10 +640,9 @@ spec:
                   Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
                 properties:
                   mode:
-                    default: Unspecified
                     description: |-
                       mode controls whether artifact streaming is enabled for provisioned nodes.
-                      When not specified (Unspecified), defaults to disabled behavior (but may change in the future).
+                      When not specified, defaults to disabled behavior (but may change in the future).
                     enum:
                     - Unspecified
                     - Disabled
