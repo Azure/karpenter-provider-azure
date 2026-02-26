@@ -107,9 +107,6 @@ type Poller struct {
 	aksMachineName    string
 }
 
-// Compile-time assertion that Poller implements CreatePoller
-var _ CreatePoller = (*Poller)(nil)
-
 func NewPoller(
 	config Options,
 	client AKSMachineGetter,
