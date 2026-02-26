@@ -195,6 +195,5 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		IsKata:                                  false,                                                               // n
 		NeedsCgroupV2:                           true,                                                                // s only static for karpenter
 		EnsureNoDupePromiscuousBridge:           false,                                                               // s karpenter does not support kubenet
-		EnableArtifactStreaming:                 false,                                                               // td
 	}
 }
