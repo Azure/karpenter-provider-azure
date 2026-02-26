@@ -26,7 +26,6 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,7 +46,6 @@ type AKS struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
-	ArtifactStreaming              *v1beta1.ArtifactStreamingMode
 }
 
 var _ Bootstrapper = (*AKS)(nil) // assert AKS implements Bootstrapper
@@ -221,7 +219,6 @@ type NodeBootstrapVariables struct {
 	KubeCACrt                               string   // x   unique per cluster
 	ContainerdConfigContent                 string   // k   determined by GPU VM size, WASM support, Kata support
 	IsKata                                  bool     // n   user-specified
-	EnableArtifactStreaming                 bool     // t   user-specified via AKSNodeClass
 }
 
 func (a AKS) aksBootstrapScript() (string, error) {
@@ -358,19 +355,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), " ")
-
-	// Set EnableArtifactStreaming based on ArtifactStreamingMode
-	if a.ArtifactStreaming != nil {
-		switch *a.ArtifactStreaming {
-		case v1beta1.ArtifactStreamingModeEnabled:
-			nbv.EnableArtifactStreaming = true
-		case v1beta1.ArtifactStreamingModeDisabled:
-			nbv.EnableArtifactStreaming = false
-		case v1beta1.ArtifactStreamingModeUnspecified:
-			// Default to disabled (for now)
-			nbv.EnableArtifactStreaming = false
-		}
-	}
 }
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {

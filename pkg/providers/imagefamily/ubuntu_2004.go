@@ -87,7 +87,6 @@ func (u Ubuntu2004) ScriptlessCustomData(
 	labels map[string]string,
 	caBundle *string,
 	_ *cloudprovider.InstanceType,
-	artifactStreaming *v1beta1.ArtifactStreamingMode,
 ) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
@@ -115,7 +114,6 @@ func (u Ubuntu2004) ScriptlessCustomData(
 		NetworkPlugin:                  u.Options.NetworkPlugin,
 		NetworkPolicy:                  u.Options.NetworkPolicy,
 		KubernetesVersion:              u.Options.KubernetesVersion,
-		ArtifactStreaming:              artifactStreaming,
 	}
 }
 

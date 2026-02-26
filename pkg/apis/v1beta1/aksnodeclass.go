@@ -46,6 +46,16 @@ const (
 	ArtifactStreamingModeEnabled ArtifactStreamingMode = "Enabled"
 )
 
+// ArtifactStreamingSettings configures artifact streaming for provisioned nodes.
+// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+type ArtifactStreamingSettings struct {
+	// mode controls whether artifact streaming is enabled for provisioned nodes.
+	// When not specified (Unspecified), defaults to disabled behavior (but may change in the future).
+	// +default=Unspecified
+	// +optional
+	Mode *ArtifactStreamingMode `json:"mode,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -107,11 +117,10 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
-	// artifactStreaming controls whether artifact streaming is enabled for provisioned nodes.
-	// Artifact streaming allows container images to be streamed to nodes rather than fully downloaded before starting.
-	// When not specified (Unspecified), defaults to disabled behavior (but may change in the future).
+	// artifactStreaming configures artifact streaming for provisioned nodes.
+	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 	// +optional
-	ArtifactStreaming *ArtifactStreamingMode `json:"artifactStreaming,omitempty"`
+	ArtifactStreaming *ArtifactStreamingSettings `json:"artifactStreaming,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -445,12 +454,12 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 // Returns true for Enabled mode, false for Disabled mode, and for Unspecified mode,
 // returns false (the current default, which may change in the future).
 func (in *AKSNodeClass) IsArtifactStreamingEnabled() bool {
-	if in.Spec.ArtifactStreaming == nil || *in.Spec.ArtifactStreaming == "" {
+	if in.Spec.ArtifactStreaming == nil || in.Spec.ArtifactStreaming.Mode == nil {
 		// Unspecified/nil defaults to disabled (for now)
 		return false
 	}
 
-	switch *in.Spec.ArtifactStreaming {
+	switch *in.Spec.ArtifactStreaming.Mode {
 	case ArtifactStreamingModeEnabled:
 		return true
 	case ArtifactStreamingModeDisabled:
