@@ -50,9 +50,8 @@ const (
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreamingSettings struct {
 	// mode controls whether artifact streaming is enabled for provisioned nodes.
-	// When not specified, defaults to disabled behavior (but may change in the future).
-	// +optional
-	Mode *ArtifactStreamingMode `json:"mode,omitempty"`
+	// +required
+	Mode ArtifactStreamingMode `json:"mode,omitempty"`
 }
 
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
@@ -453,12 +452,12 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 // Returns true for Enabled mode, false for Disabled mode, and for Unspecified mode,
 // returns false (the current default, which may change in the future).
 func (in *AKSNodeClass) IsArtifactStreamingEnabled() bool {
-	if in.Spec.ArtifactStreaming == nil || in.Spec.ArtifactStreaming.Mode == nil {
+	if in.Spec.ArtifactStreaming == nil || in.Spec.ArtifactStreaming.Mode == "" {
 		// Unspecified/nil defaults to disabled (for now)
 		return false
 	}
 
-	switch *in.Spec.ArtifactStreaming.Mode {
+	switch in.Spec.ArtifactStreaming.Mode {
 	case ArtifactStreamingModeEnabled:
 		return true
 	case ArtifactStreamingModeDisabled:

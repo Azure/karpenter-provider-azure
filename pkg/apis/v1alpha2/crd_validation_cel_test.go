@@ -168,14 +168,14 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					ArtifactStreaming: &v1alpha2.ArtifactStreamingSettings{
-						Mode: lo.ToPtr(v1alpha2.ArtifactStreamingModeEnabled),
+						Mode: v1alpha2.ArtifactStreamingModeEnabled,
 					},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 
-		DescribeTable("should validate ArtifactStreamingMode", func(mode *v1alpha2.ArtifactStreamingMode, expectedErr string) {
+		DescribeTable("should validate ArtifactStreamingMode", func(mode v1alpha2.ArtifactStreamingMode, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -192,10 +192,10 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid mode: Unspecified", lo.ToPtr(v1alpha2.ArtifactStreamingModeUnspecified), ""),
-			Entry("valid mode: Disabled", lo.ToPtr(v1alpha2.ArtifactStreamingModeDisabled), ""),
-			Entry("valid mode: Enabled", lo.ToPtr(v1alpha2.ArtifactStreamingModeEnabled), ""),
-			Entry("invalid mode: invalid-string", lo.ToPtr(v1alpha2.ArtifactStreamingMode("invalid-string")), "spec.artifactStreaming.mode"),
+			Entry("valid mode: Unspecified", v1alpha2.ArtifactStreamingModeUnspecified, ""),
+			Entry("valid mode: Disabled", v1alpha2.ArtifactStreamingModeDisabled, ""),
+			Entry("valid mode: Enabled", v1alpha2.ArtifactStreamingModeEnabled, ""),
+			Entry("invalid mode: invalid-string", v1alpha2.ArtifactStreamingMode("invalid-string"), "spec.artifactStreaming.mode"),
 		)
 	})
 

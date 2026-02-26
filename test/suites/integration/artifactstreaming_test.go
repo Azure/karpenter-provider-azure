@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,7 +67,7 @@ var _ = Describe("ArtifactStreaming", func() {
 	It("should set artifact streaming labels and detect drift on config change", func() {
 		By("[PART 1: ENABLE ARTIFACT STREAMING] Configuring NodeClass with ArtifactStreaming enabled")
 		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreamingSettings{
-			Mode: lo.ToPtr(v1beta1.ArtifactStreamingModeEnabled),
+			Mode: v1beta1.ArtifactStreamingModeEnabled,
 		}
 
 		By("Creating unschedulable pod to trigger node provisioning")
@@ -90,7 +89,7 @@ var _ = Describe("ArtifactStreaming", func() {
 		// PART 2: Test drift detection
 		By("[PART 2: DISABLE ARTIFACT STREAMING] Disabling ArtifactStreaming to test drift detection")
 		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreamingSettings{
-			Mode: lo.ToPtr(v1beta1.ArtifactStreamingModeDisabled),
+			Mode: v1beta1.ArtifactStreamingModeDisabled,
 		}
 		env.ExpectUpdated(nodeClass)
 
@@ -117,7 +116,7 @@ var _ = Describe("ArtifactStreaming", func() {
 	It("should provision a node with artifact streaming disabled by default (Unspecified mode)", func() {
 		By("Configuring NodeClass with ArtifactStreaming mode Unspecified")
 		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreamingSettings{
-			Mode: lo.ToPtr(v1beta1.ArtifactStreamingModeUnspecified),
+			Mode: v1beta1.ArtifactStreamingModeUnspecified,
 		}
 
 		pod := coretest.Pod()

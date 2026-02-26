@@ -65,7 +65,7 @@ type ProvisionClientBootstrap struct {
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
-	ArtifactStreaming              *v1beta1.ArtifactStreamingMode
+	ArtifactStreaming              *v1beta1.ArtifactStreamingSettings
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -109,7 +109,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// Compute effective value based on ArtifactStreamingMode
 	enableArtifactStreaming := false
 	if p.ArtifactStreaming != nil {
-		switch *p.ArtifactStreaming {
+		switch p.ArtifactStreaming.Mode {
 		case v1beta1.ArtifactStreamingModeEnabled:
 			enableArtifactStreaming = true
 		case v1beta1.ArtifactStreamingModeDisabled:
