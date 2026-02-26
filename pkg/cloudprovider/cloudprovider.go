@@ -453,6 +453,10 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 	return instanceTypes, nil
 }
 
+// Delete deletes the underlying node
+// Note: Delete may be called many times while delete is ongoing (blocking) as the core Karpenter termination controller
+// watches and reconciles on all node updates (including node status updates, which happen during deletion), so while
+// one Delete call is blocking more will come in every ~5s due to excess Node events + requeues.
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 

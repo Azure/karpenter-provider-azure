@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -132,6 +134,8 @@ type DefaultAKSMachineProvider struct {
 	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
 	aksMachinesPoolLocation string
 	errorHandling           *offerings.ErrorDetailHandler
+	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
+	deletingMachinesMu      sync.RWMutex
 }
 
 func NewAKSMachineProvider(
@@ -155,6 +159,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolName:     aksMachinesPoolName,
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
+		deletingMachines:        sets.New[string](),
 	}
 
 	return provider
@@ -278,6 +283,14 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 		return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
 	}
 
+	// If there's already an in-flight delete for this machine, return immediately.
+	p.deletingMachinesMu.RLock()
+	deleting := p.deletingMachines.Has(aksMachineName)
+	p.deletingMachinesMu.RUnlock()
+	if deleting {
+		return nil
+	}
+
 	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
 	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted
 	aksMachine, err := p.Get(ctx, aksMachineName)
@@ -369,7 +382,13 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 		return fmt.Errorf("failed to begin delete AKS machine %q: %w", aksMachineName, err)
 	}
 
+	p.deletingMachinesMu.Lock()
+	p.deletingMachines.Insert(aksMachineName)
+	p.deletingMachinesMu.Unlock()
 	_, err = poller.PollUntilDone(ctx, nil)
+	p.deletingMachinesMu.Lock()
+	p.deletingMachines.Delete(aksMachineName)
+	p.deletingMachinesMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to delete AKS machine %q during LRO: %w", aksMachineName, err)
 	}
