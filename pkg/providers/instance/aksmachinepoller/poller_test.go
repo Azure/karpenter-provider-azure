@@ -110,13 +110,13 @@ func TestPoller_PollUntilDone_ImmediateSuccess(t *testing.T) {
 
 	assert.Nil(t, provisioningErr)
 	assert.NoError(t, pollerErr)
-	assert.Equal(t, 1, mock.CallCount(), "should complete with single GET due to checkTerminalState")
+	assert.Equal(t, 1, mock.CallCount(), "should complete with single GET due to immediate first poll")
 }
 
 func TestPoller_PollUntilDone_CreatingThenSucceeded(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)},  // checkTerminalState
+			{machine: machineWithState(ProvisioningStateCreating)},  // immediate first poll
 			{machine: machineWithState(ProvisioningStateCreating)},  // first tick
 			{machine: machineWithState(ProvisioningStateSucceeded)}, // second tick
 		},
@@ -204,7 +204,7 @@ func TestPoller_PollUntilDone_TransientErrorRetry(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)}, // checkTerminalState
+			{machine: machineWithState(ProvisioningStateCreating)}, // immediate first poll
 			{err: transientErr}, // first tick - transient error
 			{machine: machineWithState(ProvisioningStateSucceeded)}, // retry succeeds
 		},
@@ -226,7 +226,7 @@ func TestPoller_PollUntilDone_NonTransientErrorFails(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)}, // checkTerminalState
+			{machine: machineWithState(ProvisioningStateCreating)}, // immediate first poll
 			{err: notFoundErr}, // first tick - not found
 		},
 	}
@@ -248,11 +248,10 @@ func TestPoller_PollUntilDone_ExhaustedRetries(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)}, // checkTerminalState
-			{err: transientErr}, // tick 1
-			{err: transientErr}, // retry 1
+			{err: transientErr}, // immediate first poll - consumes retry 1
 			{err: transientErr}, // retry 2
-			{err: transientErr}, // retry 3 (exhausted)
+			{err: transientErr}, // retry 3
+			{err: transientErr}, // retry exhausted
 		},
 	}
 
@@ -278,9 +277,9 @@ func TestPoller_PollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithNilState},                          // checkTerminalState - returns false due to nil
-			{machine: machineWithNilState},                          // tick 1 - nil state, retry
-			{machine: machineWithState(ProvisioningStateSucceeded)}, // retry succeeds
+			{machine: machineWithNilState},                          // immediate first poll - nil state, consumes retry
+			{machine: machineWithNilState},                          // tick - nil state, consumes retry
+			{machine: machineWithState(ProvisioningStateSucceeded)}, // tick succeeds
 		},
 	}
 
@@ -383,7 +382,7 @@ func TestIsTransientError(t *testing.T) {
 func TestPoller_PollUntilDone_UpdatingState(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateUpdating)},  // checkTerminalState
+			{machine: machineWithState(ProvisioningStateUpdating)},  // immediate first poll
 			{machine: machineWithState(ProvisioningStateUpdating)},  // tick 1
 			{machine: machineWithState(ProvisioningStateSucceeded)}, // tick 2
 		},
@@ -399,11 +398,10 @@ func TestPoller_PollUntilDone_UpdatingState(t *testing.T) {
 func TestPoller_PollUntilDone_UnrecognizedStateExhaustsRetries(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState("UnknownState")}, // checkTerminalState - falls through
-			{machine: machineWithState("UnknownState")}, // tick 1
-			{machine: machineWithState("UnknownState")}, // retry 1
+			{machine: machineWithState("UnknownState")}, // immediate first poll - consumes retry 1
 			{machine: machineWithState("UnknownState")}, // retry 2
-			{machine: machineWithState("UnknownState")}, // retry 3 (exhausted)
+			{machine: machineWithState("UnknownState")}, // retry 3
+			{machine: machineWithState("UnknownState")}, // retry exhausted
 		},
 	}
 

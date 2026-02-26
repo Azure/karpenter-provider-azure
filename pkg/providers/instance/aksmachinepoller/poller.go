@@ -86,39 +86,6 @@ func NewPoller(
 	}
 }
 
-// checkTerminalState performs a single GET and returns immediately if the machine is in a terminal state.
-// Returns (provisioningErr, pollerErr, done). If done is true, the caller should return immediately.
-// This is used for an immediate first poll before starting the ticker loop, allowing fast completion
-// when the operation is already done (common in tests with fakes that immediately set Succeeded state).
-func (p *Poller) checkTerminalState(ctx context.Context) (*armcontainerservice.ErrorDetail, error, bool) {
-	aksMachine, err := p.getAKSMachine(ctx)
-	if err != nil {
-		// Any error on immediate check is not fatal - we'll retry in the ticker loop
-		return nil, nil, false //nolint:nilerr // intentional: swallow immediate-check error; the ticker loop will retry
-	}
-
-	if aksMachine.Properties == nil || aksMachine.Properties.ProvisioningState == nil {
-		// No state available yet, let ticker loop handle it
-		return nil, nil, false
-	}
-
-	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
-	switch provisioningState {
-	case ProvisioningStateSucceeded:
-		return nil, nil, true
-	case ProvisioningStateFailed:
-		if aksMachine.Properties.Status != nil && aksMachine.Properties.Status.ProvisioningError != nil {
-			return aksMachine.Properties.Status.ProvisioningError, nil, true
-		}
-		return nil, fmt.Errorf("AKS machine %q sees fatal provisioning state %s, but ProvisioningError is nil", p.aksMachineName, provisioningState), true
-	case ProvisioningStateDeleting:
-		return nil, fmt.Errorf("AKS machine %q sees canceled provisioning state %s", p.aksMachineName, provisioningState), true
-	default:
-		// Non-terminal state, let ticker loop handle it
-		return nil, nil, false
-	}
-}
-
 // PollUntilDone polls the AKS machine instance with GET calls until provisioning state is stabilized.
 // If the provisioning is a success, returns nil. If provisioning is a failure, returns provisioning error.
 // The function itself will error (second return value) only if the function is not performing as expected.
@@ -131,9 +98,8 @@ func (p *Poller) PollUntilDone(ctx context.Context) (*armcontainerservice.ErrorD
 	var currentRetryDelay time.Duration
 	p.resetRetryState(&retryAttemptsLeft, &currentRetryDelay)
 
-	// Do an immediate first poll before starting the ticker loop.
-	// This allows fast completion when the operation is already done (common in tests with fakes).
-	if provisioningErr, pollerErr, done := p.checkTerminalState(ctx); done {
+	// Immediate first poll for fast completion (common in tests with fakes that immediately set Succeeded state).
+	if provisioningErr, pollerErr, done := p.pollOnce(ctx, &retryAttemptsLeft, &currentRetryDelay); done {
 		return provisioningErr, pollerErr
 	}
 
