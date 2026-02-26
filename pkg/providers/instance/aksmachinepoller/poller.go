@@ -35,41 +35,55 @@ type AKSMachineGetter interface {
 
 // Options contains configuration for polling long-running operations.
 //
-// Comparison with Azure SDK poller:
-// The SDK's runtime.Poller exposes only a single option: Frequency (poll interval, default 30s).
-// HTTP-level retries (transient errors, backoff) are handled transparently by the SDK's pipeline
-// via policy.RetryOptions (MaxRetries=3, RetryDelay=800ms, MaxRetryDelay=60s, status codes
-// 408/429/500/502/503/504). The SDK poller also honors Retry-After headers from the server.
+// # How this poller relates to the Azure SDK poller
 //
-// Our GET-based poller operates above the SDK client (each GET goes through the SDK HTTP pipeline,
-// which still applies its own per-request retry policy). The options below control polling-loop-level
-// behavior — retrying when the GET succeeds but returns unexpected state (nil provisioning state,
-// unrecognized state), or when the SDK pipeline itself exhausts its retries and surfaces an error.
+// The Azure SDK's runtime.Poller has two layers:
+//  1. Polling loop — exposes one option: Frequency (interval between polls, default 30s).
+//  2. HTTP pipeline — each poll request passes through policy.RetryOptions, which handles
+//     transient HTTP errors with exponential backoff (RetryDelay=800ms, MaxRetryDelay=60s,
+//     MaxRetries=3, status codes 408/429/500/502/503/504). Retries are scoped per-request:
+//     each poll gets its own fresh retry budget.
 //
-// Notable differences from SDK poller:
-//   - We do NOT handle Retry-After headers (the SDK pipeline handles them per-request, but our
-//     polling loop uses a fixed interval). For provisioning GET polls this is acceptable since
-//     the server doesn't typically send Retry-After on successful GET responses.
-//   - We reset retry budget on healthy non-terminal states (Creating/Updating), which the SDK
-//     doesn't do (its retries are per-request, not per-polling-session).
-//   - We do NOT support per-try timeout (SDK's TryTimeout). Context cancellation and the SDK
-//     HTTP pipeline's transport-level timeouts provide equivalent protection.
+// Our GET-based poller sits on top of the same SDK HTTP client, so each GET call still
+// benefits from the SDK pipeline's per-request retries. The options here control an
+// additional retry layer at the polling loop level, handling cases the SDK pipeline
+// cannot: successful GETs that return unexpected state (nil or unrecognized provisioning
+// state), or transient errors that persist beyond the SDK pipeline's per-request budget.
+//
+// # Differences from the SDK poller and why
+//
+// Retry-After headers: The SDK poller honors Retry-After on poll responses, overriding
+// Frequency. We use a fixed PollInterval because the server does not typically send
+// Retry-After on successful provisioning GET responses. Per-request Retry-After (e.g.,
+// on 429s) is still handled by the SDK HTTP pipeline underneath.
+//
+// Retry budget reset: We reset MaxRetries when a healthy non-terminal state (Creating/
+// Updating) is observed. The SDK doesn't need this because its retries are per-request
+// (each poll starts fresh). Ours are per-session (one budget across the entire loop), so
+// without resetting, intermittent errors across a long-running operation would accumulate
+// and exhaust the budget even though the operation is making progress. The reset makes our
+// session-scoped budget behave equivalently to the SDK's per-request budget.
+//
+// Per-try timeout (TryTimeout): Not implemented. The SDK HTTP pipeline's transport-level
+// timeouts and context cancellation provide equivalent protection.
 type Options struct {
 	// PollInterval is the interval between GET requests to check operation state.
-	// Analogous to SDK's PollUntilDoneOptions.Frequency (default 30s).
+	// Equivalent to SDK's PollUntilDoneOptions.Frequency (default 30s).
 	PollInterval time.Duration
-	// InitialRetryDelay is the initial delay before retrying after a transient GET error
-	// or unexpected state (nil/unrecognized provisioning state). Uses exponential backoff.
-	// Analogous to SDK's policy.RetryOptions.RetryDelay (default 800ms), but applied at the
-	// polling loop level rather than per-HTTP-request.
-	InitialRetryDelay time.Duration
+	// RetryDelay is the initial delay before retrying after a transient GET error or
+	// unexpected state (nil/unrecognized provisioning state). Doubles on each consecutive
+	// retry, capped at MaxRetryDelay (exponential backoff).
+	// Equivalent to SDK's policy.RetryOptions.RetryDelay (default 800ms), but applied at
+	// the polling loop level rather than per-HTTP-request.
+	RetryDelay time.Duration
 	// MaxRetryDelay is the maximum delay between retries (exponential backoff cap).
-	// Analogous to SDK's policy.RetryOptions.MaxRetryDelay (default 60s).
+	// Equivalent to SDK's policy.RetryOptions.MaxRetryDelay (default 60s).
 	MaxRetryDelay time.Duration
-	// MaxRetries is the maximum number of consecutive retry attempts for transient GET errors
-	// or unexpected states before giving up. Resets when a healthy non-terminal state is observed.
-	// Analogous to SDK's policy.RetryOptions.MaxRetries (default 3), but operates at the polling
-	// loop level and resets on progress.
+	// MaxRetries is the maximum number of consecutive retry attempts for transient GET
+	// errors or unexpected states before giving up. Resets to its initial value whenever
+	// a healthy non-terminal state (Creating/Updating) is observed (see comment above).
+	// Equivalent to SDK's policy.RetryOptions.MaxRetries (default 3), but scoped to the
+	// polling session rather than individual HTTP requests.
 	MaxRetries int
 }
 
@@ -327,5 +341,5 @@ func (p *Poller) retryWithBackoff(ctx context.Context, retryAttemptsLeft *int, c
 // resetRetryState returns the initial retry state values.
 func (p *Poller) resetRetryState(retryAttemptsLeft *int, currentRetryDelay *time.Duration) {
 	*retryAttemptsLeft = p.config.MaxRetries
-	*currentRetryDelay = p.config.InitialRetryDelay
+	*currentRetryDelay = p.config.RetryDelay
 }
