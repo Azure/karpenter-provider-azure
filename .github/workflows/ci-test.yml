@@ -55,4 +55,4 @@ jobs:
       if: matrix.k8sVersion == '1.32.x'
       env:
         COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: goveralls -coverprofile=coverage.out -service=github
+      run: goveralls -coverprofile=coverage.out -service=github || true
