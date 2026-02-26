@@ -50,8 +50,7 @@ const (
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreamingSettings struct {
 	// mode controls whether artifact streaming is enabled for provisioned nodes.
-	// When not specified (Unspecified), defaults to disabled behavior (but may change in the future).
-	// +default=Unspecified
+	// When not specified, defaults to disabled behavior (but may change in the future).
 	// +optional
 	Mode *ArtifactStreamingMode `json:"mode,omitempty"`
 }
