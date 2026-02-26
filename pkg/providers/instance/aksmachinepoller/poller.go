@@ -14,6 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package aksmachinepoller provides a GET-based poller for tracking individual AKS machine
+// provisioning status by polling GET machine until terminal state. This is an alternative
+// to the Azure SDK poller, which polls on AKS operation objects (through GET operation).
+//
+// This approach works because provisioning error details and success status are derived
+// from the AKS machine object itself (through the ProvisioningError field). One use case
+// is batched AKS machine provisioning, where the batch coordinator sends one API call for
+// N machines and gets back one SDK poller for the entire batch — it cannot track individual
+// machines. Each machine needs its own poller, and polling GET machine is the most
+// straightforward approach.
+//
+// The poller sits on top of the same SDK HTTP client, so each GET call still passes through
+// the SDK pipeline's per-request retry policy. See the Options doc comment for a detailed
+// comparison with the SDK poller.
+//
+// Note: there is a proposal to stop relying on ProvisioningError from machine objects and
+// rely on AKS operation errors instead. That would require batched request error returning
+// (potentially via upcoming ARM batch API) and rewriting error handling based on AKS error
+// formats instead of CRP error formats. If that transition happens, this approach would
+// need to be revisited.
 package aksmachinepoller
 
 import (
