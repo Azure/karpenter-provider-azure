@@ -37,6 +37,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/metrics"
 	coreexpectations "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
@@ -169,4 +170,58 @@ func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider coreclou
 		_, err = coreexpectations.ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
 		Expect(err).ToNot(HaveOccurred())
 	}
+}
+
+// instancePromiseWaiter breaks the import cycle between pkg/cloudprovider and
+// this package: cloudprovider tests import this package, so this package
+// cannot import cloudprovider back. *cloudprovider.CloudProvider satisfies it.
+type instancePromiseWaiter interface {
+	WaitForInstancePromises()
+}
+
+// ExpectProvisionedAndWaitForPromises provisions pods and waits for async polling goroutines to complete.
+// This ensures that any background Create operations (including GET poller) finish before
+// the test continues, preventing goroutines from interfering with subsequent assertions.
+//
+// Use this instead of upstream ExpectProvisioned to ensure proper async cleanup.
+func ExpectProvisionedAndWaitForPromises(
+	ctx context.Context,
+	c client.Client,
+	cluster *state.Cluster,
+	cp corecloudprovider.CloudProvider,
+	provisioner *provisioning.Provisioner,
+	azureEnv *test.Environment,
+	pods ...*corev1.Pod,
+) {
+	GinkgoHelper()
+	coreexpectations.ExpectProvisioned(ctx, c, cluster, cp, provisioner, pods...)
+	cp.(instancePromiseWaiter).WaitForInstancePromises()
+}
+
+// CreateAndWaitForPromises calls cloudProvider.Create and waits for async polling goroutines to complete.
+// It sets the Launched condition on the NodeClaim (mirroring what the core lifecycle controller
+// does in production) so that the async goroutine's waitUntilLaunched unblocks.
+// Returns the created NodeClaim and any error from the Create operation.
+//
+// Use this instead of direct cloudProvider.Create() calls in tests.
+func CreateAndWaitForPromises(
+	ctx context.Context,
+	cp corecloudprovider.CloudProvider,
+	azureEnv *test.Environment,
+	nodeClaim *karpv1.NodeClaim,
+) (*karpv1.NodeClaim, error) {
+	GinkgoHelper()
+	result, err := cp.Create(ctx, nodeClaim)
+	// Simulate what the core lifecycle Launch controller does after Create():
+	// set Launched=True so the async goroutine's waitUntilLaunched can proceed.
+	// We fetch a fresh copy from the API server and do a status-only update to
+	// avoid "spec is immutable" errors when the test has modified the spec
+	// (e.g., conflicted NodeClaim tests).
+	fresh := &karpv1.NodeClaim{}
+	if getErr := azureEnv.Client().Get(ctx, types.NamespacedName{Name: nodeClaim.Name, Namespace: nodeClaim.Namespace}, fresh); getErr == nil {
+		fresh.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+		Expect(azureEnv.Client().Status().Update(ctx, fresh)).To(Succeed())
+	}
+	cp.(instancePromiseWaiter).WaitForInstancePromises()
+	return result, err
 }
