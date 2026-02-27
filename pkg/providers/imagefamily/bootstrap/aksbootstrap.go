@@ -422,6 +422,9 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.ClusterDNSServiceIP != "" {
 		args["--cluster-dns"] = kubeletConfig.ClusterDNSServiceIP
 	}
+	if kubeletConfig.SerializeImagePulls != nil {
+		args["--serialize-image-pulls"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.SerializeImagePulls))
+	}
 
 	return args
 }
