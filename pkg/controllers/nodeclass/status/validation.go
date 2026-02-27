@@ -24,7 +24,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -45,12 +45,12 @@ const (
 )
 
 type ValidationReconciler struct {
-	diskEncryptionSetsAPI     instance.DiskEncryptionSetsAPI
+	diskEncryptionSetsAPI     azclient.DiskEncryptionSetsAPI
 	parsedDiskEncryptionSetID *arm.ResourceID // parsed by options.Validate(), will be nil if DiskEncryptionSetID is not set
 }
 
 func NewValidationReconciler(
-	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI,
+	diskEncryptionSetsAPI azclient.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
 ) *ValidationReconciler {
 	return &ValidationReconciler{
