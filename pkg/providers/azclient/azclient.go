@@ -274,7 +274,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
 	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
-		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+		// copy the options to avoid modifying the original
+		var machinesClientOptions = *opts
+		machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{})
+		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, &machinesClientOptions)
 		if err != nil {
 			return nil, err
 		}
