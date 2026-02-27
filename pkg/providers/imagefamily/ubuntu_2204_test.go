@@ -66,6 +66,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
 	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
+	artifactStreaming := &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeDisabled}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -78,6 +79,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		nodeBootstrappingClient,
 		fipsMode,
 		localDNS,
+		artifactStreaming,
 	)
 
 	g := NewWithT(t)

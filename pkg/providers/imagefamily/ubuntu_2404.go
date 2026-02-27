@@ -141,6 +141,7 @@ func (u Ubuntu2404) CustomScriptsNodeBootstrapping(
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
 	localDNS *v1beta1.LocalDNS,
+	artifactStreaming *v1beta1.ArtifactStreamingSettings,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -162,5 +163,6 @@ func (u Ubuntu2404) CustomScriptsNodeBootstrapping(
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404,
 		FIPSMode:                       fipsMode,
 		LocalDNSProfile:                localDNS,
+		ArtifactStreaming:              artifactStreaming,
 	}
 }
