@@ -24,24 +24,22 @@ import (
 
 var _ policy.Policy = &spotSystemNodePolicy{}
 
-// spotSystemNodePolicy is an Azure SDK per-call policy that appends the
-// AllowSpotVMSystemNode feature flag to the AKSHTTPCustomFeatures header
-// on every PUT request sent through the AKS Machines client.
+// spotSystemNodePolicy is an Azure SDK per-call policy that adds the
+// AKSHTTPCustomFeatures header on every PUT request sent through the
+// AKS Machines client, enabling AKS-side feature flags.
 //
-// This appends to the existing header value rather than replacing it,
-// to preserve any features already set by the SDK/infrastructure
-// (e.g., UseCustomizedOSImage).
+// Features:
+//   - UseCustomizedOSImage: Required for custom OS image support. This is
+//     normally set later behind the scenes by the SDK/infrastructure, but our policy
+//     uses Header.Set which replaces the entire header value, unintentionally
+//     dropping it. Re-added here to preserve it alongside our custom feature.
+//   - AllowSpotVMSystemNode: Required for spot VM support on system node pools.
 type spotSystemNodePolicy struct{}
-
-const spotFeature = "Microsoft.ContainerService/AllowSpotVMSystemNode"
 
 func (p *spotSystemNodePolicy) Do(req *policy.Request) (*http.Response, error) {
 	if req.Raw().Method == http.MethodPut {
-		if existing := req.Raw().Header.Get("AKSHTTPCustomFeatures"); existing != "" {
-			req.Raw().Header.Set("AKSHTTPCustomFeatures", existing+","+spotFeature)
-		} else {
-			req.Raw().Header.Set("AKSHTTPCustomFeatures", spotFeature)
-		}
+		req.Raw().Header.Set("AKSHTTPCustomFeatures",
+			"Microsoft.ContainerService/UseCustomizedOSImage,Microsoft.ContainerService/AllowSpotVMSystemNode")
 	}
 	return req.Next()
 }
