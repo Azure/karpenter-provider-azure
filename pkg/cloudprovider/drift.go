@@ -40,7 +40,6 @@ const (
 	NodeClassDrift       cloudprovider.DriftReason = "NodeClassDrift"
 	K8sVersionDrift      cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageDrift           cloudprovider.DriftReason = "ImageDrift"
-	SubnetDrift          cloudprovider.DriftReason = "SubnetDrift"
 	KubeletIdentityDrift cloudprovider.DriftReason = "KubeletIdentityDrift"
 	ClusterConfigDrift   cloudprovider.DriftReason = "ClusterConfigDrift" // This is a catch-all for cluster-level config changes (e.g., from PUT ManagedCluster), where Karpenter does not directly "own" them.
 
@@ -165,6 +164,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", fmt.Errorf("no images exist for the given constraints")
 	}
 
+	// bail out early if core called this before the node is done creating.
 	if nodeClaim.Status.ImageID == "" {
 		return "", fmt.Errorf("no image ID found in nodeClaim status")
 	}
