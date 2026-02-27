@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -191,7 +192,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
-	azClient := instance.NewAZClientFromAPI(
+	azClient := azclient.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		aksMachinesAPI,

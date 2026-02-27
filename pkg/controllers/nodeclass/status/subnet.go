@@ -29,15 +29,15 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 type SubnetReconciler struct {
-	subnetClient instance.SubnetsAPI
+	subnetClient azclient.SubnetsAPI
 }
 
-func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
+func NewSubnetReconciler(subnetClient azclient.SubnetsAPI) *SubnetReconciler {
 	return &SubnetReconciler{
 		subnetClient: subnetClient,
 	}
