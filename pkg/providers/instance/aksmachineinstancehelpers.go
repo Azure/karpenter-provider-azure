@@ -309,8 +309,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig := &armcontainerservice.KubeletConfig{}
 
 	// Map from v1beta1.KubeletConfiguration to AKS machine KubeletConfig
-	if nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
-		kubeletConfig.CPUManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.CPUManagerPolicy)
+	if nodeClass.Spec.Kubelet.CPUManagerPolicy != nil && *nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
+		kubeletConfig.CPUManagerPolicy = nodeClass.Spec.Kubelet.CPUManagerPolicy
 	}
 
 	kubeletConfig.CPUCfsQuota = nodeClass.Spec.Kubelet.CPUCFSQuota
@@ -322,8 +322,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig.ImageGcHighThreshold = nodeClass.Spec.Kubelet.ImageGCHighThresholdPercent
 	kubeletConfig.ImageGcLowThreshold = nodeClass.Spec.Kubelet.ImageGCLowThresholdPercent
 
-	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
-		kubeletConfig.TopologyManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.TopologyManagerPolicy)
+	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != nil && *nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
+		kubeletConfig.TopologyManagerPolicy = nodeClass.Spec.Kubelet.TopologyManagerPolicy
 	}
 
 	if len(nodeClass.Spec.Kubelet.AllowedUnsafeSysctls) > 0 {
@@ -331,8 +331,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	}
 
 	// Convert container log max size to MB
-	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
-		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(nodeClass.Spec.Kubelet.ContainerLogMaxSize)
+	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != nil && *nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
+		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(*nodeClass.Spec.Kubelet.ContainerLogMaxSize)
 	}
 
 	kubeletConfig.ContainerLogMaxFiles = nodeClass.Spec.Kubelet.ContainerLogMaxFiles

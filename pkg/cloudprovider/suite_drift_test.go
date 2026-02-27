@@ -19,6 +19,7 @@ package cloudprovider
 import (
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
@@ -90,7 +91,10 @@ var _ = Describe("CloudProvider", func() {
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				node = ExpectScheduled(ctx, env.Client, pod)
 				// KubeletVersion must be applied to the node to satisfy k8s drift
-				node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
+				if nodeClass.Status.KubernetesVersion != nil {
+					node.Status.NodeInfo.KubeletVersion = "v" + *nodeClass.Status.KubernetesVersion
+				}
+
 				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
 				// Context must have same kubelet client id
 				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
@@ -219,7 +223,7 @@ var _ = Describe("CloudProvider", func() {
 				// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 				It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					nodeClass.Status.KubernetesVersion = ""
+					nodeClass.Status.KubernetesVersion = to.Ptr("")
 					ExpectApplied(ctx, env.Client, nodeClass)
 					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
@@ -262,9 +266,9 @@ var _ = Describe("CloudProvider", func() {
 				It("should succeed with drift true when KubernetesVersion is new", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(nodeClass.Status.KubernetesVersion))
+					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(*nodeClass.Status.KubernetesVersion))
 					semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
-					nodeClass.Status.KubernetesVersion = semverCurrentK8sVersion.String()
+					nodeClass.Status.KubernetesVersion = to.Ptr(semverCurrentK8sVersion.String())
 
 					ExpectApplied(ctx, env.Client, nodeClass)
 

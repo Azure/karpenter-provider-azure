@@ -19,6 +19,7 @@ package v1beta1_test
 import (
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
@@ -44,14 +45,14 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       "none",
+					TopologyManagerPolicy:       to.Ptr("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),
@@ -75,7 +76,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						ObservedGeneration: 1,
 					},
 				},
-				KubernetesVersion: "1.31.0",
+				KubernetesVersion: to.Ptr("1.31.0"),
 				Images: []v1beta1.NodeImage{
 					{
 						ID: "/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0",
@@ -139,14 +140,14 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       "none",
+					TopologyManagerPolicy:       to.Ptr("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),
@@ -161,7 +162,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						Message:            "Images are not ready for use",
 					},
 				},
-				KubernetesVersion: "1.31.0",
+				KubernetesVersion: to.Ptr("1.31.0"),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
@@ -183,14 +184,14 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       "none",
+					TopologyManagerPolicy:       to.Ptr("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),
@@ -212,7 +213,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						Message:            "Kubernetes version is ready for use",
 					},
 				},
-				KubernetesVersion: "1.31.0",
+				KubernetesVersion: to.Ptr("1.31.0"),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
@@ -234,14 +235,14 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       "none",
+					TopologyManagerPolicy:       to.Ptr("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),
@@ -264,7 +265,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						ObservedGeneration: 1,
 					},
 				},
-				KubernetesVersion: "",
+				KubernetesVersion: to.Ptr(""),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()

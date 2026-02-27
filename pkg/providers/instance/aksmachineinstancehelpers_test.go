@@ -19,6 +19,7 @@ package instance
 import (
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -574,13 +575,13 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should configure all kubelet settings correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:            "static",
+				CPUManagerPolicy:            to.Ptr("static"),
 				CPUCFSQuota:                 lo.ToPtr(true),
-				TopologyManagerPolicy:       "single-numa-node",
+				TopologyManagerPolicy:       to.Ptr("single-numa-node"),
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 				AllowedUnsafeSysctls:        []string{"kernel.shm_rmid_forced", "net.core.somaxconn"},
-				ContainerLogMaxSize:         "100Mi",
+				ContainerLogMaxSize:         to.Ptr("100Mi"),
 				ContainerLogMaxFiles:        lo.ToPtr(int32(5)),
 				PodPidsLimit:                lo.ToPtr(int64(2048)),
 			}
@@ -602,10 +603,10 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should handle empty/nil values correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:     "",              // Empty string should be nil
+				CPUManagerPolicy:     to.Ptr(""),      // Empty string should be nil
 				CPUCFSQuota:          lo.ToPtr(false), // False should be preserved
 				AllowedUnsafeSysctls: []string{},      // Empty slice should be nil
-				ContainerLogMaxSize:  "",              // Empty string should be nil
+				ContainerLogMaxSize:  nil,             // nil should stay nil
 				ContainerLogMaxFiles: nil,             // Nil should stay nil
 				PodPidsLimit:         nil,             // Nil should stay nil
 			}
