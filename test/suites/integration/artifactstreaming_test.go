@@ -298,10 +298,10 @@ func getArtifactStreamingStatusFromNode(node *corev1.Node) ArtifactStreamingTest
 // isArtifactStreamingEnabled parses the verification logs to determine if artifact streaming is enabled
 func isArtifactStreamingEnabled(logs string) bool {
 	// Check for positive indicators
+	// Note: /etc/overlaybd directory exists by default on VHD, so it's not a reliable indicator.
+	// Only the running process or containerd config indicate artifact streaming is actually enabled.
 	hasOverlaybdProcess := strings.Contains(logs, "overlaybd-tcmu process FOUND")
-	hasOverlaybdConfig := strings.Contains(logs, "/etc/overlaybd directory FOUND")
 	hasContainerdConfig := strings.Contains(logs, "overlaybd FOUND in containerd config")
 
-	// Any of these indicators means artifact streaming is enabled
-	return hasOverlaybdProcess || hasOverlaybdConfig || hasContainerdConfig
+	return hasOverlaybdProcess || hasContainerdConfig
 }
