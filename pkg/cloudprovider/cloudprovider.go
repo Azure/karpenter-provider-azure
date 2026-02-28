@@ -469,6 +469,18 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	return c.vmInstanceProvider.Delete(ctx, vmName)
 }
 
+// IsDrifted checks if the NodeClaim has drifted from our goal state.
+// Note: During the initial launch and registration of a NodeClaim,
+// core calls IsDrifted quite frequently as it waits for the Node to register and become ready. This is
+// because the core pkg/controllers/nodeclaim/disruption/controller.go watches NodeClaims without a
+// generation filter, so any update to the NodeClaim (including updates to status such as when updating conditions during launch)
+// will trigger a call to IsDrifted.
+// The following things produce a large number of IsDrifted calls:
+//   - The initialization controller pkg/controllers/nodeclaim/lifecycle/initialization.go changes the ConditionTypeInitialized condition a number of times during
+//     this process, which triggers disruption/controller.go to call IsDrifted each time.
+//   - Any pod scheduling that happens during this time will trigger the core disruption/controller.go, because it watches pod updates and
+//     maps each pod update to a NodeClaim event. This means every time a pod (including a DaemonSet pod) is scheduled to the node
+//     we'll get called.
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	// Not needed when GetInstanceTypes removes nodepool dependency
 	nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]
