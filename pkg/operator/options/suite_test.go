@@ -122,7 +122,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("SIG_SUBSCRIPTION_ID", "my-subscription-id")
 			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
 			os.Setenv("AZURE_NODE_RESOURCE_GROUP", "my-node-rg")
-			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "2345678-1234-1234-1234-123456789012")
+			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "12345678-1234-1234-1234-123456789012")
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
 			os.Setenv("AKS_MACHINES_POOL_NAME", "testmpool")
@@ -153,7 +153,7 @@ var _ = Describe("Options", func() {
 				SIGAccessTokenServerURL:        lo.ToPtr("http://valid-server.com"),
 				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
-				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
+				KubeletIdentityClientID:        lo.ToPtr("12345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
 				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
 				ManageExistingAKSMachines:      lo.ToPtr(true),
@@ -163,6 +163,18 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
+		It("should fail when kubelet-identity-client-id is not a uuid", func() {
+			errMsg := "kubelet-identity-client-id not-a-uuid is malformed"
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--kubelet-identity-client-id", "not-a-uuid",
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
 		It("should fail when vnet guid is not a uuid", func() {
 			errMsg := "vnet-guid null is malformed"
 			err := opts.Parse(
@@ -564,6 +576,11 @@ var _ = Describe("Options", func() {
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/my-des",
 			)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ParsedDiskEncryptionSetID).ToNot(BeNil())
+			Expect(opts.ParsedDiskEncryptionSetID.SubscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+			Expect(opts.ParsedDiskEncryptionSetID.ResourceGroupName).To(Equal("my-rg"))
+			Expect(opts.ParsedDiskEncryptionSetID.Name).To(Equal("my-des"))
+			Expect(opts.ParsedDiskEncryptionSetID.ResourceType.String()).To(Equal("Microsoft.Compute/diskEncryptionSets"))
 		})
 
 		It("should fail when disk-encryption-set-id has incorrect number of segments", func() {
@@ -577,7 +594,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg",
 			)
-			Expect(err).To(MatchError(ContainSubstring("disk-encryption-set-id is invalid: expected format")))
+			Expect(err).To(MatchError(ContainSubstring("expected resource type 'Microsoft.Compute/diskEncryptionSets'")))
 		})
 
 		It("should fail when disk-encryption-set-id doesn't start with /subscriptions/", func() {
@@ -591,7 +608,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/my-des",
 			)
-			Expect(err).To(MatchError(ContainSubstring("disk-encryption-set-id is invalid: must start with /subscriptions/")))
+			Expect(err).To(MatchError(ContainSubstring("invalid DiskEncryptionSet ID")))
 		})
 
 		It("should fail when disk-encryption-set-id has wrong provider", func() {
@@ -605,7 +622,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Network/diskEncryptionSets/my-des",
 			)
-			Expect(err).To(MatchError(ContainSubstring("disk-encryption-set-id is invalid: expected 'providers/Microsoft.Compute'")))
+			Expect(err).To(MatchError(ContainSubstring("expected resource type 'Microsoft.Compute/diskEncryptionSets'")))
 		})
 
 		It("should fail when disk-encryption-set-id has wrong resource type", func() {
@@ -619,7 +636,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/disks/my-disk",
 			)
-			Expect(err).To(MatchError(ContainSubstring("disk-encryption-set-id is invalid: expected 'diskEncryptionSets'")))
+			Expect(err).To(MatchError(ContainSubstring("expected resource type 'Microsoft.Compute/diskEncryptionSets'")))
 		})
 
 		It("should fail when disk-encryption-set-id has empty subscription ID", func() {
@@ -633,10 +650,40 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "/subscriptions//resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/my-des",
 			)
-			Expect(err).To(MatchError(ContainSubstring("disk-encryption-set-id is invalid: subscription ID, resource group name, and disk encryption set name must not be empty")))
+			Expect(err).To(MatchError(ContainSubstring("expected resource type")))
 		})
 
-		It("should succeed with case-insensitive provider names", func() {
+		It("should fail when disk-encryption-set-id has empty resource group name", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups//providers/Microsoft.Compute/diskEncryptionSets/my-des",
+			)
+			// arm.ParseResourceID parses this but with wrong resource type
+			Expect(err).To(MatchError(ContainSubstring("expected resource type")))
+		})
+
+		It("should fail when disk-encryption-set-id has empty DES name", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/",
+			)
+			// This will fail during ParseResourceID
+			Expect(err).To(MatchError(ContainSubstring("invalid DiskEncryptionSet ID")))
+		})
+
+		It("should succeed with case-insensitive provider names and verify parsed fields", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -648,6 +695,11 @@ var _ = Describe("Options", func() {
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/my-rg/PROVIDERS/MICROSOFT.COMPUTE/DISKENCRYPTIONSETS/my-des",
 			)
 			Expect(err).ToNot(HaveOccurred())
+			// Verify parsed resource ID is populated and fields are correct
+			Expect(opts.ParsedDiskEncryptionSetID).ToNot(BeNil())
+			Expect(opts.ParsedDiskEncryptionSetID.SubscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+			Expect(opts.ParsedDiskEncryptionSetID.ResourceGroupName).To(Equal("my-rg"))
+			Expect(opts.ParsedDiskEncryptionSetID.Name).To(Equal("my-des"))
 		})
 	})
 

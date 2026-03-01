@@ -45,6 +45,7 @@ import (
 )
 
 var env *azure.Environment
+var nodeClass *v1beta1.AKSNodeClass
 
 func TestConsolidation(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -56,8 +57,6 @@ func TestConsolidation(t *testing.T) {
 	})
 	RunSpecs(t, "Consolidation")
 }
-
-var nodeClass *v1beta1.AKSNodeClass
 
 var _ = BeforeEach(func() {
 	nodeClass = env.DefaultAKSNodeClass()

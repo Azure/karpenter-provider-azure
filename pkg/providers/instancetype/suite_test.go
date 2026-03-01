@@ -140,6 +140,11 @@ var _ = Describe("InstanceType Provider", func() {
 	var nodePool *karpv1.NodePool
 
 	BeforeEach(func() {
+		// Reset testOptions and ctx in case a test edited them
+		// TODO: It would be nice to find a cleaner way to edit ctx/options in these tests...
+		testOptions = test.Options()
+		ctx = options.ToContext(ctx, testOptions)
+
 		nodeClass = test.AKSNodeClass()
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
@@ -157,7 +162,6 @@ var _ = Describe("InstanceType Provider", func() {
 			},
 		})
 
-		ctx = options.ToContext(ctx, test.Options())
 		cluster.Reset()
 		clusterNonZonal.Reset()
 		clusterBootstrap.Reset()
@@ -853,7 +857,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// placement == CacheDisk
 				// MaxResourceVolumeMB == 163840 MiB -> 171.80 GB,
 				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
 				// and this is greater than 0, so we select 7559, placement == NvmeDisk
 				// Standard_D16plds_v5:
 				// NvmeDiskSizeInMiB == 0
@@ -862,11 +866,11 @@ var _ = Describe("InstanceType Provider", func() {
 				// MaxResourceVolumeMB == 614400 MiB
 				// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
 				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
 				// and this is greater than 0, so we select 7559, placement == NvmeDisk
 				// Standard_NC24ads_A100_v4:
 				// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
-				// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacments == NvmeDisk so we move to cache disk
+				// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacements == NvmeDisk so we move to cache disk
 				// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
 				// MaxResourceVolumeMB == 65536 MiB
 				// Standard_D64s_v3:
@@ -1292,7 +1296,7 @@ var _ = Describe("InstanceType Provider", func() {
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID)
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1341,7 +1345,7 @@ var _ = Describe("InstanceType Provider", func() {
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID)
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1375,7 +1379,7 @@ var _ = Describe("InstanceType Provider", func() {
 			)
 			DescribeTable("should select the right image for a given instance type",
 				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 					if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
 						Skip("AzureLinux3 ARM64 VHD is not available in CIG")
 					}
@@ -1779,7 +1783,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -2295,6 +2299,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Name      string
 				Label     string
 				ValueFunc func() string
+				SetupFunc func()
 				// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
 				// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
 				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written by another process.
@@ -2306,11 +2311,13 @@ var _ = Describe("InstanceType Provider", func() {
 				// or by another process. We're asserting on this distinction currently because it helps clarify who is doing what
 				ExpectedOnNode bool
 			}
+
+			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
 			entries := []WellKnownLabelEntry{
 				// Well known
 				{Name: v1.LabelTopologyRegion, Label: v1.LabelTopologyRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: karpv1.NodePoolLabelKey, Label: karpv1.NodePoolLabelKey, ValueFunc: func() string { return nodePool.Name }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelTopologyZone, Label: v1.LabelTopologyZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: true},
+				{Name: v1.LabelTopologyZone, Label: v1.LabelTopologyZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1.LabelInstanceTypeStable, Label: v1.LabelInstanceTypeStable, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1.LabelOSStable, Label: v1.LabelOSStable, ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1.LabelArchStable, Label: v1.LabelArchStable, ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
@@ -2336,6 +2343,22 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1beta1.AKSLabelScaleSetPriority + "=regular", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.AKSLabelScaleSetPriority + "=spot", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.AKSLabelOSSKU, Label: v1beta1.AKSLabelOSSKU, ValueFunc: func() string { return "Ubuntu" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{
+					Name:  v1beta1.AKSLabelFIPSEnabled,
+					Label: v1beta1.AKSLabelFIPSEnabled,
+					// Needs special setup because it only works on FIPS
+					SetupFunc: func() {
+						testOptions.UseSIG = true
+						ctx = options.ToContext(ctx, testOptions)
+
+						nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
+						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+						test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+					},
+					ValueFunc:               func() string { return "true" },
+					ExpectedInKubeletLabels: true,
+					ExpectedOnNode:          true,
+				},
 				// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
 				// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
 				// the new labels to the old labels for compatibility.
@@ -2346,7 +2369,7 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 				{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 				// Unsupported labels
-				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
+				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
 				// Cluster Label
 				{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			}
@@ -2359,6 +2382,9 @@ var _ = Describe("InstanceType Provider", func() {
 					entry WellKnownLabelEntry
 				}
 				for _, item := range entries {
+					if item.SetupFunc != nil {
+						continue // can't support nonstandard setup here as we're putting all labels on one pod
+					}
 					podDetails = append(podDetails, struct {
 						pod   *v1.Pod
 						entry WellKnownLabelEntry
@@ -2389,16 +2415,20 @@ var _ = Describe("InstanceType Provider", func() {
 					node := ExpectScheduled(ctx, env.Client, detail.pod)
 					if detail.entry.ExpectedOnNode {
 						Expect(node.Labels[key]).To(Equal(detail.pod.Spec.NodeSelector[key]))
+					} else {
+						Expect(node.Labels).ToNot(HaveKey(key))
 					}
 
 					// Get the VM creation input and decode custom data
-					if detail.entry.ExpectedInKubeletLabels {
-						// Extract the vm name from the provider ID
-						vmName, err := nodeclaimutils.GetVMName(node.Spec.ProviderID)
-						Expect(err).ToNot(HaveOccurred())
+					// Extract the vm name from the provider ID
+					vmName, err := nodeclaimutils.GetVMName(node.Spec.ProviderID)
+					Expect(err).ToNot(HaveOccurred())
 
-						vm := vmInputs[vmName].VM
+					vm := vmInputs[vmName].VM
+					if detail.entry.ExpectedInKubeletLabels {
 						ExpectKubeletNodeLabelsInCustomData(&vm, detail.entry.Label, detail.entry.ValueFunc())
+					} else {
+						ExpectKubeletNodeLabelsNotInCustomData(&vm, detail.entry.Label, detail.entry.ValueFunc())
 					}
 				}
 			})
@@ -2406,6 +2436,10 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually)",
 				func(item WellKnownLabelEntry) {
+					if item.SetupFunc != nil {
+						item.SetupFunc()
+					}
+
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					value := item.ValueFunc()
 
@@ -2418,6 +2452,7 @@ var _ = Describe("InstanceType Provider", func() {
 							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}
 						for i := range len(bindings) {
+							Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
 							Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
@@ -2426,14 +2461,18 @@ var _ = Describe("InstanceType Provider", func() {
 
 					if item.ExpectedOnNode {
 						Expect(node.Labels[item.Label]).To(Equal(value))
+					} else {
+						Expect(node.Labels).ToNot(HaveKey(item.Label))
 					}
 
 					// Get the VM creation input and decode custom data
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					vm := vmInput.VM
 					if item.ExpectedInKubeletLabels {
-						Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-						vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-						vm := vmInput.VM
 						ExpectKubeletNodeLabelsInCustomData(&vm, item.Label, value)
+					} else {
+						ExpectKubeletNodeLabelsNotInCustomData(&vm, item.Label, value)
 					}
 				},
 				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
@@ -2444,6 +2483,10 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually) on bootstrap API",
 				func(item WellKnownLabelEntry) {
+					if item.SetupFunc != nil {
+						item.SetupFunc()
+					}
+
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					value := item.ValueFunc()
 
@@ -2456,6 +2499,7 @@ var _ = Describe("InstanceType Provider", func() {
 							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}
 						for i := range len(bindings) {
+							Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
 							Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
@@ -2465,14 +2509,17 @@ var _ = Describe("InstanceType Provider", func() {
 
 					if item.ExpectedOnNode {
 						Expect(node.Labels[item.Label]).To(Equal(value))
+					} else {
+						Expect(node.Labels).ToNot(HaveKey(item.Label))
 					}
 
 					// Get the bootstrap API input
+					Expect(azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
+					bootstrapInput := azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
 					if item.ExpectedInKubeletLabels {
-						Expect(azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
-						bootstrapInput := azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-
 						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).To(HaveKeyWithValue(item.Label, value))
+					} else {
+						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).ToNot(HaveKeyWithValue(item.Label, value))
 					}
 				},
 				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
@@ -2481,7 +2528,8 @@ var _ = Describe("InstanceType Provider", func() {
 			)
 
 			It("entries should cover every WellKnownLabel", func() {
-				Expect(lo.Map(entries, func(item WellKnownLabelEntry, _ int) string { return item.Label })).To(ContainElements(append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)))
+				expectedLabels := append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)
+				Expect(lo.Map(entries, func(item WellKnownLabelEntry, _ int) string { return item.Label })).To(ContainElements(expectedLabels))
 			})
 
 			nonSchedulableLabels := map[string]string{
