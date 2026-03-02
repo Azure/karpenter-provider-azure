@@ -20,7 +20,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/samber/lo"
 )
 
@@ -33,7 +33,7 @@ type DiskEncryptionSetsAPI struct {
 	) (armcompute.DiskEncryptionSetsClientGetResponse, error)
 }
 
-var _ instance.DiskEncryptionSetsAPI = &DiskEncryptionSetsAPI{}
+var _ azclient.DiskEncryptionSetsAPI = &DiskEncryptionSetsAPI{}
 
 func (d *DiskEncryptionSetsAPI) Get(
 	ctx context.Context,

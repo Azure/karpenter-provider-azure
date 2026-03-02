@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/ginkgo/v2"
@@ -169,4 +170,13 @@ func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider coreclou
 		_, err = coreexpectations.ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
 		Expect(err).ToNot(HaveOccurred())
 	}
+}
+
+func ExpectNodeClassHashUpdated(ctx context.Context, c client.Client, nodeClass *v1beta1.AKSNodeClass) {
+	GinkgoHelper()
+	nodeClass.Annotations = lo.Assign(nodeClass.Annotations, map[string]string{
+		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+	})
+	coreexpectations.ExpectApplied(ctx, c, nodeClass)
 }

@@ -28,7 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 )
 
 type VirtualMachineExtensionCreateOrUpdateInput struct {
@@ -54,10 +54,10 @@ type VirtualMachineExtensionsBehavior struct {
 }
 
 // assert that ComputeAPI implements ARMComputeAPI
-var _ instance.VirtualMachineExtensionsAPI = &VirtualMachineExtensionsAPI{}
+var _ azclient.VirtualMachineExtensionsAPI = &VirtualMachineExtensionsAPI{}
 
 type VirtualMachineExtensionsAPI struct {
-	// instance.VirtualMachineExtensionsAPI
+	// azclient.VirtualMachineExtensionsAPI
 	VirtualMachineExtensionsBehavior
 }
 

@@ -30,7 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/samber/lo"
 )
 
@@ -69,11 +69,11 @@ type VirtualMachinesBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ instance.VirtualMachinesAPI = &VirtualMachinesAPI{}
+var _ azclient.VirtualMachinesAPI = &VirtualMachinesAPI{}
 
 type VirtualMachinesAPI struct {
 	// TODO: document the implications of embedding vs. not embedding the interface here
-	// instance.VirtualMachinesAPI // - this is the interface we are mocking.
+	// azclient.VirtualMachinesAPI // - this is the interface we are mocking.
 	VirtualMachinesBehavior
 	AuxiliaryTokenPolicy *auth.AuxiliaryTokenPolicy
 }
