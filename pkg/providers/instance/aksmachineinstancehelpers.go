@@ -299,6 +299,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	return tags
 }
 
+//nolint:gocyclo // borderline complexity violation, code is not hard to read
 func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.KubeletConfig {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
 
