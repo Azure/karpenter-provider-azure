@@ -230,8 +230,14 @@ func setRequirementsHyperVGeneration(requirements scheduling.Requirements, sku *
 }
 
 func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
-	if utils.IsNvidiaEnabledSKU(sku.GetName()) {
+	skuName := sku.GetName()
+	if utils.IsNvidiaEnabledSKU(skuName) {
 		requirements[v1beta1.LabelSKUGPUManufacturer].Insert(v1beta1.ManufacturerNvidia)
+		if vmsize.AcceleratorType != nil {
+			requirements[v1beta1.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
+		}
+	} else if utils.IsAMDGPUEnabledSKU(skuName) {
+		requirements[v1beta1.LabelSKUGPUManufacturer].Insert(v1beta1.ManufacturerAMD)
 		if vmsize.AcceleratorType != nil {
 			requirements[v1beta1.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
 		}
