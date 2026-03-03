@@ -1,0 +1,48 @@
+name: E2EVersionCompatibilityTrigger
+on:
+  # Disabled for now - uncomment schedule to enable
+  # schedule:
+  #   # Runs every Sunday at 2:00 AM UTC
+  #   - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      location:
+        type: choice
+        description: "Azure location to run the e2e test in"
+        default: westus3
+        options:
+          - westus3
+          - southcentralus
+          - eastus
+      cleanup:
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    if: (github.repository == 'Azure/karpenter-provider-azure' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')) || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/resolve-args.yaml
+  versionCompatibility:
+    permissions:
+      contents: read
+      id-token: write # This is required for requesting the JWT
+      statuses: write # ./.github/actions/commit-status/*
+    needs: [resolve]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        k8s_version: ["1.28", "1.29", "1.30", "1.31", "1.32", "1.33", "1.34", "1.35"]
+    uses: ./.github/workflows/e2e-matrix.yaml
+    with:
+      git_ref: ${{ needs.resolve.outputs.GIT_REF }}
+      location: ${{ inputs.location || 'westus3' }}
+      k8s_version: ${{ matrix.k8s_version }}
+    secrets:
+      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
+      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
+      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}

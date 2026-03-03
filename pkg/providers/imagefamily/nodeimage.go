@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
@@ -122,16 +123,16 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
-	retrievedLatestImages, err := p.nodeImageVersions.List(ctx, p.location, p.subscription)
+	retrievedLatestImages, err := p.nodeImageVersions.List(ctx, p.location)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, supportedImage := range supportedImages {
-		var nextImage *types.NodeImageVersion
-		for _, retrievedLatestImage := range retrievedLatestImages.Values {
-			if supportedImage.ImageDefinition == retrievedLatestImage.SKU {
-				nextImage = &retrievedLatestImage
+		var nextImage *armcontainerservice.NodeImageVersion
+		for _, retrievedLatestImage := range retrievedLatestImages {
+			if supportedImage.ImageDefinition == lo.FromPtr(retrievedLatestImage.SKU) {
+				nextImage = retrievedLatestImage
 				break
 			}
 		}
@@ -139,7 +140,7 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 			// Unable to find given image version
 			continue
 		}
-		imageID := BuildImageIDSIG(options.FromContext(ctx).SIGSubscriptionID, supportedImage.GalleryResourceGroup, supportedImage.GalleryName, supportedImage.ImageDefinition, nextImage.Version)
+		imageID := BuildImageIDSIG(options.FromContext(ctx).SIGSubscriptionID, supportedImage.GalleryResourceGroup, supportedImage.GalleryName, supportedImage.ImageDefinition, lo.FromPtr(nextImage.Version))
 
 		nodeImages = append(nodeImages, NodeImage{
 			ID:           imageID,
@@ -194,7 +195,7 @@ func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 		if err != nil {
 			return "", err
 		}
-		for _, imageVersion := range page.CommunityGalleryImageVersionList.Value {
+		for _, imageVersion := range page.Value {
 			if lo.IsEmpty(topImageVersionCandidate) || imageVersion.Properties.PublishedDate.After(*topImageVersionCandidate.Properties.PublishedDate) {
 				topImageVersionCandidate = *imageVersion
 			}

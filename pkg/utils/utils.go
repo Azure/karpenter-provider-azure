@@ -33,7 +33,6 @@ import (
 	"github.com/samber/lo"
 
 	v1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -46,7 +45,7 @@ func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 
 	version := "1"
 	if vmsize.Version != "" {
-		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {
+		if vmsize.Version[0] != 'V' && vmsize.Version[0] != 'v' {
 			// should never happen; don't capture in label (won't be available for selection by version)
 			return ""
 		}
@@ -55,10 +54,25 @@ func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 	return version
 }
 
+// azureResourceGroupNameRE is used to extract the resource group name from an Azure resource ID.
+var azureResourceGroupNameRE = regexp.MustCompile(`.*/subscriptions/(?:.*)/resourceGroups/(.+)/providers/(?:.*)`)
+
+// convertResourceGroupNameToLower converts the resource group name in the resource ID to be lowered.
+// Inlined from sigs.k8s.io/cloud-provider-azure/pkg/provider to avoid pulling in a dependency
+// that has incompatible armcompute version requirements.
+func convertResourceGroupNameToLower(resourceID string) (string, error) {
+	matches := azureResourceGroupNameRE.FindStringSubmatch(resourceID)
+	if len(matches) != 2 {
+		return "", fmt.Errorf("%q isn't in Azure resource ID format %q", resourceID, azureResourceGroupNameRE.String())
+	}
+	resourceGroup := matches[1]
+	return strings.Replace(resourceID, resourceGroup, strings.ToLower(resourceGroup), 1), nil
+}
+
 func VMResourceIDToProviderID(ctx context.Context, id string) string {
 	providerID := fmt.Sprintf("azure://%s", id)
 	// for historical reasons Azure providerID has the resource group name in lower case
-	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
+	providerIDLowerRG, err := convertResourceGroupNameToLower(providerID)
 	if err != nil {
 		log.FromContext(ctx).Info("failed to convert resource group name to lower case in providerID, using fallback", "providerID", providerID, "error", err)
 		// fallback to original providerID
@@ -190,4 +204,31 @@ func HasChanged(existing, new any, options *hashstructure.HashOptions) bool {
 	existingHV, _ := hashstructure.Hash(existing, hashstructure.FormatV2, options)
 	newHV, _ := hashstructure.Hash(new, hashstructure.FormatV2, options)
 	return existingHV != newHV
+}
+
+// GetAlphanumericHash generates a base36 alphanumeric hash of the input string with the specified length.
+// Be mindful of collision risks with short lengths. Also note that length > 13 provides no additional
+// collision resistance because the underlying hashstructure library returns a 64-bit hash, which only
+// fills ~13 base36 characters; extra characters are just leading zeros.
+// At the time of writing, this is being used in AKS machine instance provider/GetAKSMachineNameFromNodeClaimName(). See that for context.
+func GetAlphanumericHash(input string, length int) (string, error) {
+	if length <= 0 {
+		return "", fmt.Errorf("length must be positive, got %d", length)
+	}
+
+	hash, err := hashstructure.Hash(input, hashstructure.FormatV2, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash input: %w", err)
+	}
+
+	const base36Chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+	result := make([]byte, length)
+
+	for i := range length {
+		// Reverse order to have the same sense of significance as normal text
+		result[length-1-i] = base36Chars[hash%36]
+		hash /= 36
+	}
+
+	return string(result), nil
 }

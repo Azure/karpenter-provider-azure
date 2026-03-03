@@ -23,14 +23,15 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 )
 
 func TestUbuntu2404_Name(t *testing.T) {
+	g := NewWithT(t)
 	ubuntu := &imagefamily.Ubuntu2404{
 		Options: &template.StaticParameters{},
 	}
-	assert.Equal(t, v1beta1.Ubuntu2404ImageFamily, ubuntu.Name())
+	g.Expect(ubuntu.Name()).To(Equal(v1beta1.Ubuntu2404ImageFamily))
 }
 
 func TestUbuntu2404_DefaultImages(t *testing.T) {
@@ -39,33 +40,37 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 	}
 
 	t.Run("should return correct default images", func(t *testing.T) {
+		g := NewWithT(t)
 		images := ubuntu.DefaultImages(false, nil)
-		assert.Len(t, images, 3)
+		g.Expect(images).To(HaveLen(3))
 
-		assert.Equal(t, imagefamily.Ubuntu2404Gen2ImageDefinition, images[0].ImageDefinition)
-		assert.Equal(t, "aks-ubuntu-containerd-24.04-gen2", images[0].Distro)
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2ImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-24.04-gen2"))
 
-		assert.Equal(t, imagefamily.Ubuntu2404Gen1ImageDefinition, images[1].ImageDefinition)
-		assert.Equal(t, "aks-ubuntu-containerd-24.04", images[1].Distro)
+		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen1ImageDefinition))
+		g.Expect(images[1].Distro).To(Equal("aks-ubuntu-containerd-24.04"))
 
-		assert.Equal(t, imagefamily.Ubuntu2404Gen2ArmImageDefinition, images[2].ImageDefinition)
-		assert.Equal(t, "aks-ubuntu-arm64-containerd-24.04-gen2", images[2].Distro)
+		g.Expect(images[2].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2ArmImageDefinition))
+		g.Expect(images[2].Distro).To(Equal("aks-ubuntu-arm64-containerd-24.04-gen2"))
 	})
 
 	t.Run("should return empty images for FIPS mode without SIG", func(t *testing.T) {
+		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
 		images := ubuntu.DefaultImages(false, &fipsMode)
-		assert.Empty(t, images)
+		g.Expect(images).To(BeEmpty())
 	})
 
 	t.Run("should return empty images for FIPS mode with SIG (not yet supported)", func(t *testing.T) {
+		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
 		images := ubuntu.DefaultImages(true, &fipsMode)
-		assert.Empty(t, images)
+		g.Expect(images).To(BeEmpty())
 	})
 }
 
 func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
+	g := NewWithT(t)
 	ubuntu := &imagefamily.Ubuntu2404{
 		Options: &template.StaticParameters{
 			ClusterName:                    "test-cluster",
@@ -88,9 +93,9 @@ func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
 	}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
-		nil, nil, nil, nil, nil, "test-distro", "Standard_LRS", nil, nil,
+		nil, nil, nil, nil, nil, "test-distro", "Standard_LRS", nil, nil, nil,
 	)
 	provisionBootstrapper, ok := bootstrapper.(customscriptsbootstrap.ProvisionClientBootstrap)
-	assert.True(t, ok, "Expected ProvisionClientBootstrap type")
-	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
+	g.Expect(ok).To(BeTrue(), "Expected ProvisionClientBootstrap type")
+	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404), "ImageFamily field must be set to prevent unsupported image family errors")
 }

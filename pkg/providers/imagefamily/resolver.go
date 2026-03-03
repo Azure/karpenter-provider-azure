@@ -49,12 +49,15 @@ type Resolver interface {
 		nodeClaim *karpv1.NodeClaim,
 		instanceType *cloudprovider.InstanceType,
 		staticParameters *template.StaticParameters) (*template.Parameters, error)
+	ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error)
 }
 
 // assert that defaultResolver implements Resolver interface
 var _ Resolver = &defaultResolver{}
 
 // defaultResolver is able to fill-in dynamic launch template parameters
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 type defaultResolver struct {
 	nodeBootstrappingProvider types.NodeBootstrappingAPI
 	imageProvider             *provider
@@ -62,6 +65,8 @@ type defaultResolver struct {
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 type ImageFamily interface {
 	ScriptlessCustomData(
 		kubeletConfig *bootstrap.KubeletConfiguration,
@@ -80,6 +85,7 @@ type ImageFamily interface {
 		storageProfile string,
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
 		fipsMode *v1beta1.FIPSMode,
+		localDNS *v1beta1.LocalDNS,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -98,7 +104,11 @@ func NewDefaultResolver(_ client.Client, imageProvider *provider, instanceTypePr
 	}
 }
 
-// Resolve fills in dynamic launch template parameters
+// Resolve fills in dynamic launch template parameters.
+// The name "imageFamilyResolver.Resolve()" is potentially misleading here.
+// Suggestion: refactor would help, but this won't be used by PROVISION_MODE=aksmachineapi anyway. May not be worth it.
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (r *defaultResolver) Resolve(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -106,17 +116,13 @@ func (r *defaultResolver) Resolve(
 	instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters,
 ) (*template.Parameters, error) {
-	nodeImages, err := nodeClass.GetImages()
-	if err != nil {
-		return nil, err
-	}
 	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
 		return nil, err
 	}
 
 	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
-	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
+	imageID, err := r.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
@@ -134,26 +140,16 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	generalTaints := nodeClaim.Spec.Taints
-	startupTaints := nodeClaim.Spec.StartupTaints
-	allTaints := lo.Flatten([][]corev1.Taint{
-		generalTaints,
-		startupTaints,
-	})
-
-	// Ensure UnregisteredNoExecuteTaint is present
-	if _, found := lo.Find(allTaints, func(t corev1.Taint) bool { // Allow UnregisteredNoExecuteTaint to be in non-startup taints(?)
-		return t.MatchTaint(&karpv1.UnregisteredNoExecuteTaint)
-	}); !found {
-		startupTaints = append(startupTaints, karpv1.UnregisteredNoExecuteTaint)
-		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
-	}
+	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
+	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
 
 	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
 	if err != nil {
 		return nil, err
 	}
 
+	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+	// Refactoring for code unification is not being invested immediately.
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
@@ -173,6 +169,7 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
+			nodeClass.Spec.LocalDNS,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
@@ -213,6 +210,8 @@ func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily Im
 	return "", fmt.Errorf("no distro found for image id %s", imageID)
 }
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *bootstrap.KubeletConfiguration {
 	kubeletConfig := &bootstrap.KubeletConfiguration{}
 
@@ -264,12 +263,13 @@ func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string, paramet
 	return &Ubuntu2204{Options: parameters}
 }
 
-// resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
-//
-// Preconditions:
-// - nodeImages is sorted by priority order
-func (r *defaultResolver) resolveNodeImage(nodeImages []v1beta1.NodeImage, instanceType *cloudprovider.InstanceType) (string, error) {
-	// nodeImages are sorted by priority order, so we can return the first one that matches
+// ResolveNodeImageFromNodeClass resolves Distro and image ID for the given node class and instance type. Images may vary due to architecture, accelerator, etc
+func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error) {
+	// ASSUMPTION: nodeImages in a NodeClass are always sorted by priority order.
+	nodeImages, err := nodeClass.GetImages()
+	if err != nil {
+		return "", err
+	}
 	for _, availableImage := range nodeImages {
 		if err := instanceType.Requirements.Compatible(
 			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),

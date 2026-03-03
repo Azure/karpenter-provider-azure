@@ -4,9 +4,10 @@ repos:
   hooks:
   - id: gitleaks
 - repo: https://github.com/golangci/golangci-lint
-  rev: v1.64.8
+  rev: v2.8.0
   hooks:
   - id: golangci-lint
+    entry: golangci-lint-custom run --new-from-rev HEAD --fix
 - repo: https://github.com/jumanjihouse/pre-commit-hooks
   rev: 3.0.0
   hooks:

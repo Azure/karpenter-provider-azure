@@ -44,7 +44,7 @@ const (
 	cigImageVersion      = "202505.27.0"
 	laterCIGImageVersion = "202605.27.0"
 
-	sigImageVersion = "202505.27.0"
+	sigImageVersion = "202512.18.0" // Updated to match fake data versions
 )
 
 func renderExpectedCIGNodeImages(

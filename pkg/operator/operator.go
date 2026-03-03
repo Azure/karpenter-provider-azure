@@ -43,6 +43,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
+
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
@@ -56,6 +58,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -65,7 +68,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
+	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
 func init() {
@@ -89,8 +92,9 @@ type Operator struct {
 	PricingProvider           *pricing.Provider
 	InstanceTypesProvider     instancetype.Provider
 	VMInstanceProvider        *instance.DefaultVMProvider
+	AKSMachineProvider        *instance.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
-	AZClient                  *instance.AZClient
+	AZClient                  *azclient.AZClient
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -114,16 +118,16 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 
 	log.FromContext(ctx).V(0).Info("Initial AZConfig", "azConfig", azConfig.String())
 
-	cred, err := getCredential()
-	lo.Must0(err, "getting Azure credential")
-
 	env, err := auth.ResolveCloudEnvironment(azConfig)
 	lo.Must0(err, "resolving cloud environment")
+
+	cred, err := getCredential(env)
+	lo.Must0(err, "getting Azure credential")
 
 	// Get a token to ensure we can
 	lo.Must0(ensureToken(cred, env), "ensuring Azure token can be retrieved")
 
-	azClient, err := instance.NewAZClient(ctx, azConfig, env, cred)
+	azClient, err := azclient.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
@@ -195,7 +199,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).KubeletIdentityClientID,
 		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.Location,
-		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
@@ -219,6 +222,18 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
 		options.FromContext(ctx).DiskEncryptionSetID,
+		env,
+	)
+	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
+		azClient,
+		instanceTypeProvider,
+		imageResolver,
+		unavailableOfferingsCache,
+		azConfig.SubscriptionID,
+		azConfig.ResourceGroup,
+		options.FromContext(ctx).ClusterName,
+		options.FromContext(ctx).AKSMachinesPoolName,
+		azConfig.Location,
 	)
 
 	return ctx, &Operator{
@@ -232,6 +247,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		PricingProvider:              pricingProvider,
 		InstanceTypesProvider:        instanceTypeProvider,
 		VMInstanceProvider:           vmInstanceProvider,
+		AKSMachineProvider:           aksMachineInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		AZClient:                     azClient,
 	}
@@ -300,6 +316,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 	var requiredGVKs = []schema.GroupVersionKind{
 		gvk(&karpv1.NodePool{}),
 		gvk(&karpv1.NodeClaim{}),
+		gvk(&karpv1alpha1.NodeOverlay{}),
 		gvk(&v1beta1.AKSNodeClass{}),
 	}
 
@@ -357,9 +374,13 @@ func ensureToken(cred azcore.TokenCredential, env *auth.Environment) error {
 	return nil
 }
 
-func getCredential() (azcore.TokenCredential, error) {
+func getCredential(env *auth.Environment) (azcore.TokenCredential, error) {
 	// TODO: Don't use NewDefaultAzureCredential
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: env.Cloud,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}

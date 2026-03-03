@@ -18,13 +18,17 @@ package status_test
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
@@ -66,12 +70,18 @@ var _ = Describe("SubnetStatus", func() {
 		Expect(readyCondition.IsTrue()).To(BeTrue())
 	})
 
-	It("should use nodeclass subnet ID when specified", func() {
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/nodeclass-subnet")
+	It("should use nodeclass subnet ID when specified (BYO VNet)", func() {
+		// Override context to use a BYO VNet instead of managed VNet
+		byoOpts := test.Options(test.OptionsFields{
+			SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
+		})
+		byoCtx := options.ToContext(ctx, byoOpts)
+
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclass-subnet")
 
 		azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
 			Expect(resourceGroupName).To(Equal("test-resourceGroup"))
-			Expect(virtualNetworkName).To(Equal("aks-vnet-12345678"))
+			Expect(virtualNetworkName).To(Equal("byo-vnet-customname"))
 			Expect(subnetName).To(Equal("nodeclass-subnet"))
 
 			return armnetwork.SubnetsClientGetResponse{
@@ -83,9 +93,9 @@ var _ = Describe("SubnetStatus", func() {
 			}, nil
 		}
 
-		ExpectApplied(ctx, env.Client, nodeClass)
-		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
-		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+		ExpectApplied(byoCtx, env.Client, nodeClass)
+		ExpectObjectReconciled(byoCtx, env.Client, controller, nodeClass)
+		nodeClass = ExpectExists(byoCtx, env.Client, nodeClass)
 
 		cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 		Expect(cond.IsTrue()).To(BeTrue())
@@ -144,12 +154,18 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(cond.Reason).To(Equal("SubnetNotFound"))
 		})
 
-		It("should use nodeclass subnet ID when specified", func() {
-			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/nodeclass-subnet")
+		It("should use nodeclass subnet ID when specified (BYO VNet)", func() {
+			// Override context to use a BYO VNet instead of managed VNet
+			byoOpts := test.Options(test.OptionsFields{
+				SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
+			})
+			byoCtx := options.ToContext(ctx, byoOpts)
+
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclass-subnet")
 
 			azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
 				Expect(resourceGroupName).To(Equal("test-resourceGroup"))
-				Expect(virtualNetworkName).To(Equal("aks-vnet-12345678"))
+				Expect(virtualNetworkName).To(Equal("byo-vnet-customname"))
 				Expect(subnetName).To(Equal("nodeclass-subnet"))
 
 				return armnetwork.SubnetsClientGetResponse{
@@ -161,12 +177,48 @@ var _ = Describe("SubnetStatus", func() {
 				}, nil
 			}
 
-			result, err := reconciler.Reconcile(ctx, nodeClass)
+			result, err := reconciler.Reconcile(byoCtx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute * 3}))
 
 			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 			Expect(cond.IsTrue()).To(BeTrue())
+		})
+
+		It("should mark nodeclass as not ready when custom subnet is in managed VNet", func() {
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/custom-subnet")
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal("SubnetIDInvalid"))
+			Expect(cond.Message).To(ContainSubstring("custom subnet cannot be in the same VNet as cluster managed VNet"))
+		})
+
+		It("should mark nodeclass as not ready when subnet hits unknown error", func() {
+			const errString = "An unexpected internal server error occurred while processing the request. The service encountered an unrecoverable condition and was unable to complete the operation. Please retry the request after some time. If the problem persists, contact Azure support with the correlation ID and timestamp for further investigation."
+			azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+				return armnetwork.SubnetsClientGetResponse{}, &azcore.ResponseError{
+					ErrorCode:  "InternalServerError",
+					StatusCode: http.StatusInternalServerError,
+					RawResponse: &http.Response{
+						StatusCode: http.StatusInternalServerError,
+						Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"error":{"code":"InternalServerError","message":"%s"}}`, errString))),
+					},
+				}
+			}
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal("SubnetUnknownError"))
+			Expect(cond.Message).To(ContainSubstring(errString))
 		})
 	})
 })

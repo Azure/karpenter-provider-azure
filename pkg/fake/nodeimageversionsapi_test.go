@@ -21,16 +21,18 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 )
 
 func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
+	g := NewWithT(t)
 	nodeImageVersionAPI := NodeImageVersionsAPI{}
-	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "", "")
-	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions.Values)
+	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "")
+	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
 	for _, val := range filteredNodeImages {
-		assert.NotEqual(t, val.OS, "AKSWindows")
-		assert.NotEqual(t, val.OS, "AKSUbuntuEdgeZone")
+		g.Expect(lo.FromPtr(val.OS)).ToNot(Equal("AKSWindows"))
+		g.Expect(lo.FromPtr(val.OS)).ToNot(Equal("AKSUbuntuEdgeZone"))
 	}
 }
 
@@ -60,13 +62,13 @@ func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
 // duplicate entries for os + sku matchings.
 // This test validates we simply ignore the legacy distros and take in the latest Version.
 func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
-	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
+	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersionsSnapshotData)
 
-	expectedVersion := "202505.27.0"
+	expectedVersion := "202512.18.0"
 	found := false
 
 	for _, val := range filteredNodeImages {
-		if val.SKU == "2204gen2containerd" && val.Version == expectedVersion {
+		if lo.FromPtr(val.SKU) == "2204gen2containerd" && lo.FromPtr(val.Version) == expectedVersion {
 			found = true
 			break
 		}
@@ -81,15 +83,16 @@ func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
 // similar to the behavior we would see if someone is using the node image versions api call.
 // the fake imports the same clientside filtering so we need to assert that behavior is the same
 func TestFilteredNodeImageVersionsFromProviderList(t *testing.T) {
+	g := NewWithT(t)
 	nodeImageVersionsAPI := NodeImageVersionsAPI{}
-	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "", "")
-	assert.Nil(t, err)
+	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "")
+	g.Expect(err).To(BeNil())
 
-	expectedVersion := "202505.27.0"
+	expectedVersion := "202512.18.0"
 	found := false
 
-	for _, val := range filteredNodeImages.Values {
-		if val.SKU == "2204gen2containerd" && val.Version == expectedVersion {
+	for _, val := range filteredNodeImages {
+		if lo.FromPtr(val.SKU) == "2204gen2containerd" && lo.FromPtr(val.Version) == expectedVersion && lo.FromPtr(val.OS) == "AKSUbuntu" {
 			found = true
 			break
 		}

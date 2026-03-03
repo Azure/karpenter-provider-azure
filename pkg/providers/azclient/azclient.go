@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instance
+package azclient
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -38,8 +39,19 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/skewer"
 
-	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
+	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
+
+type AKSMachinesAPI interface {
+	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine, options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error)
+	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
+	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
+}
+
+type AKSAgentPoolsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.AgentPoolsClientGetOptions) (armcontainerservice.AgentPoolsClientGetResponse, error)
+	BeginDeleteMachines(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachines armcontainerservice.AgentPoolDeleteMachinesParameter, options *armcontainerservice.AgentPoolsClientBeginDeleteMachinesOptions) (*runtime.Poller[armcontainerservice.AgentPoolsClientDeleteMachinesResponse], error)
+}
 
 type VirtualMachinesAPI interface {
 	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error)
@@ -68,13 +80,19 @@ type SubnetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
 }
 
-// TODO: Move this to another package that more correctly reflects its usage across multiple providers
+type DiskEncryptionSetsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
+}
+
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
+	aksMachinesClient              AKSMachinesAPI
+	agentPoolsClient               AKSAgentPoolsAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
 	subnetsClient                  SubnetsAPI
+	diskEncryptionSetsClient       DiskEncryptionSetsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -90,12 +108,49 @@ func (c *AZClient) SubnetsClient() SubnetsAPI {
 	return c.subnetsClient
 }
 
+func (c *AZClient) DiskEncryptionSetsClient() DiskEncryptionSetsAPI {
+	return c.diskEncryptionSetsClient
+}
+
+func (c *AZClient) AKSMachinesClient() AKSMachinesAPI {
+	return c.aksMachinesClient
+}
+
+// SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
+// with a batching layer when BatchCreationEnabled is true.
+func (c *AZClient) SetAKSMachinesClient(client AKSMachinesAPI) {
+	c.aksMachinesClient = client
+}
+
+func (c *AZClient) AgentPoolsClient() AKSAgentPoolsAPI {
+	return c.agentPoolsClient
+}
+
+func (c *AZClient) VirtualMachinesClient() VirtualMachinesAPI {
+	return c.virtualMachinesClient
+}
+
+func (c *AZClient) VirtualMachineExtensionsClient() VirtualMachineExtensionsAPI {
+	return c.virtualMachinesExtensionClient
+}
+
+func (c *AZClient) NetworkInterfacesClient() NetworkInterfacesAPI {
+	return c.networkInterfacesClient
+}
+
+func (c *AZClient) AzureResourceGraphClient() AzureResourceGraphAPI {
+	return c.azureResourceGraphClient
+}
+
 func NewAZClientFromAPI(
 	virtualMachinesClient VirtualMachinesAPI,
 	azureResourceGraphClient AzureResourceGraphAPI,
+	aksMachinesClient AKSMachinesAPI,
+	agentPoolsClient AKSAgentPoolsAPI,
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
 	subnetsClient SubnetsAPI,
+	diskEncryptionSetsClient DiskEncryptionSetsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
@@ -107,9 +162,12 @@ func NewAZClientFromAPI(
 	return &AZClient{
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
+		aksMachinesClient:              aksMachinesClient,
+		agentPoolsClient:               agentPoolsClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
 		subnetsClient:                  subnetsClient,
+		diskEncryptionSetsClient:       diskEncryptionSetsClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
 		NodeBootstrappingClient:        nodeBootstrappingClient,
@@ -120,7 +178,7 @@ func NewAZClientFromAPI(
 	}
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
 	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
@@ -142,11 +200,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
-	if o.UseSIG {
+	if o.UseSIG && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI { // Not doing this if PROVISION_MODE is aksmachineapi as Create will never use VM client, but want to allow other VM client operations
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
-		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
+		vmClientOptions.PerRetryPolicies = append(vmClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {
@@ -163,7 +221,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
-	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred, opts.Cloud)
+	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -180,11 +241,21 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
+	diskEncryptionSetsClient, err := armcompute.NewDiskEncryptionSetsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
 
-	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
+	// These clients are used for Azure instance management.
+	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
+	var aksMachinesClient AKSMachinesAPI
+	var agentPoolsClient AKSAgentPoolsAPI
+
+	// Only create the bootstrapping client if we need to use it.
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		nodeBootstrappingClient, err = imagefamily.NewNodeBootstrappingClient(
 			ctx,
@@ -200,12 +271,42 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		}
 	}
 
+	// Only create AKS machine clients if we need to use them.
+	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
+		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+		agentPoolsClient, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		aksMachinesClient = NewNoAKSMachinesClient()
+		agentPoolsClient = NewNoAKSAgentPoolsClient()
+
+		// Try create true clients. This is just for diagnostic purposes and serves no real functionality.
+		// This portion of code can be removed once we are confident that this works reliably.
+		_, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			log.FromContext(ctx).Info("failed to create true AKS machines client, but tolerated due to currently on no-client", "error", err)
+		}
+		_, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			log.FromContext(ctx).Info("failed to create true AKS agent pools client, but tolerated due to currently on no-client", "error", err)
+		}
+	}
+
 	return NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
+		aksMachinesClient,
+		agentPoolsClient,
 		extensionsClient,
 		interfacesClient,
 		subnetsClient,
+		diskEncryptionSetsClient,
 		loadBalancersClient,
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,

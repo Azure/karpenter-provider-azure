@@ -33,7 +33,7 @@ import (
 
 func (env *Environment) GetVM(nodeName string) armcompute.VirtualMachine {
 	GinkgoHelper()
-	node := env.Environment.GetNode(nodeName)
+	node := env.GetNode(nodeName)
 	return env.GetVMByName(env.ExpectParsedProviderID(node.Spec.ProviderID))
 }
 
@@ -91,8 +91,8 @@ func firstVNETInRG(ctx context.Context, client *armnetwork.VirtualNetworksClient
 		if err != nil {
 			return nil, fmt.Errorf("failed to list virtual networks: %w", err)
 		}
-		if len(resp.VirtualNetworkListResult.Value) > 0 {
-			return resp.VirtualNetworkListResult.Value[0], nil
+		if len(resp.Value) > 0 {
+			return resp.Value[0], nil
 		}
 	}
 	return nil, fmt.Errorf("no virtual networks found in resource group: %s", vnetRG)

@@ -46,6 +46,7 @@ var (
 	AzureWellKnownLabels = sets.New(
 		LabelSKUName,
 		LabelSKUFamily,
+		LabelSKUSeries,
 		LabelSKUVersion,
 
 		LabelSKUCPU,
@@ -63,6 +64,10 @@ var (
 		LabelSKUGPUCount,
 
 		AKSLabelCluster,
+		AKSLabelMode,
+		AKSLabelScaleSetPriority,
+		AKSLabelOSSKU,
+		AKSLabelFIPSEnabled,
 	)
 
 	RestrictedLabels = sets.New(
@@ -77,8 +82,9 @@ var (
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
 
-	LabelSKUName    = Group + "/sku-name"    // Standard_A1_v2
-	LabelSKUFamily  = Group + "/sku-family"  // A
+	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
+	LabelSKUFamily  = Group + "/sku-family"  // D
+	LabelSKUSeries  = Group + "/sku-series"  // Dpls_v6
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
@@ -106,9 +112,22 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
+	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
+	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
+
+	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
+	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
+)
+
+const (
+	ModeUser   = "user"
+	ModeSystem = "system"
 )
 
 const (
@@ -118,8 +137,35 @@ const (
 	AzureLinuxImageFamily = "AzureLinux"
 )
 
+const (
+	ScaleSetPriorityRegular = "regular"
+	ScaleSetPrioritySpot    = "spot"
+)
+
 var UbuntuFamilies = sets.New(
 	UbuntuImageFamily,
 	Ubuntu2204ImageFamily,
 	Ubuntu2404ImageFamily,
 )
+
+// imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
+// These values match what AKS writes for kubernetes.azure.com/os-sku.
+var imageFamilyToOSSKU = map[string]string{
+	UbuntuImageFamily:     "Ubuntu",
+	Ubuntu2204ImageFamily: "Ubuntu",
+	Ubuntu2404ImageFamily: "Ubuntu",
+	AzureLinuxImageFamily: "AzureLinux",
+}
+
+// GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
+// If imageFamily is empty, it defaults to Ubuntu.
+// If the imageFamily is not recognized, it returns the imageFamily as-is.
+func GetOSSKUFromImageFamily(imageFamily string) string {
+	if imageFamily == "" {
+		imageFamily = UbuntuImageFamily
+	}
+	if osSKU, ok := imageFamilyToOSSKU[imageFamily]; ok {
+		return osSKU
+	}
+	return imageFamily // fallback for unknown image families
+}

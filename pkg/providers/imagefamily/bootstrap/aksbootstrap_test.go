@@ -23,8 +23,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -186,7 +186,8 @@ func TestKubeletConfigMap(t *testing.T) {
 	}
 	actualKubeletConfig := kubeletConfigToMap(&kubeletConfiguration)
 
+	g := NewWithT(t)
 	for k, v := range expectedKubeletConfigs {
-		assert.Equal(t, v, actualKubeletConfig[k], fmt.Sprintf("parameter mismatch for %s", k))
+		g.Expect(actualKubeletConfig[k]).To(Equal(v), fmt.Sprintf("parameter mismatch for %s", k))
 	}
 }

@@ -44,7 +44,7 @@ type AzureLinux struct {
 }
 
 func (u AzureLinux) Name() string {
-	return v1beta1.AzureLinuxImageFamily
+	return "AzureLinux2"
 }
 
 func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
@@ -165,6 +165,7 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
+	localDNS *v1beta1.LocalDNS,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -185,5 +186,6 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 		FIPSMode:                       fipsMode,
+		LocalDNSProfile:                localDNS,
 	}
 }

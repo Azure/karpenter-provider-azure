@@ -18,14 +18,17 @@ package instance
 
 import (
 	"context"
+	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/samber/lo"
 )
 
-func CreateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, vm armcompute.VirtualMachine) (*armcompute.VirtualMachine, error) {
+func CreateVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAPI, rg, vmName string, vm armcompute.VirtualMachine) (*armcompute.VirtualMachine, error) {
 	poller, err := client.BeginCreateOrUpdate(ctx, rg, vmName, vm, nil)
 	if err != nil {
 		return nil, err
@@ -37,7 +40,7 @@ func CreateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vm
 	return &res.VirtualMachine, nil
 }
 
-func UpdateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, updates armcompute.VirtualMachineUpdate) error {
+func UpdateVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAPI, rg, vmName string, updates armcompute.VirtualMachineUpdate) error {
 	poller, err := client.BeginUpdate(ctx, rg, vmName, updates, nil)
 	if err != nil {
 		return err
@@ -49,7 +52,7 @@ func UpdateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vm
 	return nil
 }
 
-func deleteVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string) error {
+func deleteVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAPI, rg, vmName string) error {
 	poller, err := client.BeginDelete(ctx, rg, vmName, &armcompute.VirtualMachinesClientBeginDeleteOptions{ForceDeletion: lo.ToPtr(true)})
 	if err != nil {
 		return err
@@ -64,19 +67,32 @@ func deleteVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vm
 	return nil
 }
 
-func createVirtualMachineExtension(ctx context.Context, client VirtualMachineExtensionsAPI, rg, vmName, extensionName string, vmExt armcompute.VirtualMachineExtension) (*armcompute.VirtualMachineExtension, error) {
+func createVirtualMachineExtension(
+	ctx context.Context,
+	client azclient.VirtualMachineExtensionsAPI,
+	rg string,
+	vmName string,
+	extensionName string,
+	vmExt armcompute.VirtualMachineExtension,
+) (*armcompute.VirtualMachineExtension, error) {
 	poller, err := client.BeginCreateOrUpdate(ctx, rg, vmName, extensionName, vmExt, nil)
 	if err != nil {
 		return nil, err
 	}
-	res, err := poller.PollUntilDone(ctx, nil)
+
+	// Poll more frequently than the default of 30s
+	opts := &runtime.PollUntilDoneOptions{
+		Frequency: 3 * time.Second,
+	}
+	res, err := poller.PollUntilDone(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+
 	return &res.VirtualMachineExtension, nil
 }
 
-func createNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string, nic armnetwork.Interface) (*armnetwork.Interface, error) {
+func createNic(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, nicName string, nic armnetwork.Interface) (*armnetwork.Interface, error) {
 	poller, err := client.BeginCreateOrUpdate(ctx, rg, nicName, nic, nil)
 	if err != nil {
 		return nil, err
@@ -89,7 +105,7 @@ func createNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName str
 	return &res.Interface, nil
 }
 
-func deleteNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string) error {
+func deleteNic(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, nicName string) error {
 	poller, err := client.BeginDelete(ctx, rg, nicName, nil)
 	if err != nil {
 		return err
@@ -104,7 +120,7 @@ func deleteNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName str
 	return nil
 }
 
-func deleteNicIfExists(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string) error {
+func deleteNicIfExists(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, nicName string) error {
 	_, err := client.Get(ctx, rg, nicName, nil)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
@@ -116,7 +132,7 @@ func deleteNicIfExists(ctx context.Context, client NetworkInterfacesAPI, rg, nic
 }
 
 // deleteVirtualMachineIfExists checks if a virtual machine exists, and if it does, we delete it with a cascading delete
-func deleteVirtualMachineIfExists(ctx context.Context, client VirtualMachinesAPI, rg, vmName string) error {
+func deleteVirtualMachineIfExists(ctx context.Context, client azclient.VirtualMachinesAPI, rg, vmName string) error {
 	_, err := client.Get(ctx, rg, vmName, nil)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {

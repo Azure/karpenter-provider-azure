@@ -19,7 +19,7 @@ package test
 import (
 	"fmt"
 
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 	"github.com/samber/lo"
 
 	azoptions "github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -48,6 +48,8 @@ type OptionsFields struct {
 	EnableAzureSDKLogging          *bool
 	DiskEncryptionSetID            *string
 	ClusterDNSServiceIP            *string
+	ManageExistingAKSMachines      *bool
+	AKSMachinesPoolName            *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -67,7 +69,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ClusterEndpoint:                lo.FromPtrOr(options.ClusterEndpoint, "https://test-cluster"),
 		ClusterID:                      lo.FromPtrOr(options.ClusterID, "00000000"),
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
-		KubeletIdentityClientID:        lo.FromPtrOr(options.KubeletIdentityClientID, "12345678-1234-1234-1234-123456789012"),
+		KubeletIdentityClientID:        lo.FromPtrOr(options.KubeletIdentityClientID, "61f71907-753f-4802-a901-47361c3664f2"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
 		LinuxAdminUsername:             lo.FromPtrOr(options.LinuxAdminUsername, "azureuser"),
 		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
@@ -88,5 +90,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
+		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
+		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),
 	}
 }
