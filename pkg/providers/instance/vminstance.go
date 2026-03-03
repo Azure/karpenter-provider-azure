@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -170,6 +171,8 @@ type DefaultVMProvider struct {
 	env                          *auth.Environment
 
 	vmListQuery, nicListQuery string
+	deletingVMs               sets.Set[string] // tracks in-flight delete operations by VM name
+	deletingVMsMu             sync.RWMutex
 }
 
 func NewDefaultVMProvider(
@@ -203,6 +206,7 @@ func NewDefaultVMProvider(
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
 
 		errorHandling: offerings.NewResponseErrorHandler(offeringsCache),
+		deletingVMs:   sets.New[string](),
 	}
 }
 
@@ -347,8 +351,20 @@ func (p *DefaultVMProvider) List(ctx context.Context) ([]*armcompute.VirtualMach
 }
 
 func (p *DefaultVMProvider) Delete(ctx context.Context, resourceName string) error {
+	// If there's already an in-flight delete for this VM, return immediately.
+	p.deletingVMsMu.RLock()
+	deleting := p.deletingVMs.Has(resourceName)
+	p.deletingVMsMu.RUnlock()
+	if deleting {
+		return nil
+	}
+
 	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
-	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted
+	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted.
+	// This get exists to deal with the case where the operator restarted during the course of a deletion.
+	// With it, we may do an extra unneeded get before delete, but without it we may erroneously issue
+	// 2 deletes if the instance was being deleted and the operator restarted.
+	// Since get quota is generally higher, we prefer to check w/ get rather than issue 2 deletes.
 	vm, err := p.Get(ctx, resourceName)
 	if err != nil {
 		return err
@@ -916,7 +932,7 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 // We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
 // NIC garbage collector is expected to handle such cases.
 func (p *DefaultVMProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
-	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.VirtualMachinesClient(), p.resourceGroup, resourceName)
+	vmErr := p.deleteVirtualMachineIfExists(ctx, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
 	}
@@ -940,6 +956,49 @@ func (p *DefaultVMProvider) cleanupAzureResources(ctx context.Context, resourceN
 		}
 		return vmErr
 	}
+}
+
+// deleteVirtualMachineIfExists checks if a virtual machine exists, and if it does, we delete it with a cascading delete
+func (p *DefaultVMProvider) deleteVirtualMachineIfExists(ctx context.Context, vmName string) error {
+	_, err := p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, vmName, nil)
+	if err != nil {
+		if sdkerrors.IsNotFoundErr(err) {
+			return nil
+		}
+		return err
+	}
+	return p.deleteVirtualMachine(ctx, vmName)
+}
+
+func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName string) error {
+	p.deletingVMsMu.Lock()
+	p.deletingVMs.Insert(vmName)
+	p.deletingVMsMu.Unlock()
+	defer func() {
+		p.deletingVMsMu.Lock()
+		p.deletingVMs.Delete(vmName)
+		p.deletingVMsMu.Unlock()
+	}()
+
+	poller, err := p.azClient.VirtualMachinesClient().BeginDelete(
+		ctx,
+		p.resourceGroup,
+		vmName,
+		&armcompute.VirtualMachinesClientBeginDeleteOptions{ForceDeletion: lo.ToPtr(true)},
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+
+	if err != nil {
+		if sdkerrors.IsNotFoundErr(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (p *DefaultVMProvider) getAKSIdentifyingExtension(tags map[string]*string) *armcompute.VirtualMachineExtension {

@@ -576,13 +576,13 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubeletConfig: &bootstrap.KubeletConfiguration{
 					MaxPods: int32(110),
 					KubeletConfiguration: v1beta1.KubeletConfiguration{
-						CPUManagerPolicy:            "static",
+						CPUManagerPolicy:            lo.ToPtr("static"),
 						CPUCFSQuota:                 lo.ToPtr(true),
 						CPUCFSQuotaPeriod:           metav1.Duration{Duration: 100 * time.Millisecond},
-						TopologyManagerPolicy:       "single-numa-node",
+						TopologyManagerPolicy:       lo.ToPtr("single-numa-node"),
 						ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 						ImageGCLowThresholdPercent:  lo.ToPtr(int32(75)),
-						ContainerLogMaxSize:         "100Mi",
+						ContainerLogMaxSize:         lo.ToPtr("100Mi"),
 						ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 						PodPidsLimit:                lo.ToPtr(int64(1024)),
 						AllowedUnsafeSysctls:        []string{"kernel.msg*", "net.ipv4.route.min_pmtu"},

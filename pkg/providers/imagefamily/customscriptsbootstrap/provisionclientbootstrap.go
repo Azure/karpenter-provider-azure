@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -152,32 +151,35 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	switch p.OSSKU {
 	// https://go.dev/wiki/Switch#multiple-cases
 	case ImageFamilyOSSKUUbuntu2004, ImageFamilyOSSKUUbuntu2204, ImageFamilyOSSKUUbuntu2404:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUAzureLinux)
 	default:
 		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}
 
 	if p.KubeletConfig != nil {
 		provisionProfile.CustomKubeletConfig = &models.CustomKubeletConfig{
-			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
-			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
-			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
-			ContainerLogMaxSizeMB: ConvertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
-			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
-			PodMaxPids:            ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			CPUCfsQuota:          p.KubeletConfig.CPUCFSQuota,
+			ImageGcHighThreshold: p.KubeletConfig.ImageGCHighThresholdPercent,
+			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
+			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
+			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+		}
+
+		if p.KubeletConfig.ContainerLogMaxSize != nil {
+			provisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB = ConvertContainerLogMaxSizeToMB(*p.KubeletConfig.ContainerLogMaxSize)
 		}
 
 		// NodeClaim defaults don't work somehow and keep giving invalid values. Can be improved later.
 		if p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String() != "0s" {
 			provisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod = lo.ToPtr(p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String())
 		}
-		if p.KubeletConfig.CPUManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = lo.ToPtr(p.KubeletConfig.CPUManagerPolicy)
+		if p.KubeletConfig.CPUManagerPolicy != nil && *p.KubeletConfig.CPUManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = p.KubeletConfig.CPUManagerPolicy
 		}
-		if p.KubeletConfig.TopologyManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = lo.ToPtr(p.KubeletConfig.TopologyManagerPolicy)
+		if p.KubeletConfig.TopologyManagerPolicy != nil && *p.KubeletConfig.TopologyManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = p.KubeletConfig.TopologyManagerPolicy
 		}
 		if len(p.KubeletConfig.AllowedUnsafeSysctls) > 0 {
 			provisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls = p.KubeletConfig.AllowedUnsafeSysctls
