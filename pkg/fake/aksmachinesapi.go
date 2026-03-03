@@ -27,7 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/samber/lo"
 )
 
@@ -213,7 +213,7 @@ func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
 }
 
 // assert that the fake implements the interface
-var _ instance.AKSMachinesAPI = &AKSMachinesAPI{}
+var _ azclient.AKSMachinesAPI = &AKSMachinesAPI{}
 
 type AKSMachinesAPI struct {
 	AKSMachinesBehavior
@@ -473,8 +473,6 @@ func MkMachineID(resourceGroupName string, clusterName string, agentPoolName str
 
 // setDefaultMachineValues sets comprehensive default values for AKS machine creation
 // Note: this may not be accurate. But likely sufficient for testing.
-//
-// nolint: gocyclo
 func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, resourceGroupName string, agentPoolName string) {
 	if machine.Properties == nil {
 		machine.Properties = &armcontainerservice.MachineProperties{}

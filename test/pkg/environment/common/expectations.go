@@ -718,7 +718,7 @@ func (env *Environment) EventuallyExpectNodesUntaintedWithTimeout(timeout time.D
 
 func (env *Environment) EventuallyExpectRegisteredNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
-	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
+	By(fmt.Sprintf("waiting for node claims to be %s to %d", comparator, count))
 	nodeClaimList := &karpv1.NodeClaimList{}
 	Eventually(func(g Gomega) {
 		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel})).To(Succeed())
@@ -730,7 +730,7 @@ func (env *Environment) EventuallyExpectRegisteredNodeClaimCount(comparator stri
 
 func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
-	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
+	By(fmt.Sprintf("waiting for node claims to be %s to %d", comparator, count))
 	nodeClaimList := &karpv1.NodeClaimList{}
 	Eventually(func(g Gomega) {
 		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel})).To(Succeed())

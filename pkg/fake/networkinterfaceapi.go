@@ -28,7 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 )
 
 type NetworkInterfaceCreateOrUpdateInput struct {
@@ -57,10 +57,10 @@ type NetworkInterfacesBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ instance.NetworkInterfacesAPI = &NetworkInterfacesAPI{}
+var _ azclient.NetworkInterfacesAPI = &NetworkInterfacesAPI{}
 
 type NetworkInterfacesAPI struct {
-	// instance.NetworkInterfacesAPI
+	// azclient.NetworkInterfacesAPI
 	NetworkInterfacesBehavior
 }
 

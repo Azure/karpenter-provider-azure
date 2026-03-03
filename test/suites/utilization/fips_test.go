@@ -33,7 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
-var _ = Describe("FIPS", func() {
+var _ = Describe("FIPS", Label("runner"), func() {
 	Context("FIPS Validation", func() {
 		It("should reject FIPS without SIG access", func() {
 			if !env.InClusterController {

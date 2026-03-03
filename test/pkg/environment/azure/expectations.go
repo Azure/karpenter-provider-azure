@@ -35,6 +35,15 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
+// ExpectRunInClusterControllerWithMachineMode confirms that the cluster has a Machine AgentPool created for it
+func (env *Environment) ExpectRunInClusterControllerWithMachineMode() *containerservice.AgentPool {
+	GinkgoHelper()
+	Expect(env.InClusterController).To(BeTrue(), "Should only create a byo Machine Pool when running as an InClusterController")
+	By("Setup BYO Machine AgentPool for self-hosted testing")
+	byoMachineAP := env.ExpectMachinesAgentPoolExists()
+	return byoMachineAP
+}
+
 func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 	GinkgoHelper()
 	Eventually(func() bool {

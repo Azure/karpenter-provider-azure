@@ -21,9 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -32,7 +30,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -43,7 +40,6 @@ const (
 	NodeClassDrift       cloudprovider.DriftReason = "NodeClassDrift"
 	K8sVersionDrift      cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageDrift           cloudprovider.DriftReason = "ImageDrift"
-	SubnetDrift          cloudprovider.DriftReason = "SubnetDrift"
 	KubeletIdentityDrift cloudprovider.DriftReason = "KubeletIdentityDrift"
 	ClusterConfigDrift   cloudprovider.DriftReason = "ClusterConfigDrift" // This is a catch-all for cluster-level config changes (e.g., from PUT ManagedCluster), where Karpenter does not directly "own" them.
 
@@ -75,7 +71,6 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 			c.isK8sVersionDrifted,
 			c.isKubeletIdentityDrifted,
 			c.isImageVersionDrifted,
-			c.isSubnetDrifted,
 		}
 	}
 
@@ -169,30 +164,12 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", fmt.Errorf("no images exist for the given constraints")
 	}
 
-	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
-		// AKS machine node
-		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
-		if err != nil {
-			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-			//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-			//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
-			return "", err
-		}
-		if aksMachine == nil {
-			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-			//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-			//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
-			return "", fmt.Errorf("AKS machine %s missing", aksMachineName)
-		}
+	// bail out early if core called this before the node is done creating.
+	if nodeClaim.Status.ImageID == "" {
+		return "", fmt.Errorf("no image ID found in nodeClaim status")
+	}
 
-		if aksMachine.Properties == nil || aksMachine.Properties.NodeImageVersion == nil {
-			// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
-			//     We may want to collect this with the other errors up a level as to not block other drift conditions.
-			return "", nil
-		}
-
-		aksMachineNodeImageVersion := lo.FromPtr(aksMachine.Properties.NodeImageVersion) // E.g., AKSUbuntu-2204gen2containerd-2022.10.03
-
+	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		for _, availableImage := range nodeImages {
 			// Note: not supporting drift across galleries yet, as AKS machine does not hold gallery info, as of now.
 			// Alternatively, could call GET VM, if not propose API changes.
@@ -201,96 +178,22 @@ func (c *CloudProvider) isImageVersionDrifted(
 				logger.Error(err, "failed to convert image ID to AKS machine node image version", "imageID", availableImage.ID)
 				continue
 			}
-			if availableImageVersion == aksMachineNodeImageVersion {
+			if availableImageVersion == nodeClaim.Status.ImageID {
 				return "", nil
 			}
 		}
-
-		logger.V(1).Info("drift triggered as actual image version was not found in the set of currently available node images",
-			"driftType", ImageDrift,
-			"actualImageVersion", aksMachineNodeImageVersion)
-		return ImageDrift, nil
-	}
-	return c.isVMInstanceImageDrifted(ctx, nodeClaim, nodeImages)
-}
-
-func (c *CloudProvider) isVMInstanceImageDrifted(
-	ctx context.Context,
-	nodeClaim *karpv1.NodeClaim,
-	nodeImages []v1beta1.NodeImage,
-) (cloudprovider.DriftReason, error) {
-	logger := log.FromContext(ctx)
-	// VM instance node
-	id, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
-	if err != nil {
-		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-		//     I don't think we can get to Drift, until after ProviderID is set, so this should be fine/impossible.
-		return "", err
-	}
-
-	vm, err := c.vmInstanceProvider.Get(ctx, id)
-	if err != nil {
-		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
-		return "", err
-	}
-	if vm == nil {
-		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
-		return "", fmt.Errorf("vm with id %s missing", id)
-	}
-
-	if vm.Properties == nil ||
-		vm.Properties.StorageProfile == nil ||
-		vm.Properties.StorageProfile.ImageReference == nil {
-		// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
-		//     We may want to collect this with the other errors up a level as to not block other drift conditions.
-		return "", nil
-	}
-	CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
-	SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
-	vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
-
-	for _, availableImage := range nodeImages {
-		if availableImage.ID == vmImageID {
-			return "", nil
+	} else {
+		for _, availableImage := range nodeImages {
+			if availableImage.ID == nodeClaim.Status.ImageID {
+				return "", nil
+			}
 		}
 	}
 
-	logger.V(1).Info("drift triggered as actual image id was not found in the set of currently available node images",
+	logger.V(1).Info("drift triggered as actual image version was not found in the set of currently available node images",
 		"driftType", ImageDrift,
-		"actualImageID", vmImageID)
+		"actualImageVersion", nodeClaim.Status.ImageID)
 	return ImageDrift, nil
-}
-
-// isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
-func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
-	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
-		// Not supported for AKS machine nodes anymore, as covered by areStaticFieldsDrifted for NodeClass updates, and cluster-level subnet is immutable for now
-		return "", nil
-	}
-
-	expectedSubnet := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
-	nicName := instance.GenerateResourceName(nodeClaim.Name)
-
-	// TODO: Refactor all of AzConfig to be part of options
-	nic, err := c.vmInstanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
-	if err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	nicSubnet := getSubnetFromPrimaryIPConfig(nic)
-	if nicSubnet == "" {
-		return "", fmt.Errorf("no subnet found for nic: %s", nicName)
-	}
-	if nicSubnet != expectedSubnet {
-		return SubnetDrift, nil
-	}
-	return "", nil
 }
 
 // isKubeletIdentityDrifted returns drift if the kubelet identity has drifted
@@ -346,15 +249,6 @@ func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.N
 	}
 
 	return n, nil
-}
-
-func getSubnetFromPrimaryIPConfig(nic *armnetwork.Interface) string {
-	for _, ipConfig := range nic.Properties.IPConfigurations {
-		if ipConfig.Properties.Subnet != nil && lo.FromPtr(ipConfig.Properties.Primary) {
-			return lo.FromPtr(ipConfig.Properties.Subnet.ID)
-		}
-	}
-	return ""
 }
 
 // isMachineDrifted checks the DriftAction field of the AKS machine to determine if drift exists
