@@ -42,7 +42,7 @@ const (
 	OSUbuntu      = "ubuntu"
 	OSAzureLinux  = "azurelinux"
 	OSAzureLinux3 = "azurelinux3"
-	OSWindows     = "windows"
+	OSWindows     = "windows" // NOTE: Windows nodes are not currently supported. This constant is used for future support and validation only.
 )
 
 type GPUSKUConfig struct {
@@ -75,6 +75,7 @@ func readGPUSKUConfig() {
 			panic("os field must not be empty for SKU: " + sku)
 		}
 		for _, os := range config.OS {
+			// NOTE: Windows is validated here for future support, but Windows nodes are not currently supported
 			if os != OSUbuntu && os != OSAzureLinux && os != OSAzureLinux3 && os != OSWindows {
 				panic("os field must be either ubuntu, azurelinux, azurelinux3, or windows for SKU: " + sku)
 			}

@@ -2,6 +2,10 @@
 # Each SKU specifies:
 #   gpu: The GPU manufacturer ("nvidia" or "amd")
 #   os: List of supported operating systems (ubuntu, windows, azurelinux, azurelinux3)
+#
+# NOTE: While "windows" is listed in the os field for many SKUs below, Windows nodes are NOT currently
+# supported in karpenter-provider-azure. The windows entries represent future support and are used for
+# validation purposes only. See README.md for current limitations.
 
 #  StandardNCADSA10v4Family:
 standard_nc16ads_a10_v4:
