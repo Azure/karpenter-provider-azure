@@ -224,6 +224,13 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 
 	nextNodeOSMWStartStr, okStart := mwConfigMap.Data[fmt.Sprintf(configMapStartTimeFormat, nodeOSMaintenanceWindowChannel)]
 	nextNodeOSMWEndStr, okEnd := mwConfigMap.Data[fmt.Sprintf(configMapEndTimeFormat, nodeOSMaintenanceWindowChannel)]
+	// Treat empty string values as missing, since the ConfigMap may have keys present with empty values
+	if nextNodeOSMWStartStr == "" {
+		okStart = false
+	}
+	if nextNodeOSMWEndStr == "" {
+		okEnd = false
+	}
 	if !okStart && !okEnd {
 		// No maintenance window defined for aksManagedNodeOSUpgradeSchedule, so its up to us when to preform maintenance
 		return true, nil
