@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
-	"github.com/samber/lo"
 )
 
 func CreateVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAPI, rg, vmName string, vm armcompute.VirtualMachine) (*armcompute.VirtualMachine, error) {
@@ -47,21 +46,6 @@ func UpdateVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAP
 	}
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func deleteVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAPI, rg, vmName string) error {
-	poller, err := client.BeginDelete(ctx, rg, vmName, &armcompute.VirtualMachinesClientBeginDeleteOptions{ForceDeletion: lo.ToPtr(true)})
-	if err != nil {
-		return err
-	}
-	_, err = poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
-			return nil
-		}
 		return err
 	}
 	return nil
@@ -129,16 +113,4 @@ func deleteNicIfExists(ctx context.Context, client azclient.NetworkInterfacesAPI
 		return err
 	}
 	return deleteNic(ctx, client, rg, nicName)
-}
-
-// deleteVirtualMachineIfExists checks if a virtual machine exists, and if it does, we delete it with a cascading delete
-func deleteVirtualMachineIfExists(ctx context.Context, client azclient.VirtualMachinesAPI, rg, vmName string) error {
-	_, err := client.Get(ctx, rg, vmName, nil)
-	if err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
-			return nil
-		}
-		return err
-	}
-	return deleteVirtualMachine(ctx, client, rg, vmName)
 }
