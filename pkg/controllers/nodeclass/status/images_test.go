@@ -175,7 +175,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	Context("NodeImageReconciler direct tests", func() {
 		BeforeEach(func() {
 			// Setup NodeClass
-			nodeClass.Status.KubernetesVersion = testK8sVersion
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)

@@ -489,7 +489,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should handle configured NodeClass", func() {
 				// Configure comprehensive NodeClass settings
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            lo.ToPtr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),

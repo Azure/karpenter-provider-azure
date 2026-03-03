@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/awslabs/operatorpkg/status"
+	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,7 +46,9 @@ var _ = Describe("IsLocalDNSEnabled", func() {
 			if mode != "" {
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: mode}
 			}
-			nodeClass.Status.KubernetesVersion = kubernetesVersion
+			if kubernetesVersion != "" {
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
+			}
 			Expect(nodeClass.IsLocalDNSEnabled()).To(Equal(expected))
 		},
 		Entry("LocalDNS is nil", v1beta1.LocalDNSMode(""), "", false),
