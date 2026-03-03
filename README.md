@@ -43,7 +43,6 @@ Karpenter provider for AKS can be used in two modes:
 * **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) mode**: Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users as it has more test coverage, improved scale-up speed, automatic maintenance window integration, support for some additional SKUs, and various other improvements over self-hosted Karpenter. NAP also leverages an AKS experience, Node Provisioning Service, which integrates Azure tools into the managed Karpenter experience for optimized performance and scalability. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode. NAP manages:
   * Token rotation
   * Helm charts
-  * Kubernetes version upgrades
   * Karpenter version updates
   * VM OS disk updates
   * node image upgrades (Linux)
