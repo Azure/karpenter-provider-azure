@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/awslabs/operatorpkg/object"
 	corestatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
@@ -249,7 +248,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should include stateless CNI label for kubernetes 1.34+ set to true", func() {
 				// Set kubernetes version to 1.34.0
-				nodeClass.Status.KubernetesVersion = to.Ptr("1.34.0")
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -262,7 +261,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should include stateless CNI label for kubernetes < 1.34 set to false", func() {
 				// Set kubernetes version to 1.33.0
-				nodeClass.Status.KubernetesVersion = to.Ptr("1.33.0")
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.33.0")
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -662,7 +661,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 				if k8sVersion != "" {
-					nodeClass.Status.KubernetesVersion = to.Ptr(k8sVersion)
+					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
 				}
 				ExpectApplied(ctx, env.Client, nodeClass)
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
@@ -1123,14 +1122,14 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("Nodepool with KubeletConfig", func() {
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            to.Ptr("static"),
+					CPUManagerPolicy:            lo.ToPtr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       to.Ptr("best-effort"),
+					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         to.Ptr("42Mi"),
+					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}
@@ -1199,14 +1198,14 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            to.Ptr("static"),
+					CPUManagerPolicy:            lo.ToPtr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       to.Ptr("best-effort"),
+					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         to.Ptr("42Mi"),
+					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}
@@ -1242,14 +1241,14 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            to.Ptr("static"),
+					CPUManagerPolicy:            lo.ToPtr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       to.Ptr("best-effort"),
+					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         to.Ptr("42Mi"),
+					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}

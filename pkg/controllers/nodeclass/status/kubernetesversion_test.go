@@ -17,11 +17,11 @@ limitations under the License.
 package status_test
 
 import (
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -46,7 +46,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 	})
 
 	It("Should update KubernetesVersion when new kubernetes version is detected", func() {
-		nodeClass.Status.KubernetesVersion = to.Ptr(oldK8sVersion)
+		nodeClass.Status.KubernetesVersion = lo.ToPtr(oldK8sVersion)
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 		ExpectApplied(ctx, env.Client, nodeClass)
@@ -74,7 +74,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 		})
 
 		It("Should update KubernetesVersion when new kubernetes version is detected, and reset node image readiness to false", func() {
-			nodeClass.Status.KubernetesVersion = to.Ptr(oldK8sVersion)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(oldK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 			result, err := k8sReconciler.Reconcile(ctx, nodeClass)

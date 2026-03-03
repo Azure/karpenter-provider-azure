@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -152,9 +151,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	switch p.OSSKU {
 	// https://go.dev/wiki/Switch#multiple-cases
 	case ImageFamilyOSSKUUbuntu2004, ImageFamilyOSSKUUbuntu2204, ImageFamilyOSSKUUbuntu2404:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUAzureLinux)
 	default:
 		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}

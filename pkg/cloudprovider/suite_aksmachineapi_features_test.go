@@ -34,7 +34,6 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -490,7 +489,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should handle configured NodeClass", func() {
 				// Configure comprehensive NodeClass settings
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            to.Ptr("static"),
+					CPUManagerPolicy:            lo.ToPtr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),

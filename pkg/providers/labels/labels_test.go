@@ -20,12 +20,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -332,7 +332,7 @@ func TestLocalDNSLabels(t *testing.T) {
 					LocalDNS: tc.localDNS,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: to.Ptr(tc.kubernetesVersion),
+					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -362,7 +362,7 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 			Name: "test-nodeclass",
 		},
 		Status: v1beta1.AKSNodeClassStatus{
-			KubernetesVersion: to.Ptr("1.35.0"),
+			KubernetesVersion: lo.ToPtr("1.35.0"),
 			Conditions: []status.Condition{
 				{
 					Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -484,7 +484,7 @@ func TestLabelsGet(t *testing.T) {
 					ImageFamily: &imageFamily,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: to.Ptr(tc.kubernetesVersion),
+					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,

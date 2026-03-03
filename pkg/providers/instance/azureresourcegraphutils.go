@@ -20,15 +20,15 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	arg "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/samber/lo"
 )
 
 func NewQueryRequest(subscriptionID *string, query string) *arg.QueryRequest {
 	return &arg.QueryRequest{
 		Query: &query,
 		Options: &arg.QueryRequestOptions{
-			ResultFormat: to.Ptr(arg.ResultFormatObjectArray),
+			ResultFormat: lo.ToPtr(arg.ResultFormatObjectArray),
 		},
 		Subscriptions: []*string{subscriptionID},
 	}

@@ -21,9 +21,9 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 )
 
 type RBACManager struct {
@@ -52,7 +52,7 @@ func (r *RBACManager) EnsureRole(ctx context.Context, scope, roleDefinitionID, p
 func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, roleDefinitionID, principalID, principalType string) error {
 	// Quick scan to avoid duplicates
 	pager := r.client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: to.Ptr(fmt.Sprintf("assignedTo('%s')", principalID)),
+		Filter: lo.ToPtr(fmt.Sprintf("assignedTo('%s')", principalID)),
 	})
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -72,12 +72,12 @@ func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, ro
 	}
 	name := uuid.New().String()
 	properties := &armauthorization.RoleAssignmentProperties{
-		PrincipalID:      to.Ptr(principalID),
-		RoleDefinitionID: to.Ptr(roleDefinitionID),
+		PrincipalID:      lo.ToPtr(principalID),
+		RoleDefinitionID: lo.ToPtr(roleDefinitionID),
 	}
 
 	if principalType != "" {
-		properties.PrincipalType = to.Ptr(armauthorization.PrincipalType(principalType))
+		properties.PrincipalType = lo.ToPtr(armauthorization.PrincipalType(principalType))
 	}
 
 	_, err := r.client.Create(ctx, scope, name, armauthorization.RoleAssignmentCreateParameters{
