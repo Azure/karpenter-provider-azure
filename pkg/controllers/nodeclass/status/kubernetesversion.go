@@ -28,6 +28,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -58,10 +59,8 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 		Named(kubernetesVersionReconcilerName).
 		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
-			RateLimiter: reasonable.RateLimiter(),
-			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
-			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
-			MaxConcurrentReconciles: 10,
+			RateLimiter:             reasonable.RateLimiter(),
+			MaxConcurrentReconciles: consts.MaxConcurrentReconciles,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), r))
 }
