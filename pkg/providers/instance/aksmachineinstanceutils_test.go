@@ -113,13 +113,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					Priority:   lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
 					ResourceID: lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
 					Status: &armcontainerservice.MachineStatus{
-						CreationTimestamp: lo.ToPtr(creationTime.Add(10 * time.Minute)),
+						CreationTimestamp: lo.ToPtr(creationTime),
 					},
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
 						NodePoolTagKey: lo.ToPtr("test-nodepool"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey:         lo.ToPtr("test-nodeclaim"),
-						launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(AKSMachineTimestampToTag(creationTime)),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 					},
 				},
 			}
@@ -161,8 +160,8 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should handle missing creation time gracefully", func() {
-			// Remove the creation timestamp tag to test missing timestamp handling
-			delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineCreationTimestampTagKey)
+			// Remove the Status.CreationTimestamp to test missing timestamp handling
+			aksMachine.Properties.Status.CreationTimestamp = nil
 
 			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 

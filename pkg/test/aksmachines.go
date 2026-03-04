@@ -137,7 +137,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		options.NodepoolName = "default"
 	}
 	if options.Properties.Tags == nil {
-		options.Properties.Tags = ManagedTagsAKSMachine(options.NodepoolName, "some-nodeclaim", (*options.Properties.Status.CreationTimestamp).Add(-1*time.Minute))
+		options.Properties.Tags = ManagedTagsAKSMachine(options.NodepoolName, "some-nodeclaim")
 	}
 
 	// Construct the AKS Machine
