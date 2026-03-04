@@ -100,7 +100,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorLowPriorityCoresQuota(fake.Region)
 
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
 
@@ -114,7 +114,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clear both error and output for retry - should succeed with on-demand
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 
@@ -139,7 +139,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorOverconstrainedZonalAllocation()
 
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// Verify the create API was called but failed due to zonal allocation constraint
@@ -155,7 +155,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clear the error and retry - should succeed with different zone
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(initialZone))
 			})
@@ -176,7 +176,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorOverconstrainedAllocation()
 
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// Verify the create API was called but failed due to overconstrained allocation
@@ -192,7 +192,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clear both error and output for retry - should succeed with on-demand
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			})
@@ -213,7 +213,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorAllocationFailed()
 
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// Verify the create API was called but failed due to allocation failure
@@ -228,7 +228,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clear the error and retry - should succeed with different VM size
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelInstanceTypeStable]).ToNot(Equal(initialVMSize))
 			})
@@ -241,7 +241,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorVMFamilyQuotaExceeded("westus2", "Standard NCASv3_T4", 24, 24, 8, 32)
 
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// Verify the create API was called but failed due to family quota
@@ -249,7 +249,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clear the error and retry - should succeed
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 			})
 
@@ -261,7 +261,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorVMFamilyQuotaExceeded("westus2", "Standard NCASv3_T4", 0, 0, 8, 8)
 
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// Verify the create API was called but failed due to zero quota limit
@@ -269,7 +269,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clear the error and retry - should succeed
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 			})
 
@@ -295,7 +295,7 @@ var _ = Describe("CloudProvider", func() {
 				})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass, testNodeClaim1)
-				claim, err := cloudProvider.Create(ctx, testNodeClaim1)
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim1)
 				Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 				Expect(claim).To(BeNil())
 			})
@@ -312,7 +312,7 @@ var _ = Describe("CloudProvider", func() {
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
 
@@ -326,7 +326,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should support provisioning in non-zonal regions", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -345,7 +345,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, ""))
@@ -373,7 +373,7 @@ var _ = Describe("CloudProvider", func() {
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-				cloudProviderMachine, err := cloudProvider.Create(ctx, nodeClaim)
+				cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 				Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 				Expect(cloudProviderMachine).To(BeNil())
 			})
@@ -397,7 +397,7 @@ var _ = Describe("CloudProvider", func() {
 				})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass, testNodeClaim2)
-				claim, err := cloudProvider.Create(ctx, testNodeClaim2)
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim2)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
@@ -433,7 +433,7 @@ var _ = Describe("CloudProvider", func() {
 					},
 				})
 
-				claim, err := cloudProvider.Create(ctx, testNodeClaim3)
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim3)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
@@ -466,7 +466,7 @@ var _ = Describe("CloudProvider", func() {
 				// Set up the AKS machine provider to fail (different from VM API)
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorAny()
 
-				claim, err := cloudProvider.Create(ctx, testNodeClaim4)
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim4)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
@@ -521,7 +521,7 @@ var _ = Describe("CloudProvider", func() {
 			// 	for key, value := range nodeSelector {
 			// 		pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{key: value}}))
 			// 	}
-			// 	ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
+			// 	ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
 			// 	for _, pod := range pods {
 			// 		ExpectScheduled(ctx, env.Client, pod)
 			// 	}
@@ -543,7 +543,7 @@ var _ = Describe("CloudProvider", func() {
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
@@ -563,7 +563,7 @@ var _ = Describe("CloudProvider", func() {
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				By("marking whatever zone was picked as unavailable - for both spot and on-demand")
@@ -621,7 +621,7 @@ var _ = Describe("CloudProvider", func() {
 				// Clear the error and verify retry succeeds in different zone
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = nil
 
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 
 				// Verify machine was created in a different zone than the failed one
@@ -702,7 +702,7 @@ var _ = Describe("CloudProvider", func() {
 						},
 					},
 				}
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
@@ -731,7 +731,7 @@ var _ = Describe("CloudProvider", func() {
 				}
 				// Provisions 2 smaller instances since larger was ICE'd
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
 
 				nodeNames := sets.New[string]()
 				for _, pod := range pods {
@@ -754,12 +754,12 @@ var _ = Describe("CloudProvider", func() {
 					pod := coretest.UnschedulablePod(coretest.PodOptions{
 						NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
 					})
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectNotScheduled(ctx, env.Client, pod)
 
 					// capacity shortage is over - expire the items from the cache and try again
 					azureEnv.UnavailableOfferingsCache.Flush()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					node := ExpectScheduled(ctx, env.Client, pod)
 					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
 				})
@@ -773,12 +773,12 @@ var _ = Describe("CloudProvider", func() {
 					pod := coretest.UnschedulablePod(coretest.PodOptions{
 						NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
 					})
-					ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
 					ExpectNotScheduled(ctx, env.Client, pod)
 
 					// capacity shortage is over - expire the items from the cache and try again
 					azureEnvNonZonal.UnavailableOfferingsCache.Flush()
-					ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
 					node := ExpectScheduled(ctx, env.Client, pod)
 					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
 				})
@@ -798,7 +798,7 @@ var _ = Describe("CloudProvider", func() {
 					)
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 					pod := coretest.UnschedulablePod()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectNotScheduled(ctx, env.Client, pod)
 					for _, zoneID := range []string{"1", "2", "3"} {
 						ExpectUnavailable(azureEnv, sku, utils.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)

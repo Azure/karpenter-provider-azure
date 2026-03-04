@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
 	"github.com/patrickmn/go-cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -367,4 +368,9 @@ func (env *Environment) Zones() []string {
 	} else {
 		return []string{fake.Region + "-1", fake.Region + "-2", fake.Region + "-3"}
 	}
+}
+
+// Client returns the controller-runtime client from the underlying core test environment.
+func (env *Environment) Client() client.Client {
+	return env.coreEnv.Client
 }

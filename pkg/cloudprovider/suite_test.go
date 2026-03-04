@@ -38,6 +38,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
@@ -204,7 +205,7 @@ var _ = Describe("CloudProvider", func() {
 		It("should list nodeclaim created by the CloudProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
@@ -231,7 +232,7 @@ var _ = Describe("CloudProvider", func() {
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-			cloudProviderMachine, err := cloudProvider.Create(ctx, nodeClaim)
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
 		})
@@ -240,7 +241,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should not call writes to AKS Machine API", func() {
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -251,7 +252,7 @@ var _ = Describe("CloudProvider", func() {
 					// First create a successful VM
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 					pod := coretest.UnschedulablePod()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 
 					// cloudprovider.List should return vm nodeclaim
@@ -293,7 +294,7 @@ var _ = Describe("CloudProvider", func() {
 		It("should list nodeclaim created by the CloudProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
@@ -320,7 +321,7 @@ var _ = Describe("CloudProvider", func() {
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-			cloudProviderMachine, err := cloudProvider.Create(ctx, nodeClaim)
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
 		})
@@ -329,7 +330,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should not call writes to AKS Machine API", func() {
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -340,7 +341,7 @@ var _ = Describe("CloudProvider", func() {
 					// First create a successful VM
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 					pod := coretest.UnschedulablePod()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 
 					// cloudprovider.List should return vm nodeclaim
