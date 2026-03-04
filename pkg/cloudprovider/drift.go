@@ -254,6 +254,17 @@ func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.N
 // isMachineDrifted checks the DriftAction field of the AKS machine to determine if drift exists
 func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, _ *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
+
+	// Skip drift check while the node is still creating/registering. Core's drift controller starts
+	// calling IsDrifted once the NodeClaim is "Launched" (i.e., the PUT was accepted), but the machine
+	// may still be provisioning. Issuing GET Machine calls during this window generates unnecessary API
+	// load and can produce 404 errors in batch scenarios where the machine doesn't yet exist in ARM.
+	// This follows the same pattern as getNodeForDrift returning (nil, nil) for node-not-found.
+	if !nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue() {
+		logger.V(1).Info("node not yet registered, skipping machine drift check", "nodeClaim", nodeClaim.Name)
+		return "", nil
+	}
+
 	aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim)
 	if !isAKSMachine {
 		// Not an AKS machine node, no drift action to check
