@@ -258,12 +258,13 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			Context("Kubelet Client ID", func() {
-				It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
-					node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "" // Not set
+				It("should trigger drift if node doesn't have kubelet client ID label", func() {
+					node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "" // Not set — pre-1.4.0 nodes
+					ExpectApplied(ctx, env.Client, node)
 
 					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(drifted).To(BeEmpty())
+					Expect(drifted).To(Equal(KubeletIdentityDrift))
 				})
 
 				It("should trigger drift if node kubelet client ID doesn't match options", func() {

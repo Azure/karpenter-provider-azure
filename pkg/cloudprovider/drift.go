@@ -207,13 +207,16 @@ func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim 
 	}
 
 	kubeletIdentityClientID := node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]
-	// The kubelet identity label is supposed to be set on every node, but prior to
-	// 1.4.0 it was not set by Karpenter. In order to avoid rolling all existing nodes,
-	// we don't count a missing kubelet identity as drift. This situation should resolve itself as
-	// image version and Kubernetes version drift is performed.
-	// TODO: This short-circuit should be removed post 1.4.0 (~2025-07-01)
 	if kubeletIdentityClientID == "" {
-		return "", nil
+		// A missing kubelet identity label means the node was created by a Karpenter version
+		// prior to 1.4.0 (which first started setting this label). Since we are now well past
+		// 1.4.0 (current: 1.7.x), all pre-1.4.0 nodes should have been rotated by now through
+		// image/k8s version drift. A missing label at this point indicates a node that has
+		// somehow survived without rotation and should be drifted to ensure it gets the label.
+		logger.V(1).Info("drift triggered due to missing kubelet identity label on node",
+			"driftType", KubeletIdentityDrift,
+			"expectedKubeletIdentityClientID", opts.KubeletIdentityClientID)
+		return KubeletIdentityDrift, nil
 	}
 
 	if kubeletIdentityClientID != opts.KubeletIdentityClientID {
