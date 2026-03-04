@@ -40,4 +40,11 @@ const (
 	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
 	ProvisionModeAKSMachineAPI       = "aksmachineapi"
+
+	// MaxConcurrentReconciles is the default concurrency limit for Azure-specific reconcilers.
+	// Set to 10 to allow moderate parallelism for handling multiple AKSNodeClass/NodeClaim objects
+	// without overwhelming the API server or Azure API rate limits. This matches the commonly used
+	// controller-runtime default for reconcilers with external I/O dependencies.
+	// Discussion: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
+	MaxConcurrentReconciles = 10
 )
