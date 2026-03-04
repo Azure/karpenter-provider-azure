@@ -19,12 +19,16 @@ package instance
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -340,6 +344,62 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 	return aksMachine, nil
 }
 
+// getMachineWithRetry wraps getMachine with application-level retry logic that is tolerant to throttling (429) errors.
+//
+// The Azure SDK already retries 429s 3 times with exponential backoff (800ms → 1.6s → 3.2s).
+// However, during burst creation at scale (e.g., 1000+ nodes), the SDK's retries are insufficient
+// because 429 responses can persist for 17-29 seconds each. This function adds additional retries
+// on top of the SDK's built-in retries, so that transient throttling during scale-up bursts
+// does not cause the entire machine creation to fail.
+//
+// Only 429 (Too Many Requests) errors are retried. All other errors (404, 400, etc.) are returned immediately.
+func (p *DefaultAKSMachineProvider) getMachineWithRetry(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	var result *armcontainerservice.Machine
+
+	// Exponential backoff: 5s base, 2x factor, 30s cap, ~2min total timeout.
+	// This is on top of the SDK's own ~5.6s of retries per attempt.
+	// Total worst-case wall time: ~2min (enough for throttling windows observed in Telescope 1k/5k runs).
+	backoff := wait.Backoff{
+		Duration: 5 * time.Second,
+		Factor:   2.0,
+		Jitter:   0.1,
+		Steps:    5,  // 5s, 10s, 20s, 40s, 80s (capped at 30s) → attempts at ~0s, 5s, 15s, 35s, 65s
+		Cap:      30 * time.Second,
+	}
+
+	retryErr := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		machine, err := p.getMachine(ctx, aksMachineName)
+		if err == nil {
+			result = machine
+			return true, nil // Success, stop retrying
+		}
+
+		// Only retry on throttling (429) errors; return all others immediately.
+		if isThrottlingError(err) {
+			log.FromContext(ctx).V(1).Info("GET machine throttled, retrying", "aksMachineName", aksMachineName)
+			return false, nil // Retry
+		}
+
+		return false, err // Non-retryable error, stop with error
+	})
+
+	if retryErr != nil {
+		// If we timed out due to persistent throttling, wrap the error for clarity.
+		if wait.Interrupted(retryErr) {
+			return nil, fmt.Errorf("failed to get AKS machine %q: retries exhausted due to persistent throttling", aksMachineName)
+		}
+		return nil, retryErr
+	}
+
+	return result, nil
+}
+
+// isThrottlingError checks if an error is a 429 Too Many Requests response from Azure.
+func isThrottlingError(err error) bool {
+	azErr := sdkerrors.IsResponseError(err)
+	return azErr != nil && azErr.StatusCode == http.StatusTooManyRequests
+}
+
 func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
 	var machines []*armcontainerservice.Machine
 	pager := p.azClient.AKSMachinesClient().NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
@@ -467,7 +527,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Get once after begin create to retrieve VMResourceID.
 	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 	// TODO: find a way to access that instead of making another GET call like this.
-	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	// Uses getMachineWithRetry to tolerate throttling (429) during burst creation at scale.
+	gotAKSMachine, err := p.getMachineWithRetry(ctx, aksMachineName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
