@@ -213,19 +213,19 @@ func runSharedAKSMachineAPITests() {
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(nil)
 		})
 
-		It("should handle malformed timestamp tags gracefully during List operation", func() {
-			// Create AKS machine with malformed timestamp tag directly in store
+		It("should handle malformed timestamp gracefully during List operation", func() {
+			// Create AKS machine with missing timestamp directly in store
 			opts := options.FromContext(ctx)
 			aksMachine := test.AKSMachine(test.AKSMachineOptions{
-				Name:             "malformed-timestamp-machine",
+				Name:             "missing-timestamp-machine",
 				MachinesPoolName: opts.AKSMachinesPoolName,
 				ClusterName:      opts.ClusterName,
 			})
-			// Set malformed timestamp tag
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr("invalid-timestamp-format")
+			// Clear Status.CreationTimestamp
+			aksMachine.Properties.Status.CreationTimestamp = nil
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			// List should not fail despite malformed timestamp
+			// List should not fail despite missing timestamp
 			nodeClaims, err := cloudProvider.List(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(nodeClaims)).To(BeNumerically(">=", 1))
@@ -240,7 +240,7 @@ func runSharedAKSMachineAPITests() {
 			}
 			Expect(ourNodeClaim).ToNot(BeNil())
 
-			// CreationTimestamp should be zero due to parsing failure
+			// CreationTimestamp should be zero because Status.CreationTimestamp is nil
 			Expect(ourNodeClaim.CreationTimestamp.IsZero()).To(BeTrue())
 		})
 
