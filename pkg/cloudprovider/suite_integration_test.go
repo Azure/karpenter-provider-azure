@@ -588,11 +588,6 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
 			})
-			// Enable batch creation to test batch client + GET poller
-			testOptions.BatchCreationEnabled = true
-			testOptions.BatchIdleTimeoutMS = 100
-			testOptions.BatchMaxTimeoutMS = 1000
-			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -632,11 +627,6 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(true), // should not have any effect
 			})
-			// Enable batch creation to test batch client + GET poller
-			testOptions.BatchCreationEnabled = true
-			testOptions.BatchIdleTimeoutMS = 100
-			testOptions.BatchMaxTimeoutMS = 1000
-			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -1024,11 +1014,6 @@ var _ = Describe("CloudProvider", func() {
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 				UseSIG:        lo.ToPtr(true),
 			})
-			// Enable batch creation to test batch client + GET poller
-			testOptions.BatchCreationEnabled = true
-			testOptions.BatchIdleTimeoutMS = 100
-			testOptions.BatchMaxTimeoutMS = 1000
-			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
