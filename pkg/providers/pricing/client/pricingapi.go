@@ -46,7 +46,7 @@ func New(cloud cloud.Configuration) PricingAPI {
 	return &pricingAPI{cloud: cloud}
 }
 
-func (papi *pricingAPI) GetProductsPricePages(_ context.Context, filters []*Filter, pageHandler func(output *ProductsPricePage)) error {
+func (papi *pricingAPI) GetProductsPricePages(ctx context.Context, filters []*Filter, pageHandler func(output *ProductsPricePage)) error {
 	nextURL := pricingURL
 
 	if !auth.IsPublic(papi.cloud) {
@@ -66,16 +66,22 @@ func (papi *pricingAPI) GetProductsPricePages(_ context.Context, filters []*Filt
 	}
 
 	for nextURL != "" {
-		res, err := http.Get(nextURL)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
+		if err != nil {
+			return fmt.Errorf("creating pricing request: %w", err)
+		}
+		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return err
 		}
 
 		if res.StatusCode != 200 {
+			res.Body.Close()
 			return fmt.Errorf("got a non-200 status code: %d", res.StatusCode)
 		}
 
 		resBody, err := io.ReadAll(res.Body)
+		res.Body.Close()
 		if err != nil {
 			return err
 		}
