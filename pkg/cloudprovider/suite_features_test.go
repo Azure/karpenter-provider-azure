@@ -621,7 +621,7 @@ var _ = Describe("CloudProvider - Features", func() {
 
 	// === MODE CONTEXTS ===
 
-	Context("ProvisionMode = AKSMachineAPI", func() {
+	Context("ProvisionMode = AKSMachineAPI + Batch", func() {
 		BeforeEach(func() { setupAKSMachineAPIMode() })
 		AfterEach(func() { teardownProvisionMode() })
 
@@ -1089,6 +1089,20 @@ var _ = Describe("CloudProvider - Features", func() {
 				Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).To(BeNil())
 			})
 		})
+	})
+
+	Context("ProvisionMode = AKSMachineAPI (no batch)", func() {
+		BeforeEach(func() { setupAKSMachineAPIModeNoBatch() })
+		AfterEach(func() { teardownProvisionMode() })
+
+		mode := aksMachineProvisionMode()
+		runSharedImageSelectionTests(mode)
+		runSharedGPUTests(mode)
+		runSharedEphemeralDiskTests(mode)
+		runSharedAdditionalTagsTests(mode)
+		runSharedSubnetTests(mode)
+		runSharedKubeletConfigTests(mode)
+		runSharedReuseExistingResourceTests(mode)
 	})
 
 	Context("ProvisionMode = AKSScriptless", func() {
