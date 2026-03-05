@@ -30,6 +30,8 @@ var (
 	//CompatibilityGroup = "compatibility." + Group
 	//go:embed crds/karpenter.azure.com_aksnodeclasses.yaml
 	AKSNodeClassCRD []byte
+	//go:embed crds/karpenter.azure.com_azurenodeclasses.yaml
+	AzureNodeClassCRD []byte
 	//go:embed crds/karpenter.sh_nodepools.yaml
 	NodePoolCRD []byte
 	//go:embed crds/karpenter.sh_nodeclaims.yaml
@@ -38,6 +40,7 @@ var (
 	NodeOverlayCRD []byte
 	CRDs           = []*apiextensionsv1.CustomResourceDefinition{
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](AKSNodeClassCRD),
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](AzureNodeClassCRD),
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodePoolCRD),
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeClaimCRD),
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeOverlayCRD),
