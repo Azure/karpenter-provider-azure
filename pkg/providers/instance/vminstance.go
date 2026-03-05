@@ -811,7 +811,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {
-			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+			// Can't look up the SKU to do proper error handling (e.g., marking offerings unavailable),
+			// so return the original VM creation error with context about the SKU lookup failure.
+			return nil, fmt.Errorf("VM creation failed and unable to look up instance type %q for error handling (skuErr: %v): %w", instanceType.Name, skuErr, err)
 		}
 		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
 		if handledError != nil {
@@ -855,7 +857,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
-					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+					// Can't look up the SKU to do proper error handling (e.g., marking offerings unavailable),
+					// so return the original VM creation error with context about the SKU lookup failure.
+					return fmt.Errorf("VM creation failed and unable to look up instance type %q for error handling (skuErr: %v): %w", instanceType.Name, skuErr, err)
 				}
 				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
 				if handledError != nil {
