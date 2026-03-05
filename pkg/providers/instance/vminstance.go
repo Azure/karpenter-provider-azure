@@ -29,7 +29,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -375,93 +374,9 @@ func (p *DefaultVMProvider) createCSExtension(ctx context.Context, vmName string
 	return nil
 }
 
-func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
-	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
-		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
-			ID: &poolID,
-		})
-	}
-
-	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
-		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
-
-	enableAcceleratedNetworking := false
-	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
-		enableAcceleratedNetworking = true
-	}
-
-	var nsgRef *armnetwork.SecurityGroup
-	if opts.NetworkSecurityGroupID != "" {
-		nsgRef = &armnetwork.SecurityGroup{
-			ID: &opts.NetworkSecurityGroupID,
-		}
-	}
-
-	nic := armnetwork.Interface{
-		Location: lo.ToPtr(p.location),
-		Properties: &armnetwork.InterfacePropertiesFormat{
-			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
-				{
-					Name: &opts.NICName,
-					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(true),
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-
-						LoadBalancerBackendAddressPools: ipv4BackendPools,
-					},
-				},
-			},
-			NetworkSecurityGroup:        nsgRef,
-			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
-			EnableIPForwarding:          lo.ToPtr(false),
-		},
-	}
-	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
-		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
-		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
-		for i := 1; i < int(opts.MaxPods); i++ {
-			nic.Properties.IPConfigurations = append(
-				nic.Properties.IPConfigurations,
-				&armnetwork.InterfaceIPConfiguration{
-					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i)),
-					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(false),
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-					},
-				},
-			)
-		}
-	}
-	return nic
-}
-
 // E.g., aks-default-2jf98
 func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
-}
-
-type createNICOptions struct {
-	NICName                string
-	BackendPools           *loadbalancer.BackendAddressPools
-	InstanceType           *corecloudprovider.InstanceType
-	LaunchTemplate         *launchtemplate.Template
-	NetworkPlugin          string
-	NetworkPluginMode      string
-	MaxPods                int32
-	NetworkSecurityGroupID string
-}
-
-func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
-	nic := p.newNetworkInterfaceForVM(opts)
-	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
-	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", opts.NICName)
-	res, err := createNic(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, opts.NICName, nic)
-	if err != nil {
-		return "", err
-	}
-	log.FromContext(ctx).V(1).Info("successfully created network interface", "nicName", opts.NICName, "nicID", *res.ID)
-	return *res.ID, nil
 }
 
 // createVMOptions contains all the parameters needed to create a VM
@@ -684,43 +599,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting backend pools: %w", err)
-	}
-	networkPlugin := options.FromContext(ctx).NetworkPlugin
-	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
-	if err != nil {
-		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
-	}
-	var nsgID string
-	if !isAKSManagedVNET {
-		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("getting managed network security group: %w", err)
-		}
-		nsgID = lo.FromPtr(nsg.ID)
-	}
-
-	// TODO: Not returning after launching this LRO because
-	// TODO: doing so would bypass the capacity and other errors that are currently handled by
-	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
-	// TODO: emitted in capacity failure cases that we probably want.
-	nicReference, err := p.createNetworkInterface(
-		ctx,
-		&createNICOptions{
-			NICName:                resourceName,
-			NetworkPlugin:          networkPlugin,
-			NetworkPluginMode:      networkPluginMode,
-			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:         launchTemplate,
-			BackendPools:           backendPools,
-			InstanceType:           instanceType,
-			NetworkSecurityGroupID: nsgID,
-		},
-	)
+	// Create NIC
+	nicReference, err := p.buildAndCreateNIC(ctx, resourceName, instanceType, nodeClass, launchTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -819,14 +699,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		},
 		VM: result.VM,
 	}, nil
-}
-
-func (p *DefaultVMProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
-	// set tags
-	nic.Tags = template.Tags
-	for _, ipConfig := range nic.Properties.IPConfigurations {
-		ipConfig.Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
-	}
 }
 
 func (p *DefaultVMProvider) getLaunchTemplate(
