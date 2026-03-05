@@ -17,6 +17,9 @@ limitations under the License.
 package v1beta1_test
 
 import (
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"k8s.io/utils/ptr"
+	"slices"
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -125,6 +128,30 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid resource group name with invalid character 'invalid#character'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/invalid#character/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
 			Entry("invalid resource group name with unsupported chars 'name@with*unsupported&chars'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/name@with*unsupported&chars/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
 		)
+	})
+
+	Context("OSDiskType", func() {
+		It("should reject invalid OSDiskType", func() {
+			allowedOSDiskTypes := []armcompute.StorageAccountTypes{armcompute.StorageAccountTypesPremiumLRS,
+				armcompute.StorageAccountTypesPremiumZRS,
+				armcompute.StorageAccountTypesStandardLRS,
+				armcompute.StorageAccountTypesStandardSSDLRS,
+				armcompute.StorageAccountTypesStandardSSDZRS}
+
+			for _, diskType := range armcompute.PossibleStorageAccountTypesValues() {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						OSDiskType: ptr.To(string(diskType)),
+					},
+				}
+				if slices.Contains(allowedOSDiskTypes, diskType) {
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				} else {
+					Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				}
+			}
+		})
 	})
 
 	Context("ImageFamily", func() {
