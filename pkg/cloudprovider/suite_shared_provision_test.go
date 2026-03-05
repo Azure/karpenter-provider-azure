@@ -147,6 +147,37 @@ func setupAKSMachineAPIMode() {
 	ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 }
 
+// setupAKSMachineAPIModeWithBatch configures test infrastructure for AKSMachineAPI provisioning mode
+// with batch creation enabled (grouper → coordinator → GET poller).
+func setupAKSMachineAPIModeWithBatch() {
+	testOptions = test.Options(test.OptionsFields{
+		ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+		UseSIG:        lo.ToPtr(true),
+	})
+	testOptions.BatchCreationEnabled = true
+	testOptions.BatchIdleTimeoutMS = 100
+	testOptions.BatchMaxTimeoutMS = 1000
+	testOptions.MaxBatchSize = 50
+
+	ctx = coreoptions.ToContext(ctx, coretest.Options())
+	ctx = options.ToContext(ctx, testOptions)
+
+	azureEnv = test.NewEnvironment(ctx, env)
+	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+	statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+
+	ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+	ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+}
+
 // setupVMMode configures test infrastructure for AKSScriptless (VM) provisioning mode.
 func setupVMMode() {
 	testOptions = test.Options(test.OptionsFields{
