@@ -316,8 +316,10 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 	var requiredGVKs = []schema.GroupVersionKind{
 		gvk(&karpv1.NodePool{}),
 		gvk(&karpv1.NodeClaim{}),
-		gvk(&karpv1alpha1.NodeOverlay{}),
 		gvk(&v1beta1.AKSNodeClass{}),
+	}
+	if coreoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+		requiredGVKs = append(requiredGVKs, gvk(&karpv1alpha1.NodeOverlay{}))
 	}
 
 	client, err := rest.HTTPClientFor(config)
