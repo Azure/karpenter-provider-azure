@@ -479,10 +479,6 @@ var _ = Describe("CloudProvider - Features", func() {
 						UseSIG:        lo.ToPtr(true),
 						SubnetID:      lo.ToPtr(byoClusterSubnetID),
 					})
-					byoOpts.BatchCreationEnabled = true
-					byoOpts.BatchIdleTimeoutMS = 100
-					byoOpts.BatchMaxTimeoutMS = 1000
-					byoOpts.MaxBatchSize = 50
 				}
 				byoCtx := options.ToContext(ctx, byoOpts)
 
@@ -673,10 +669,6 @@ var _ = Describe("CloudProvider - Features", func() {
 					UseSIG:        lo.ToPtr(true),
 					SubnetID:      lo.ToPtr(byoClusterSubnetID),
 				})
-				byoOpts.BatchCreationEnabled = true
-				byoOpts.BatchIdleTimeoutMS = 100
-				byoOpts.BatchMaxTimeoutMS = 1000
-				byoOpts.MaxBatchSize = 50
 				byoCtx := options.ToContext(ctx, byoOpts)
 
 				// Extract cluster subnet components and create a test subnet in the same VNet
