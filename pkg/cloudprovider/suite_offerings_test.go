@@ -629,19 +629,8 @@ var _ = Describe("CloudProvider - Offerings", func() {
 
 	// === MODE CONTEXTS ===
 
-	Context("ProvisionMode = AKSMachineAPI + Batch", func() {
+	Context("ProvisionMode = AKSMachineAPI", func() {
 		BeforeEach(func() { setupAKSMachineAPIMode() })
-		AfterEach(func() { teardownProvisionMode() })
-
-		mode := aksMachineProvisionMode()
-		runSharedCreationFailureTests(mode)
-		runSharedZoneAwareTests(mode)
-		runSharedErrorCaseTests(mode)
-		runSharedUnavailableOfferingsTests(mode)
-	})
-
-	Context("ProvisionMode = AKSMachineAPI (no batch)", func() {
-		BeforeEach(func() { setupAKSMachineAPIModeNoBatch() })
 		AfterEach(func() { teardownProvisionMode() })
 
 		mode := aksMachineProvisionMode()
