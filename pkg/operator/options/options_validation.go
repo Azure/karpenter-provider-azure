@@ -34,6 +34,20 @@ import (
 
 func (o *Options) Validate() error {
 	validate := validator.New()
+
+	// AzureVM mode has relaxed validation — skip AKS-specific checks
+	if o.ProvisionMode == consts.ProvisionModeAzureVM {
+		return multierr.Combine(
+			o.validateRequiredFields(),
+			o.validateProvisionMode(),
+			o.validateVnetSubnetID(),
+			o.validateVMMemoryOverheadPercent(),
+			o.validateAdditionalTags(),
+			o.validateDiskEncryptionSetID(),
+			validate.Struct(o),
+		)
+	}
+
 	return multierr.Combine(
 		o.validateRequiredFields(),
 		o.validateVNETGUID(),
@@ -118,7 +132,20 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+	validModes := []string{
+		consts.ProvisionModeAKSScriptless,
+		consts.ProvisionModeBootstrappingClient,
+		consts.ProvisionModeAKSMachineAPI,
+		consts.ProvisionModeAzureVM,
+	}
+	isValid := false
+	for _, mode := range validModes {
+		if o.ProvisionMode == mode {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
@@ -133,11 +160,26 @@ func (o *Options) validateProvisionMode() error {
 		if !o.UseSIG {
 			return fmt.Errorf("use-sig is required to be true when provision-mode is aksmachineapi")
 		}
+	case consts.ProvisionModeAzureVM:
+		// AzureVM mode has minimal requirements — no AKS-specific options needed.
+		// Bootstrap is provided via AzureNodeClass userData field.
+		// cluster-endpoint, kubelet-bootstrap-token, etc. are not required.
 	}
 	return nil
 }
 
 func (o *Options) validateRequiredFields() error {
+	// AzureVM mode has minimal requirements — only subnet and node resource group are needed.
+	if o.ProvisionMode == consts.ProvisionModeAzureVM {
+		if o.SubnetID == "" {
+			return fmt.Errorf("missing field, vnet-subnet-id")
+		}
+		if o.NodeResourceGroup == "" {
+			return fmt.Errorf("missing field, node-resource-group")
+		}
+		return nil
+	}
+
 	if o.ClusterEndpoint == "" {
 		return fmt.Errorf("missing field, cluster-endpoint")
 	}
