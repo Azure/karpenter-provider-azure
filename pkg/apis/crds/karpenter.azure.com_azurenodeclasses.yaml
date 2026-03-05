@@ -1,0 +1,191 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: azurenodeclasses.karpenter.azure.com
+spec:
+  group: karpenter.azure.com
+  names:
+    categories:
+    - karpenter
+    kind: AzureNodeClass
+    listKind: AzureNodeClassList
+    plural: azurenodeclasses
+    shortNames:
+    - aznc
+    - azncs
+    singular: azurenodeclass
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageID
+      name: ImageID
+      priority: 1
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AzureNodeClass is the Schema for the AzureNodeClass API.
+          AzureNodeClass is a more generic node class for provisioning Azure VMs
+          that are not necessarily managed by AKS. It supports custom images,
+          custom bootstrap data (userData), and per-NodeClass identity configuration.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              spec is the top level specification for the Azure Karpenter Provider.
+              This will contain configuration necessary to launch instances in Azure.
+            properties:
+              imageID:
+                description: |-
+                  imageID is the ARM resource ID of the image that instances use.
+                  This can be a Compute Gallery image, Shared Image Gallery image, or any valid Azure image resource ID.
+                  When set, imageFamily-based image resolution is bypassed entirely.
+                  The user is responsible for ensuring the image is compatible with the selected instance types.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.(Compute|AzureHybridBenefit)\/.*$
+                type: string
+              managedIdentities:
+                description: |-
+                  managedIdentities is a list of user-assigned managed identity resource IDs
+                  to attach to provisioned VMs. These are merged with any global identities
+                  configured via the --node-identities flag.
+                items:
+                  type: string
+                maxItems: 10
+                type: array
+              osDiskSizeGB:
+                description: osDiskSizeGB is the size of the OS disk in GB.
+                format: int32
+                maximum: 4096
+                minimum: 30
+                type: integer
+              security:
+                description: security is a collection of security related karpenter
+                  fields.
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
+              tags:
+                additionalProperties:
+                  type: string
+                description: tags to be applied on Azure resources like instances.
+                type: object
+                x-kubernetes-validations:
+                - message: tags keys must be less than 512 characters
+                  rule: self.all(k, size(k) <= 512)
+                - message: tags keys must not contain '<', '>', '%', '&', or '?'
+                  rule: self.all(k, !k.matches('[<>%&?]'))
+                - message: tags keys must not contain '\'
+                  rule: self.all(k, !k.contains('\\'))
+                - message: tags values must be less than 256 characters
+                  rule: self.all(k, size(self[k]) <= 256)
+              userData:
+                description: |-
+                  userData is verbatim CustomData that will be passed to the VM at creation time.
+                  The Azure SDK will base64-encode this value before sending it to the Azure API.
+                  The user is fully responsible for providing valid bootstrap/cloud-init data.
+                  When this field is set, no Karpenter-managed bootstrapping is performed.
+                type: string
+              vnetSubnetID:
+                description: |-
+                  vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
+                  If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
+                type: string
+            type: object
+          status:
+            description: status contains the resolved state of the AzureNodeClass.
+            properties:
+              conditions:
+                description: conditions contains signals for health and readiness
+                items:
+                  description: Condition aliases the upstream type and adds additional
+                    helper methods
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
