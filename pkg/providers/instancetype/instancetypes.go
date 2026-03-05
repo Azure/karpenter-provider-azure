@@ -118,7 +118,10 @@ func (p *DefaultProvider) List(
 	}
 
 	// Compute fully initialized instance types hash key
-	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	kcHash, kcHashErr := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	if kcHashErr != nil {
+		log.FromContext(ctx).Error(kcHashErr, "failed to hash kubelet configuration, skipping instance type cache")
+	}
 	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
@@ -129,10 +132,12 @@ func (p *DefaultProvider) List(
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
 	)
-	if item, ok := p.instanceTypesCache.Get(key); ok {
-		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
-		// so that modifications to the ordering of the data don't affect the original
-		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+	if kcHashErr == nil {
+		if item, ok := p.instanceTypesCache.Get(key); ok {
+			// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
+			// so that modifications to the ordering of the data don't affect the original
+			return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+		}
 	}
 
 	// Get Viable offerings
@@ -172,7 +177,9 @@ func (p *DefaultProvider) List(
 		result = append(result, instanceType)
 	}
 
-	p.instanceTypesCache.SetDefault(key, result)
+	if kcHashErr == nil {
+		p.instanceTypesCache.SetDefault(key, result)
+	}
 	return result, nil
 }
 

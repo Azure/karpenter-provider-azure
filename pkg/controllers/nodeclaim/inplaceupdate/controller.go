@@ -215,9 +215,12 @@ func (c *Controller) applyAKSMachinePatch(
 	aksMachine *armcontainerservice.Machine,
 ) error {
 	// Create a deep copy of the original for diff comparison
-	originalBytes, _ := json.Marshal(aksMachine)
+	originalBytes, err := json.Marshal(aksMachine)
+	if err != nil {
+		return fmt.Errorf("failed to marshal AKS machine for deep copy: %w", err)
+	}
 	var originalAKSMachine armcontainerservice.Machine
-	err := json.Unmarshal(originalBytes, &originalAKSMachine)
+	err = json.Unmarshal(originalBytes, &originalAKSMachine)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal original AKS machine for comparison: %w", err)
 	}
