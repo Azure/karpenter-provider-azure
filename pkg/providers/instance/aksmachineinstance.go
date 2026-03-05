@@ -140,7 +140,7 @@ type DefaultAKSMachineProvider struct {
 	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu      sync.RWMutex
 	pollerOptions           aksmachinepoller.Options // Configurable for testing; defaults to production values
-	machineCache            *machineListCache         // LIST-based cache to reduce individual GET Machine calls
+	machineCache            *machineListCache        // LIST-based cache to reduce individual GET Machine calls
 }
 
 func NewAKSMachineProvider(
