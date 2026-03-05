@@ -175,6 +175,7 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	AfterEach(func() {
+		cloudProvider.WaitForInstancePromises()
 		ExpectCleanedUp(ctx, env.Client)
 	})
 

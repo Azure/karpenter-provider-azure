@@ -239,6 +239,7 @@ var _ = Describe("VMInstanceProvider", func() {
 	})
 
 	var _ = AfterEach(func() {
+		cloudProvider.WaitForInstancePromises()
 		ExpectCleanedUp(ctx, env.Client)
 	})
 
