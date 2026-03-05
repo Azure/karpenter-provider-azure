@@ -492,7 +492,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					return err
 				}
 			}
-			if isAKSIdentifyingExtensionEnabled(p.env) {
+			// In AzureVM mode, skip AKS-specific extensions (billing + identifying).
+			// The VM is not part of an AKS cluster, so these extensions are irrelevant.
+			if p.provisionMode != consts.ProvisionModeAzureVM && isAKSIdentifyingExtensionEnabled(p.env) {
 				err = p.createAKSIdentifyingExtensionFromSpec(ctx, resourceName, bootstrap.Tags)
 				if err != nil {
 					return err
