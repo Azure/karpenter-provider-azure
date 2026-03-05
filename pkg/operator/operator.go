@@ -298,7 +298,7 @@ func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Co
 	if err != nil {
 		return "", err
 	}
-	vnet, err := vnetClient.Get(context.Background(), subnetParts.ResourceGroupName, subnetParts.VNetName, nil)
+	vnet, err := vnetClient.Get(ctx, subnetParts.ResourceGroupName, subnetParts.VNetName, nil)
 	if err != nil {
 		return "", err
 	}
