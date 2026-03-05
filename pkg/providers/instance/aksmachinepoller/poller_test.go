@@ -70,10 +70,10 @@ func (m *mockGetter) CallCount() int {
 
 func testOptions() Options {
 	return Options{
-		PollInterval:      10 * time.Millisecond,
+		PollInterval:  10 * time.Millisecond,
 		RetryDelay:    5 * time.Millisecond,
-		MaxRetryDelay:     20 * time.Millisecond,
-		MaxRetries:        3,
+		MaxRetryDelay: 20 * time.Millisecond,
+		MaxRetries:    3,
 	}
 }
 
