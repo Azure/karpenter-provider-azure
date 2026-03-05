@@ -21,15 +21,12 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
@@ -195,7 +192,7 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
-	newNodeClaim, err := c.vmInstanceToNodeClaim(ctx, vm, instanceType)
+	newNodeClaim, err := instance.BuildNodeClaimFromVM(ctx, vm, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -394,12 +391,12 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 		return nil, fmt.Errorf("listing VM instances, %w", err)
 	}
 
-	for _, instance := range vmInstances {
-		instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, instance)
+	for _, vmInst := range vmInstances {
+		instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, vmInst)
 		if err != nil {
 			return nil, fmt.Errorf("resolving instance type for VM instance, %w", err)
 		}
-		nodeClaim, err := c.vmInstanceToNodeClaim(ctx, instance, instanceType)
+		nodeClaim, err := instance.BuildNodeClaimFromVM(ctx, vmInst, instanceType)
 		if err != nil {
 			return nil, fmt.Errorf("converting VM instance to node claim, %w", err)
 		}
@@ -434,7 +431,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		if err != nil {
 			return nil, fmt.Errorf("resolving instance type, %w", err)
 		}
-		return c.vmInstanceToNodeClaim(ctx, vm, instanceType)
+		return instance.BuildNodeClaimFromVM(ctx, vm, instanceType)
 	}
 }
 
@@ -615,60 +612,6 @@ func (c *CloudProvider) resolveNodePoolFromVMInstance(ctx context.Context, vm *a
 	}
 
 	return nil, errors.NewNotFound(schema.GroupResource{Group: coreapis.Group, Resource: "nodepools"}, "")
-}
-
-func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
-	nodeClaim := &karpv1.NodeClaim{}
-	labels := map[string]string{}
-	annotations := map[string]string{}
-
-	if instanceType != nil {
-		labels = labelspkg.GetAllSingleValuedRequirementLabels(instanceType.Requirements)
-		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
-		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
-	}
-
-	if zone, err := utils.MakeAKSLabelZoneFromVM(vm); err != nil {
-		log.FromContext(ctx).Info("failed to get zone for VM, zone label will be empty", "vmName", *vm.Name, "error", err)
-	} else {
-		labels[corev1.LabelTopologyZone] = zone
-	}
-
-	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityTypeFromVM(vm)
-	labels[v1beta1.AKSLabelScaleSetPriority] = instance.GetScaleSetPriorityLabelFromVM(vm)
-
-	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
-		labels[karpv1.NodePoolLabelKey] = *tag
-	}
-
-	nodeClaim.Name = GetNodeClaimNameFromVMName(*vm.Name)
-	nodeClaim.Labels = labels
-	nodeClaim.Annotations = annotations
-	if vm.Properties != nil && vm.Properties.TimeCreated != nil {
-		nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
-	} else {
-		// Fallback to current time to ensure garbage collection grace period is enforced
-		// when TimeCreated is unavailable. Without this, CreationTimestamp would be epoch (zero value)
-		// and the instance could be immediately garbage collected, bypassing the 5-minute grace period.
-		// TODO: Investigate a more fail-safe approach. If vm.Properties.TimeCreated is NEVER populated,
-		// this fallback means the VM will never be garbage collected since we call this helper every time
-		// we create an in-memory NodeClaim. We currently assume this shouldn't happen because VMs that fail
-		// to come up should eventually stop appearing in Azure API responses.
-		nodeClaim.CreationTimestamp = metav1.Time{Time: time.Now()}
-	}
-	// Set the deletionTimestamp to be the current time if the instance is currently terminating
-	if utils.IsVMDeleting(*vm) {
-		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	}
-	nodeClaim.Status.ProviderID = utils.VMResourceIDToProviderID(ctx, *vm.ID)
-	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
-		nodeClaim.Status.ImageID = utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)
-	}
-	return nodeClaim, nil
-}
-
-func GetNodeClaimNameFromVMName(vmName string) string {
-	return strings.TrimPrefix(vmName, "aks-")
 }
 
 const truncateAt = 1200
