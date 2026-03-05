@@ -139,6 +139,9 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 }
 
 func (o *Options) GetAPIServerName() string {
+	if o.ClusterEndpoint == "" {
+		return ""
+	}
 	endpoint, _ := url.Parse(o.ClusterEndpoint) // assume to already validated
 	return endpoint.Hostname()
 }
@@ -168,8 +171,10 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		return fmt.Errorf("validating options, %w", err)
 	}
 
-	// ClusterID is generated from cluster endpoint
-	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
+	// ClusterID is generated from cluster endpoint (only for AKS modes)
+	if o.ClusterEndpoint != "" {
+		o.ClusterID = getAKSClusterID(o.GetAPIServerName())
+	}
 
 	return nil
 }
