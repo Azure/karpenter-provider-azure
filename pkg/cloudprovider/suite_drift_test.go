@@ -24,16 +24,20 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -308,6 +312,121 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 	})
+
+	Context("ProvisionMode = AKSMachineAPI + Batch", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				UseSIG:        lo.ToPtr(true),
+			})
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
+
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+
+			azureEnv = test.NewEnvironment(ctx, env)
+			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+		})
+
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			cluster.Reset()
+			azureEnv.Reset()
+			azureEnvNonZonal.Reset()
+		})
+
+		Context("Drift", func() {
+			var nodeClaim *karpv1.NodeClaim
+			var node *v1.Node
+			var createInput *fake.AKSMachineCreateOrUpdateInput
+
+			BeforeEach(func() {
+				instanceType := "Standard_D2_v2"
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node = ExpectScheduled(ctx, env.Client, pod)
+				if nodeClass.Status.KubernetesVersion != nil {
+					node.Status.NodeInfo.KubeletVersion = "v" + *nodeClass.Status.KubernetesVersion
+				}
+				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2"
+
+				ExpectApplied(ctx, env.Client, node)
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput = azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+
+				nodeClaims, err := cloudProvider.List(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClaims).To(HaveLen(1))
+
+				nodeClaim = nodeClaims[0]
+				nodeClaim.Status.NodeName = node.Name
+				nodeClaim.Spec.NodeClassRef = &karpv1.NodeClassReference{
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
+				}
+				// Set hash annotations on the NodeClaim to match the NodeClass,
+				// mirroring what Create() does via setAdditionalAnnotationsForNewNodeClaim.
+				// List() doesn't return these annotations, so we set them manually.
+				nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
+					v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+					v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+				})
+			})
+
+			runCommonDriftTests(func() *karpv1.NodeClaim { return nodeClaim })
+
+			// AKSMachineAPI-specific: DriftAction field
+			Context("Node Image Drift", func() {
+				It("should trigger drift when DriftAction field is available", func() {
+					aksMachineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, createInput.AKSMachineName)
+
+					existingMachine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(aksMachineID)
+					Expect(ok).To(BeTrue(), "AKS machine should exist in fake store")
+
+					aksMachine := existingMachine.(armcontainerservice.Machine)
+
+					if aksMachine.Properties == nil {
+						aksMachine.Properties = &armcontainerservice.MachineProperties{}
+					}
+					if aksMachine.Properties.Status == nil {
+						aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
+					}
+					aksMachine.Properties.Status.DriftAction = lo.ToPtr(armcontainerservice.DriftActionRecreate)
+					aksMachine.Properties.Status.DriftReason = lo.ToPtr("ClusterConfigurationChanged")
+
+					azureEnv.AKSDataStorage.AKSMachines.Store(aksMachineID, aksMachine)
+
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(ClusterConfigDrift))
+				})
+			})
+		})
+	})
+
+	// --- AKSScriptless mode drift tests (VM-based provisioning) ---
+	// These tests verify drift behavior when ProvisionMode = AKSScriptless.
+	// If ProvisionMode = AKSScriptless is no longer supported, these tests will be removed.
 
 	Context("ProvisionMode = AKSScriptless", func() {
 		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
