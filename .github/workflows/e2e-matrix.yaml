@@ -41,6 +41,7 @@ jobs:
           - InPlaceUpdate
           - Integration
           - KubernetesUpgrade
+          - Machines
           - NodeClaim
           - Scheduling
           - Spot
