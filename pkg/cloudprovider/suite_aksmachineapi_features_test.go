@@ -73,6 +73,7 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
