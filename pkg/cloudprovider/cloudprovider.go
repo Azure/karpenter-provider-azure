@@ -141,17 +141,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class, %w", err))
 	}
 
-	/*
-		// TODO: Remove this after v1
-		nodePool, err := utils.ResolveNodePoolFromNodeClaim(ctx, c.kubeClient, nodeClaim)
-		if err != nil {
-			return nil, err
-		}
-		kubeletHash, err := utils.GetHashKubelet(nodePool, nodeClass)
-		if err != nil {
-			return nil, err
-		}
-	*/
 	if err = c.validateNodeClass(nodeClass); err != nil {
 		return nil, err
 	}
