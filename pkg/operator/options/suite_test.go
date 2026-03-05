@@ -978,3 +978,157 @@ func TestAdditionalTagsValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestAzureVMProvisionMode(t *testing.T) {
+	t.Parallel()
+
+	azurevmSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
+
+	tests := []struct {
+		name      string
+		args      []string
+		wantErr   bool
+		errSubstr string
+		validate  func(t *testing.T, opts *options.Options)
+	}{
+		{
+			name: "should succeed with only subnet and node-resource-group in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.ProvisionMode != "azurevm" {
+					t.Errorf("expected provision mode 'azurevm', got %q", opts.ProvisionMode)
+				}
+			},
+		},
+		{
+			name: "should not require cluster-endpoint in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+		},
+		{
+			name: "should not require cluster-name in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.ClusterName != "" {
+					t.Errorf("expected empty ClusterName, got %q", opts.ClusterName)
+				}
+			},
+		},
+		{
+			name: "should not require kubelet-bootstrap-token in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.KubeletClientTLSBootstrapToken != "" {
+					t.Errorf("expected empty KubeletClientTLSBootstrapToken, got %q", opts.KubeletClientTLSBootstrapToken)
+				}
+			},
+		},
+		{
+			name: "should not require ssh-public-key in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.SSHPublicKey != "" {
+					t.Errorf("expected empty SSHPublicKey, got %q", opts.SSHPublicKey)
+				}
+			},
+		},
+		{
+			name:      "should fail in azurevm mode when vnet-subnet-id is missing",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", "", "--node-resource-group", "my-node-rg"},
+			wantErr:   true,
+			errSubstr: "missing field, vnet-subnet-id",
+		},
+		{
+			name:      "should fail in azurevm mode when node-resource-group is missing",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID},
+			wantErr:   true,
+			errSubstr: "missing field, node-resource-group",
+		},
+		{
+			name:      "should still validate vnet-subnet-id format in azurevm mode",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", "invalid-subnet-id", "--node-resource-group", "my-node-rg"},
+			wantErr:   true,
+			errSubstr: "vnet-subnet-id is invalid",
+		},
+		{
+			name:      "should still validate vm-memory-overhead-percent in azurevm mode",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--vm-memory-overhead-percent", "-0.01"},
+			wantErr:   true,
+			errSubstr: "vm-memory-overhead-percent cannot be negative",
+		},
+		{
+			name:      "should still validate additional-tags in azurevm mode",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--additional-tags", fmt.Sprintf("%s=value", strings.Repeat("a", 513))},
+			wantErr:   true,
+			errSubstr: "exceeds maximum length of 512 characters",
+		},
+		{
+			name:      "should still validate disk-encryption-set-id in azurevm mode",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--node-osdisk-diskencryptionset-id", "not-a-valid-resource-id"},
+			wantErr:   true,
+			errSubstr: "invalid DiskEncryptionSet ID",
+		},
+		{
+			name: "should not generate ClusterID when ClusterEndpoint is empty in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.ClusterID != "" {
+					t.Errorf("expected empty ClusterID, got %q", opts.ClusterID)
+				}
+			},
+		},
+		{
+			name: "should succeed with optional cluster-endpoint and generate ClusterID in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.ClusterID == "" {
+					t.Error("expected non-empty ClusterID when cluster-endpoint is provided")
+				}
+			},
+		},
+		{
+			name: "should skip networking validation in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--network-plugin", "kubenet"},
+		},
+		{
+			name: "IsAzureVMMode returns true for azurevm provision mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if !opts.IsAzureVMMode() {
+					t.Error("expected IsAzureVMMode() to return true")
+				}
+			},
+		},
+		{
+			name: "IsAzureVMMode returns false for aksscriptless provision mode",
+			args: []string{"--cluster-name", "my-name", "--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io", "--kubelet-bootstrap-token", "flag-bootstrap-token", "--ssh-public-key", "flag-ssh-public-key", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.IsAzureVMMode() {
+					t.Error("expected IsAzureVMMode() to return false")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saveAndClearEnv(t)
+			fs, opts := newFlagSetAndOpts()
+			err := opts.Parse(fs, tt.args...)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errSubstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.validate != nil {
+				tt.validate(t, opts)
+			}
+		})
+	}
+}
