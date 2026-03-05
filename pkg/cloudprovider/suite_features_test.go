@@ -919,6 +919,17 @@ var _ = Describe("CloudProvider - Features", func() {
 		runCommonKubeletConfigTests()
 	})
 
+	Context("ProvisionMode = AKSMachineAPI + Batch", func() {
+		BeforeEach(func() { setupAKSMachineAPIModeWithBatch() })
+		AfterEach(func() { teardownTestEnvironment() })
+
+		runCommonGPUTests()
+		runCommonEphemeralDiskTests()
+		runCommonAdditionalTagsTests()
+		runCommonSubnetTests()
+		runCommonKubeletConfigTests()
+	})
+
 	Context("ProvisionMode = AKSScriptless", func() {
 		BeforeEach(func() { setupProvisionModeAKSScriptlessTestEnvironment() })
 		AfterEach(func() { teardownTestEnvironment() })
