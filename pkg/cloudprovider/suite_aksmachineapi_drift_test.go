@@ -103,7 +103,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(nodeClaims).To(HaveLen(1))
 
 				nodeClaim = nodeClaims[0]
-				nodeClaim.Status.NodeName = node.Name // Normally core would do this.
+				nodeClaim.Status.NodeName = node.Name                                // Normally core would do this.
 				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered) // Normally core would do this during node registration.
 				nodeClaim.Spec.NodeClassRef = &karpv1.NodeClassReference{
 					Group: object.GVK(nodeClass).Group,
