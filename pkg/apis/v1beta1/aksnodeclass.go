@@ -52,6 +52,15 @@ type AKSNodeClassSpec struct {
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
+	// UserData is verbatim CustomData that will be passed to the VM at creation time.
+	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
+	// Not exposed in the AKSNodeClass API.
+	UserData *string `json:"-"`
+	// ManagedIdentities is a list of user-assigned managed identity resource IDs
+	// from AzureNodeClass. Only used in AzureVM provision mode via the adapter.
+	// These are merged with the global --node-identities at VM creation time.
+	// Not exposed in the AKSNodeClass API.
+	ManagedIdentities []string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}

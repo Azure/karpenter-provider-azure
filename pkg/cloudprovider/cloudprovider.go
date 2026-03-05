@@ -129,6 +129,11 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	// In AzureVM mode, resolve AzureNodeClass instead of AKSNodeClass and adapt it
+	if options.FromContext(ctx).IsAzureVMMode() {
+		return c.createAzureVMInstance(ctx, nodeClaim)
+	}
+
 	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -172,6 +177,40 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	// Choose provider based on provision mode
 	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI {
 		return c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	}
+
+	return c.createVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+}
+
+// createAzureVMInstance resolves AzureNodeClass, adapts it to AKSNodeClass, and routes through the VM path.
+// In AzureVM mode, we skip AKS-specific validation (k8s version, images) since the user controls bootstrapping.
+func (c *CloudProvider) createAzureVMInstance(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	azureNodeClass, err := nodeclaimutils.GetAzureNodeClass(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+		}
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving AzureNodeClass, %w", err))
+	}
+
+	// Adapt to AKSNodeClass for the VM provider path
+	nodeClass := nodeclaimutils.AKSNodeClassFromAzureNodeClass(azureNodeClass)
+
+	// Skip validateNodeClass — AzureNodeClass doesn't carry AKS-specific status (k8s version, images)
+	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
+	if err != nil {
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
+	}
+	if len(instanceTypes) == 0 {
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
+	}
+	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
+			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
+			if err != nil {
+				return nil, fmt.Errorf("creating instance, %w", err)
+			}
+		}
 	}
 
 	return c.createVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
