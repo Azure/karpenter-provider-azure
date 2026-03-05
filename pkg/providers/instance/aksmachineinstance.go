@@ -363,7 +363,7 @@ func (p *DefaultAKSMachineProvider) getMachineWithRetry(ctx context.Context, aks
 		Duration: 5 * time.Second,
 		Factor:   2.0,
 		Jitter:   0.1,
-		Steps:    5,  // 5s, 10s, 20s, 40s, 80s (capped at 30s) → attempts at ~0s, 5s, 15s, 35s, 65s
+		Steps:    5, // 5s, 10s, 20s, 40s, 80s (capped at 30s) → attempts at ~0s, 5s, 15s, 35s, 65s
 		Cap:      30 * time.Second,
 	}
 
