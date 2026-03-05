@@ -29,9 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	azureclouds "sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -43,81 +41,15 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
-var (
-	KarpCapacityTypeToVMPriority = map[string]armcompute.VirtualMachinePriorityTypes{
-		karpv1.CapacityTypeSpot:     armcompute.VirtualMachinePriorityTypesSpot,
-		karpv1.CapacityTypeOnDemand: armcompute.VirtualMachinePriorityTypesRegular,
-	}
-	VMPriorityToKarpCapacityType = map[armcompute.VirtualMachinePriorityTypes]string{
-		armcompute.VirtualMachinePriorityTypesSpot:    karpv1.CapacityTypeSpot,
-		armcompute.VirtualMachinePriorityTypesRegular: karpv1.CapacityTypeOnDemand,
-	}
-	// Note that there is no ScaleSetPriorityToKarpCapacityType because the karpenter.sh/capacity-type
-	// label is the "official" label that we actually key priority off of. Selection still works though
-	// because when we list instance types on-demand offerings always have v1beta1.ScaleSetPriorityRegular
-	// and spot instances always have v1beta1.ScaleSetPrioritySpot, so the correct karpenter.sh/capacity-type
-	// label is still selected even if the user is using kubernetes.azure.com/scalesetpriority only on the NodePool.
-	VMPriorityToScaleSetPriority = map[armcompute.VirtualMachinePriorityTypes]string{
-		armcompute.VirtualMachinePriorityTypesSpot:    v1beta1.ScaleSetPrioritySpot,
-		armcompute.VirtualMachinePriorityTypesRegular: v1beta1.ScaleSetPriorityRegular,
-	}
-
-	aksIdentifyingExtensionEnvs = sets.New(
-		azureclouds.PublicCloud.Name,
-		azureclouds.ChinaCloud.Name,
-		azureclouds.USGovernmentCloud.Name,
-	)
-)
-
-const (
-	aksIdentifyingExtensionName = "computeAksLinuxBilling"
-	// TODO: Why bother with a different CSE name for Windows?
-	cseNameWindows = "windows-cse-agent-karpenter"
-	cseNameLinux   = "cse-agent-karpenter"
-)
-
-// ErrorCodeForMetrics extracts a stable Azure error code for metric labeling when possible.
-func ErrorCodeForMetrics(err error) string {
-	if err == nil {
-		return "UnknownError"
-	}
-	if azErr := sdkerrors.IsResponseError(err); azErr != nil {
-		if azErr.ErrorCode != "" {
-			return azErr.ErrorCode
-		}
-		return "UnknownError"
-	}
-	return "UnknownError"
-}
-
-// GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
-// This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
-func GetManagedExtensionNames(provisionMode string, env *auth.Environment) []string {
-	var result []string
-	// Only including AKS identifying extension in the clouds it is supported in
-	if isAKSIdentifyingExtensionEnabled(env) {
-		result = append(result, aksIdentifyingExtensionName)
-	}
-	if provisionMode == consts.ProvisionModeBootstrappingClient {
-		result = append(result, cseNameLinux) // TODO: Windows
-	}
-	return result
-}
-
-func isAKSIdentifyingExtensionEnabled(env *auth.Environment) bool {
-	return aksIdentifyingExtensionEnvs.Has(env.Environment.Name)
-}
 
 type Resource = map[string]interface{}
 
@@ -160,7 +92,7 @@ type DefaultVMProvider struct {
 	location                     string
 	azClient                     *azclient.AZClient
 	instanceTypeProvider         instancetype.Provider
-	launchTemplateProvider       *launchtemplate.Provider
+	imageResolver                imagefamily.Resolver
 	loadBalancerProvider         *loadbalancer.Provider
 	networkSecurityGroupProvider *networksecuritygroup.Provider
 	resourceGroup                string
@@ -170,6 +102,12 @@ type DefaultVMProvider struct {
 	errorHandling                *offerings.ResponseErrorHandler
 	env                          *auth.Environment
 
+	// Fields previously on launchtemplate.Provider, now inlined
+	caBundle             *string
+	clusterEndpoint      string
+	tenantID             string
+	clusterResourceGroup string
+
 	vmListQuery, nicListQuery string
 	deletingVMs               sets.Set[string] // tracks in-flight delete operations by VM name
 	deletingVMsMu             sync.RWMutex
@@ -178,7 +116,7 @@ type DefaultVMProvider struct {
 func NewDefaultVMProvider(
 	azClient *azclient.AZClient,
 	instanceTypeProvider instancetype.Provider,
-	launchTemplateProvider *launchtemplate.Provider,
+	imageResolver imagefamily.Resolver,
 	loadBalancerProvider *loadbalancer.Provider,
 	networkSecurityGroupProvider *networksecuritygroup.Provider,
 	offeringsCache *cache.UnavailableOfferings,
@@ -188,11 +126,15 @@ func NewDefaultVMProvider(
 	provisionMode string,
 	diskEncryptionSetID string,
 	env *auth.Environment,
+	caBundle *string,
+	clusterEndpoint string,
+	tenantID string,
+	clusterResourceGroup string,
 ) *DefaultVMProvider {
 	return &DefaultVMProvider{
 		azClient:                     azClient,
 		instanceTypeProvider:         instanceTypeProvider,
-		launchTemplateProvider:       launchTemplateProvider,
+		imageResolver:                imageResolver,
 		loadBalancerProvider:         loadBalancerProvider,
 		networkSecurityGroupProvider: networkSecurityGroupProvider,
 		location:                     location,
@@ -201,6 +143,10 @@ func NewDefaultVMProvider(
 		provisionMode:                provisionMode,
 		diskEncryptionSetID:          diskEncryptionSetID,
 		env:                          env,
+		caBundle:                     caBundle,
+		clusterEndpoint:              clusterEndpoint,
+		tenantID:                     tenantID,
+		clusterResourceGroup:         clusterResourceGroup,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
@@ -410,319 +356,49 @@ func (p *DefaultVMProvider) DeleteNic(ctx context.Context, nicName string) error
 	return deleteNicIfExists(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, nicName)
 }
 
-// createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
-func (p *DefaultVMProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string, tags map[string]*string) (err error) {
-	vmExt := p.getAKSIdentifyingExtension(tags)
-	vmExtName := *vmExt.Name
-	log.FromContext(ctx).V(1).Info("creating virtual machine AKS identifying extension", "vmName", vmName)
-	v, err := createVirtualMachineExtension(ctx, p.azClient.VirtualMachineExtensionsClient(), p.resourceGroup, vmName, vmExtName, *vmExt)
-	if err != nil {
-		return fmt.Errorf("creating VM AKS identifying extension %q for VM %q: %w", vmExtName, vmName, err)
-	}
-	log.FromContext(ctx).V(1).Info("created virtual machine AKS identifying extension",
-		"vmName", vmName,
-		"extensionID", *v.ID,
-	)
-	return nil
-}
-
-func (p *DefaultVMProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool, tags map[string]*string) error {
-	vmExt := p.getCSExtension(cse, isWindows, tags)
-	vmExtName := *vmExt.Name
-	log.FromContext(ctx).V(1).Info("creating virtual machine CSE", "vmName", vmName)
-	v, err := createVirtualMachineExtension(ctx, p.azClient.VirtualMachineExtensionsClient(), p.resourceGroup, vmName, vmExtName, *vmExt)
-	if err != nil {
-		return fmt.Errorf("creating VM CSE for VM %q: %w", vmName, err)
-	}
-	log.FromContext(ctx).V(1).Info("created virtual machine CSE",
-		"vmName", vmName,
-		"extensionID", *v.ID,
-	)
-	return nil
-}
-
-func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
-	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
-		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
-			ID: &poolID,
-		})
-	}
-
-	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
-		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
-
-	enableAcceleratedNetworking := false
-	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
-		enableAcceleratedNetworking = true
-	}
-
-	var nsgRef *armnetwork.SecurityGroup
-	if opts.NetworkSecurityGroupID != "" {
-		nsgRef = &armnetwork.SecurityGroup{
-			ID: &opts.NetworkSecurityGroupID,
-		}
-	}
-
-	nic := armnetwork.Interface{
-		Location: lo.ToPtr(p.location),
-		Properties: &armnetwork.InterfacePropertiesFormat{
-			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
-				{
-					Name: &opts.NICName,
-					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(true),
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-
-						LoadBalancerBackendAddressPools: ipv4BackendPools,
-					},
-				},
-			},
-			NetworkSecurityGroup:        nsgRef,
-			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
-			EnableIPForwarding:          lo.ToPtr(false),
-		},
-	}
-	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
-		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
-		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
-		for i := 1; i < int(opts.MaxPods); i++ {
-			nic.Properties.IPConfigurations = append(
-				nic.Properties.IPConfigurations,
-				&armnetwork.InterfaceIPConfiguration{
-					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i)),
-					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(false),
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-					},
-				},
-			)
-		}
-	}
-	return nic
-}
 
 // E.g., aks-default-2jf98
 func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
 
-type createNICOptions struct {
-	NICName                string
-	BackendPools           *loadbalancer.BackendAddressPools
-	InstanceType           *corecloudprovider.InstanceType
-	LaunchTemplate         *launchtemplate.Template
-	NetworkPlugin          string
-	NetworkPluginMode      string
-	MaxPods                int32
-	NetworkSecurityGroupID string
-}
-
-func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
-	nic := p.newNetworkInterfaceForVM(opts)
-	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
-	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", opts.NICName)
-	res, err := createNic(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, opts.NICName, nic)
-	if err != nil {
-		return "", err
-	}
-	log.FromContext(ctx).V(1).Info("successfully created network interface", "nicName", opts.NICName, "nicID", *res.ID)
-	return *res.ID, nil
-}
-
-// createVMOptions contains all the parameters needed to create a VM
-type createVMOptions struct {
-	VMName              string
-	NicReference        string
-	Zone                string
-	CapacityType        string
-	Location            string
-	SSHPublicKey        string
-	LinuxAdminUsername  string
-	NodeIdentities      []string
-	NodeClass           *v1beta1.AKSNodeClass
-	LaunchTemplate      *launchtemplate.Template
-	InstanceType        *corecloudprovider.InstanceType
-	ProvisionMode       string
-	UseSIG              bool
-	DiskEncryptionSetID string
-	NodePoolName        string
-}
-
-// newVMObject creates a new armcompute.VirtualMachine from the provided options
-func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
-	if opts.LaunchTemplate.IsWindows {
-		return &armcompute.VirtualMachine{} // TODO(Windows)
-	}
-
-	vm := &armcompute.VirtualMachine{
-		Name:     lo.ToPtr(opts.VMName), // TODO: I think it's safe to set this, even though it's read only
-		Location: lo.ToPtr(opts.Location),
-		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
-		Properties: &armcompute.VirtualMachineProperties{
-			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
-			},
-
-			StorageProfile: &armcompute.StorageProfile{
-				OSDisk: &armcompute.OSDisk{
-					Name:         lo.ToPtr(opts.VMName),
-					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
-					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
-					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
-				},
-			},
-
-			NetworkProfile: &armcompute.NetworkProfile{
-				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
-					{
-						ID: &opts.NicReference,
-						Properties: &armcompute.NetworkInterfaceReferenceProperties{
-							Primary:      lo.ToPtr(true),
-							DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
-						},
-					},
-				},
-			},
-
-			OSProfile: &armcompute.OSProfile{
-				AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
-				ComputerName:  &opts.VMName,
-				LinuxConfiguration: &armcompute.LinuxConfiguration{
-					DisablePasswordAuthentication: lo.ToPtr(true),
-					SSH: &armcompute.SSHConfiguration{
-						PublicKeys: []*armcompute.SSHPublicKey{
-							{
-								KeyData: lo.ToPtr(opts.SSHPublicKey),
-								Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
-							},
-						},
-					},
-				},
-			},
-			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
-		},
-		Zones: utils.MakeARMZonesFromAKSLabelZone(opts.Zone),
-		Tags:  opts.LaunchTemplate.Tags,
-	}
-	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
-	setVMPropertiesOSDiskEncryption(vm.Properties, opts.DiskEncryptionSetID)
-	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
-	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
-	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
-
-	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
-	} else {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.ScriptlessCustomData)
-	}
-
-	return vm
-}
-
-func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, launchTemplate *launchtemplate.Template) {
-	placement := launchTemplate.StorageProfilePlacement
-	if launchTemplate.StorageProfileIsEphemeral {
-		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
-			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
-			Placement: lo.ToPtr(placement),
-		}
-		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
-	}
-}
-
-func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProperties, diskEncryptionSetID string) {
-	if diskEncryptionSetID != "" {
-		if vmProperties.StorageProfile.OSDisk.ManagedDisk == nil {
-			vmProperties.StorageProfile.OSDisk.ManagedDisk = &armcompute.ManagedDiskParameters{}
-		}
-		vmProperties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet = &armcompute.DiskEncryptionSetParameters{
-			ID: lo.ToPtr(diskEncryptionSetID),
-		}
-	}
-}
-
-// setImageReference sets the image reference for the VM based on if we are using self hosted karpenter or the node auto provisioning addon
-func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageID string, useSIG bool) {
-	if useSIG {
-		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
-			ID: lo.ToPtr(imageID),
-		}
-		return
-	}
-	vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
-		CommunityGalleryImageID: lo.ToPtr(imageID),
-	}
-}
-
-// setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
-func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
-	if capacityType == karpv1.CapacityTypeSpot {
-		vmProperties.EvictionPolicy = lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
-		vmProperties.BillingProfile = &armcompute.BillingProfile{
-			MaxPrice: lo.ToPtr(float64(-1)),
-		}
-	}
-}
-
-func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
-		if vmProperties.SecurityProfile == nil {
-			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
-		}
-		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
-	}
-}
 
 type createResult struct {
 	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
 	VM     *armcompute.VirtualMachine
 }
 
-// createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
-func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*createResult, error) {
+// createVirtualMachine creates a new VM or returns an existing one if it already exists.
+func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, vmName string, vm *armcompute.VirtualMachine, imageID string, instanceType *corecloudprovider.InstanceType, zone, capacityType, nodePoolName string) (*createResult, error) {
 	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
-	// there are some non-deterministic properties that may change.
-	// Zones: zones are non-detrminsitic as we do a random pick out of zones on the nodeclaim that satisfy the workload requirements.
-	// 	      Nodeclaim can have Requirements: Zone-1, Zone-2, Zone-3
-	//        Then we pick a random zone from that list in each create call that satisfies the workload
-	// UnavailableOfferingsCache: The unavailable offerings cache is used to determine if we should pick the sku, zone, or even priority.
-	//        Errors for things like subscription level spot quota, SKU Quota, etc are stored in the unavailable offerings cache.
-	//        So values like the SKU, Priority(Spot/On-Demand), may be different, which results in a different image, different
-	//        os.CustomData.
-	// If any of these properties are modified, the existing vm will return a 409 status code "PropertyChangeNotAllowed".
-	// this results in create being blocked on the nodeclaim until liveness TTL is hit.
-	resp, err := p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, opts.VMName, nil)
-	// If status == ok, we want to return the existing vmm
+	resp, err := p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, vmName, nil)
 	if err == nil {
 		return &createResult{VM: &resp.VirtualMachine}, nil
 	}
-	// if status != ok, and for a reason other than we did not find the vm
 	if !sdkerrors.IsNotFoundErr(err) {
-		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
+		return nil, fmt.Errorf("getting VM %q: %w", vmName, err)
 	}
-	vm := newVMObject(opts)
-	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, logging.InstanceType, opts.InstanceType.Name)
+	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", vmName, logging.InstanceType, instanceType.Name)
 	VMCreateStartMetric.With(map[string]string{
-		metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
-		metrics.SizeLabel:         opts.InstanceType.Name,
-		metrics.ZoneLabel:         opts.Zone,
-		metrics.CapacityTypeLabel: opts.CapacityType,
-		metrics.NodePoolLabel:     opts.NodePoolName,
+		metrics.ImageLabel:        imageID,
+		metrics.SizeLabel:         instanceType.Name,
+		metrics.ZoneLabel:         zone,
+		metrics.CapacityTypeLabel: capacityType,
+		metrics.NodePoolLabel:     nodePoolName,
 	}).Inc()
 
-	poller, err := p.azClient.VirtualMachinesClient().BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
+	poller, err := p.azClient.VirtualMachinesClient().BeginCreateOrUpdate(ctx, p.resourceGroup, vmName, *vm, nil)
 	if err != nil {
 		VMCreateFailureMetric.With(map[string]string{
-			metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
-			metrics.SizeLabel:         opts.InstanceType.Name,
-			metrics.ZoneLabel:         opts.Zone,
-			metrics.CapacityTypeLabel: opts.CapacityType,
-			metrics.NodePoolLabel:     opts.NodePoolName,
+			metrics.ImageLabel:        imageID,
+			metrics.SizeLabel:         instanceType.Name,
+			metrics.ZoneLabel:         zone,
+			metrics.CapacityTypeLabel: capacityType,
+			metrics.NodePoolLabel:     nodePoolName,
 			metrics.PhaseLabel:        phaseSyncFailure,
 			metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
 		}).Inc()
-		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
+		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
 }
@@ -730,8 +406,6 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
-//
-//nolint:gocyclo
 func (p *DefaultVMProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -742,72 +416,27 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
-	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType)
-	if err != nil {
-		return nil, fmt.Errorf("getting launch template: %w", err)
-	}
 
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
+	// Resolve bootstrap data and build the VM template
+	vm, bootstrap, err := p.buildVMTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim, "" /* nicReference filled after NIC creation */)
 	if err != nil {
-		return nil, fmt.Errorf("getting backend pools: %w", err)
-	}
-	networkPlugin := options.FromContext(ctx).NetworkPlugin
-	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
-	if err != nil {
-		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
-	}
-	var nsgID string
-	if !isAKSManagedVNET {
-		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("getting managed network security group: %w", err)
-		}
-		nsgID = lo.FromPtr(nsg.ID)
+		return nil, fmt.Errorf("building VM template: %w", err)
 	}
 
-	// TODO: Not returning after launching this LRO because
-	// TODO: doing so would bypass the capacity and other errors that are currently handled by
-	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
-	// TODO: emitted in capacity failure cases that we probably want.
-	nicReference, err := p.createNetworkInterface(
-		ctx,
-		&createNICOptions{
-			NICName:                resourceName,
-			NetworkPlugin:          networkPlugin,
-			NetworkPluginMode:      networkPluginMode,
-			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:         launchTemplate,
-			BackendPools:           backendPools,
-			InstanceType:           instanceType,
-			NetworkSecurityGroupID: nsgID,
-		},
-	)
+	// Create NIC using subnet and tags from bootstrap data
+	nicReference, err := p.buildAndCreateNIC(ctx, resourceName, instanceType, nodeClass, bootstrap.SubnetID, bootstrap.Tags)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := p.createVirtualMachine(ctx, &createVMOptions{
-		VMName:              resourceName,
-		NicReference:        nicReference,
-		Zone:                zone,
-		CapacityType:        capacityType,
-		Location:            p.location,
-		SSHPublicKey:        options.FromContext(ctx).SSHPublicKey,
-		LinuxAdminUsername:  options.FromContext(ctx).LinuxAdminUsername,
-		NodeIdentities:      options.FromContext(ctx).NodeIdentities,
-		NodeClass:           nodeClass,
-		LaunchTemplate:      launchTemplate,
-		InstanceType:        instanceType,
-		ProvisionMode:       p.provisionMode,
-		UseSIG:              options.FromContext(ctx).UseSIG,
-		DiskEncryptionSetID: p.diskEncryptionSetID,
-		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
-	})
+	// Patch the NIC reference into the VM template
+	vm.Properties.NetworkProfile = configureNetworkProfile(nicReference)
+
+	// Create or retrieve existing VM
+	result, err := p.createVirtualMachine(ctx, resourceName, vm, bootstrap.ImageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {
@@ -815,9 +444,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		}
 		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
 		if handledError != nil {
-			// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
-			// Thus the error needs to be returned.
-			// Assuming that `HandleResponseError` already format/convert the error for such (e.g., `InsufficientCapacityError`).
 			return nil, handledError
 		}
 		return nil, err
@@ -835,16 +461,13 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		WaitFunc: func() error {
 			if result.Poller == nil {
 				// Poller is nil means the VM existed already and we're done.
-				// TODO: if the VM doesn't have extensions this will still happen and we will have to
-				// TODO: wait for the TTL for the claim to be deleted and recreated. This will most likely
-				// TODO: happen during Karpenter pod restart.
 				return nil
 			}
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
 				VMCreateFailureMetric.With(map[string]string{
-					metrics.ImageLabel:        launchTemplate.ImageID,
+					metrics.ImageLabel:        bootstrap.ImageID,
 					metrics.SizeLabel:         instanceType.Name,
 					metrics.ZoneLabel:         zone,
 					metrics.CapacityTypeLabel: capacityType,
@@ -859,23 +482,19 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				}
 				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
 				if handledError != nil {
-					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
-					// Thus the error needs to be returned.
-					// Assuming that `HandleResponseError` already format/convert the error for such (e.g., `InsufficientCapacityError`).
 					return handledError
 				}
 				return err
 			}
 
 			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
+				err = p.createCSExtensionFromSpec(ctx, resourceName, bootstrap.CustomScriptsCSE, bootstrap.IsWindows, bootstrap.Tags)
 				if err != nil {
-					// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
 					return err
 				}
 			}
 			if isAKSIdentifyingExtensionEnabled(p.env) {
-				err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
+				err = p.createAKSIdentifyingExtensionFromSpec(ctx, resourceName, bootstrap.Tags)
 				if err != nil {
 					return err
 				}
@@ -887,46 +506,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}, nil
 }
 
-func (p *DefaultVMProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
-	// set tags
-	nic.Tags = template.Tags
-	for _, ipConfig := range nic.Properties.IPConfigurations {
-		ipConfig.Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
-	}
-}
-
-func (p *DefaultVMProvider) getLaunchTemplate(
-	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
-	nodeClaim *karpv1.NodeClaim,
-	instanceType *corecloudprovider.InstanceType,
-	capacityType string,
-) (*launchtemplate.Template, error) {
-	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
-	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
-	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
-
-	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
-	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
-	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
-		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
-		func(k string, req *scheduling.Requirement) bool {
-			return labels.IsKubeletLabel(k)
-		},
-	)
-	additionalLabels := lo.Assign(
-		claimLabels,
-		labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
-		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
-	)
-
-	launchTemplate, err := p.launchTemplateProvider.GetTemplate(ctx, nodeClass, nodeClaim, instanceType, additionalLabels)
-	if err != nil {
-		return nil, fmt.Errorf("getting launch templates, %w", err)
-	}
-
-	return launchTemplate, nil
-}
 
 // mustDeleteNic parameter is used to determine whether NIC deletion failure is considered an error.
 // We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
@@ -1001,88 +580,4 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 	return nil
 }
 
-func (p *DefaultVMProvider) getAKSIdentifyingExtension(tags map[string]*string) *armcompute.VirtualMachineExtension {
-	const (
-		vmExtensionType                  = "Microsoft.Compute/virtualMachines/extensions"
-		aksIdentifyingExtensionPublisher = "Microsoft.AKS"
-		aksIdentifyingExtensionTypeLinux = "Compute.AKS.Linux.Billing"
-	)
 
-	vmExtension := &armcompute.VirtualMachineExtension{
-		Location: lo.ToPtr(p.location),
-		Name:     lo.ToPtr(aksIdentifyingExtensionName),
-		Properties: &armcompute.VirtualMachineExtensionProperties{
-			Publisher:               lo.ToPtr(aksIdentifyingExtensionPublisher),
-			TypeHandlerVersion:      lo.ToPtr("1.0"),
-			AutoUpgradeMinorVersion: lo.ToPtr(true),
-			Settings:                &map[string]interface{}{},
-			Type:                    lo.ToPtr(aksIdentifyingExtensionTypeLinux),
-		},
-		Type: lo.ToPtr(vmExtensionType),
-		Tags: tags,
-	}
-
-	return vmExtension
-}
-
-func (p *DefaultVMProvider) getCSExtension(cse string, isWindows bool, tags map[string]*string) *armcompute.VirtualMachineExtension {
-	const (
-		vmExtensionType     = "Microsoft.Compute/virtualMachines/extensions"
-		cseTypeWindows      = "CustomScriptExtension"
-		csePublisherWindows = "Microsoft.Compute"
-		cseVersionWindows   = "1.10"
-		cseTypeLinux        = "CustomScript"
-		csePublisherLinux   = "Microsoft.Azure.Extensions"
-		cseVersionLinux     = "2.0"
-	)
-
-	return &armcompute.VirtualMachineExtension{
-		Location: lo.ToPtr(p.location),
-		Name:     lo.ToPtr(lo.Ternary(isWindows, cseNameWindows, cseNameLinux)),
-		Type:     lo.ToPtr(vmExtensionType),
-		Properties: &armcompute.VirtualMachineExtensionProperties{
-			AutoUpgradeMinorVersion: lo.ToPtr(true),
-			Type:                    lo.ToPtr(lo.Ternary(isWindows, cseTypeWindows, cseTypeLinux)),
-			Publisher:               lo.ToPtr(lo.Ternary(isWindows, csePublisherWindows, csePublisherLinux)),
-			TypeHandlerVersion:      lo.ToPtr(lo.Ternary(isWindows, cseVersionWindows, cseVersionLinux)),
-			Settings:                &map[string]interface{}{},
-			ProtectedSettings: &map[string]interface{}{
-				"commandToExecute": cse,
-			},
-		},
-		Tags: tags,
-	}
-}
-
-func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.VirtualMachineIdentity {
-	var identity *armcompute.VirtualMachineIdentity
-	if len(nodeIdentities) > 0 {
-		identityMap := make(map[string]*armcompute.UserAssignedIdentitiesValue)
-		for _, identityID := range nodeIdentities {
-			identityMap[identityID] = &armcompute.UserAssignedIdentitiesValue{}
-		}
-
-		if len(identityMap) > 0 {
-			identity = &armcompute.VirtualMachineIdentity{
-				Type:                   lo.ToPtr(armcompute.ResourceIdentityTypeUserAssigned),
-				UserAssignedIdentities: identityMap,
-			}
-		}
-	}
-
-	return identity
-}
-
-func GetCapacityTypeFromVM(vm *armcompute.VirtualMachine) string {
-	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
-		return VMPriorityToKarpCapacityType[*vm.Properties.Priority]
-	}
-	return ""
-}
-
-func GetScaleSetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
-	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
-		return VMPriorityToScaleSetPriority[*vm.Properties.Priority]
-	}
-	return ""
-}

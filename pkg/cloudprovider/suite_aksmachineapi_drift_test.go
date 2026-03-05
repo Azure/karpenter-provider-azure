@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 )
@@ -382,7 +383,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 				// Corresponding NodeClaim - fetch from API server so it has all status fields (including ImageID)
-				nodeClaimName := GetNodeClaimNameFromVMName(input.VMName)
+				nodeClaimName := instance.GetNodeClaimNameFromVMName(input.VMName)
 				driftNodeClaim = &karpv1.NodeClaim{}
 				Expect(env.Client.Get(ctx, types.NamespacedName{Name: nodeClaimName}, driftNodeClaim)).To(Succeed())
 				// ExpectProvisioned doesn't set Status.NodeName
