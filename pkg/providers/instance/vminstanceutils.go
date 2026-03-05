@@ -91,7 +91,11 @@ func ErrorCodeForMetrics(err error) string {
 
 // GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
 // This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
+// In AzureVM mode, no extensions are managed.
 func GetManagedExtensionNames(provisionMode string, env *auth.Environment) []string {
+	if provisionMode == consts.ProvisionModeAzureVM {
+		return nil
+	}
 	var result []string
 	// Only including AKS identifying extension in the clouds it is supported in
 	if isAKSIdentifyingExtensionEnabled(env) {

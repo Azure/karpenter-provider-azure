@@ -29,6 +29,7 @@ import (
 
 	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -65,6 +66,58 @@ func GetAKSNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *k
 	}
 
 	return nodeClass, nil
+}
+
+// GetAzureNodeClass resolves the AzureNodeClass from the NodeClaim's NodeClassRef.
+// If the NodeClass for the nodeClaim has DeletionTimestamp set, an error is returned.
+func GetAzureNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *karpv1.NodeClaim) (*v1alpha1.AzureNodeClass, error) {
+	if nodeClaim.Spec.NodeClassRef == nil {
+		return nil, fmt.Errorf("nodeClaim %s does not have a nodeClassRef", nodeClaim.Name)
+	}
+
+	nodeClass := &v1alpha1.AzureNodeClass{}
+	if err := kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
+		return nil, fmt.Errorf("getting AzureNodeClass %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
+	}
+
+	if !nodeClass.DeletionTimestamp.IsZero() {
+		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "azurenodeclasses"}, nodeClass.Name)
+	}
+
+	return nodeClass, nil
+}
+
+// AKSNodeClassFromAzureNodeClass creates a compatible AKSNodeClass from an AzureNodeClass.
+// This adapter allows the VM provider (which expects AKSNodeClass) to work with AzureNodeClass
+// by mapping the shared fields. Fields that only exist on AKSNodeClass (e.g. ImageFamily, Kubelet,
+// MaxPods) are left at their zero values, and the VM provider's AzureVM-mode logic handles them.
+func AKSNodeClassFromAzureNodeClass(azureNC *v1alpha1.AzureNodeClass) *v1beta1.AKSNodeClass {
+	aksNC := &v1beta1.AKSNodeClass{}
+	aksNC.Name = azureNC.Name
+	aksNC.Namespace = azureNC.Namespace
+	aksNC.Labels = azureNC.Labels
+	aksNC.Annotations = azureNC.Annotations
+
+	// Map shared spec fields
+	aksNC.Spec.VNETSubnetID = azureNC.Spec.VNETSubnetID
+	aksNC.Spec.OSDiskSizeGB = azureNC.Spec.OSDiskSizeGB
+	aksNC.Spec.Tags = azureNC.Spec.Tags
+
+	// Map security settings
+	if azureNC.Spec.Security != nil {
+		aksNC.Spec.Security = &v1beta1.Security{
+			EncryptionAtHost: azureNC.Spec.Security.EncryptionAtHost,
+		}
+	}
+
+	// ImageID is stored in AKSNodeClass.Spec.ImageID (which is json:"-" on AKSNodeClass, but the Go field exists)
+	aksNC.Spec.ImageID = azureNC.Spec.ImageID
+
+	// AzureVM-specific fields: carried via json:"-" fields on AKSNodeClass for adapter use
+	aksNC.Spec.UserData = azureNC.Spec.UserData
+	aksNC.Spec.ManagedIdentities = azureNC.Spec.ManagedIdentities
+
+	return aksNC
 }
 
 // TODO: Could go onto vmInstanceProvider?

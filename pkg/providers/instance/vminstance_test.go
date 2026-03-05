@@ -22,8 +22,12 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
 
 func TestGetManagedExtensionNames(t *testing.T) {
@@ -92,6 +96,18 @@ func TestGetManagedExtensionNames(t *testing.T) {
 			env:           noBillingExtensionEnv,
 			expected:      nil,
 		},
+		{
+			name:          "AzureVM mode returns no extensions",
+			provisionMode: consts.ProvisionModeAzureVM,
+			env:           publicCloudEnv,
+			expected:      nil,
+		},
+		{
+			name:          "AzureVM mode with nonstandard cloud returns no extensions",
+			provisionMode: consts.ProvisionModeAzureVM,
+			env:           noBillingExtensionEnv,
+			expected:      nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -103,4 +119,176 @@ func TestGetManagedExtensionNames(t *testing.T) {
 			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestConfigureStorageProfile_AzureVMMode(t *testing.T) {
+	g := NewWithT(t)
+	imageID := "/subscriptions/sub-123/resourceGroups/rg/providers/Microsoft.Compute/galleries/gallery/images/myimage/versions/1.0.0"
+	bootstrap := &resolvedBootstrapData{ImageID: imageID}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	profile := configureStorageProfile(bootstrap, nodeClass, "", false, consts.ProvisionModeAzureVM, "test-vm")
+
+	g.Expect(profile.ImageReference).NotTo(BeNil())
+	g.Expect(profile.ImageReference.ID).NotTo(BeNil())
+	g.Expect(*profile.ImageReference.ID).To(Equal(imageID))
+	g.Expect(profile.ImageReference.CommunityGalleryImageID).To(BeNil())
+}
+
+func TestConfigureStorageProfile_SIG(t *testing.T) {
+	g := NewWithT(t)
+	imageID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/images/myimage"
+	bootstrap := &resolvedBootstrapData{ImageID: imageID}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	profile := configureStorageProfile(bootstrap, nodeClass, "", true, consts.ProvisionModeAKSScriptless, "test-vm")
+
+	g.Expect(profile.ImageReference.ID).NotTo(BeNil())
+	g.Expect(*profile.ImageReference.ID).To(Equal(imageID))
+}
+
+func TestConfigureStorageProfile_CommunityGallery(t *testing.T) {
+	g := NewWithT(t)
+	imageID := "/CommunityGalleries/gallery/Images/image/Versions/1.0.0"
+	bootstrap := &resolvedBootstrapData{ImageID: imageID}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	profile := configureStorageProfile(bootstrap, nodeClass, "", false, consts.ProvisionModeAKSScriptless, "test-vm")
+
+	g.Expect(profile.ImageReference.CommunityGalleryImageID).NotTo(BeNil())
+	g.Expect(*profile.ImageReference.CommunityGalleryImageID).To(Equal(imageID))
+}
+
+func TestConfigureOSProfile_AzureVMMode_WithSSH(t *testing.T) {
+	g := NewWithT(t)
+	opts := &options.Options{
+		SSHPublicKey:       "ssh-rsa AAAA...",
+		LinuxAdminUsername: "testuser",
+	}
+	bootstrap := &resolvedBootstrapData{}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	osProfile := configureOSProfile(opts, "test-vm", bootstrap, consts.ProvisionModeAzureVM, nodeClass)
+
+	g.Expect(osProfile.ComputerName).NotTo(BeNil())
+	g.Expect(*osProfile.ComputerName).To(Equal("test-vm"))
+	g.Expect(osProfile.AdminUsername).NotTo(BeNil())
+	g.Expect(*osProfile.AdminUsername).To(Equal("testuser"))
+	g.Expect(osProfile.LinuxConfiguration).NotTo(BeNil())
+	g.Expect(osProfile.LinuxConfiguration.SSH).NotTo(BeNil())
+	g.Expect(osProfile.LinuxConfiguration.SSH.PublicKeys).To(HaveLen(1))
+	g.Expect(*osProfile.LinuxConfiguration.SSH.PublicKeys[0].KeyData).To(Equal("ssh-rsa AAAA..."))
+}
+
+func TestConfigureOSProfile_AzureVMMode_WithoutSSH(t *testing.T) {
+	g := NewWithT(t)
+	opts := &options.Options{
+		SSHPublicKey:       "",
+		LinuxAdminUsername: "",
+	}
+	bootstrap := &resolvedBootstrapData{}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	osProfile := configureOSProfile(opts, "test-vm", bootstrap, consts.ProvisionModeAzureVM, nodeClass)
+
+	g.Expect(osProfile.ComputerName).NotTo(BeNil())
+	g.Expect(*osProfile.ComputerName).To(Equal("test-vm"))
+	g.Expect(osProfile.AdminUsername).To(BeNil())
+	g.Expect(osProfile.LinuxConfiguration).NotTo(BeNil())
+	g.Expect(*osProfile.LinuxConfiguration.DisablePasswordAuthentication).To(BeTrue())
+	g.Expect(osProfile.LinuxConfiguration.SSH).To(BeNil())
+}
+
+func TestConfigureOSProfile_AzureVMMode_UserData(t *testing.T) {
+	g := NewWithT(t)
+	userData := "#!/bin/bash\necho hello"
+	opts := &options.Options{}
+	bootstrap := &resolvedBootstrapData{}
+	nodeClass := &v1beta1.AKSNodeClass{
+		Spec: v1beta1.AKSNodeClassSpec{
+			UserData: &userData,
+		},
+	}
+
+	osProfile := configureOSProfile(opts, "test-vm", bootstrap, consts.ProvisionModeAzureVM, nodeClass)
+
+	g.Expect(osProfile.CustomData).NotTo(BeNil())
+	g.Expect(*osProfile.CustomData).To(Equal(userData))
+}
+
+func TestConfigureOSProfile_AzureVMMode_NoUserData(t *testing.T) {
+	g := NewWithT(t)
+	opts := &options.Options{}
+	bootstrap := &resolvedBootstrapData{}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	osProfile := configureOSProfile(opts, "test-vm", bootstrap, consts.ProvisionModeAzureVM, nodeClass)
+
+	g.Expect(osProfile.CustomData).To(BeNil())
+}
+
+func TestConfigureOSProfile_AKSMode(t *testing.T) {
+	g := NewWithT(t)
+	opts := &options.Options{
+		SSHPublicKey:       "ssh-rsa AAAA...",
+		LinuxAdminUsername: "azureuser",
+	}
+	bootstrap := &resolvedBootstrapData{
+		ScriptlessCustomData: "base64-data",
+	}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	osProfile := configureOSProfile(opts, "test-vm", bootstrap, consts.ProvisionModeAKSScriptless, nodeClass)
+
+	g.Expect(*osProfile.AdminUsername).To(Equal("azureuser"))
+	g.Expect(osProfile.LinuxConfiguration.SSH.PublicKeys).To(HaveLen(1))
+	g.Expect(*osProfile.LinuxConfiguration.SSH.PublicKeys[0].Path).To(Equal("/home/azureuser/.ssh/authorized_keys"))
+	g.Expect(osProfile.CustomData).NotTo(BeNil())
+	g.Expect(*osProfile.CustomData).To(Equal("base64-data"))
+}
+
+func TestBuildVMIdentity_GlobalOnly(t *testing.T) {
+	g := NewWithT(t)
+	nodeIdentities := []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id1"}
+	nodeClass := &v1beta1.AKSNodeClass{}
+
+	identity := buildVMIdentity(nodeIdentities, nodeClass)
+
+	g.Expect(identity).NotTo(BeNil())
+	g.Expect(identity.Type).NotTo(BeNil())
+	g.Expect(*identity.Type).To(Equal(armcompute.ResourceIdentityTypeUserAssigned))
+	g.Expect(identity.UserAssignedIdentities).To(HaveLen(1))
+}
+
+func TestBuildVMIdentity_MergedIdentities(t *testing.T) {
+	g := NewWithT(t)
+	nodeIdentities := []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/global-id"}
+	nodeClass := &v1beta1.AKSNodeClass{
+		Spec: v1beta1.AKSNodeClassSpec{
+			ManagedIdentities: []string{
+				"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/nc-id",
+			},
+		},
+	}
+
+	identity := buildVMIdentity(nodeIdentities, nodeClass)
+
+	g.Expect(identity).NotTo(BeNil())
+	g.Expect(identity.UserAssignedIdentities).To(HaveLen(2))
+}
+
+func TestBuildVMIdentity_DeduplicatesIdentities(t *testing.T) {
+	g := NewWithT(t)
+	sameID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/same-id"
+	nodeIdentities := []string{sameID}
+	nodeClass := &v1beta1.AKSNodeClass{
+		Spec: v1beta1.AKSNodeClassSpec{
+			ManagedIdentities: []string{sameID},
+		},
+	}
+
+	identity := buildVMIdentity(nodeIdentities, nodeClass)
+
+	g.Expect(identity).NotTo(BeNil())
+	g.Expect(identity.UserAssignedIdentities).To(HaveLen(1))
 }
