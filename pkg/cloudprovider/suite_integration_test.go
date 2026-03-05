@@ -681,6 +681,88 @@ var _ = Describe("CloudProvider", func() {
 		runSharedAKSMachineAPITests()
 	})
 
+	Context("ProvisionMode = AKSMachineAPI + Batch, ManageExistingAKSMachines = false", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				UseSIG:                    lo.ToPtr(true),
+				ManageExistingAKSMachines: lo.ToPtr(false),
+			})
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
+
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+
+			azureEnv = test.NewEnvironment(ctx, env)
+			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+		})
+
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			cluster.Reset()
+			azureEnv.Reset()
+			azureEnvNonZonal.Reset()
+		})
+
+		runSharedAKSMachineAPITests()
+	})
+
+	Context("ProvisionMode = AKSMachineAPI + Batch, ManageExistingAKSMachines = true", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				UseSIG:                    lo.ToPtr(true),
+				ManageExistingAKSMachines: lo.ToPtr(true),
+			})
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
+
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+
+			azureEnv = test.NewEnvironment(ctx, env)
+			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+		})
+
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			cluster.Reset()
+			azureEnv.Reset()
+			azureEnvNonZonal.Reset()
+		})
+
+		runSharedAKSMachineAPITests()
+	})
+
 	Context("Mixed Environment - Migration from ProvisionMode = AKSMachineAPI to VM mode", func() {
 		Context("ManageExistingAKSMachines = false", func() {
 			var existingAKSMachine *armcontainerservice.Machine
