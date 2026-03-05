@@ -49,7 +49,7 @@ const (
 
 	loadBalancersCacheKey = "LoadBalancers"
 
-	// LoadBalancersCacheTTL configures how freuqently we check for updates to the LBs.
+	// LoadBalancersCacheTTL configures how frequently we check for updates to the LBs.
 	// Currently the choice of this value is entirely "how much work do we want to save cloudprovider".
 	// The faster we do this, the faster we notice the creation of a kubernetes-internal LB and start
 	// including it on new VMs, which saves CloudProvider needing to do that.
