@@ -6,6 +6,11 @@
 # NOTE: While "windows" is listed in the os field for many SKUs below, Windows nodes are NOT currently
 # supported in karpenter-provider-azure. The windows entries represent future support and are used for
 # validation purposes only. See README.md for current limitations.
+#
+# AMD GPU Support ("gpu: amd"):
+# AMD GPU instances use a "Bring Your Own Driver" (BYO) approach. Karpenter will provision AMD GPU nodes
+# with correct capacity (amd.com/gpu) and labels, but users must install their own AMD drivers (e.g., ROCm)
+# and device plugins. The node bootstrap process does NOT automatically install AMD GPU drivers.
 
 #  StandardNCADSA10v4Family:
 standard_nc16ads_a10_v4:

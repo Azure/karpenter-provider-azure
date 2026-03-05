@@ -261,19 +261,42 @@ func getArchitecture(architecture string) string {
 }
 
 func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) corev1.ResourceList {
-	return corev1.ResourceList{
-		corev1.ResourceCPU:                    *cpu(sku),
-		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
-		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
-		corev1.ResourcePods:                   *pods(ctx, nodeClass),
-		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
+	capacity := corev1.ResourceList{
+		corev1.ResourceCPU:              *cpu(sku),
+		corev1.ResourceMemory:           *memoryWithoutOverhead(ctx, sku),
+		corev1.ResourceEphemeralStorage: *ephemeralStorage(nodeClass),
+		corev1.ResourcePods:             *pods(ctx, nodeClass),
 	}
+
+	// Add GPU capacity based on manufacturer
+	skuName := sku.GetName()
+	if utils.IsNvidiaEnabledSKU(skuName) {
+		capacity[corev1.ResourceName("nvidia.com/gpu")] = *gpuNvidiaCount(sku)
+	} else if utils.IsAMDGPUEnabledSKU(skuName) {
+		capacity[corev1.ResourceName("amd.com/gpu")] = *gpuAMDCount(sku)
+	}
+
+	return capacity
 }
 
-// gpuNvidiaCount returns the number of Nvidia GPUs in the SKU. Currently nvidia is the only gpu manufacturer we support.
+// gpuNvidiaCount returns the number of Nvidia GPUs in the SKU.
+// Note: NVIDIA GPU driver installation is handled automatically by the node bootstrap process.
 func gpuNvidiaCount(sku *skewer.SKU) *resource.Quantity {
 	count, err := sku.GPU()
 	if err != nil || !utils.IsNvidiaEnabledSKU(sku.GetName()) {
+		count = 0
+	}
+	return resources.Quantity(fmt.Sprint(count))
+}
+
+// gpuAMDCount returns the number of AMD GPUs in the SKU.
+// Note: AMD GPU support requires "Bring Your Own Driver" (BYO) approach. While Karpenter will
+// provision AMD GPU nodes with correct capacity and labels, users must install their own AMD GPU
+// drivers to enable GPU workloads. The node bootstrap process
+// does not automatically install AMD drivers.
+func gpuAMDCount(sku *skewer.SKU) *resource.Quantity {
+	count, err := sku.GPU()
+	if err != nil || !utils.IsAMDGPUEnabledSKU(sku.GetName()) {
 		count = 0
 	}
 	return resources.Quantity(fmt.Sprint(count))
