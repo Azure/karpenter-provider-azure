@@ -127,10 +127,6 @@ func setupAKSMachineAPIMode() {
 		ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 		UseSIG:        lo.ToPtr(true),
 	})
-	testOptions.BatchCreationEnabled = true
-	testOptions.BatchIdleTimeoutMS = 100
-	testOptions.BatchMaxTimeoutMS = 1000
-	testOptions.MaxBatchSize = 50
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, testOptions)
