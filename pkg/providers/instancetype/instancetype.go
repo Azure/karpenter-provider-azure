@@ -269,10 +269,15 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AK
 	}
 
 	// Add GPU capacity based on manufacturer
+	// Always include nvidia.com/gpu in capacity (set to 0 for non-GPU nodes)
 	skuName := sku.GetName()
 	if utils.IsNvidiaEnabledSKU(skuName) {
 		capacity[corev1.ResourceName("nvidia.com/gpu")] = *gpuNvidiaCount(sku)
-	} else if utils.IsAMDGPUEnabledSKU(skuName) {
+	} else {
+		capacity[corev1.ResourceName("nvidia.com/gpu")] = *resources.Quantity("0")
+	}
+
+	if utils.IsAMDGPUEnabledSKU(skuName) {
 		capacity[corev1.ResourceName("amd.com/gpu")] = *gpuAMDCount(sku)
 	}
 
