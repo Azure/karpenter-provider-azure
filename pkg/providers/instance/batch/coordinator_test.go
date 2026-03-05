@@ -109,13 +109,11 @@ func tpl(vmSize string, zones []string, tags map[string]string) armcontainerserv
 		},
 	}
 	for _, z := range zones {
-		z := z
 		m.Zones = append(m.Zones, &z)
 	}
 	if len(tags) > 0 {
 		m.Properties.Tags = make(map[string]*string, len(tags))
 		for k, v := range tags {
-			v := v
 			m.Properties.Tags[k] = &v
 		}
 	}
