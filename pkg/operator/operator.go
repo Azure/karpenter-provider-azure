@@ -63,7 +63,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
@@ -88,7 +87,6 @@ type Operator struct {
 	KubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
 	ImageProvider             imagefamily.NodeImageProvider
 	ImageResolver             imagefamily.Resolver
-	LaunchTemplateProvider    *launchtemplate.Provider
 	PricingProvider           *pricing.Provider
 	InstanceTypesProvider     instancetype.Provider
 	VMInstanceProvider        *instance.DefaultVMProvider
@@ -193,20 +191,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		instanceTypeProvider,
 		azClient.NodeBootstrappingClient,
 	)
-	launchTemplateProvider := launchtemplate.NewProvider(
-		ctx,
-		imageResolver,
-		imageProvider,
-		lo.Must(getCABundle(operator.GetConfig())),
-		options.FromContext(ctx).ClusterEndpoint,
-		azConfig.TenantID,
-		azConfig.SubscriptionID,
-		azConfig.ResourceGroup,
-		options.FromContext(ctx).KubeletIdentityClientID,
-		options.FromContext(ctx).NodeResourceGroup,
-		azConfig.Location,
-		options.FromContext(ctx).ProvisionMode,
-	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
@@ -221,7 +205,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient,
 		instanceTypeProvider,
 		allocationStrategyProvider,
-		launchTemplateProvider,
+		imageResolver,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
 		unavailableOfferingsCache,
@@ -231,6 +215,10 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ProvisionMode,
 		options.FromContext(ctx).DiskEncryptionSetID,
 		env,
+		lo.Must(getCABundle(operator.GetConfig())),
+		options.FromContext(ctx).ClusterEndpoint,
+		azConfig.TenantID,
+		azConfig.ResourceGroup,
 	)
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
@@ -252,7 +240,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,
 		ImageResolver:                imageResolver,
-		LaunchTemplateProvider:       launchTemplateProvider,
 		PricingProvider:              pricingProvider,
 		InstanceTypesProvider:        instanceTypeProvider,
 		VMInstanceProvider:           vmInstanceProvider,
