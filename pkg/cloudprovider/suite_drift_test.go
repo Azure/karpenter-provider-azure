@@ -24,31 +24,27 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
-	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 )
 
-// runSharedDriftTests generates drift tests that apply identically to both
+// runCommonDriftTests generates drift tests that apply identically to both
 // AKSMachineAPI and AKSScriptless provision modes. The only difference between
 // modes is how the NodeClaim is provisioned (BeforeEach), so getNodeClaim
 // returns the mode-specific claim.
-func runSharedDriftTests(getNodeClaim func() *karpv1.NodeClaim) {
+func runCommonDriftTests(getNodeClaim func() *karpv1.NodeClaim) {
 	It("should not fail if nodeClass does not exist", func() {
 		ExpectDeleted(ctx, env.Client, nodeClass)
 		drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
@@ -197,19 +193,6 @@ func runSharedDriftTests(getNodeClaim func() *karpv1.NodeClaim) {
 		})
 	})
 
-	Context("Kubelet Client ID", func() {
-		It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
-			nc := getNodeClaim()
-			node := ExpectNodeExists(ctx, env.Client, nc.Status.NodeName)
-			node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = ""
-			ExpectApplied(ctx, env.Client, node)
-
-			drifted, err := cloudProvider.IsDrifted(ctx, nc)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(drifted).To(BeEmpty())
-		})
-	})
-
 	Context("Static fields", func() {
 		It("should not trigger drift if NodeClass hasn't changed", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, getNodeClaim())
@@ -242,38 +225,8 @@ func runSharedDriftTests(getNodeClaim func() *karpv1.NodeClaim) {
 
 var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPI", func() {
-		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				UseSIG:        lo.ToPtr(true),
-			})
-
-			ctx = coreoptions.ToContext(ctx, coretest.Options())
-			ctx = options.ToContext(ctx, testOptions)
-
-			azureEnv = test.NewEnvironment(ctx, env)
-			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
-			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
-
-			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
-
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-		})
-
-		AfterEach(func() {
-			// Wait for any async polling goroutines to complete before resetting
-			cloudProvider.WaitForInstancePromises()
-			cluster.Reset()
-			azureEnv.Reset()
-			azureEnvNonZonal.Reset()
-		})
+		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
+		AfterEach(func() { teardownTestEnvironment() })
 
 		Context("Drift", func() {
 			var nodeClaim *karpv1.NodeClaim
@@ -320,10 +273,11 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// Shared tests across provision modes
-			runSharedDriftTests(func() *karpv1.NodeClaim { return nodeClaim })
+			runCommonDriftTests(func() *karpv1.NodeClaim { return nodeClaim })
 
 			// AKSMachineAPI-specific: DriftAction field
-			Context("Node Image Drift", func() {
+			// This is a new functionality that only applies to AKS machine instances
+			Context("DriftAction", func() {
 				It("should trigger drift when DriftAction field is available", func() {
 					// Find the AKS machine that was created during BeforeEach
 					aksMachineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, createInput.AKSMachineName)
@@ -355,30 +309,9 @@ var _ = Describe("CloudProvider", func() {
 		})
 	})
 
-	// --- AKSScriptless mode drift tests (VM-based provisioning) ---
-	// These tests verify drift behavior when ProvisionMode = AKSScriptless.
-	// If ProvisionMode = AKSScriptless is no longer supported, these tests will be removed.
-
 	Context("ProvisionMode = AKSScriptless", func() {
-		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSScriptless),
-			})
-			ctx = coreoptions.ToContext(ctx, coretest.Options())
-			ctx = options.ToContext(ctx, testOptions)
-
-			azureEnv = test.NewEnvironment(ctx, env)
-			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-
-			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-		})
-
-		AfterEach(func() {
-			cluster.Reset()
-			azureEnv.Reset()
-		})
+		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
+		AfterEach(func() { teardownTestEnvironment() })
 
 		Context("Drift", func() {
 			var driftNodeClaim *karpv1.NodeClaim
@@ -428,10 +361,20 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// Shared tests across provision modes
-			runSharedDriftTests(func() *karpv1.NodeClaim { return driftNodeClaim })
+			runCommonDriftTests(func() *karpv1.NodeClaim { return driftNodeClaim })
 
 			// AKSScriptless-specific: kubelet client ID drift
+			// This is handled by DriftAction for AKS machine cases.
 			Context("Kubelet Client ID", func() {
+				It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
+					node := ExpectNodeExists(ctx, env.Client, driftNodeClaim.Status.NodeName)
+					node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = ""
+					ExpectApplied(ctx, env.Client, node)
+
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(BeEmpty())
+				})
 				It("should trigger drift if node kubelet client ID doesn't match options", func() {
 					ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
 						KubeletIdentityClientID: lo.ToPtr("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
