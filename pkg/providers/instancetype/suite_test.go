@@ -56,7 +56,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -411,56 +410,8 @@ var _ = Describe("InstanceType Provider", func() {
 			ctx = options.ToContext(ctx, originalOptions)
 		})
 
-		Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
-			// B20ms:
-			// NvmeDiskSizeInMiB == 0
-			// CacheDiskBytes == 32212254720 -> 32.21225472 GB .. we should select this as the ephemeral disk size
-			// placement == CacheDisk
-			// MaxResourceVolumeMB == 163840 MiB -> 171.80 GB,
-			// Standard_D128ds_v6:
-			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
-			// and this is greater than 0, so we select 7559, placement == NvmeDisk
-			// Standard_D16plds_v5:
-			// NvmeDiskSizeInMiB == 0
-			// CacheDiskBytes == 429496729600 -> 429.4967296, this is greater than zero, so we select this as the ephemeral disk size
-			// placement == CacheDisk and size == 429.4967296 GB
-			// MaxResourceVolumeMB == 614400 MiB
-			// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
-			// Standard_D128ds_v6:
-			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
-			// and this is greater than 0, so we select 7559, placement == NvmeDisk
-			// Standard_NC24ads_A100_v4:
-			// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
-			// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacements == NvmeDisk so we move to cache disk
-			// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
-			// MaxResourceVolumeMB == 65536 MiB
-			// Standard_D64s_v3:
-			// NvmeDiskSizeInMiB == 0
-			// CacheDiskBytes == 1717986918400 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
-			// placement == CacheDisk and size == 1717 GB
-			// Standard_A0
-			// NvmeDiskSizeInMiB == 0
-			// CacheDiskBytes == 0, this is zero
-			// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk
-			DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
-				func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
-					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
-					Expect(sizeGB).To(Equal(expectedSize))
-					Expect(placement).To(Equal(expectedPlacement))
-				}, Entry("Standard_B20ms", SkewerSKU("Standard_B20ms"), int64(32), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-				Entry("Standard_D128ds_v6", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
-				Entry("Standard_D16plds_v5", SkewerSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-				Entry("Standard_D2as_v6", SkewerSKU("Standard_D2as_v6"), int64(0), nil), // does not support ephemeral
-				Entry("Standard_NC24ads_A100_v4", SkewerSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-				Entry("Standard_D64s_v3", SkewerSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-				Entry("Standard_A0", SkewerSKU("Standard_A0"), int64(0), nil),       // does not support ephemeral
-				Entry("Standard_D2_v2", SkewerSKU("Standard_D2_v2"), int64(0), nil), // does not support ephemeral
-				// TODO: codegen
-				// Entry("Standard_D2pls_v5", SkewerSKU("Standard_D2pls_v5"), int64(0), nil), // does not support ephemeral
-				// Entry("Standard_D2lds_v5", SkewerSKU("Standard_D2lds_v5"), int64(80), armcompute.DiffDiskPlacementResourceDisk),
-				Entry("Nil SKU", nil, int64(0), nil),
-			)
-		})
+		// FindMaxEphemeralSizeGBAndPlacement unit tests migrated to ephemeral_disk_test.go
+		// using standard Go table-driven testing for better developer experience
 		Context("Placement", func() {
 			It("should prefer NVMe disk if supported for ephemeral", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1008,51 +959,9 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 })
 
-var _ = Describe("Tax Calculator", func() {
-	Context("KubeReservedResources", func() {
-		It("should have 4 cores, 7GiB", func() {
-			cpus := int64(4) // 4 cores
-			memory := 7.0    // 7 GiB
-			expectedCPU := "140m"
-			expectedMemory := "1638Mi"
+// KubeReservedResources unit tests migrated to kube_reserved_test.go
+// using standard Go table-driven testing for better developer experience
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
-			gotCPU := resources[v1.ResourceCPU]
-			gotMemory := resources[v1.ResourceMemory]
-
-			Expect(gotCPU.String()).To(Equal(expectedCPU))
-			Expect(gotMemory.String()).To(Equal(expectedMemory))
-		})
-
-		It("should have 2 cores, 8GiB", func() {
-			cpus := int64(2) // 2 cores
-			memory := 8.0    // 8 GiB
-			expectedCPU := "100m"
-			expectedMemory := "1843Mi"
-
-			resources := instancetype.KubeReservedResources(cpus, memory)
-			gotCPU := resources[v1.ResourceCPU]
-			gotMemory := resources[v1.ResourceMemory]
-
-			Expect(gotCPU.String()).To(Equal(expectedCPU))
-			Expect(gotMemory.String()).To(Equal(expectedMemory))
-		})
-
-		It("should have 3 cores, 64GiB", func() {
-			cpus := int64(3) // 3 cores
-			memory := 64.0   // 64 GiB
-			expectedCPU := "120m"
-			expectedMemory := "5611Mi"
-
-			resources := instancetype.KubeReservedResources(cpus, memory)
-			gotCPU := resources[v1.ResourceCPU]
-			gotMemory := resources[v1.ResourceMemory]
-
-			Expect(gotCPU.String()).To(Equal(expectedCPU))
-			Expect(gotMemory.String()).To(Equal(expectedMemory))
-		})
-	})
-})
 
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
