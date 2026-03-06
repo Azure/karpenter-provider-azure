@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/go-logr/logr"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -254,6 +255,17 @@ func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.N
 // isMachineDrifted checks the DriftAction field of the AKS machine to determine if drift exists
 func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, _ *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
+
+	// Skip drift check while the node is still creating/registering. Core's drift controller starts
+	// calling IsDrifted once the NodeClaim is "Launched" (i.e., the PUT was accepted), but the machine
+	// may still be provisioning. Issuing GET Machine calls during this window generates unnecessary API
+	// load and can produce 404 errors in batch scenarios where the machine doesn't yet exist in ARM.
+	// This follows the same pattern as getNodeForDrift returning (nil, nil) for node-not-found.
+	if !nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue() {
+		logger.V(1).Info("node not yet registered, skipping machine drift check", "nodeClaim", nodeClaim.Name)
+		return "", nil
+	}
+
 	aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim)
 	if !isAKSMachine {
 		// Not an AKS machine node, no drift action to check
@@ -269,30 +281,35 @@ func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.
 		return "", fmt.Errorf("AKS machine with name %s not found", aksMachineName)
 	}
 
-	if aksMachine.Properties != nil && aksMachine.Properties.Status != nil && aksMachine.Properties.Status.DriftAction != nil {
-		driftAction := lo.FromPtr(aksMachine.Properties.Status.DriftAction)
-		driftReason := "" // Note: this is not being incorporated yet, and we currently return ClusterConfigDrift for all reasons. // Suggestion: could be extended.
-		if aksMachine.Properties.Status.DriftReason != nil {
-			driftReason = lo.FromPtr(aksMachine.Properties.Status.DriftReason)
-		}
+	return parseDriftAction(logger, aksMachineName, aksMachine)
+}
 
-		switch driftAction {
-		case "":
-			return "", nil
-		case armcontainerservice.DriftActionSynced:
-			return "", nil
-		case armcontainerservice.DriftActionRecreate:
-			return ClusterConfigDrift, nil
-		default:
-			// AKS machine API may add additional drift actions in the future (e.g., restart, reimage). Karpenter (core) need to support them explicitly.
-			// Meanwhile, re-create covers all cases.
-			logger.Error(fmt.Errorf("unknown drift action %s for AKS machine %s", driftAction, aksMachineName), "unknown drift action, considering it as drift",
-				"aksMachineName", aksMachineName,
-				"driftAction", driftAction,
-				"driftReason", driftReason)
-			return ClusterConfigDrift, nil
-		}
+// parseDriftAction interprets the DriftAction/DriftReason from an AKS machine status
+func parseDriftAction(logger logr.Logger, aksMachineName string, aksMachine *armcontainerservice.Machine) (cloudprovider.DriftReason, error) {
+	if aksMachine.Properties == nil || aksMachine.Properties.Status == nil || aksMachine.Properties.Status.DriftAction == nil {
+		return "", nil
 	}
 
-	return "", nil
+	driftAction := lo.FromPtr(aksMachine.Properties.Status.DriftAction)
+	driftReason := "" // Note: this is not being incorporated yet, and we currently return ClusterConfigDrift for all reasons. // Suggestion: could be extended.
+	if aksMachine.Properties.Status.DriftReason != nil {
+		driftReason = lo.FromPtr(aksMachine.Properties.Status.DriftReason)
+	}
+
+	switch driftAction {
+	case "":
+		return "", nil
+	case armcontainerservice.DriftActionSynced:
+		return "", nil
+	case armcontainerservice.DriftActionRecreate:
+		return ClusterConfigDrift, nil
+	default:
+		// AKS machine API may add additional drift actions in the future (e.g., restart, reimage). Karpenter (core) need to support them explicitly.
+		// Meanwhile, re-create covers all cases.
+		logger.Error(fmt.Errorf("unknown drift action %s for AKS machine %s", driftAction, aksMachineName), "unknown drift action, considering it as drift",
+			"aksMachineName", aksMachineName,
+			"driftAction", driftAction,
+			"driftReason", driftReason)
+		return ClusterConfigDrift, nil
+	}
 }

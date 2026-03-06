@@ -103,7 +103,8 @@ var _ = Describe("CloudProvider", func() {
 				Expect(nodeClaims).To(HaveLen(1))
 
 				nodeClaim = nodeClaims[0]
-				nodeClaim.Status.NodeName = node.Name // Normally core would do this.
+				nodeClaim.Status.NodeName = node.Name                                // Normally core would do this.
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered) // Normally core would do this during node registration.
 				nodeClaim.Spec.NodeClassRef = &karpv1.NodeClassReference{
 					Group: object.GVK(nodeClass).Group,
 					Kind:  object.GVK(nodeClass).Kind,
@@ -128,6 +129,32 @@ var _ = Describe("CloudProvider", func() {
 			It("should not return drifted if the NodeClaim is valid", func() {
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(BeEmpty())
+			})
+
+			It("should not check machine drift when node is not yet registered", func() {
+				// Clear Registered condition to simulate a node still in creation/registration
+				nodeClaim.StatusConditions().SetUnknown(karpv1.ConditionTypeRegistered)
+
+				// Set DriftAction to Recreate — this would normally trigger drift, but should be skipped
+				aksMachineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, createInput.AKSMachineName)
+				existingMachine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(aksMachineID)
+				Expect(ok).To(BeTrue())
+				aksMachine := existingMachine.(armcontainerservice.Machine)
+				if aksMachine.Properties == nil {
+					aksMachine.Properties = &armcontainerservice.MachineProperties{}
+				}
+				if aksMachine.Properties.Status == nil {
+					aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
+				}
+				aksMachine.Properties.Status.DriftAction = lo.ToPtr(armcontainerservice.DriftActionRecreate)
+				azureEnv.AKSDataStorage.AKSMachines.Store(aksMachineID, aksMachine)
+
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				// Machine drift check is suppressed during creation, so even with DriftAction=Recreate,
+				// the drift reason should only come from other checks (static fields, k8s version, image).
+				// Since none of those are drifted, we expect no drift.
 				Expect(drifted).To(BeEmpty())
 			})
 
