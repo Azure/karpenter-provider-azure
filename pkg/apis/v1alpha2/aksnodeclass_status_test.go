@@ -17,117 +17,170 @@ limitations under the License.
 package v1alpha2_test
 
 import (
+	"testing"
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 )
 
-var _ = Describe("Status, successful outcomes", func() {
-	var nodeClass *v1alpha2.AKSNodeClass
-	BeforeEach(func() {
-		nodeClass = &v1alpha2.AKSNodeClass{
-			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
-			Spec: v1alpha2.AKSNodeClassSpec{
-				VNETSubnetID: lo.ToPtr("subnet-id"),
-				OSDiskSizeGB: lo.ToPtr(int32(30)),
-				ImageFamily:  lo.ToPtr("Ubuntu2204"),
-				Tags: map[string]string{
-					"keyTag-1": "valueTag-1",
-					"keyTag-2": "valueTag-2",
-				},
-				Kubelet: &v1alpha2.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
-					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       lo.ToPtr("none"),
-					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         lo.ToPtr("10Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
-				},
-				MaxPods: lo.ToPtr(int32(100)),
+func newStatusTestNodeClassV1Alpha2() *v1alpha2.AKSNodeClass {
+	return &v1alpha2.AKSNodeClass{
+		ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
+		Spec: v1alpha2.AKSNodeClassSpec{
+			VNETSubnetID: lo.ToPtr("subnet-id"),
+			OSDiskSizeGB: lo.ToPtr(int32(30)),
+			ImageFamily:  lo.ToPtr("Ubuntu2204"),
+			Tags: map[string]string{
+				"keyTag-1": "valueTag-1",
+				"keyTag-2": "valueTag-2",
 			},
-			Status: v1alpha2.AKSNodeClassStatus{
-				Conditions: []status.Condition{
-					{
-						Type:               v1alpha2.ConditionTypeImagesReady,
-						Status:             metav1.ConditionTrue,
-						LastTransitionTime: metav1.Now(),
-						Reason:             "ImagesReady",
-						Message:            "Images are ready for use",
-						ObservedGeneration: 1,
-					},
-					{
-						Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
-						Status:             metav1.ConditionTrue,
-						LastTransitionTime: metav1.Now(),
-						Reason:             "KubernetesVersionReady",
-						Message:            "Kubernetes version is ready for use",
-						ObservedGeneration: 1,
-					},
+			Kubelet: &v1alpha2.KubeletConfiguration{
+				CPUManagerPolicy:            lo.ToPtr("static"),
+				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
+				ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
+				ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
+				TopologyManagerPolicy:       lo.ToPtr("none"),
+				AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
+				ContainerLogMaxSize:         lo.ToPtr("10Mi"),
+				ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+			},
+			MaxPods: lo.ToPtr(int32(100)),
+		},
+		Status: v1alpha2.AKSNodeClassStatus{
+			Conditions: []status.Condition{
+				{
+					Type:               v1alpha2.ConditionTypeImagesReady,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "ImagesReady",
+					Message:            "Images are ready for use",
+					ObservedGeneration: 1,
 				},
-				KubernetesVersion: lo.ToPtr("1.31.0"),
-				Images: []v1alpha2.NodeImage{
-					{
-						ID: "/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0",
-						Requirements: []corev1.NodeSelectorRequirement{
-							{
-								Key:      corev1.LabelArchStable,
-								Operator: "In",
-								Values:   []string{"amd64"},
-							},
+				{
+					Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "KubernetesVersionReady",
+					Message:            "Kubernetes version is ready for use",
+					ObservedGeneration: 1,
+				},
+			},
+			KubernetesVersion: lo.ToPtr("1.31.0"),
+			Images: []v1alpha2.NodeImage{
+				{
+					ID: "/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0",
+					Requirements: []corev1.NodeSelectorRequirement{
+						{
+							Key:      corev1.LabelArchStable,
+							Operator: "In",
+							Values:   []string{"amd64"},
 						},
 					},
 				},
 			},
+		},
+	}
+}
+
+//nolint:gocyclo
+func TestStatusAccessors(t *testing.T) {
+	t.Run("should return conditions", func(t *testing.T) {
+		nodeClass := newStatusTestNodeClassV1Alpha2()
+		conditions := nodeClass.GetConditions()
+		if conditions == nil {
+			t.Fatal("expected conditions to not be nil")
+		}
+		if len(conditions) != 2 {
+			t.Fatalf("expected 2 conditions, got %d", len(conditions))
+		}
+		if conditions[0].Type != v1alpha2.ConditionTypeImagesReady {
+			t.Errorf("expected condition type %s, got %s", v1alpha2.ConditionTypeImagesReady, conditions[0].Type)
+		}
+		if conditions[0].Status != metav1.ConditionTrue {
+			t.Errorf("expected condition status %s, got %s", metav1.ConditionTrue, conditions[0].Status)
+		}
+		if time.Since(conditions[0].LastTransitionTime.Time) > time.Second {
+			t.Errorf("expected LastTransitionTime to be within 1 second of now")
+		}
+		if conditions[0].Reason != "ImagesReady" {
+			t.Errorf("expected reason ImagesReady, got %s", conditions[0].Reason)
+		}
+		if conditions[0].Message != "Images are ready for use" {
+			t.Errorf("expected message 'Images are ready for use', got %s", conditions[0].Message)
 		}
 	})
-	It("should return conditions", func() {
-		conditions := nodeClass.GetConditions()
-		Expect(conditions).ToNot(BeNil())
-		Expect(conditions).To(HaveLen(2))
-		Expect(conditions[0].Type).To(Equal(v1alpha2.ConditionTypeImagesReady))
-		Expect(conditions[0].Status).To(Equal(metav1.ConditionTrue))
-		Expect(conditions[0].LastTransitionTime.UTC()).To(BeTemporally("~", metav1.Now().Time, time.Second))
-		Expect(conditions[0].Reason).To(Equal("ImagesReady"))
-		Expect(conditions[0].Message).To(Equal("Images are ready for use"))
-	})
-	It("should return status conditions", func() {
+
+	t.Run("should return status conditions", func(t *testing.T) {
+		nodeClass := newStatusTestNodeClassV1Alpha2()
 		conditionSet := nodeClass.StatusConditions()
-		Expect(conditionSet).ToNot(BeNil())
-		Expect(conditionSet.List()).To(HaveLen(4)) // KubernetesVersionReady, ImagesReady, SubnetReady, Ready
-		Expect(conditionSet.Root().Type).To(Equal(status.ConditionReady))
+		// KubernetesVersionReady, ImagesReady, SubnetReady, Ready
+		if got := len(conditionSet.List()); got != 4 {
+			t.Errorf("expected 4 status conditions, got %d", got)
+		}
+		if conditionSet.Root().Type != status.ConditionReady {
+			t.Errorf("expected root condition type %s, got %s", status.ConditionReady, conditionSet.Root().Type)
+		}
 	})
-	It("should return kubernetes version", func() {
+
+	t.Run("should return kubernetes version", func(t *testing.T) {
+		nodeClass := newStatusTestNodeClassV1Alpha2()
 		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-		Expect(err).To(BeNil())
-		Expect(kubernetesVersion).To(Equal("1.31.0"))
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if kubernetesVersion != "1.31.0" {
+			t.Errorf("expected kubernetes version 1.31.0, got %s", kubernetesVersion)
+		}
 	})
-	It("should return image", func() {
+
+	t.Run("should return image", func(t *testing.T) {
+		nodeClass := newStatusTestNodeClassV1Alpha2()
 		images, err := nodeClass.GetImages()
-		Expect(err).To(BeNil())
-		Expect(images).To(HaveLen(1))
-		Expect(images[0].ID).To(Equal("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0"))
-		Expect(images[0].Requirements).To(HaveLen(1))
-		Expect(images[0].Requirements[0].Key).To(Equal(corev1.LabelArchStable))
-		Expect(images[0].Requirements[0].Operator).To(Equal(corev1.NodeSelectorOperator("In")))
-		Expect(images[0].Requirements[0].Values).To(Equal([]string{"amd64"}))
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(images) != 1 {
+			t.Fatalf("expected 1 image, got %d", len(images))
+		}
+		expectedID := "/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0"
+		if images[0].ID != expectedID {
+			t.Errorf("expected image ID %s, got %s", expectedID, images[0].ID)
+		}
+		if len(images[0].Requirements) != 1 {
+			t.Fatalf("expected 1 requirement, got %d", len(images[0].Requirements))
+		}
+		if images[0].Requirements[0].Key != corev1.LabelArchStable {
+			t.Errorf("expected requirement key %s, got %s", corev1.LabelArchStable, images[0].Requirements[0].Key)
+		}
+		if images[0].Requirements[0].Operator != corev1.NodeSelectorOperator("In") {
+			t.Errorf("expected requirement operator In, got %s", images[0].Requirements[0].Operator)
+		}
+		if len(images[0].Requirements[0].Values) != 1 || images[0].Requirements[0].Values[0] != "amd64" {
+			t.Errorf("expected requirement values [amd64], got %v", images[0].Requirements[0].Values)
+		}
 	})
-	It("should return the expected errors", func() {
+
+	t.Run("should return the expected errors", func(t *testing.T) {
+		// nil nodeClass
 		var errNodeClass *v1alpha2.AKSNodeClass
 		kubernetesVersion, err := errNodeClass.GetKubernetesVersion()
-		Expect(err).To(HaveOccurred())
-		Expect(kubernetesVersion).To(Equal(""))
-		Expect(err.Error()).To(Equal("NodeClass is nil, condition KubernetesVersionReady is not true"))
+		if err == nil {
+			t.Fatal("expected error for nil nodeClass")
+		}
+		if kubernetesVersion != "" {
+			t.Errorf("expected empty kubernetes version, got %s", kubernetesVersion)
+		}
+		if err.Error() != "NodeClass is nil, condition KubernetesVersionReady is not true" {
+			t.Errorf("unexpected error: %s", err.Error())
+		}
+
+		// nodeClass with ImagesReady=False, no KubernetesVersionReady condition
 		errNodeClass = &v1alpha2.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1alpha2.AKSNodeClassSpec{
@@ -165,13 +218,27 @@ var _ = Describe("Status, successful outcomes", func() {
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
-		Expect(kubernetesVersion).To(Equal(""))
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal("NodeClass condition KubernetesVersionReady, is in Ready=Unknown, object is awaiting reconciliation"))
+		if kubernetesVersion != "" {
+			t.Errorf("expected empty kubernetes version, got %s", kubernetesVersion)
+		}
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if err.Error() != "NodeClass condition KubernetesVersionReady, is in Ready=Unknown, object is awaiting reconciliation" {
+			t.Errorf("unexpected error: %s", err.Error())
+		}
 		images, err := errNodeClass.GetImages()
-		Expect(err).To(HaveOccurred())
-		Expect(images).To(Equal([]v1alpha2.NodeImage{}))
-		Expect(err.Error()).To(Equal("NodeClass condition ImagesReady, is in Ready=False, Images are not ready for use"))
+		if err == nil {
+			t.Fatal("expected error for GetImages")
+		}
+		if len(images) != 0 {
+			t.Errorf("expected empty images, got %d", len(images))
+		}
+		if err.Error() != "NodeClass condition ImagesReady, is in Ready=False, Images are not ready for use" {
+			t.Errorf("unexpected error: %s", err.Error())
+		}
+
+		// nodeClass with ObservedGeneration mismatch
 		errNodeClass = &v1alpha2.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1alpha2.AKSNodeClassSpec{
@@ -216,13 +283,27 @@ var _ = Describe("Status, successful outcomes", func() {
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
-		Expect(err).To(HaveOccurred())
-		Expect(kubernetesVersion).To(Equal(""))
-		Expect(err.Error()).To(Equal("NodeClass condition KubernetesVersionReady ObservedGeneration 0 does not match the NodeClass Generation 1"))
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if kubernetesVersion != "" {
+			t.Errorf("expected empty kubernetes version, got %s", kubernetesVersion)
+		}
+		if err.Error() != "NodeClass condition KubernetesVersionReady ObservedGeneration 0 does not match the NodeClass Generation 1" {
+			t.Errorf("unexpected error: %s", err.Error())
+		}
 		images, err = errNodeClass.GetImages()
-		Expect(err).To(HaveOccurred())
-		Expect(images).To(Equal([]v1alpha2.NodeImage{}))
-		Expect(err.Error()).To(Equal("NodeClass condition ImagesReady ObservedGeneration 0 does not match the NodeClass Generation 1"))
+		if err == nil {
+			t.Fatal("expected error for GetImages")
+		}
+		if len(images) != 0 {
+			t.Errorf("expected empty images, got %d", len(images))
+		}
+		if err.Error() != "NodeClass condition ImagesReady ObservedGeneration 0 does not match the NodeClass Generation 1" {
+			t.Errorf("unexpected error: %s", err.Error())
+		}
+
+		// nodeClass with empty KubernetesVersion
 		errNodeClass = &v1alpha2.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1alpha2.AKSNodeClassSpec{
@@ -268,8 +349,14 @@ var _ = Describe("Status, successful outcomes", func() {
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
-		Expect(err).To(HaveOccurred())
-		Expect(kubernetesVersion).To(Equal(""))
-		Expect(err.Error()).To(Equal("NodeClass KubernetesVersion is uninitialized"))
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if kubernetesVersion != "" {
+			t.Errorf("expected empty kubernetes version, got %s", kubernetesVersion)
+		}
+		if err.Error() != "NodeClass KubernetesVersion is uninitialized" {
+			t.Errorf("unexpected error: %s", err.Error())
+		}
 	})
-})
+}
