@@ -20,7 +20,7 @@ import (
 	_ "embed"
 	"strings"
 
-	"go.yaml.in/yaml/v2"
+	"gopkg.in/yaml.v3"
 )
 
 // TODO: Get these from agentbaker
@@ -33,40 +33,52 @@ const (
 
 	NvidiaGridDriverVersion = "550.144.06"
 	AKSGPUGridVersionSuffix = "20250512225043"
+
+	// GPU types
+	GPUNvidia = "nvidia"
+	GPUAMD    = "amd"
+
+	// OS types
+	OSUbuntu      = "ubuntu"
+	OSAzureLinux  = "azurelinux"
+	OSAzureLinux3 = "azurelinux3"
+	OSWindows     = "windows" // NOTE: Windows nodes are not currently supported. This constant is used for future support and validation only.
 )
 
-type NvidiaSKUConfig struct {
-	NvidiaEnabledSKUFamilies        map[string][]string `yaml:"nvidiaEnabledSKUs"`
-	MarinerNvidiaEnabledSKUFamilies map[string][]string `yaml:"marinerNvidiaEnabledSKUs"`
+type GPUSKUConfig struct {
+	GPU string   `yaml:"gpu"`
+	OS  []string `yaml:"os"`
 }
 
 var (
-	nvidiaEnabledSKUs        = make(map[string]bool)
-	marinerNvidiaEnabledSKUs = make(map[string]bool)
+	gpuSKUConfigs = make(map[string]GPUSKUConfig)
 )
 
 //go:embed supported-gpus.yaml
 var configFile []byte
 
 func init() {
-	readNvidiaSKUConfig()
+	readGPUSKUConfig()
 }
 
-func readNvidiaSKUConfig() {
-	var nvidiaSKUConfig NvidiaSKUConfig
-
-	err := yaml.Unmarshal(configFile, &nvidiaSKUConfig)
+func readGPUSKUConfig() {
+	err := yaml.Unmarshal(configFile, &gpuSKUConfigs)
 	if err != nil {
 		panic(err)
 	}
-	for _, skus := range nvidiaSKUConfig.NvidiaEnabledSKUFamilies {
-		for _, sku := range skus {
-			nvidiaEnabledSKUs[sku] = true
+	// Validate the configuration
+	for sku, config := range gpuSKUConfigs {
+		if config.GPU != GPUNvidia && config.GPU != GPUAMD {
+			panic("gpu field must be either nvidia or amd for SKU: " + sku)
 		}
-	}
-	for _, skus := range nvidiaSKUConfig.MarinerNvidiaEnabledSKUFamilies {
-		for _, sku := range skus {
-			marinerNvidiaEnabledSKUs[sku] = true
+		if len(config.OS) == 0 {
+			panic("os field must not be empty for SKU: " + sku)
+		}
+		for _, os := range config.OS {
+			// NOTE: Windows is validated here for future support, but Windows nodes are not currently supported
+			if os != OSUbuntu && os != OSAzureLinux && os != OSAzureLinux3 && os != OSWindows {
+				panic("os field must be either ubuntu, azurelinux, azurelinux3, or windows for SKU: " + sku)
+			}
 		}
 	}
 }
@@ -83,15 +95,55 @@ func IsNvidiaEnabledSKU(vmSize string) bool {
 	// Trim the optional _Promo suffix.
 	vmSize = strings.ToLower(vmSize)
 	vmSize = strings.TrimSuffix(vmSize, "_promo")
-	return nvidiaEnabledSKUs[vmSize]
+	config, ok := gpuSKUConfigs[vmSize]
+	return ok && config.GPU == GPUNvidia
 }
 
-// IsNvidiaEnabledSKU determines if an VM SKU has nvidia driver support
+// IsMarinerEnabledGPUSKU determines if an VM SKU has nvidia driver support on AzureLinux
 func IsMarinerEnabledGPUSKU(vmSize string) bool {
 	// Trim the optional _Promo suffix.
 	vmSize = strings.ToLower(vmSize)
 	vmSize = strings.TrimSuffix(vmSize, "_promo")
-	return marinerNvidiaEnabledSKUs[vmSize]
+	return IsSKUSupportedOnOS(vmSize, OSAzureLinux)
+}
+
+// IsAMDGPUEnabledSKU determines if a VM SKU has AMD GPU driver support
+func IsAMDGPUEnabledSKU(vmSize string) bool {
+	vmSize = strings.ToLower(vmSize)
+	vmSize = strings.TrimSuffix(vmSize, "_promo")
+	config, ok := gpuSKUConfigs[vmSize]
+	return ok && config.GPU == GPUAMD
+}
+
+// IsGPUEnabledSKU determines if a VM SKU has any GPU support
+func IsGPUEnabledSKU(vmSize string) bool {
+	vmSize = strings.ToLower(vmSize)
+	vmSize = strings.TrimSuffix(vmSize, "_promo")
+	_, ok := gpuSKUConfigs[vmSize]
+	return ok
+}
+
+// IsAzureLinux3EnabledGPUSKU determines if azurelinux3 VM has driver support for the given SKU
+func IsAzureLinux3EnabledGPUSKU(vmSize string) bool {
+	vmSize = strings.ToLower(vmSize)
+	vmSize = strings.TrimSuffix(vmSize, "_promo")
+	return IsSKUSupportedOnOS(vmSize, OSAzureLinux3)
+}
+
+// IsSKUSupportedOnOS determines if a SKU supports a specific OS
+func IsSKUSupportedOnOS(vmSize string, os string) bool {
+	vmSize = strings.ToLower(vmSize)
+	vmSize = strings.TrimSuffix(vmSize, "_promo")
+	config, ok := gpuSKUConfigs[vmSize]
+	if !ok {
+		return false
+	}
+	for _, supportedOS := range config.OS {
+		if supportedOS == os {
+			return true
+		}
+	}
+	return false
 }
 
 // NV series GPUs target graphics workloads vs NC which targets compute.

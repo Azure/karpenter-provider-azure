@@ -265,15 +265,25 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
 	// Currently only GPU has conditional support by image family
-	if !utils.IsNvidiaEnabledSKU(skuName) && !utils.IsMarinerEnabledGPUSKU(skuName) {
+	if !utils.IsGPUEnabledSKU(skuName) {
+		// Non-GPU SKUs are supported on all OS families
 		return true
 	}
+
 	switch {
 	case v1beta1.UbuntuFamilies.Has(imageFamily):
-		return utils.IsNvidiaEnabledSKU(skuName)
+		// Ubuntu supports any GPU SKU that lists "ubuntu" in its OS support
+		return utils.IsSKUSupportedOnOS(skuName, utils.OSUbuntu)
 	case imageFamily == v1beta1.AzureLinuxImageFamily:
+		// AzureLinuxImageFamily can resolve to either v2 or v3 based on Kubernetes version.
+		// To be conservative and maintain backward compatibility, we check if the SKU
+		// supports azurelinux (v2). SKUs that ONLY support azurelinux3 will be filtered
+		// out here, but will become available when k8s version triggers v3 selection.
+		// In practice, most SKUs support both azurelinux and azurelinux3, so this
+		// ensures compatibility across versions.
 		return utils.IsMarinerEnabledGPUSKU(skuName)
 	default:
+		// Other OS families (Windows, etc.) don't support GPU yet
 		return false
 	}
 }
@@ -390,7 +400,8 @@ func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	if err != nil || gpu <= 0 {
 		return false
 	}
-	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
+	// Reject SKUs with GPUs that we don't have driver support for
+	return !utils.IsGPUEnabledSKU(name)
 }
 
 // SKU with constrained CPUs

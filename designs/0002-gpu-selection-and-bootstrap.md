@@ -126,6 +126,24 @@ Here are some relevant labels:
 
 **Note:** The AKS VHD Validator currently only supports Nvidia GPUs, which will be the focus for the preview. Our apis don't natively support gpu memory, so we will need to add this at a later date for proper support.
 
+### AMD GPU Support (Bring Your Own Driver)
+
+AMD GPU instances are supported through a "Bring Your Own Driver" (BYO) approach. Karpenter will:
+- Provision AMD GPU nodes (V710 and MI300X series)
+- Apply correct labels (`karpenter.azure.com/sku-gpu-manufacturer: amd`)
+- Advertise `amd.com/gpu` capacity in node resources
+
+However, AMD GPU driver installation and device plugin deployment are **not handled automatically** by the node bootstrap process. Users must:
+- Install AMD GPU drivers (e.g., ROCm) manually or via DaemonSet
+- Deploy an AMD GPU device plugin to expose `amd.com/gpu` resources to pods
+- Configure containerd runtime for AMD GPUs if needed
+
+**Supported AMD GPU SKUs:**
+- **NVads V710 v5-series:** `standard_nv4ads_v710_v5`, `standard_nv8ads_v710_v5`, `standard_nv12ads_v710_v5`, `standard_nv24ads_v710_v5`, `standard_nv28adms_v710_v5`
+- **ND-MI300X-v5 series:** `standard_nd96isr_mi300x_v5`, `standard_nd96is_mi300x_v5`
+
+All AMD GPU SKUs support Ubuntu OS only at this time.
+
 ## Proposed New Labels for Azure
 
 | Selector Label                            | Values  | Description                                        | Where to get the value                  |
