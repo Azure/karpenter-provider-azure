@@ -86,6 +86,7 @@ type ImageFamily interface {
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
 		fipsMode *v1beta1.FIPSMode,
 		localDNS *v1beta1.LocalDNS,
+		artifactStreaming *v1beta1.ArtifactStreamingSettings,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -170,6 +171,7 @@ func (r *defaultResolver) Resolve(
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
 			nodeClass.Spec.LocalDNS,
+			nodeClass.Spec.ArtifactStreaming,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
