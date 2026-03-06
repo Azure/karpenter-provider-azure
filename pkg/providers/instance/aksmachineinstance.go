@@ -34,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -137,6 +138,7 @@ type DefaultAKSMachineProvider struct {
 	errorHandling           *offerings.ErrorDetailHandler
 	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu      sync.RWMutex
+	pollerOptions           aksmachinepoller.Options // Configurable for testing; defaults to production values
 }
 
 func NewAKSMachineProvider(
@@ -161,9 +163,15 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:        sets.New[string](),
+		pollerOptions:           aksmachinepoller.DefaultOptions(),
 	}
 
 	return provider
+}
+
+// SetPollerOptions allows overriding poller configuration (primarily for testing).
+func (p *DefaultAKSMachineProvider) SetPollerOptions(opts aksmachinepoller.Options) {
+	p.pollerOptions = opts
 }
 
 // BeginCreate creates an instance given the constraints.
