@@ -383,3 +383,12 @@ var _ = Describe("CloudProvider", func() {
 		})
 	})
 })
+
+func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool) {
+	// Common validations
+	validateNodeClaimCommon(nodeClaim, nodePool)
+
+	// AKS-specific annotations
+	Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+	Expect(nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
+}

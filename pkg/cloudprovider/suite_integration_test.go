@@ -48,15 +48,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
-func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool) {
-	// Common validations
-	validateNodeClaimCommon(nodeClaim, nodePool)
-
-	// AKS-specific annotations
-	Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
-	Expect(nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
-}
-
 // runSharedAKSMachineAPITests contains the common test cases that should be run
 // for both ManageExistingAKSMachines = true and false configurations
 func runSharedAKSMachineAPITests() {
