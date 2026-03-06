@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/batch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
@@ -283,7 +284,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// The GET-based poller still runs, but with 1ms intervals it completes almost instantly.
 	// Tests that reset counters after Create() should call WaitForAsyncPolling() first.
 	if testOptions.BatchCreationEnabled {
-		aksMachineInstanceProvider.SetPollerOptions(instance.InstantPollerOptions())
+		aksMachineInstanceProvider.SetPollerOptions(aksmachinepoller.InstantOptions())
 	}
 
 	store := nodeoverlay.NewInstanceTypeStore()
