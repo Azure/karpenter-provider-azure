@@ -57,6 +57,11 @@ func NewCoordinator(
 
 // ExecuteBatch sends a batch to Azure as one API call, then distributes
 // results (success or per-machine errors) back to each request's channel.
+//
+// Uses context.Background() intentionally: a batch serves multiple callers with
+// different deadlines, and cancelling an in-flight PUT mid-request risks creating
+// phantom Azure resources that Karpenter doesn't track. The callers' own contexts
+// protect them from indefinite waits on their response channels.
 func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 	ctx := context.Background()
 	batchID := uuid.New().String()

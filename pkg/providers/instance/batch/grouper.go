@@ -101,15 +101,32 @@ func (g *Grouper) Start() {
 }
 
 // run is the main loop: wait for trigger → collect more requests → execute batches → repeat.
-// Self-heals on panic by restarting.
+// Self-heals on panic by restarting (loop-based, not recursive, to avoid stack growth).
+// On exit, drains all pending requests with an error so callers don't block.
 func (g *Grouper) run() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.FromContext(g.ctx).Error(fmt.Errorf("%v", r), "BatchGrouper panic, restarting")
-			g.run()
-		}
-	}()
+	defer g.drainPendingRequests()
 
+	for {
+		panicked := func() (didPanic bool) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.FromContext(g.ctx).Error(fmt.Errorf("%v", r), "BatchGrouper panic, restarting")
+					didPanic = true
+				}
+			}()
+			g.runLoop()
+			return false
+		}()
+
+		if !panicked {
+			return // runLoop returned normally (context cancelled)
+		}
+	}
+}
+
+// runLoop is the inner loop that processes batches. Separated from run() so that
+// panic recovery wraps this cleanly.
+func (g *Grouper) runLoop() {
 	for {
 		select {
 		case <-g.ctx.Done():
@@ -184,6 +201,31 @@ func (g *Grouper) executeBatches() {
 			}()
 			g.coordinator.ExecuteBatch(b)
 		}(batch)
+	}
+}
+
+// drainPendingRequests fails all in-flight requests with a shutdown error.
+// Called when the Grouper's run loop exits (context cancellation or panic limit).
+// Without this, callers would block on their response channels until their
+// individual context timeouts, creating a latency cliff during deployments.
+func (g *Grouper) drainPendingRequests() {
+	g.mu.Lock()
+	batches := g.batches
+	g.batches = make(map[string]*PendingBatch)
+	g.mu.Unlock()
+
+	shutdownErr := fmt.Errorf("batch grouper shutting down")
+	drained := 0
+	for _, batch := range batches {
+		for _, req := range batch.requests {
+			req.responseChan <- &CreateResponse{Poller: nil, Err: shutdownErr}
+			drained++
+		}
+	}
+
+	if drained > 0 {
+		log.FromContext(g.ctx).Info("BatchGrouper drained pending requests on shutdown",
+			"drainedRequests", drained)
 	}
 }
 

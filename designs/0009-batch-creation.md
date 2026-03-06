@@ -64,8 +64,8 @@ request's response channel.
 
 The SDK poller returned for the batch API call is discarded — it tracks the batch, not
 individual machines. Each request's response has `Poller: nil`, which signals the
-promise's wait function to use the GET-based poller (see design 0010) for per-machine
-status tracking.
+promise's wait function to use the GET-based poller
+(`pkg/providers/instance/aksmachinepoller`) for per-machine status tracking.
 
 ## Dependencies
 
@@ -75,5 +75,5 @@ This design depends on:
   (the request is just enqueued into the Grouper), and the background goroutine runs
   longer (waiting for batch dispatch + GET polling). Deterministic synchronization is
   essential for test correctness.
-- **GET-based poller (0010)**: Individual machines need their own polling mechanism since
-  the SDK poller is per-batch, not per-machine.
+- **GET-based poller** (`pkg/providers/instance/aksmachinepoller`): Individual machines
+  need their own polling mechanism since the SDK poller is per-batch, not per-machine.

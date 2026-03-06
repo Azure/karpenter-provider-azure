@@ -190,7 +190,8 @@ func TestCoordinatorClearsPerMachineFieldsFromBody(t *testing.T) {
 	mock := &recordingClient{}
 	coord := NewCoordinator(mock, "rg", "cluster", "pool")
 
-	r1 := cReq(context.Background(), "m-1",
+	ctx := context.Background()
+	r1 := cReq(ctx, "m-1",
 		tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"k": "v"}))
 	coord.ExecuteBatch(pBatch(r1))
 
@@ -210,9 +211,10 @@ func TestCoordinatorAttachesPerMachineEntriesToContext(t *testing.T) {
 	mock := &recordingClient{}
 	coord := NewCoordinator(mock, "rg", "cluster", "pool")
 
-	r1 := cReq(context.Background(), "m-1",
+	ctx := context.Background()
+	r1 := cReq(ctx, "m-1",
 		tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"a": "1"}))
-	r2 := cReq(context.Background(), "m-2",
+	r2 := cReq(ctx, "m-2",
 		tpl("Standard_D2s_v3", []string{"2", "3"}, map[string]string{"b": "2"}))
 	coord.ExecuteBatch(pBatch(r1, r2))
 
@@ -237,8 +239,9 @@ func TestCoordinatorDistributesErrorToAllCallers(t *testing.T) {
 	mock := &recordingClient{err: fmt.Errorf("azure boom")}
 	coord := NewCoordinator(mock, "rg", "cluster", "pool")
 
-	r1 := cReq(context.Background(), "m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := cReq(context.Background(), "m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	ctx := context.Background()
+	r1 := cReq(ctx, "m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := cReq(ctx, "m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
 	coord.ExecuteBatch(pBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {

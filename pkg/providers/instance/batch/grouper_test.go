@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestComputeTemplateHash(t *testing.T) {
@@ -216,4 +217,68 @@ func TestGrouperBatchesDifferentTemplate(t *testing.T) {
 	grouper.mu.Lock()
 	assert.Len(t, grouper.batches, 2, "should have two pending batches for different templates")
 	grouper.mu.Unlock()
+}
+
+// When the grouper shuts down (context cancelled), pending requests that haven't
+// been dispatched yet must receive an error instead of hanging forever.
+func TestGrouperDrainsPendingRequestsOnShutdown(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create grouper but DON'T start the background loop — this ensures requests
+	// stay in the pending map and are only handled by drain.
+	grouper := NewGrouper(ctx, Options{
+		IdleTimeout:  10 * time.Second,
+		MaxTimeout:   10 * time.Second,
+		MaxBatchSize: 50,
+	})
+	grouper.SetCoordinator(NewCoordinator(&recordingClient{}, "rg", "cluster", "pool"))
+
+	// Enqueue requests — they'll sit in the pending batch with no loop to dispatch them
+	vmSize := "Standard_D2s_v3"
+	req1 := &CreateRequest{
+		ctx:          ctx,
+		machineName:  "machine1",
+		responseChan: make(chan *CreateResponse, 1),
+		template: armcontainerservice.Machine{
+			Properties: &armcontainerservice.MachineProperties{
+				Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+			},
+		},
+	}
+	req2 := &CreateRequest{
+		ctx:          ctx,
+		machineName:  "machine2",
+		responseChan: make(chan *CreateResponse, 1),
+		template: armcontainerservice.Machine{
+			Properties: &armcontainerservice.MachineProperties{
+				Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+			},
+		},
+	}
+
+	grouper.EnqueueCreate(req1)
+	grouper.EnqueueCreate(req2)
+
+	// Verify requests are pending
+	grouper.mu.Lock()
+	assert.Len(t, grouper.batches, 1, "should have one pending batch")
+	grouper.mu.Unlock()
+
+	// Cancel context then drain directly — verifies drainPendingRequests
+	// fails all waiting callers with a shutdown error.
+	cancel()
+	grouper.drainPendingRequests()
+
+	// Both requests should receive a shutdown error
+	for i, req := range []*CreateRequest{req1, req2} {
+		select {
+		case resp := <-req.responseChan:
+			require.Error(t, resp.Err, "request %d should receive a shutdown error", i)
+			assert.Contains(t, resp.Err.Error(), "shutting down", "request %d error should mention shutdown", i)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("request %d timed out — drain did not deliver shutdown error", i)
+		}
+	}
 }
