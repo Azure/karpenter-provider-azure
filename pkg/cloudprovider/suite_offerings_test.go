@@ -170,7 +170,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
 
 				// VM mode: verify NIC cleanup after creation failure (preserved from original VM test)
-				if mode.isVM {
+				if mode.isVMInstance {
 					Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 					nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 					Expect(nic).NotTo(BeNil())
@@ -194,7 +194,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
 
 				// VM mode: verify NIC cleanup after creation failure (preserved from original VM test)
-				if mode.isVM {
+				if mode.isVMInstance {
 					Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 					nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 					Expect(nic).NotTo(BeNil())
@@ -257,14 +257,14 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Mode-specific creation check: verify the correct API was called (preserved from originals)
-				if mode.isVM {
+				if mode.isVMInstance {
 					Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				} else {
 					Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				}
 
 				// Verify that zones are empty for non-zonal regions
-				if mode.isVM {
+				if mode.isVMInstance {
 					vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 					Expect(vm.Zones).To(BeEmpty())
 				} else {
@@ -421,7 +421,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				if mode.isVM {
+				if mode.isVMInstance {
 					ExpectLaunched(ctx, env.Client, cloudProvider, coreProvisioner, pod)
 				} else {
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -429,7 +429,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// Verify the failed NodeClaim is cleaned up (VM mode only - AKS Machine mode doesn't clean up synchronously)
-				if mode.isVM {
+				if mode.isVMInstance {
 					Eventually(func() []*karpv1.NodeClaim { return ExpectNodeClaims(ctx, env.Client) }).To(HaveLen(0))
 				}
 
@@ -455,14 +455,14 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				By("successfully scheduling in a different zone on retry")
 				// VM mode: original test did NOT clear the error before retry (async Error is consumed)
 				// AKS Machine mode: must clear the provisioning error override
-				if !mode.isVM {
+				if !mode.isVMInstance {
 					mode.clearError()
 				}
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(result.zone))
 				// AKS Machine mode: verify retry actually made a creation call (preserved from original)
-				if !mode.isVM {
+				if !mode.isVMInstance {
 					Expect(mode.getCreateCallCount()).To(BeNumerically(">", 0))
 				}
 			})
@@ -630,8 +630,8 @@ var _ = Describe("CloudProvider - Offerings", func() {
 	// === MODE CONTEXTS ===
 
 	Context("ProvisionMode = AKSMachineAPI", func() {
-		BeforeEach(func() { setupAKSMachineAPIMode() })
-		AfterEach(func() { teardownProvisionMode() })
+		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
+		AfterEach(func() { teardownTestEnvironment() })
 
 		mode := aksMachineProvisionMode()
 		runSharedCreationFailureTests(mode)
@@ -641,8 +641,8 @@ var _ = Describe("CloudProvider - Offerings", func() {
 	})
 
 	Context("ProvisionMode = AKSScriptless", func() {
-		BeforeEach(func() { setupVMMode() })
-		AfterEach(func() { teardownProvisionMode() })
+		BeforeEach(func() { setupProvisionModeAKSScriptlessTestEnvironment() })
+		AfterEach(func() { teardownTestEnvironment() })
 
 		mode := vmProvisionMode()
 		runSharedCreationFailureTests(mode)
