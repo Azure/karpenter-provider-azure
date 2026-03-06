@@ -70,12 +70,13 @@ type creationResult struct {
 	isCommunityGalleryImage bool   // whether the image source is a community gallery
 }
 
+// TODO (NOW): stop using provisionTestMode adapters below. We should make the distinction clear in the each test logic, not here. Only use real options provision mode to see the differences.
 // provisionTestMode provides mode-specific callbacks for shared provisioning tests.
 // All closures capture package-level vars (azureEnv, etc.) by reference, so they
 // always reflect the value set by the current test's BeforeEach.
 type provisionTestMode struct {
-	// isVM is true for AKSScriptless (VM) mode, false for AKSMachineAPI mode.
-	isVM bool
+	// isVMInstance is true for AKSScriptless (VM) mode, false for AKSMachineAPI mode.
+	isVMInstance bool
 	// setError injects a provisioning error by error type constant.
 	setError func(errorType string)
 	// setZoneAllocError injects a ZoneAllocationFailed error for a specific SKU and zone.
@@ -121,8 +122,8 @@ func createVMSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }
 
-// setupAKSMachineAPIMode configures test infrastructure for AKSMachineAPI provisioning mode.
-func setupAKSMachineAPIMode() {
+// setupProvisionModeAKSMachineAPITestEnvironment configures test infrastructure for AKSMachineAPI provisioning mode.
+func setupProvisionModeAKSMachineAPITestEnvironment() {
 	testOptions = test.Options(test.OptionsFields{
 		ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 		UseSIG:        lo.ToPtr(true),
@@ -137,7 +138,6 @@ func setupAKSMachineAPIMode() {
 	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 	cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
-
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
@@ -147,10 +147,11 @@ func setupAKSMachineAPIMode() {
 	ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 }
 
-// setupVMMode configures test infrastructure for AKSScriptless (VM) provisioning mode.
-func setupVMMode() {
+// setupProvisionModeAKSScriptlessTestEnvironment configures test infrastructure for AKSScriptless (VM) provisioning mode.
+func setupProvisionModeAKSScriptlessTestEnvironment() {
 	testOptions = test.Options(test.OptionsFields{
-		UseSIG: lo.ToPtr(true),
+		ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSScriptless),
+		UseSIG:        lo.ToPtr(false),
 	})
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -162,7 +163,6 @@ func setupVMMode() {
 	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 	cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
-
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
@@ -176,8 +176,36 @@ func setupVMMode() {
 	ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 }
 
-// teardownProvisionMode resets state after each test.
-func teardownProvisionMode() {
+func setupProvisionModeBootstrappingClientTestEnvironment() {
+	testOptions = test.Options(test.OptionsFields{
+		ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
+		UseSIG:        lo.ToPtr(true),
+	})
+
+	ctx = coreoptions.ToContext(ctx, coretest.Options())
+	ctx = options.ToContext(ctx, testOptions)
+
+	azureEnv = test.NewEnvironment(ctx, env)
+	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+	statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+
+	// VM mode needs NSG setup for NIC creation
+	nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, fmt.Sprintf("aks-agentpool-%s-nsg", options.FromContext(ctx).ClusterID))
+	azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
+
+	ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+	ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+}
+
+// teardownTestEnvironment resets state after each test.
+func teardownTestEnvironment() {
 	cloudProvider.WaitForInstancePromises()
 	cluster.Reset()
 	clusterNonZonal.Reset()
@@ -190,7 +218,7 @@ func teardownProvisionMode() {
 //nolint:gocyclo
 func aksMachineProvisionMode() provisionTestMode {
 	return provisionTestMode{
-		isVM: false,
+		isVMInstance: false,
 		setError: func(errorType string) {
 			switch errorType {
 			case errLowPriorityQuota:
@@ -272,7 +300,7 @@ func aksMachineProvisionMode() provisionTestMode {
 //nolint:gocyclo
 func vmProvisionMode() provisionTestMode {
 	return provisionTestMode{
-		isVM: true,
+		isVMInstance: true,
 		setError: func(errorType string) {
 			var code string
 			var msg string
