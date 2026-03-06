@@ -497,8 +497,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 				}
 			}()
 
-			// Use GET-based poller when SDK poller is nil (batch case)
-			// The GET poller is also compatible with non-batch case but SDK poller is preferred when available.
+			// Use GET-based poller when SDK poller is nil (batch case).
+			// In practice, the non-batch code path always provides an SDK poller, so poller==nil
+			// only occurs when the batching client was used. The GET poller is technically compatible
+			// with the non-batch case too, but the SDK poller is preferred when available.
 			if poller == nil {
 				getPoller := aksmachinepoller.NewPoller(
 					p.pollerOptions,
