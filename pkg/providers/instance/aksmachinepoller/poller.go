@@ -107,6 +107,28 @@ type Options struct {
 	MaxRetries int
 }
 
+// DefaultOptions returns production poller configuration.
+func DefaultOptions() Options {
+	return Options{
+		PollInterval:  5 * time.Second,
+		RetryDelay:    1 * time.Second,
+		MaxRetryDelay: 30 * time.Second,
+		MaxRetries:    10,
+	}
+}
+
+// InstantOptions returns poller configuration for tests where the fake
+// returns Succeeded immediately. Uses minimal intervals to avoid delays while
+// still exercising the polling code path.
+func InstantOptions() Options {
+	return Options{
+		PollInterval:  1 * time.Millisecond,
+		RetryDelay:    1 * time.Millisecond,
+		MaxRetryDelay: 1 * time.Millisecond,
+		MaxRetries:    3,
+	}
+}
+
 // Provisioning state constants for AKS Machine API
 const (
 	ProvisioningStateCreating  = "Creating"
