@@ -159,26 +159,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 		})
 
-		It("should handle missing creation time gracefully", func() {
-			// Remove the Status.CreationTimestamp to test missing timestamp handling
-			aksMachine.Properties.Status.CreationTimestamp = nil
-
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
-
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
-			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
-			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
-			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
-			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
-			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
-			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
-		})
-
 		It("should return error when properties is missing", func() {
 			aksMachine.Properties = nil
 

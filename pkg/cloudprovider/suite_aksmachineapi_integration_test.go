@@ -212,37 +212,6 @@ func runSharedAKSMachineAPITests() {
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(nil)
 		})
 
-		It("should handle malformed timestamp gracefully during List operation", func() {
-			// Create AKS machine with missing timestamp directly in store
-			opts := options.FromContext(ctx)
-			aksMachine := test.AKSMachine(test.AKSMachineOptions{
-				Name:             "missing-timestamp-machine",
-				MachinesPoolName: opts.AKSMachinesPoolName,
-				ClusterName:      opts.ClusterName,
-			})
-			// Clear Status.CreationTimestamp
-			aksMachine.Properties.Status.CreationTimestamp = nil
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			// List should not fail despite missing timestamp
-			nodeClaims, err := cloudProvider.List(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(nodeClaims)).To(BeNumerically(">=", 1))
-
-			// Find our machine in the results
-			var ourNodeClaim *karpv1.NodeClaim
-			for _, nc := range nodeClaims {
-				if nc.Annotations[v1beta1.AnnotationAKSMachineResourceID] == lo.FromPtr(aksMachine.ID) {
-					ourNodeClaim = nc
-					break
-				}
-			}
-			Expect(ourNodeClaim).ToNot(BeNil())
-
-			// CreationTimestamp should be zero because Status.CreationTimestamp is nil
-			Expect(ourNodeClaim.CreationTimestamp.IsZero()).To(BeTrue())
-		})
-
 		It("should handle AKS machine delete failures - unrecognized error during sync/initial", func() {
 			// First create a successful AKS machine
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)

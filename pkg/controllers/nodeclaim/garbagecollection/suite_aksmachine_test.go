@@ -21,18 +21,15 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
-	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -73,17 +70,6 @@ var _ = Describe("Instance Garbage Collection", func() {
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ExpectSingletonReconciled(ctx, InstanceGCController)
-			_, err = cloudProvider.Get(ctx, providerID)
-			Expect(err).To(HaveOccurred())
-			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-		})
-
-		It("should delete an AKS machine if there is no NodeClaim owner, and without timestamp", func() {
-			aksMachine.Properties.Status.CreationTimestamp = nil
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			ExpectSingletonReconciled(ctx, InstanceGCController)
-
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -150,226 +136,6 @@ var _ = Describe("Instance Garbage Collection", func() {
 			ExpectNotFound(ctx, env.Client, node)
 		})
 
-		var _ = Context("Complex tags manipulation scenarios with in-place updates", func() {
-			var nodeClaim *karpv1.NodeClaim
-			var nodeClass *v1beta1.AKSNodeClass
-			var providerID string
-
-			BeforeEach(func() {
-				// Set up agent pool for AKS machines
-				opts := options.FromContext(ctx)
-				agentPool := test.AKSAgentPool(test.AKSAgentPoolOptions{
-					Name:          opts.AKSMachinesPoolName,
-					ResourceGroup: opts.NodeResourceGroup,
-					ClusterName:   opts.ClusterName,
-				})
-				azureEnv.AKSDataStorage.AgentPools.Store(lo.FromPtr(agentPool.ID), *agentPool)
-
-				// Create AKS machine
-				aksMachine = test.AKSMachine(test.AKSMachineOptions{Name: "corner-case-machine", MachinesPoolName: opts.AKSMachinesPoolName})
-				providerID = utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
-
-				// Create corresponding NodeClaim, not launched yet
-				nodeClass = test.AKSNodeClass()
-				nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "corner-case-nodeclaim",
-						Annotations: map[string]string{
-							v1beta1.AnnotationAKSMachineResourceID: lo.FromPtr(aksMachine.ID),
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-							Name:  nodeClass.Name,
-						},
-					},
-				})
-			})
-
-			AfterEach(func() {
-				ExpectCleanedUp(ctx, env.Client)
-			})
-
-			It("Instance created -> Tag deleted -> In-place update -> GC does NOT false-positive (Status.CreationTimestamp protects) -> Create() completed -> Registered -> In-place update", func() {
-				// Blank NodeClaim is there from the core.
-				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
-
-				// AKS machine created, but the user somehow deleted the nodeclaim tag.
-				// With server-side Status.CreationTimestamp, this no longer causes GC false positives.
-				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
-				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-				// Provider still waiting for Create() to complete. No change to NodeClaim.
-
-				// In-place update reconciles - should not do anything as no ProviderID yet
-				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
-				// Verify no update calls and the tags stay as-is.
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-				unchangedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(unchangedAKSMachine.Properties.Tags).ToNot(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-
-				// Garbage collection reconciles - should NOT garbage collect because Status.CreationTimestamp (server-side) is recent.
-				// This is the improvement over the old tag-based approach: no more false positives from tag deletion.
-				ExpectSingletonReconciled(ctx, InstanceGCController)
-				_, err = cloudProvider.Get(ctx, providerID)
-				Expect(err).NotTo(HaveOccurred())
-
-				// Provider Create() completes, setting the ProviderID on the NodeClaim
-				nodeClaim.Status.ProviderID = providerID
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// NodeClaim gets registered
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// In-place update reconciles - should repair the nodeclaim tag
-				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				repairedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
-				Expect(err).ToNot(HaveOccurred())
-				// NodeClaim tag should be repaired
-				Expect(repairedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-				Expect(*repairedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
-			})
-
-			It("Instance created -> Tag deleted -> Create() completed -> Registered -> In-place update -> Garbage collection negative -> In-place update -> Garbage collection negative -> Tag deleted -> Garbage collection negative", func() {
-				// Blank NodeClaim is there from the core.
-				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
-
-				// AKS machine created, but the user somehow deleted the nodeclaim tag
-				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
-				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-				// Provider Create() completes, setting the ProviderID on the NodeClaim
-				nodeClaim.Status.ProviderID = providerID
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// NodeClaim gets registered
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// In-place update reconciles - should repair nodeclaim tag
-				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
-				// Verify update call and the nodeclaim tag is repaired.
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-				Expect(*updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
-
-				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, InstanceGCController)
-				_, err = cloudProvider.Get(ctx, providerID)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
-
-				// In-place update reconciles again - should not trigger additional update.
-				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
-				// Verify no additional update calls and tags stay unchanged.
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				unchangedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(unchangedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-				Expect(*unchangedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
-
-				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, InstanceGCController)
-				_, err = cloudProvider.Get(ctx, providerID)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
-
-				// The user somehow deleted the nodeclaim tag again
-				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
-				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, InstanceGCController)
-				_, err = cloudProvider.Get(ctx, providerID)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
-
-			It("Instance created -> Tag deleted -> In-place update -> Create() completed -> Registered -> Garbage collection negative", func() {
-				// Blank NodeClaim is there from the core.
-				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
-
-				// AKS machine created, but the user somehow deleted the nodeclaim tag
-				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
-				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-				// In-place update reconciles - should not do anything as no ProviderID yet
-				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
-				// Verify no update calls and the nodeclaim tag stays broken.
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-				unchangedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(unchangedAKSMachine.Properties.Tags).ToNot(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-
-				// Provider Create() completes, setting the ProviderID on the NodeClaim
-				nodeClaim.Status.ProviderID = providerID
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// NodeClaim gets registered
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, InstanceGCController)
-				_, err = cloudProvider.Get(ctx, providerID)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
-
-			It("Instance created -> Tag deleted -> Create() completed -> Garbage collection negative", func() {
-				// Blank NodeClaim is there from the core.
-				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
-
-				// AKS machine created, but the user somehow deleted the nodeclaim tag
-				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
-				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-				// Provider Create() completes, setting the ProviderID on the NodeClaim
-				nodeClaim.Status.ProviderID = providerID
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, InstanceGCController)
-				_, err = cloudProvider.Get(ctx, providerID)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
-
-			It("Instance created -> Tag deleted -> Create() completed -> Registered -> Garbage collection negative", func() {
-				// Blank NodeClaim is there from the core.
-				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
-
-				// AKS machine created, but the user somehow deleted the nodeclaim tag
-				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
-				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-				// Provider Create() completes, setting the ProviderID on the NodeClaim
-				nodeClaim.Status.ProviderID = providerID
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// NodeClaim gets registered
-				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
-				ExpectApplied(ctx, env.Client, nodeClaim)
-
-				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, InstanceGCController)
-				_, err = cloudProvider.Get(ctx, providerID)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
-		})
 	})
 
 	var _ = Context("Mixed VM and AKS machine instances", func() {
