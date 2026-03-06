@@ -57,7 +57,12 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	}
 
 	var checks []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error)
-	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+	if options.FromContext(ctx).IsAzureVMMode() {
+		// AzureVM mode: only hash-based drift (no AKS-specific k8s version, image, kubelet identity checks)
+		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
+			c.areStaticFieldsDrifted,
+		}
+	} else if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
 			c.areStaticFieldsDrifted,
 			c.isK8sVersionDrifted,
