@@ -135,6 +135,7 @@ type DefaultAKSMachineProvider struct {
 	aksMachinesPoolLocation string
 	errorHandling           *offerings.ErrorDetailHandler
 	pollerOptions           aksmachinepoller.Options // Configurable for testing; defaults to production values
+	machineListCache        *machineListCache
 }
 
 func NewAKSMachineProvider(
@@ -159,6 +160,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		pollerOptions:           DefaultPollerOptions(),
+		machineListCache:        newMachineListCache(time.Minute),
 	}
 
 	return provider
@@ -502,6 +504,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// Use GET-based poller when SDK poller is nil (batch case)
 			// The GET poller is also compatible with non-batch case but SDK poller is preferred when available.
 			if poller == nil {
+
+				if true {
+					machine, got := p.machineListCache.get(p.clusterName)
+				}
+
 				p.pollerOptions.PollInterval = 30 * time.Second
 				getPoller := aksmachinepoller.NewPoller(
 					p.pollerOptions,
