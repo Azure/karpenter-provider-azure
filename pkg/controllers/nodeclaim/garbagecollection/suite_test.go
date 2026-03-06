@@ -122,6 +122,7 @@ var _ = BeforeEach(func() {
 })
 
 var _ = AfterEach(func() {
+	// Wait for any async polling goroutines to complete before resetting
 	cloudProvider.WaitForInstancePromises()
 	ExpectCleanedUp(ctx, env.Client)
 })
