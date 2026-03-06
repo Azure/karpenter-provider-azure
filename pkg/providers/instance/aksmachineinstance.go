@@ -502,6 +502,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// Use GET-based poller when SDK poller is nil (batch case)
 			// The GET poller is also compatible with non-batch case but SDK poller is preferred when available.
 			if poller == nil {
+				p.pollerOptions.PollInterval = 30 * time.Second
 				getPoller := aksmachinepoller.NewPoller(
 					p.pollerOptions,
 					p.azClient.AKSMachinesClient(),
