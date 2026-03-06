@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
@@ -563,7 +564,7 @@ func (c *CloudProvider) Name() string {
 }
 
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
-	return []status.Object{&v1beta1.AKSNodeClass{}}
+	return []status.Object{&v1beta1.AKSNodeClass{}, &v1alpha1.AzureNodeClass{}}
 }
 
 // TODO: review repair policies
@@ -585,8 +586,23 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 
 // May return apimachinery.NotFoundError if NodePool is not found.
 func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1beta1.AKSNodeClass, error) {
+	ref := nodePool.Spec.Template.Spec.NodeClassRef
+
+	// AzureNodeClass: resolve and adapt to AKSNodeClass
+	if ref.Group == v1alpha1.Group && ref.Kind == "AzureNodeClass" {
+		azureNodeClass := &v1alpha1.AzureNodeClass{}
+		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: ref.Name}, azureNodeClass); err != nil {
+			return nil, err
+		}
+		if !azureNodeClass.DeletionTimestamp.IsZero() {
+			return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: v1alpha1.Group, Resource: "azurenodeclasses"}, azureNodeClass.Name)
+		}
+		return nodeclaimutils.AKSNodeClassFromAzureNodeClass(azureNodeClass), nil
+	}
+
+	// Default: AKSNodeClass (existing behavior)
 	nodeClass := &v1beta1.AKSNodeClass{}
-	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
+	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: ref.Name}, nodeClass); err != nil {
 		return nil, err
 	}
 	// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound
