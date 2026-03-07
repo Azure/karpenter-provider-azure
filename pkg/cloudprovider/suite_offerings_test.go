@@ -46,7 +46,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 	// === SHARED TEST FUNCTIONS ===
 	// These run for both AKSMachineAPI and AKSScriptless (VM) modes.
 
-	runSharedCreationFailureTests := func(mode provisionTestMode) {
+	runSharedCreationFailureTests := func() {
 		Context("Create - Expected Creation Failures", func() {
 			It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -58,18 +58,18 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				mode.setError(errLowPriorityQuota)
+				setProvisioningError(errLowPriorityQuota)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(BeNumerically(">=", 1))
+				result := popCreationResult()
 				testSKU := &skewer.SKU{Name: lo.ToPtr(result.vmSize)}
 				Expect(result.zoneErr).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, testSKU, result.zone, karpv1.CapacityTypeSpot)
 
-				mode.clearError()
+				clearProvisioningError()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
@@ -90,18 +90,18 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				mode.setError(errOverconstrainedZonal)
+				setProvisioningError(errOverconstrainedZonal)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(BeNumerically(">=", 1))
+				result := popCreationResult()
 				Expect(result.zoneErr).ToNot(HaveOccurred())
 				testSKU := &skewer.SKU{Name: lo.ToPtr(result.vmSize)}
 				ExpectUnavailable(azureEnv, testSKU, result.zone, karpv1.CapacityTypeSpot)
 
-				mode.clearError()
+				clearProvisioningError()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(result.zone))
@@ -117,18 +117,18 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				mode.setError(errOverconstrained)
+				setProvisioningError(errOverconstrained)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(BeNumerically(">=", 1))
+				result := popCreationResult()
 				testSKU := &skewer.SKU{Name: lo.ToPtr(result.vmSize)}
 				Expect(result.zoneErr).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, testSKU, result.zone, karpv1.CapacityTypeSpot)
 
-				mode.clearError()
+				clearProvisioningError()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
@@ -144,17 +144,17 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				mode.setError(errAllocationFailed)
+				setProvisioningError(errAllocationFailed)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(BeNumerically(">=", 1))
+				result := popCreationResult()
 				Expect(result.zoneErr).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, &skewer.SKU{Name: lo.ToPtr(result.vmSize)}, result.zone, karpv1.CapacityTypeSpot)
 
-				mode.clearError()
+				clearProvisioningError()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelInstanceTypeStable]).ToNot(Equal(result.vmSize))
@@ -163,14 +163,14 @@ var _ = Describe("CloudProvider - Offerings", func() {
 			It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				mode.setError(errSKUFamilyQuota)
+				setProvisioningError(errSKUFamilyQuota)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
-				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
+				Expect(getCreateCallCount()).To(BeNumerically(">=", 1))
 
 				// VM mode: verify NIC cleanup after creation failure (preserved from original VM test)
-				if mode.isVMInstance {
+				if isVMMode() {
 					Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 					nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 					Expect(nic).NotTo(BeNil())
@@ -178,7 +178,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 					Expect(ok).To(Equal(false))
 				}
 
-				mode.clearError()
+				clearProvisioningError()
 				pod = coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -187,14 +187,14 @@ var _ = Describe("CloudProvider - Offerings", func() {
 			It("should fail to provision when VM SKU family vCPU quota limit is zero, and succeed when its gone", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				mode.setError(errSKUFamilyQuotaZero)
+				setProvisioningError(errSKUFamilyQuotaZero)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
-				Expect(mode.getCreateCallCount()).To(BeNumerically(">=", 1))
+				Expect(getCreateCallCount()).To(BeNumerically(">=", 1))
 
 				// VM mode: verify NIC cleanup after creation failure (preserved from original VM test)
-				if mode.isVMInstance {
+				if isVMMode() {
 					Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 					nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 					Expect(nic).NotTo(BeNil())
@@ -202,14 +202,14 @@ var _ = Describe("CloudProvider - Offerings", func() {
 					Expect(ok).To(Equal(false))
 				}
 
-				mode.clearError()
+				clearProvisioningError()
 				pod = coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 			})
 
 			It("should return ICE if Total Regional Cores Quota errors are hit", func() {
-				mode.setError(errRegionalCoresQuota)
+				setProvisioningError(errRegionalCoresQuota)
 
 				testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
@@ -231,7 +231,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 		})
 	}
 
-	runSharedZoneAwareTests := func(mode provisionTestMode) {
+	runSharedZoneAwareTests := func() {
 		Context("Create - Zone-aware provisioning", func() {
 			It("should launch in the NodePool-requested zone", func() {
 				zone, rawZone := fmt.Sprintf("%s-3", fake.Region), "3"
@@ -245,8 +245,8 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
 
-				Expect(mode.getCreateCallCount()).To(Equal(1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(Equal(1))
+				result := popCreationResult()
 				Expect(result.zones).To(ConsistOf(&rawZone))
 			})
 
@@ -257,14 +257,14 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Mode-specific creation check: verify the correct API was called (preserved from originals)
-				if mode.isVMInstance {
+				if isVMMode() {
 					Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				} else {
 					Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				}
 
 				// Verify that zones are empty for non-zonal regions
-				if mode.isVMInstance {
+				if isVMMode() {
 					vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 					Expect(vm.Zones).To(BeEmpty())
 				} else {
@@ -287,14 +287,14 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, ""))
 
-				Expect(mode.getCreateCallCount()).To(Equal(1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(Equal(1))
+				result := popCreationResult()
 				Expect(result.zones).To(BeEmpty())
 			})
 		})
 	}
 
-	runSharedErrorCaseTests := func(mode provisionTestMode) {
+	runSharedErrorCaseTests := func() {
 		Context("Create - CloudProvider Create Error Cases", func() {
 			It("should return an ICE error when there are no instance types to launch", func() {
 				nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
@@ -376,7 +376,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 						},
 					},
 				})
-				mode.setError(errGenericCreation)
+				setProvisioningError(errGenericCreation)
 				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
@@ -389,7 +389,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 		})
 	}
 
-	runSharedUnavailableOfferingsTests := func(mode provisionTestMode) {
+	runSharedUnavailableOfferingsTests := func() {
 		Context("Create - Unavailable Offerings", func() {
 			It("should not allocate in a zone marked as unavailable", func() {
 				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeSpot)
@@ -410,7 +410,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 			})
 
 			It("should handle ZonalAllocationFailed on creating the instance", func() {
-				mode.setZoneAllocError("Standard_D2_v2", "1")
+				setZoneAllocError("Standard_D2_v2", "1")
 
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -421,7 +421,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				if mode.isVMInstance {
+				if isVMMode() {
 					ExpectLaunched(ctx, env.Client, cloudProvider, coreProvisioner, pod)
 				} else {
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -429,7 +429,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// Verify the failed NodeClaim is cleaned up (VM mode only - AKS Machine mode doesn't clean up synchronously)
-				if mode.isVMInstance {
+				if isVMMode() {
 					Eventually(func() []*karpv1.NodeClaim { return ExpectNodeClaims(ctx, env.Client) }).To(HaveLen(0))
 				}
 
@@ -443,8 +443,8 @@ var _ = Describe("CloudProvider - Offerings", func() {
 						Capabilities: &[]compute.ResourceSkuCapabilities{{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("32")}}},
 				}
 
-				Expect(mode.getCreateCallCount()).To(BeNumerically(">", 0))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(BeNumerically(">", 0))
+				result := popCreationResult()
 				Expect(result.zoneErr).ToNot(HaveOccurred())
 
 				for _, skuToCheck := range expectedUnavailableSKUs {
@@ -455,15 +455,15 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				By("successfully scheduling in a different zone on retry")
 				// VM mode: original test did NOT clear the error before retry (async Error is consumed)
 				// AKS Machine mode: must clear the provisioning error override
-				if !mode.isVMInstance {
-					mode.clearError()
+				if !isVMMode() {
+					clearProvisioningError()
 				}
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(result.zone))
 				// AKS Machine mode: verify retry actually made a creation call (preserved from original)
-				if !mode.isVMInstance {
-					Expect(mode.getCreateCallCount()).To(BeNumerically(">", 0))
+				if !isVMMode() {
+					Expect(getCreateCallCount()).To(BeNumerically(">", 0))
 				}
 			})
 
@@ -601,7 +601,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 
 			Context("SKUNotAvailable", func() {
 				AssertUnavailable := func(sku *skewer.SKU, capacityType string) {
-					mode.setSkuNotAvailable(sku.GetName())
+					setSkuNotAvailable(sku.GetName())
 					coretest.ReplaceRequirements(nodePool,
 						karpv1.NodeSelectorRequirementWithMinValues{
 							NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}}},
@@ -633,21 +633,19 @@ var _ = Describe("CloudProvider - Offerings", func() {
 		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
 		AfterEach(func() { teardownTestEnvironment() })
 
-		mode := aksMachineProvisionMode()
-		runSharedCreationFailureTests(mode)
-		runSharedZoneAwareTests(mode)
-		runSharedErrorCaseTests(mode)
-		runSharedUnavailableOfferingsTests(mode)
+		runSharedCreationFailureTests()
+		runSharedZoneAwareTests()
+		runSharedErrorCaseTests()
+		runSharedUnavailableOfferingsTests()
 	})
 
 	Context("ProvisionMode = AKSScriptless", func() {
 		BeforeEach(func() { setupProvisionModeAKSScriptlessTestEnvironment() })
 		AfterEach(func() { teardownTestEnvironment() })
 
-		mode := vmProvisionMode()
-		runSharedCreationFailureTests(mode)
-		runSharedZoneAwareTests(mode)
-		runSharedErrorCaseTests(mode)
-		runSharedUnavailableOfferingsTests(mode)
+		runSharedCreationFailureTests()
+		runSharedZoneAwareTests()
+		runSharedErrorCaseTests()
+		runSharedUnavailableOfferingsTests()
 	})
 })
