@@ -160,7 +160,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		pollerOptions:           DefaultPollerOptions(),
-		machineListCache:        newMachineListCache(time.Minute),
+		//machineListCache:        newMachineListCache(time.Minute),
 	}
 
 	return provider
@@ -506,7 +506,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			if poller == nil {
 
 				if true {
-					machine, got := p.machineListCache.get(p.clusterName)
+					//machine, got := p.machineListCache.get(p.clusterName)
 				}
 
 				p.pollerOptions.PollInterval = 30 * time.Second
@@ -664,4 +664,35 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,
 	), nil
+}
+
+func (p *DefaultAKSMachineProvider) pollCache(ctx context.Context, name string, interval time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			_, ok := p.machineListCache.get(name)
+			if ok {
+				log.FromContext(ctx).Info("cache hit for AKS machine", "aksMachineName", name)
+				return nil
+			}
+
+			if !ok && !p.machineListCache.isFresh() {
+				machines, err := p.listMachines(ctx)
+				if err != nil {
+					log.FromContext(ctx).Error(err, "failed to refresh AKS machine cache", "aksMachineName", name)
+				} else {
+					p.machineListCache.update(machines)
+				}
+			} else {
+				log.FromContext(ctx).Info("cache miss for AKS machine, but cache is still fresh, skipping refresh", "aksMachineName", name)
+			}
+		case <-ctx.Done():
+			log.FromContext(ctx).Info("stopping cache polling for AKS machine", "aksMachineName", name)
+			return nil
+		}
+	}
+
 }
