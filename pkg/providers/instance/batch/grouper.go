@@ -119,7 +119,7 @@ func (g *Grouper) run() {
 		}()
 
 		if !panicked {
-			return // runLoop returned normally (context cancelled)
+			return // runLoop returned normally (context canceled)
 		}
 	}
 }
@@ -307,7 +307,7 @@ func computeTemplateHash(template *armcontainerservice.Machine) string {
 
 	jsonBytes, err := json.Marshal(key)
 	if err != nil {
-		// If marshalling fails, fall back to fmt.Sprintf which is slower but always works.
+		// If marshaling fails, fall back to fmt.Sprintf which is slower but always works.
 		// This prevents different templates from colliding on the same (empty) hash.
 		jsonBytes = []byte(fmt.Sprintf("%+v", key))
 	}

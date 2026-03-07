@@ -219,7 +219,7 @@ func TestGrouperBatchesDifferentTemplate(t *testing.T) {
 	grouper.mu.Unlock()
 }
 
-// When the grouper shuts down (context cancelled), pending requests that haven't
+// When the grouper shuts down (context canceled), pending requests that haven't
 // been dispatched yet must receive an error instead of hanging forever.
 func TestGrouperDrainsPendingRequestsOnShutdown(t *testing.T) {
 	t.Parallel()
