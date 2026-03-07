@@ -73,15 +73,10 @@ spec:
               imageID:
                 description: |-
                   imageID is the ARM resource ID of the image that instances use.
-                  This can be a Compute Gallery image, Shared Image Gallery image, Community Gallery image,
-                  or any valid Azure image resource ID.
+                  This can be a Compute Gallery image, Shared Image Gallery image, or any valid Azure image resource ID.
                   When set, imageFamily-based image resolution is bypassed entirely.
                   The user is responsible for ensuring the image is compatible with the selected instance types.
-                  Examples:
-                    /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/galleries/{gallery}/images/{image}/versions/{version}
-                    /CommunityGalleries/{gallery}/images/{image}/versions/{version}
-                maxLength: 1024
-                pattern: (?i)^(\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.Compute\/.*|\/CommunityGalleries\/[^\/]+\/images\/[^\/]+\/versions\/[^\/]+)$
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.(Compute|AzureHybridBenefit)\/.*$
                 type: string
               location:
                 description: |-
@@ -145,12 +140,10 @@ spec:
                   rule: self.all(k, size(self[k]) <= 256)
               userData:
                 description: |-
-                  userData is the base64-encoded custom data that will be passed to the VM at creation time.
-                  The caller must pre-encode their cloud-init or bootstrap script to base64, as the Azure API
-                  expects this field to contain a base64-encoded string.
+                  userData is verbatim CustomData that will be passed to the VM at creation time.
+                  The Azure SDK will base64-encode this value before sending it to the Azure API.
                   The user is fully responsible for providing valid bootstrap/cloud-init data.
                   When this field is set, no Karpenter-managed bootstrapping is performed.
-                maxLength: 87380
                 type: string
               vnetSubnetID:
                 description: |-
