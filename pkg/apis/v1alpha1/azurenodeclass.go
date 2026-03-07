@@ -28,6 +28,23 @@ import (
 // This will contain configuration necessary to launch instances in Azure,
 // independent of a specific managed control plane (e.g. AKS).
 type AzureNodeClassSpec struct {
+	// subscriptionID overrides the controller-level Azure subscription for this NodeClass.
+	// When set, VMs and NICs are created in this subscription instead of the default.
+	// The controller's managed identity / service principal must have permissions in this subscription.
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	// +optional
+	SubscriptionID *string `json:"subscriptionID,omitempty"`
+	// resourceGroup overrides the controller-level resource group for this NodeClass.
+	// When set, VMs and NICs are created in this resource group instead of the default --node-resource-group.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=90
+	// +optional
+	ResourceGroup *string `json:"resourceGroup,omitempty"`
+	// location overrides the controller-level Azure region for this NodeClass.
+	// When set, VMs are created in this region instead of the default.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Location *string `json:"location,omitempty"`
 	// imageID is the ARM resource ID of the image that instances use.
 	// This can be a Compute Gallery image, Shared Image Gallery image, Community Gallery image,
 	// or any valid Azure image resource ID.
@@ -65,6 +82,13 @@ type AzureNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum=4096
 	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
+	// dataDiskSizeGB is the size of an additional data disk to attach to provisioned VMs, in GB.
+	// When set, a Premium_LRS managed data disk of this size is attached at LUN 0.
+	// Useful for container runtime storage or scratch space.
+	// +kubebuilder:validation:Minimum=10
+	// +kubebuilder:validation:Maximum=4096
+	// +optional
+	DataDiskSizeGB *int32 `json:"dataDiskSizeGB,omitempty"`
 	// tags to be applied on Azure resources like instances.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
