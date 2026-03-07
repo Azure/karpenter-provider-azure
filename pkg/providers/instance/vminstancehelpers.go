@@ -54,6 +54,7 @@ type resolvedBootstrapData struct {
 
 // resolveBootstrapAndImageData replaces the launchtemplate.Provider.GetTemplate chain.
 // It builds StaticParameters locally, calls imagefamily.Resolve(), renders bootstrap data, and returns the result.
+// In AzureVM mode, it bypasses image family resolution entirely and uses user-provided imageID/userData.
 func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -61,6 +62,12 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 ) (*resolvedBootstrapData, error) {
+	// In AzureVM mode, bypass image family resolution entirely.
+	// The user provides their own imageID and userData via AzureNodeClass.
+	if p.provisionMode == consts.ProvisionModeAzureVM {
+		return p.resolveAzureVMBootstrapData(ctx, nodeClass, nodeClaim)
+	}
+
 	// Build additional labels (same logic as old getLaunchTemplate)
 	claimLabels := labelpkg.GetFilteredSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
@@ -156,6 +163,32 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 	return result, nil
 }
 
+// resolveAzureVMBootstrapData creates minimal bootstrap data for AzureVM mode.
+// In this mode, no Karpenter-managed bootstrapping or image resolution is performed.
+// The user provides imageID and userData directly via AzureNodeClass.
+func (p *DefaultVMProvider) resolveAzureVMBootstrapData(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+) (*resolvedBootstrapData, error) {
+	opts := options.FromContext(ctx)
+	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
+
+	imageID := ""
+	if nodeClass.Spec.ImageID != nil {
+		imageID = *nodeClass.Spec.ImageID
+	}
+	if imageID == "" {
+		return nil, fmt.Errorf("imageID is required in AzureVM mode")
+	}
+
+	return &resolvedBootstrapData{
+		ImageID:  imageID,
+		SubnetID: subnetID,
+		Tags:     launchtemplate.Tags(opts, nodeClass, nodeClaim),
+	}, nil
+}
+
 func getAgentbakerNetworkPlugin(ctx context.Context) string {
 	opts := options.FromContext(ctx)
 	if opts.IsAzureCNIOverlay() || opts.IsCiliumNodeSubnet() || opts.IsNetworkPluginNone() {
@@ -188,14 +221,14 @@ func (p *DefaultVMProvider) buildVMTemplate(
 	vm := &armcompute.VirtualMachine{
 		Name:     lo.ToPtr(vmName),
 		Location: lo.ToPtr(p.location),
-		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
+		Identity: buildVMIdentity(opts.NodeIdentities, nodeClass),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
 			},
-			StorageProfile: configureStorageProfile(bootstrap, nodeClass, p.diskEncryptionSetID, opts.UseSIG, vmName),
+			StorageProfile: configureStorageProfile(bootstrap, nodeClass, p.diskEncryptionSetID, opts.UseSIG, p.provisionMode, vmName),
 			NetworkProfile: configureNetworkProfile(nicReference),
-			OSProfile:      configureOSProfile(opts, vmName, bootstrap, p.provisionMode),
+			OSProfile:      configureOSProfile(opts, vmName, bootstrap, p.provisionMode, nodeClass),
 			Priority:       lo.ToPtr(KarpCapacityTypeToVMPriority[capacityType]),
 		},
 		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
@@ -209,7 +242,7 @@ func (p *DefaultVMProvider) buildVMTemplate(
 }
 
 // configureStorageProfile builds the StorageProfile for the VM.
-func configureStorageProfile(bootstrap *resolvedBootstrapData, nodeClass *v1beta1.AKSNodeClass, diskEncryptionSetID string, useSIG bool, vmName string) *armcompute.StorageProfile {
+func configureStorageProfile(bootstrap *resolvedBootstrapData, nodeClass *v1beta1.AKSNodeClass, diskEncryptionSetID string, useSIG bool, provisionMode string, vmName string) *armcompute.StorageProfile {
 	osDisk := &armcompute.OSDisk{
 		Name:         lo.ToPtr(vmName),
 		DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
@@ -238,7 +271,13 @@ func configureStorageProfile(bootstrap *resolvedBootstrapData, nodeClass *v1beta
 
 	// Image reference
 	var imageRef *armcompute.ImageReference
-	if useSIG {
+	if provisionMode == consts.ProvisionModeAzureVM {
+		// In AzureVM mode, the imageID is always a direct ARM resource ID
+		// provided by the user in AzureNodeClass.Spec.ImageID
+		imageRef = &armcompute.ImageReference{
+			ID: lo.ToPtr(bootstrap.ImageID),
+		}
+	} else if useSIG {
 		imageRef = &armcompute.ImageReference{
 			ID: lo.ToPtr(bootstrap.ImageID),
 		}
@@ -270,11 +309,43 @@ func configureNetworkProfile(nicReference string) *armcompute.NetworkProfile {
 }
 
 // configureOSProfile builds the OSProfile for the VM.
-func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolvedBootstrapData, provisionMode string) *armcompute.OSProfile {
+func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolvedBootstrapData, provisionMode string, nodeClass *v1beta1.AKSNodeClass) *armcompute.OSProfile {
 	osProfile := &armcompute.OSProfile{
-		AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
-		ComputerName:  &vmName,
-		LinuxConfiguration: &armcompute.LinuxConfiguration{
+		ComputerName: &vmName,
+	}
+
+	if provisionMode == consts.ProvisionModeAzureVM {
+		// In AzureVM mode, SSH key and admin username are optional.
+		// If provided, configure them; otherwise omit SSH configuration entirely.
+		if opts.LinuxAdminUsername != "" {
+			osProfile.AdminUsername = lo.ToPtr(opts.LinuxAdminUsername)
+		}
+		if opts.SSHPublicKey != "" && opts.LinuxAdminUsername != "" {
+			osProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
+				DisablePasswordAuthentication: lo.ToPtr(true),
+				SSH: &armcompute.SSHConfiguration{
+					PublicKeys: []*armcompute.SSHPublicKey{
+						{
+							KeyData: lo.ToPtr(opts.SSHPublicKey),
+							Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
+						},
+					},
+				},
+			}
+		} else {
+			osProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
+				DisablePasswordAuthentication: lo.ToPtr(true),
+			}
+		}
+		// In AzureVM mode, pass through verbatim userData from the AzureNodeClass adapter.
+		// UserData may be nil/empty — it's the user's responsibility to provide valid bootstrap data.
+		if nodeClass.Spec.UserData != nil {
+			osProfile.CustomData = nodeClass.Spec.UserData
+		}
+	} else {
+		// AKS modes: SSH key and admin username are required
+		osProfile.AdminUsername = lo.ToPtr(opts.LinuxAdminUsername)
+		osProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: lo.ToPtr(true),
 			SSH: &armcompute.SSHConfiguration{
 				PublicKeys: []*armcompute.SSHPublicKey{
@@ -284,16 +355,35 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 					},
 				},
 			},
-		},
-	}
-
-	if provisionMode == consts.ProvisionModeBootstrappingClient {
-		osProfile.CustomData = lo.ToPtr(bootstrap.CustomScriptsCustomData)
-	} else {
-		osProfile.CustomData = lo.ToPtr(bootstrap.ScriptlessCustomData)
+		}
+		if provisionMode == consts.ProvisionModeBootstrappingClient {
+			osProfile.CustomData = lo.ToPtr(bootstrap.CustomScriptsCustomData)
+		} else {
+			osProfile.CustomData = lo.ToPtr(bootstrap.ScriptlessCustomData)
+		}
 	}
 
 	return osProfile
+}
+
+// buildVMIdentity creates the VM identity configuration, merging global node identities
+// with any per-NodeClass managed identities (from AzureNodeClass in AzureVM mode).
+func buildVMIdentity(nodeIdentities []string, nodeClass *v1beta1.AKSNodeClass) *armcompute.VirtualMachineIdentity {
+	allIdentities := nodeIdentities
+	if len(nodeClass.Spec.ManagedIdentities) > 0 {
+		// Merge nodeclass-level identities with global identities, deduplicating
+		seen := make(map[string]bool, len(allIdentities))
+		for _, id := range allIdentities {
+			seen[id] = true
+		}
+		for _, id := range nodeClass.Spec.ManagedIdentities {
+			if !seen[id] {
+				allIdentities = append(allIdentities, id)
+				seen[id] = true
+			}
+		}
+	}
+	return ConvertToVirtualMachineIdentity(allIdentities)
 }
 
 // configureBillingProfile sets a default MaxPrice of -1 for Spot.
