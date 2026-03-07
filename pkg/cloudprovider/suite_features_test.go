@@ -1203,18 +1203,26 @@ var _ = Describe("CloudProvider - Features", func() {
 		})
 
 		Context("ImageProvider + Image Family (CIG, VM-only)", func() {
-			kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
-			expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
-			azureLinuxGen2ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ImageDefinition, imagefamily.AzureLinuxGen2ImageDefinition)
-			azureLinuxGen1ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen1ImageDefinition, imagefamily.AzureLinuxGen1ImageDefinition)
-			azureLinuxGen2ArmImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
-
+			// NOTE: kubernetes version and AzureLinux image definitions must be resolved at
+			// test runtime (inside the func body), NOT during ginkgo tree construction,
+			// because env.KubernetesInterface is nil until BeforeEach runs.
 			DescribeTable("should select the right Community Image Gallery image for a given instance type",
 				func(instanceType string, imgFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-					localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
-					if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
-						Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+					// Resolve AzureLinux image definitions at runtime based on kubernetes version
+					kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
+					expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
+					if expectUseAzureLinux3 {
+						switch expectedImageDefinition {
+						case imagefamily.AzureLinuxGen2ImageDefinition:
+							expectedImageDefinition = imagefamily.AzureLinux3Gen2ImageDefinition
+						case imagefamily.AzureLinuxGen1ImageDefinition:
+							expectedImageDefinition = imagefamily.AzureLinux3Gen1ImageDefinition
+						case imagefamily.AzureLinuxGen2ArmImageDefinition:
+							Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+						}
 					}
+
+					localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imgFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1247,11 +1255,11 @@ var _ = Describe("CloudProvider - Features", func() {
 				Entry("ARM instance type with AKSUbuntu image family",
 					"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 				Entry("Gen2 instance type with AzureLinux image family",
-					"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 				Entry("Gen1 instance type with AzureLinux image family",
-					"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 				Entry("ARM instance type with AzureLinux image family",
-					"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+					"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			)
 		})
 
