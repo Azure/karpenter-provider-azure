@@ -113,13 +113,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					Priority:   lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
 					ResourceID: lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
 					Status: &armcontainerservice.MachineStatus{
-						CreationTimestamp: lo.ToPtr(creationTime.Add(10 * time.Minute)),
+						CreationTimestamp: lo.ToPtr(creationTime),
 					},
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
 						NodePoolTagKey: lo.ToPtr("test-nodepool"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey:         lo.ToPtr("test-nodeclaim"),
-						launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(AKSMachineTimestampToTag(creationTime)),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 					},
 				},
 			}
@@ -158,26 +157,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
-		})
-
-		It("should handle missing creation time gracefully", func() {
-			// Remove the creation timestamp tag to test missing timestamp handling
-			delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineCreationTimestampTagKey)
-
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
-
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
-			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
-			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
-			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
-			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
-			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
-			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
 		})
 
 		It("should return error when properties is missing", func() {
