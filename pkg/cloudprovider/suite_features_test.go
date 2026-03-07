@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -50,7 +49,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
@@ -58,7 +56,7 @@ import (
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
-func runCommonGPUTests(mode provisionTestMode) {
+func runCommonGPUTests() {
 	Context("Create - GPU Workloads + Nodes", func() {
 		It("should schedule non-GPU pod onto the cheapest non-GPU capable node", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -66,8 +64,8 @@ func runCommonGPUTests(mode provisionTestMode) {
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(mode.getCreateCallCount()).To(Equal(1))
-			result := mode.popCreationResult()
+			Expect(getCreateCallCount()).To(Equal(1))
+			result := popCreationResult()
 			Expect(utils.IsNvidiaEnabledSKU(result.vmSize)).To(BeFalse())
 			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-count", "0"))
 		})
@@ -104,8 +102,8 @@ func runCommonGPUTests(mode provisionTestMode) {
 			// the following checks assume Standard_NC16as_T4_v3 (surprisingly the cheapest GPU in the test set), so test the assumption
 			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_NC16as_T4_v3"))
 
-			Expect(mode.getCreateCallCount()).To(Equal(1))
-			result := mode.popCreationResult()
+			Expect(getCreateCallCount()).To(Equal(1))
+			result := popCreationResult()
 			Expect(utils.IsNvidiaEnabledSKU(result.vmSize)).To(BeTrue())
 
 			// Verify that the node the pod was scheduled on has GPU resource and labels set
@@ -115,7 +113,7 @@ func runCommonGPUTests(mode provisionTestMode) {
 			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-count", "1"))
 
 			// VM mode: also verify GPU-related settings in customData/bootstrap
-			if mode.isVMInstance {
+			if isVMMode() {
 				Expect(result.customData).ToNot(BeEmpty())
 				Expect(result.customData).To(SatisfyAll(
 					ContainSubstring("GPU_NODE=true"),
@@ -134,7 +132,7 @@ func runCommonGPUTests(mode provisionTestMode) {
 	})
 }
 
-func runCommonEphemeralDiskTests(mode provisionTestMode) {
+func runCommonEphemeralDiskTests() {
 	Context("Create - Ephemeral Disk", func() {
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
@@ -150,14 +148,14 @@ func runCommonEphemeralDiskTests(mode provisionTestMode) {
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(mode.getCreateCallCount()).To(Equal(1))
-			result := mode.popCreationResult()
+			Expect(getCreateCallCount()).To(Equal(1))
+			result := popCreationResult()
 			Expect(result.isEphemeral).To(BeTrue())
 			Expect(result.diskSizeGB).ToNot(BeNil())
 			Expect(*result.diskSizeGB).To(Equal(int32(128))) // Default 128GB minimum
 
 			// VM mode: verify DiffDiskSettings.Option is Local
-			if mode.isVMInstance {
+			if isVMMode() {
 				Expect(result.diffDiskOption).To(Equal(string(armcompute.DiffDiskOptionsLocal)))
 			}
 		})
@@ -192,14 +190,14 @@ func runCommonEphemeralDiskTests(mode provisionTestMode) {
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(mode.getCreateCallCount()).To(Equal(1))
-			result := mode.popCreationResult()
+			Expect(getCreateCallCount()).To(Equal(1))
+			result := popCreationResult()
 			Expect(result.isEphemeral).To(BeTrue())
 			Expect(result.diskSizeGB).ToNot(BeNil())
 			Expect(*result.diskSizeGB).To(Equal(int32(30)))
 
 			// VM mode: verify DiffDiskSettings.Option is Local
-			if mode.isVMInstance {
+			if isVMMode() {
 				Expect(result.diffDiskOption).To(Equal(string(armcompute.DiffDiskOptionsLocal)))
 			}
 		})
@@ -220,14 +218,14 @@ func runCommonEphemeralDiskTests(mode provisionTestMode) {
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(mode.getCreateCallCount()).To(Equal(1))
-			result := mode.popCreationResult()
+			Expect(getCreateCallCount()).To(Equal(1))
+			result := popCreationResult()
 			Expect(result.isEphemeral).To(BeTrue())
 			Expect(result.diskSizeGB).ToNot(BeNil())
 			Expect(*result.diskSizeGB).To(Equal(int32(256)))
 
 			// VM mode: verify DiffDiskSettings.Option is Local
-			if mode.isVMInstance {
+			if isVMMode() {
 				Expect(result.diffDiskOption).To(Equal(string(armcompute.DiffDiskOptionsLocal)))
 			}
 		})
@@ -248,24 +246,24 @@ func runCommonEphemeralDiskTests(mode provisionTestMode) {
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(mode.getCreateCallCount()).To(Equal(1))
-			result := mode.popCreationResult()
+			Expect(getCreateCallCount()).To(Equal(1))
+			result := popCreationResult()
 			Expect(result.isEphemeral).To(BeFalse())
 			Expect(result.diskSizeGB).ToNot(BeNil())
 			Expect(*result.diskSizeGB).To(Equal(int32(128))) // Default size
 			// AKS Machine mode: verify OSDiskType is explicitly Managed (preserved from original)
-			if !mode.isVMInstance {
+			if isAKSMachineMode() {
 				Expect(result.osDiskType).To(Equal("Managed"))
 			}
 		})
 	})
 }
 
-func runCommonAdditionalTagsTests(mode provisionTestMode) {
+func runCommonAdditionalTagsTests() {
 	Context("Create - Additional Tags", func() {
 		It("should add additional tags to the created resource", func() {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
-				ProvisionMode: lo.Ternary(!mode.isVMInstance, lo.ToPtr(consts.ProvisionModeAKSMachineAPI), nil),
+				ProvisionMode: lo.Ternary(isAKSMachineMode(), lo.ToPtr(consts.ProvisionModeAKSMachineAPI), nil),
 				UseSIG:        lo.ToPtr(true),
 				AdditionalTags: map[string]string{
 					"karpenter.azure.com/test-tag": "test-value",
@@ -277,8 +275,8 @@ func runCommonAdditionalTagsTests(mode provisionTestMode) {
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(mode.getCreateCallCount()).To(Equal(1))
-			result := mode.popCreationResult()
+			Expect(getCreateCallCount()).To(Equal(1))
+			result := popCreationResult()
 
 			// Common tag assertions — both modes should have these
 			Expect(result.tags).To(HaveKey("karpenter.azure.com_test-tag"))
@@ -290,7 +288,7 @@ func runCommonAdditionalTagsTests(mode provisionTestMode) {
 			Expect(result.tags).To(HaveKey("karpenter.sh_nodepool"))
 			Expect(*result.tags["karpenter.sh_nodepool"]).To(Equal(nodePool.Name))
 
-			if mode.isVMInstance {
+			if isVMMode() {
 				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 				Expect(nic).NotTo(BeNil())
 				Expect(nic.Interface.Tags).To(HaveKey("karpenter.azure.com_test-tag"))
@@ -309,7 +307,7 @@ func runCommonAdditionalTagsTests(mode provisionTestMode) {
 	})
 }
 
-func runCommonSubnetTests(mode provisionTestMode) {
+func runCommonSubnetTests() {
 	Context("Create - Subnet Selection", func() {
 		It("should use the subnet specified in the nodeclass", func() {
 			// BYO VNet pattern: the subnet reconciler requires custom subnets to be in the
@@ -319,7 +317,7 @@ func runCommonSubnetTests(mode provisionTestMode) {
 			testSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclassSubnet"
 
 			var byoOpts *options.Options
-			if mode.isVMInstance {
+			if isVMMode() {
 				byoOpts = test.Options(test.OptionsFields{
 					UseSIG:   lo.ToPtr(true),
 					SubnetID: lo.ToPtr(byoClusterSubnetID),
@@ -339,19 +337,19 @@ func runCommonSubnetTests(mode provisionTestMode) {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisionedAndWaitForPromises(byoCtx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(byoCtx, env.Client, pod)
-			Expect(mode.getSubnetID()).To(Equal(testSubnetID))
+			Expect(getSubnetID()).To(Equal(testSubnetID))
 		})
 	})
 }
 
-func runCommonKubeletConfigTests(mode provisionTestMode) {
+func runCommonKubeletConfigTests() {
 	Context("Create - KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig", func() {
 			// Use mode-specific GC thresholds to match original tests:
 			// VM: 30/20 (original VM kubelet test), AKS Machine: 85/80 (original AKS Machine test)
 			gcHigh := int32(30)
 			gcLow := int32(20)
-			if !mode.isVMInstance {
+			if isAKSMachineMode() {
 				gcHigh = int32(85)
 				gcLow = int32(80)
 			}
@@ -375,7 +373,7 @@ func runCommonKubeletConfigTests(mode provisionTestMode) {
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			if mode.isVMInstance {
+			if isVMMode() {
 				// VM: verify kubelet flags are passed through in customData
 				customData := ExpectDecodedCustomData(azureEnv)
 				expectedFlags := map[string]string{
@@ -415,37 +413,23 @@ func runCommonKubeletConfigTests(mode provisionTestMode) {
 	})
 }
 
-func runCommonReuseExistingResourceTests(mode provisionTestMode) {
-	// TODO (NOW): more granularity on each mode's differences
-	Context("Create - Reuse Existing Resource", func() {
-		It("should not reattempt creation of a resource that has been created before", func() {
-			if mode.isVMInstance {
-				// VM mode: pre-store a VM in the fake store, then verify CreateAndWaitForPromises succeeds
-				// by finding it via GET instead of creating a new one
-				testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
-					},
-					Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
-				})
-				vmName := instance.GenerateResourceName(testNodeClaim.Name)
-				vm := &armcompute.VirtualMachine{
-					Name:     lo.ToPtr(vmName),
-					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
-					Location: lo.ToPtr(fake.Region),
-					Zones:    []*string{lo.ToPtr("fantasy-zone")},
-					Properties: &armcompute.VirtualMachineProperties{
-						TimeCreated: lo.ToPtr(time.Now()),
-						HardwareProfile: &armcompute.HardwareProfile{
-							VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
-						},
-					},
-				}
-				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
-				Expect(err).ToNot(HaveOccurred())
-			} else {
+// runCommonReuseExistingResourceTests was removed — the two branches had 100% mode-split
+// code with zero shared logic. They are now inlined at each call site below.
+
+var _ = Describe("CloudProvider - Features", func() {
+
+	Context("ProvisionMode = AKSMachineAPI", func() {
+		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
+		AfterEach(func() { teardownTestEnvironment() })
+
+		runCommonGPUTests()
+		runCommonEphemeralDiskTests()
+		runCommonAdditionalTagsTests()
+		runCommonSubnetTests()
+		runCommonKubeletConfigTests()
+
+		Context("Create - Reuse Existing Resource (AKS Machine)", func() {
+			It("should not reattempt creation of a resource that has been created before", func() {
 				// AKS Machine mode: create first, then create again with deep-copied claim and
 				// verify the machine was reused (GET, not CreateOrUpdate)
 				firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
@@ -480,24 +464,8 @@ func runCommonReuseExistingResourceTests(mode provisionTestMode) {
 				// Verify reuse: no new CreateOrUpdate, just a Get
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
-			}
+			})
 		})
-	})
-}
-
-var _ = Describe("CloudProvider - Features", func() {
-
-	Context("ProvisionMode = AKSMachineAPI", func() {
-		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
-		AfterEach(func() { teardownTestEnvironment() })
-
-		mode := aksMachineProvisionMode()
-		runCommonGPUTests(mode)
-		runCommonEphemeralDiskTests(mode)
-		runCommonAdditionalTagsTests(mode)
-		runCommonSubnetTests(mode)
-		runCommonKubeletConfigTests(mode)
-		runCommonReuseExistingResourceTests(mode)
 
 		// === AKS Machine API Only Tests ===
 
@@ -509,8 +477,8 @@ var _ = Describe("CloudProvider - Features", func() {
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(Equal(1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(Equal(1))
+				result := popCreationResult()
 				Expect(result.imageRef).To(ContainSubstring("AKSUbuntu"))
 			})
 
@@ -530,8 +498,8 @@ var _ = Describe("CloudProvider - Features", func() {
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 
-					Expect(mode.getCreateCallCount()).To(Equal(1))
-					result := mode.popCreationResult()
+					Expect(getCreateCallCount()).To(Equal(1))
+					result := popCreationResult()
 					Expect(result.imageRef).To(ContainSubstring(expectedImageDefinition))
 				},
 				Entry("Gen2 instance type", "Standard_D2_v5", imagefamily.Ubuntu2204Gen2ImageDefinition),
@@ -559,8 +527,8 @@ var _ = Describe("CloudProvider - Features", func() {
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(Equal(1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(Equal(1))
+				result := popCreationResult()
 				Expect(result.imageRef).To(ContainSubstring(expectedImageDefinition))
 			})
 
@@ -584,8 +552,8 @@ var _ = Describe("CloudProvider - Features", func() {
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(Equal(1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(Equal(1))
+				result := popCreationResult()
 				Expect(result.imageRef).To(ContainSubstring(expectedImageDefinition))
 			})
 
@@ -609,8 +577,8 @@ var _ = Describe("CloudProvider - Features", func() {
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
-				Expect(mode.getCreateCallCount()).To(Equal(1))
-				result := mode.popCreationResult()
+				Expect(getCreateCallCount()).To(Equal(1))
+				result := popCreationResult()
 				Expect(result.imageRef).To(ContainSubstring(expectedImageDefinition))
 			})
 		})
@@ -830,15 +798,44 @@ var _ = Describe("CloudProvider - Features", func() {
 		BeforeEach(func() { setupProvisionModeAKSScriptlessTestEnvironment() })
 		AfterEach(func() { teardownTestEnvironment() })
 
-		mode := vmProvisionMode()
-		runCommonGPUTests(mode)
-		runCommonEphemeralDiskTests(mode)
-		runCommonAdditionalTagsTests(mode)
-		runCommonSubnetTests(mode)
-		runCommonKubeletConfigTests(mode)
-		runCommonReuseExistingResourceTests(mode)
+		runCommonGPUTests()
+		runCommonEphemeralDiskTests()
+		runCommonAdditionalTagsTests()
+		runCommonSubnetTests()
+		runCommonKubeletConfigTests()
 
-		// TODO (NOW): see if these can be more shared. These were taken from former instancetype/suite_test.go
+		Context("Create - Reuse Existing Resource (VM)", func() {
+			It("should not reattempt creation of a vm thats been created before", func() {
+				// VM mode: pre-store a VM in the fake store, then verify CreateAndWaitForPromises succeeds
+				// by finding it via GET instead of creating a new one
+				testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
+				})
+				vmName := instance.GenerateResourceName(testNodeClaim.Name)
+				vm := &armcompute.VirtualMachine{
+					Name:     lo.ToPtr(vmName),
+					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+					Location: lo.ToPtr(fake.Region),
+					Zones:    []*string{lo.ToPtr("fantasy-zone")},
+					Properties: &armcompute.VirtualMachineProperties{
+						TimeCreated: lo.ToPtr(time.Now()),
+						HardwareProfile: &armcompute.HardwareProfile{
+							VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
+						},
+					},
+				}
+				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		// CNI label tests are legitimately VM-only: AKS Machine handles CNI labels server-side,
+		// so only VM modes need to verify they're correctly set in custom data / bootstrap.
 		Context("Subnet", func() {
 			It("should use the VNET_SUBNET_ID", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1472,85 +1469,8 @@ var _ = Describe("CloudProvider - Features", func() {
 		})
 
 		Context("Basic (provisioning)", func() {
-			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
-			type WellKnownLabelEntry struct {
-				Name      string
-				Label     string
-				ValueFunc func() string
-				SetupFunc func()
-				// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
-				// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
-				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written by another process.
-				// We expect that if ExpectedOnNode is set, ExpectedInKubeletLabels is also set.
-				ExpectedInKubeletLabels bool
-				// ExpectedOnNode indicates if we expect to see this on the node.
-				// If this is false it means is that Karpenter will not set it on the node directly via kube-apiserver.
-				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written as part of KUBELET_NODE_LABELS (see above)
-				// or by another process. We're asserting on this distinction currently because it helps clarify who is doing what
-				ExpectedOnNode bool
-			}
-
-			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
-			entries := []WellKnownLabelEntry{
-				// Well known
-				{Name: v1.LabelTopologyRegion, Label: v1.LabelTopologyRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: karpv1.NodePoolLabelKey, Label: karpv1.NodePoolLabelKey, ValueFunc: func() string { return nodePool.Name }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelTopologyZone, Label: v1.LabelTopologyZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelInstanceTypeStable, Label: v1.LabelInstanceTypeStable, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelOSStable, Label: v1.LabelOSStable, ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelArchStable, Label: v1.LabelArchStable, ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: karpv1.CapacityTypeLabelKey, Label: karpv1.CapacityTypeLabelKey, ValueFunc: func() string { return "on-demand" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				// Well Known to AKS
-				{Name: v1beta1.LabelSKUName, Label: v1beta1.LabelSKUName, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUFamily, Label: v1beta1.LabelSKUFamily, ValueFunc: func() string { return "N" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUSeries, Label: v1beta1.LabelSKUSeries, ValueFunc: func() string { return "NCads_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUVersion, Label: v1beta1.LabelSKUVersion, ValueFunc: func() string { return "4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "429" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUAcceleratedNetworking, Label: v1beta1.LabelSKUAcceleratedNetworking, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUStoragePremiumCapable, Label: v1beta1.LabelSKUStoragePremiumCapable, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUGPUName, Label: v1beta1.LabelSKUGPUName, ValueFunc: func() string { return "A100" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUGPUManufacturer, Label: v1beta1.LabelSKUGPUManufacturer, ValueFunc: func() string { return "nvidia" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUGPUCount, Label: v1beta1.LabelSKUGPUCount, ValueFunc: func() string { return "1" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUCPU, Label: v1beta1.LabelSKUCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUMemory, Label: v1beta1.LabelSKUMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				// AKS domain
-				{Name: v1beta1.AKSLabelCPU, Label: v1beta1.AKSLabelCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelMemory, Label: v1beta1.AKSLabelMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelMode + "=user", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "user" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelMode + "=system", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "system" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelScaleSetPriority + "=regular", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelScaleSetPriority + "=spot", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelOSSKU, Label: v1beta1.AKSLabelOSSKU, ValueFunc: func() string { return "Ubuntu" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{
-					Name:  v1beta1.AKSLabelFIPSEnabled,
-					Label: v1beta1.AKSLabelFIPSEnabled,
-					// Needs special setup because it only works on FIPS
-					SetupFunc: func() {
-						testOptions.UseSIG = true
-						ctx = options.ToContext(ctx, testOptions)
-
-						nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
-						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-						test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-					},
-					ValueFunc:               func() string { return "true" },
-					ExpectedInKubeletLabels: true,
-					ExpectedOnNode:          true,
-				},
-				// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
-				// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
-				// the new labels to the old labels for compatibility.
-				{Name: v1.LabelFailureDomainBetaRegion, Label: v1.LabelFailureDomainBetaRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: v1.LabelFailureDomainBetaZone, Label: v1.LabelFailureDomainBetaZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: "beta.kubernetes.io/arch", Label: "beta.kubernetes.io/arch", ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: "beta.kubernetes.io/os", Label: "beta.kubernetes.io/os", ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				// Unsupported labels
-				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
-				// Cluster Label
-				{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			}
+			entries := wellKnownLabelEntries()
+			nonSchedulableLabels := nonSchedulableLabelsMap()
 
 			It("should support individual instance type labels (when all pods scheduled at once)", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1611,18 +1531,6 @@ var _ = Describe("CloudProvider - Features", func() {
 				}
 			})
 
-			nonSchedulableLabels := map[string]string{
-				labels.AKSLabelRole:                     "agent",
-				v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
-				"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
-				//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
-				labels.AKSLabelSubnetName:          "aks-subnet",
-				labels.AKSLabelVNetGUID:            test.Options().VnetGUID,
-				labels.AKSLabelAzureCNIOverlay:     strconv.FormatBool(true),
-				labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
-				karpv1.NodeDoNotSyncTaintsLabelKey: "true",
-			}
-
 			It("should write other (non-schedulable) labels to kubelet", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -1679,101 +1587,15 @@ var _ = Describe("CloudProvider - Features", func() {
 		})
 	})
 
-	// TODO (NOW): see if we can merge this better with other modes
+	// BootstrappingClient uses shared WellKnownLabelEntry and nonSchedulableLabels
+	// definitions from suite_shared_provision_test.go (wellKnownLabelEntries() and nonSchedulableLabelsMap())
 	Context("ProvisionMode = BootstrappingClient", func() {
 		BeforeEach(func() { setupProvisionModeBootstrappingClientTestEnvironment() })
 		AfterEach(func() { teardownTestEnvironment() })
 
-		type WellKnownLabelEntry struct {
-			Name      string
-			Label     string
-			ValueFunc func() string
-			SetupFunc func()
-			// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
-			// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
-			// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written by another process.
-			// We expect that if ExpectedOnNode is set, ExpectedInKubeletLabels is also set.
-			ExpectedInKubeletLabels bool
-			// ExpectedOnNode indicates if we expect to see this on the node.
-			// If this is false it means is that Karpenter will not set it on the node directly via kube-apiserver.
-			// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written as part of KUBELET_NODE_LABELS (see above)
-			// or by another process. We're asserting on this distinction currently because it helps clarify who is doing what
-			ExpectedOnNode bool
-		}
-
-		// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
-		entries := []WellKnownLabelEntry{
-			// Well known
-			{Name: v1.LabelTopologyRegion, Label: v1.LabelTopologyRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: karpv1.NodePoolLabelKey, Label: karpv1.NodePoolLabelKey, ValueFunc: func() string { return nodePool.Name }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1.LabelTopologyZone, Label: v1.LabelTopologyZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1.LabelInstanceTypeStable, Label: v1.LabelInstanceTypeStable, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1.LabelOSStable, Label: v1.LabelOSStable, ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1.LabelArchStable, Label: v1.LabelArchStable, ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: karpv1.CapacityTypeLabelKey, Label: karpv1.CapacityTypeLabelKey, ValueFunc: func() string { return "on-demand" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			// Well Known to AKS
-			{Name: v1beta1.LabelSKUName, Label: v1beta1.LabelSKUName, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUFamily, Label: v1beta1.LabelSKUFamily, ValueFunc: func() string { return "N" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUSeries, Label: v1beta1.LabelSKUSeries, ValueFunc: func() string { return "NCads_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUVersion, Label: v1beta1.LabelSKUVersion, ValueFunc: func() string { return "4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "429" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUAcceleratedNetworking, Label: v1beta1.LabelSKUAcceleratedNetworking, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUStoragePremiumCapable, Label: v1beta1.LabelSKUStoragePremiumCapable, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUGPUName, Label: v1beta1.LabelSKUGPUName, ValueFunc: func() string { return "A100" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUGPUManufacturer, Label: v1beta1.LabelSKUGPUManufacturer, ValueFunc: func() string { return "nvidia" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUGPUCount, Label: v1beta1.LabelSKUGPUCount, ValueFunc: func() string { return "1" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUCPU, Label: v1beta1.LabelSKUCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.LabelSKUMemory, Label: v1beta1.LabelSKUMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			// AKS domain
-			{Name: v1beta1.AKSLabelCPU, Label: v1beta1.AKSLabelCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.AKSLabelMemory, Label: v1beta1.AKSLabelMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.AKSLabelMode + "=user", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "user" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.AKSLabelMode + "=system", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "system" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.AKSLabelScaleSetPriority + "=regular", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.AKSLabelScaleSetPriority + "=spot", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{Name: v1beta1.AKSLabelOSSKU, Label: v1beta1.AKSLabelOSSKU, ValueFunc: func() string { return "Ubuntu" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			{
-				Name:  v1beta1.AKSLabelFIPSEnabled,
-				Label: v1beta1.AKSLabelFIPSEnabled,
-				// Needs special setup because it only works on FIPS
-				SetupFunc: func() {
-					testOptions.UseSIG = true
-					ctx = options.ToContext(ctx, testOptions)
-
-					nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
-					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-					test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-				},
-				ValueFunc:               func() string { return "true" },
-				ExpectedInKubeletLabels: true,
-				ExpectedOnNode:          true,
-			},
-			// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
-			// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
-			// the new labels to the old labels for compatibility.
-			{Name: v1.LabelFailureDomainBetaRegion, Label: v1.LabelFailureDomainBetaRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-			{Name: v1.LabelFailureDomainBetaZone, Label: v1.LabelFailureDomainBetaZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-			{Name: "beta.kubernetes.io/arch", Label: "beta.kubernetes.io/arch", ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-			{Name: "beta.kubernetes.io/os", Label: "beta.kubernetes.io/os", ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-			{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-			{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-			// Unsupported labels
-			{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
-			// Cluster Label
-			{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-		}
-
-		nonSchedulableLabels := map[string]string{
-			labels.AKSLabelRole:                     "agent",
-			v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
-			"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
-			//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
-			labels.AKSLabelSubnetName:          "aks-subnet",
-			labels.AKSLabelVNetGUID:            test.Options().VnetGUID,
-			labels.AKSLabelAzureCNIOverlay:     strconv.FormatBool(true),
-			labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
-			karpv1.NodeDoNotSyncTaintsLabelKey: "true",
-		}
+		entries := wellKnownLabelEntries()
+		nonSchedulableLabels := nonSchedulableLabelsMap()
+		_ = nonSchedulableLabels // used in test closures below
 
 		It("should provision the node and CSE", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
