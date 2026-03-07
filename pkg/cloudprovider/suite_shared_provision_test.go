@@ -33,8 +33,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"k8s.io/client-go/tools/record"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -289,41 +289,47 @@ func getCreateCallCount() int {
 func popCreationResult() creationResult {
 	GinkgoHelper()
 	if isAKSMachineMode() {
-		input := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-		m := input.AKSMachine
-		// Preserved nil guards from original AKS Machine tests
-		Expect(m.Properties).ToNot(BeNil())
-		Expect(m.Properties.Hardware).ToNot(BeNil())
-		Expect(m.Properties.Hardware.VMSize).ToNot(BeNil())
-
-		zone, zoneErr := instance.GetAKSLabelZoneFromAKSMachine(&m, fake.Region)
-		isEphemeral := false
-		var osDiskType string
-		if m.Properties.OperatingSystem != nil && m.Properties.OperatingSystem.OSDiskType != nil {
-			osDiskType = string(*m.Properties.OperatingSystem.OSDiskType)
-			isEphemeral = *m.Properties.OperatingSystem.OSDiskType == armcontainerservice.OSDiskTypeEphemeral
-		}
-		var diskSizeGB *int32
-		if m.Properties.OperatingSystem != nil {
-			diskSizeGB = m.Properties.OperatingSystem.OSDiskSizeGB
-		}
-		return creationResult{
-			vmSize:      lo.FromPtr(m.Properties.Hardware.VMSize),
-			zone:        zone,
-			zoneErr:     zoneErr,
-			zones:       m.Zones,
-			tags:        m.Properties.Tags,
-			isEphemeral: isEphemeral,
-			diskSizeGB:  diskSizeGB,
-			osDiskType:  osDiskType,
-			imageRef:    lo.FromPtr(m.Properties.NodeImageVersion),
-		}
+		return popAKSMachineCreationResult()
 	}
+	return popVMCreationResult()
+}
 
-	// VM mode (AKSScriptless or BootstrappingClient)
+func popAKSMachineCreationResult() creationResult {
+	GinkgoHelper()
+	input := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+	m := input.AKSMachine
+	Expect(m.Properties).ToNot(BeNil())
+	Expect(m.Properties.Hardware).ToNot(BeNil())
+	Expect(m.Properties.Hardware.VMSize).ToNot(BeNil())
+
+	zone, zoneErr := instance.GetAKSLabelZoneFromAKSMachine(&m, fake.Region)
+	isEphemeral := false
+	var osDiskType string
+	if m.Properties.OperatingSystem != nil && m.Properties.OperatingSystem.OSDiskType != nil {
+		osDiskType = string(*m.Properties.OperatingSystem.OSDiskType)
+		isEphemeral = *m.Properties.OperatingSystem.OSDiskType == armcontainerservice.OSDiskTypeEphemeral
+	}
+	var diskSizeGB *int32
+	if m.Properties.OperatingSystem != nil {
+		diskSizeGB = m.Properties.OperatingSystem.OSDiskSizeGB
+	}
+	return creationResult{
+		vmSize:      lo.FromPtr(m.Properties.Hardware.VMSize),
+		zone:        zone,
+		zoneErr:     zoneErr,
+		zones:       m.Zones,
+		tags:        m.Properties.Tags,
+		isEphemeral: isEphemeral,
+		diskSizeGB:  diskSizeGB,
+		osDiskType:  osDiskType,
+		imageRef:    lo.FromPtr(m.Properties.NodeImageVersion),
+	}
+}
+
+func popVMCreationResult() creationResult {
+	GinkgoHelper()
 	input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 	vm := input.VM
-	// Preserved nil guards from original VM tests
 	Expect(vm.Properties).ToNot(BeNil())
 	Expect(vm.Properties.HardwareProfile).ToNot(BeNil())
 	Expect(vm.Properties.StorageProfile).ToNot(BeNil())
