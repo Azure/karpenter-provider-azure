@@ -237,6 +237,7 @@ func (p *DefaultVMProvider) buildVMTemplate(
 
 	configureBillingProfile(vm.Properties, capacityType)
 	configureSecurityProfile(vm.Properties, nodeClass)
+	configureDataDisk(vm.Properties, nodeClass)
 
 	return vm, bootstrap, nil
 }
@@ -404,6 +405,24 @@ func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, node
 		}
 		vmProps.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
+}
+
+// configureDataDisk attaches an additional Premium_LRS managed data disk when
+// DataDiskSizeGB is set on the NodeClass (via AzureNodeClass adapter).
+func configureDataDisk(vmProps *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
+	if nodeClass.Spec.DataDiskSizeGB == nil || *nodeClass.Spec.DataDiskSizeGB <= 0 {
+		return
+	}
+	vmProps.StorageProfile.DataDisks = append(vmProps.StorageProfile.DataDisks, &armcompute.DataDisk{
+		Lun:          lo.ToPtr(int32(0)),
+		Name:         lo.ToPtr(lo.FromPtr(vmProps.StorageProfile.OSDisk.Name) + "-data-0"),
+		DiskSizeGB:   nodeClass.Spec.DataDiskSizeGB,
+		CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesEmpty),
+		DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
+		ManagedDisk: &armcompute.ManagedDiskParameters{
+			StorageAccountType: lo.ToPtr(armcompute.StorageAccountTypesPremiumLRS),
+		},
+	})
 }
 
 // buildAKSBillingExtensionSpec returns the AKS billing extension spec.

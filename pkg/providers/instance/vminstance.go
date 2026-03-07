@@ -90,6 +90,7 @@ var _ VMProvider = (*DefaultVMProvider)(nil)
 type DefaultVMProvider struct {
 	location                     string
 	azClient                     *azclient.AZClient
+	azClientManager              *azclient.AZClientManager // nil in non-azurevm modes
 	instanceTypeProvider         instancetype.Provider
 	imageResolver                imagefamily.Resolver
 	loadBalancerProvider         *loadbalancer.Provider
@@ -153,6 +154,43 @@ func NewDefaultVMProvider(
 		errorHandling: offerings.NewResponseErrorHandler(offeringsCache),
 		deletingVMs:   sets.New[string](),
 	}
+}
+
+// SetAZClientManager sets the multi-subscription client manager for azurevm mode.
+// When set, the VM provider will use per-subscription Azure clients based on
+// the AzureNodeClass's subscriptionID field.
+func (p *DefaultVMProvider) SetAZClientManager(mgr *azclient.AZClientManager) {
+	p.azClientManager = mgr
+}
+
+// resolveEffectiveClients returns the Azure SDK clients, resource group, and location
+// to use for a given NodeClass. In azurevm mode with per-NodeClass overrides, these
+// may differ from the provider defaults.
+func (p *DefaultVMProvider) resolveEffectiveClients(nodeClass *v1beta1.AKSNodeClass) (vmClient azclient.VirtualMachinesAPI, nicClient azclient.NetworkInterfacesAPI, rg string, location string, subID string, err error) {
+	rg = p.resourceGroup
+	location = p.location
+	subID = p.subscriptionID
+
+	if nodeClass.Spec.ResourceGroup != nil && *nodeClass.Spec.ResourceGroup != "" {
+		rg = *nodeClass.Spec.ResourceGroup
+	}
+	if nodeClass.Spec.Location != nil && *nodeClass.Spec.Location != "" {
+		location = *nodeClass.Spec.Location
+	}
+	if nodeClass.Spec.SubscriptionID != nil && *nodeClass.Spec.SubscriptionID != "" {
+		subID = *nodeClass.Spec.SubscriptionID
+	}
+
+	// If we have a client manager and the subscription differs, use per-subscription clients
+	if p.azClientManager != nil && subID != p.subscriptionID {
+		clients, err := p.azClientManager.GetClients(subID)
+		if err != nil {
+			return nil, nil, "", "", "", err
+		}
+		return clients.VirtualMachinesClient, clients.NetworkInterfacesClient, rg, location, subID, nil
+	}
+
+	return p.azClient.VirtualMachinesClient(), p.azClient.NetworkInterfacesClient(), rg, location, subID, nil
 }
 
 // BeginCreate creates an instance given the constraints.

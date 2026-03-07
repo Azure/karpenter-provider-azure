@@ -61,6 +61,15 @@ spec:
               spec is the top level specification for the Azure Karpenter Provider.
               This will contain configuration necessary to launch instances in Azure.
             properties:
+              dataDiskSizeGB:
+                description: |-
+                  dataDiskSizeGB is the size of an additional data disk to attach to provisioned VMs, in GB.
+                  When set, a Premium_LRS managed data disk of this size is attached at LUN 0.
+                  Useful for container runtime storage or scratch space.
+                format: int32
+                maximum: 4096
+                minimum: 10
+                type: integer
               imageID:
                 description: |-
                   imageID is the ARM resource ID of the image that instances use.
@@ -68,6 +77,12 @@ spec:
                   When set, imageFamily-based image resolution is bypassed entirely.
                   The user is responsible for ensuring the image is compatible with the selected instance types.
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.(Compute|AzureHybridBenefit)\/.*$
+                type: string
+              location:
+                description: |-
+                  location overrides the controller-level Azure region for this NodeClass.
+                  When set, VMs are created in this region instead of the default.
+                minLength: 1
                 type: string
               managedIdentities:
                 description: |-
@@ -84,6 +99,13 @@ spec:
                 maximum: 4096
                 minimum: 30
                 type: integer
+              resourceGroup:
+                description: |-
+                  resourceGroup overrides the controller-level resource group for this NodeClass.
+                  When set, VMs and NICs are created in this resource group instead of the default --node-resource-group.
+                maxLength: 90
+                minLength: 1
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields.
@@ -95,6 +117,13 @@ spec:
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
                 type: object
+              subscriptionID:
+                description: |-
+                  subscriptionID overrides the controller-level Azure subscription for this NodeClass.
+                  When set, VMs and NICs are created in this subscription instead of the default.
+                  The controller's managed identity / service principal must have permissions in this subscription.
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                type: string
               tags:
                 additionalProperties:
                   type: string
