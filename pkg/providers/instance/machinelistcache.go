@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,9 +34,8 @@ const (
 	DefaultMachineListCacheTTL = 30 * time.Second
 )
 
-// AKSMachineLister defines the interface for listing AKS machines.
-type AKSMachineLister interface {
-	List(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
+type AKSMachineNewListPager interface {
+	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *armcontainerservice.MachinesClientListPager
 }
 
 // machineListCache caches the results of LIST Machine API calls, keyed by machine name.
@@ -54,10 +54,14 @@ type machineListCache struct {
 	lastUpdated time.Time
 	ttl         time.Duration
 	interval    time.Duration
-	client      AKSMachineLister
+	client      AKSMachineNewListPager
+
+	clusterResourceGroup string
+	clusterName          string
+	aksMachinesPoolName  string
 }
 
-func newMachineListCache(ttl time.Duration, client AKSMachineLister, interval time.Duration) *machineListCache {
+func newMachineListCache(ttl time.Duration, client AKSMachineNewListPager, interval time.Duration) *machineListCache {
 	return &machineListCache{
 		machines: make(map[string]*armcontainerservice.Machine),
 		ttl:      ttl,
@@ -86,9 +90,12 @@ func (c *machineListCache) get(machineName string) (*armcontainerservice.Machine
 }
 
 // update replaces the entire cache with the results of a LIST call.
+/*
 func (c *machineListCache) update(machines []*armcontainerservice.Machine) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	machines =
 
 	newCache := make(map[string]*armcontainerservice.Machine, len(machines))
 	for _, m := range machines {
@@ -99,6 +106,7 @@ func (c *machineListCache) update(machines []*armcontainerservice.Machine) {
 	c.machines = newCache
 	c.lastUpdated = time.Now()
 }
+*/
 
 // invalidate removes a specific machine from the cache, forcing the next Get()
 // for that machine to fall through to the API. This is called after mutating
@@ -129,12 +137,7 @@ func (c *machineListCache) poll(ctx context.Context, name string, interval time.
 		case <-ticker.C:
 
 			if !c.isFresh() {
-				machines, err := c.client.List(ctx, "", "", "", name, nil)
-				if err != nil {
-					log.FromContext(ctx).Error(err, "failed to refresh AKS machine cache", "aksMachineName", name)
-				} else {
-					c.update(machines)
-				}
+				c.update(ctx)
 			}
 
 			machine, ok := c.get(name)
@@ -159,4 +162,37 @@ func (c *machineListCache) poll(ctx context.Context, name string, interval time.
 		}
 	}
 
+}
+
+func (c *machineListCache) update(ctx context.Context) error {
+	var machines []*armcontainerservice.Machine
+	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
+	if pager == nil {
+		return fmt.Errorf("failed to list AKS machines: created pager is nil")
+	}
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			if IsAKSMachineOrMachinesPoolNotFound(err) {
+				// AKS machines pool not found. Handle gracefully.
+				// Suggestion: separate the util function to not cover more than needed?
+				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
+				break
+			}
+
+			return fmt.Errorf("failed to list AKS machines: %w", err)
+		}
+
+		for _, aksMachine := range page.Value {
+			// Filter to only include machines created by Karpenter
+			// Check if the AKS machine has the Karpenter nodepool tag
+			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
+				if _, hasKarpenterTag := aksMachine.Properties.Tags[NodePoolTagKey]; hasKarpenterTag {
+					machines = append(machines, aksMachine)
+				}
+			}
+		}
+	}
+
+	return nil
 }
