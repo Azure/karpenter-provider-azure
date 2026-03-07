@@ -305,7 +305,12 @@ func computeTemplateHash(template *armcontainerservice.Machine) string {
 		key.KubeletConfig = props.Kubernetes.KubeletConfig
 	}
 
-	jsonBytes, _ := json.Marshal(key)
+	jsonBytes, err := json.Marshal(key)
+	if err != nil {
+		// If marshalling fails, fall back to fmt.Sprintf which is slower but always works.
+		// This prevents different templates from colliding on the same (empty) hash.
+		jsonBytes = []byte(fmt.Sprintf("%+v", key))
+	}
 	hash := sha256.Sum256(jsonBytes)
 	return fmt.Sprintf("%x", hash[:8])
 }

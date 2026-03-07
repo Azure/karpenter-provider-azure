@@ -329,7 +329,7 @@ func TestConcurrentRequestsBatchThroughClient(t *testing.T) {
 	g.SetCoordinator(NewCoordinator(mock, "rg", "cluster", "pool"))
 	g.Start()
 
-	client := NewBatchingMachinesClient(mock, g, "rg", "cluster", "pool")
+	client := NewBatchingMachinesClient(mock, g)
 	tmpl := tpl("Standard_D2s_v3", []string{"1"}, nil)
 
 	const n = 5

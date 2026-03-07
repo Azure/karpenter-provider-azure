@@ -113,8 +113,8 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 	// If there's an API-level error, try to parse per-machine errors from it
 	frontendErrors := c.parseFrontendErrors(err)
 
-	// If we have an error but couldn't parse per-machine errors, all machines failed
-	if err != nil && len(frontendErrors) == 0 {
+	// If there's an API-level error but no per-machine breakdown, all machines failed
+	if err != nil && frontendErrors == nil {
 		log.FromContext(ctx).Error(err, "batch API call failed, distributing error to all machines",
 			"batchID", batchID,
 			"size", len(batch.requests))
@@ -129,12 +129,10 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 			req.responseChan <- &CreateResponse{Poller: nil, Err: machineErr, BatchID: batchID}
 			failCount++
 		} else {
-			req.ctx = WithBatchMetadata(req.ctx, &BatchMetadata{
-				IsBatched:   true,
-				MachineName: req.machineName,
-				BatchID:     batchID,
-			})
-			// Return nil poller - caller will use GET-based polling
+			// Note: We don't propagate batch metadata via req.ctx here because
+			// the caller already received its response through the channel and
+			// never reads req.ctx again. Batch identification is via the BatchID
+			// field in CreateResponse.
 			req.responseChan <- &CreateResponse{Poller: nil, Err: nil, BatchID: batchID}
 			successCount++
 		}
@@ -151,10 +149,16 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 func (c *Coordinator) buildBatchHeader(batch *PendingBatch) (string, []MachineEntry, error) {
 	entries := make([]MachineEntry, 0, len(batch.requests))
 	for _, req := range batch.requests {
+		var tags map[string]string
+		if req.template.Properties != nil {
+			tags = extractTags(req.template.Properties.Tags)
+		} else {
+			tags = make(map[string]string)
+		}
 		entries = append(entries, MachineEntry{
 			MachineName: req.machineName,
 			Zones:       extractZones(req.template.Zones),
-			Tags:        extractTags(req.template.Properties.Tags),
+			Tags:        tags,
 		})
 	}
 
@@ -171,14 +175,22 @@ func (c *Coordinator) buildBatchHeader(batch *PendingBatch) (string, []MachineEn
 }
 
 // parseFrontendErrors extracts per-machine errors from Azure's response.
-// TODO: Implement actual parsing. Currently treats all machines uniformly.
+// TODO: Implement actual parsing of Azure's structured error response.
+// Currently returns nil to signal "no per-machine breakdown available",
+// which causes the caller to treat all machines as failed uniformly.
+//
+// IMPORTANT for future implementors: When implementing this, the return
+// contract must be that machines NOT present in the returned map are
+// treated as failed (not succeeded), unless the overall err is nil.
+// This is because a partial parse that misses some machines should fail
+// safe rather than report phantom successes.
 func (c *Coordinator) parseFrontendErrors(err error) map[string]error {
-	errors := make(map[string]error)
 	if err == nil {
-		return errors
+		return nil
 	}
-	// TODO: Parse Azure's structured error response
-	return errors
+	// TODO: Parse Azure's structured error response to extract per-machine failures.
+	// Return nil to indicate "could not parse" → all machines will be failed uniformly.
+	return nil
 }
 
 // distributeError sends the same error to all requests (used for early failures).

@@ -27,10 +27,6 @@ import (
 type BatchingMachinesClient struct {
 	realClient azclient.AKSMachinesAPI
 	grouper    *Grouper
-
-	resourceGroup string
-	clusterName   string
-	poolName      string
 }
 
 var _ azclient.AKSMachinesAPI = (*BatchingMachinesClient)(nil)
@@ -38,16 +34,10 @@ var _ azclient.AKSMachinesAPI = (*BatchingMachinesClient)(nil)
 func NewBatchingMachinesClient(
 	realClient azclient.AKSMachinesAPI,
 	grouper *Grouper,
-	resourceGroup string,
-	clusterName string,
-	poolName string,
 ) *BatchingMachinesClient {
 	return &BatchingMachinesClient{
-		realClient:    realClient,
-		grouper:       grouper,
-		resourceGroup: resourceGroup,
-		clusterName:   clusterName,
-		poolName:      poolName,
+		realClient: realClient,
+		grouper:    grouper,
 	}
 }
 

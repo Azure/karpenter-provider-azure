@@ -217,9 +217,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		aksMachinesClientForAZClient = batch.NewBatchingMachinesClient(
 			aksMachinesAPI,
 			grouper,
-			testOptions.NodeResourceGroup,
-			clusterName,
-			testOptions.AKSMachinesPoolName,
 		)
 	}
 

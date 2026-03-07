@@ -155,9 +155,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		batchingClient := batch.NewBatchingMachinesClient(
 			azClient.AKSMachinesClient(),
 			grouper,
-			azConfig.ResourceGroup,
-			o.ClusterName,
-			o.AKSMachinesPoolName,
 		)
 		azClient.SetAKSMachinesClient(batchingClient)
 	}

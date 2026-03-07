@@ -62,7 +62,7 @@ func TestBatchingClientPassthrough(t *testing.T) {
 	})
 	grouper.enabled = false
 
-	batchClient := NewBatchingMachinesClient(mockClient, grouper, "rg", "cluster", "pool")
+	batchClient := NewBatchingMachinesClient(mockClient, grouper)
 
 	vmSize := "Standard_D2s_v3"
 	template := armcontainerservice.Machine{
@@ -94,7 +94,7 @@ func TestBatchingClientSkipsUpdate(t *testing.T) {
 	})
 	grouper.enabled = true
 
-	batchClient := NewBatchingMachinesClient(mockClient, grouper, "rg", "cluster", "pool")
+	batchClient := NewBatchingMachinesClient(mockClient, grouper)
 
 	vmSize := "Standard_D2s_v3"
 	template := armcontainerservice.Machine{
@@ -131,7 +131,7 @@ func TestBatchingClientSkipsWhenContextFlagged(t *testing.T) {
 	})
 	grouper.enabled = true
 
-	batchClient := NewBatchingMachinesClient(mockClient, grouper, "rg", "cluster", "pool")
+	batchClient := NewBatchingMachinesClient(mockClient, grouper)
 
 	vmSize := "Standard_D2s_v3"
 	template := armcontainerservice.Machine{
