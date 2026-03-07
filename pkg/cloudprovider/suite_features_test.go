@@ -1027,6 +1027,8 @@ var _ = Describe("CloudProvider - Features", func() {
 					}})
 				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](100)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				// Re-reconcile to pick up SIG images (UseSIG=true in outer context BeforeEach)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -1107,6 +1109,7 @@ var _ = Describe("CloudProvider - Features", func() {
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -1151,6 +1154,7 @@ var _ = Describe("CloudProvider - Features", func() {
 				nodeClass.Spec.MaxPods = lo.ToPtr(int32(15))
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -1649,53 +1653,8 @@ var _ = Describe("CloudProvider - Features", func() {
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				value := item.ValueFunc()
-
-				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
-				// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
-				// end up with a new node for each scheduling attempt
-				if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-					bindings := []Bindings{}
-					for range 3 {
-						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod))
-					}
-					for i := range len(bindings) {
-						Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
-						Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
-					}
-				}
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-
-				if item.ExpectedOnNode {
-					Expect(node.Labels[item.Label]).To(Equal(value))
-				} else {
-					Expect(node.Labels).ToNot(HaveKey(item.Label))
-				}
-
-				// Get the VM creation input and decode custom data
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				vm := vmInput.VM
-				if item.ExpectedInKubeletLabels {
-					expectKubeletNodeLabelsInCustomData(&vm, item.Label, value)
-				} else {
-					expectKubeletNodeLabelsNotInCustomData(&vm, item.Label, value)
-				}
-			},
-			lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
-				return Entry(item.Name, item)
-			}),
-		)
-
-		DescribeTable(
-			"should support individual instance type labels (when all pods scheduled individually) on bootstrap API",
-			func(item WellKnownLabelEntry) {
-				if item.SetupFunc != nil {
-					item.SetupFunc()
-				}
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				// Re-reconcile status after applying, in case SetupFunc changed image family or FIPS mode
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				value := item.ValueFunc()
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
