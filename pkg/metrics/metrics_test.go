@@ -20,29 +20,37 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-func TestAzure(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Metrics Suite")
+func TestImageSelectionErrorCount(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func()
+		expectedCount int
+	}{
+		{
+			name:          "should have no errors initially",
+			setup:         func() {},
+			expectedCount: 0,
+		},
+		{
+			name: "should increment the error count for a family",
+			setup: func() {
+				metrics.ImageSelectionErrorCount.WithLabelValues("Ubuntu2204").Inc()
+			},
+			expectedCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metrics.ImageSelectionErrorCount.Reset()
+			tt.setup()
+			got := testutil.CollectAndCount(metrics.ImageSelectionErrorCount)
+			if got != tt.expectedCount {
+				t.Errorf("CollectAndCount = %d, want %d", got, tt.expectedCount)
+			}
+		})
+	}
 }
-
-var _ = Describe("Image Selection Error Metrics", func() {
-	BeforeEach(func() {
-		metrics.ImageSelectionErrorCount.Reset()
-	})
-
-	Describe("ImageSelectionErrorCount", func() {
-		It("should have no errors initially", func() {
-			Expect(testutil.CollectAndCount(metrics.ImageSelectionErrorCount)).To(Equal(0))
-		})
-
-		It("should increment the error count for a family", func() {
-			metrics.ImageSelectionErrorCount.WithLabelValues("Ubuntu2204").Inc()
-			Expect(testutil.CollectAndCount(metrics.ImageSelectionErrorCount)).To(Equal(1))
-		})
-	})
-})
