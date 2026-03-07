@@ -116,6 +116,10 @@ func AKSNodeClassFromAzureNodeClass(azureNC *v1alpha1.AzureNodeClass) *v1beta1.A
 	// AzureVM-specific fields: carried via json:"-" fields on AKSNodeClass for adapter use
 	aksNC.Spec.UserData = azureNC.Spec.UserData
 	aksNC.Spec.ManagedIdentities = azureNC.Spec.ManagedIdentities
+	aksNC.Spec.DataDiskSizeGB = azureNC.Spec.DataDiskSizeGB
+	aksNC.Spec.SubscriptionID = azureNC.Spec.SubscriptionID
+	aksNC.Spec.ResourceGroup = azureNC.Spec.ResourceGroup
+	aksNC.Spec.Location = azureNC.Spec.Location
 
 	return aksNC
 }
