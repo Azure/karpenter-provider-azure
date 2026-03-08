@@ -40,6 +40,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
 // Grouper collects VM creation requests and groups them by template for batch execution.
@@ -238,30 +240,6 @@ func (g *Grouper) EnqueueCreate(req *CreateRequest) chan *CreateResponse {
 	return req.responseChan
 }
 
-// clearPerMachineFields zeros MachineProperties fields that vary per machine and
-// travel via the BatchPutMachine HTTP header instead of the shared request body.
-// This function is the single source of truth for which fields are per-machine.
-// Both computeTemplateHash and Coordinator.ExecuteBatch call this, so adding a
-// new per-machine field here automatically updates the hash AND the body clearing.
-//
-// If you need to add a new per-machine field (e.g., the Machine API starts accepting
-// a field that varies per NodeClaim), add it here. Both the grouper hash and the
-// coordinator body will pick it up. The reflection-based guardrail test
-// TestComputeTemplateHash_AllFieldsAccountedFor will catch the addition at test
-// time and force you to decide.
-func clearPerMachineFields(props *armcontainerservice.MachineProperties) {
-	props.Tags = nil
-}
-
-// clearReadOnlyFields zeros MachineProperties fields that are set by the server
-// and should never influence template hashing or request bodies.
-func clearReadOnlyFields(props *armcontainerservice.MachineProperties) {
-	props.ETag = nil
-	props.ProvisioningState = nil
-	props.ResourceID = nil
-	props.Status = nil
-}
-
 // computeTemplateHash generates a hash of VM config fields that must match for batching.
 //
 // Approach: copy MachineProperties, zero out per-machine and read-only fields,
@@ -269,6 +247,11 @@ func clearReadOnlyFields(props *armcontainerservice.MachineProperties) {
 // MachineProperties is automatically included in the hash (fail-safe).
 // See TestComputeTemplateHash_AllFieldsAccountedFor for a reflection-based
 // guardrail that catches unaccounted-for fields at test time.
+//
+// Per-machine and read-only field definitions live in the instance package
+// (batch_field_registry.go) so that developers modifying the template builder
+// naturally discover them. See instance.ClearPerMachineFields and
+// instance.ClearReadOnlyFields.
 //
 // Note: Machine.Zones and Machine.Name are also per-machine but live on Machine,
 // not MachineProperties, so they are not part of this hash.
@@ -279,8 +262,8 @@ func computeTemplateHash(template *armcontainerservice.Machine) string {
 
 	// Shallow copy so we can zero out excluded fields without mutating the original.
 	props := *template.Properties
-	clearPerMachineFields(&props)
-	clearReadOnlyFields(&props)
+	instance.ClearPerMachineFields(&props)
+	instance.ClearReadOnlyFields(&props)
 
 	jsonBytes, err := json.Marshal(props)
 	if err != nil {

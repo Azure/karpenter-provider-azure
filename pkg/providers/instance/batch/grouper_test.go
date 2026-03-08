@@ -27,6 +27,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
 func TestComputeTemplateHash(t *testing.T) {
@@ -146,22 +148,23 @@ func TestComputeTemplateHash_ReadOnlyFieldsExcluded(t *testing.T) {
 // this test fails — forcing the developer to decide whether to hash or exclude it.
 //
 // When a new field appears:
-//   - If it's per-machine (varies per NodeClaim), add it to clearPerMachineFields()
-//     in grouper.go. Both the hash and the coordinator body-clearing pick it up
-//     automatically — no second place to update.
-//   - If it's read-only (set by server), add it to clearReadOnlyFields().
+//   - If it's per-machine (varies per NodeClaim), add it to ClearPerMachineFields()
+//     in batch_field_registry.go. Both the hash and the coordinator body-clearing
+//     pick it up automatically — no second place to update.
+//   - If it's read-only (set by server), add it to ClearReadOnlyFields() in
+//     batch_field_registry.go.
 //   - If it's shared template config, do nothing — it's hashed automatically.
 func TestComputeTemplateHash_AllFieldsAccountedFor(t *testing.T) {
 	t.Parallel()
 
-	// Fields explicitly excluded from the hash via clearPerMachineFields/clearReadOnlyFields.
-	// If you add a new field to this set, update the corresponding clear function in grouper.go.
+	// Fields explicitly excluded from the hash via instance.ClearPerMachineFields/instance.ClearReadOnlyFields.
+	// If you add a new field to this set, update the corresponding clear function in batch_field_registry.go.
 	excludedFields := map[string]string{
-		"Tags":              "per-machine: contains NodeClaim name (cleared by clearPerMachineFields)",
-		"ETag":              "read-only: set by server (cleared by clearReadOnlyFields)",
-		"ProvisioningState": "read-only: set by server (cleared by clearReadOnlyFields)",
-		"ResourceID":        "read-only: set by server (cleared by clearReadOnlyFields)",
-		"Status":            "read-only: set by server (cleared by clearReadOnlyFields)",
+		"Tags":              "per-machine: contains NodeClaim name (cleared by instance.ClearPerMachineFields)",
+		"ETag":              "read-only: set by server (cleared by instance.ClearReadOnlyFields)",
+		"ProvisioningState": "read-only: set by server (cleared by instance.ClearReadOnlyFields)",
+		"ResourceID":        "read-only: set by server (cleared by instance.ClearReadOnlyFields)",
+		"Status":            "read-only: set by server (cleared by instance.ClearReadOnlyFields)",
 	}
 
 	typ := reflect.TypeOf(armcontainerservice.MachineProperties{})
@@ -401,10 +404,10 @@ func TestGrouperDrainsPendingRequestsOnShutdown(t *testing.T) {
 	}
 }
 
-// Verifies that clearPerMachineFields and clearReadOnlyFields (used by both
-// computeTemplateHash and ExecuteBatch) zero exactly the fields listed in the
-// AllFieldsAccountedFor guardrail test. If someone adds a field to one of the
-// clear functions but forgets the guardrail, or vice versa, this test fails.
+// Verifies that instance.ClearPerMachineFields and instance.ClearReadOnlyFields
+// (used by both computeTemplateHash and ExecuteBatch) zero exactly the fields
+// listed in the AllFieldsAccountedFor guardrail test. If someone adds a field to
+// one of the clear functions but forgets the guardrail, or vice versa, this test fails.
 func TestClearFieldFunctions_MatchExcludeList(t *testing.T) {
 	t.Parallel()
 
@@ -428,17 +431,17 @@ func TestClearFieldFunctions_MatchExcludeList(t *testing.T) {
 
 	// Run both clear functions (same as computeTemplateHash does)
 	cleared := allSet
-	clearPerMachineFields(&cleared)
-	clearReadOnlyFields(&cleared)
+	instance.ClearPerMachineFields(&cleared)
+	instance.ClearReadOnlyFields(&cleared)
 
 	// Check that Tags was cleared (per-machine)
-	assert.Nil(t, cleared.Tags, "clearPerMachineFields should nil Tags")
+	assert.Nil(t, cleared.Tags, "instance.ClearPerMachineFields should nil Tags")
 
 	// Check that read-only fields were cleared
-	assert.Nil(t, cleared.ETag, "clearReadOnlyFields should nil ETag")
-	assert.Nil(t, cleared.ProvisioningState, "clearReadOnlyFields should nil ProvisioningState")
-	assert.Nil(t, cleared.ResourceID, "clearReadOnlyFields should nil ResourceID")
-	assert.Nil(t, cleared.Status, "clearReadOnlyFields should nil Status")
+	assert.Nil(t, cleared.ETag, "instance.ClearReadOnlyFields should nil ETag")
+	assert.Nil(t, cleared.ProvisioningState, "instance.ClearReadOnlyFields should nil ProvisioningState")
+	assert.Nil(t, cleared.ResourceID, "instance.ClearReadOnlyFields should nil ResourceID")
+	assert.Nil(t, cleared.Status, "instance.ClearReadOnlyFields should nil Status")
 
 	// Check that template fields were NOT cleared
 	assert.NotNil(t, cleared.Hardware, "Hardware should not be cleared")

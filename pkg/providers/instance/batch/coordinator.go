@@ -30,6 +30,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -88,12 +89,12 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 
 	// Clear per-machine fields from the body — these are already in the BatchPutMachine header
 	// and the body should only contain the shared template config.
-	// Uses the same clearPerMachineFields as computeTemplateHash to stay in sync.
+	// Uses instance.ClearPerMachineFields (batch_field_registry.go) — the single source of truth.
 	template := batch.template
 	template.Zones = nil
 	if template.Properties != nil {
 		props := *template.Properties
-		clearPerMachineFields(&props)
+		instance.ClearPerMachineFields(&props)
 		template.Properties = &props
 	}
 
