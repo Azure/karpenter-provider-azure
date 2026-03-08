@@ -337,7 +337,9 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 				DisablePasswordAuthentication: lo.ToPtr(true),
 			}
 		}
-		// In AzureVM mode, pass through verbatim userData from the AzureNodeClass adapter.
+		// In AzureVM mode, pass through pre-base64-encoded userData from the
+		// AzureNodeClass adapter directly to osProfile.CustomData. The Azure API
+		// expects base64, and the SDK does NOT auto-encode.
 		// UserData may be nil/empty — it's the user's responsibility to provide valid bootstrap data.
 		if nodeClass.Spec.UserData != nil {
 			osProfile.CustomData = nodeClass.Spec.UserData
