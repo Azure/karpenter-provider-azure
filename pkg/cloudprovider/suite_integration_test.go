@@ -640,6 +640,9 @@ var _ = Describe("CloudProvider", func() {
 
 		// Run shared AKS Machine API tests
 		runSharedAKSMachineAPITests()
+
+		// Multi-instance provisioning tests (mode-agnostic)
+		runSharedMultiInstanceProvisionTests()
 	})
 
 	Context("ProvisionMode = AKSMachineAPI, ManageExistingAKSMachines = true", func() {
@@ -720,6 +723,10 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		runSharedAKSMachineAPITests()
+
+		// Multi-instance provisioning tests (mode-agnostic) + batch grouping tests
+		runSharedMultiInstanceProvisionTests()
+		runBatchSpecificMultiInstanceTests()
 	})
 
 	Context("ProvisionMode = AKSMachineAPI + Batch, ManageExistingAKSMachines = true", func() {
@@ -761,6 +768,10 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		runSharedAKSMachineAPITests()
+
+		// Multi-instance provisioning tests (mode-agnostic) + batch grouping tests
+		runSharedMultiInstanceProvisionTests()
+		runBatchSpecificMultiInstanceTests()
 	})
 
 	Context("Mixed Environment - Migration from ProvisionMode = AKSMachineAPI to VM mode", func() {
