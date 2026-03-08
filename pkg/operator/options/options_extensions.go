@@ -31,3 +31,8 @@ func (o *Options) IsCiliumNodeSubnet() bool {
 func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
+
+// IsAzureVMMode returns true if the provision mode is AzureVM (non-AKS generic Azure VM provisioning).
+func (o *Options) IsAzureVMMode() bool {
+	return o.ProvisionMode == consts.ProvisionModeAzureVM
+}
