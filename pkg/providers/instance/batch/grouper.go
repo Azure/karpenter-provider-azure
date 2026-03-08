@@ -101,32 +101,14 @@ func (g *Grouper) Start() {
 }
 
 // run is the main loop: wait for trigger → collect more requests → execute batches → repeat.
-// Self-heals on panic by restarting (loop-based, not recursive, to avoid stack growth).
 // On exit, drains all pending requests with an error so callers don't block.
+//
+// No panic recovery here: if the loop panics, it's a programmer error that should crash
+// the process for immediate detection. Per-batch recovery in executeBatches() isolates
+// individual batch failures so they don't take down the loop.
 func (g *Grouper) run() {
 	defer g.drainPendingRequests()
 
-	for {
-		panicked := func() (didPanic bool) {
-			defer func() {
-				if r := recover(); r != nil {
-					log.FromContext(g.ctx).Error(fmt.Errorf("%v", r), "BatchGrouper panic, restarting")
-					didPanic = true
-				}
-			}()
-			g.runLoop()
-			return false
-		}()
-
-		if !panicked {
-			return // runLoop returned normally (context canceled)
-		}
-	}
-}
-
-// runLoop is the inner loop that processes batches. Separated from run() so that
-// panic recovery wraps this cleanly.
-func (g *Grouper) runLoop() {
 	for {
 		select {
 		case <-g.ctx.Done():
