@@ -665,11 +665,6 @@ func collectMachinesFromDataStore() []armcontainerservice.Machine {
 	return machines
 }
 
-// isBatchEnabled returns true if batch creation is enabled in the current test options.
-func isBatchEnabled() bool {
-	return testOptions.BatchCreationEnabled
-}
-
 // runSharedMultiInstanceProvisionTests verifies multi-instance provisioning
 // correctness. These tests are mode-agnostic — they assert on outcomes (machines
 // created, correct properties) but NOT on batch grouping (API call counts).
@@ -731,6 +726,40 @@ func runSharedMultiInstanceProvisionTests() {
 	})
 }
 
+// countMachinesByVMSize returns a map of VM size → count from the data store.
+func countMachinesByVMSize() map[string]int {
+	machines := collectMachinesFromDataStore()
+	vmSizes := make(map[string]int)
+	for _, m := range machines {
+		if m.Properties != nil && m.Properties.Hardware != nil && m.Properties.Hardware.VMSize != nil {
+			vmSizes[*m.Properties.Hardware.VMSize]++
+		}
+	}
+	return vmSizes
+}
+
+// makeNClaims creates n NodeClaims all requesting the same instance type.
+func makeNClaims(n int, instanceType string) []*karpv1.NodeClaim {
+	claims := make([]*karpv1.NodeClaim, n)
+	for i := 0; i < n; i++ {
+		claims[i] = makeNodeClaimForInstanceType(instanceType)
+	}
+	return claims
+}
+
+// expectAllSucceeded asserts that all results succeeded with non-nil NodeClaims.
+func expectAllSucceeded(results []concurrentCreateResult) {
+	for i, r := range results {
+		Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+		Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+	}
+}
+
+// resetBatchCallCounter resets the CalledWithInput counter on the AKS Machines API fake.
+func resetBatchCallCounter() {
+	azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+}
+
 // runBatchSpecificMultiInstanceTests verifies batch grouping behavior — that
 // concurrent creates with the same template land in the same batch (single API
 // call) and different templates produce separate batches. Only meaningful under
@@ -743,39 +772,23 @@ func runBatchSpecificMultiInstanceTests() {
 	Context("Batch Grouping", func() {
 		It("should batch same-template instances into a single API call", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			resetBatchCallCounter()
 
-			// Create 5 NodeClaims all requesting the same instance type.
-			// They should all land in the same batch because they produce
-			// identical template hashes (same VM size, same node class config).
 			const count = 5
-			claims := make([]*karpv1.NodeClaim, count)
-			for i := 0; i < count; i++ {
-				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
-			}
-
+			claims := makeNClaims(count, "Standard_D2_v2")
 			results := concurrentCreateAndWaitForPromises(claims)
-
-			for i, r := range results {
-				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
-				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
-			}
+			expectAllSucceeded(results)
 
 			// Core assertion: all 5 went through a single BeginCreateOrUpdate call
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1),
 				"expected 1 batch API call for 5 same-template creates")
-
-			// All 5 machines should be in the data store
 			Expect(countMachinesInDataStore()).To(Equal(count))
 		})
 
 		It("should split different-template instances into separate batches", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			resetBatchCallCounter()
 
-			// Create 5 NodeClaims: 3 × Standard_D2_v2, 2 × Standard_D4s_v3.
-			// Different VM sizes produce different template hashes, so these
-			// should result in 2 separate batches.
 			claims := []*karpv1.NodeClaim{
 				makeNodeClaimForInstanceType("Standard_D2_v2"),
 				makeNodeClaimForInstanceType("Standard_D2_v2"),
@@ -783,57 +796,33 @@ func runBatchSpecificMultiInstanceTests() {
 				makeNodeClaimForInstanceType("Standard_D4s_v3"),
 				makeNodeClaimForInstanceType("Standard_D4s_v3"),
 			}
-
 			results := concurrentCreateAndWaitForPromises(claims)
-
-			for i, r := range results {
-				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
-				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
-			}
+			expectAllSucceeded(results)
 
 			// Core assertion: 2 distinct template hashes → 2 batch API calls
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(2),
 				"expected 2 batch API calls for 2 distinct template hashes")
-
-			// All 5 machines should be in the data store
 			Expect(countMachinesInDataStore()).To(Equal(5))
 
-			// Verify correct VM size distribution
-			machines := collectMachinesFromDataStore()
-			vmSizes := make(map[string]int)
-			for _, m := range machines {
-				if m.Properties != nil && m.Properties.Hardware != nil && m.Properties.Hardware.VMSize != nil {
-					vmSizes[*m.Properties.Hardware.VMSize]++
-				}
-			}
+			vmSizes := countMachinesByVMSize()
 			Expect(vmSizes["Standard_D2_v2"]).To(Equal(3))
 			Expect(vmSizes["Standard_D4s_v3"]).To(Equal(2))
 		})
 
 		It("should propagate per-machine tags through batch", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			resetBatchCallCounter()
 
-			// Create 3 same-template NodeClaims. Even though they share the
-			// same template, each machine should get unique per-machine tags
-			// (e.g., nodeclaim name, creation timestamp) because the batch
-			// coordinator preserves per-machine entries.
 			const count = 3
-			claims := make([]*karpv1.NodeClaim, count)
-			for i := 0; i < count; i++ {
-				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
-			}
-
+			claims := makeNClaims(count, "Standard_D2_v2")
 			results := concurrentCreateAndWaitForPromises(claims)
 
 			for i, r := range results {
 				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
 			}
 
-			// All should be batched into 1 call
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
-			// Each machine should have unique tags
 			machines := collectMachinesFromDataStore()
 			Expect(machines).To(HaveLen(count))
 
@@ -842,8 +831,6 @@ func runBatchSpecificMultiInstanceTests() {
 				Expect(m.Name).ToNot(BeNil(), "machine name should not be nil")
 				Expect(machineNames).ToNot(HaveKey(*m.Name), "machine names should be unique")
 				machineNames[*m.Name] = true
-
-				// Per-machine tags should be set
 				Expect(m.Properties).ToNot(BeNil())
 				Expect(m.Properties.Tags).ToNot(BeNil(), "per-machine tags should not be nil for machine %s", *m.Name)
 			}
@@ -851,29 +838,20 @@ func runBatchSpecificMultiInstanceTests() {
 
 		It("should propagate batch error to all machines in the batch", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			resetBatchCallCounter()
 
-			// Inject a BeginError — this simulates the Azure API returning
-			// an error for the entire batch.
 			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(
 				&azcore.ResponseError{ErrorCode: "BatchFailed"},
 			)
 			defer azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 
 			const count = 3
-			claims := make([]*karpv1.NodeClaim, count)
-			for i := 0; i < count; i++ {
-				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
-			}
-
+			claims := makeNClaims(count, "Standard_D2_v2")
 			results := concurrentCreateAndWaitForPromises(claims)
 
-			// All creates should have failed
 			for i, r := range results {
 				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
 			}
-
-			// No machines should have been stored
 			Expect(countMachinesInDataStore()).To(Equal(0))
 		})
 	})
