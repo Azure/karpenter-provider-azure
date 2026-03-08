@@ -139,7 +139,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
 		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
-		EnableFIPS: lo.ToPtr(enableFIPS),
+		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
