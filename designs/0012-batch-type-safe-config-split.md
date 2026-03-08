@@ -6,7 +6,10 @@
 
 ## Status
 
-**Proposed** — not yet implemented. Created as a reference for future consideration.
+**Implemented** — `MachineTemplate` with `SharedMachineConfig` and `PerMachineConfig`
+structs enforces the split at the template creation boundary. The batch system's
+runtime field registry (`batch_field_registry.go`) remains as a complementary
+safety net within the `AKSMachinesAPI` interface boundary.
 
 ## Context
 
@@ -95,13 +98,17 @@ the non-batch (single-VM) code path.
 
 ## Decision
 
-Deferred. Proposals A+C provide sufficient safety for the current field count
-(1 per-machine field on MachineProperties: Tags). If the per-machine field set
-grows significantly, the type-safe split becomes more valuable. Revisit when:
+Implemented. The type-safe split is applied at the template creation boundary:
 
-- Azure adds new per-machine fields to `MachineProperties`
-- The runtime registry becomes a recurring source of bugs
-- A major refactor of the template builder is planned anyway
+- `buildAKSMachineTemplate()` returns `*MachineTemplate` (see `machine_template.go`)
+- The caller reassembles via `ToAzureMachine()` for the `AKSMachinesAPI` interface
+- The batch system continues to use `ClearPerMachineFields`/`ClearReadOnlyFields`
+  internally because it receives a flat `armcontainerservice.Machine` through the
+  interface boundary
+
+This gives compile-time enforcement where mistakes actually happen (template
+construction) while keeping the batch internals stable. The runtime registry
+is complementary, not redundant — it protects the batch system's own boundary.
 
 ## References
 
