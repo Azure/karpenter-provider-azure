@@ -1101,11 +1101,20 @@ func TestAzureVMProvisionMode(t *testing.T) {
 			},
 		},
 		{
-			name: "should succeed with optional cluster-endpoint and generate ClusterID in azurevm mode",
+			name: "should not generate ClusterID even when cluster-endpoint is provided in azurevm mode",
 			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io"},
 			validate: func(t *testing.T, opts *options.Options) {
-				if opts.ClusterID == "" {
-					t.Error("expected non-empty ClusterID when cluster-endpoint is provided")
+				if opts.ClusterID != "" {
+					t.Errorf("expected empty ClusterID in azurevm mode, got %q", opts.ClusterID)
+				}
+			},
+		},
+		{
+			name: "should not panic with short cluster-endpoint in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--cluster-endpoint", "https://short.com"},
+			validate: func(t *testing.T, opts *options.Options) {
+				if opts.ClusterID != "" {
+					t.Errorf("expected empty ClusterID in azurevm mode, got %q", opts.ClusterID)
 				}
 			},
 		},
@@ -1130,6 +1139,28 @@ func TestAzureVMProvisionMode(t *testing.T) {
 					t.Error("expected IsAzureVMMode() to return false")
 				}
 			},
+		},
+		{
+			name:      "should validate vnet-guid if provided in azurevm mode",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--vnet-guid", "not-a-uuid"},
+			wantErr:   true,
+			errSubstr: "vnet-guid",
+		},
+		{
+			name:      "should validate kubelet-identity-client-id if provided in azurevm mode",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--kubelet-identity-client-id", "not-a-uuid"},
+			wantErr:   true,
+			errSubstr: "kubelet-identity-client-id",
+		},
+		{
+			name:      "should validate cluster-endpoint format if provided in azurevm mode",
+			args:      []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--cluster-endpoint", "not-a-url"},
+			wantErr:   true,
+			errSubstr: "not a valid clusterEndpoint URL",
+		},
+		{
+			name: "should accept valid optional vnet-guid in azurevm mode",
+			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--vnet-guid", "12345678-1234-1234-1234-123456789012"},
 		},
 	}
 

@@ -171,8 +171,10 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		return fmt.Errorf("validating options, %w", err)
 	}
 
-	// ClusterID is generated from cluster endpoint (only for AKS modes)
-	if o.ClusterEndpoint != "" {
+	// ClusterID is generated from cluster endpoint (only for AKS modes).
+	// In AzureVM mode, cluster ID is not needed and the endpoint format
+	// may not match AKS conventions, so we skip this.
+	if o.ClusterEndpoint != "" && o.ProvisionMode != consts.ProvisionModeAzureVM {
 		o.ClusterID = getAKSClusterID(o.GetAPIServerName())
 	}
 
@@ -208,6 +210,14 @@ func FromContext(ctx context.Context) *Options {
 // The logic comes from AgentBaker and other places, originally from aks-engine
 // with the additional assumption of DNS prefix being the first 33 chars of FQDN
 func getAKSClusterID(apiServerFQDN string) string {
+	if len(apiServerFQDN) < 33 {
+		// Non-AKS endpoints may have short hostnames. Use what we have.
+		// This path should not be reached in normal AKS operation.
+		h := fnv.New64a()
+		h.Write([]byte(apiServerFQDN))
+		r := rand.New(rand.NewSource(int64(h.Sum64()))) //nolint:gosec
+		return fmt.Sprintf("%08d", r.Uint32())[:8]
+	}
 	dnsPrefix := apiServerFQDN[:33]
 	h := fnv.New64a()
 	h.Write([]byte(dnsPrefix))
