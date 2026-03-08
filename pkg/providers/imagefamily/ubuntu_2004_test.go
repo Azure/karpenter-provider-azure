@@ -79,6 +79,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		fipsMode,
 		nil, // Ubuntu 20.04 does not support LocalDNS
 		artifactStreaming,
+		nil, // Ubuntu 20.04 does not support LinuxOSConfig
 	)
 
 	g := NewWithT(t)
