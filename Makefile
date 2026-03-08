@@ -109,7 +109,7 @@ verify: tidy download ## Verify code. Includes dependencies, linting, formatting
 	actionlint -oneline
 
 vulncheck: ## Verify code vulnerabilities
-	@govulncheck ./pkg/...
+	@hack/vulncheck.sh
 	@trivy filesystem --ignore-unfixed --scanners vuln --exit-code 1 go.mod
 
 licenses: download ## Verifies dependency licenses
