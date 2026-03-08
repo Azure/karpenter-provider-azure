@@ -40,6 +40,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/batch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -193,10 +195,35 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
+
+	// Determine which AKS machines client to use for the azClient
+	// If batching is enabled, wrap with BatchingMachinesClient
+	var aksMachinesClientForAZClient azclient.AKSMachinesAPI = aksMachinesAPI
+	if testOptions.BatchCreationEnabled && testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		grouper := batch.NewGrouper(ctx, batch.Options{
+			IdleTimeout:  time.Duration(testOptions.BatchIdleTimeoutMS) * time.Millisecond,
+			MaxTimeout:   time.Duration(testOptions.BatchMaxTimeoutMS) * time.Millisecond,
+			MaxBatchSize: testOptions.MaxBatchSize,
+		})
+		coordinator := batch.NewCoordinator(
+			aksMachinesAPI,
+			testOptions.NodeResourceGroup,
+			clusterName,
+			testOptions.AKSMachinesPoolName,
+		)
+		grouper.SetCoordinator(coordinator)
+		grouper.Start()
+
+		aksMachinesClientForAZClient = batch.NewBatchingMachinesClient(
+			aksMachinesAPI,
+			grouper,
+		)
+	}
+
 	azClient := azclient.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
-		aksMachinesAPI,
+		aksMachinesClientForAZClient,
 		aksAgentPoolsAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
@@ -249,6 +276,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.AKSMachinesPoolName,
 		region,
 	)
+
+	// Use instant poller for batch mode tests to minimize async polling time.
+	// The GET-based poller still runs, but with 1ms intervals it completes almost instantly.
+	// Tests that reset counters after Create() should call WaitForAsyncPolling() first.
+	if testOptions.BatchCreationEnabled {
+		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
+	}
 
 	store := nodeoverlay.NewInstanceTypeStore()
 

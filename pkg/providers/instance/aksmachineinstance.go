@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -138,6 +139,7 @@ type DefaultAKSMachineProvider struct {
 	errorHandling           *offerings.ErrorDetailHandler
 	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu      sync.RWMutex
+	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
 }
 
 func NewAKSMachineProvider(
@@ -162,9 +164,16 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:        sets.New[string](),
+		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
 	}
 
 	return provider
+}
+
+// SetFallbackAKSMachinePollerOptions overrides the default GET-based poller options (used in tests to avoid real polling delays).
+// "Fallback" because the GET poller is used when the SDK poller is nil (batch code path).
+func (p *DefaultAKSMachineProvider) SetFallbackAKSMachinePollerOptions(opts aksmachinepoller.Options) {
+	p.fallbackAKSMachinePollerOptions = opts
 }
 
 // BeginCreate creates an instance given the constraints.
@@ -496,6 +505,36 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO, AKS API panicked: %w", aksMachineName, err)
 				}
 			}()
+
+			// Use GET-based poller when SDK poller is nil (batch case).
+			// In practice, the non-batch code path always provides an SDK poller, so poller==nil
+			// only occurs when the batching client was used. The GET poller is technically compatible
+			// with the non-batch case too, but the SDK poller is preferred when available.
+			if poller == nil {
+				getPoller := aksmachinepoller.NewPoller(
+					p.fallbackAKSMachinePollerOptions,
+					p.azClient.AKSMachinesClient(),
+					p.clusterResourceGroup,
+					p.clusterName,
+					p.aksMachinesPoolName,
+					aksMachineName,
+				)
+				provisioningErr, pollerErr := getPoller.PollUntilDone(ctx)
+				if pollerErr != nil {
+					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (GET poller), poller error: %w", aksMachineName, pollerErr)
+					return
+				}
+				if provisioningErr != nil {
+					pollingErr = p.handleMachineProvisioningError(ctx, "LRO (GET poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+					return
+				}
+				log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+					"aksMachineName", aksMachineName,
+					"aksMachineID", gotAKSMachine.ID)
+				return
+			}
+
+			// Use SDK poller (non-batch case)
 			_, err := poller.PollUntilDone(ctx, nil) // This may panic if it is deleted mid-way.
 			if err != nil {
 				// Could be quota error; will be handled with custom logic below
