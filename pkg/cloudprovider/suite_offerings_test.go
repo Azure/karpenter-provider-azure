@@ -639,6 +639,16 @@ var _ = Describe("CloudProvider - Offerings", func() {
 		runSharedUnavailableOfferingsTests()
 	})
 
+	Context("ProvisionMode = AKSMachineAPI + Batch", func() {
+		BeforeEach(func() { setupAKSMachineAPIModeWithBatch() })
+		AfterEach(func() { teardownTestEnvironment() })
+
+		runSharedCreationFailureTests()
+		runSharedZoneAwareTests()
+		runSharedErrorCaseTests()
+		runSharedUnavailableOfferingsTests()
+	})
+
 	Context("ProvisionMode = AKSScriptless", func() {
 		BeforeEach(func() { setupProvisionModeAKSScriptlessTestEnvironment() })
 		AfterEach(func() { teardownTestEnvironment() })
