@@ -36,6 +36,7 @@ func (o *Options) Validate() error {
 	validate := validator.New()
 
 	// AzureVM mode has relaxed validation — skip AKS-specific checks
+	// but still validate optional fields if they are provided
 	if o.ProvisionMode == consts.ProvisionModeAzureVM {
 		return multierr.Combine(
 			o.validateRequiredFields(),
@@ -44,6 +45,9 @@ func (o *Options) Validate() error {
 			o.validateVMMemoryOverheadPercent(),
 			o.validateAdditionalTags(),
 			o.validateDiskEncryptionSetID(),
+			o.validateVNETGUID(),               // validate if provided
+			o.validateKubeletIdentityClientID(), // validate if provided
+			o.validateEndpoint(),                // validate if provided
 			validate.Struct(o),
 		)
 	}
