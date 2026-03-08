@@ -18,15 +18,7 @@ package utils
 
 import (
 	"testing"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 )
-
-func TestCustomvnet(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "GetVnetSubnetIDComponents")
-}
 
 func Benchmark(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -37,203 +29,258 @@ func Benchmark(b *testing.B) {
 	}
 }
 
-var _ = Describe("GetVnetSubnetIDComponents", func() {
-	It("should return correct subnet id components", func() {
-		subnetResource, err := GetVnetSubnetIDComponents("/subscriptions/00000000-0000-0000-0000-0000000000/resourceGroups/myrg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/default1")
-		Expect(err).ToNot(HaveOccurred())
-		subscriptionID := subnetResource.SubscriptionID
-		resourceGroupName := subnetResource.ResourceGroupName
-		vNetName := subnetResource.VNetName
-		subnetName := subnetResource.SubnetName
-
-		Expect(subscriptionID).To(Equal("00000000-0000-0000-0000-0000000000"))
-		Expect(resourceGroupName).To(Equal("myrg"))
-		Expect(vNetName).To(Equal("my-vnet"))
-		Expect(subnetName).To(Equal("default1"))
-	})
-	It("should return error when unable to parse vnet subnet id", func() {
-		// "/subscriptions/00000000-0000-0000-0000-0000000000/resourceGroups/myrg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/default1"
-		customVnetSubnetID := "someSubnetID" // invalid format
-		_, err := GetVnetSubnetIDComponents(customVnetSubnetID)
-		Expect(err).To(HaveOccurred())
-
-		// "resourceGr" instead of "resourceGroups" in customVnetSubnetID
-		customVnetSubnetID = "/subscriptions/00000000-0000-0000-0000-0000000000/resourceGr/myrg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/default1"
-		_, err = GetVnetSubnetIDComponents(customVnetSubnetID)
-		Expect(err).To(HaveOccurred())
-	})
-
-	It("Is reflexive", func() {
-		vnetsubnetid := GetSubnetResourceID("sam", "red", "violet", "subaru")
-		vnet, err := GetVnetSubnetIDComponents(vnetsubnetid)
-		Expect(err).To(BeNil())
-
-		Expect(vnet.SubscriptionID).To(Equal("sam"))
-		Expect(vnet.ResourceGroupName).To(Equal("red"))
-		Expect(vnet.VNetName).To(Equal("violet"))
-		Expect(vnet.SubnetName).To(Equal("subaru"))
-	})
-
-	It("real world weirdness (subnets is repeated broke old regex)", func() {
-		vnetsubnetid := "/subscriptions/00000000-0000-0000-0000-0000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/sillygeese-VNET/subnets/subnets/AKSMgmtv2-Subnet"
-		_, err := GetVnetSubnetIDComponents(vnetsubnetid)
-		Expect(err).ToNot(BeNil())
-	})
-
-	It("Is case insensitive (subnetparser.GetVnetSubnetIDComponents)", func() {
-		vnetsubnetid := "/SubscRiptionS/mySubscRiption/ResourceGroupS/myResourceGroup/ProviDerS/MicrOsofT.NetWorK/VirtualNetwOrkS/myVirtualNetwork/SubNetS/mySubnet"
-		vnet, err := GetVnetSubnetIDComponents(vnetsubnetid)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(vnet.SubscriptionID).To(Equal("mySubscRiption"))
-		Expect(vnet.ResourceGroupName).To(Equal("myResourceGroup"))
-		Expect(vnet.VNetName).To(Equal("myVirtualNetwork"))
-		Expect(vnet.SubnetName).To(Equal("mySubnet"))
-	})
-
-	It("Fails when appropriate", func() {
-		_, err := GetVnetSubnetIDComponents("what/a/bunch/of/junk")
-		Expect(err).ToNot(BeNil())
-		_, err = GetVnetSubnetIDComponents("/subscriptions/sam/resourceGroups/red/providers/Microsoft.Network/virtualNetworks/soclose")
-		Expect(err).ToNot(BeNil())
-	})
-
-	It("Test GetVNETSubnetIDComponents", func() {
-		vnetSubnetID := "/subscriptions/SUB_ID/resourceGroups/RG_NAME/providers/Microsoft.Network/virtualNetworks/VNET_NAME/subnets/SUBNET_NAME"
-		vs, err := GetVnetSubnetIDComponents(vnetSubnetID)
-		Expect(err).To(BeNil())
-		Expect(vs.SubscriptionID).To(Equal("SUB_ID"))
-		Expect(vs.ResourceGroupName).To(Equal("RG_NAME"))
-		Expect(vs.VNetName).To(Equal("VNET_NAME"))
-		Expect(vs.SubnetName).To(Equal("SUBNET_NAME"))
-
-		// case-insensitive match
-		vnetSubnetID = "/SubscriPtioNS/SUB_ID/REsourceGroupS/RG_NAME/ProViderS/MicrosoFT.NetWorK/VirtualNetWorKS/VNET_NAME/SubneTS/SUBNET_NAME"
-		vs, err = GetVnetSubnetIDComponents(vnetSubnetID)
-		Expect(err).To(BeNil())
-		Expect(vs.SubscriptionID).To(Equal("SUB_ID"))
-		Expect(vs.ResourceGroupName).To(Equal("RG_NAME"))
-		Expect(vs.VNetName).To(Equal("VNET_NAME"))
-		Expect(vs.SubnetName).To(Equal("SUBNET_NAME"))
-
-		//wtwo bad ones
-		vnetSubnetID = "/providers/Microsoft.Network/virtualNetworks/VNET_NAME/subnets/SUBNET_NAME"
-		_, err = GetVnetSubnetIDComponents(vnetSubnetID)
-		Expect(err).ToNot(BeNil())
-
-		vnetSubnetID = "badVnetSubnetID"
-		_, err = GetVnetSubnetIDComponents(vnetSubnetID)
-		Expect(err).ToNot(BeNil())
-	})
-})
-
-var _ = Describe("IsSameVNET", func() {
-	var baseResource VnetSubnetResource
-
-	BeforeEach(func() {
-		baseResource = VnetSubnetResource{
-			SubscriptionID:    "12345678-1234-1234-1234-123456789012",
-			ResourceGroupName: "my-resource-group",
-			VNetName:          "my-vnet",
-			SubnetName:        "my-subnet",
-		}
-	})
-
-	DescribeTable("IsSameVNET comparison tests",
-		func(compareResource VnetSubnetResource, expected bool) {
-			Expect(baseResource.IsSameVNET(compareResource)).To(Equal(expected))
+func TestGetVnetSubnetIDComponents(t *testing.T) {
+	tests := []struct {
+		name              string
+		input             string
+		wantErr           bool
+		wantSubscription  string
+		wantResourceGroup string
+		wantVNetName      string
+		wantSubnetName    string
+	}{
+		{
+			name:              "should return correct subnet id components",
+			input:             "/subscriptions/00000000-0000-0000-0000-0000000000/resourceGroups/myrg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/default1",
+			wantErr:           false,
+			wantSubscription:  "00000000-0000-0000-0000-0000000000",
+			wantResourceGroup: "myrg",
+			wantVNetName:      "my-vnet",
+			wantSubnetName:    "default1",
 		},
-		Entry("should return true when all VNET components match",
-			VnetSubnetResource{
+		{
+			name:    "should return error for invalid format (short string)",
+			input:   "someSubnetID",
+			wantErr: true,
+		},
+		{
+			name:    "should return error for incorrect resourceGroups keyword",
+			input:   "/subscriptions/00000000-0000-0000-0000-0000000000/resourceGr/myrg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/default1",
+			wantErr: true,
+		},
+		{
+			name:    "should return error for repeated subnets in path",
+			input:   "/subscriptions/00000000-0000-0000-0000-0000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/sillygeese-VNET/subnets/subnets/AKSMgmtv2-Subnet",
+			wantErr: true,
+		},
+		{
+			name:              "is case insensitive for path keywords",
+			input:             "/SubscRiptionS/mySubscRiption/ResourceGroupS/myResourceGroup/ProviDerS/MicrOsofT.NetWorK/VirtualNetwOrkS/myVirtualNetwork/SubNetS/mySubnet",
+			wantErr:           false,
+			wantSubscription:  "mySubscRiption",
+			wantResourceGroup: "myResourceGroup",
+			wantVNetName:      "myVirtualNetwork",
+			wantSubnetName:    "mySubnet",
+		},
+		{
+			name:    "fails for junk path",
+			input:   "what/a/bunch/of/junk",
+			wantErr: true,
+		},
+		{
+			name:    "fails for path missing subnets segment",
+			input:   "/subscriptions/sam/resourceGroups/red/providers/Microsoft.Network/virtualNetworks/soclose",
+			wantErr: true,
+		},
+		{
+			name:              "standard vnet subnet id",
+			input:             "/subscriptions/SUB_ID/resourceGroups/RG_NAME/providers/Microsoft.Network/virtualNetworks/VNET_NAME/subnets/SUBNET_NAME",
+			wantErr:           false,
+			wantSubscription:  "SUB_ID",
+			wantResourceGroup: "RG_NAME",
+			wantVNetName:      "VNET_NAME",
+			wantSubnetName:    "SUBNET_NAME",
+		},
+		{
+			name:              "case-insensitive match for all keywords",
+			input:             "/SubscriPtioNS/SUB_ID/REsourceGroupS/RG_NAME/ProViderS/MicrosoFT.NetWorK/VirtualNetWorKS/VNET_NAME/SubneTS/SUBNET_NAME",
+			wantErr:           false,
+			wantSubscription:  "SUB_ID",
+			wantResourceGroup: "RG_NAME",
+			wantVNetName:      "VNET_NAME",
+			wantSubnetName:    "SUBNET_NAME",
+		},
+		{
+			name:    "missing subscription and resource group",
+			input:   "/providers/Microsoft.Network/virtualNetworks/VNET_NAME/subnets/SUBNET_NAME",
+			wantErr: true,
+		},
+		{
+			name:    "completely invalid",
+			input:   "badVnetSubnetID",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetVnetSubnetIDComponents(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("GetVnetSubnetIDComponents(%q) expected error, got nil", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetVnetSubnetIDComponents(%q) unexpected error: %v", tt.input, err)
+			}
+			if got.SubscriptionID != tt.wantSubscription {
+				t.Errorf("SubscriptionID = %q, want %q", got.SubscriptionID, tt.wantSubscription)
+			}
+			if got.ResourceGroupName != tt.wantResourceGroup {
+				t.Errorf("ResourceGroupName = %q, want %q", got.ResourceGroupName, tt.wantResourceGroup)
+			}
+			if got.VNetName != tt.wantVNetName {
+				t.Errorf("VNetName = %q, want %q", got.VNetName, tt.wantVNetName)
+			}
+			if got.SubnetName != tt.wantSubnetName {
+				t.Errorf("SubnetName = %q, want %q", got.SubnetName, tt.wantSubnetName)
+			}
+		})
+	}
+}
+
+func TestGetSubnetResourceID_Reflexive(t *testing.T) {
+	vnetsubnetid := GetSubnetResourceID("sam", "red", "violet", "subaru")
+	vnet, err := GetVnetSubnetIDComponents(vnetsubnetid)
+	if err != nil {
+		t.Fatalf("GetVnetSubnetIDComponents returned unexpected error: %v", err)
+	}
+	if vnet.SubscriptionID != "sam" {
+		t.Errorf("SubscriptionID = %q, want %q", vnet.SubscriptionID, "sam")
+	}
+	if vnet.ResourceGroupName != "red" {
+		t.Errorf("ResourceGroupName = %q, want %q", vnet.ResourceGroupName, "red")
+	}
+	if vnet.VNetName != "violet" {
+		t.Errorf("VNetName = %q, want %q", vnet.VNetName, "violet")
+	}
+	if vnet.SubnetName != "subaru" {
+		t.Errorf("SubnetName = %q, want %q", vnet.SubnetName, "subaru")
+	}
+}
+
+func TestIsSameVNET(t *testing.T) {
+	baseResource := VnetSubnetResource{
+		SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+		ResourceGroupName: "my-resource-group",
+		VNetName:          "my-vnet",
+		SubnetName:        "my-subnet",
+	}
+
+	tests := []struct {
+		name     string
+		compare  VnetSubnetResource
+		expected bool
+	}{
+		{
+			name: "should return true when all VNET components match",
+			compare: VnetSubnetResource{
 				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
 				ResourceGroupName: "my-resource-group",
 				VNetName:          "my-vnet",
 				SubnetName:        "different-subnet",
 			},
-			true,
-		),
-		Entry("should return true when subnet names are different but VNET components match",
-			VnetSubnetResource{
+			expected: true,
+		},
+		{
+			name: "should return true when subnet names are different but VNET components match",
+			compare: VnetSubnetResource{
 				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
 				ResourceGroupName: "my-resource-group",
 				VNetName:          "my-vnet",
 				SubnetName:        "completely-different-subnet",
 			},
-			true,
-		),
-		Entry("should return false when subscription IDs are different",
-			VnetSubnetResource{
+			expected: true,
+		},
+		{
+			name: "should return false when subscription IDs are different",
+			compare: VnetSubnetResource{
 				SubscriptionID:    "87654321-4321-4321-4321-210987654321",
 				ResourceGroupName: "my-resource-group",
 				VNetName:          "my-vnet",
 				SubnetName:        "my-subnet",
 			},
-			false,
-		),
-		Entry("should return false when resource group names are different",
-			VnetSubnetResource{
+			expected: false,
+		},
+		{
+			name: "should return false when resource group names are different",
+			compare: VnetSubnetResource{
 				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
 				ResourceGroupName: "different-resource-group",
 				VNetName:          "my-vnet",
 				SubnetName:        "my-subnet",
 			},
-			false,
-		),
-		Entry("should return false when VNET names are different",
-			VnetSubnetResource{
+			expected: false,
+		},
+		{
+			name: "should return false when VNET names are different",
+			compare: VnetSubnetResource{
 				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
 				ResourceGroupName: "my-resource-group",
 				VNetName:          "different-vnet",
 				SubnetName:        "my-subnet",
 			},
-			false,
-		),
-		Entry("should return false when multiple components are different",
-			VnetSubnetResource{
+			expected: false,
+		},
+		{
+			name: "should return false when multiple components are different",
+			compare: VnetSubnetResource{
 				SubscriptionID:    "87654321-4321-4321-4321-210987654321",
 				ResourceGroupName: "different-resource-group",
 				VNetName:          "different-vnet",
 				SubnetName:        "different-subnet",
 			},
-			false,
-		),
-	)
-
-	Context("empty string comparisons", func() {
-		It("should handle empty resource comparisons correctly", func() {
-			emptyResource := VnetSubnetResource{
-				SubscriptionID:    "",
-				ResourceGroupName: "",
-				VNetName:          "",
-				SubnetName:        "",
-			}
-
-			Expect(emptyResource.IsSameVNET(emptyResource)).To(BeTrue())
-			Expect(emptyResource.IsSameVNET(baseResource)).To(BeFalse())
-			Expect(baseResource.IsSameVNET(emptyResource)).To(BeFalse())
-		})
-	})
-
-	Context("case sensitivity", func() {
-		DescribeTable("should be case-sensitive for all components",
-			func(compareResource VnetSubnetResource) {
-				Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+			expected: false,
+		},
+		{
+			name: "different case resource group name",
+			compare: VnetSubnetResource{
+				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+				ResourceGroupName: "My-Resource-Group",
+				VNetName:          "my-vnet",
+				SubnetName:        "my-subnet",
 			},
-			Entry("different case resource group name",
-				VnetSubnetResource{
-					SubscriptionID:    "12345678-1234-1234-1234-123456789012",
-					ResourceGroupName: "My-Resource-Group",
-					VNetName:          "my-vnet",
-					SubnetName:        "my-subnet",
-				},
-			),
-			Entry("different case VNET name",
-				VnetSubnetResource{
-					SubscriptionID:    "12345678-1234-1234-1234-123456789012",
-					ResourceGroupName: "my-resource-group",
-					VNetName:          "My-VNet",
-					SubnetName:        "my-subnet",
-				},
-			),
-		)
+			expected: false,
+		},
+		{
+			name: "different case VNET name",
+			compare: VnetSubnetResource{
+				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+				ResourceGroupName: "my-resource-group",
+				VNetName:          "My-VNet",
+				SubnetName:        "my-subnet",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := baseResource.IsSameVNET(tt.compare)
+			if got != tt.expected {
+				t.Errorf("IsSameVNET() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+
+	// Empty resource comparisons
+	t.Run("empty resource comparisons", func(t *testing.T) {
+		emptyResource := VnetSubnetResource{
+			SubscriptionID:    "",
+			ResourceGroupName: "",
+			VNetName:          "",
+			SubnetName:        "",
+		}
+
+		if got := emptyResource.IsSameVNET(emptyResource); got != true {
+			t.Errorf("empty.IsSameVNET(empty) = %v, want true", got)
+		}
+		if got := emptyResource.IsSameVNET(baseResource); got != false {
+			t.Errorf("empty.IsSameVNET(base) = %v, want false", got)
+		}
+		if got := baseResource.IsSameVNET(emptyResource); got != false {
+			t.Errorf("base.IsSameVNET(empty) = %v, want false", got)
+		}
 	})
-})
+}
