@@ -88,11 +88,12 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 
 	// Clear per-machine fields from the body — these are already in the BatchPutMachine header
 	// and the body should only contain the shared template config.
+	// Uses the same clearPerMachineFields as computeTemplateHash to stay in sync.
 	template := batch.template
 	template.Zones = nil
 	if template.Properties != nil {
 		props := *template.Properties
-		props.Tags = nil
+		clearPerMachineFields(&props)
 		template.Properties = &props
 	}
 
