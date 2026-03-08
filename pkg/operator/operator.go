@@ -48,6 +48,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
@@ -300,11 +301,16 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 	gvk := func(obj runtime.Object) schema.GroupVersionKind {
 		return lo.Must(apiutil.GVKForObject(obj, scheme.Scheme))
 	}
-	var requiredGVKs = []schema.GroupVersionKind{
+	requiredGVKs := []schema.GroupVersionKind{
 		gvk(&karpv1.NodePool{}),
 		gvk(&karpv1.NodeClaim{}),
 		gvk(&karpv1alpha1.NodeOverlay{}),
-		gvk(&v1beta1.AKSNodeClass{}),
+	}
+	// In azurevm mode, require AzureNodeClass CRD instead of AKSNodeClass
+	if options.FromContext(ctx).IsAzureVMMode() {
+		requiredGVKs = append(requiredGVKs, gvk(&v1alpha1.AzureNodeClass{}))
+	} else {
+		requiredGVKs = append(requiredGVKs, gvk(&v1beta1.AKSNodeClass{}))
 	}
 
 	client, err := rest.HTTPClientFor(config)
