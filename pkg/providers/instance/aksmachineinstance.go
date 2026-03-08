@@ -32,7 +32,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
@@ -476,7 +475,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
-	if lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == consts.ProvisioningStateFailed {
+	if lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// We luckily catch failed state early (compared to during polling).
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
 		if gotAKSMachine.Properties.Status == nil || gotAKSMachine.Properties.Status.ProvisioningError == nil {
@@ -591,7 +590,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		// ASSUMPTION: repeated failure will eventually result in NodeClaim reaching registration TTL, then gets re-created with the new hash, recovering from the collision.
 		return nil, fmt.Errorf("found existing AKS machine %s, but its karpenter.azure.com_aksmachine_nodeclaim tag %q does not match the NodeClaim to create %q", aksMachineName, existingAKSMachineNodeClaimName, nodeClaim.Name)
 	}
-	if existingAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(existingAKSMachine.Properties.ProvisioningState) == consts.ProvisioningStateFailed {
+	if existingAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(existingAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// Unfortunately, that was more like a remain than a usable aksMachine.
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
 		if existingAKSMachine.Properties.Status == nil || existingAKSMachine.Properties.Status.ProvisioningError == nil {

@@ -29,8 +29,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
 // mockGetter implements AKSMachineGetter for testing
@@ -90,7 +88,7 @@ func machineWithState(state string) *armcontainerservice.Machine {
 }
 
 func machineWithFailedState(errorCode, errorMsg string) *armcontainerservice.Machine {
-	m := machineWithState(consts.ProvisioningStateFailed)
+	m := machineWithState(ProvisioningStateFailed)
 	m.Properties.Status = &armcontainerservice.MachineStatus{
 		ProvisioningError: &armcontainerservice.ErrorDetail{
 			Code:    lo.ToPtr(errorCode),
@@ -103,7 +101,7 @@ func machineWithFailedState(errorCode, errorMsg string) *armcontainerservice.Mac
 func TestPollUntilDone_ImmediateSuccess(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
+			{machine: machineWithState(ProvisioningStateSucceeded)},
 		},
 	}
 
@@ -118,9 +116,9 @@ func TestPollUntilDone_ImmediateSuccess(t *testing.T) {
 func TestPollUntilDone_CreatingThenSucceeded(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
-			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
+			{machine: machineWithState(ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateSucceeded)},
 		},
 	}
 
@@ -135,7 +133,7 @@ func TestPollUntilDone_CreatingThenSucceeded(t *testing.T) {
 func TestPollUntilDone_CreatingThenFailed(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateCreating)},
 			{machine: machineWithFailedState("SkuNotAvailable", "SKU not available in region")},
 		},
 	}
@@ -166,7 +164,7 @@ func TestPollUntilDone_ImmediateFailed(t *testing.T) {
 }
 
 func TestPollUntilDone_FailedWithoutProvisioningError(t *testing.T) {
-	m := machineWithState(consts.ProvisioningStateFailed)
+	m := machineWithState(ProvisioningStateFailed)
 	// No ProvisioningError set
 	mock := &mockGetter{
 		responses: []mockResponse{
@@ -185,7 +183,7 @@ func TestPollUntilDone_FailedWithoutProvisioningError(t *testing.T) {
 func TestPollUntilDone_Deleting(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateDeleting)},
+			{machine: machineWithState(ProvisioningStateDeleting)},
 		},
 	}
 
@@ -200,7 +198,7 @@ func TestPollUntilDone_Deleting(t *testing.T) {
 func TestPollUntilDone_ContextCancelled(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateCreating)},
 		},
 	}
 
@@ -223,9 +221,9 @@ func TestPollUntilDone_TransientErrorRetry(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateCreating)},
 			{err: transientErr},                                          // transient error
-			{machine: machineWithState(consts.ProvisioningStateSucceeded)}, // retry succeeds
+			{machine: machineWithState(ProvisioningStateSucceeded)}, // retry succeeds
 		},
 	}
 
@@ -245,7 +243,7 @@ func TestPollUntilDone_NonTransientErrorFails(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateCreating)},
 			{err: notFoundErr}, // not found
 		},
 	}
@@ -298,7 +296,7 @@ func TestPollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 		responses: []mockResponse{
 			{machine: machineWithNilState},                                  // nil state, consumes retry
 			{machine: machineWithNilState},                                  // nil state, consumes retry
-			{machine: machineWithState(consts.ProvisioningStateSucceeded)}, // succeeds
+			{machine: machineWithState(ProvisioningStateSucceeded)}, // succeeds
 		},
 	}
 
@@ -325,13 +323,13 @@ func TestPollUntilDone_RetryBudgetResetsOnHealthyState(t *testing.T) {
 	// 7. Succeeded (done)
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateCreating)},
 			{err: transientErr},
 			{err: transientErr},
-			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(ProvisioningStateCreating)},
 			{err: transientErr},
 			{err: transientErr},
-			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
+			{machine: machineWithState(ProvisioningStateSucceeded)},
 		},
 	}
 
@@ -438,9 +436,9 @@ func TestIsTransientError(t *testing.T) {
 func TestPollUntilDone_UpdatingState(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(consts.ProvisioningStateUpdating)},
-			{machine: machineWithState(consts.ProvisioningStateUpdating)},
-			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
+			{machine: machineWithState(ProvisioningStateUpdating)},
+			{machine: machineWithState(ProvisioningStateUpdating)},
+			{machine: machineWithState(ProvisioningStateSucceeded)},
 		},
 	}
 

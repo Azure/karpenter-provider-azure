@@ -47,8 +47,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
 
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+// Provisioning states for AKS Machine objects.
+// The SDK's Machine.Properties.ProvisioningState is typed as *string (no typed constants).
+// Suggestion: find a constant from azure-sdk-for-go if one becomes available.
+const (
+	ProvisioningStateCreating  = "Creating"
+	ProvisioningStateUpdating  = "Updating"
+	ProvisioningStateSucceeded = "Succeeded"
+	ProvisioningStateFailed    = "Failed"
+	ProvisioningStateDeleting  = "Deleting"
 )
 
 type AKSMachineGetter interface {
@@ -258,7 +267,7 @@ func (p *Poller) handleProvisioningState(ctx context.Context, aksMachine *armcon
 	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
 	switch provisioningState {
 	// Non-terminal state
-	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
+	case ProvisioningStateCreating, ProvisioningStateUpdating:
 		log.FromContext(ctx).V(2).Info("Poller: polling for AKS machine ongoing",
 			"aksMachineName", p.aksMachineName,
 			"aksMachineID", aksMachine.ID,
@@ -269,16 +278,16 @@ func (p *Poller) handleProvisioningState(ctx context.Context, aksMachine *armcon
 		return nil, nil, false
 
 	// Canceled terminal state
-	case consts.ProvisioningStateDeleting:
+	case ProvisioningStateDeleting:
 		// If polling interval is too long/deletion is too fast, then we might get 404 from GET instead of reaching here.
 		return nil, fmt.Errorf("AKS machine %q sees canceled provisioning state %s", p.aksMachineName, provisioningState), true
 
 	// Succeeded terminal state
-	case consts.ProvisioningStateSucceeded:
+	case ProvisioningStateSucceeded:
 		return nil, nil, true
 
 	// Fatal terminal state
-	case consts.ProvisioningStateFailed:
+	case ProvisioningStateFailed:
 		if aksMachine.Properties.Status != nil && aksMachine.Properties.Status.ProvisioningError != nil {
 			return aksMachine.Properties.Status.ProvisioningError, nil, true
 		}

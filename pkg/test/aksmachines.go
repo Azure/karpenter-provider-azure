@@ -22,7 +22,6 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/samber/lo"
 )
@@ -103,7 +102,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		}
 	}
 	if options.Properties.ProvisioningState == nil {
-		options.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
+		options.Properties.ProvisioningState = lo.ToPtr("Succeeded")
 	}
 
 	// Set Priority field (required field that was missing) - must be set AFTER default Priority is established
