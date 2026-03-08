@@ -979,18 +979,42 @@ func TestAdditionalTagsValidation(t *testing.T) {
 	}
 }
 
-func TestAzureVMProvisionMode(t *testing.T) {
-	t.Parallel()
+// optionsTestCase is a table-driven test case for option parsing tests.
+type optionsTestCase struct {
+	name      string
+	args      []string
+	wantErr   bool
+	errSubstr string
+	validate  func(t *testing.T, opts *options.Options)
+}
 
+// runOptionsTest runs a single options parsing test case.
+func runOptionsTest(t *testing.T, tt optionsTestCase) {
+	t.Helper()
+	saveAndClearEnv(t)
+	fs, opts := newFlagSetAndOpts()
+	err := opts.Parse(fs, tt.args...)
+	if tt.wantErr {
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
+			t.Errorf("error %q does not contain %q", err.Error(), tt.errSubstr)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tt.validate != nil {
+		tt.validate(t, opts)
+	}
+}
+
+func TestAzureVMProvisionMode(t *testing.T) {
 	azurevmSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
 
-	tests := []struct {
-		name      string
-		args      []string
-		wantErr   bool
-		errSubstr string
-		validate  func(t *testing.T, opts *options.Options)
-	}{
+	tests := []optionsTestCase{
 		{
 			name: "should succeed with only subnet and node-resource-group in azurevm mode",
 			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
@@ -1111,24 +1135,7 @@ func TestAzureVMProvisionMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			saveAndClearEnv(t)
-			fs, opts := newFlagSetAndOpts()
-			err := opts.Parse(fs, tt.args...)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
-					t.Errorf("error %q does not contain %q", err.Error(), tt.errSubstr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.validate != nil {
-				tt.validate(t, opts)
-			}
+			runOptionsTest(t, tt)
 		})
 	}
 }
