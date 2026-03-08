@@ -29,16 +29,23 @@ import (
 // independent of a specific managed control plane (e.g. AKS).
 type AzureNodeClassSpec struct {
 	// imageID is the ARM resource ID of the image that instances use.
-	// This can be a Compute Gallery image, Shared Image Gallery image, or any valid Azure image resource ID.
+	// This can be a Compute Gallery image, Shared Image Gallery image, Community Gallery image,
+	// or any valid Azure image resource ID.
 	// When set, imageFamily-based image resolution is bypassed entirely.
 	// The user is responsible for ensuring the image is compatible with the selected instance types.
-	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.(Compute|AzureHybridBenefit)\/.*$`
+	// Examples:
+	//   /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/galleries/{gallery}/images/{image}/versions/{version}
+	//   /CommunityGalleries/{gallery}/images/{image}/versions/{version}
+	// +kubebuilder:validation:Pattern=`(?i)^(\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.Compute\/.*|\/CommunityGalleries\/[^\/]+\/images\/[^\/]+\/versions\/[^\/]+)$`
+	// +kubebuilder:validation:MaxLength=1024
 	// +optional
 	ImageID *string `json:"imageID,omitempty"`
-	// userData is verbatim CustomData that will be passed to the VM at creation time.
-	// The Azure SDK will base64-encode this value before sending it to the Azure API.
+	// userData is the base64-encoded custom data that will be passed to the VM at creation time.
+	// The caller must pre-encode their cloud-init or bootstrap script to base64, as the Azure API
+	// expects this field to contain a base64-encoded string.
 	// The user is fully responsible for providing valid bootstrap/cloud-init data.
 	// When this field is set, no Karpenter-managed bootstrapping is performed.
+	// +kubebuilder:validation:MaxLength=87380
 	// +optional
 	UserData *string `json:"userData,omitempty"`
 	// managedIdentities is a list of user-assigned managed identity resource IDs
