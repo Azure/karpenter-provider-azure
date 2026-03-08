@@ -40,4 +40,13 @@ const (
 	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
 	ProvisionModeAKSMachineAPI       = "aksmachineapi"
+
+	// ARM provisioning state constants.
+	// The Azure SDK does not define typed constants for Machine.Properties.ProvisioningState
+	// (it uses *string), so we define them here for use across the codebase.
+	ProvisioningStateCreating  = "Creating"
+	ProvisioningStateUpdating  = "Updating"
+	ProvisioningStateDeleting  = "Deleting"
+	ProvisioningStateSucceeded = "Succeeded"
+	ProvisioningStateFailed    = "Failed"
 )

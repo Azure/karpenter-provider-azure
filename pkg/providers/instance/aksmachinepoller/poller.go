@@ -47,6 +47,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
 type AKSMachineGetter interface {
@@ -129,24 +131,15 @@ func InstantOptions() Options {
 	}
 }
 
-// Provisioning state constants for AKS Machine API
-const (
-	ProvisioningStateCreating  = "Creating"
-	ProvisioningStateUpdating  = "Updating"
-	ProvisioningStateDeleting  = "Deleting"
-	ProvisioningStateSucceeded = "Succeeded"
-	ProvisioningStateFailed    = "Failed"
-)
-
 // Poller polls AKS machine instances until they reach a terminal state.
 // This follows Azure SDK polling patterns with exponential backoff for transient errors.
 type Poller struct {
-	config            Options
-	client            AKSMachineGetter
-	resourceGroupName string
-	clusterName       string
-	agentPoolName     string
-	aksMachineName    string
+	config              Options
+	client              AKSMachineGetter
+	resourceGroupName   string
+	clusterName         string
+	aksMachinesPoolName string
+	aksMachineName      string
 }
 
 func NewPoller(
@@ -154,16 +147,16 @@ func NewPoller(
 	client AKSMachineGetter,
 	resourceGroupName string,
 	clusterName string,
-	agentPoolName string,
+	aksMachinesPoolName string,
 	aksMachineName string,
 ) *Poller {
 	return &Poller{
-		config:            config,
-		client:            client,
-		resourceGroupName: resourceGroupName,
-		clusterName:       clusterName,
-		agentPoolName:     agentPoolName,
-		aksMachineName:    aksMachineName,
+		config:              config,
+		client:              client,
+		resourceGroupName:   resourceGroupName,
+		clusterName:         clusterName,
+		aksMachinesPoolName: aksMachinesPoolName,
+		aksMachineName:      aksMachineName,
 	}
 }
 
@@ -178,11 +171,6 @@ func (p *Poller) PollUntilDone(ctx context.Context) (*armcontainerservice.ErrorD
 	var retryAttemptsLeft int
 	var currentRetryDelay time.Duration
 	p.resetRetryState(&retryAttemptsLeft, &currentRetryDelay)
-
-	// Immediate first poll for fast completion (common in tests with fakes that immediately set Succeeded state).
-	if provisioningErr, pollerErr, done := p.pollOnce(ctx, &retryAttemptsLeft, &currentRetryDelay); done {
-		return provisioningErr, pollerErr
-	}
 
 	ticker := time.NewTicker(p.config.PollInterval)
 	defer ticker.Stop()
@@ -270,7 +258,7 @@ func (p *Poller) handleProvisioningState(ctx context.Context, aksMachine *armcon
 	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
 	switch provisioningState {
 	// Non-terminal state
-	case ProvisioningStateCreating, ProvisioningStateUpdating:
+	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
 		log.FromContext(ctx).V(2).Info("Poller: polling for AKS machine ongoing",
 			"aksMachineName", p.aksMachineName,
 			"aksMachineID", aksMachine.ID,
@@ -281,16 +269,16 @@ func (p *Poller) handleProvisioningState(ctx context.Context, aksMachine *armcon
 		return nil, nil, false
 
 	// Canceled terminal state
-	case ProvisioningStateDeleting:
+	case consts.ProvisioningStateDeleting:
 		// If polling interval is too long/deletion is too fast, then we might get 404 from GET instead of reaching here.
 		return nil, fmt.Errorf("AKS machine %q sees canceled provisioning state %s", p.aksMachineName, provisioningState), true
 
 	// Succeeded terminal state
-	case ProvisioningStateSucceeded:
+	case consts.ProvisioningStateSucceeded:
 		return nil, nil, true
 
 	// Fatal terminal state
-	case ProvisioningStateFailed:
+	case consts.ProvisioningStateFailed:
 		if aksMachine.Properties.Status != nil && aksMachine.Properties.Status.ProvisioningError != nil {
 			return aksMachine.Properties.Status.ProvisioningError, nil, true
 		}
@@ -350,7 +338,7 @@ func isTransientError(err error) bool {
 }
 
 func (p *Poller) getAKSMachine(ctx context.Context) (*armcontainerservice.Machine, error) {
-	resp, err := p.client.Get(ctx, p.resourceGroupName, p.clusterName, p.agentPoolName, p.aksMachineName, nil)
+	resp, err := p.client.Get(ctx, p.resourceGroupName, p.clusterName, p.aksMachinesPoolName, p.aksMachineName, nil)
 	if err != nil {
 		return nil, err
 	}

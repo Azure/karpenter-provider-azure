@@ -29,6 +29,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
 // mockGetter implements AKSMachineGetter for testing
@@ -88,7 +90,7 @@ func machineWithState(state string) *armcontainerservice.Machine {
 }
 
 func machineWithFailedState(errorCode, errorMsg string) *armcontainerservice.Machine {
-	m := machineWithState(ProvisioningStateFailed)
+	m := machineWithState(consts.ProvisioningStateFailed)
 	m.Properties.Status = &armcontainerservice.MachineStatus{
 		ProvisioningError: &armcontainerservice.ErrorDetail{
 			Code:    lo.ToPtr(errorCode),
@@ -98,10 +100,10 @@ func machineWithFailedState(errorCode, errorMsg string) *armcontainerservice.Mac
 	return m
 }
 
-func TestPoller_PollUntilDone_ImmediateSuccess(t *testing.T) {
+func TestPollUntilDone_ImmediateSuccess(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateSucceeded)},
+			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
 		},
 	}
 
@@ -110,15 +112,15 @@ func TestPoller_PollUntilDone_ImmediateSuccess(t *testing.T) {
 
 	assert.Nil(t, provisioningErr)
 	assert.NoError(t, pollerErr)
-	assert.Equal(t, 1, mock.CallCount(), "should complete with single GET due to immediate first poll")
+	assert.Equal(t, 1, mock.CallCount())
 }
 
-func TestPoller_PollUntilDone_CreatingThenSucceeded(t *testing.T) {
+func TestPollUntilDone_CreatingThenSucceeded(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)},  // immediate first poll
-			{machine: machineWithState(ProvisioningStateCreating)},  // first tick
-			{machine: machineWithState(ProvisioningStateSucceeded)}, // second tick
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
 		},
 	}
 
@@ -130,7 +132,24 @@ func TestPoller_PollUntilDone_CreatingThenSucceeded(t *testing.T) {
 	assert.Equal(t, 3, mock.CallCount())
 }
 
-func TestPoller_PollUntilDone_ImmediateFailed(t *testing.T) {
+func TestPollUntilDone_CreatingThenFailed(t *testing.T) {
+	mock := &mockGetter{
+		responses: []mockResponse{
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{machine: machineWithFailedState("SkuNotAvailable", "SKU not available in region")},
+		},
+	}
+
+	poller := NewPoller(testOptions(), mock, "rg", "cluster", "pool", "machine")
+	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
+
+	require.NotNil(t, provisioningErr)
+	assert.Equal(t, "SkuNotAvailable", lo.FromPtr(provisioningErr.Code))
+	assert.NoError(t, pollerErr)
+	assert.Equal(t, 2, mock.CallCount())
+}
+
+func TestPollUntilDone_ImmediateFailed(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithFailedState("SkuNotAvailable", "SKU not available in region")},
@@ -146,8 +165,8 @@ func TestPoller_PollUntilDone_ImmediateFailed(t *testing.T) {
 	assert.Equal(t, 1, mock.CallCount())
 }
 
-func TestPoller_PollUntilDone_FailedWithoutProvisioningError(t *testing.T) {
-	m := machineWithState(ProvisioningStateFailed)
+func TestPollUntilDone_FailedWithoutProvisioningError(t *testing.T) {
+	m := machineWithState(consts.ProvisioningStateFailed)
 	// No ProvisioningError set
 	mock := &mockGetter{
 		responses: []mockResponse{
@@ -163,10 +182,10 @@ func TestPoller_PollUntilDone_FailedWithoutProvisioningError(t *testing.T) {
 	assert.Contains(t, pollerErr.Error(), "ProvisioningError is nil")
 }
 
-func TestPoller_PollUntilDone_Deleting(t *testing.T) {
+func TestPollUntilDone_Deleting(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateDeleting)},
+			{machine: machineWithState(consts.ProvisioningStateDeleting)},
 		},
 	}
 
@@ -178,10 +197,10 @@ func TestPoller_PollUntilDone_Deleting(t *testing.T) {
 	assert.Contains(t, pollerErr.Error(), "canceled provisioning state")
 }
 
-func TestPoller_PollUntilDone_ContextCancelled(t *testing.T) {
+func TestPollUntilDone_ContextCancelled(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)},
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
 		},
 	}
 
@@ -196,7 +215,7 @@ func TestPoller_PollUntilDone_ContextCancelled(t *testing.T) {
 	assert.Contains(t, pollerErr.Error(), "context canceled")
 }
 
-func TestPoller_PollUntilDone_TransientErrorRetry(t *testing.T) {
+func TestPollUntilDone_TransientErrorRetry(t *testing.T) {
 	transientErr := &azcore.ResponseError{
 		StatusCode: http.StatusTooManyRequests,
 		ErrorCode:  "TooManyRequests",
@@ -204,9 +223,9 @@ func TestPoller_PollUntilDone_TransientErrorRetry(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)}, // immediate first poll
-			{err: transientErr}, // first tick - transient error
-			{machine: machineWithState(ProvisioningStateSucceeded)}, // retry succeeds
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{err: transientErr},                                          // transient error
+			{machine: machineWithState(consts.ProvisioningStateSucceeded)}, // retry succeeds
 		},
 	}
 
@@ -218,7 +237,7 @@ func TestPoller_PollUntilDone_TransientErrorRetry(t *testing.T) {
 	assert.Equal(t, 3, mock.CallCount())
 }
 
-func TestPoller_PollUntilDone_NonTransientErrorFails(t *testing.T) {
+func TestPollUntilDone_NonTransientErrorFails(t *testing.T) {
 	notFoundErr := &azcore.ResponseError{
 		StatusCode: http.StatusNotFound,
 		ErrorCode:  "NotFound",
@@ -226,8 +245,8 @@ func TestPoller_PollUntilDone_NonTransientErrorFails(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateCreating)}, // immediate first poll
-			{err: notFoundErr}, // first tick - not found
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{err: notFoundErr}, // not found
 		},
 	}
 
@@ -240,7 +259,7 @@ func TestPoller_PollUntilDone_NonTransientErrorFails(t *testing.T) {
 	assert.Equal(t, 2, mock.CallCount())
 }
 
-func TestPoller_PollUntilDone_ExhaustedRetries(t *testing.T) {
+func TestPollUntilDone_ExhaustedRetries(t *testing.T) {
 	transientErr := &azcore.ResponseError{
 		StatusCode: http.StatusInternalServerError,
 		ErrorCode:  "InternalServerError",
@@ -248,7 +267,7 @@ func TestPoller_PollUntilDone_ExhaustedRetries(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{err: transientErr}, // immediate first poll - consumes retry 1
+			{err: transientErr}, // consumes retry 1
 			{err: transientErr}, // retry 2
 			{err: transientErr}, // retry 3
 			{err: transientErr}, // retry exhausted
@@ -266,7 +285,7 @@ func TestPoller_PollUntilDone_ExhaustedRetries(t *testing.T) {
 	assert.Contains(t, pollerErr.Error(), "exhausting")
 }
 
-func TestPoller_PollUntilDone_NilProvisioningStateRetry(t *testing.T) {
+func TestPollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 	machineWithNilState := &armcontainerservice.Machine{
 		ID:   lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/..."),
 		Name: lo.ToPtr("machine"),
@@ -277,9 +296,9 @@ func TestPoller_PollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithNilState},                          // immediate first poll - nil state, consumes retry
-			{machine: machineWithNilState},                          // tick - nil state, consumes retry
-			{machine: machineWithState(ProvisioningStateSucceeded)}, // tick succeeds
+			{machine: machineWithNilState},                                  // nil state, consumes retry
+			{machine: machineWithNilState},                                  // nil state, consumes retry
+			{machine: machineWithState(consts.ProvisioningStateSucceeded)}, // succeeds
 		},
 	}
 
@@ -288,6 +307,43 @@ func TestPoller_PollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 
 	assert.Nil(t, provisioningErr)
 	assert.NoError(t, pollerErr)
+}
+
+func TestPollUntilDone_RetryBudgetResetsOnHealthyState(t *testing.T) {
+	transientErr := &azcore.ResponseError{
+		StatusCode: http.StatusInternalServerError,
+		ErrorCode:  "InternalServerError",
+	}
+
+	// With MaxRetries=2:
+	// 1. Creating (healthy - budget stays at 2)
+	// 2. transient error (budget: 2→1, retries)
+	// 3. transient error (budget: 1→0, retries)
+	// 4. Creating (healthy - budget resets to 2)
+	// 5. transient error (budget: 2→1, retries)
+	// 6. transient error (budget: 1→0, retries)
+	// 7. Succeeded (done)
+	mock := &mockGetter{
+		responses: []mockResponse{
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{err: transientErr},
+			{err: transientErr},
+			{machine: machineWithState(consts.ProvisioningStateCreating)},
+			{err: transientErr},
+			{err: transientErr},
+			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
+		},
+	}
+
+	opts := testOptions()
+	opts.MaxRetries = 2
+
+	poller := NewPoller(opts, mock, "rg", "cluster", "pool", "machine")
+	provisioningErr, pollerErr := poller.PollUntilDone(context.Background())
+
+	assert.Nil(t, provisioningErr)
+	assert.NoError(t, pollerErr)
+	assert.Equal(t, 7, mock.CallCount())
 }
 
 func TestIsTransientError(t *testing.T) {
@@ -379,12 +435,12 @@ func TestIsTransientError(t *testing.T) {
 	}
 }
 
-func TestPoller_PollUntilDone_UpdatingState(t *testing.T) {
+func TestPollUntilDone_UpdatingState(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState(ProvisioningStateUpdating)},  // immediate first poll
-			{machine: machineWithState(ProvisioningStateUpdating)},  // tick 1
-			{machine: machineWithState(ProvisioningStateSucceeded)}, // tick 2
+			{machine: machineWithState(consts.ProvisioningStateUpdating)},
+			{machine: machineWithState(consts.ProvisioningStateUpdating)},
+			{machine: machineWithState(consts.ProvisioningStateSucceeded)},
 		},
 	}
 
@@ -395,10 +451,10 @@ func TestPoller_PollUntilDone_UpdatingState(t *testing.T) {
 	assert.NoError(t, pollerErr)
 }
 
-func TestPoller_PollUntilDone_UnrecognizedStateExhaustsRetries(t *testing.T) {
+func TestPollUntilDone_UnrecognizedStateExhaustsRetries(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithState("UnknownState")}, // immediate first poll - consumes retry 1
+			{machine: machineWithState("UnknownState")}, // consumes retry 1
 			{machine: machineWithState("UnknownState")}, // retry 2
 			{machine: machineWithState("UnknownState")}, // retry 3
 			{machine: machineWithState("UnknownState")}, // retry exhausted
