@@ -60,7 +60,7 @@ limitations under the License.
 //
 // A stronger guarantee would be to split the machine template into typed structs
 // (SharedMachineConfig vs PerMachineConfig) at the point of creation, making the
-// type system enforce the separation. See PR #XXXX for that proposal.
+// type system enforce the separation. See designs/0012-batch-type-safe-config-split.md.
 // Discussion: https://github.com/Azure/karpenter-provider-azure/pull/1455#discussion_r2901097563
 package instance
 
