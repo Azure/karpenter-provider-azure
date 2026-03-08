@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -34,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -137,6 +139,8 @@ type DefaultAKSMachineProvider struct {
 	errorHandling           *offerings.ErrorDetailHandler
 	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu      sync.RWMutex
+	pollerOptions           aksmachinepoller.Options // Configurable for testing; defaults to production values
+	machineCache            *machineListCache        // LIST-based cache to reduce individual GET Machine calls
 }
 
 func NewAKSMachineProvider(
@@ -161,9 +165,48 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:        sets.New[string](),
+		pollerOptions:           DefaultPollerOptions(),
+		machineCache:            newMachineListCache(DefaultMachineListCacheTTL),
 	}
 
 	return provider
+}
+
+// DefaultPollerOptions returns production poller configuration.
+func DefaultPollerOptions() aksmachinepoller.Options {
+	return aksmachinepoller.Options{
+		// PollInterval increased from 5s to 15s to reduce GET Machine API call volume.
+		// At 1000 nodes with 5s polling, the system generates 200 GET/s. At 15s, this drops to ~67 GET/s.
+		// Telescope data shows GET 429s at 17-29s latency each — fewer GETs means less throttling.
+		PollInterval:  15 * time.Second,
+		RetryDelay:    1 * time.Second,
+		MaxRetryDelay: 30 * time.Second,
+		MaxRetries:    10,
+	}
+}
+
+// SetPollerOptions allows overriding poller configuration (primarily for testing).
+func (p *DefaultAKSMachineProvider) SetPollerOptions(opts aksmachinepoller.Options) {
+	p.pollerOptions = opts
+}
+
+// InvalidateMachineCache clears the LIST-based machine cache, forcing subsequent
+// Get() calls to fall through to the API. Primarily for testing scenarios where
+// conditions change between List() and Get() calls (e.g., injecting API errors).
+func (p *DefaultAKSMachineProvider) InvalidateMachineCache() {
+	p.machineCache.invalidateAll()
+}
+
+// InstantPollerOptions returns poller configuration for tests where the fake
+// returns Succeeded immediately. Uses minimal intervals to avoid delays while
+// still exercising the polling code path.
+func InstantPollerOptions() aksmachinepoller.Options {
+	return aksmachinepoller.Options{
+		PollInterval:  1 * time.Millisecond,
+		RetryDelay:    1 * time.Millisecond,
+		MaxRetryDelay: 1 * time.Millisecond,
+		MaxRetries:    3,
+	}
 }
 
 // BeginCreate creates an instance given the constraints.
@@ -201,6 +244,9 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 		"capacity-type", aksMachinePromise.CapacityType,
 	)
 
+	// Invalidate cache entry so subsequent Get() calls fetch fresh data for the newly created machine.
+	p.machineCache.invalidate(aksMachineName)
+
 	return aksMachinePromise, nil
 }
 
@@ -232,6 +278,8 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 	if err != nil {
 		return fmt.Errorf("failed to update AKS machine %q during LRO: %w", aksMachineName, err)
 	}
+	// Invalidate cache entry so subsequent Get() calls fetch the updated machine from API.
+	p.machineCache.invalidate(aksMachineName)
 	log.FromContext(ctx).V(1).Info("successfully updated AKS machine", "aksMachineName", aksMachineName)
 	return nil
 }
@@ -247,6 +295,13 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 		// But an AKS machine instance exists, whether added manually or from before switching PROVISION_MODE.
 		// So, we respond similarly to if AKS machines pool is not found.
 		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to get AKS machine, AKS machines pool name is empty"))
+	}
+
+	// Check the LIST cache first. This converts O(N) individual GET Machine calls
+	// (from drift checks, reconciliation, etc.) into O(1) cached lookups between LIST refreshes.
+	// If the cache has the machine, we return it directly without hitting the API.
+	if cached, ok := p.machineCache.get(aksMachineName); ok {
+		return cached, nil
 	}
 
 	aksMachine, err := p.getMachine(ctx, aksMachineName)
@@ -275,6 +330,10 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 	if err != nil {
 		return nil, err
 	}
+
+	// Populate the LIST cache so that subsequent Get() calls for individual
+	// machines can be served from cache instead of hitting the API.
+	p.machineCache.update(aksMachines)
 
 	return aksMachines, nil
 }
@@ -402,6 +461,8 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 		return fmt.Errorf("failed to delete AKS machine %q during LRO: %w", aksMachineName, err)
 	}
 
+	// Invalidate cache entry so subsequent Get() calls don't return stale data for deleted machine.
+	p.machineCache.invalidate(aksMachineName)
 	log.FromContext(ctx).V(1).Info("successfully deleted AKS machine", "aksMachineName", aksMachineName)
 	return nil
 }

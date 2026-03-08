@@ -91,11 +91,12 @@ func runSharedAKSMachineAPITests() {
 		validateAKSMachineNodeClaim(createdNodeClaim, nodePool)
 
 		// Get should return the created nodeClaim
+		// Note: may be served from LIST cache (0 API calls) or from API (1 call)
 		azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
 		azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
 		retrievedNodeClaim, err := cloudProvider.Get(ctx, createdNodeClaim.Status.ProviderID)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+		Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(BeNumerically("<=", 1))
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 
 		//// The returned nodeClaim should be correct
@@ -123,7 +124,7 @@ func runSharedAKSMachineAPITests() {
 		nodeClaim, err = cloudProvider.Get(ctx, createdNodeClaim.Status.ProviderID)
 		Expect(err).To(HaveOccurred())
 		Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+		Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(BeNumerically("<=", 1))
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 		Expect(nodeClaim).To(BeNil())
 	})
@@ -190,6 +191,9 @@ func runSharedAKSMachineAPITests() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaims).To(HaveLen(1))
 			validateAKSMachineNodeClaim(nodeClaims[0], nodePool)
+
+			// Invalidate the LIST cache so the Get error is not masked by cached data
+			azureEnv.AKSMachineProvider.(*instance.DefaultAKSMachineProvider).InvalidateMachineCache()
 
 			// Set up Get to fail
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(fake.AKSMachineAPIErrorAny)
@@ -916,11 +920,12 @@ var _ = Describe("CloudProvider", func() {
 				validateVMNodeClaim(vmNodeClaim, nodePool)
 
 				// Get should return AKS machine nodeclaim
+				// Note: may be served from LIST cache (0 API calls) or from API (1 call)
 				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
 				azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
 				retrievedAKSNodeClaim, err := cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(BeNumerically("<=", 1))
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 
 				// The returned nodeClaim should be correct
@@ -990,6 +995,9 @@ var _ = Describe("CloudProvider", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(nodeClaims).To(HaveLen(1))
 					// validateAKSMachineNodeClaim(nodeClaims[0], nodePool)  // Not covered as this fake VM does not have enough data in the first place
+
+					// Invalidate the LIST cache so the Get error is not masked by cached data
+					azureEnv.AKSMachineProvider.(*instance.DefaultAKSMachineProvider).InvalidateMachineCache()
 
 					// Set up Get to fail
 					azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(fake.AKSMachineAPIErrorAny)
@@ -1119,11 +1127,12 @@ var _ = Describe("CloudProvider", func() {
 			Expect(vmNodeClaim.Status.ProviderID).To(Equal(utils.VMResourceIDToProviderID(ctx, *existingVM.ID)))
 
 			// Get should return AKS machine nodeclaim
+			// Note: may be served from LIST cache (0 API calls) or from API (1 call)
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
 			azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
 			retrievedAKSNodeClaim, err := cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(BeNumerically("<=", 1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 
 			//// The returned nodeClaim should be correct
@@ -1162,11 +1171,12 @@ var _ = Describe("CloudProvider", func() {
 			Expect(nodeClaims).To(HaveLen(1)) // Only AKS machine nodeclaim should remain
 
 			//// Get AKS machine should still found
+			// Note: may be served from LIST cache (0 API calls) or from API (1 call)
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
 			azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
 			nodeClaim, err = cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(BeNumerically("<=", 1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 			Expect(nodeClaim).ToNot(BeNil())
 			validateAKSMachineNodeClaim(nodeClaim, nodePool)
@@ -1260,6 +1270,9 @@ var _ = Describe("CloudProvider", func() {
 				agentPoolID := fake.MkAgentPoolID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName)
 				azureEnv.AKSDataStorage.AgentPools.Delete(agentPoolID)
 				// (then, mostly relying on fake API to reflect the correct behavior)
+
+				// Invalidate the LIST cache so that Get/Delete/Create below hit the API and observe the deleted pool
+				azureEnv.AKSMachineProvider.(*instance.DefaultAKSMachineProvider).InvalidateMachineCache()
 
 				// cloudprovider.Get should return NodeClaimNotFoundError, but not panic
 				retrievedNodeClaim3, err := cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
