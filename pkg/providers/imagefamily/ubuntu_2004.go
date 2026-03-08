@@ -129,6 +129,7 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
 	_ *v1beta1.LocalDNS, // Ubuntu 20.04 does not support LocalDNS
+	_ *v1beta1.LinuxOSConfiguration, // Ubuntu 20.04 does not support LinuxOSConfig
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,

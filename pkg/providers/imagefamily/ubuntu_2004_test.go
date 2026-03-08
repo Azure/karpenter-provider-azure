@@ -77,6 +77,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		nodeBootstrappingClient,
 		fipsMode,
 		nil, // Ubuntu 20.04 does not support LocalDNS
+		nil, // Ubuntu 20.04 does not support LinuxOSConfig
 	)
 
 	g := NewWithT(t)
