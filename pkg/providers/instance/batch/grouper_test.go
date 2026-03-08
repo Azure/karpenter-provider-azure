@@ -18,10 +18,12 @@ package batch
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,6 +74,116 @@ func TestComputeTemplateHash(t *testing.T) {
 
 	assert.Equal(t, hash1, hash2, "hashes should be equal when only zones and names differ")
 	assert.NotEqual(t, hash1, hash3, "hashes should differ when VM size differs")
+}
+
+// Tags contain NodeClaim-unique values (nodeClaim.Name, creationTimestamp) and must
+// be excluded from the hash so that machines with the same template but different
+// NodeClaims still batch together.
+func TestComputeTemplateHash_TagsExcluded(t *testing.T) {
+	t.Parallel()
+
+	vmSize := "Standard_D2s_v3"
+
+	withTags := &armcontainerservice.Machine{
+		Properties: &armcontainerservice.MachineProperties{
+			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+			Tags: map[string]*string{
+				"karpenter.azure.com_aksmachine_nodeclaim":          lo.ToPtr("nodeclaim-abc"),
+				"karpenter.azure.com_aksmachine_creationtimestamp":  lo.ToPtr("2026-01-01T00:00:00Z"),
+			},
+		},
+	}
+	withoutTags := &armcontainerservice.Machine{
+		Properties: &armcontainerservice.MachineProperties{
+			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+		},
+	}
+	withDifferentTags := &armcontainerservice.Machine{
+		Properties: &armcontainerservice.MachineProperties{
+			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+			Tags: map[string]*string{
+				"karpenter.azure.com_aksmachine_nodeclaim":          lo.ToPtr("nodeclaim-xyz"),
+				"karpenter.azure.com_aksmachine_creationtimestamp":  lo.ToPtr("2026-02-02T00:00:00Z"),
+			},
+		},
+	}
+
+	h1 := computeTemplateHash(withTags)
+	h2 := computeTemplateHash(withoutTags)
+	h3 := computeTemplateHash(withDifferentTags)
+
+	assert.Equal(t, h1, h2, "tags should not affect hash")
+	assert.Equal(t, h1, h3, "different tags should not affect hash")
+}
+
+// Read-only fields (ETag, ProvisioningState, ResourceID, Status) must not affect the hash.
+func TestComputeTemplateHash_ReadOnlyFieldsExcluded(t *testing.T) {
+	t.Parallel()
+
+	vmSize := "Standard_D2s_v3"
+
+	withReadOnly := &armcontainerservice.Machine{
+		Properties: &armcontainerservice.MachineProperties{
+			Hardware:          &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+			ETag:              lo.ToPtr("etag-123"),
+			ProvisioningState: lo.ToPtr("Succeeded"),
+			ResourceID:        lo.ToPtr("/subscriptions/sub/resourceGroups/rg/..."),
+		},
+	}
+	withoutReadOnly := &armcontainerservice.Machine{
+		Properties: &armcontainerservice.MachineProperties{
+			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+		},
+	}
+
+	h1 := computeTemplateHash(withReadOnly)
+	h2 := computeTemplateHash(withoutReadOnly)
+
+	assert.Equal(t, h1, h2, "read-only fields should not affect hash")
+}
+
+// Guardrail: ensures that every field of MachineProperties is either hashed or
+// explicitly excluded. If the Azure SDK adds a new field to MachineProperties,
+// this test fails — forcing the developer to decide whether to hash or exclude it.
+func TestComputeTemplateHash_AllFieldsAccountedFor(t *testing.T) {
+	t.Parallel()
+
+	// Fields explicitly excluded from the hash in computeTemplateHash.
+	// If you add a new field to this set, add a comment explaining why it's excluded.
+	excludedFields := map[string]string{
+		"Tags":              "per-machine: contains NodeClaim name and creation timestamp",
+		"ETag":              "read-only: set by server",
+		"ProvisioningState": "read-only: set by server",
+		"ResourceID":        "read-only: set by server",
+		"Status":            "read-only: set by server",
+	}
+
+	typ := reflect.TypeOf(armcontainerservice.MachineProperties{})
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if _, excluded := excludedFields[field.Name]; excluded {
+			continue
+		}
+		// If this assertion fails, a new field was added to MachineProperties.
+		// Decide: should it be hashed (do nothing) or excluded (add to excludedFields above)?
+		assert.True(t, field.IsExported(),
+			"unexpected unexported field %q in MachineProperties — review computeTemplateHash", field.Name)
+	}
+
+	// Verify the count matches: hashed fields + excluded fields == total fields.
+	// This catches the case where someone adds a field to excludedFields without
+	// a corresponding SDK field (stale exclude entry).
+	totalFields := typ.NumField()
+	hashedFields := totalFields - len(excludedFields)
+	assert.Greater(t, hashedFields, 0,
+		"at least one field should be hashed (got %d total, %d excluded)", totalFields, len(excludedFields))
+
+	// Verify all excluded fields actually exist in the struct.
+	for name, reason := range excludedFields {
+		_, found := typ.FieldByName(name)
+		assert.True(t, found,
+			"excluded field %q (reason: %s) does not exist in MachineProperties — remove from excludedFields", name, reason)
+	}
 }
 
 func TestGrouperEnqueueCreate(t *testing.T) {

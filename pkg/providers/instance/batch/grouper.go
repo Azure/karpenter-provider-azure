@@ -240,58 +240,42 @@ func (g *Grouper) EnqueueCreate(req *CreateRequest) chan *CreateResponse {
 
 // computeTemplateHash generates a hash of VM config fields that must match for batching.
 //
-// Batched together: VMSize, OS settings, Kubernetes config, network, priority, mode.
-// NOT batched (per-machine): machine name, zones, tags—these go in the BatchPutMachine header.
+// Approach: copy MachineProperties, zero out per-machine and read-only fields,
+// then JSON-marshal the remainder. This ensures any new field added to
+// MachineProperties is automatically included in the hash (fail-safe).
+// See TestComputeTemplateHash_AllFieldsAccountedFor for a reflection-based
+// guardrail that catches unaccounted-for fields at test time.
+//
+// Excluded from hash (per-machine, travel via BatchPutMachine header):
+//   - Tags: contains NodeClaim name and creation timestamp (unique per machine)
+//
+// Excluded from hash (read-only, set by server):
+//   - ETag, ProvisioningState, ResourceID, Status
+//
+// Note: Machine.Zones and Machine.Name are also per-machine but live on Machine,
+// not MachineProperties, so they are not part of this hash.
 func computeTemplateHash(template *armcontainerservice.Machine) string {
 	if template == nil || template.Properties == nil {
 		return ""
 	}
 
-	type templateKey struct {
-		VMSize              *string
-		Priority            *armcontainerservice.ScaleSetPriority
-		OrchestratorVersion *string
-		OSSKU               *armcontainerservice.OSSKU
-		OSDiskSizeGB        *int32
-		OSDiskType          *armcontainerservice.OSDiskType
-		EnableFIPS          *bool
-		MaxPods             *int32
-		VNetSubnetID        *string
-		KubeletConfig       *armcontainerservice.KubeletConfig
-		GPUProfile          *armcontainerservice.GPUProfile
-		Mode                *armcontainerservice.AgentPoolMode
-	}
+	// Shallow copy so we can zero out excluded fields without mutating the original.
+	props := *template.Properties
 
-	props := template.Properties
-	key := templateKey{
-		Priority: props.Priority,
-		Mode:     props.Mode,
-	}
+	// Per-machine fields (travel via BatchPutMachine header, unique per machine)
+	props.Tags = nil
 
-	if props.Network != nil {
-		key.VNetSubnetID = props.Network.VnetSubnetID
-	}
-	if props.Hardware != nil {
-		key.VMSize = props.Hardware.VMSize
-		key.GPUProfile = props.Hardware.GpuProfile
-	}
-	if props.OperatingSystem != nil {
-		key.OSSKU = props.OperatingSystem.OSSKU
-		key.OSDiskSizeGB = props.OperatingSystem.OSDiskSizeGB
-		key.OSDiskType = props.OperatingSystem.OSDiskType
-		key.EnableFIPS = props.OperatingSystem.EnableFIPS
-	}
-	if props.Kubernetes != nil {
-		key.OrchestratorVersion = props.Kubernetes.OrchestratorVersion
-		key.MaxPods = props.Kubernetes.MaxPods
-		key.KubeletConfig = props.Kubernetes.KubeletConfig
-	}
+	// Read-only fields (set by server, never part of the template)
+	props.ETag = nil
+	props.ProvisioningState = nil
+	props.ResourceID = nil
+	props.Status = nil
 
-	jsonBytes, err := json.Marshal(key)
+	jsonBytes, err := json.Marshal(props)
 	if err != nil {
 		// If marshaling fails, fall back to fmt.Sprintf which is slower but always works.
 		// This prevents different templates from colliding on the same (empty) hash.
-		jsonBytes = []byte(fmt.Sprintf("%+v", key))
+		jsonBytes = []byte(fmt.Sprintf("%+v", props))
 	}
 	hash := sha256.Sum256(jsonBytes)
 	return fmt.Sprintf("%x", hash[:8])
