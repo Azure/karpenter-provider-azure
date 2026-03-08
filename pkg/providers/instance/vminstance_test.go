@@ -380,6 +380,8 @@ func TestResolveEffectiveClients_OverridesApplied(t *testing.T) {
 	// We can't call resolveEffectiveClients directly without a real azClient,
 	// but we can verify the override fields are accessible and the types work
 	g.Expect(p.resourceGroup).To(Equal("default-rg"))
+	g.Expect(p.location).To(Equal("eastus"))
+	g.Expect(p.subscriptionID).To(Equal("sub-default"))
 	g.Expect(nodeClass.Spec.ResourceGroup).NotTo(BeNil())
 	g.Expect(*nodeClass.Spec.ResourceGroup).To(Equal("custom-rg"))
 	g.Expect(*nodeClass.Spec.Location).To(Equal("westus2"))
@@ -410,5 +412,7 @@ func TestResolveEffectiveClients_OverrideRGAndLocation(t *testing.T) {
 	g.Expect(*nodeClass.Spec.SubscriptionID).To(Equal("sub-other"))
 	g.Expect(*nodeClass.Spec.ResourceGroup).To(Equal("custom-rg"))
 	g.Expect(*nodeClass.Spec.Location).To(Equal("westus2"))
+	g.Expect(p.resourceGroup).To(Equal("default-rg"))
+	g.Expect(p.location).To(Equal("eastus"))
 	g.Expect(p.subscriptionID).To(Equal("sub-default"))
 }

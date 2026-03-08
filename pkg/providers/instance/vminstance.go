@@ -166,6 +166,9 @@ func (p *DefaultVMProvider) SetAZClientManager(mgr *azclient.AZClientManager) {
 // resolveEffectiveClients returns the Azure SDK clients, resource group, and location
 // to use for a given NodeClass. In azurevm mode with per-NodeClass overrides, these
 // may differ from the provider defaults.
+// TODO: Wire into beginLaunchInstance once AZClientManager is injected via controller startup.
+//
+//nolint:unused // Staged for future controller wiring (see PR #1497 remaining work section)
 func (p *DefaultVMProvider) resolveEffectiveClients(nodeClass *v1beta1.AKSNodeClass) (vmClient azclient.VirtualMachinesAPI, nicClient azclient.NetworkInterfacesAPI, rg string, location string, subID string, err error) {
 	rg = p.resourceGroup
 	location = p.location
