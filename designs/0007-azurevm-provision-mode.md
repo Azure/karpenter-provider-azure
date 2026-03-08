@@ -134,3 +134,21 @@ The feature is delivered as a chain of incremental PRs:
 * **Quotas**: Standard Azure VM quotas apply per-subscription
 * **Observability**: Existing Karpenter metrics (vm_create_start, vm_create_failure) apply. Error codes are extracted via `ErrorCodeForMetrics`
 * **Upgrade path**: AzureNodeClass is v1alpha1; field changes before GA are expected
+
+## Known Limitations
+
+### Multi-Subscription Support (v1alpha1)
+
+The `subscriptionID`, `resourceGroup`, and `location` override fields are defined on the AzureNodeClass CRD, and the adapter maps them through to the VM provider. However, the following limitations exist:
+
+1. **Create path**: `resolveEffectiveClients()` is implemented but not yet wired into `beginLaunchInstance()`. VMs are currently always created in the controller's default subscription/RG. The wiring requires refactoring `createNetworkInterface()` and `createVirtualMachine()` to accept overridden clients.
+
+2. **List/Get/Delete paths**: These operations (used for garbage collection, drift detection, and lifecycle management) are hardcoded to the default subscription/RG via `p.azClient` and `p.resourceGroup`. VMs created in a non-default subscription or resource group would not be discoverable by Karpenter for lifecycle management.
+
+3. **Error handling**: When a non-default subscription is specified but `AZClientManager` is not injected, `resolveEffectiveClients()` returns a clear error instead of silently using default-subscription clients.
+
+These limitations will be addressed in a follow-up PR. For the initial release, AzureVM mode operates exclusively within the controller's default subscription and resource group.
+
+### userData Encoding
+
+The `userData` field must contain pre-base64-encoded data. The Azure Compute SDK does NOT auto-encode `CustomData`. If raw (non-base64) data is provided, the VM will receive corrupted bootstrap data.

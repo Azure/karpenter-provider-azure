@@ -166,9 +166,11 @@ func (p *DefaultVMProvider) SetAZClientManager(mgr *azclient.AZClientManager) {
 // resolveEffectiveClients returns the Azure SDK clients, resource group, and location
 // to use for a given NodeClass. In azurevm mode with per-NodeClass overrides, these
 // may differ from the provider defaults.
-// TODO: Wire into beginLaunchInstance once AZClientManager is injected via controller startup.
 //
-//nolint:unused // Staged for future controller wiring (see PR #1497 remaining work section)
+// Currently only wired into the Create path (beginLaunchInstance). List, Get, and Delete
+// operations use the default subscription/RG, so VMs created in a non-default subscription
+// or resource group will not be discoverable by Karpenter for lifecycle management.
+// This limitation will be addressed in a future PR.
 func (p *DefaultVMProvider) resolveEffectiveClients(nodeClass *v1beta1.AKSNodeClass) (vmClient azclient.VirtualMachinesAPI, nicClient azclient.NetworkInterfacesAPI, rg string, location string, subID string, err error) {
 	rg = p.resourceGroup
 	location = p.location
@@ -185,7 +187,10 @@ func (p *DefaultVMProvider) resolveEffectiveClients(nodeClass *v1beta1.AKSNodeCl
 	}
 
 	// If we have a client manager and the subscription differs, use per-subscription clients
-	if p.azClientManager != nil && subID != p.subscriptionID {
+	if subID != p.subscriptionID {
+		if p.azClientManager == nil {
+			return nil, nil, "", "", "", fmt.Errorf("NodeClass specifies subscription %q but no AZClientManager is configured; multi-subscription requires AZClientManager to be injected at startup", subID)
+		}
 		clients, err := p.azClientManager.GetClients(subID)
 		if err != nil {
 			return nil, nil, "", "", "", err
@@ -444,6 +449,12 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, vmName str
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
+//
+// TODO(multi-sub): Wire resolveEffectiveClients into this method to support
+// multi-subscription VM creation. This requires refactoring createNetworkInterface
+// and createVirtualMachine to accept client overrides instead of using p.azClient
+// and p.resourceGroup directly. Also needs VM ID construction (line ~496) to use
+// the resolved subscription/RG. List/Get/Delete also need multi-sub awareness.
 //
 //nolint:gocyclo
 func (p *DefaultVMProvider) beginLaunchInstance(
