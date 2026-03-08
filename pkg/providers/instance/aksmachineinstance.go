@@ -139,7 +139,7 @@ type DefaultAKSMachineProvider struct {
 	errorHandling           *offerings.ErrorDetailHandler
 	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu      sync.RWMutex
-	pollerOptions           aksmachinepoller.Options // Configurable for testing; defaults to production values
+	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
 }
 
 func NewAKSMachineProvider(
@@ -164,15 +164,16 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:        sets.New[string](),
-		pollerOptions:           aksmachinepoller.DefaultOptions(),
+		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
 	}
 
 	return provider
 }
 
-// SetPollerOptions overrides the default poller options (used in tests to avoid real polling delays).
-func (p *DefaultAKSMachineProvider) SetPollerOptions(opts aksmachinepoller.Options) {
-	p.pollerOptions = opts
+// SetFallbackAKSMachinePollerOptions overrides the default GET-based poller options (used in tests to avoid real polling delays).
+// "Fallback" because the GET poller is used when the SDK poller is nil (batch code path).
+func (p *DefaultAKSMachineProvider) SetFallbackAKSMachinePollerOptions(opts aksmachinepoller.Options) {
+	p.fallbackAKSMachinePollerOptions = opts
 }
 
 // BeginCreate creates an instance given the constraints.
@@ -511,7 +512,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// with the non-batch case too, but the SDK poller is preferred when available.
 			if poller == nil {
 				getPoller := aksmachinepoller.NewPoller(
-					p.pollerOptions,
+					p.fallbackAKSMachinePollerOptions,
 					p.azClient.AKSMachinesClient(),
 					p.clusterResourceGroup,
 					p.clusterName,

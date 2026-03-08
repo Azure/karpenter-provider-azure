@@ -281,7 +281,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// The GET-based poller still runs, but with 1ms intervals it completes almost instantly.
 	// Tests that reset counters after Create() should call WaitForAsyncPolling() first.
 	if testOptions.BatchCreationEnabled {
-		aksMachineInstanceProvider.SetPollerOptions(aksmachinepoller.InstantOptions())
+		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
 
 	store := nodeoverlay.NewInstanceTypeStore()
