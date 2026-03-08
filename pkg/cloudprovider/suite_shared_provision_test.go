@@ -28,11 +28,15 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 
+	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -549,4 +553,328 @@ func teardownTestEnvironment() {
 	clusterNonZonal.Reset()
 	azureEnv.Reset()
 	azureEnvNonZonal.Reset()
+}
+
+// ─── Multi-instance provisioning helpers and tests ─────────────────────────────
+//
+// Why these tests exist:
+// The standard provisioner creates NodeClaims in a serial for-loop. Each
+// cloudProvider.Create() blocks on the batch grouper's response channel, and
+// the batch idle timeout fires before the next Create() starts — so every
+// batch window closes with exactly 1 machine. Batching never actually happens
+// at the cloudprovider integration level.
+//
+// To close this gap, these tests call cloudProvider.Create() concurrently from
+// goroutines, ensuring multiple requests land in the same batch window. This
+// exercises the full path:
+//   cloudProvider.Create() → AKSMachineProvider.BeginCreate() →
+//   BatchingMachinesClient → Grouper → Coordinator → fake API
+//
+// The tests are split into two groups:
+// - runSharedMultiInstanceProvisionTests: mode-agnostic correctness checks
+//   (work for all provision modes, no batch-specific assertions)
+// - runBatchSpecificMultiInstanceTests: batch grouping assertions
+//   (only run under batch-enabled contexts)
+
+// concurrentCreateResult holds the outcome of a single cloudProvider.Create() call.
+type concurrentCreateResult struct {
+	NodeClaim *karpv1.NodeClaim
+	Err       error
+}
+
+// concurrentCreateAndWaitForPromises creates multiple NodeClaims concurrently
+// via cloudProvider.Create(), sets the Launched condition on each (mirroring
+// what the core lifecycle controller does in production), then waits for all
+// async promise goroutines to complete.
+//
+// This is the concurrent counterpart to CreateAndWaitForPromises.
+// The concurrency is what makes batching actually happen in tests — all
+// Create() calls enqueue into the grouper before the idle timeout fires.
+func concurrentCreateAndWaitForPromises(claims []*karpv1.NodeClaim) []concurrentCreateResult {
+	GinkgoHelper()
+	results := make([]concurrentCreateResult, len(claims))
+	var wg sync.WaitGroup
+	wg.Add(len(claims))
+	for i, nc := range claims {
+		go func(idx int, claim *karpv1.NodeClaim) {
+			defer GinkgoRecover()
+			defer wg.Done()
+			created, err := cloudProvider.Create(ctx, claim)
+			// Simulate what the core lifecycle Launch controller does after Create():
+			// set Launched=True so the async promise goroutine's waitUntilLaunched
+			// unblocks. Without this, the goroutine polls indefinitely.
+			fresh := &karpv1.NodeClaim{}
+			if getErr := env.Client.Get(ctx, types.NamespacedName{
+				Name: claim.Name, Namespace: claim.Namespace,
+			}, fresh); getErr == nil {
+				fresh.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				_ = env.Client.Status().Update(ctx, fresh)
+			}
+			results[idx] = concurrentCreateResult{NodeClaim: created, Err: err}
+		}(i, nc)
+	}
+	wg.Wait()
+	cloudProvider.WaitForInstancePromises()
+	return results
+}
+
+// makeNodeClaimForInstanceType creates a NodeClaim requesting a specific instance type,
+// applies it to the fake API server, and returns it ready for cloudProvider.Create().
+// Uses the package-level nodePool and nodeClass.
+func makeNodeClaimForInstanceType(instanceType string) *karpv1.NodeClaim {
+	GinkgoHelper()
+	nc := coretest.NodeClaim(karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
+		},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{
+				Group: object.GVK(nodeClass).Group,
+				Kind:  object.GVK(nodeClass).Kind,
+				Name:  nodeClass.Name,
+			},
+			Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+				{NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
+					Values: []string{instanceType},
+				}},
+			},
+		},
+	})
+	ExpectApplied(ctx, env.Client, nc)
+	return nc
+}
+
+// countMachinesInDataStore counts machines stored in the fake AKS data storage.
+func countMachinesInDataStore() int {
+	count := 0
+	azureEnv.AKSDataStorage.AKSMachines.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+// collectMachinesFromDataStore returns all machines from the fake AKS data storage.
+func collectMachinesFromDataStore() []armcontainerservice.Machine {
+	var machines []armcontainerservice.Machine
+	azureEnv.AKSDataStorage.AKSMachines.Range(func(_, v any) bool {
+		machines = append(machines, v.(armcontainerservice.Machine))
+		return true
+	})
+	return machines
+}
+
+// isBatchEnabled returns true if batch creation is enabled in the current test options.
+func isBatchEnabled() bool {
+	return testOptions.BatchCreationEnabled
+}
+
+// runSharedMultiInstanceProvisionTests verifies multi-instance provisioning
+// correctness. These tests are mode-agnostic — they assert on outcomes (machines
+// created, correct properties) but NOT on batch grouping (API call counts).
+// They work under any provision mode context (AKSMachineAPI, AKSMachineAPI+Batch,
+// AKSScriptless).
+func runSharedMultiInstanceProvisionTests() {
+	Context("Multi-Instance Provisioning", func() {
+		It("should provision multiple instances with the same instance type", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+
+			const count = 3
+			claims := make([]*karpv1.NodeClaim, count)
+			for i := 0; i < count; i++ {
+				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+			}
+
+			if isAKSMachineMode() {
+				Expect(countMachinesInDataStore()).To(Equal(count))
+			}
+		})
+
+		It("should provision multiple instances with different instance types", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+
+			claims := []*karpv1.NodeClaim{
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D4s_v3"),
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+			}
+
+			if isAKSMachineMode() {
+				Expect(countMachinesInDataStore()).To(Equal(3))
+				// Verify at least one machine has each VM size
+				machines := collectMachinesFromDataStore()
+				vmSizes := make(map[string]int)
+				for _, m := range machines {
+					if m.Properties != nil && m.Properties.Hardware != nil && m.Properties.Hardware.VMSize != nil {
+						vmSizes[*m.Properties.Hardware.VMSize]++
+					}
+				}
+				Expect(vmSizes).To(HaveKey("Standard_D2_v2"))
+				Expect(vmSizes).To(HaveKey("Standard_D4s_v3"))
+			}
+		})
+	})
+}
+
+// runBatchSpecificMultiInstanceTests verifies batch grouping behavior — that
+// concurrent creates with the same template land in the same batch (single API
+// call) and different templates produce separate batches. Only meaningful under
+// batch-enabled contexts.
+//
+// Key assertion: CalledWithInput.Len() counts how many times the fake's
+// BeginCreateOrUpdate was called. The coordinator calls it once per batch,
+// so N same-template creates → 1 call, K distinct templates → K calls.
+func runBatchSpecificMultiInstanceTests() {
+	Context("Batch Grouping", func() {
+		It("should batch same-template instances into a single API call", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+
+			// Create 5 NodeClaims all requesting the same instance type.
+			// They should all land in the same batch because they produce
+			// identical template hashes (same VM size, same node class config).
+			const count = 5
+			claims := make([]*karpv1.NodeClaim, count)
+			for i := 0; i < count; i++ {
+				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+			}
+
+			// Core assertion: all 5 went through a single BeginCreateOrUpdate call
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1),
+				"expected 1 batch API call for 5 same-template creates")
+
+			// All 5 machines should be in the data store
+			Expect(countMachinesInDataStore()).To(Equal(count))
+		})
+
+		It("should split different-template instances into separate batches", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+
+			// Create 5 NodeClaims: 3 × Standard_D2_v2, 2 × Standard_D4s_v3.
+			// Different VM sizes produce different template hashes, so these
+			// should result in 2 separate batches.
+			claims := []*karpv1.NodeClaim{
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D4s_v3"),
+				makeNodeClaimForInstanceType("Standard_D4s_v3"),
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+			}
+
+			// Core assertion: 2 distinct template hashes → 2 batch API calls
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(2),
+				"expected 2 batch API calls for 2 distinct template hashes")
+
+			// All 5 machines should be in the data store
+			Expect(countMachinesInDataStore()).To(Equal(5))
+
+			// Verify correct VM size distribution
+			machines := collectMachinesFromDataStore()
+			vmSizes := make(map[string]int)
+			for _, m := range machines {
+				if m.Properties != nil && m.Properties.Hardware != nil && m.Properties.Hardware.VMSize != nil {
+					vmSizes[*m.Properties.Hardware.VMSize]++
+				}
+			}
+			Expect(vmSizes["Standard_D2_v2"]).To(Equal(3))
+			Expect(vmSizes["Standard_D4s_v3"]).To(Equal(2))
+		})
+
+		It("should propagate per-machine tags through batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+
+			// Create 3 same-template NodeClaims. Even though they share the
+			// same template, each machine should get unique per-machine tags
+			// (e.g., nodeclaim name, creation timestamp) because the batch
+			// coordinator preserves per-machine entries.
+			const count = 3
+			claims := make([]*karpv1.NodeClaim, count)
+			for i := 0; i < count; i++ {
+				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+			}
+
+			// All should be batched into 1 call
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			// Each machine should have unique tags
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			machineNames := make(map[string]bool)
+			for _, m := range machines {
+				Expect(m.Name).ToNot(BeNil(), "machine name should not be nil")
+				Expect(machineNames).ToNot(HaveKey(*m.Name), "machine names should be unique")
+				machineNames[*m.Name] = true
+
+				// Per-machine tags should be set
+				Expect(m.Properties).ToNot(BeNil())
+				Expect(m.Properties.Tags).ToNot(BeNil(), "per-machine tags should not be nil for machine %s", *m.Name)
+			}
+		})
+
+		It("should propagate batch error to all machines in the batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+
+			// Inject a BeginError — this simulates the Azure API returning
+			// an error for the entire batch.
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{ErrorCode: "BatchFailed"},
+			)
+			defer azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+
+			const count = 3
+			claims := make([]*karpv1.NodeClaim, count)
+			for i := 0; i < count; i++ {
+				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			// All creates should have failed
+			for i, r := range results {
+				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
+			}
+
+			// No machines should have been stored
+			Expect(countMachinesInDataStore()).To(Equal(0))
+		})
+	})
 }
