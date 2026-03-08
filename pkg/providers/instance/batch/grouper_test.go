@@ -471,8 +471,8 @@ func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.Ma
 			NodeInitializationTaints: []*string{
 				lo.ToPtr("node.cloudprovider.kubernetes.io/uninitialized=true:NoSchedule"),
 			},
-			NodeTaints:   []*string{},
-			MaxPods:      lo.ToPtr[int32](250),
+			NodeTaints: []*string{},
+			MaxPods:    lo.ToPtr[int32](250),
 			KubeletConfig: &armcontainerservice.KubeletConfig{
 				CPUManagerPolicy: lo.ToPtr("static"),
 			},
@@ -601,6 +601,7 @@ func TestComputeTemplateHash_RealisticMachinesDifferentConfigsSplit(t *testing.T
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			props := baseProps()
 			tt.modify(props)
 			m := &armcontainerservice.Machine{
@@ -629,7 +630,7 @@ func TestGrouperBatchesRealisticMixedWorkload(t *testing.T) {
 		MaxBatchSize: 50,
 	})
 
-	zones := []string{"1", "2", "3"}
+	zoneForIndex := func(i int) string { return fmt.Sprintf("%d", i%3+1) }
 	makeReq := func(name, vmSize, nodeClaimName string, zone string) *CreateRequest {
 		return &CreateRequest{
 			ctx:          ctx,
@@ -649,7 +650,7 @@ func TestGrouperBatchesRealisticMixedWorkload(t *testing.T) {
 			fmt.Sprintf("d4-machine-%d", i),
 			"Standard_D4s_v3",
 			fmt.Sprintf("nc-d4-%d", i),
-			zones[i%len(zones)],
+			zoneForIndex(i),
 		)
 		grouper.EnqueueCreate(req)
 	}
@@ -660,7 +661,7 @@ func TestGrouperBatchesRealisticMixedWorkload(t *testing.T) {
 			fmt.Sprintf("d8-machine-%d", i),
 			"Standard_D8s_v3",
 			fmt.Sprintf("nc-d8-%d", i),
-			zones[i%len(zones)],
+			zoneForIndex(i),
 		)
 		grouper.EnqueueCreate(req)
 	}
@@ -671,7 +672,7 @@ func TestGrouperBatchesRealisticMixedWorkload(t *testing.T) {
 			fmt.Sprintf("spot-machine-%d", i),
 			"Standard_D4s_v3",
 			fmt.Sprintf("nc-spot-%d", i),
-			zones[i%len(zones)],
+			zoneForIndex(i),
 		)
 		req.template.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot)
 		grouper.EnqueueCreate(req)
