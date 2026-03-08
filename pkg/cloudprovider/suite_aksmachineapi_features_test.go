@@ -705,5 +705,181 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeFalse())
 			})
 		})
+
+		Context("Create - LinuxOSConfig", func() {
+			It("should create AKS machine with full LinuxOSConfig when specified in AKSNodeClass", func() {
+				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+					SwapFileSizeMB:             lo.ToPtr(int32(1500)),
+					TransparentHugePageDefrag:  lo.ToPtr("madvise"),
+					TransparentHugePageEnabled: lo.ToPtr("always"),
+					Sysctls: &v1beta1.SysctlConfiguration{
+						FsAioMaxNr:                     lo.ToPtr(int32(65536)),
+						FsFileMax:                      lo.ToPtr(int32(12000)),
+						FsInotifyMaxUserWatches:         lo.ToPtr(int32(781250)),
+						FsNrOpen:                       lo.ToPtr(int32(8192)),
+						KernelThreadsMax:                lo.ToPtr(int32(30000)),
+						NetCoreNetdevMaxBacklog:         lo.ToPtr(int32(1000)),
+						NetCoreOptmemMax:                lo.ToPtr(int32(20480)),
+						NetCoreRmemDefault:              lo.ToPtr(int32(212992)),
+						NetCoreRmemMax:                  lo.ToPtr(int32(212992)),
+						NetCoreSomaxconn:                lo.ToPtr(int32(4096)),
+						NetCoreWmemDefault:              lo.ToPtr(int32(212992)),
+						NetCoreWmemMax:                  lo.ToPtr(int32(212992)),
+						NetIPv4IPLocalPortRange:         lo.ToPtr("32768 60999"),
+						NetIPv4NeighDefaultGcThresh1:    lo.ToPtr(int32(128)),
+						NetIPv4NeighDefaultGcThresh2:    lo.ToPtr(int32(512)),
+						NetIPv4NeighDefaultGcThresh3:    lo.ToPtr(int32(1024)),
+						NetIPv4TCPFinTimeout:            lo.ToPtr(int32(60)),
+						NetIPv4TCPKeepaliveProbes:       lo.ToPtr(int32(9)),
+						NetIPv4TCPKeepaliveTime:         lo.ToPtr(int32(7200)),
+						NetIPv4TCPMaxSynBacklog:         lo.ToPtr(int32(128)),
+						NetIPv4TCPMaxTwBuckets:          lo.ToPtr(int32(8000)),
+						NetIPv4TCPTwReuse:               lo.ToPtr(true),
+						NetIPv4TCPKeepaliveIntvl:        lo.ToPtr(int32(75)),
+						NetNetfilterNfConntrackBuckets:  lo.ToPtr(int32(65536)),
+						NetNetfilterNfConntrackMax:      lo.ToPtr(int32(131072)),
+						VMMaxMapCount:                   lo.ToPtr(int32(65530)),
+						VMSwappiness:                    lo.ToPtr(int32(60)),
+						VMVfsCachePressure:              lo.ToPtr(int32(100)),
+					},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+				Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
+				linuxOSConfig := aksMachine.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig
+				Expect(linuxOSConfig).ToNot(BeNil())
+
+				// Verify top-level fields
+				Expect(lo.FromPtr(linuxOSConfig.SwapFileSizeMB)).To(Equal(int32(1500)))
+				Expect(lo.FromPtr(linuxOSConfig.TransparentHugePageDefrag)).To(Equal("madvise"))
+				Expect(lo.FromPtr(linuxOSConfig.TransparentHugePageEnabled)).To(Equal("always"))
+
+				// Verify sysctl fields
+				Expect(linuxOSConfig.Sysctls).ToNot(BeNil())
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsAioMaxNr)).To(Equal(int32(65536)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsFileMax)).To(Equal(int32(12000)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.FsInotifyMaxUserWatches)).To(Equal(int32(781250)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.NetCoreNetdevMaxBacklog)).To(Equal(int32(1000)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.NetIPv4IPLocalPortRange)).To(Equal("32768 60999"))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.NetIPv4TCPTwReuse)).To(BeTrue())
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.VMMaxMapCount)).To(Equal(int32(65530)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.VMSwappiness)).To(Equal(int32(60)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.VMVfsCachePressure)).To(Equal(int32(100)))
+			})
+
+			It("should create AKS machine with only sysctls when only sysctls are specified", func() {
+				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+					Sysctls: &v1beta1.SysctlConfiguration{
+						VMMaxMapCount: lo.ToPtr(int32(262144)),
+						VMSwappiness:  lo.ToPtr(int32(10)),
+					},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
+				linuxOSConfig := aksMachine.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig
+				Expect(linuxOSConfig).ToNot(BeNil())
+
+				// Top-level fields should be nil
+				Expect(linuxOSConfig.SwapFileSizeMB).To(BeNil())
+				Expect(linuxOSConfig.TransparentHugePageDefrag).To(BeNil())
+				Expect(linuxOSConfig.TransparentHugePageEnabled).To(BeNil())
+
+				// Sysctls should be set
+				Expect(linuxOSConfig.Sysctls).ToNot(BeNil())
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.VMMaxMapCount)).To(Equal(int32(262144)))
+				Expect(lo.FromPtr(linuxOSConfig.Sysctls.VMSwappiness)).To(Equal(int32(10)))
+
+				// Other sysctls should be nil
+				Expect(linuxOSConfig.Sysctls.FsAioMaxNr).To(BeNil())
+			})
+
+			It("should create AKS machine with only THP settings when only THP is specified", func() {
+				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+					TransparentHugePageEnabled: lo.ToPtr("never"),
+					TransparentHugePageDefrag:  lo.ToPtr("defer"),
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
+				linuxOSConfig := aksMachine.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig
+				Expect(linuxOSConfig).ToNot(BeNil())
+
+				Expect(lo.FromPtr(linuxOSConfig.TransparentHugePageEnabled)).To(Equal("never"))
+				Expect(lo.FromPtr(linuxOSConfig.TransparentHugePageDefrag)).To(Equal("defer"))
+				Expect(linuxOSConfig.SwapFileSizeMB).To(BeNil())
+				Expect(linuxOSConfig.Sysctls).To(BeNil())
+			})
+
+			It("should create AKS machine with only SwapFileSizeMB when only swap is specified", func() {
+				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+					SwapFileSizeMB: lo.ToPtr(int32(2048)),
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
+				linuxOSConfig := aksMachine.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig
+				Expect(linuxOSConfig).ToNot(BeNil())
+				Expect(lo.FromPtr(linuxOSConfig.SwapFileSizeMB)).To(Equal(int32(2048)))
+				Expect(linuxOSConfig.TransparentHugePageDefrag).To(BeNil())
+				Expect(linuxOSConfig.TransparentHugePageEnabled).To(BeNil())
+				Expect(linuxOSConfig.Sysctls).To(BeNil())
+			})
+
+			It("should create AKS machine without LinuxProfile when LinuxOSConfig is not specified", func() {
+				// Explicitly ensure LinuxOSConfig is not set
+				nodeClass.Spec.LinuxOSConfig = nil
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+				Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).To(BeNil())
+			})
+		})
 	})
 })
