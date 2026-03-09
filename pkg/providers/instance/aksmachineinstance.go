@@ -31,6 +31,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
@@ -505,8 +506,22 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// The GET poller is also compatible with non-batch case but SDK poller is preferred when available.
 			if poller == nil {
 
-				if true {
+				if options.FromContext(ctx).ListPollerEnabled {
+					provisioningErr, pollErr := p.machineListCache.pollUntilDone(ctx, aksMachineName)
+					if pollErr != nil {
+						pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (list poller), poller error: %w", aksMachineName, pollErr)
+						return
+					}
 
+					if provisioningErr != nil {
+						pollingErr = p.handleMachineProvisioningError(ctx, "LRO (list poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+						return
+					}
+
+					log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+						"aksMachineName", aksMachineName,
+						"aksMachineID", gotAKSMachine.ID)
+					return
 				}
 
 				p.pollerOptions.PollInterval = 30 * time.Second

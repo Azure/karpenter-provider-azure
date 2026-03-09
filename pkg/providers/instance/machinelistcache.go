@@ -124,9 +124,9 @@ func (c *machineListCache) invalidateAll() {
 	c.lastUpdated = time.Time{} // zero value → isFresh() returns false
 }
 
-func (c *machineListCache) pollUntilDone(ctx context.Context, name string, interval time.Duration) (*armcontainerservice.ErrorDetail, error) {
-	fmt.Printf("Starting cache poller for AKS machine %q with interval %s\n", name, interval)
-	ticker := time.NewTicker(interval)
+func (c *machineListCache) pollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
+	fmt.Printf("Starting cache poller for AKS machine %q with interval %s\n", name, c.interval)
+	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
 
 	retries := 10
