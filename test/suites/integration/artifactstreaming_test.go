@@ -35,8 +35,9 @@ import (
 )
 
 const (
-	// Label key for artifact streaming state
-	artifactStreamingStateLabelKey = "kubernetes.azure.com/artifact-streaming-state"
+	// Label key for artifact streaming - matches AKS RP label
+	// Note: This label is only set when artifact streaming is enabled
+	artifactStreamingEnabledLabelKey = "kubernetes.azure.com/artifactstreaming-enabled"
 
 	// Test timeouts
 	artifactStreamingTestTimeout = 5 * time.Minute
@@ -63,7 +64,6 @@ var _ = Describe("ArtifactStreaming", func() {
 	// =========================================================================
 	// ARTIFACT STREAMING LABEL AND DRIFT TEST
 	// Verifies that Karpenter correctly sets labels and triggers drift when config changes
-	// =========================================================================
 	It("should set artifact streaming labels and detect drift on config change", func() {
 		By("[PART 1: ENABLE ARTIFACT STREAMING] Configuring NodeClass with ArtifactStreaming enabled")
 		enabled := true
@@ -81,7 +81,7 @@ var _ = Describe("ArtifactStreaming", func() {
 
 		By(fmt.Sprintf("Node %s created with ArtifactStreaming enabled", enabledNode.Name))
 
-		expectNodeArtifactStreamingLabel(enabledNode, "enabled")
+		expectNodeHasArtifactStreamingEnabledLabel(enabledNode)
 
 		By("Verifying artifact streaming infrastructure on the node")
 		enabledResult := getArtifactStreamingStatusFromNode(enabledNode)
@@ -108,14 +108,14 @@ var _ = Describe("ArtifactStreaming", func() {
 
 		By(fmt.Sprintf("New node %s provisioned to replace old node %s", disabledNode.Name, enabledNode.Name))
 
-		expectNodeArtifactStreamingLabel(disabledNode, "disabled")
+		expectNodeDoesNotHaveArtifactStreamingLabel(disabledNode)
 
 		By("Verifying artifact streaming is disabled on the new node")
 		disabledResult := getArtifactStreamingStatusFromNode(disabledNode)
 		expectArtifactStreamingResult(disabledResult, false)
 	})
 
-	It("should provision a node without artifact streaming when not specified (defaults to enabled)", func() {
+	It("should provision a node with artifact streaming when not specified (defaults to enabled)", func() {
 		By("Creating NodeClass without ArtifactStreaming configuration (defaults to enabled)")
 		// nodeClass.Spec.ArtifactStreaming is nil by default
 
@@ -128,15 +128,15 @@ var _ = Describe("ArtifactStreaming", func() {
 
 		By(fmt.Sprintf("Node %s created with ArtifactStreaming not specified (defaults to enabled)", node.Name))
 
-		expectNodeArtifactStreamingLabel(node, "enabled")
-		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), false)
+		expectNodeHasArtifactStreamingEnabledLabel(node)
+		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), true)
 	})
 
-	It("should provision a node with artifact streaming when explicitly enabled", func() {
-		By("Configuring NodeClass with ArtifactStreaming explicitly enabled")
-		enabled := true
+	It("should provision a node without artifact streaming when explicitly disabled", func() {
+		By("Configuring NodeClass with ArtifactStreaming explicitly disabled")
+		disabled := false
 		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
-			Enabled: &enabled,
+			Enabled: &disabled,
 		}
 
 		pod := coretest.Pod()
@@ -146,10 +146,10 @@ var _ = Describe("ArtifactStreaming", func() {
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
-		By(fmt.Sprintf("Node %s created with ArtifactStreaming enabled", node.Name))
+		By(fmt.Sprintf("Node %s created with ArtifactStreaming disabled", node.Name))
 
-		expectNodeArtifactStreamingLabel(node, "enabled")
-		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), true)
+		expectNodeDoesNotHaveArtifactStreamingLabel(node)
+		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), false)
 	})
 })
 
@@ -165,17 +165,30 @@ func expectArtifactStreamingResult(result ArtifactStreamingTestResult, expectedE
 	Expect(result.Enabled).To(Equal(expectedEnabled), fmt.Sprintf("Artifact streaming should be %v", map[bool]string{true: "enabled", false: "disabled"}[expectedEnabled]))
 }
 
-// expectNodeArtifactStreamingLabel verifies that a node has the expected artifact-streaming-state label value.
-// This function waits for the label to appear on the node with the correct value.
-func expectNodeArtifactStreamingLabel(node *corev1.Node, expectedValue string) {
-	By(fmt.Sprintf("Verifying node %s has artifact-streaming-state=%s label", node.Name, expectedValue))
+// expectNodeHasArtifactStreamingEnabledLabel verifies that a node has the artifactstreaming-enabled label set to "true".
+// This matches AKS RP behavior where the label is only set when artifact streaming is enabled.
+func expectNodeHasArtifactStreamingEnabledLabel(node *corev1.Node) {
+	By(fmt.Sprintf("Verifying node %s has artifactstreaming-enabled=true label", node.Name))
 	Eventually(func(g Gomega) {
 		var currentNode corev1.Node
 		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: node.Name}, &currentNode)).To(Succeed())
 
-		labelValue, exists := currentNode.Labels[artifactStreamingStateLabelKey]
-		g.Expect(exists).To(BeTrue(), fmt.Sprintf("Node %s should have artifact-streaming-state label", node.Name))
-		g.Expect(labelValue).To(Equal(expectedValue), fmt.Sprintf("ArtifactStreaming state should be %s", expectedValue))
+		labelValue, exists := currentNode.Labels[artifactStreamingEnabledLabelKey]
+		g.Expect(exists).To(BeTrue(), fmt.Sprintf("Node %s should have artifactstreaming-enabled label when enabled", node.Name))
+		g.Expect(labelValue).To(Equal("true"), "ArtifactStreaming label should be 'true' when enabled")
+	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+}
+
+// expectNodeDoesNotHaveArtifactStreamingLabel verifies that a node does NOT have the artifactstreaming-enabled label.
+// This matches AKS RP behavior where the label is only set when artifact streaming is enabled.
+func expectNodeDoesNotHaveArtifactStreamingLabel(node *corev1.Node) {
+	By(fmt.Sprintf("Verifying node %s does NOT have artifactstreaming-enabled label (disabled)", node.Name))
+	Eventually(func(g Gomega) {
+		var currentNode corev1.Node
+		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: node.Name}, &currentNode)).To(Succeed())
+
+		_, exists := currentNode.Labels[artifactStreamingEnabledLabelKey]
+		g.Expect(exists).To(BeFalse(), fmt.Sprintf("Node %s should NOT have artifactstreaming-enabled label when disabled", node.Name))
 	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 

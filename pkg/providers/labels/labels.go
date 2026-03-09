@@ -37,14 +37,14 @@ import (
 // These labels are defined here rather than v1beta1 because we do not support scheduling simulation
 // on these labels
 var (
-	AKSLabelEBPFDataplane             = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
-	AKSLabelAzureCNIOverlay           = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
-	AKSLabelSubnetName                = v1beta1.AKSLabelDomain + "/network-subnet"
-	AKSLabelVNetGUID                  = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
-	AKSLabelPodNetworkType            = v1beta1.AKSLabelDomain + "/podnetwork-type"
-	AKSLabelNetworkStatelessCNI       = v1beta1.AKSLabelDomain + "/network-stateless-cni"
-	AKSLocalDNSStateLabelKey          = v1beta1.AKSLabelDomain + "/localdns-state"
-	AKSArtifactStreamingStateLabelKey = v1beta1.AKSLabelDomain + "/artifact-streaming-state"
+	AKSLabelEBPFDataplane               = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
+	AKSLabelAzureCNIOverlay             = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	AKSLabelSubnetName                  = v1beta1.AKSLabelDomain + "/network-subnet"
+	AKSLabelVNetGUID                    = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
+	AKSLabelPodNetworkType              = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	AKSLabelNetworkStatelessCNI         = v1beta1.AKSLabelDomain + "/network-stateless-cni"
+	AKSLocalDNSStateLabelKey            = v1beta1.AKSLabelDomain + "/localdns-state"
+	AKSArtifactStreamingEnabledLabelKey = v1beta1.AKSLabelDomain + "/artifactstreaming-enabled"
 
 	AKSLabelRole = v1beta1.AKSLabelDomain + "/role"
 
@@ -157,10 +157,9 @@ func Get(
 		labels[AKSLocalDNSStateLabelKey] = "disabled"
 	}
 
+	// Only set the artifact streaming label when it's enabled (matching AKS RP behavior)
 	if nodeClass.IsArtifactStreamingEnabled() {
-		labels[AKSArtifactStreamingStateLabelKey] = "enabled"
-	} else {
-		labels[AKSArtifactStreamingStateLabelKey] = "disabled"
+		labels[AKSArtifactStreamingEnabledLabelKey] = "true"
 	}
 
 	return labels, nil
