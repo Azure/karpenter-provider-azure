@@ -22,7 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -32,10 +34,17 @@ const (
 	// converts O(N) individual GETs into O(1) cached lookups. A 30-second TTL is
 	// acceptable because drift and reconciliation checks re-run on subsequent cycles anyway.
 	DefaultMachineListCacheTTL = 30 * time.Second
+
+	// Provisioning state constants for AKS Machine API
+	ProvisioningStateCreating  = "Creating"
+	ProvisioningStateUpdating  = "Updating"
+	ProvisioningStateDeleting  = "Deleting"
+	ProvisioningStateSucceeded = "Succeeded"
+	ProvisioningStateFailed    = "Failed"
 )
 
 type AKSMachineNewListPager interface {
-	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *armcontainerservice.MachinesClientListPager
+	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
 }
 
 // machineListCache caches the results of LIST Machine API calls, keyed by machine name.
@@ -72,6 +81,9 @@ func newMachineListCache(ttl time.Duration, client AKSMachineNewListPager, inter
 
 // isFresh returns true if the cache has been populated and hasn't expired.
 func (c *machineListCache) isFresh() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	return !c.lastUpdated.IsZero() && time.Since(c.lastUpdated) < c.ttl
 }
 
@@ -88,25 +100,6 @@ func (c *machineListCache) get(machineName string) (*armcontainerservice.Machine
 	machine, ok := c.machines[machineName]
 	return machine, ok
 }
-
-// update replaces the entire cache with the results of a LIST call.
-/*
-func (c *machineListCache) update(machines []*armcontainerservice.Machine) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	machines =
-
-	newCache := make(map[string]*armcontainerservice.Machine, len(machines))
-	for _, m := range machines {
-		if m.Name != nil {
-			newCache[*m.Name] = m
-		}
-	}
-	c.machines = newCache
-	c.lastUpdated = time.Now()
-}
-*/
 
 // invalidate removes a specific machine from the cache, forcing the next Get()
 // for that machine to fall through to the API. This is called after mutating
@@ -129,6 +122,7 @@ func (c *machineListCache) invalidateAll() {
 }
 
 func (c *machineListCache) poll(ctx context.Context, name string, interval time.Duration) error {
+	fmt.Printf("Starting cache poller for AKS machine %q with interval %s\n", name, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -142,19 +136,30 @@ func (c *machineListCache) poll(ctx context.Context, name string, interval time.
 
 			machine, ok := c.get(name)
 			if !ok {
-				log.FromContext(ctx).Info("cache hit for AKS machine", "aksMachineName", name)
-				return nil
+				log.FromContext(ctx).Info("cache miss for AKS machine during poll", "aksMachineName", name)
+				continue
 			}
 
-			// check if machine is in terminal state; if so, we can stop polling and rely on cache until next refresh
-			if machine.Properties != nil && machine.Properties.ProvisioningState != nil {
-				state := *machine.Properties.ProvisioningState
-				log.FromContext(ctx).Info("polled AKS machine provisioning state", "aksMachineName", name, "state", state)
-				if state == "Succeeded" || state == "Failed" || state == "Canceled" {
-					log.FromContext(ctx).Info("AKS machine is in terminal provisioning state, stopping poller", "aksMachineName", name, "state", state)
-					return nil
-				}
+			if machine.Properties == nil || machine.Properties.ProvisioningState == nil {
+				log.FromContext(ctx).Info("cache poller found AKS machine with nil provisioning state,", "aksMachineName", name)
+				continue
 			}
+
+			state := *machine.Properties.ProvisioningState
+			log.FromContext(ctx).Info("polled AKS machine provisioning state", "aksMachineName", name, "state", state)
+
+			if !c.terminalState(ctx, state, *machine.Name) {
+				continue
+			}
+
+			if machine.Properties.Status != nil && machine.Properties.Status.ProvisioningError != nil {
+				log.FromContext(ctx).Error(nil, "Cache poller: AKS machine provisioning error details",
+					"aksMachineName", *machine.Name,
+					"provisioningError", machine.Properties.Status.ProvisioningError,
+				)
+			}
+
+			return nil
 
 		case <-ctx.Done():
 			log.FromContext(ctx).Info("stopping cache polling for AKS machine", "aksMachineName", name)
@@ -165,11 +170,25 @@ func (c *machineListCache) poll(ctx context.Context, name string, interval time.
 }
 
 func (c *machineListCache) update(ctx context.Context) error {
-	var machines []*armcontainerservice.Machine
+	// Update the cache with fresh data
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	fmt.Println("Updating machine list cache from Azure API")
+
+	// Double-check freshness after acquiring lock to avoid redundant updates
+	if !c.lastUpdated.IsZero() && time.Since(c.lastUpdated) < c.ttl {
+		return nil
+	}
+
 	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
 	if pager == nil {
 		return fmt.Errorf("failed to list AKS machines: created pager is nil")
 	}
+
+	// Clear existing cache
+	c.machines = make(map[string]*armcontainerservice.Machine)
+
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -188,11 +207,70 @@ func (c *machineListCache) update(ctx context.Context) error {
 			// Check if the AKS machine has the Karpenter nodepool tag
 			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
 				if _, hasKarpenterTag := aksMachine.Properties.Tags[NodePoolTagKey]; hasKarpenterTag {
-					machines = append(machines, aksMachine)
+					if aksMachine.Name != nil {
+						c.machines[*aksMachine.Name] = aksMachine
+					}
+				} else {
+					log.FromContext(ctx).V(1).Info("skipping AKS machine without Karpenter nodepool tag",
+						"aksMachineName", lo.FromPtr(aksMachine.Name),
+					)
 				}
+			} else {
+				log.FromContext(ctx).V(1).Info("skipping AKS machine with nil tags",
+					"aksMachineName", lo.FromPtr(aksMachine.Name),
+				)
 			}
 		}
 	}
 
+	fmt.Printf("Machine list cache updated with %d machines\n", len(c.machines))
+
+	c.lastUpdated = time.Now()
 	return nil
+}
+
+func (c *machineListCache) terminalState(ctx context.Context, state, machineName string) bool {
+	switch state {
+	// Non-terminal state
+	case ProvisioningStateCreating, ProvisioningStateUpdating:
+		log.FromContext(ctx).V(2).Info("Cache poller: polling for AKS machine ongoing",
+			"aksMachineName", machineName,
+			"provisioningState", state,
+		)
+		return false // continue polling
+
+	// Terminal states - all cause polling to stop
+	case ProvisioningStateDeleting:
+		// If polling interval is too long/deletion is too fast, then we might get 404 from GET instead of reaching here.
+		log.FromContext(ctx).Info("Cache poller: AKS machine is in canceled provisioning state, stopping polling",
+			"aksMachineName", machineName,
+			"provisioningState", state,
+		)
+		return true // stop polling
+
+	case ProvisioningStateSucceeded:
+		log.FromContext(ctx).Info("Cache poller: AKS machine provisioning succeeded, stopping polling",
+			"aksMachineName", machineName,
+			"provisioningState", state,
+		)
+		return true // stop polling
+
+	case ProvisioningStateFailed:
+		log.FromContext(ctx).Info("Cache poller: AKS machine provisioning failed, stopping polling",
+			"aksMachineName", machineName,
+			"provisioningState", state,
+		)
+
+		return true // stop polling
+
+	// Unrecognized state
+	default:
+		log.FromContext(ctx).V(1).Info("Cache poller: warning: polling for AKS machine found unrecognized provisioning state",
+			"aksMachineName", machineName,
+			"provisioningState", state,
+		)
+		// For unrecognized states in cache-based polling, we continue polling
+		// The cache will refresh and we'll get updated state information
+		return false // continue polling
+	}
 }
