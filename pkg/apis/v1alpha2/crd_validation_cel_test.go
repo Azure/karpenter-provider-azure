@@ -163,40 +163,31 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 
-		It("should accept ArtifactStreaming with Enabled mode", func() {
+		It("should accept ArtifactStreaming with enabled true", func() {
+			enabled := true
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					ArtifactStreaming: &v1alpha2.ArtifactStreamingSettings{
-						Mode: v1alpha2.ArtifactStreamingModeEnabled,
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{
+						Enabled: &enabled,
 					},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 
-		DescribeTable("should validate ArtifactStreamingMode", func(mode v1alpha2.ArtifactStreamingMode, expectedErr string) {
+		It("should accept ArtifactStreaming with enabled false", func() {
+			disabled := false
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					ArtifactStreaming: &v1alpha2.ArtifactStreamingSettings{
-						Mode: mode,
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{
+						Enabled: &disabled,
 					},
 				},
 			}
-			err := env.Client.Create(ctx, nodeClass)
-			if expectedErr == "" {
-				Expect(err).To(Succeed())
-			} else {
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(expectedErr))
-			}
-		},
-			Entry("valid mode: Unspecified", v1alpha2.ArtifactStreamingModeUnspecified, ""),
-			Entry("valid mode: Disabled", v1alpha2.ArtifactStreamingModeDisabled, ""),
-			Entry("valid mode: Enabled", v1alpha2.ArtifactStreamingModeEnabled, ""),
-			Entry("invalid mode: invalid-string", v1alpha2.ArtifactStreamingMode("invalid-string"), "spec.artifactStreaming.mode"),
-		)
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
 	})
 
 	Context("LocalDNS", func() {

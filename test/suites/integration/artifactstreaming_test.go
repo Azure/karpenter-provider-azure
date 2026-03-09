@@ -66,8 +66,9 @@ var _ = Describe("ArtifactStreaming", func() {
 	// =========================================================================
 	It("should set artifact streaming labels and detect drift on config change", func() {
 		By("[PART 1: ENABLE ARTIFACT STREAMING] Configuring NodeClass with ArtifactStreaming enabled")
-		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreamingSettings{
-			Mode: v1beta1.ArtifactStreamingModeEnabled,
+		enabled := true
+		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+			Enabled: &enabled,
 		}
 
 		By("Creating unschedulable pod to trigger node provisioning")
@@ -88,8 +89,9 @@ var _ = Describe("ArtifactStreaming", func() {
 
 		// PART 2: Test drift detection
 		By("[PART 2: DISABLE ARTIFACT STREAMING] Disabling ArtifactStreaming to test drift detection")
-		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreamingSettings{
-			Mode: v1beta1.ArtifactStreamingModeDisabled,
+		disabled := false
+		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+			Enabled: &disabled,
 		}
 		env.ExpectUpdated(nodeClass)
 
@@ -113,27 +115,8 @@ var _ = Describe("ArtifactStreaming", func() {
 		expectArtifactStreamingResult(disabledResult, false)
 	})
 
-	It("should provision a node with artifact streaming disabled by default (Unspecified mode)", func() {
-		By("Configuring NodeClass with ArtifactStreaming mode Unspecified")
-		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreamingSettings{
-			Mode: v1beta1.ArtifactStreamingModeUnspecified,
-		}
-
-		pod := coretest.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-
-		By("Waiting for node to be provisioned")
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectHealthy(pod)
-
-		By(fmt.Sprintf("Node %s created with ArtifactStreaming Unspecified (defaults to disabled)", node.Name))
-
-		expectNodeArtifactStreamingLabel(node, "disabled")
-		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), false)
-	})
-
-	It("should provision a node without artifact streaming when not specified", func() {
-		By("Creating NodeClass without ArtifactStreaming configuration")
+	It("should provision a node without artifact streaming when not specified (defaults to enabled)", func() {
+		By("Creating NodeClass without ArtifactStreaming configuration (defaults to enabled)")
 		// nodeClass.Spec.ArtifactStreaming is nil by default
 
 		pod := coretest.Pod()
@@ -143,10 +126,30 @@ var _ = Describe("ArtifactStreaming", func() {
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
-		By(fmt.Sprintf("Node %s created without ArtifactStreaming configuration", node.Name))
+		By(fmt.Sprintf("Node %s created with ArtifactStreaming not specified (defaults to enabled)", node.Name))
 
-		expectNodeArtifactStreamingLabel(node, "disabled")
+		expectNodeArtifactStreamingLabel(node, "enabled")
 		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), false)
+	})
+
+	It("should provision a node with artifact streaming when explicitly enabled", func() {
+		By("Configuring NodeClass with ArtifactStreaming explicitly enabled")
+		enabled := true
+		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+			Enabled: &enabled,
+		}
+
+		pod := coretest.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Waiting for node to be provisioned")
+		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		env.EventuallyExpectHealthy(pod)
+
+		By(fmt.Sprintf("Node %s created with ArtifactStreaming enabled", node.Name))
+
+		expectNodeArtifactStreamingLabel(node, "enabled")
+		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), true)
 	})
 })
 
