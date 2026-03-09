@@ -1121,12 +1121,12 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			description:       "Azure Linux v3 should allow artifact streaming to be enabled if configured",
 		},
 		{
-			name:              "Default (nil) should be false for all OS SKUs",
+			name:              "Default (nil) should be true for all OS SKUs",
 			ossku:             customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: nil,
-			expectedValue:     false,
-			description:       "When artifactStreaming is nil, it should default to false",
+			expectedValue:     true,
+			description:       "When artifactStreaming is nil, it should default to true",
 		},
 	}
 
