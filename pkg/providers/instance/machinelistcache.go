@@ -70,12 +70,15 @@ type machineListCache struct {
 	aksMachinesPoolName  string
 }
 
-func newMachineListCache(ttl time.Duration, client AKSMachineNewListPager, interval time.Duration) *machineListCache {
+func newMachineListCache(ttl time.Duration, client AKSMachineNewListPager, interval time.Duration, clusterResourceGroup, clusterName, aksMachinesPoolName string) *machineListCache {
 	return &machineListCache{
-		machines: make(map[string]*armcontainerservice.Machine),
-		ttl:      ttl,
-		interval: interval,
-		client:   client,
+		machines:             make(map[string]*armcontainerservice.Machine),
+		ttl:                  ttl,
+		interval:             interval,
+		client:               client,
+		clusterResourceGroup: clusterResourceGroup,
+		clusterName:          clusterName,
+		aksMachinesPoolName:  aksMachinesPoolName,
 	}
 }
 

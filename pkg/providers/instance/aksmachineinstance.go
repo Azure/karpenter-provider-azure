@@ -160,7 +160,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		pollerOptions:           DefaultPollerOptions(),
-		//machineListCache:        newMachineListCache(time.Minute),
+		machineListCache:        newMachineListCache(time.Minute, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
 	}
 
 	return provider
@@ -506,7 +506,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			if poller == nil {
 
 				if true {
-					//machine, got := p.machineListCache.get(p.clusterName)
+
 				}
 
 				p.pollerOptions.PollInterval = 30 * time.Second
