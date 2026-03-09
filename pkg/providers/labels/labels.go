@@ -182,6 +182,10 @@ func CanKubeletSetLabel(key string) bool {
 	return false
 }
 
+func IsLabelKubeletManaged(key string) bool {
+	return kubeletLabels.Has(key)
+}
+
 // GetWellKnownSingleValuedRequirementLabels converts well-known Azure single-value instanceType.Requirements to labels
 // This is useful for projecting requirements from the NodeClaim to labels, which is required for scheduling simulation to work
 // correctly.
