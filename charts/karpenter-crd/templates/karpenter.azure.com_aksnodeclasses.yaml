@@ -67,7 +67,7 @@ spec:
                 properties:
                   enabled:
                     description: |-
-                      Enabled controls whether artifact streaming is enabled for provisioned nodes.
+                      enabled controls whether artifact streaming is enabled for provisioned nodes.
                       If not specified, defaults to true.
                     type: boolean
                 type: object
@@ -637,7 +637,7 @@ spec:
                 properties:
                   enabled:
                     description: |-
-                      Enabled controls whether artifact streaming is enabled for provisioned nodes.
+                      enabled controls whether artifact streaming is enabled for provisioned nodes.
                       If not specified, defaults to true.
                     type: boolean
                 type: object
