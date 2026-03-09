@@ -121,17 +121,36 @@ func (c *machineListCache) invalidateAll() {
 	c.lastUpdated = time.Time{} // zero value → isFresh() returns false
 }
 
-func (c *machineListCache) poll(ctx context.Context, name string, interval time.Duration) error {
+func (c *machineListCache) pollUntilDone(ctx context.Context, name string, interval time.Duration) (*armcontainerservice.ErrorDetail, error) {
 	fmt.Printf("Starting cache poller for AKS machine %q with interval %s\n", name, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
+	retries := 10
 
 	for {
 		select {
 		case <-ticker.C:
 
 			if !c.isFresh() {
-				c.update(ctx)
+
+				if err := c.update(ctx); err != nil {
+					log.FromContext(ctx).Error(err, "failed to update machine list cache")
+
+					if retries > 0 {
+						retries--
+						log.FromContext(ctx).Info("retrying poll", "remainingRetries", retries)
+						continue
+					} else {
+						log.FromContext(ctx).Error(nil, "exhausted retries for cache update, stopping cache poller",
+							"aksMachineName", name,
+						)
+						return nil, fmt.Errorf("cache poller: failed to update machine list cache after multiple attempts: %w", err)
+					}
+				}
+
+				log.FromContext(ctx).Info("cache updated successfully during poll")
+				retries = 10 // reset retries after a successful update
 			}
 
 			machine, ok := c.get(name)
@@ -157,13 +176,14 @@ func (c *machineListCache) poll(ctx context.Context, name string, interval time.
 					"aksMachineName", *machine.Name,
 					"provisioningError", machine.Properties.Status.ProvisioningError,
 				)
+				return machine.Properties.Status.ProvisioningError, nil
 			}
 
-			return nil
+			return nil, nil
 
 		case <-ctx.Done():
 			log.FromContext(ctx).Info("stopping cache polling for AKS machine", "aksMachineName", name)
-			return nil
+			return nil, nil
 		}
 	}
 
