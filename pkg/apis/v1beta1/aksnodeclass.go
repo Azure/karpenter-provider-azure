@@ -34,24 +34,13 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
-// +kubebuilder:validation:Enum:={Unspecified,Disabled,Enabled}
-type ArtifactStreamingMode string
-
-const (
-	// If not specified, use the default behavior (currently disabled, but may change in the future)
-	ArtifactStreamingModeUnspecified ArtifactStreamingMode = "Unspecified"
-	// Disable artifact streaming
-	ArtifactStreamingModeDisabled ArtifactStreamingMode = "Disabled"
-	// Enable artifact streaming
-	ArtifactStreamingModeEnabled ArtifactStreamingMode = "Enabled"
-)
-
-// ArtifactStreamingSettings configures artifact streaming for provisioned nodes.
+// ArtifactStreaming configures artifact streaming for provisioned nodes.
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
-type ArtifactStreamingSettings struct {
-	// mode controls whether artifact streaming is enabled for provisioned nodes.
-	// +required
-	Mode ArtifactStreamingMode `json:"mode,omitempty"`
+type ArtifactStreaming struct {
+	// enabled controls whether artifact streaming is enabled for provisioned nodes.
+	// If not specified, defaults to true.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
@@ -118,7 +107,7 @@ type AKSNodeClassSpec struct {
 	// artifactStreaming configures artifact streaming for provisioned nodes.
 	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 	// +optional
-	ArtifactStreaming *ArtifactStreamingSettings `json:"artifactStreaming,omitempty"`
+	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -449,25 +438,13 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 }
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.
-// Returns true for Enabled mode, false for Disabled mode, and for Unspecified mode,
-// returns false (the current default, which may change in the future).
+// If not specified (nil), defaults to true (enabled).
 func (in *AKSNodeClass) IsArtifactStreamingEnabled() bool {
-	if in.Spec.ArtifactStreaming == nil || in.Spec.ArtifactStreaming.Mode == "" {
-		// Unspecified/nil defaults to disabled (for now)
-		return false
-	}
-
-	switch in.Spec.ArtifactStreaming.Mode {
-	case ArtifactStreamingModeEnabled:
+	if in.Spec.ArtifactStreaming == nil || in.Spec.ArtifactStreaming.Enabled == nil {
+		// nil defaults to enabled
 		return true
-	case ArtifactStreamingModeDisabled:
-		return false
-	case ArtifactStreamingModeUnspecified:
-		// Unspecified defaults to disabled (for now)
-		return false
-	default:
-		return false
 	}
+	return *in.Spec.ArtifactStreaming.Enabled
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.

@@ -1007,36 +1007,29 @@ func TestArtifactStreamingConfiguration(t *testing.T) {
 			},
 		},
 	}
-
 	tests := []struct {
 		name                           string
-		artifactStreaming              *v1beta1.ArtifactStreamingSettings
+		artifactStreaming              *v1beta1.ArtifactStreaming
 		expectedArtifactStreamingValue bool
 		description                    string
 	}{
 		{
 			name:                           "Artifact streaming explicitly enabled",
-			artifactStreaming:              &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeEnabled},
+			artifactStreaming:              &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedArtifactStreamingValue: true,
-			description:                    "When artifactStreaming is set to Enabled, artifact streaming should be enabled",
+			description:                    "When artifactStreaming.enabled is true, artifact streaming should be enabled",
 		},
 		{
 			name:                           "Artifact streaming explicitly disabled",
-			artifactStreaming:              &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeDisabled},
-			expectedArtifactStreamingValue: false,
-			description:                    "When artifactStreaming is set to Disabled, artifact streaming should be disabled",
+			artifactStreaming:              &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			expectedArtifactStreamingValue: true,
+			description:                    "When artifactStreaming.enabled is false, artifact streaming should be disabled",
 		},
 		{
-			name:                           "Artifact streaming unspecified",
-			artifactStreaming:              &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeUnspecified},
-			expectedArtifactStreamingValue: false,
-			description:                    "When artifactStreaming is set to Unspecified, artifact streaming should default to false",
-		},
-		{
-			name:                           "Artifact streaming not specified (nil) - defaults to false",
+			name:                           "Artifact streaming not specified (nil) - defaults to disabled",
 			artifactStreaming:              nil,
-			expectedArtifactStreamingValue: false,
-			description:                    "When artifactStreaming is nil, artifact streaming should default to false",
+			expectedArtifactStreamingValue: true,
+			description:                    "When artifactStreaming is nil, artifact streaming should default to enabled",
 		},
 	}
 
@@ -1075,7 +1068,7 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 		name              string
 		ossku             string
 		arch              string
-		artifactStreaming *v1beta1.ArtifactStreamingSettings
+		artifactStreaming *v1beta1.ArtifactStreaming
 		expectedValue     bool
 		description       string
 	}{
@@ -1083,7 +1076,7 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			name:              "Ubuntu 22.04 with artifact streaming enabled",
 			ossku:             customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			arch:              karpv1.ArchitectureAmd64,
-			artifactStreaming: &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeEnabled},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
 			description:       "Ubuntu 22.04 should support artifact streaming when explicitly enabled",
 		},
@@ -1091,7 +1084,7 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			name:              "Ubuntu 22.04 with artifact streaming disabled",
 			ossku:             customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			arch:              karpv1.ArchitectureAmd64,
-			artifactStreaming: &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeDisabled},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
 			expectedValue:     false,
 			description:       "Ubuntu 22.04 should respect disabled artifact streaming",
 		},
@@ -1099,7 +1092,7 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			name:              "Ubuntu 20.04 with artifact streaming enabled",
 			ossku:             customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 			arch:              karpv1.ArchitectureAmd64,
-			artifactStreaming: &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeEnabled},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
 			description:       "Ubuntu 20.04 should allow artifact streaming to be enabled if configured",
 		},
@@ -1107,7 +1100,7 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			name:              "Ubuntu 24.04 with artifact streaming enabled",
 			ossku:             customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404,
 			arch:              karpv1.ArchitectureAmd64,
-			artifactStreaming: &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeEnabled},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
 			description:       "Ubuntu 24.04 should allow artifact streaming to be enabled if configured",
 		},
@@ -1115,7 +1108,7 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			name:              "Azure Linux v2 with artifact streaming enabled",
 			ossku:             customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 			arch:              karpv1.ArchitectureAmd64,
-			artifactStreaming: &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeEnabled},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
 			description:       "Azure Linux v2 should support artifact streaming when explicitly enabled",
 		},
@@ -1123,7 +1116,7 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			name:              "Azure Linux v3 with artifact streaming enabled",
 			ossku:             customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
 			arch:              karpv1.ArchitectureAmd64,
-			artifactStreaming: &v1beta1.ArtifactStreamingSettings{Mode: v1beta1.ArtifactStreamingModeEnabled},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
 			description:       "Azure Linux v3 should allow artifact streaming to be enabled if configured",
 		},

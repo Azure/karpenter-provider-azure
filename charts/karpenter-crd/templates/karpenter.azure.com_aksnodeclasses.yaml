@@ -65,16 +65,11 @@ spec:
                   artifactStreaming configures artifact streaming for provisioned nodes.
                   Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
                 properties:
-                  mode:
-                    description: mode controls whether artifact streaming is enabled
-                      for provisioned nodes.
-                    enum:
-                    - Unspecified
-                    - Disabled
-                    - Enabled
-                    type: string
-                required:
-                - mode
+                  enabled:
+                    description: |-
+                      Enabled controls whether artifact streaming is enabled for provisioned nodes.
+                      If not specified, defaults to true.
+                    type: boolean
                 type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
@@ -640,16 +635,11 @@ spec:
                   artifactStreaming configures artifact streaming for provisioned nodes.
                   Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
                 properties:
-                  mode:
-                    description: mode controls whether artifact streaming is enabled
-                      for provisioned nodes.
-                    enum:
-                    - Unspecified
-                    - Disabled
-                    - Enabled
-                    type: string
-                required:
-                - mode
+                  enabled:
+                    description: |-
+                      Enabled controls whether artifact streaming is enabled for provisioned nodes.
+                      If not specified, defaults to true.
+                    type: boolean
                 type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned

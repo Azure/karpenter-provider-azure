@@ -65,7 +65,7 @@ type ProvisionClientBootstrap struct {
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
-	ArtifactStreaming              *v1beta1.ArtifactStreamingSettings
+	ArtifactStreaming              *v1beta1.ArtifactStreaming
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -106,18 +106,10 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
 	// Artifact streaming is configurable through the AKSNodeClass spec
-	// Compute effective value based on ArtifactStreamingMode
-	enableArtifactStreaming := false
-	if p.ArtifactStreaming != nil {
-		switch p.ArtifactStreaming.Mode {
-		case v1beta1.ArtifactStreamingModeEnabled:
-			enableArtifactStreaming = true
-		case v1beta1.ArtifactStreamingModeDisabled:
-			enableArtifactStreaming = false
-		case v1beta1.ArtifactStreamingModeUnspecified:
-			// Default to disabled (for now)
-			enableArtifactStreaming = false
-		}
+	// If not specified, defaults to enabled
+	enableArtifactStreaming := true
+	if p.ArtifactStreaming != nil && p.ArtifactStreaming.Enabled != nil {
+		enableArtifactStreaming = *p.ArtifactStreaming.Enabled
 	}
 
 	// unspecified FIPSMode is effectively no FIPS for now
