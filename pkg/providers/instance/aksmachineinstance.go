@@ -507,6 +507,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			if poller == nil {
 
 				if options.FromContext(ctx).ListPollerEnabled {
+					fmt.Printf("Using list poller for AKS machine %q\n", aksMachineName)
 					provisioningErr, pollErr := p.machineListCache.pollUntilDone(ctx, aksMachineName)
 					if pollErr != nil {
 						pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (list poller), poller error: %w", aksMachineName, pollErr)
@@ -522,6 +523,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 						"aksMachineName", aksMachineName,
 						"aksMachineID", gotAKSMachine.ID)
 					return
+				} else {
+					fmt.Printf("List poller is disabled, falling back to GET poller for AKS machine %q\n", aksMachineName)
 				}
 
 				p.pollerOptions.PollInterval = 30 * time.Second
