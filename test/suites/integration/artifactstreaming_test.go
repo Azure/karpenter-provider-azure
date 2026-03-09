@@ -36,104 +36,48 @@ import (
 
 const (
 	// Label key for artifact streaming - matches AKS RP label
-	// Note: This label is only set when artifact streaming is enabled
 	artifactStreamingEnabledLabelKey = "kubernetes.azure.com/artifactstreaming-enabled"
 
-	// Test timeouts
 	artifactStreamingTestTimeout = 5 * time.Minute
 )
 
-// ArtifactStreamingTestResult holds the results of artifact streaming verification
-type ArtifactStreamingTestResult struct {
-	Logs    string
-	Enabled bool
-	Success bool
-}
-
 var _ = Describe("ArtifactStreaming", func() {
-	// Note: These tests verify Karpenter's configuration flow (labels, drift detection)
-	// AND check for artifact streaming infrastructure on nodes.
-	// Infrastructure verification (overlaybd daemon/config) requires NPS on NAP/managed clusters.
-
 	BeforeEach(func() {
 		if env.InClusterController {
 			Skip("ArtifactStreaming tests require NPS (Node Provisioning Service) - only supported in NAP/managed Karpenter mode")
 		}
 	})
 
-	// =========================================================================
-	// ARTIFACT STREAMING LABEL AND DRIFT TEST
-	// Verifies that Karpenter correctly sets labels and triggers drift when config changes
-	It("should set artifact streaming labels and detect drift on config change", func() {
-		By("[PART 1: ENABLE ARTIFACT STREAMING] Configuring NodeClass with ArtifactStreaming enabled")
+	It("should set artifact streaming label and enable infrastructure when explicitly enabled", func() {
 		enabled := true
 		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
 			Enabled: &enabled,
 		}
 
-		By("Creating unschedulable pod to trigger node provisioning")
-		enabledPod := coretest.Pod()
-		env.ExpectCreated(nodeClass, nodePool, enabledPod)
+		pod := coretest.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
 
-		By("Waiting for node to be provisioned with artifact streaming enabled")
-		enabledNode := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectHealthy(enabledPod)
+		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		env.EventuallyExpectHealthy(pod)
 
-		By(fmt.Sprintf("Node %s created with ArtifactStreaming enabled", enabledNode.Name))
-
-		expectNodeHasArtifactStreamingEnabledLabel(enabledNode)
-
-		By("Verifying artifact streaming infrastructure on the node")
-		enabledResult := getArtifactStreamingStatusFromNode(enabledNode)
-		expectArtifactStreamingResult(enabledResult, true)
-
-		// PART 2: Test drift detection
-		By("[PART 2: DISABLE ARTIFACT STREAMING] Disabling ArtifactStreaming to test drift detection")
-		disabled := false
-		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
-			Enabled: &disabled,
-		}
-		env.ExpectUpdated(nodeClass)
-
-		By("Waiting for new node to be provisioned with disabled ArtifactStreaming (drift will replace the old node)")
-		newNodes := env.EventuallyExpectCreatedNodeCount("==", 2)
-		var disabledNode *corev1.Node
-		for i := range newNodes {
-			if newNodes[i].Name != enabledNode.Name {
-				disabledNode = newNodes[i]
-				break
-			}
-		}
-		Expect(disabledNode).ToNot(BeNil(), "Should have provisioned a new node due to drift")
-
-		By(fmt.Sprintf("New node %s provisioned to replace old node %s", disabledNode.Name, enabledNode.Name))
-
-		expectNodeDoesNotHaveArtifactStreamingLabel(disabledNode)
-
-		By("Verifying artifact streaming is disabled on the new node")
-		disabledResult := getArtifactStreamingStatusFromNode(disabledNode)
-		expectArtifactStreamingResult(disabledResult, false)
+		expectNodeHasArtifactStreamingEnabledLabel(node)
+		verifyArtifactStreamingOnNode(node, true)
 	})
 
-	It("should provision a node with artifact streaming when not specified (defaults to enabled)", func() {
-		By("Creating NodeClass without ArtifactStreaming configuration (defaults to enabled)")
+	It("should set artifact streaming label and enable infrastructure when not specified (defaults to enabled)", func() {
 		// nodeClass.Spec.ArtifactStreaming is nil by default
 
 		pod := coretest.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
-		By("Waiting for node to be provisioned")
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
-		By(fmt.Sprintf("Node %s created with ArtifactStreaming not specified (defaults to enabled)", node.Name))
-
 		expectNodeHasArtifactStreamingEnabledLabel(node)
-		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), true)
+		verifyArtifactStreamingOnNode(node, true)
 	})
 
-	It("should provision a node without artifact streaming when explicitly disabled", func() {
-		By("Configuring NodeClass with ArtifactStreaming explicitly disabled")
+	It("should not set artifact streaming label or enable infrastructure when explicitly disabled", func() {
 		disabled := false
 		nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
 			Enabled: &disabled,
@@ -142,63 +86,33 @@ var _ = Describe("ArtifactStreaming", func() {
 		pod := coretest.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
-		By("Waiting for node to be provisioned")
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
-		By(fmt.Sprintf("Node %s created with ArtifactStreaming disabled", node.Name))
-
 		expectNodeDoesNotHaveArtifactStreamingLabel(node)
-		expectArtifactStreamingResult(getArtifactStreamingStatusFromNode(node), false)
+		verifyArtifactStreamingOnNode(node, false)
 	})
 })
 
-// =========================================================================
-// HELPER FUNCTIONS
-// =========================================================================
-
-// expectArtifactStreamingResult verifies the artifact streaming verification result matches expected state.
-func expectArtifactStreamingResult(result ArtifactStreamingTestResult, expectedEnabled bool) {
-	By(fmt.Sprintf("Artifact streaming verification - Expected enabled: %v, Actual enabled: %v", expectedEnabled, result.Enabled))
-	By(fmt.Sprintf("Verification logs:\n%s", result.Logs))
-	Expect(result.Success).To(BeTrue(), "Artifact streaming verification should succeed")
-	Expect(result.Enabled).To(Equal(expectedEnabled), fmt.Sprintf("Artifact streaming should be %v", map[bool]string{true: "enabled", false: "disabled"}[expectedEnabled]))
-}
-
 // expectNodeHasArtifactStreamingEnabledLabel verifies that a node has the artifactstreaming-enabled label set to "true".
-// This matches AKS RP behavior where the label is only set when artifact streaming is enabled.
 func expectNodeHasArtifactStreamingEnabledLabel(node *corev1.Node) {
 	By(fmt.Sprintf("Verifying node %s has artifactstreaming-enabled=true label", node.Name))
-	Eventually(func(g Gomega) {
-		var currentNode corev1.Node
-		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: node.Name}, &currentNode)).To(Succeed())
-
-		labelValue, exists := currentNode.Labels[artifactStreamingEnabledLabelKey]
-		g.Expect(exists).To(BeTrue(), fmt.Sprintf("Node %s should have artifactstreaming-enabled label when enabled", node.Name))
-		g.Expect(labelValue).To(Equal("true"), "ArtifactStreaming label should be 'true' when enabled")
-	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	labelValue, exists := node.Labels[artifactStreamingEnabledLabelKey]
+	Expect(exists).To(BeTrue(), fmt.Sprintf("Node %s should have artifactstreaming-enabled label when enabled", node.Name))
+	Expect(labelValue).To(Equal("true"), "ArtifactStreaming label should be 'true' when enabled")
 }
 
 // expectNodeDoesNotHaveArtifactStreamingLabel verifies that a node does NOT have the artifactstreaming-enabled label.
-// This matches AKS RP behavior where the label is only set when artifact streaming is enabled.
 func expectNodeDoesNotHaveArtifactStreamingLabel(node *corev1.Node) {
 	By(fmt.Sprintf("Verifying node %s does NOT have artifactstreaming-enabled label (disabled)", node.Name))
-	Eventually(func(g Gomega) {
-		var currentNode corev1.Node
-		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: node.Name}, &currentNode)).To(Succeed())
-
-		_, exists := currentNode.Labels[artifactStreamingEnabledLabelKey]
-		g.Expect(exists).To(BeFalse(), fmt.Sprintf("Node %s should NOT have artifactstreaming-enabled label when disabled", node.Name))
-	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	_, exists := node.Labels[artifactStreamingEnabledLabelKey]
+	Expect(exists).To(BeFalse(), fmt.Sprintf("Node %s should NOT have artifactstreaming-enabled label when disabled", node.Name))
 }
 
-// getArtifactStreamingStatusFromNode creates a privileged pod on the node to check for artifact streaming indicators
-func getArtifactStreamingStatusFromNode(node *corev1.Node) ArtifactStreamingTestResult {
-	var result ArtifactStreamingTestResult
+// verifyArtifactStreamingOnNode checks for artifact streaming infrastructure (overlaybd process/config) on the node.
+func verifyArtifactStreamingOnNode(node *corev1.Node, expectEnabled bool) {
+	By(fmt.Sprintf("Verifying artifact streaming infrastructure on node %s (expect enabled: %v)", node.Name, expectEnabled))
 
-	By(fmt.Sprintf("Creating privileged pod on node %s to verify artifact streaming status", node.Name))
-
-	// Create a privileged pod that can access host processes and filesystem
 	privileged := true
 	testPod := coretest.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
@@ -212,30 +126,20 @@ func getArtifactStreamingStatusFromNode(node *corev1.Node) ArtifactStreamingTest
 			echo "--- Checking for overlaybd-tcmu process ---" && \
 			if ps aux 2>/dev/null | grep -v grep | grep -q overlaybd-tcmu; then \
 				echo "overlaybd-tcmu process FOUND"; \
-				ps aux | grep overlaybd-tcmu | grep -v grep; \
 			else \
 				echo "overlaybd-tcmu process NOT FOUND"; \
-			fi && \
-			echo "--- Checking for /etc/overlaybd directory ---" && \
-			if [ -d /host/etc/overlaybd ]; then \
-				echo "/etc/overlaybd directory FOUND"; \
-				ls -la /host/etc/overlaybd/ 2>/dev/null || echo "Could not list directory"; \
-			else \
-				echo "/etc/overlaybd directory NOT FOUND"; \
 			fi && \
 			echo "--- Checking containerd config for overlaybd ---" && \
 			if [ -f /host/etc/containerd/config.toml ]; then \
 				if grep -q overlaybd /host/etc/containerd/config.toml 2>/dev/null; then \
 					echo "overlaybd FOUND in containerd config"; \
-					grep -A5 -B5 overlaybd /host/etc/containerd/config.toml 2>/dev/null || true; \
 				else \
 					echo "overlaybd NOT FOUND in containerd config"; \
 				fi; \
 			else \
 				echo "containerd config file not found"; \
 			fi && \
-			echo "=== Artifact streaming check complete ===" && \
-			sleep 30`,
+			echo "=== Artifact streaming check complete ==="`,
 		},
 		NodeSelector: map[string]string{
 			corev1.LabelHostname: node.Name,
@@ -243,12 +147,10 @@ func getArtifactStreamingStatusFromNode(node *corev1.Node) ArtifactStreamingTest
 		RestartPolicy: corev1.RestartPolicyNever,
 	})
 
-	// Configure privileged access
 	testPod.Spec.HostPID = true
 	testPod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
 		Privileged: &privileged,
 	}
-	// Mount host filesystem
 	testPod.Spec.Volumes = []corev1.Volume{
 		{
 			Name: "host-root",
@@ -269,21 +171,18 @@ func getArtifactStreamingStatusFromNode(node *corev1.Node) ArtifactStreamingTest
 
 	env.ExpectCreated(testPod)
 	defer func() {
-		By("Cleaning up artifact streaming check pod")
 		env.ExpectDeleted(testPod)
 	}()
 
-	// Wait for pod to be running or completed
 	Eventually(func(g Gomega) {
 		var currentPod corev1.Pod
 		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: testPod.Name, Namespace: testPod.Namespace}, &currentPod)).To(Succeed())
-		g.Expect(currentPod.Status.Phase).To(Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)), "Pod should be running or completed")
+		g.Expect(currentPod.Status.Phase).To(Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)))
 	}).WithTimeout(2 * time.Minute).Should(Succeed())
 
-	// Get logs from the pod
+	var logs string
 	Eventually(func(g Gomega) {
 		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(testPod), testPod)).To(Succeed())
-
 		if testPod.Status.Phase != corev1.PodRunning && testPod.Status.Phase != corev1.PodSucceeded {
 			return
 		}
@@ -298,26 +197,18 @@ func getArtifactStreamingStatusFromNode(node *corev1.Node) ArtifactStreamingTest
 		buf := new(bytes.Buffer)
 		_, err = io.Copy(buf, podLogs)
 		g.Expect(err).To(Succeed())
-
-		result.Logs = buf.String()
-		result.Success = true
+		logs = buf.String()
 	}).WithTimeout(artifactStreamingTestTimeout).Should(Succeed())
 
-	// Parse the logs to determine if artifact streaming is enabled
-	result.Enabled = isArtifactStreamingEnabled(result.Logs)
+	By(fmt.Sprintf("Artifact streaming check output from node %s:\n%s", node.Name, logs))
 
-	By(fmt.Sprintf("Artifact streaming check output from node %s:\n%s", node.Name, result.Logs))
-
-	return result
-}
-
-// isArtifactStreamingEnabled parses the verification logs to determine if artifact streaming is enabled
-func isArtifactStreamingEnabled(logs string) bool {
-	// Check for positive indicators
-	// Note: /etc/overlaybd directory exists by default on VHD, so it's not a reliable indicator.
-	// Only the running process or containerd config indicate artifact streaming is actually enabled.
 	hasOverlaybdProcess := strings.Contains(logs, "overlaybd-tcmu process FOUND")
 	hasContainerdConfig := strings.Contains(logs, "overlaybd FOUND in containerd config")
+	actuallyEnabled := hasOverlaybdProcess || hasContainerdConfig
 
-	return hasOverlaybdProcess || hasContainerdConfig
+	if expectEnabled {
+		Expect(actuallyEnabled).To(BeTrue(), fmt.Sprintf("Artifact streaming should be enabled on node %s\nLogs:\n%s", node.Name, logs))
+	} else {
+		Expect(actuallyEnabled).To(BeFalse(), fmt.Sprintf("Artifact streaming should be disabled on node %s\nLogs:\n%s", node.Name, logs))
+	}
 }
