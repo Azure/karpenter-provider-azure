@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
@@ -85,6 +86,7 @@ type CloudProvider struct {
 	imageProvider              imagefamily.NodeImageProvider
 	recorder                   events.Recorder
 	instanceTypeStore          *nodeoverlay.InstanceTypeStore
+	instancePromiseWg          sync.WaitGroup
 }
 
 func New(
@@ -105,6 +107,11 @@ func New(
 		recorder:                   recorder,
 		instanceTypeStore:          store,
 	}
+}
+
+// WaitForInstancePromises blocks until all in-flight async Create goroutines have completed.
+func (c *CloudProvider) WaitForInstancePromises() {
+	c.instancePromiseWg.Wait()
 }
 
 func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error {
@@ -266,7 +273,9 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
 	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
 	// only held in memory.
+	c.instancePromiseWg.Add(1)
 	go func() {
+		defer c.instancePromiseWg.Done()
 		defer func() {
 			if r := recover(); r != nil {
 				err := fmt.Errorf("%v", r)
@@ -453,6 +462,10 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 	return instanceTypes, nil
 }
 
+// Delete deletes the underlying node
+// Note: Delete may be called many times while delete is ongoing (blocking) as the core Karpenter termination controller
+// watches and reconciles on all node updates (including node status updates, which happen during deletion), so while
+// one Delete call is blocking more will come in every ~5s due to excess Node events + requeues.
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 

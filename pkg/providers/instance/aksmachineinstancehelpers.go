@@ -244,7 +244,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 		func(k string, req *scheduling.Requirement) bool {
-			return labels.IsKubeletLabel(k)
+			return labels.CanKubeletSetLabel(k)
 		},
 	)
 	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
@@ -255,25 +255,11 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
 	}
 
-	// TEMPORARY
-	// TODO(mattchr): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
-	labelsToRemove := []string{
-		"beta.kubernetes.io/instance-type",
-		"failure-domain.beta.kubernetes.io/region",
-		"beta.kubernetes.io/os",
-		"beta.kubernetes.io/arch",
-		"failure-domain.beta.kubernetes.io/zone",
-		"topology.kubernetes.io/zone",
-		"topology.kubernetes.io/region",
-		"node.kubernetes.io/instance-type",
-		"kubernetes.io/arch",
-		"kubernetes.io/os",
-		"node.kubernetes.io/windows-build",
-	}
-	nodeLabels = lo.OmitByKeys(nodeLabels, labelsToRemove)
-	// Remove all labels with kubernetes.azure.com prefix
+	// TODO: also do the same for taints (which don't have sanitization logic like this yet)
+	// Remove all labels with kubernetes.azure.com prefix, as well as those managed by kubelet.
+	// Also remove legacy AKS managed labels
 	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {
-		return strings.HasPrefix(key, "kubernetes.azure.com/")
+		return v1beta1.IsAKSLabel(key) || labels.IsLabelKubeletManaged(key)
 	})
 
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))
@@ -299,6 +285,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	return tags
 }
 
+//nolint:gocyclo // borderline complexity violation, code is not hard to read
 func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.KubeletConfig {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
 
@@ -309,8 +296,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig := &armcontainerservice.KubeletConfig{}
 
 	// Map from v1beta1.KubeletConfiguration to AKS machine KubeletConfig
-	if nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
-		kubeletConfig.CPUManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.CPUManagerPolicy)
+	if nodeClass.Spec.Kubelet.CPUManagerPolicy != nil && *nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
+		kubeletConfig.CPUManagerPolicy = nodeClass.Spec.Kubelet.CPUManagerPolicy
 	}
 
 	kubeletConfig.CPUCfsQuota = nodeClass.Spec.Kubelet.CPUCFSQuota
@@ -322,8 +309,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig.ImageGcHighThreshold = nodeClass.Spec.Kubelet.ImageGCHighThresholdPercent
 	kubeletConfig.ImageGcLowThreshold = nodeClass.Spec.Kubelet.ImageGCLowThresholdPercent
 
-	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
-		kubeletConfig.TopologyManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.TopologyManagerPolicy)
+	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != nil && *nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
+		kubeletConfig.TopologyManagerPolicy = nodeClass.Spec.Kubelet.TopologyManagerPolicy
 	}
 
 	if len(nodeClass.Spec.Kubelet.AllowedUnsafeSysctls) > 0 {
@@ -331,8 +318,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	}
 
 	// Convert container log max size to MB
-	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
-		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(nodeClass.Spec.Kubelet.ContainerLogMaxSize)
+	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != nil && *nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
+		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(*nodeClass.Spec.Kubelet.ContainerLogMaxSize)
 	}
 
 	kubeletConfig.ContainerLogMaxFiles = nodeClass.Spec.Kubelet.ContainerLogMaxFiles
