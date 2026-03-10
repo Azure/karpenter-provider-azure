@@ -95,18 +95,28 @@ var _ = Describe("ArtifactStreaming", func() {
 })
 
 // expectNodeHasArtifactStreamingEnabledLabel verifies that a node has the artifactstreaming-enabled label set to "true".
+// Re-fetches the node since NPS may apply the label asynchronously.
 func expectNodeHasArtifactStreamingEnabledLabel(node *corev1.Node) {
 	By(fmt.Sprintf("Verifying node %s has artifactstreaming-enabled=true label", node.Name))
-	labelValue, exists := node.Labels[artifactStreamingEnabledLabelKey]
-	Expect(exists).To(BeTrue(), fmt.Sprintf("Node %s should have artifactstreaming-enabled label when enabled", node.Name))
-	Expect(labelValue).To(Equal("true"), "ArtifactStreaming label should be 'true' when enabled")
+	Eventually(func(g Gomega) {
+		var current corev1.Node
+		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), &current)).To(Succeed())
+		labelValue, exists := current.Labels[artifactStreamingEnabledLabelKey]
+		g.Expect(exists).To(BeTrue(), fmt.Sprintf("Node %s should have artifactstreaming-enabled label when enabled", node.Name))
+		g.Expect(labelValue).To(Equal("true"), "ArtifactStreaming label should be 'true' when enabled")
+	}).WithTimeout(artifactStreamingTestTimeout).Should(Succeed())
 }
 
 // expectNodeDoesNotHaveArtifactStreamingLabel verifies that a node does NOT have the artifactstreaming-enabled label.
+// Re-fetches the node and uses Consistently to confirm the label stays absent.
 func expectNodeDoesNotHaveArtifactStreamingLabel(node *corev1.Node) {
 	By(fmt.Sprintf("Verifying node %s does NOT have artifactstreaming-enabled label (disabled)", node.Name))
-	_, exists := node.Labels[artifactStreamingEnabledLabelKey]
-	Expect(exists).To(BeFalse(), fmt.Sprintf("Node %s should NOT have artifactstreaming-enabled label when disabled", node.Name))
+	Consistently(func(g Gomega) {
+		var current corev1.Node
+		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), &current)).To(Succeed())
+		_, exists := current.Labels[artifactStreamingEnabledLabelKey]
+		g.Expect(exists).To(BeFalse(), fmt.Sprintf("Node %s should NOT have artifactstreaming-enabled label when disabled", node.Name))
+	}).WithTimeout(30 * time.Second).Should(Succeed())
 }
 
 // verifyArtifactStreamingOnNode checks for artifact streaming infrastructure (overlaybd process/config) on the node.
