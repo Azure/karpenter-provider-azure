@@ -31,6 +31,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
@@ -135,6 +136,7 @@ type DefaultAKSMachineProvider struct {
 	aksMachinesPoolLocation string
 	errorHandling           *offerings.ErrorDetailHandler
 	pollerOptions           aksmachinepoller.Options // Configurable for testing; defaults to production values
+	machineListCache        *machineListCache
 }
 
 func NewAKSMachineProvider(
@@ -159,6 +161,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		pollerOptions:           DefaultPollerOptions(),
+		machineListCache:        newMachineListCache(30*time.Second, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
 	}
 
 	return provider
@@ -502,6 +505,29 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// Use GET-based poller when SDK poller is nil (batch case)
 			// The GET poller is also compatible with non-batch case but SDK poller is preferred when available.
 			if poller == nil {
+
+				if options.FromContext(ctx).ListPollerEnabled {
+					fmt.Printf("Using list poller for AKS machine %q\n", aksMachineName)
+					provisioningErr, pollErr := p.machineListCache.pollUntilDone(ctx, aksMachineName)
+					if pollErr != nil {
+						pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (list poller), poller error: %w", aksMachineName, pollErr)
+						return
+					}
+
+					if provisioningErr != nil {
+						pollingErr = p.handleMachineProvisioningError(ctx, "LRO (list poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+						return
+					}
+
+					log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+						"aksMachineName", aksMachineName,
+						"aksMachineID", gotAKSMachine.ID)
+					return
+				} else {
+					fmt.Printf("List poller is disabled, falling back to GET poller for AKS machine %q\n", aksMachineName)
+				}
+
+				p.pollerOptions.PollInterval = 30 * time.Second
 				getPoller := aksmachinepoller.NewPoller(
 					p.pollerOptions,
 					p.azClient.AKSMachinesClient(),

@@ -138,6 +138,7 @@ func (p *Poller) PollUntilDone(ctx context.Context) (*armcontainerservice.ErrorD
 	}
 
 	ticker := time.NewTicker(p.config.PollInterval)
+	fmt.Printf("Polling for AKS machine %q with interval %s\n", p.aksMachineName, p.config.PollInterval)
 	defer ticker.Stop()
 
 	for {
