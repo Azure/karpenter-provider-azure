@@ -161,7 +161,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		pollerOptions:           DefaultPollerOptions(),
-		machineListCache:        newMachineListCache(time.Minute, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
+		machineListCache:        newMachineListCache(30*time.Second, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
 	}
 
 	return provider
