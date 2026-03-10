@@ -437,14 +437,19 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 	return false
 }
 
-// IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.
-// If not specified (nil), defaults to true (enabled).
-func (in *AKSNodeClass) IsArtifactStreamingEnabled() bool {
-	if in.Spec.ArtifactStreaming == nil || in.Spec.ArtifactStreaming.Enabled == nil {
-		// nil defaults to enabled
-		return true
+// IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class
+// based on the architecture. ARM64 nodes do not support artifact streaming.
+// If not explicitly specified (nil), defaults to true for AMD64 and false for ARM64.
+func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
+	// If explicitly set, use that value regardless of architecture
+	if in.Spec.ArtifactStreaming != nil && in.Spec.ArtifactStreaming.Enabled != nil {
+		return *in.Spec.ArtifactStreaming.Enabled
 	}
-	return *in.Spec.ArtifactStreaming.Enabled
+
+	// If not specified (nil), default based on architecture
+	// ARM64 does not support artifact streaming, so default to false
+	// AMD64 supports artifact streaming, so default to true
+	return arch != "arm64"
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.

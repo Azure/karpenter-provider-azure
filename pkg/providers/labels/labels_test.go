@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -341,7 +342,7 @@ func TestLocalDNSLabels(t *testing.T) {
 				},
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass)
+			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(labelMap[labels.AKSLocalDNSStateLabelKey]).To(Equal(tc.expectedLabel))
 		})
@@ -371,7 +372,7 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 		},
 	}
 
-	labelMap, err := labels.Get(ctx, nodeClass)
+	labelMap, err := labels.Get(ctx, nodeClass, "amd64")
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
 }
@@ -493,10 +494,107 @@ func TestLabelsGet(t *testing.T) {
 				},
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass)
+			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
 			g.Expect(err).ToNot(HaveOccurred())
 			for key, expectedValue := range tc.expectedLabels {
 				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)
+			}
+		})
+	}
+}
+
+func TestArtifactStreamingLabel(t *testing.T) {
+	testCases := []struct {
+		name               string
+		arch               string
+		artifactStreaming  *v1beta1.ArtifactStreaming
+		expectLabel        bool
+		expectedLabelValue string
+		description        string
+	}{
+		{
+			name:               "AMD64 with nil (default) should have label set to true",
+			arch:               "amd64",
+			artifactStreaming:  nil,
+			expectLabel:        true,
+			expectedLabelValue: "true",
+			description:        "Default for AMD64 should enable artifact streaming",
+		},
+		{
+			name:              "ARM64 with nil (default) should NOT have label",
+			arch:              "arm64",
+			artifactStreaming: nil,
+			expectLabel:       false,
+			description:       "Default for ARM64 should disable artifact streaming (no label)",
+		},
+		{
+			name:               "AMD64 with explicitly enabled should have label set to true",
+			arch:               "amd64",
+			artifactStreaming:  &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectLabel:        true,
+			expectedLabelValue: "true",
+			description:        "Explicit enable on AMD64 should set label",
+		},
+		{
+			name:               "ARM64 with explicitly enabled should have label set to true",
+			arch:               "arm64",
+			artifactStreaming:  &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectLabel:        true,
+			expectedLabelValue: "true",
+			description:        "Explicit enable on ARM64 should override default and set label",
+		},
+		{
+			name:              "AMD64 with explicitly disabled should NOT have label",
+			arch:              "amd64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			expectLabel:       false,
+			description:       "Explicit disable on AMD64 should not set label",
+		},
+		{
+			name:              "ARM64 with explicitly disabled should NOT have label",
+			arch:              "arm64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			expectLabel:       false,
+			description:       "Explicit disable on ARM64 should not set label",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := options.ToContext(context.Background(), &options.Options{
+				NodeResourceGroup:       "test-rg",
+				KubeletIdentityClientID: "test-client-id",
+				SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
+			})
+
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreaming: tc.artifactStreaming,
+				},
+				Status: v1beta1.AKSNodeClassStatus{
+					KubernetesVersion: "1.35.0",
+					Conditions: []status.Condition{
+						{
+							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
+							Status: metav1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			labelMap, err := labels.Get(ctx, nodeClass, tc.arch)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			labelValue, exists := labelMap[labels.AKSArtifactStreamingEnabledLabelKey]
+			if tc.expectLabel {
+				g.Expect(exists).To(BeTrue(), "Expected artifact streaming label to exist")
+				g.Expect(labelValue).To(Equal(tc.expectedLabelValue), "Expected artifact streaming label value to match")
+			} else {
+				g.Expect(exists).To(BeFalse(), "Expected artifact streaming label to NOT exist")
 			}
 		})
 	}

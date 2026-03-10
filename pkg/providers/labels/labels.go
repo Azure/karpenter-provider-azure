@@ -87,6 +87,7 @@ const (
 func Get(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
+	arch string,
 ) (map[string]string, error) {
 	labels := map[string]string{}
 	opts := options.FromContext(ctx)
@@ -158,7 +159,8 @@ func Get(
 	}
 
 	// Only set the artifact streaming label when it's enabled (matching AKS RP behavior)
-	if nodeClass.IsArtifactStreamingEnabled() {
+	// ARM64 nodes do not support artifact streaming
+	if nodeClass.IsArtifactStreamingEnabled(arch) {
 		labels[AKSArtifactStreamingEnabledLabelKey] = "true"
 	}
 
