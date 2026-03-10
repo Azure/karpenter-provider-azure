@@ -576,7 +576,7 @@ func TestArtifactStreamingLabel(t *testing.T) {
 					ArtifactStreaming: tc.artifactStreaming,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: "1.35.0",
+					KubernetesVersion: lo.ToPtr("1.35.0"),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
