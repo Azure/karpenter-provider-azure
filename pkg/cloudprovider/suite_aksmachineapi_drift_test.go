@@ -17,6 +17,7 @@ limitations under the License.
 package cloudprovider
 
 import (
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
@@ -70,6 +71,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -86,7 +89,7 @@ var _ = Describe("CloudProvider", func() {
 				pod := coretest.UnschedulablePod(coretest.PodOptions{
 					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node = ExpectScheduled(ctx, env.Client, pod)
 				// KubeletVersion must be applied to the node to satisfy k8s drift
 				if nodeClass.Status.KubernetesVersion != nil {

@@ -23,7 +23,7 @@ runs:
           /usr/local/kubebuilder/bin
           ~/go/bin
         # Include runner.environment in key because ~/go/bin expands differently on github-hosted vs self-hosted runners
-        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
+        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-go-${{ steps.setup-go.outputs.go-version }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
       env:
