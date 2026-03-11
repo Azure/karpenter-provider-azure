@@ -128,17 +128,17 @@ type AKSMachineProvider interface {
 var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
-	azClient                *azclient.AZClient
-	instanceTypeProvider    instancetype.Provider
-	imageResolver           imagefamily.Resolver
-	subscriptionID          string
-	clusterResourceGroup    string
-	clusterName             string
-	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
-	aksMachinesPoolLocation string
-	errorHandling           *offerings.ErrorDetailHandler
-	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
-	deletingMachinesMu      sync.RWMutex
+	azClient                        *azclient.AZClient
+	instanceTypeProvider            instancetype.Provider
+	imageResolver                   imagefamily.Resolver
+	subscriptionID                  string
+	clusterResourceGroup            string
+	clusterName                     string
+	aksMachinesPoolName             string // Only support one AKS machine pool at a time, for now.
+	aksMachinesPoolLocation         string
+	errorHandling                   *offerings.ErrorDetailHandler
+	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
+	deletingMachinesMu              sync.RWMutex
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
 }
 
@@ -154,16 +154,16 @@ func NewAKSMachineProvider(
 	aksMachinesPoolLocation string,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
-		azClient:                azClient,
-		instanceTypeProvider:    instanceTypeProvider,
-		imageResolver:           imageResolver,
-		subscriptionID:          subscriptionID,
-		clusterResourceGroup:    clusterResourceGroup,
-		clusterName:             clusterName,
-		aksMachinesPoolName:     aksMachinesPoolName,
-		aksMachinesPoolLocation: aksMachinesPoolLocation,
-		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
-		deletingMachines:        sets.New[string](),
+		azClient:                        azClient,
+		instanceTypeProvider:            instanceTypeProvider,
+		imageResolver:                   imageResolver,
+		subscriptionID:                  subscriptionID,
+		clusterResourceGroup:            clusterResourceGroup,
+		clusterName:                     clusterName,
+		aksMachinesPoolName:             aksMachinesPoolName,
+		aksMachinesPoolLocation:         aksMachinesPoolLocation,
+		errorHandling:                   offerings.NewErrorDetailHandler(offeringsCache),
+		deletingMachines:                sets.New[string](),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
 	}
 
@@ -459,17 +459,20 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Determine creation timestamp for Karpenter's perspective
 	creationTimestamp := NewAKSMachineTimestamp()
 
-	// Build the AKS machine template
-	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim, creationTimestamp)
+	// Build the AKS machine template (type-safe split: shared + per-machine config)
+	machineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim, creationTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
 
+	// Reassemble into Azure SDK Machine for API calls and downstream consumers.
+	aksMachineTemplate := machineTemplate.ToAzureMachine()
+
 	// Call the AKS machine API with the template to create the AKS machine instance
 	if logger := log.FromContext(ctx).V(1); logger.Enabled() {
-		logger.Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name, "aksMachine", BuildJSONFromAKSMachine(aksMachineTemplate))
+		logger.Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name, "aksMachine", BuildJSONFromAKSMachine(&aksMachineTemplate))
 	}
-	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
+	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachineTemplate, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
 	}
@@ -497,7 +500,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Return LRO
 	return NewAKSMachinePromise(
 		p,
-		aksMachineTemplate,
+		&aksMachineTemplate,
 		func() (pollingErr error) {
 			defer func() {
 				if r := recover(); r != nil {

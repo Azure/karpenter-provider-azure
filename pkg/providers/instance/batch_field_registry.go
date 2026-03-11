@@ -56,12 +56,16 @@ limitations under the License.
 // registry. If the Machine API adds new offerings-related fields to
 // MachineProperties in the future, this distinction will need to be revisited.
 //
-// ## Future improvement: type-safe config split (Proposal B)
+// ## Relationship with MachineTemplate (Proposal B)
 //
-// A stronger guarantee would be to split the machine template into typed structs
-// (SharedMachineConfig vs PerMachineConfig) at the point of creation, making the
-// type system enforce the separation. See PR #XXXX for that proposal.
-// Discussion: https://github.com/Azure/karpenter-provider-azure/pull/1455#discussion_r2901097563
+// The type-safe config split (machine_template.go) enforces the shared vs
+// per-machine classification at compile time in buildAKSMachineTemplate().
+// This registry remains necessary because the batch system receives a flat
+// armcontainerservice.Machine through the AKSMachinesAPI interface boundary,
+// so it still needs runtime field-clearing for hashing and body construction.
+// The two mechanisms are complementary: MachineTemplate catches misclassification
+// at the creation point, and this registry catches it within the batch internals.
+// See designs/0012-batch-type-safe-config-split.md.
 package instance
 
 import (
