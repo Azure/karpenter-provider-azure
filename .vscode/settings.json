@@ -27,5 +27,6 @@
                 "query": "repo:${owner}/${repository} is:open -label:dependencies"
             }
         ]
-    }
+    },
+    "chat.useAgentSkills": true
 }
