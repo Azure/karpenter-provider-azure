@@ -39,6 +39,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
@@ -262,10 +263,8 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
 		// TODO: if/when we need to monitor provisioner changes and flow updates on the NodePool down to the underlying VMs.
 		WithOptions(controller.Options{
-			RateLimiter: reasonable.RateLimiter(),
-			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
-			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
-			MaxConcurrentReconciles: 10,
+			RateLimiter:             reasonable.RateLimiter(),
+			MaxConcurrentReconciles: consts.MaxConcurrentReconciles,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }

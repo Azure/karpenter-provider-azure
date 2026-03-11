@@ -33,6 +33,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
 type Controller struct {
@@ -74,10 +75,8 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		Named("nodeclass.hash").
 		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
-			RateLimiter: reasonable.RateLimiter(),
-			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
-			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
-			MaxConcurrentReconciles: 10,
+			RateLimiter:             reasonable.RateLimiter(),
+			MaxConcurrentReconciles: consts.MaxConcurrentReconciles,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }

@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/types"
@@ -118,10 +119,8 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 			}),
 		).
 		WithOptions(controller.Options{
-			RateLimiter: reasonable.RateLimiter(),
-			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
-			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
-			MaxConcurrentReconciles: 10,
+			RateLimiter:             reasonable.RateLimiter(),
+			MaxConcurrentReconciles: consts.MaxConcurrentReconciles,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }
