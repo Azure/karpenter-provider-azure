@@ -74,6 +74,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
+	ctx = options.ToContext(ctx, test.Options())
 	nodeClass = test.AKSNodeClass()
 	azureEnv.Reset()
 
