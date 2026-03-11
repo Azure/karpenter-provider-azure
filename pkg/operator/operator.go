@@ -307,8 +307,16 @@ func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Co
 	return *vnet.Properties.ResourceGUID, nil
 }
 
-// WaitForCRDs waits for the required CRDs to be available with a timeout
-func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config, log logr.Logger) error {
+// WaitForCRDs waits for the required CRDs to be available.
+// The timeout parameter is accepted for backward compatibility but is no longer used.
+// Instead, the function waits indefinitely, relying on kubelet liveness probes to restart
+// the pod if CRDs truly never appear. In CCP deployments, CRD installation via the overlay
+// Flux HelmController can take minutes to tens of minutes depending on infrastructure load.
+// A hard timeout here causes crash-loop overhead that makes the situation worse: the
+// DynamicRESTMapper's cache is lost on each restart, and CrashLoopBackOff exponential
+// backoff delays the next attempt. Waiting indefinitely allows the pod to succeed as soon
+// as CRDs arrive, without wasting time on restarts.
+func WaitForCRDs(ctx context.Context, _ time.Duration, config *rest.Config, log logr.Logger) error {
 	requiredGVKs := getRequiredGVKs()
 	client, err := rest.HTTPClientFor(config)
 	if err != nil {
@@ -319,9 +327,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 		return fmt.Errorf("creating dynamic rest mapper, %w", err)
 	}
 
-	log.Info("waiting for required CRDs to be available", "gvks", requiredGVKs, "timeout", timeout)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	log.Info("waiting for required CRDs to be available", "gvks", requiredGVKs)
 
 	for _, gvk := range requiredGVKs {
 		err := wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
@@ -330,15 +336,17 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 					log.V(1).Info("waiting for CRD to be available", "gvk", gvk)
 					return false, nil
 				}
-				return false, err
+				// Transient errors (network, 503, etc.) should also be retried rather than
+				// treated as fatal. The DynamicRESTMapper wraps discovery failures as
+				// ErrResourceDiscoveryFailed which is not a NoMatchError, but these are
+				// typically transient and will resolve once the API server is reachable.
+				log.V(1).Info("transient error checking CRD, will retry", "gvk", gvk, "error", err)
+				return false, nil
 			}
 			log.V(1).Info("CRD is available", "gvk", gvk)
 			return true, nil
 		})
 		if err != nil {
-			if ctx.Err() == context.DeadlineExceeded {
-				return fmt.Errorf("timed out waiting for CRD %s to be available", gvk)
-			}
 			return fmt.Errorf("failed to wait for CRD %s: %w", gvk, err)
 		}
 	}
