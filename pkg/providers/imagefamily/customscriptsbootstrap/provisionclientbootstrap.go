@@ -106,7 +106,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	// Artifact streaming is configurable through the AKSNodeClass spec
 	// If not specified, defaults to enabled for AMD64 and disabled for ARM64
-	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64
+	enableArtifactStreaming := p.Arch != karpv1.ArchitectureArm64
 	if p.ArtifactStreaming != nil && p.ArtifactStreaming.Enabled != nil {
 		enableArtifactStreaming = *p.ArtifactStreaming.Enabled
 	}
