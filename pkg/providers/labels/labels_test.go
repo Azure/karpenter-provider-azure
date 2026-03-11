@@ -238,7 +238,7 @@ func TestIsKubeletLabel(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result := labels.IsKubeletLabel(c.label)
+			result := labels.CanKubeletSetLabel(c.label)
 			g.Expect(result).To(Equal(c.expectedKubelet))
 		})
 	}
