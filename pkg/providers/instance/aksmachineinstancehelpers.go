@@ -259,7 +259,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 		func(k string, req *scheduling.Requirement) bool {
-			return labels.IsKubeletLabel(k)
+			return labels.CanKubeletSetLabel(k)
 		},
 	)
 	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
@@ -270,25 +270,11 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
 	}
 
-	// TEMPORARY
-	// TODO(mattchr): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
-	labelsToRemove := []string{
-		"beta.kubernetes.io/instance-type",
-		"failure-domain.beta.kubernetes.io/region",
-		"beta.kubernetes.io/os",
-		"beta.kubernetes.io/arch",
-		"failure-domain.beta.kubernetes.io/zone",
-		"topology.kubernetes.io/zone",
-		"topology.kubernetes.io/region",
-		"node.kubernetes.io/instance-type",
-		"kubernetes.io/arch",
-		"kubernetes.io/os",
-		"node.kubernetes.io/windows-build",
-	}
-	nodeLabels = lo.OmitByKeys(nodeLabels, labelsToRemove)
-	// Remove all labels with kubernetes.azure.com prefix
+	// TODO: also do the same for taints (which don't have sanitization logic like this yet)
+	// Remove all labels with kubernetes.azure.com prefix, as well as those managed by kubelet.
+	// Also remove legacy AKS managed labels
 	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {
-		return strings.HasPrefix(key, "kubernetes.azure.com/")
+		return v1beta1.IsAKSLabel(key) || labels.IsLabelKubeletManaged(key)
 	})
 
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))
