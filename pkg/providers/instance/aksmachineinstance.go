@@ -445,16 +445,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	var existingAKSMachine *armcontainerservice.Machine
-	var err error
 
-	if options.FromContext(ctx).ListPollerEnabled {
-		log.FromContext(ctx).Info("List poller is enabled, trying to find existing AKS machine with list poller", "aksMachineName", aksMachineName)
-		existingAKSMachine, err = p.machineListCache.FreshGet(ctx, aksMachineName)
-	} else {
-		log.FromContext(ctx).Info("List poller is disabled, trying to find existing AKS machine with direct GET", "aksMachineName", aksMachineName)
-		existingAKSMachine, err = p.getMachine(ctx, aksMachineName)
-	}
+	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
 
 	if err == nil {
 		// Existing AKS machine found, reuse it.
