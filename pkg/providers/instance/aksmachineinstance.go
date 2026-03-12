@@ -445,7 +445,17 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	var existingAKSMachine *armcontainerservice.Machine
+	var err error
+
+	if options.FromContext(ctx).ListPollerEnabled {
+		log.FromContext(ctx).Info("List poller is enabled, trying to find existing AKS machine with list poller", "aksMachineName", aksMachineName)
+		existingAKSMachine, err = p.machineListCache.FreshGet(ctx, aksMachineName)
+	} else {
+		log.FromContext(ctx).Info("List poller is disabled, trying to find existing AKS machine with direct GET", "aksMachineName", aksMachineName)
+		existingAKSMachine, err = p.getMachine(ctx, aksMachineName)
+	}
+
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, nodeClaim, instanceTypes, existingAKSMachine)
@@ -481,10 +491,18 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Get once after begin create to retrieve VMResourceID.
 	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 	// TODO: find a way to access that instead of making another GET call like this.
-	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	var gotAKSMachine *armcontainerservice.Machine
+	if options.FromContext(ctx).ListPollerEnabled {
+		log.FromContext(ctx).Info("Using list poller to get AKS machine once after begin creation", "aksMachineName", aksMachineName)
+		gotAKSMachine, err = p.machineListCache.FreshGet(ctx, aksMachineName)
+	} else {
+		log.FromContext(ctx).Info("Using direct GET to get AKS machine once after begin creation", "aksMachineName", aksMachineName)
+		gotAKSMachine, err = p.getMachine(ctx, aksMachineName)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
+
 	// Process what we got.
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
