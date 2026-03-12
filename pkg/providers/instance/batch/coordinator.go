@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
@@ -66,6 +67,12 @@ func NewCoordinator(
 func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 	ctx := context.Background()
 	batchID := uuid.New().String()
+
+	nowTime := time.Now().UTC()
+	defer log.FromContext(ctx).Info("batch execution finished",
+		"batchID", batchID,
+		"duration", time.Since(nowTime).String(),
+	)
 
 	log.FromContext(ctx).Info("executing batch",
 		"batchID", batchID,

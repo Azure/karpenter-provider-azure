@@ -447,7 +447,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
 
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
-
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, nodeClaim, instanceTypes, existingAKSMachine)
@@ -483,17 +482,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Get once after begin create to retrieve VMResourceID.
 	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 	// TODO: find a way to access that instead of making another GET call like this.
-	var gotAKSMachine *armcontainerservice.Machine
-	if options.FromContext(ctx).ListPollerEnabled {
-		log.FromContext(ctx).Info("Using list poller to get AKS machine once after begin creation", "aksMachineName", aksMachineName)
-		gotAKSMachine, err = p.machineListCache.FreshGet(ctx, aksMachineName)
-	} else {
-		log.FromContext(ctx).Info("Using direct GET to get AKS machine once after begin creation", "aksMachineName", aksMachineName)
-		gotAKSMachine, err = p.getMachine(ctx, aksMachineName)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
-	}
+	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
 
 	// Process what we got.
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {

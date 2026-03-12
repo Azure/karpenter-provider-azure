@@ -91,24 +91,6 @@ func NewMachineListCache(ttl time.Duration, client AKSMachineNewListPager, inter
 	}
 }
 
-// FreshGet retrieves a machine from the cache by name. If the cache is stale, it triggers an update.
-func (c *MachineListCache) FreshGet(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
-	if !c.isFresh() {
-		if err := c.update(ctx); err != nil {
-			return nil, fmt.Errorf("failed to update machine list cache: %w", err)
-		}
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	machine, ok := c.machines[machineName]
-	if !ok {
-		return nil, fmt.Errorf("machine %q not found in cache", machineName)
-	}
-	return machine, nil
-}
-
 // isFresh returns true if the cache has been populated and hasn't expired.
 // Lock-free implementation using atomic operations for better concurrency.
 func (c *MachineListCache) isFresh() bool {
@@ -227,7 +209,13 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	fmt.Println("Updating machine list cache from Azure API")
+	now := time.Now()
+	defer func() {
+		log.FromContext(ctx).Info("finished updating machine list cache",
+			"duration", time.Since(now).String(),
+			"aksMachinesPoolName", c.aksMachinesPoolName,
+		)
+	}()
 
 	// Double-check freshness after acquiring lock to avoid redundant updates
 	if c.isFresh() {
