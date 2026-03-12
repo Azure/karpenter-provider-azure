@@ -83,6 +83,7 @@ var (
 	HyperVGenerationV1 = "1"
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
+	ManufacturerAMD    = "amd"
 
 	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
 	LabelSKUFamily  = Group + "/sku-family"  // D

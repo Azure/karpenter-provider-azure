@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
 
@@ -53,7 +54,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("GPU", func() {
 	DescribeTable("should provision one GPU node and one GPU Pod",
 		Label("GPU"),
-		func(nodeClass *v1beta1.AKSNodeClass) {
+		func(nodeClass *v1beta1.AKSNodeClass, gpuResourceName string) {
 			// Enable NodeRepair feature gate if running in-cluster
 			if env.InClusterController {
 				// Have Node Repair enabled to validate it does not interfere with
@@ -71,8 +72,8 @@ var _ = Describe("GPU", func() {
 			})
 
 			nodePool.Spec.Limits = karpv1.Limits{
-				corev1.ResourceCPU:                    resource.MustParse("25"),
-				corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+				corev1.ResourceCPU:                   resource.MustParse("25"),
+				corev1.ResourceName(gpuResourceName): resource.MustParse("1"),
 			}
 
 			minstPodOptions := test.PodOptions{
@@ -84,7 +85,7 @@ var _ = Describe("GPU", func() {
 				},
 				ResourceRequirements: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("1"),
+						corev1.ResourceName(gpuResourceName): resource.MustParse("1"),
 					},
 				},
 			}
@@ -102,24 +103,33 @@ var _ = Describe("GPU", func() {
 				int(*deployment.Spec.Replicas),
 			)
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
+
+			// Verify the provisioned node uses a GPU SKU from the new implementation
+			nodes := env.Monitor.CreatedNodes()
+			Expect(nodes).To(HaveLen(int(*deployment.Spec.Replicas)))
+			for _, node := range nodes {
+				instanceType := node.Labels[corev1.LabelInstanceTypeStable]
+				Expect(utils.IsGPUEnabledSKU(instanceType)).To(BeTrue(),
+					"Expected node to use a GPU-enabled SKU, got: %s", instanceType)
+			}
 		},
-		Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
+		Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass(), "nvidia.com/gpu"),
 		Entry("should provision one GPU Node and one GPU Pod (Ubuntu)", func() *v1beta1.AKSNodeClass { // This ensures the case statement for GPU Filtering covers the generic Ubuntu Image family
 			nodeClass := env.DefaultAKSNodeClass()
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 			return nodeClass
 
-		}()),
+		}(), "nvidia.com/gpu"),
 		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", func() *v1beta1.AKSNodeClass {
 			nodeClass := env.DefaultAKSNodeClass()
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 			return nodeClass
-		}()),
+		}(), "nvidia.com/gpu"),
 		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2404)", func() *v1beta1.AKSNodeClass {
 			nodeClass := env.DefaultAKSNodeClass()
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 			return nodeClass
-		}()),
+		}(), "nvidia.com/gpu"),
 	)
 })
 
