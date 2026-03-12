@@ -247,8 +247,7 @@ func GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName string) (string, er
 
 func isAKSMachineDeleting(aksMachine *armcontainerservice.Machine) bool {
 	if aksMachine != nil && aksMachine.Properties != nil && aksMachine.Properties.ProvisioningState != nil {
-		// Suggestion: find a constant?
-		return *aksMachine.Properties.ProvisioningState == "Deleting"
+		return *aksMachine.Properties.ProvisioningState == consts.ProvisioningStateDeleting
 	}
 	return false
 }

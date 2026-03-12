@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -495,7 +496,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		It("should return true when provisioning state is Deleting", func() {
 			machine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: lo.ToPtr("Deleting"),
+					ProvisioningState: lo.ToPtr(consts.ProvisioningStateDeleting),
 				},
 			}
 
