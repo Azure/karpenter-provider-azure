@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -66,12 +67,12 @@ type AKSMachineNewListPager interface {
 //   - Explicit: mutating operations (Create, Update, Delete) invalidate the affected entry
 //   - Full refresh: List() replaces the entire cache
 type MachineListCache struct {
-	mu          sync.RWMutex
-	machines    map[string]*armcontainerservice.Machine // keyed by machine name (not full ARM ID)
-	lastUpdated time.Time
-	ttl         time.Duration
-	interval    time.Duration
-	client      AKSMachineNewListPager
+	mu                   sync.RWMutex
+	machines             map[string]*armcontainerservice.Machine // keyed by machine name (not full ARM ID)
+	lastUpdatedUnixNanos atomic.Int64                            // nanoseconds since epoch; 0 means never updated
+	ttl                  time.Duration
+	interval             time.Duration
+	client               AKSMachineNewListPager
 
 	clusterResourceGroup string
 	clusterName          string
@@ -91,11 +92,14 @@ func NewMachineListCache(ttl time.Duration, client AKSMachineNewListPager, inter
 }
 
 // isFresh returns true if the cache has been populated and hasn't expired.
+// Lock-free implementation using atomic operations for better concurrency.
 func (c *MachineListCache) isFresh() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return !c.lastUpdated.IsZero() && time.Since(c.lastUpdated) < c.ttl
+	lastUpdatedNanos := c.lastUpdatedUnixNanos.Load()
+	if lastUpdatedNanos == 0 {
+		return false
+	}
+	lastUpdated := time.Unix(0, lastUpdatedNanos)
+	return time.Since(lastUpdated) < c.ttl
 }
 
 // get retrieves a machine from the cache by name.
@@ -129,7 +133,7 @@ func (c *MachineListCache) invalidateAll() {
 	defer c.mu.Unlock()
 
 	c.machines = make(map[string]*armcontainerservice.Machine)
-	c.lastUpdated = time.Time{} // zero value → isFresh() returns false
+	c.lastUpdatedUnixNanos.Store(0) // zero value → isFresh() returns false
 }
 
 func (c *MachineListCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
@@ -208,7 +212,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	fmt.Println("Updating machine list cache from Azure API")
 
 	// Double-check freshness after acquiring lock to avoid redundant updates
-	if !c.lastUpdated.IsZero() && time.Since(c.lastUpdated) < c.ttl {
+	if c.isFresh() {
 		return nil
 	}
 
@@ -256,7 +260,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 
 	fmt.Printf("Machine list cache updated with %d machines\n", len(c.machines))
 
-	c.lastUpdated = time.Now()
+	c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 	return nil
 }
 
