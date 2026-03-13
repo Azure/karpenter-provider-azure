@@ -92,7 +92,7 @@ type Environment struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	// Providers
-	InstanceTypesProvider        instancetype.Provider
+	InstanceTypesProvider        *instancetype.DefaultProvider
 	VMInstanceProvider           instance.VMProvider
 	AKSMachineProvider           instance.AKSMachineProvider
 	PricingProvider              *pricing.Provider
@@ -251,6 +251,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
+
+	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
+	// We can update it in individual tests as needed.
+	lo.Must0(instanceTypesProvider.UpdateInstanceTypes(ctx))
 
 	return &Environment{
 		VirtualMachinesAPI:          virtualMachinesAPI,
