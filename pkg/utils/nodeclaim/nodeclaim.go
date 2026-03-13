@@ -20,10 +20,12 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -51,6 +53,11 @@ func UsingAKSNodeClassPredicate() predicate.Funcs {
 // GetAKSNodeClass resolves the AKSNodeClass from the NodeClaim's NodeClassRef.
 // If the NodeClass for the nodeClaim has DeletionTimestamp set, an error is returned.
 func GetAKSNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *karpv1.NodeClaim) (*v1beta1.AKSNodeClass, error) {
+	nowTime := time.Now().UTC()
+	defer log.FromContext(ctx).Info("resolved AKSNodeClass",
+		"nodeClaim", nodeClaim.Name,
+		"duration", time.Since(nowTime).Seconds(),
+	)
 	if nodeClaim.Spec.NodeClassRef == nil {
 		return nil, fmt.Errorf("nodeClaim %s does not have a nodeClassRef", nodeClaim.Name)
 	}

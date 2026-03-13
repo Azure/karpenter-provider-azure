@@ -209,6 +209,11 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Double-check freshness after acquiring lock to avoid redundant updates
+	if c.isFresh() {
+		return nil
+	}
+
 	now := time.Now()
 	defer func() {
 		log.FromContext(ctx).Info("finished updating machine list cache",
@@ -216,11 +221,6 @@ func (c *MachineListCache) update(ctx context.Context) error {
 			"aksMachinesPoolName", c.aksMachinesPoolName,
 		)
 	}()
-
-	// Double-check freshness after acquiring lock to avoid redundant updates
-	if c.isFresh() {
-		return nil
-	}
 
 	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
 	if pager == nil {

@@ -167,7 +167,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation:         aksMachinesPoolLocation,
 		errorHandling:                   offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:                sets.New[string](),
-		machineListCache:                aksmachinepoller.NewMachineListCache(30*time.Second, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
+		machineListCache:                aksmachinepoller.NewMachineListCache(time.Minute, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
 	}
 
@@ -446,6 +446,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
 
+	nowTime := time.Now().UTC()
+	defer log.FromContext(ctx).Info("begin create machine finished",
+		"aksMachineName", aksMachineName,
+		"duration", time.Since(nowTime).Seconds(),
+	)
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
