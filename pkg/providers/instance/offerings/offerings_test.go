@@ -607,3 +607,260 @@ func TestGetInstanceTypeFromVMSize(t *testing.T) {
 		})
 	}
 }
+
+// Helper to create an instance type with available offerings for PreLaunchFilter tests
+func createFilterTestInstanceType(name string, offeringDefs ...offering) *cloudprovider.InstanceType {
+	it := &cloudprovider.InstanceType{
+		Name:     name,
+		Offerings: []*cloudprovider.Offering{},
+	}
+	for _, o := range offeringDefs {
+		it.Offerings = append(it.Offerings, &cloudprovider.Offering{
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, o.capacityType),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, o.zone),
+			),
+			Available: true,
+		})
+	}
+	return it
+}
+
+func TestPreLaunchFilter_NilIsAvailable_ReturnsAll(t *testing.T) {
+	g := NewWithT(t)
+	instanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D2s_v3", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D4s_v3", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+	}
+
+	// nil isAvailable means fail-open: return all
+	result := PreLaunchFilter(context.Background(), instanceTypes, nil)
+	g.Expect(result).To(HaveLen(2))
+}
+
+func TestPreLaunchFilter_AllAvailable_ReturnsAll(t *testing.T) {
+	g := NewWithT(t)
+	instanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D2s_v3", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D4s_v3", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+	}
+
+	// All available
+	result := PreLaunchFilter(context.Background(), instanceTypes, func(name, zone, ct string) bool {
+		return true
+	})
+	g.Expect(result).To(HaveLen(2))
+}
+
+func TestPreLaunchFilter_AllUnavailable_ReturnsEmpty(t *testing.T) {
+	g := NewWithT(t)
+	instanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D2s_v3", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D4s_v3", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+	}
+
+	// All unavailable
+	result := PreLaunchFilter(context.Background(), instanceTypes, func(name, zone, ct string) bool {
+		return false
+	})
+	g.Expect(result).To(BeEmpty())
+}
+
+func TestPreLaunchFilter_PartialUnavailable_FiltersCorrectly(t *testing.T) {
+	g := NewWithT(t)
+	instanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D64ads_v5", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D32ads_v5", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D8s_v3", offering{"westus-1", karpv1.CapacityTypeOnDemand}),
+	}
+
+	// D64 and D32 are quota-exhausted (marked unavailable by parallel failures), D8 is still OK
+	result := PreLaunchFilter(context.Background(), instanceTypes, func(name, zone, ct string) bool {
+		return name == "Standard_D8s_v3"
+	})
+	g.Expect(result).To(HaveLen(1))
+	g.Expect(result[0].Name).To(Equal("Standard_D8s_v3"))
+}
+
+func TestPreLaunchFilter_MultiZone_KeepsIfAnyZoneAvailable(t *testing.T) {
+	g := NewWithT(t)
+	instanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D64ads_v5",
+			offering{"westus-1", karpv1.CapacityTypeOnDemand},
+			offering{"westus-2", karpv1.CapacityTypeOnDemand},
+			offering{"westus-3", karpv1.CapacityTypeOnDemand},
+		),
+	}
+
+	// Zone 1 and 2 unavailable, zone 3 still available — keep the instance type
+	result := PreLaunchFilter(context.Background(), instanceTypes, func(name, zone, ct string) bool {
+		return zone == "westus-3"
+	})
+	g.Expect(result).To(HaveLen(1))
+	g.Expect(result[0].Name).To(Equal("Standard_D64ads_v5"))
+}
+
+func TestPreLaunchFilter_MultiZone_RemovesIfAllZonesUnavailable(t *testing.T) {
+	g := NewWithT(t)
+	instanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D64ads_v5",
+			offering{"westus-1", karpv1.CapacityTypeOnDemand},
+			offering{"westus-2", karpv1.CapacityTypeOnDemand},
+		),
+	}
+
+	// All zones unavailable
+	result := PreLaunchFilter(context.Background(), instanceTypes, func(name, zone, ct string) bool {
+		return false
+	})
+	g.Expect(result).To(BeEmpty())
+}
+
+func TestPreLaunchFilter_SpotAndOnDemand_FiltersPerCapacityType(t *testing.T) {
+	g := NewWithT(t)
+	instanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D64ads_v5",
+			offering{"westus-1", karpv1.CapacityTypeOnDemand},
+			offering{"westus-1", karpv1.CapacityTypeSpot},
+		),
+	}
+
+	// On-demand unavailable, spot still available — keep the instance type
+	result := PreLaunchFilter(context.Background(), instanceTypes, func(name, zone, ct string) bool {
+		return ct == karpv1.CapacityTypeSpot
+	})
+	g.Expect(result).To(HaveLen(1))
+}
+
+func TestPreLaunchFilter_EmptyInput_ReturnsEmpty(t *testing.T) {
+	g := NewWithT(t)
+	result := PreLaunchFilter(context.Background(), []*cloudprovider.InstanceType{}, func(name, zone, ct string) bool {
+		return true
+	})
+	g.Expect(result).To(BeEmpty())
+}
+
+func TestPreLaunchFilter_OnlyChecksAvailableOfferings(t *testing.T) {
+	g := NewWithT(t)
+	// Create an instance type where one offering is already marked Available=false at scheduling time
+	it := &cloudprovider.InstanceType{
+		Name: "Standard_D64ads_v5",
+		Offerings: []*cloudprovider.Offering{
+			{
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+				),
+				Available: false, // Already marked unavailable at scheduling time
+			},
+			{
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-2"),
+				),
+				Available: true,
+			},
+		},
+	}
+
+	// westus-2 is also now unavailable in live cache
+	result := PreLaunchFilter(context.Background(), []*cloudprovider.InstanceType{it}, func(name, zone, ct string) bool {
+		return false // all unavailable in live cache
+	})
+	// Should be filtered out because the only Available=true offering (westus-2) is now unavailable in live cache
+	g.Expect(result).To(BeEmpty())
+}
+
+func TestPreLaunchFilter_LargeScale_CircuitBreaker(t *testing.T) {
+	g := NewWithT(t)
+	// Simulate 10 instance types, all in the same SKU family
+	var instanceTypes []*cloudprovider.InstanceType
+	for _, size := range []string{"D4", "D8", "D16", "D32", "D64", "D96", "E4", "E8", "E16", "E32"} {
+		instanceTypes = append(instanceTypes, createFilterTestInstanceType(
+			"Standard_"+size+"ads_v5",
+			offering{"westus-1", karpv1.CapacityTypeOnDemand},
+			offering{"westus-2", karpv1.CapacityTypeOnDemand},
+		))
+	}
+
+	// Simulate: first failure marks all D-series unavailable, E-series still OK
+	result := PreLaunchFilter(context.Background(), instanceTypes, func(name, zone, ct string) bool {
+		return name == "Standard_E4ads_v5" || name == "Standard_E8ads_v5" || name == "Standard_E16ads_v5" || name == "Standard_E32ads_v5"
+	})
+	g.Expect(result).To(HaveLen(4))
+	for _, it := range result {
+		g.Expect(it.Name).To(HavePrefix("Standard_E"))
+	}
+}
+
+// TestPreLaunchFilter_SequentialNodeClaims_ProgressiveFiltering simulates the real-world
+// 5000-core prompt scale scenario:
+//
+// 1. Scheduler creates 78 NodeClaims for D64ads_v5 (78 × 64 = 4992 cores)
+// 2. First ~7 succeed (consuming 448 of 500 vCPU quota)
+// 3. 8th fails with quota error → cache updated
+// 4. Remaining 70 NodeClaims call PreLaunchFilter → D64 is filtered out
+// 5. Fallback to lower-weight pool's SKUs
+//
+// This test verifies that after the cache is updated (simulating the failure),
+// subsequent calls to PreLaunchFilter correctly filter out the failed SKU.
+func TestPreLaunchFilter_SequentialNodeClaims_ProgressiveFiltering(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// High-weight pool: AMD D-series (weight=5)
+	amdInstanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D64ads_v5", offering{"eastus2-1", karpv1.CapacityTypeOnDemand}, offering{"eastus2-2", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D32ads_v5", offering{"eastus2-1", karpv1.CapacityTypeOnDemand}, offering{"eastus2-2", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D16ads_v5", offering{"eastus2-1", karpv1.CapacityTypeOnDemand}, offering{"eastus2-2", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D8ads_v5", offering{"eastus2-1", karpv1.CapacityTypeOnDemand}, offering{"eastus2-2", karpv1.CapacityTypeOnDemand}),
+	}
+
+	// Low-weight pool: Intel D-series (weight=1) — the fallback
+	intelInstanceTypes := []*cloudprovider.InstanceType{
+		createFilterTestInstanceType("Standard_D64s_v3", offering{"eastus2-1", karpv1.CapacityTypeOnDemand}, offering{"eastus2-2", karpv1.CapacityTypeOnDemand}),
+		createFilterTestInstanceType("Standard_D32s_v3", offering{"eastus2-1", karpv1.CapacityTypeOnDemand}, offering{"eastus2-2", karpv1.CapacityTypeOnDemand}),
+	}
+
+	// Simulated ICE cache state: tracks which SKUs are marked unavailable
+	unavailableSKUs := map[string]bool{}
+
+	isAvailable := func(name, zone, ct string) bool {
+		return !unavailableSKUs[name]
+	}
+
+	// === Phase 1: Before any failure — all AMD SKUs available ===
+	result := PreLaunchFilter(ctx, amdInstanceTypes, isAvailable)
+	g.Expect(result).To(HaveLen(4), "Phase 1: all AMD SKUs should be available before any failure")
+
+	// === Phase 2: First NodeClaim fails (D64), cache updated ===
+	// Simulates: handleSKUFamilyQuotaError marks D64 unavailable
+	unavailableSKUs["Standard_D64ads_v5"] = true
+
+	result = PreLaunchFilter(ctx, amdInstanceTypes, isAvailable)
+	g.Expect(result).To(HaveLen(3), "Phase 2: D64 should be filtered out after first failure")
+	for _, it := range result {
+		g.Expect(it.Name).NotTo(Equal("Standard_D64ads_v5"))
+	}
+
+	// === Phase 3: D32 also fails (still over quota for 32 vCPUs) ===
+	unavailableSKUs["Standard_D32ads_v5"] = true
+
+	result = PreLaunchFilter(ctx, amdInstanceTypes, isAvailable)
+	g.Expect(result).To(HaveLen(2), "Phase 3: D64 and D32 should be filtered out")
+
+	// === Phase 4: D16 and D8 also fail — entire AMD pool exhausted ===
+	unavailableSKUs["Standard_D16ads_v5"] = true
+	unavailableSKUs["Standard_D8ads_v5"] = true
+
+	result = PreLaunchFilter(ctx, amdInstanceTypes, isAvailable)
+	g.Expect(result).To(BeEmpty(), "Phase 4: all AMD SKUs exhausted, should be empty")
+
+	// === Phase 5: Intel (lower-weight) pool is still available ===
+	result = PreLaunchFilter(ctx, intelInstanceTypes, isAvailable)
+	g.Expect(result).To(HaveLen(2), "Phase 5: Intel fallback pool should be fully available")
+	for _, it := range result {
+		g.Expect(it.Name).To(HavePrefix("Standard_D"), "Intel SKUs should be available")
+		g.Expect(it.Name).To(HaveSuffix("s_v3"), "Intel SKUs should end with v3")
+	}
+}
