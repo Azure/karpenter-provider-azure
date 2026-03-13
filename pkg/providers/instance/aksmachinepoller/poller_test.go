@@ -224,7 +224,7 @@ func TestPollUntilDone_TransientErrorRetry(t *testing.T) {
 	mock := &mockGetter{
 		responses: []mockResponse{
 			{machine: machineWithState(consts.ProvisioningStateCreating)},
-			{err: transientErr},                                          // transient error
+			{err: transientErr}, // transient error
 			{machine: machineWithState(consts.ProvisioningStateSucceeded)}, // retry succeeds
 		},
 	}
@@ -296,8 +296,8 @@ func TestPollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 
 	mock := &mockGetter{
 		responses: []mockResponse{
-			{machine: machineWithNilState},                                  // nil state, consumes retry
-			{machine: machineWithNilState},                                  // nil state, consumes retry
+			{machine: machineWithNilState},                                 // nil state, consumes retry
+			{machine: machineWithNilState},                                 // nil state, consumes retry
 			{machine: machineWithState(consts.ProvisioningStateSucceeded)}, // succeeds
 		},
 	}
