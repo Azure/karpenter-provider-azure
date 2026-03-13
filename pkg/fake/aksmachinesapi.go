@@ -300,13 +300,40 @@ func (c *AKSMachinesAPI) createSingleMachine(input *AKSMachineCreateOrUpdateInpu
 	})
 }
 
-// createBatchMachines handles batch creation: creates one machine per entry
-// using the shared template body + per-machine zones/tags from the batch entries.
-// This simulates what the real Azure API does when reading the BatchPutMachine header.
+// createBatchMachines handles batch creation: creates one machine from the body
+// (the primary) plus one machine per batch entry (non-primary) from the header.
+//
+// This simulates what the real Azure API does:
+//   - Primary machine: created from the PUT body (has its own tags/zones)
+//   - Non-primary machines: cloned from the body, then overwritten with
+//     per-machine zones/tags from the BatchPutMachine header entries
+//
+// The entries list does NOT include the primary — it was excluded by the
+// coordinator's buildBatchHeader to match how the RP's
+// cleanUpInvalidDuplicateMachinesAndZones filters it out.
 func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInput, template armcontainerservice.Machine, entries []batch.MachineEntry) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
-	var primaryMachine armcontainerservice.Machine
+	// Step 1: Create the primary machine from the body (it has its tags/zones intact)
+	primaryMachine := template
+	primaryID := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
+	primaryMachine.ID = &primaryID
+	primaryMachine.Name = lo.ToPtr(input.AKSMachineName)
 
-	for i, entry := range entries {
+	if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(primaryID); ok {
+		existing := existingRaw.(armcontainerservice.Machine)
+		if c.doImmutablePropertiesChanged(&existing, &primaryMachine) {
+			return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
+		}
+	}
+
+	c.setDefaultMachineValues(&primaryMachine, input.ResourceGroupName, input.AgentPoolName)
+	primaryMachine.Properties.ProvisioningState = lo.ToPtr("Creating")
+	c.aksDataStorage.AKSMachines.Store(primaryID, primaryMachine)
+
+	updatedPrimary, _ := c.simulateCreateStatusAtAsync(primaryMachine)
+	c.aksDataStorage.AKSMachines.Store(primaryID, updatedPrimary)
+
+	// Step 2: Create non-primary machines from the header entries
+	for _, entry := range entries {
 		// Build a per-machine copy from the shared template
 		machine := template
 		machine.Name = lo.ToPtr(entry.MachineName)
@@ -339,7 +366,6 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 		}
 
 		// Check if AKS machine already exists — if so, check for immutable property conflicts
-		// (mirrors the conflict detection in createSingleMachine → updateExistingAKSMachine)
 		if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
 			existing := existingRaw.(armcontainerservice.Machine)
 			if c.doImmutablePropertiesChanged(&existing, &machine) {
@@ -355,19 +381,15 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 		// Simulate async completion
 		updatedMachine, _ := c.simulateCreateStatusAtAsync(machine)
 		c.aksDataStorage.AKSMachines.Store(id, updatedMachine)
-
-		if i == 0 {
-			primaryMachine = updatedMachine
-		}
 	}
 
-	// Enrich input.AKSMachine with the primary entry's zones/tags so that
-	// CalledWithInput captures meaningful per-machine data (not the cleared template).
-	input.AKSMachine = primaryMachine
+	// Enrich input.AKSMachine with the primary's final state so that
+	// CalledWithInput captures meaningful per-machine data.
+	input.AKSMachine = updatedPrimary
 
-	// Return the poller for the primary (first) machine, matching coordinator behavior
+	// Return the poller for the primary machine, matching coordinator behavior
 	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
-		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: primaryMachine}, nil
+		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: updatedPrimary}, nil
 	})
 }
 

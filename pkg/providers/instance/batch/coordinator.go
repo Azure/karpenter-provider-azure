@@ -30,7 +30,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -87,16 +86,19 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 	// See WithFakeBatchEntries for why this duplication is necessary.
 	ctxWithHeader = WithFakeBatchEntries(ctxWithHeader, entries)
 
-	// Clear per-machine fields from the body — these are already in the BatchPutMachine header
-	// and the body should only contain the shared template config.
-	// Uses instance.ClearPerMachineFields (batch_field_registry.go) — the single source of truth.
-	template := batch.template
-	template.Zones = nil
-	if template.Properties != nil {
-		props := *template.Properties
-		instance.ClearPerMachineFields(&props)
-		template.Properties = &props
-	}
+	// Build the PUT body from the primary machine's template.
+	//
+	// The primary machine (batch.requests[0]) keeps its per-machine fields
+	// (tags, zones) in the body — the RP reads them normally from the body.
+	// Non-primary machines get their per-machine fields from the BatchPutMachine
+	// header instead. This matches how the RP's PrepareBatchMachines works:
+	// it uses the body for the primary and the header for clones.
+	//
+	// We still need to clear per-machine fields from the *shared* properties
+	// that the RP will clone for non-primary machines. However, the RP
+	// overwrites cloned machines' tags (line 112) and zones (lines 114-118)
+	// from the header, so it's safe to leave the primary's values in the body.
+	template := batch.requests[0].template
 
 	poller, err := c.realClient.BeginCreateOrUpdate(
 		ctxWithHeader,
@@ -148,9 +150,22 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 
 // buildBatchHeader creates the JSON for the BatchPutMachine HTTP header
 // and returns the per-machine entries for context propagation.
+//
+// The primary machine (batch.requests[0]) is EXCLUDED from batchMachines.
+// Its per-machine fields (tags, zones) travel in the PUT body instead.
+// The RP's PrepareBatchMachines creates the primary from the body and clones
+// it for each batchMachines entry — it does NOT apply header fields to the
+// primary. If the primary were included in the header, its entry would be
+// silently discarded by cleanUpInvalidDuplicateMachinesAndZones (which
+// pre-seeds "seen" with the PUT URL machine name), and the primary would
+// end up with no tags and no zone.
 func (c *Coordinator) buildBatchHeader(batch *PendingBatch) (string, []MachineEntry, error) {
-	entries := make([]MachineEntry, 0, len(batch.requests))
-	for _, req := range batch.requests {
+	// Start from index 1: the primary (index 0) gets its fields from the body.
+	entries := make([]MachineEntry, 0, len(batch.requests)-1)
+	for i, req := range batch.requests {
+		if i == 0 {
+			continue // Primary machine — fields travel in the PUT body
+		}
 		var tags map[string]string
 		if req.template.Properties != nil {
 			tags = extractTags(req.template.Properties.Tags)
