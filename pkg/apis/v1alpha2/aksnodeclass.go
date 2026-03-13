@@ -34,6 +34,15 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+// ArtifactStreaming configures artifact streaming for provisioned nodes.
+// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+type ArtifactStreaming struct {
+	// enabled controls whether artifact streaming is enabled for provisioned nodes.
+	// If not specified, defaults to true.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -95,6 +104,10 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// artifactStreaming configures artifact streaming for provisioned nodes.
+	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+	// +optional
+	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -419,6 +432,21 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class
+// based on the architecture. ARM64 nodes do not support artifact streaming.
+// If not explicitly specified (nil), defaults to true for AMD64 and false for ARM64.
+func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
+	// If explicitly set, use that value regardless of architecture
+	if in.Spec.ArtifactStreaming != nil && in.Spec.ArtifactStreaming.Enabled != nil {
+		return *in.Spec.ArtifactStreaming.Enabled
+	}
+
+	// If not specified (nil), default based on architecture
+	// ARM64 does not support artifact streaming, so default to false
+	// AMD64 supports artifact streaming, so default to true
+	return arch != "arm64"
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
