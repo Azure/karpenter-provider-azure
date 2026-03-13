@@ -263,7 +263,9 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to get AKS machine, AKS machines pool name is empty"))
 	}
 
+	getStart := time.Now()
 	aksMachine, err := p.getMachine(ctx, aksMachineName)
+	log.FromContext(ctx).Info("AKSMachine GET", "caller", "Get", "aksMachineName", aksMachineName, "duration", time.Since(getStart).String(), "error", err)
 	if err != nil {
 		if IsAKSMachineOrMachinesPoolNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
@@ -451,7 +453,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		"aksMachineName", aksMachineName,
 		"duration", time.Since(nowTime).Seconds(),
 	)
+	preCreateGetStart := time.Now()
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	log.FromContext(ctx).Info("AKSMachine GET", "caller", "beginCreateMachine/preCreationGet", "aksMachineName", aksMachineName, "duration", time.Since(preCreateGetStart).String(), "error", err)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, nodeClaim, instanceTypes, existingAKSMachine)
@@ -487,7 +491,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Get once after begin create to retrieve VMResourceID.
 	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 	// TODO: find a way to access that instead of making another GET call like this.
+	postCreateGetStart := time.Now()
 	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	log.FromContext(ctx).Info("AKSMachine GET", "caller", "beginCreateMachine/postCreationGet", "aksMachineName", aksMachineName, "duration", time.Since(postCreateGetStart).String(), "error", err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
@@ -571,7 +577,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 				// Could be quota error; will be handled with custom logic below
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
+				failureDiagGetStart := time.Now()
 				failedAKSMachine, _ := p.getMachine(ctx, aksMachineName)
+				log.FromContext(ctx).Info("AKSMachine GET", "caller", "beginCreateMachine/failureDiagnosisGet", "aksMachineName", aksMachineName, "duration", time.Since(failureDiagGetStart).String())
 				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, nodeClass, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 					return
