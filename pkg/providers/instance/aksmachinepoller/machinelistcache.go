@@ -176,15 +176,18 @@ func (c *MachineListCache) PollUntilDone(ctx context.Context, name string) (*arm
 
 			if machine.Properties == nil || machine.Properties.ProvisioningState == nil {
 				log.FromContext(ctx).Info("cache poller found AKS machine with nil provisioning state,", "aksMachineName", name)
+				retries--
 				continue
 			}
+
+			retries = 10 // reset retries on successful retrieval of provisioning state
 
 			state := *machine.Properties.ProvisioningState
 			log.FromContext(ctx).Info("polled AKS machine provisioning state", "aksMachineName", name, "state", state)
 
-			done, err := c.handleState(ctx, state, machine)
+			errorDetail, err, done := c.handleState(ctx, state, machine)
 			if err != nil {
-				return machine.Properties.Status.ProvisioningError, err
+				return errorDetail, err
 			}
 			if !done {
 				continue
@@ -266,7 +269,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	return nil
 }
 
-func (c *MachineListCache) handleState(ctx context.Context, state string, machine *armcontainerservice.Machine) (done bool, err error) {
+func (c *MachineListCache) handleState(ctx context.Context, state string, machine *armcontainerservice.Machine) (errorDetail *armcontainerservice.ErrorDetail, err error, done bool) {
 	machineName := lo.FromPtr(machine.Name)
 
 	// Check for provisioning error regardless of state
@@ -275,7 +278,7 @@ func (c *MachineListCache) handleState(ctx context.Context, state string, machin
 			"aksMachineName", machineName,
 			"provisioningError", machine.Properties.Status.ProvisioningError,
 		)
-		return true, fmt.Errorf("AKS machine %s has provisioning error", machineName)
+		return machine.Properties.Status.ProvisioningError, nil, true
 	}
 
 	switch state {
@@ -284,35 +287,35 @@ func (c *MachineListCache) handleState(ctx context.Context, state string, machin
 			"aksMachineName", machineName,
 			"provisioningState", state,
 		)
-		return true, fmt.Errorf("AKS machine %s provisioning failed", machineName)
+		return nil, fmt.Errorf("AKS machine %s provisioning failed", machineName), true
 
 	case ProvisioningStateCreating, ProvisioningStateUpdating:
 		log.FromContext(ctx).V(2).Info("Cache poller: polling for AKS machine ongoing",
 			"aksMachineName", machineName,
 			"provisioningState", state,
 		)
-		return false, nil // not done, keep polling
+		return nil, nil, false // not done, keep polling
 
 	case ProvisioningStateSucceeded:
 		log.FromContext(ctx).Info("Cache poller: AKS machine provisioning succeeded",
 			"aksMachineName", machineName,
 			"provisioningState", state,
 		)
-		return true, nil // done, no error
+		return nil, nil, true // done, no error
 
 	case ProvisioningStateDeleting:
 		log.FromContext(ctx).Info("Cache poller: AKS machine is deleting",
 			"aksMachineName", machineName,
 			"provisioningState", state,
 		)
-		return true, fmt.Errorf("AKS machine %s is being deleted", machineName)
+		return nil, fmt.Errorf("AKS machine %s is being deleted", machineName), true
 
 	default:
 		log.FromContext(ctx).V(1).Info("Cache poller: unrecognized provisioning state, continuing to poll",
 			"aksMachineName", machineName,
 			"provisioningState", state,
 		)
-		return false, nil // continue polling
+		return nil, nil, false // continue polling
 	}
 }
 
