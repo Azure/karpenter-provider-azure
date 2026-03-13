@@ -132,6 +132,11 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	nowTime := time.Now().UTC()
+	defer log.FromContext(ctx).Info("create finished",
+		"duration", time.Since(nowTime).Seconds(),
+	)
+
 	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -214,6 +219,11 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 }
 
 func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	nowTime := time.Now().UTC()
+	defer log.FromContext(ctx).Info("creating AKS machine instance finished",
+		"duration", time.Since(nowTime).Seconds(),
+		"nodeClaim", nodeClaim.Name,
+	)
 	// Begin the creation of the instance
 	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {

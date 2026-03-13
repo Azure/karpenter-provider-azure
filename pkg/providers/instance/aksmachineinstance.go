@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -33,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
@@ -128,17 +130,18 @@ type AKSMachineProvider interface {
 var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
-	azClient                *azclient.AZClient
-	instanceTypeProvider    instancetype.Provider
-	imageResolver           imagefamily.Resolver
-	subscriptionID          string
-	clusterResourceGroup    string
-	clusterName             string
-	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
-	aksMachinesPoolLocation string
-	errorHandling           *offerings.ErrorDetailHandler
-	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
-	deletingMachinesMu      sync.RWMutex
+	azClient                        *azclient.AZClient
+	instanceTypeProvider            instancetype.Provider
+	imageResolver                   imagefamily.Resolver
+	subscriptionID                  string
+	clusterResourceGroup            string
+	clusterName                     string
+	aksMachinesPoolName             string // Only support one AKS machine pool at a time, for now.
+	aksMachinesPoolLocation         string
+	errorHandling                   *offerings.ErrorDetailHandler
+	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
+	deletingMachinesMu              sync.RWMutex
+	machineListCache                *aksmachinepoller.MachineListCache
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
 }
 
@@ -154,16 +157,17 @@ func NewAKSMachineProvider(
 	aksMachinesPoolLocation string,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
-		azClient:                azClient,
-		instanceTypeProvider:    instanceTypeProvider,
-		imageResolver:           imageResolver,
-		subscriptionID:          subscriptionID,
-		clusterResourceGroup:    clusterResourceGroup,
-		clusterName:             clusterName,
-		aksMachinesPoolName:     aksMachinesPoolName,
-		aksMachinesPoolLocation: aksMachinesPoolLocation,
-		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
-		deletingMachines:        sets.New[string](),
+		azClient:                        azClient,
+		instanceTypeProvider:            instanceTypeProvider,
+		imageResolver:                   imageResolver,
+		subscriptionID:                  subscriptionID,
+		clusterResourceGroup:            clusterResourceGroup,
+		clusterName:                     clusterName,
+		aksMachinesPoolName:             aksMachinesPoolName,
+		aksMachinesPoolLocation:         aksMachinesPoolLocation,
+		errorHandling:                   offerings.NewErrorDetailHandler(offeringsCache),
+		deletingMachines:                sets.New[string](),
+		machineListCache:                aksmachinepoller.NewMachineListCache(time.Minute, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
 	}
 
@@ -441,6 +445,12 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
+
+	nowTime := time.Now().UTC()
+	defer log.FromContext(ctx).Info("begin create machine finished",
+		"aksMachineName", aksMachineName,
+		"duration", time.Since(nowTime).Seconds(),
+	)
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
@@ -478,9 +488,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 	// TODO: find a way to access that instead of making another GET call like this.
 	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
-	}
+
 	// Process what we got.
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
@@ -511,6 +519,27 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// only occurs when the batching client was used. The GET poller is technically compatible
 			// with the non-batch case too, but the SDK poller is preferred when available.
 			if poller == nil {
+				if options.FromContext(ctx).ListPollerEnabled {
+					fmt.Printf("Using list poller for AKS machine %q\n", aksMachineName)
+					provisioningErr, pollErr := p.machineListCache.PollUntilDone(ctx, aksMachineName)
+					if pollErr != nil {
+						pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (list poller), poller error: %w", aksMachineName, pollErr)
+						return
+					}
+
+					if provisioningErr != nil {
+						pollingErr = p.handleMachineProvisioningError(ctx, "LRO (list poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+						return
+					}
+
+					log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+						"aksMachineName", aksMachineName,
+						"aksMachineID", gotAKSMachine.ID)
+					return
+				} else {
+					fmt.Printf("List poller is disabled, falling back to GET poller for AKS machine %q\n", aksMachineName)
+				}
+
 				getPoller := aksmachinepoller.NewPoller(
 					p.fallbackAKSMachinePollerOptions,
 					p.azClient.AKSMachinesClient(),
