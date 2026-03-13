@@ -128,17 +128,17 @@ type AKSMachineProvider interface {
 var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
-	azClient                *azclient.AZClient
-	instanceTypeProvider    instancetype.Provider
-	imageResolver           imagefamily.Resolver
-	subscriptionID          string
-	clusterResourceGroup    string
-	clusterName             string
-	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
-	aksMachinesPoolLocation string
-	errorHandling           *offerings.ErrorDetailHandler
-	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
-	deletingMachinesMu      sync.RWMutex
+	azClient                        *azclient.AZClient
+	instanceTypeProvider            instancetype.Provider
+	imageResolver                   imagefamily.Resolver
+	subscriptionID                  string
+	clusterResourceGroup            string
+	clusterName                     string
+	aksMachinesPoolName             string // Only support one AKS machine pool at a time, for now.
+	aksMachinesPoolLocation         string
+	errorHandling                   *offerings.ErrorDetailHandler
+	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
+	deletingMachinesMu              sync.RWMutex
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
 }
 
@@ -154,16 +154,16 @@ func NewAKSMachineProvider(
 	aksMachinesPoolLocation string,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
-		azClient:                azClient,
-		instanceTypeProvider:    instanceTypeProvider,
-		imageResolver:           imageResolver,
-		subscriptionID:          subscriptionID,
-		clusterResourceGroup:    clusterResourceGroup,
-		clusterName:             clusterName,
-		aksMachinesPoolName:     aksMachinesPoolName,
-		aksMachinesPoolLocation: aksMachinesPoolLocation,
-		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
-		deletingMachines:        sets.New[string](),
+		azClient:                        azClient,
+		instanceTypeProvider:            instanceTypeProvider,
+		imageResolver:                   imageResolver,
+		subscriptionID:                  subscriptionID,
+		clusterResourceGroup:            clusterResourceGroup,
+		clusterName:                     clusterName,
+		aksMachinesPoolName:             aksMachinesPoolName,
+		aksMachinesPoolLocation:         aksMachinesPoolLocation,
+		errorHandling:                   offerings.NewErrorDetailHandler(offeringsCache),
+		deletingMachines:                sets.New[string](),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
 	}
 

@@ -86,7 +86,7 @@ func TestBatchAwareness_PerMachineFieldsDoNotAffectGrouping(t *testing.T) {
 		"karpenter.azure.com_cluster":              lo.ToPtr("prod-cluster"),
 		"karpenter.sh_nodeclaim":                   lo.ToPtr("nc-aaa"),
 		"karpenter.sh_managed-by":                  lo.ToPtr("prod-cluster"),
-		"kubernetes.azure.com_karpenter-timestamp":  lo.ToPtr("2024-01-01T00:00:00Z"),
+		"kubernetes.azure.com_karpenter-timestamp": lo.ToPtr("2024-01-01T00:00:00Z"),
 	})
 
 	// Template for NodeClaim "nc-bbb" — different unique tags
@@ -94,7 +94,7 @@ func TestBatchAwareness_PerMachineFieldsDoNotAffectGrouping(t *testing.T) {
 		"karpenter.azure.com_cluster":              lo.ToPtr("prod-cluster"),
 		"karpenter.sh_nodeclaim":                   lo.ToPtr("nc-bbb"),
 		"karpenter.sh_managed-by":                  lo.ToPtr("prod-cluster"),
-		"kubernetes.azure.com_karpenter-timestamp":  lo.ToPtr("2024-01-01T00:00:01Z"),
+		"kubernetes.azure.com_karpenter-timestamp": lo.ToPtr("2024-01-01T00:00:01Z"),
 	})
 
 	// Hash both templates after clearing per-machine and read-only fields
