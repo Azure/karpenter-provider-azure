@@ -33,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
@@ -128,18 +129,19 @@ type AKSMachineProvider interface {
 var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
-	azClient                *azclient.AZClient
-	instanceTypeProvider    instancetype.Provider
-	imageResolver           imagefamily.Resolver
-	subscriptionID          string
-	clusterResourceGroup    string
-	clusterName             string
-	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
-	aksMachinesPoolLocation string
-	errorHandling           *offerings.ErrorDetailHandler
-	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
-	deletingMachinesMu      sync.RWMutex
+	azClient                        *azclient.AZClient
+	instanceTypeProvider            instancetype.Provider
+	imageResolver                   imagefamily.Resolver
+	subscriptionID                  string
+	clusterResourceGroup            string
+	clusterName                     string
+	aksMachinesPoolName             string // Only support one AKS machine pool at a time, for now.
+	aksMachinesPoolLocation         string
+	errorHandling                   *offerings.ErrorDetailHandler
+	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
+	deletingMachinesMu              sync.RWMutex
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
+	limitpoller                     *aksmachinepoller.LimitedPoller
 }
 
 func NewAKSMachineProvider(
@@ -154,17 +156,18 @@ func NewAKSMachineProvider(
 	aksMachinesPoolLocation string,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
-		azClient:                azClient,
-		instanceTypeProvider:    instanceTypeProvider,
-		imageResolver:           imageResolver,
-		subscriptionID:          subscriptionID,
-		clusterResourceGroup:    clusterResourceGroup,
-		clusterName:             clusterName,
-		aksMachinesPoolName:     aksMachinesPoolName,
-		aksMachinesPoolLocation: aksMachinesPoolLocation,
-		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
-		deletingMachines:        sets.New[string](),
+		azClient:                        azClient,
+		instanceTypeProvider:            instanceTypeProvider,
+		imageResolver:                   imageResolver,
+		subscriptionID:                  subscriptionID,
+		clusterResourceGroup:            clusterResourceGroup,
+		clusterName:                     clusterName,
+		aksMachinesPoolName:             aksMachinesPoolName,
+		aksMachinesPoolLocation:         aksMachinesPoolLocation,
+		errorHandling:                   offerings.NewErrorDetailHandler(offeringsCache),
+		deletingMachines:                sets.New[string](),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
+		limitpoller:                     aksmachinepoller.NewLimitedPoller(aksmachinepoller.DefaultOptions(), azClient.AKSMachinesClient(), clusterResourceGroup, clusterName, aksMachinesPoolName),
 	}
 
 	return provider
@@ -511,6 +514,24 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// only occurs when the batching client was used. The GET poller is technically compatible
 			// with the non-batch case too, but the SDK poller is preferred when available.
 			if poller == nil {
+
+				// Use limited GET poller if enabled to prevent thundering herd at scale
+				if options.FromContext(ctx).LimitedGet {
+					provisioningErr, pollerErr := p.limitpoller.PollUntilDone(ctx, aksMachineName)
+					if pollerErr != nil {
+						pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (limited GET poller), poller error: %w", aksMachineName, pollerErr)
+						return
+					}
+					if provisioningErr != nil {
+						pollingErr = p.handleMachineProvisioningError(ctx, "LRO (limited GET poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+						return
+					}
+					log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+						"aksMachineName", aksMachineName,
+						"aksMachineID", gotAKSMachine.ID)
+					return
+				}
+
 				getPoller := aksmachinepoller.NewPoller(
 					p.fallbackAKSMachinePollerOptions,
 					p.azClient.AKSMachinesClient(),

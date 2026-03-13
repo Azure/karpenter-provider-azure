@@ -102,6 +102,7 @@ type Options struct {
 	BatchIdleTimeoutMS   int    `json:"batchIdleTimeoutMS,omitempty"`   // Idle timeout in milliseconds for batch accumulation (default 1000ms). Only used when batch creation is enabled.
 	BatchMaxTimeoutMS    int    `json:"batchMaxTimeoutMS,omitempty"`    // Maximum timeout in milliseconds for batch accumulation (default 5000ms). Only used when batch creation is enabled.
 	MaxBatchSize         int    `json:"maxBatchSize,omitempty"`         // Maximum number of machines per batch (default 50, AKS API limit). Only used when batch creation is enabled.
+	LimitedGet           bool   `json:"limitedGet,omitempty"`           // If set to true, limits concurrent GET machine requests to 100 to prevent thundering herd at scale (default true).
 
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
@@ -136,6 +137,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.IntVar(&o.BatchIdleTimeoutMS, "batch-idle-timeout-ms", env.WithDefaultInt("BATCH_IDLE_TIMEOUT_MS", 1000), "Idle timeout in milliseconds for batch accumulation. Only used when batch creation is enabled.")
 	fs.IntVar(&o.BatchMaxTimeoutMS, "batch-max-timeout-ms", env.WithDefaultInt("BATCH_MAX_TIMEOUT_MS", 5000), "Maximum timeout in milliseconds for batch accumulation. Only used when batch creation is enabled.")
 	fs.IntVar(&o.MaxBatchSize, "max-batch-size", env.WithDefaultInt("MAX_BATCH_SIZE", 50), "Maximum number of machines per batch (AKS API limit is 50). Only used when batch creation is enabled.")
+	fs.BoolVar(&o.LimitedGet, "limited-get", env.WithDefaultBool("LIMITED_GET", true), "If set to true, limits concurrent GET machine requests to 100 to prevent thundering herd at scale.")
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
