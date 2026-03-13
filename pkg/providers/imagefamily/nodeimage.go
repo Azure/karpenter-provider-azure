@@ -150,10 +150,10 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 	return nodeImages, nil
 }
 
-func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
+func (p *provider) listCIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	for _, supportedImage := range supportedImages {
-		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
+		cigImageID, err := p.getCIGImageID(ctx, supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
 		if err != nil {
 			return nil, err
 		}
@@ -179,19 +179,19 @@ func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersi
 	return fmt.Sprintf("%016x", hash), nil
 }
 
-func (p *provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
-	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
+func (p *provider) getCIGImageID(ctx context.Context, publicGalleryURL, communityImageName string) (string, error) {
+	imageVersion, err := p.latestNodeImageVersionCommunity(ctx, publicGalleryURL, communityImageName)
 	if err != nil {
 		return "", err
 	}
 	return BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
 }
 
-func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
+func (p *provider) latestNodeImageVersionCommunity(ctx context.Context, publicGalleryURL, communityImageName string) (string, error) {
 	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
 	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
 	for pager.More() {
-		page, err := pager.NextPage(context.Background())
+		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return "", err
 		}
