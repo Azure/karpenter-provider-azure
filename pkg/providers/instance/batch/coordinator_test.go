@@ -101,8 +101,6 @@ func (r *recordingClient) snapshot() []recordedCall {
 // test helpers
 // ---------------------------------------------------------------------------
 
-func strPtr(s string) *string { return &s }
-
 // tpl builds an armcontainerservice.Machine with the given VM size, zones, and tags.
 func tpl(vmSize string, zones []string, tags map[string]string) armcontainerservice.Machine {
 	m := armcontainerservice.Machine{
@@ -184,11 +182,10 @@ func TestCoordinatorSingleAPICallForBatch(t *testing.T) {
 	}
 }
 
-// The body sent to the API must carry the primary machine's per-machine
-// fields (zones, tags) since the RP reads the primary from the body.
-// Non-primary machines get their per-machine fields via the header.
-// Shared fields like VMSize must also be present.
-func TestCoordinatorPreservesPrimaryFieldsInBody(t *testing.T) {
+// The body sent to the API must have nil Zones and nil Tags (those
+// travel via the BatchPutMachine header), but shared fields like
+// VMSize remain.
+func TestCoordinatorClearsPerMachineFieldsFromBody(t *testing.T) {
 	t.Parallel()
 	mock := &recordingClient{}
 	coord := NewCoordinator(mock, "rg", "cluster", "pool")
@@ -200,19 +197,16 @@ func TestCoordinatorPreservesPrimaryFieldsInBody(t *testing.T) {
 
 	calls := mock.snapshot()
 	require.Len(t, calls, 1)
-	assert.Equal(t, []*string{strPtr("1")}, calls[0].parameters.Zones,
-		"primary machine's zones must be in the body")
-	assert.Equal(t, map[string]*string{"k": strPtr("v")}, calls[0].parameters.Properties.Tags,
-		"primary machine's tags must be in the body")
+	assert.Nil(t, calls[0].parameters.Zones, "zones must be nil in body (sent via header)")
+	assert.Nil(t, calls[0].parameters.Properties.Tags, "tags must be nil in body (sent via header)")
 	assert.Equal(t, "Standard_D2s_v3", *calls[0].parameters.Properties.Hardware.VMSize,
 		"shared template fields must remain")
 }
 
 // The context passed to BeginCreateOrUpdate must carry per-machine
-// MachineEntry data (zones, tags, name) via WithFakeBatchEntries for
-// non-primary machines. The primary is excluded — its fields travel
-// in the PUT body instead.
-func TestCoordinatorAttachesNonPrimaryEntriesToContext(t *testing.T) {
+// MachineEntry data (zones, tags, name) via WithFakeBatchEntries so
+// that the fake can reconstruct individual machines.
+func TestCoordinatorAttachesPerMachineEntriesToContext(t *testing.T) {
 	t.Parallel()
 	mock := &recordingClient{}
 	coord := NewCoordinator(mock, "rg", "cluster", "pool")
@@ -228,11 +222,15 @@ func TestCoordinatorAttachesNonPrimaryEntriesToContext(t *testing.T) {
 	require.Len(t, calls, 1)
 
 	entries := FakeBatchEntriesFromContext(calls[0].ctx)
-	require.Len(t, entries, 1, "context should carry only non-primary entries (m-1 is primary, excluded)")
+	require.Len(t, entries, 2, "context should carry per-machine entries")
 
-	assert.Equal(t, "m-2", entries[0].MachineName)
-	assert.Equal(t, []string{"2", "3"}, entries[0].Zones)
-	assert.Equal(t, map[string]string{"b": "2"}, entries[0].Tags)
+	assert.Equal(t, "m-1", entries[0].MachineName)
+	assert.Equal(t, []string{"1"}, entries[0].Zones)
+	assert.Equal(t, map[string]string{"a": "1"}, entries[0].Tags)
+
+	assert.Equal(t, "m-2", entries[1].MachineName)
+	assert.Equal(t, []string{"2", "3"}, entries[1].Zones)
+	assert.Equal(t, map[string]string{"b": "2"}, entries[1].Tags)
 }
 
 // When the API call fails, every request's channel receives the error.
