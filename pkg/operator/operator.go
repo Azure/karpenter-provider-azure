@@ -60,6 +60,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/batch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -128,6 +129,35 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 
 	azClient, err := azclient.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
+
+	// Wire up batching if enabled for AKS Machine API
+	o := options.FromContext(ctx)
+	if o.BatchCreationEnabled && o.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		log.FromContext(ctx).Info("enabling batch creation for AKS Machine API",
+			"idleTimeoutMS", o.BatchIdleTimeoutMS,
+			"maxTimeoutMS", o.BatchMaxTimeoutMS,
+			"maxBatchSize", o.MaxBatchSize)
+		grouper := batch.NewGrouper(ctx, batch.Options{
+			IdleTimeout:  time.Duration(o.BatchIdleTimeoutMS) * time.Millisecond,
+			MaxTimeout:   time.Duration(o.BatchMaxTimeoutMS) * time.Millisecond,
+			MaxBatchSize: o.MaxBatchSize,
+		})
+		coordinator := batch.NewCoordinator(
+			azClient.AKSMachinesClient(),
+			azConfig.ResourceGroup,
+			o.ClusterName,
+			o.AKSMachinesPoolName,
+		)
+		grouper.SetCoordinator(coordinator)
+		grouper.Start()
+
+		batchingClient := batch.NewBatchingMachinesClient(
+			azClient.AKSMachinesClient(),
+			grouper,
+		)
+		azClient.SetAKSMachinesClient(batchingClient)
+	}
+
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")

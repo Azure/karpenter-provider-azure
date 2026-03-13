@@ -41,6 +41,14 @@ import (
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
 // May return error whenever required fields are not set (check carefully).
+//
+// BATCH AWARENESS: This template is used both for single-VM creates and as the shared
+// template body in batch creates. When adding new MachineProperties fields:
+//   - If the field varies per NodeClaim (like Tags), update ClearPerMachineFields in
+//     batch_field_registry.go so the batch system knows to move it to the per-machine header.
+//   - If the field is the same for all NodeClaims in a NodePool+NodeClass (like VMSize),
+//     no action needed — it's automatically part of the shared template and batch grouping hash.
+//   - See batch_field_registry.go for the complete field classification and checklist.
 func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
@@ -95,9 +103,16 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 
 	// Tags (to be put on AKS machine and all affiliated resources)
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
+	//
+	// BATCH: Tags is a per-machine field (varies per NodeClaim). If you change this,
+	// see batch_field_registry.go — ClearPerMachineFields must cover any new per-machine
+	// MachineProperties field so batch grouping and header extraction stay correct.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
 	return &armcontainerservice.Machine{
+		// BATCH: Zones is a per-machine field (selected from instance type offerings).
+		// It lives on Machine (not MachineProperties) so it's excluded from template
+		// hashing by design. See batch_field_registry.go for the full field classification.
 		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: lo.ToPtr(nodeImageVersion),
