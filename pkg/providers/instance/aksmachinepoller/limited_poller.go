@@ -58,7 +58,7 @@ type LimitedPoller struct {
 	resourceGroupName   string
 	clusterName         string
 	aksMachinesPoolName string
-	getLimit            chan struct{} // Semaphore to limit concurrent GETs, protecting against thundering herd of polls on large batches
+	getLimit            chan struct{} // Shared semaphore to limit concurrent GETs
 }
 
 func NewLimitedPoller(
@@ -67,6 +67,7 @@ func NewLimitedPoller(
 	resourceGroupName string,
 	clusterName string,
 	aksMachinesPoolName string,
+	getLimit chan struct{},
 ) *LimitedPoller {
 	return &LimitedPoller{
 		config:              config,
@@ -74,7 +75,7 @@ func NewLimitedPoller(
 		resourceGroupName:   resourceGroupName,
 		clusterName:         clusterName,
 		aksMachinesPoolName: aksMachinesPoolName,
-		getLimit:            make(chan struct{}, 100), // Limit to 100 concurrent GETs
+		getLimit:            getLimit,
 	}
 }
 

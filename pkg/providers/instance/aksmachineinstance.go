@@ -142,6 +142,7 @@ type DefaultAKSMachineProvider struct {
 	deletingMachinesMu              sync.RWMutex
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
 	limitpoller                     *aksmachinepoller.LimitedPoller
+	getSemaphore                    chan struct{} // limits concurrent GET Machine calls across all callers
 }
 
 func NewAKSMachineProvider(
@@ -167,8 +168,9 @@ func NewAKSMachineProvider(
 		errorHandling:                   offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:                sets.New[string](),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
-		limitpoller:                     aksmachinepoller.NewLimitedPoller(aksmachinepoller.DefaultOptions(), azClient.AKSMachinesClient(), clusterResourceGroup, clusterName, aksMachinesPoolName),
+		getSemaphore:                    make(chan struct{}, 200),
 	}
+	provider.limitpoller = aksmachinepoller.NewLimitedPoller(aksmachinepoller.DefaultOptions(), azClient.AKSMachinesClient(), clusterResourceGroup, clusterName, aksMachinesPoolName, provider.getSemaphore)
 
 	return provider
 }
@@ -343,6 +345,14 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	// Acquire semaphore to limit concurrent GET calls
+	select {
+	case p.getSemaphore <- struct{}{}:
+		defer func() { <-p.getSemaphore }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
 	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
