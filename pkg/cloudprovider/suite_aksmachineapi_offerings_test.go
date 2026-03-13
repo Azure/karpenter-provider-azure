@@ -39,6 +39,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -109,6 +110,7 @@ var _ = Describe("CloudProvider", func() {
 				// Verify spot capacity type marked as unavailable due to quota error
 				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 				vmSize := lo.FromPtr(createInput.AKSMachine.Properties.Hardware.VMSize)
+				Expect(*createInput.AKSMachine.Properties.Priority).To(Equal(armcontainerservice.ScaleSetPrioritySpot))
 				testSKU := &skewer.SKU{Name: lo.ToPtr(vmSize)}
 				zone, err := instance.GetAKSLabelZoneFromAKSMachine(&createInput.AKSMachine, fake.Region)
 				Expect(err).ToNot(HaveOccurred())
