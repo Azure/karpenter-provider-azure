@@ -18,10 +18,12 @@ package batch
 
 import (
 	"context"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type BatchingMachinesClient struct {
@@ -112,7 +114,10 @@ func (c *BatchingMachinesClient) Get(
 	aksMachineName string,
 	options *armcontainerservice.MachinesClientGetOptions,
 ) (armcontainerservice.MachinesClientGetResponse, error) {
-	return c.realClient.Get(ctx, resourceGroupName, resourceName, agentPoolName, aksMachineName, options)
+	getStart := time.Now()
+	resp, err := c.realClient.Get(ctx, resourceGroupName, resourceName, agentPoolName, aksMachineName, options)
+	log.FromContext(ctx).Info("AKSMachine GET", "caller", "BatchingMachinesClient.Get", "aksMachineName", aksMachineName, "duration", time.Since(getStart).String(), "error", err)
+	return resp, err
 }
 
 func (c *BatchingMachinesClient) NewListPager(

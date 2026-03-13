@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -261,7 +262,9 @@ func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.
 		return "", nil
 	}
 
+	isMachineDriftedGetStart := time.Now()
 	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+	log.FromContext(ctx).Info("AKSMachine GET", "caller", "isMachineDrifted", "aksMachineName", aksMachineName, "duration", time.Since(isMachineDriftedGetStart).String(), "error", err)
 	if err != nil {
 		return "", err
 	}

@@ -170,7 +170,9 @@ func (c *Controller) processAKSMachineInstance(
 	nodeClass *v1beta1.AKSNodeClass,
 	aksMachineName string,
 ) error {
+	inPlaceGetStart := time.Now()
 	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+	log.FromContext(ctx).Info("AKSMachine GET", "caller", "inPlaceUpdate.processAKSMachineInstance", "aksMachineName", aksMachineName, "duration", time.Since(inPlaceGetStart).String(), "error", err)
 	if err != nil {
 		return fmt.Errorf("getting AKS machine %s from instance provider: %w", aksMachineName, err)
 	}

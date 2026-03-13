@@ -338,7 +338,9 @@ func isTransientError(err error) bool {
 }
 
 func (p *Poller) getAKSMachine(ctx context.Context) (*armcontainerservice.Machine, error) {
+	getStart := time.Now()
 	resp, err := p.client.Get(ctx, p.resourceGroupName, p.clusterName, p.aksMachinesPoolName, p.aksMachineName, nil)
+	log.FromContext(ctx).Info("AKSMachine GET", "caller", "Poller.getAKSMachine", "aksMachineName", p.aksMachineName, "duration", time.Since(getStart).String(), "error", err)
 	if err != nil {
 		return nil, err
 	}
