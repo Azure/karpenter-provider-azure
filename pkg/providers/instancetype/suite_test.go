@@ -845,6 +845,9 @@ var _ = Describe("InstanceType Provider", func() {
 					test.Options(test.OptionsFields{
 						UseSIG: lo.ToPtr(true),
 					}))
+
+				// Repopilate instance types based on above ctx
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			AfterEach(func() {
@@ -1793,7 +1796,11 @@ var _ = Describe("InstanceType Provider", func() {
 				// Reconcile the NodeClass to ensure status is updated
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-				azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
+				// Flush the cache to simulate the controller not having run yet.
+				// With the instance type controller, SKU API errors happen during
+				// UpdateInstanceTypes (controller reconcile), not during List.
+				// When the cache is empty, List returns an error.
+				azureEnv.InstanceTypesProvider.Reset()
 
 				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1815,6 +1822,9 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
 				Expect(err.Error()).To(ContainSubstring("resolving instance types"))
+
+				// Reset instance types
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			It("should return error when instance creation fails", func() {
@@ -2091,6 +2101,7 @@ var _ = Describe("InstanceType Provider", func() {
 			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
 
 			BeforeEach(func() {
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 			})
