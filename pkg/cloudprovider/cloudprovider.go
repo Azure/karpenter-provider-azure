@@ -545,7 +545,7 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 			TolerationDuration: 10 * time.Minute,
 		},
 		{
-			ConditionType:      "aks.azure.com/NodeHealthy",
+			ConditionType:      "kuberentes.azure.com/NodeHealthy",
 			ConditionStatus:    corev1.ConditionFalse,
 			TolerationDuration: 0,
 		},
