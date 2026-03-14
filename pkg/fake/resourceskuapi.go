@@ -19,7 +19,7 @@ package fake
 import (
 	"context"
 
-	//nolint SA1019 - deprecated package
+	//nolint:staticcheck // deprecated package
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 	"github.com/Azure/skewer"
 )
@@ -28,18 +28,6 @@ import (
 
 // ResourceSkus is a map of location to resource skus
 var ResourceSkus = make(map[string][]compute.ResourceSku)
-
-type MockSkuClientSingleton struct {
-	SKUClient *ResourceSKUsAPI
-}
-
-func (sc *MockSkuClientSingleton) GetInstance() skewer.ResourceClient {
-	return sc.SKUClient
-}
-
-func (sc *MockSkuClientSingleton) Reset() {
-	sc.SKUClient.Reset()
-}
 
 // assert that the fake implements the interface
 var _ skewer.ResourceClient = &ResourceSKUsAPI{}

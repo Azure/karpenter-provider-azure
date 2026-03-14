@@ -20,15 +20,15 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/http"
 	"sync"
 
 	"github.com/samber/lo"
 
-	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 )
 
 type VirtualMachineExtensionCreateOrUpdateInput struct {
@@ -54,10 +54,10 @@ type VirtualMachineExtensionsBehavior struct {
 }
 
 // assert that ComputeAPI implements ARMComputeAPI
-var _ instance.VirtualMachineExtensionsAPI = &VirtualMachineExtensionsAPI{}
+var _ azclient.VirtualMachineExtensionsAPI = &VirtualMachineExtensionsAPI{}
 
 type VirtualMachineExtensionsAPI struct {
-	// instance.VirtualMachineExtensionsAPI
+	// azclient.VirtualMachineExtensionsAPI
 	VirtualMachineExtensionsBehavior
 }
 
@@ -120,7 +120,7 @@ func (c *VirtualMachineExtensionsAPI) BeginUpdate(
 
 		instance, ok := c.Extensions.Load(id)
 		if !ok {
-			return nil, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+			return nil, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 		}
 		ext := instance.(armcompute.VirtualMachineExtension)
 

@@ -17,7 +17,6 @@ limitations under the License.
 package azure
 
 import (
-	//nolint:revive,stylecheck
 	"fmt"
 
 	. "github.com/onsi/gomega"
@@ -26,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
 var persistedSettings []v1.EnvVar
@@ -45,7 +45,12 @@ func (env *Environment) BeforeEach() {
 
 func (env *Environment) Cleanup() {
 	env.Environment.Cleanup()
-	env.Environment.CleanupObjects(CleanableObjects...)
+	env.CleanupObjects(CleanableObjects...)
+	if env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		// > Note: under current usage no machines should exist here,
+		// > as scaledown should ensure the machines are deleted
+		env.ExpectNoMachines()
+	}
 
 	err := env.tracker.Cleanup()
 	Expect(err).ToNot(HaveOccurred(), "Failed to clean up Azure resources")

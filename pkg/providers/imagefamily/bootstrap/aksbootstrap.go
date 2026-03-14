@@ -26,7 +26,6 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -310,8 +309,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}
 
 	// merge and stringify labels
-	kubeletLabels := lo.Assign(getBaseKubeletNodeLabels(), a.Labels)
-	labels.AddAgentBakerGeneratedLabels(a.ResourceGroup, a.KubeletIdentityClientID, kubeletLabels)
+	kubeletLabels := a.Labels
 
 	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
 	nbv.Subnet = subnetParts.SubnetName
@@ -333,6 +331,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}
 	if minorVersion >= 35 {
 		delete(kubeletFlagsBase, "--pod-infra-container-image")
+		delete(kubeletFlagsBase, "--cloud-config") // removed in 1.34
 	}
 
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
@@ -378,7 +377,7 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 	return buffer.String(), nil
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
@@ -406,14 +405,14 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
 	}
-	if kubeletConfig.CPUManagerPolicy != "" {
-		args["--cpu-manager-policy"] = kubeletConfig.CPUManagerPolicy
+	if kubeletConfig.CPUManagerPolicy != nil && *kubeletConfig.CPUManagerPolicy != "" {
+		args["--cpu-manager-policy"] = *kubeletConfig.CPUManagerPolicy
 	}
-	if kubeletConfig.TopologyManagerPolicy != "" {
-		args["--topology-manager-policy"] = kubeletConfig.TopologyManagerPolicy
+	if kubeletConfig.TopologyManagerPolicy != nil && *kubeletConfig.TopologyManagerPolicy != "" {
+		args["--topology-manager-policy"] = *kubeletConfig.TopologyManagerPolicy
 	}
-	if kubeletConfig.ContainerLogMaxSize != "" {
-		args["--container-log-max-size"] = kubeletConfig.ContainerLogMaxSize
+	if kubeletConfig.ContainerLogMaxSize != nil && *kubeletConfig.ContainerLogMaxSize != "" {
+		args["--container-log-max-size"] = *kubeletConfig.ContainerLogMaxSize
 	}
 	if kubeletConfig.ContainerLogMaxFiles != nil {
 		args["--container-log-max-files"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ContainerLogMaxFiles))
@@ -423,6 +422,9 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	}
 	if len(kubeletConfig.AllowedUnsafeSysctls) > 0 {
 		args["--allowed-unsafe-sysctls"] = strings.Join(kubeletConfig.AllowedUnsafeSysctls, ",")
+	}
+	if kubeletConfig.ClusterDNSServiceIP != "" {
+		args["--cluster-dns"] = kubeletConfig.ClusterDNSServiceIP
 	}
 
 	return args

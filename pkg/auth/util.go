@@ -19,10 +19,17 @@ package auth
 import (
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"sigs.k8s.io/karpenter/pkg/operator"
 )
 
 func GetUserAgentExtension() string {
 	// Note: do not change "karpenter-aks/" prefix, some infra depends on it
 	return fmt.Sprintf("karpenter-aks/v%s", operator.Version)
+}
+
+// TokenScope returns the token scope for the Azure environment, such as "https://management.azure.com/.default" (for public cloud)
+func TokenScope(cloudCfg cloud.Configuration) string {
+	rm := cloudCfg.Services[cloud.ResourceManager]
+	return fmt.Sprintf("%s/.default", rm.Audience)
 }

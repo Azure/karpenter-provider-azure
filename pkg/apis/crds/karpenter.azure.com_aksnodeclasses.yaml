@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.19.0
   name: aksnodeclasses.karpenter.azure.com
 spec:
   group: karpenter.azure.com
@@ -20,7 +20,18 @@ spec:
     singular: aksnodeclass
   scope: Cluster
   versions:
-  - deprecated: true
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    deprecated: true
     deprecationWarning: use v1beta1.AKSNodeClass instead
     name: v1alpha2
     schema:
@@ -46,25 +57,34 @@ spec:
             type: object
           spec:
             description: |-
-              AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
+              spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
-              imageFamily:
-                default: Ubuntu2204
-                description: ImageFamily is the image family that instances use.
+              fipsMode:
+                description: fipsMode controls FIPS compliance for the provisioned
+                  nodes
                 enum:
+                - FIPS
+                - Disabled
+                type: string
+              imageFamily:
+                default: Ubuntu
+                description: imageFamily is the image family that instances use.
+                enum:
+                - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
                 description: |-
-                  Kubelet defines args to be used when configuring kubelet on provisioned nodes.
+                  kubelet defines args to be used when configuring kubelet on provisioned nodes.
                   They are a subset of the upstream types, recognizing not all options may be supported.
                   Wherever possible, the types and names should reflect the upstream kubelet types.
                 properties:
                   allowedUnsafeSysctls:
                     description: |-
-                      A comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+                      allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
                       Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
                       and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
                       Default: []
@@ -91,13 +111,13 @@ spec:
                   cpuCFSQuota:
                     default: true
                     description: |-
-                      CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+                      cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
                       Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
                     type: boolean
                   cpuCFSQuotaPeriod:
                     default: 100ms
                     description: |-
-                      cpuCfsQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
+                      cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
                       The value must be between 1 ms and 1 second, inclusive.
                       Default: "100ms"
                     type: string
@@ -110,7 +130,7 @@ spec:
                     type: string
                   imageGCHighThresholdPercent:
                     description: |-
-                      ImageGCHighThresholdPercent is the percent of disk usage after which image
+                      imageGCHighThresholdPercent is the percent of disk usage after which image
                       garbage collection is always run. The percent is calculated by dividing this
                       field value by 100, so this field must be between 0 and 100, inclusive.
                       When specified, the value must be greater than ImageGCLowThresholdPercent.
@@ -121,7 +141,7 @@ spec:
                     type: integer
                   imageGCLowThresholdPercent:
                     description: |-
-                      ImageGCLowThresholdPercent is the percent of disk usage before which image
+                      imageGCLowThresholdPercent is the percent of disk usage before which image
                       garbage collection is never run. Lowest disk usage to garbage collect to.
                       The percent is calculated by dividing this field value by 100,
                       so the field value must be between 0 and 100, inclusive.
@@ -161,9 +181,229 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+              localDNS:
+                description: |-
+                  localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+                  LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
+                  For more details see aka.ms/aks/localdns.
+                properties:
+                  kubeDNSOverrides:
+                    description: kubeDNSOverrides apply to DNS traffic from pods with
+                      dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: forwardDestination is the destination server
+                            for DNS queries to be forwarded from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: forwardPolicy is the forward policy for selecting
+                            upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: maxConcurrent is the maximum number of concurrent
+                            queries. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: protocol enforces TCP or prefers UDP protocol
+                            for connections from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: queryLogging is the log level for DNS queries
+                            in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: serveStale is the policy for serving stale
+                            data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          maxLength: 254
+                          minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
+                  mode:
+                    description: mode of enablement for localDNS.
+                    enum:
+                    - Preferred
+                    - Required
+                    - Disabled
+                    type: string
+                  vnetDNSOverrides:
+                    description: vnetDNSOverrides apply to DNS traffic from pods with
+                      dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: forwardDestination is the destination server
+                            for DNS queries to be forwarded from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: forwardPolicy is the forward policy for selecting
+                            upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: maxConcurrent is the maximum number of concurrent
+                            queries. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: protocol enforces TCP or prefers UDP protocol
+                            for connections from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: queryLogging is the log level for DNS queries
+                            in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: serveStale is the policy for serving stale
+                            data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          maxLength: 254
+                          minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
+                    - message: root zone '.' cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
+                        == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
+                required:
+                - kubeDNSOverrides
+                - mode
+                - vnetDNSOverrides
+                type: object
               maxPods:
                 description: |-
-                  MaxPods is an override for the maximum number of pods that can run on a worker node instance.
+                  maxPods is an override for the maximum number of pods that can run on a worker node instance.
                   See minimum + maximum pods per node documentation: https://learn.microsoft.com/en-us/azure/aks/concepts-network-ip-address-planning#maximum-pods-per-node
                   Default behavior if this is not specified depends on the network plugin:
                     - If Network Plugin is Azure with "" (v1 or NodeSubnet), the default is 30.
@@ -178,12 +418,25 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
+              security:
+                description: security is a collection of security related karpenter
+                  fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               tags:
                 additionalProperties:
                   type: string
-                description: Tags to be applied on Azure resources like instances.
+                description: tags to be applied on Azure resources like instances.
                 type: object
                 x-kubernetes-validations:
                 - message: tags keys must be less than 512 characters
@@ -196,16 +449,21 @@ spec:
                   rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
-                  VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
+                  vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
                   If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
-            description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
+            description: status contains the resolved state of the AKSNodeClass.
             properties:
               conditions:
-                description: Conditions contains signals for health and readiness
+                description: conditions contains signals for health and readiness
                 items:
                   description: Condition aliases the upstream type and adds additional
                     helper methods
@@ -263,7 +521,7 @@ spec:
                 type: array
               images:
                 description: |-
-                  Images contains the current set of images available to use
+                  images contains the current set of images available to use
                   for the NodeClass
                 items:
                   description: NodeImage contains resolved image selector values utilized
@@ -271,12 +529,12 @@ spec:
                   properties:
                     id:
                       description: |-
-                        The ID of the image. Examples:
+                        id is the ID of the image. Examples:
                         - CIG: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
                         - SIG: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
                       type: string
                     requirements:
-                      description: Requirements of the image to be utilized on an
+                      description: requirements of the image to be utilized on an
                         instance type
                       items:
                         description: |-
@@ -314,7 +572,7 @@ spec:
                 type: array
               kubernetesVersion:
                 description: |-
-                  KubernetesVersion contains the current kubernetes version which should be
+                  kubernetesVersion contains the current kubernetes version which should be
                   used for nodes provisioned for the NodeClass
                 type: string
             type: object
@@ -323,7 +581,18 @@ spec:
     storage: false
     subresources:
       status: {}
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AKSNodeClass is the Schema for the AKSNodeClass API
@@ -347,25 +616,34 @@ spec:
             type: object
           spec:
             description: |-
-              AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
+              spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
-              imageFamily:
-                default: Ubuntu2204
-                description: ImageFamily is the image family that instances use.
+              fipsMode:
+                description: fipsMode controls FIPS compliance for the provisioned
+                  nodes
                 enum:
+                - FIPS
+                - Disabled
+                type: string
+              imageFamily:
+                default: Ubuntu
+                description: imageFamily is the image family that instances use.
+                enum:
+                - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
                 description: |-
-                  Kubelet defines args to be used when configuring kubelet on provisioned nodes.
+                  kubelet defines args to be used when configuring kubelet on provisioned nodes.
                   They are a subset of the upstream types, recognizing not all options may be supported.
                   Wherever possible, the types and names should reflect the upstream kubelet types.
                 properties:
                   allowedUnsafeSysctls:
                     description: |-
-                      A comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+                      allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
                       Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
                       and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
                       Default: []
@@ -392,13 +670,13 @@ spec:
                   cpuCFSQuota:
                     default: true
                     description: |-
-                      CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+                      cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
                       Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
                     type: boolean
                   cpuCFSQuotaPeriod:
                     default: 100ms
                     description: |-
-                      cpuCfsQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
+                      cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
                       The value must be between 1 ms and 1 second, inclusive.
                       Default: "100ms"
                     type: string
@@ -411,7 +689,7 @@ spec:
                     type: string
                   imageGCHighThresholdPercent:
                     description: |-
-                      ImageGCHighThresholdPercent is the percent of disk usage after which image
+                      imageGCHighThresholdPercent is the percent of disk usage after which image
                       garbage collection is always run. The percent is calculated by dividing this
                       field value by 100, so this field must be between 0 and 100, inclusive.
                       When specified, the value must be greater than ImageGCLowThresholdPercent.
@@ -422,7 +700,7 @@ spec:
                     type: integer
                   imageGCLowThresholdPercent:
                     description: |-
-                      ImageGCLowThresholdPercent is the percent of disk usage before which image
+                      imageGCLowThresholdPercent is the percent of disk usage before which image
                       garbage collection is never run. Lowest disk usage to garbage collect to.
                       The percent is calculated by dividing this field value by 100,
                       so the field value must be between 0 and 100, inclusive.
@@ -462,9 +740,229 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+              localDNS:
+                description: |-
+                  localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+                  LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
+                  For more details see aka.ms/aks/localdns.
+                properties:
+                  kubeDNSOverrides:
+                    description: kubeDNSOverrides apply to DNS traffic from pods with
+                      dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: forwardDestination is the destination server
+                            for DNS queries to be forwarded from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: forwardPolicy is the forward policy for selecting
+                            upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: maxConcurrent is the maximum number of concurrent
+                            queries. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: protocol enforces TCP or prefers UDP protocol
+                            for connections from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: queryLogging is the log level for DNS queries
+                            in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: serveStale is the policy for serving stale
+                            data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          maxLength: 254
+                          minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
+                  mode:
+                    description: mode of enablement for localDNS.
+                    enum:
+                    - Preferred
+                    - Required
+                    - Disabled
+                    type: string
+                  vnetDNSOverrides:
+                    description: vnetDNSOverrides apply to DNS traffic from pods with
+                      dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: forwardDestination is the destination server
+                            for DNS queries to be forwarded from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: forwardPolicy is the forward policy for selecting
+                            upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: maxConcurrent is the maximum number of concurrent
+                            queries. See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: protocol enforces TCP or prefers UDP protocol
+                            for connections from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: queryLogging is the log level for DNS queries
+                            in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: serveStale is the policy for serving stale
+                            data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          maxLength: 254
+                          minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
+                    - message: root zone '.' cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
+                        == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
+                required:
+                - kubeDNSOverrides
+                - mode
+                - vnetDNSOverrides
+                type: object
               maxPods:
                 description: |-
-                  MaxPods is an override for the maximum number of pods that can run on a worker node instance.
+                  maxPods is an override for the maximum number of pods that can run on a worker node instance.
                   See minimum + maximum pods per node documentation: https://learn.microsoft.com/en-us/azure/aks/concepts-network-ip-address-planning#maximum-pods-per-node
                   Default behavior if this is not specified depends on the network plugin:
                     - If Network Plugin is Azure with "" (v1 or NodeSubnet), the default is 30.
@@ -479,12 +977,25 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
+              security:
+                description: security is a collection of security related karpenter
+                  fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               tags:
                 additionalProperties:
                   type: string
-                description: Tags to be applied on Azure resources like instances.
+                description: tags to be applied on Azure resources like instances.
                 type: object
                 x-kubernetes-validations:
                 - message: tags keys must be less than 512 characters
@@ -497,16 +1008,21 @@ spec:
                   rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
-                  VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
+                  vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
                   If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
-            description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
+            description: status contains the resolved state of the AKSNodeClass.
             properties:
               conditions:
-                description: Conditions contains signals for health and readiness
+                description: conditions contains signals for health and readiness
                 items:
                   description: Condition aliases the upstream type and adds additional
                     helper methods
@@ -564,7 +1080,7 @@ spec:
                 type: array
               images:
                 description: |-
-                  Images contains the current set of images available to use
+                  images contains the current set of images available to use
                   for the NodeClass
                 items:
                   description: NodeImage contains resolved image selector values utilized
@@ -572,12 +1088,12 @@ spec:
                   properties:
                     id:
                       description: |-
-                        The ID of the image. Examples:
+                        id is the ID of the image. Examples:
                         - CIG: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
                         - SIG: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
                       type: string
                     requirements:
-                      description: Requirements of the image to be utilized on an
+                      description: requirements of the image to be utilized on an
                         instance type
                       items:
                         description: |-
@@ -615,7 +1131,7 @@ spec:
                 type: array
               kubernetesVersion:
                 description: |-
-                  KubernetesVersion contains the current kubernetes version which should be
+                  kubernetesVersion contains the current kubernetes version which should be
                   used for nodes provisioned for the NodeClass
                 type: string
             type: object

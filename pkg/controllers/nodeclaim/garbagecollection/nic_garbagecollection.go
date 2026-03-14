@@ -24,13 +24,13 @@ import (
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
@@ -45,20 +45,20 @@ const (
 )
 
 type NetworkInterface struct {
-	kubeClient       client.Client
-	instanceProvider instance.Provider
+	kubeClient         client.Client
+	vmInstanceProvider instance.VMProvider
 }
 
-func NewNetworkInterface(kubeClient client.Client, instanceProvider instance.Provider) *NetworkInterface {
+func NewNetworkInterface(kubeClient client.Client, vmInstanceProvider instance.VMProvider) *NetworkInterface {
 	return &NetworkInterface{
-		kubeClient:       kubeClient,
-		instanceProvider: instanceProvider,
+		kubeClient:         kubeClient,
+		vmInstanceProvider: vmInstanceProvider,
 	}
 }
 
 func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (sets.Set[string], error) {
 	unremovableInterfaces := sets.New[string]()
-	vms, err := c.instanceProvider.List(ctx)
+	vms, err := c.vmInstanceProvider.List(ctx)
 	if err != nil {
 		return unremovableInterfaces, fmt.Errorf("listing VMs: %w", err)
 	}
@@ -76,21 +76,21 @@ func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (s
 	return unremovableInterfaces, nil
 }
 
-func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *NetworkInterface) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	ctx = injection.WithControllerName(ctx, "networkinterface.garbagecollection")
-	nics, err := c.instanceProvider.ListNics(ctx)
+	nics, err := c.vmInstanceProvider.ListNics(ctx)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("listing NICs: %w", err)
+		return reconciler.Result{}, fmt.Errorf("listing NICs: %w", err)
 	}
 
 	unremovableInterfaces, err := c.populateUnremovableInterfaces(ctx)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("error listing resources needed to populate unremovable nics %w", err)
+		return reconciler.Result{}, fmt.Errorf("error listing resources needed to populate unremovable nics %w", err)
 	}
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
 		nicName := lo.FromPtr(nics[i].Name)
 		if !unremovableInterfaces.Has(nicName) {
-			err := c.instanceProvider.DeleteNic(ctx, nicName)
+			err := c.vmInstanceProvider.DeleteNic(ctx, nicName)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "")
 				return
@@ -99,7 +99,7 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 			log.FromContext(ctx).Info("garbage collected NIC", "nicName", nicName)
 		}
 	})
-	return reconcile.Result{
+	return reconciler.Result{
 		RequeueAfter: NicGarbageCollectionInterval,
 	}, nil
 }

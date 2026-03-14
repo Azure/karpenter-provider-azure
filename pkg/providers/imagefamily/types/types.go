@@ -21,7 +21,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
@@ -58,19 +59,8 @@ type CommunityGalleryImageVersionsAPI interface {
 	NewListPager(location string, publicGalleryName string, galleryImageName string, options *armcomputev5.CommunityGalleryImageVersionsClientListOptions) *runtime.Pager[armcomputev5.CommunityGalleryImageVersionsClientListResponse]
 }
 
-type NodeImageVersion struct {
-	FullName string `json:"fullName"`
-	OS       string `json:"os"`
-	SKU      string `json:"sku"`
-	Version  string `json:"version"`
-}
-
-type NodeImageVersionsResponse struct {
-	Values []NodeImageVersion `json:"values"`
-}
-
 type NodeImageVersionsAPI interface {
-	List(ctx context.Context, location, subscription string) (NodeImageVersionsResponse, error)
+	List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error)
 }
 
 // NodeBootstrappingAPI defines the interface for retrieving node bootstrapping data

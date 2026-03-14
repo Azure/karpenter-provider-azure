@@ -31,6 +31,8 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
 var _ = Describe("DaemonSet", func() {
@@ -137,6 +139,73 @@ var _ = Describe("DaemonSet", func() {
 
 			g.Expect(deploymentPods[0].Spec.NodeName).To(Equal(nodeList.Items[0].Name))
 			g.Expect(daemonSetPods[0].Spec.NodeName).To(Equal(nodeList.Items[0].Name))
+		}).Should(Succeed())
+	})
+	It("should schedule DaemonSet with matching AKS domain node affinity (small/medium/large)", func() {
+		// DaemonSet 1: Small (CPU <= 2).
+		daemonsetSmall := test.DaemonSet(test.DaemonSetOptions{
+			ObjectMeta: metav1.ObjectMeta{Name: "ds-small"},
+			PodOptions: test.PodOptions{
+				NodeRequirements: []corev1.NodeSelectorRequirement{
+					{Key: v1beta1.AKSLabelCPU, Operator: corev1.NodeSelectorOpLt, Values: []string{"3"}},
+				},
+			},
+		})
+
+		// DaemonSet 2: Medium (CPU 3-4).
+		daemonsetMedium := test.DaemonSet(test.DaemonSetOptions{
+			ObjectMeta: metav1.ObjectMeta{Name: "ds-medium"},
+			PodOptions: test.PodOptions{
+				NodeRequirements: []corev1.NodeSelectorRequirement{
+					{Key: v1beta1.AKSLabelCPU, Operator: corev1.NodeSelectorOpGt, Values: []string{"2"}},
+					{Key: v1beta1.AKSLabelCPU, Operator: corev1.NodeSelectorOpLt, Values: []string{"5"}},
+				},
+			},
+		})
+
+		// DaemonSet 3: Large (CPU 5+).
+		daemonsetLarge := test.DaemonSet(test.DaemonSetOptions{
+			ObjectMeta: metav1.ObjectMeta{Name: "ds-large"},
+			PodOptions: test.PodOptions{
+				NodeRequirements: []corev1.NodeSelectorRequirement{
+					{Key: v1beta1.AKSLabelCPU, Operator: corev1.NodeSelectorOpGt, Values: []string{"4"}},
+				},
+			},
+		})
+
+		// Deployment targeting 2 CPU core.
+		deployment := test.Deployment(test.DeploymentOptions{
+			Replicas: 1,
+			PodOptions: test.PodOptions{
+				NodeSelector: map[string]string{
+					v1beta1.AKSLabelCPU: "2",
+				},
+			},
+		})
+
+		env.ExpectCreated(nodeClass, nodePool, daemonsetSmall, daemonsetMedium, daemonsetLarge, deployment)
+
+		// Eventually expect deployment and small DaemonSet to schedule.
+		Eventually(func(g Gomega) {
+			nodeList := &corev1.NodeList{}
+			g.Expect(env.Client.List(env, nodeList, client.HasLabels{"testing/cluster"})).To(Succeed())
+			g.Expect(nodeList.Items).To(HaveLen(1))
+
+			node := nodeList.Items[0]
+			g.Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelCPU, "2"))
+
+			deploymentPods := env.Monitor.RunningPods(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels))
+			g.Expect(deploymentPods).To(HaveLen(1))
+			g.Expect(deploymentPods[0].Spec.NodeName).To(Equal(node.Name))
+
+			smallDSPods := env.Monitor.RunningPods(labels.SelectorFromSet(daemonsetSmall.Spec.Selector.MatchLabels))
+			g.Expect(smallDSPods).To(HaveLen(1))
+			g.Expect(smallDSPods[0].Spec.NodeName).To(Equal(node.Name))
+
+			mediumDSPods := env.Monitor.RunningPods(labels.SelectorFromSet(daemonsetMedium.Spec.Selector.MatchLabels))
+			g.Expect(mediumDSPods).To(HaveLen(0))
+			largeDSPods := env.Monitor.RunningPods(labels.SelectorFromSet(daemonsetLarge.Spec.Selector.MatchLabels))
+			g.Expect(largeDSPods).To(HaveLen(0))
 		}).Should(Succeed())
 	})
 })

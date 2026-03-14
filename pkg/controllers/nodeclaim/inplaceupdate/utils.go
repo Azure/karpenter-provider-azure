@@ -26,18 +26,26 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 )
 
 // According to https://pkg.go.dev/encoding/json#Marshal, it's safe to use map-types (and encoding/json in general) to produce
 // strings deterministically.
-type inPlaceUpdateFields struct {
+type aksMachineInPlaceUpdateFields struct {
+	// VM identities are handled server-side for AKS machines. No need here.
+	Tags map[string]string `json:"tags,omitempty"`
+}
+
+type vmInPlaceUpdateFields struct {
 	Identities sets.Set[string]  `json:"identities,omitempty"`
 	Tags       map[string]string `json:"tags,omitempty"`
 }
 
-func (i *inPlaceUpdateFields) CalculateHash() (string, error) {
-	encoded, err := json.Marshal(i)
+// CalculateHash computes a hash for any JSON-marshalable struct
+func CalculateHash(data any) (string, error) {
+	encoded, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
@@ -51,16 +59,25 @@ func (i *inPlaceUpdateFields) CalculateHash() (string, error) {
 }
 
 // HashFromNodeClaim calculates an inplace update hash from the specified options, nodeClaim, and nodeClass
-func HashFromNodeClaim(options *options.Options, _ *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
-	tags := options.AdditionalTags
-	if nodeClass != nil {
-		tags = lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags)
+func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
+	tags := launchtemplate.Tags(options, nodeClass, nodeClaim)
+	tagsForHash := lo.MapValues(tags, func(v *string, _ string) string {
+		return lo.FromPtr(v)
+	})
+
+	var hashStruct any
+	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+		// AKS machine-based node
+		hashStruct = &aksMachineInPlaceUpdateFields{
+			Tags: tagsForHash,
+		}
+	} else {
+		// VM instance-based node
+		hashStruct = &vmInPlaceUpdateFields{
+			Identities: sets.New(options.NodeIdentities...),
+			Tags:       tagsForHash,
+		}
 	}
 
-	hashStruct := &inPlaceUpdateFields{
-		Identities: sets.New(options.NodeIdentities...),
-		Tags:       tags,
-	}
-
-	return hashStruct.CalculateHash()
+	return CalculateHash(hashStruct)
 }

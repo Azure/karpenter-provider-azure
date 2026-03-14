@@ -17,11 +17,10 @@ limitations under the License.
 package auth
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
-
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 
 	"github.com/Azure/go-autorest/autorest"
 )
@@ -43,11 +42,12 @@ type ClientConfig struct {
 
 // Config holds the configuration parsed from the --cloud-config flag
 type Config struct {
-	Cloud          string `json:"cloud" yaml:"cloud"`
-	Location       string `json:"location" yaml:"location"`
-	TenantID       string `json:"tenantId" yaml:"tenantId"`
-	SubscriptionID string `json:"subscriptionId" yaml:"subscriptionId"`
-	ResourceGroup  string `json:"resourceGroup" yaml:"resourceGroup"`
+	Cloud                    string `json:"cloud" yaml:"cloud"`
+	Location                 string `json:"location" yaml:"location"`
+	TenantID                 string `json:"tenantId" yaml:"tenantId"`
+	SubscriptionID           string `json:"subscriptionId" yaml:"subscriptionId"`
+	ResourceGroup            string `json:"resourceGroup" yaml:"resourceGroup"`
+	AzureEnvironmentFilepath string `json:"azureEnvironmentFilepath" yaml:"azureEnvironmentFilepath"`
 }
 
 // BuildAzureConfig returns a Config object for the Azure clients
@@ -67,35 +67,43 @@ func BuildAzureConfig() (*Config, error) {
 	return cfg, nil
 }
 
-func (cfg *Config) GetAzureClientConfig(authorizer autorest.Authorizer, env *azclient.Environment) *ClientConfig {
-	azClientConfig := &ClientConfig{
-		Location:                cfg.Location,
-		SubscriptionID:          cfg.SubscriptionID,
-		ResourceManagerEndpoint: env.ResourceManagerEndpoint,
-		Authorizer:              authorizer,
-		UserAgent:               GetUserAgentExtension(),
-	}
-
-	return azClientConfig
-}
-
 func (cfg *Config) Build() error {
 	// May require more than this behind the scenes: https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/azidentity/README.md#defaultazurecredential
 	cfg.Cloud = strings.TrimSpace(os.Getenv("ARM_CLOUD"))
 	cfg.Location = strings.TrimSpace(os.Getenv("LOCATION"))
 	cfg.ResourceGroup = strings.TrimSpace(os.Getenv("ARM_RESOURCE_GROUP"))
-	cfg.TenantID = strings.TrimSpace(os.Getenv("ARM_TENANT_ID"))
-	cfg.SubscriptionID = strings.TrimSpace(os.Getenv("ARM_SUBSCRIPTION_ID"))
+	// TODO: We probably can remove both of these "ARM_" fallbacks in mid 2026. We also don't currently
+	// use the TENANT_ID anyway so possibly could remove that too.
+	// Read both ARM_TENANT_ID and AZURE_TENANT_ID env vars, preferring AZURE_ when both are set
+	cfg.TenantID = strings.TrimSpace(os.Getenv("AZURE_TENANT_ID"))
+	if cfg.TenantID == "" {
+		cfg.TenantID = strings.TrimSpace(os.Getenv("ARM_TENANT_ID"))
+	}
+	// Read both ARM_SUBSCRIPTION_ID and AZURE_SUBSCRIPTION_ID env vars, preferring AZURE_ when both are set
+	cfg.SubscriptionID = strings.TrimSpace(os.Getenv("AZURE_SUBSCRIPTION_ID"))
+	if cfg.SubscriptionID == "" {
+		cfg.SubscriptionID = strings.TrimSpace(os.Getenv("ARM_SUBSCRIPTION_ID"))
+	}
+	cfg.AzureEnvironmentFilepath = strings.TrimSpace(os.Getenv("AZURE_ENVIRONMENT_FILEPATH"))
 
 	return nil
 }
 
 func (cfg *Config) Default() error {
-	// Nothing to default, for now.
+	// Default is AzurePublicCloud if not set
+	if cfg.Cloud == "" && cfg.AzureEnvironmentFilepath == "" {
+		cfg.Cloud = "AzurePublicCloud"
+	}
+
 	return nil
 }
 
 func (cfg *Config) Validate() error {
+	// Validate that ARM_CLOUD and AZURE_ENVIRONMENT_FILEPATH are not both set
+	if cfg.Cloud != "" && cfg.AzureEnvironmentFilepath != "" {
+		return fmt.Errorf("ARM_CLOUD and AZURE_ENVIRONMENT_FILEPATH cannot both be set - please use only one cloud configuration method")
+	}
+
 	// Setup fields and validate all of them are not empty
 	fields := []cfgField{
 		{cfg.SubscriptionID, "subscription ID"},
@@ -110,4 +118,13 @@ func (cfg *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (cfg *Config) String() string {
+	json, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Sprintf("couldn't marshal Config JSON: %s", err)
+	}
+
+	return string(json)
 }

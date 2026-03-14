@@ -27,12 +27,22 @@ import (
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
+
+// ExpectRunInClusterControllerWithMachineMode confirms that the cluster has a Machine AgentPool created for it
+func (env *Environment) ExpectRunInClusterControllerWithMachineMode() *containerservice.AgentPool {
+	GinkgoHelper()
+	Expect(env.InClusterController).To(BeTrue(), "Should only create a byo Machine Pool when running as an InClusterController")
+	By("Setup BYO Machine AgentPool for self-hosted testing")
+	byoMachineAP := env.ExpectMachinesAgentPoolExists()
+	return byoMachineAP
+}
 
 func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 	GinkgoHelper()
@@ -62,7 +72,7 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 	Expect(err).ToNot(HaveOccurred())
 	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
-	env.tracker.Add(lo.FromPtr(resp.Interface.ID), func() error {
+	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
 		deletePoller, err := env.interfacesClient.BeginDelete(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), nil)
 		if err != nil {
 			return fmt.Errorf("failed to delete network interface %s: %w", lo.FromPtr(networkInterface.Name), err)
@@ -79,7 +89,7 @@ func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesF
 	GinkgoHelper()
 	upgradeProfile, err := env.managedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
 	Expect(err).ToNot(HaveOccurred())
-	return upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades
+	return upgradeProfile.Properties.ControlPlaneProfile.Upgrades
 }
 
 func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) containerservice.ManagedCluster {
@@ -109,13 +119,13 @@ func (env *Environment) ExpectParsedProviderID(providerID string) string {
 
 func (env *Environment) ExpectCreatedSubnet(vnetName string, subnet *armnetwork.Subnet) {
 	GinkgoHelper()
-	poller, err := env.subnetClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), *subnet, nil)
+	poller, err := env.subnetClient.BeginCreateOrUpdate(env.Context, env.VNETResourceGroup, vnetName, lo.FromPtr(subnet.Name), *subnet, nil)
 	Expect(err).ToNot(HaveOccurred())
 	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
 	*subnet = resp.Subnet
 	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
-		deletePoller, err := env.subnetClient.BeginDelete(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), nil)
+		deletePoller, err := env.subnetClient.BeginDelete(env.Context, env.VNETResourceGroup, vnetName, lo.FromPtr(subnet.Name), nil)
 		if err != nil {
 			return fmt.Errorf("failed to delete subnet %s: %w", lo.FromPtr(subnet.Name), err)
 		}
@@ -249,6 +259,7 @@ func (env *Environment) EventuallyExpectAzureResources(
 		// VMs
 		managedExtensionNames := instance.GetManagedExtensionNames(
 			lo.Ternary(env.InClusterController, consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient),
+			lo.Must(auth.EnvironmentFromName("AzurePublicCloud")),
 		)
 		vmPager := env.vmClient.NewListPager(env.NodeResourceGroup, nil)
 		for vmPager.More() {

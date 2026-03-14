@@ -21,11 +21,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
+	"github.com/samber/lo"
+
+	opstatus "github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -121,6 +124,19 @@ func getEmptyMWConfigMap() *corev1.ConfigMap {
 	}
 }
 
+// getEmptyValuesMWConfigMap returns a ConfigMap with all maintenance window keys present
+// but with empty string values, which may be observed under some circumstances
+func getEmptyValuesMWConfigMap() *corev1.ConfigMap {
+	configMap := getEmptyMWConfigMap()
+	configMap.Data["aksManagedAutoUpgradeSchedule-start"] = ""
+	configMap.Data["aksManagedAutoUpgradeSchedule-end"] = ""
+	configMap.Data["aksManagedNodeOSUpgradeSchedule-start"] = ""
+	configMap.Data["aksManagedNodeOSUpgradeSchedule-end"] = ""
+	configMap.Data["default-start"] = ""
+	configMap.Data["default-end"] = ""
+	return configMap
+}
+
 var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 
@@ -159,11 +175,47 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	Context("NodeImageReconciler direct tests", func() {
 		BeforeEach(func() {
 			// Setup NodeClass
-			nodeClass.Status.KubernetesVersion = testK8sVersion
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		})
+
+		Context("FIPS Validation With UseSIG", func() {
+			var (
+				imageReconciler *status.NodeImageReconciler
+			)
+
+			BeforeEach(func() {
+				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+			})
+
+			It("images ready status should be false if FIPS is enabled but UseSIG is false", func() {
+				// set up test options with UseSIG disabled (false)
+				options := test.Options(test.OptionsFields{
+					UseSIG: lo.ToPtr(false),
+				})
+				ctx = options.ToContext(ctx)
+
+				nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
+				// set ImageFamily to AzureLinux (to bypass unsupported FIPS on the default Ubuntu2204)
+				imageFamily := v1beta1.AzureLinuxImageFamily
+				nodeClass.Spec.ImageFamily = &imageFamily
+
+				result, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+				Expect(nodeClass.Status.Images).To(BeNil())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("SIGRequiredForFIPS"))
+				Expect(condition.Message).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)"))
+
+				readyCondition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
+				Expect(readyCondition.IsFalse()).To(BeTrue())
+			})
 		})
 
 		When("SYSTEM_NAMESPACE is set", func() {
@@ -194,6 +246,15 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			It("Should update NodeImages when ConfigMap is empty (maintenance window undefined)", func() {
 				ExpectApplied(ctx, env.Client, getEmptyMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+			})
+
+			It("Should update NodeImages when ConfigMap has keys with empty string values (fail open)", func() {
+				ExpectApplied(ctx, env.Client, getEmptyValuesMWConfigMap())
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())

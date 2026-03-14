@@ -20,15 +20,15 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/http"
 	"sync"
 
 	"github.com/samber/lo"
 
-	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 )
 
 type NetworkInterfaceCreateOrUpdateInput struct {
@@ -57,10 +57,10 @@ type NetworkInterfacesBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ instance.NetworkInterfacesAPI = &NetworkInterfacesAPI{}
+var _ azclient.NetworkInterfacesAPI = &NetworkInterfacesAPI{}
 
 type NetworkInterfacesAPI struct {
-	// instance.NetworkInterfacesAPI
+	// azclient.NetworkInterfacesAPI
 	NetworkInterfacesBehavior
 }
 
@@ -99,7 +99,7 @@ func (c *NetworkInterfacesAPI) Get(_ context.Context, resourceGroupName string, 
 	id := MakeNetworkInterfaceID(resourceGroupName, interfaceName)
 	iface, ok := c.NetworkInterfaces.Load(id)
 	if !ok {
-		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 	}
 	return armnetwork.InterfacesClientGetResponse{
 		Interface: iface.(armnetwork.Interface),
@@ -135,7 +135,7 @@ func (c *NetworkInterfacesAPI) UpdateTags(
 		id := MakeNetworkInterfaceID(resourceGroupName, interfaceName)
 		instance, ok := c.NetworkInterfaces.Load(id)
 		if !ok {
-			return armnetwork.InterfacesClientUpdateTagsResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+			return armnetwork.InterfacesClientUpdateTagsResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 		}
 
 		iface := instance.(armnetwork.Interface)

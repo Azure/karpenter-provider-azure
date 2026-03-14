@@ -18,6 +18,7 @@ package options
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/multierr"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -35,6 +37,7 @@ func (o *Options) Validate() error {
 	return multierr.Combine(
 		o.validateRequiredFields(),
 		o.validateVNETGUID(),
+		o.validateKubeletIdentityClientID(),
 		o.validateEndpoint(),
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
@@ -43,13 +46,31 @@ func (o *Options) Validate() error {
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
 		o.validateAdditionalTags(),
+		o.validateDiskEncryptionSetID(),
+		o.validateClusterDNSIP(),
 		validate.Struct(o),
 	)
+}
+
+func (o *Options) validateClusterDNSIP() error {
+	if o.DNSServiceIP != "" {
+		if _, err := netip.ParseAddr(o.DNSServiceIP); err != nil {
+			return fmt.Errorf("dns-service-ip is invalid %w", err)
+		}
+	}
+	return nil
 }
 
 func (o *Options) validateVNETGUID() error {
 	if o.VnetGUID != "" && uuid.Validate(o.VnetGUID) != nil {
 		return fmt.Errorf("vnet-guid %s is malformed", o.VnetGUID)
+	}
+	return nil
+}
+
+func (o *Options) validateKubeletIdentityClientID() error {
+	if o.KubeletIdentityClientID != "" && uuid.Validate(o.KubeletIdentityClientID) != nil {
+		return fmt.Errorf("kubelet-identity-client-id %s is malformed", o.KubeletIdentityClientID)
 	}
 	return nil
 }
@@ -97,12 +118,20 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
-	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+	switch o.ProvisionMode {
+	case consts.ProvisionModeBootstrappingClient:
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
+		}
+	case consts.ProvisionModeAKSMachineAPI:
+		if o.AKSMachinesPoolName == "" {
+			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is aksmachineapi")
+		}
+		if !o.UseSIG {
+			return fmt.Errorf("use-sig is required to be true when provision-mode is aksmachineapi")
 		}
 	}
 	return nil
@@ -132,20 +161,18 @@ func (o *Options) validateRequiredFields() error {
 
 func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
-		if o.SIGAccessTokenServerURL == "" {
-			return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
+		if o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+			// For ProvisionModeAKSMachineAPI, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
+			if o.SIGAccessTokenServerURL == "" {
+				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
+			}
+			if !isValidURL(o.SIGAccessTokenServerURL) {
+				return fmt.Errorf("sig-access-token-server-url is not a valid URL")
+			}
 		}
-		if o.SIGAccessTokenScope == "" {
-			return fmt.Errorf("sig-access-token-scope is required when use-sig is true")
-		}
+
 		if o.SIGSubscriptionID == "" {
 			return fmt.Errorf("sig-subscription-id is required when use-sig is true")
-		}
-		if !isValidURL(o.SIGAccessTokenServerURL) {
-			return fmt.Errorf("sig-access-token-server-url is not a valid URL")
-		}
-		if !isValidURL(o.SIGAccessTokenScope) {
-			return fmt.Errorf("sig-access-token-scope is not a valid URL")
 		}
 	}
 	return nil
@@ -199,4 +226,37 @@ func isValidURL(u string) bool {
 	// url.Parse() will accept a lot of input without error; make
 	// sure it's a real URL
 	return err == nil && endpoint.IsAbs() && endpoint.Hostname() != ""
+}
+
+func (o *Options) validateDiskEncryptionSetID() error {
+	if o.DiskEncryptionSetID == "" {
+		return nil
+	}
+
+	// Parse with Azure SDK for validation
+	// arm.ParseResourceID will validate the format of the resource ID and extract its components
+	parsedID, err := arm.ParseResourceID(o.DiskEncryptionSetID)
+	if err != nil {
+		return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
+	}
+
+	// Validate resource type is Microsoft.Compute/diskEncryptionSets
+	expectedResourceType := "Microsoft.Compute/diskEncryptionSets"
+	if !strings.EqualFold(parsedID.ResourceType.String(), expectedResourceType) {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected resource type '%s' but got '%s'", expectedResourceType, parsedID.ResourceType.String())
+	}
+
+	// Validate required fields are not empty
+	if parsedID.SubscriptionID == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: subscription ID must not be empty")
+	}
+	if parsedID.ResourceGroupName == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: resource group name must not be empty")
+	}
+	if parsedID.Name == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: disk encryption set name must not be empty")
+	}
+
+	o.ParsedDiskEncryptionSetID = parsedID
+	return nil
 }

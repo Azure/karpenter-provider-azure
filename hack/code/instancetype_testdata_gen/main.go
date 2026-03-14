@@ -26,14 +26,14 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
 	"github.com/samber/lo"
 )
 
 func main() {
 	fmt.Println("starting generation of sku data...")
-	sub := os.Getenv("SUBSCRIPTION_ID")
+	sub := os.Getenv("AZURE_SUBSCRIPTION_ID")
 	path, region, selectedSkus := os.Args[2], os.Args[3], os.Args[4]
 	skus := strings.Split(selectedSkus, ",")
 	targetSkus := map[string]struct{}{}
@@ -41,7 +41,7 @@ func main() {
 		targetSkus[sku] = struct{}{}
 	}
 	if sub == "" {
-		fmt.Println("SUBSCRIPTION_ID env var is required")
+		fmt.Println("AZURE_SUBSCRIPTION_ID env var is required")
 		os.Exit(1)
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -89,8 +89,8 @@ func writeSkuData(ResourceSkus []*armcompute.ResourceSKU, location, path string)
 	fmt.Fprintln(src, "package fake")
 	fmt.Fprintln(src, "import (")
 	fmt.Fprintln(src, `	"github.com/samber/lo"`)
-	fmt.Fprintln(src, `		// nolint SA1019 - deprecated package`)
-	fmt.Fprintln(src, `		"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"`)
+	fmt.Fprintln(src, `	//nolint:staticcheck // deprecated package`)
+	fmt.Fprintln(src, `	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"`)
 	fmt.Fprintln(src, ")")
 	now := time.Now().UTC().Format(time.RFC3339)
 	fmt.Fprintf(src, "// generated at %s\n\n\n", now)

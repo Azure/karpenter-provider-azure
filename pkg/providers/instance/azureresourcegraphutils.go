@@ -20,22 +20,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	arg "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/samber/lo"
 )
 
 func NewQueryRequest(subscriptionID *string, query string) *arg.QueryRequest {
 	return &arg.QueryRequest{
 		Query: &query,
 		Options: &arg.QueryRequestOptions{
-			ResultFormat: to.Ptr(arg.ResultFormatObjectArray),
+			ResultFormat: lo.ToPtr(arg.ResultFormatObjectArray),
 		},
 		Subscriptions: []*string{subscriptionID},
 	}
 }
 
 // Queries Azure Resource Graph using Resources() and returns a list of all pages of data.
-func GetResourceData(ctx context.Context, client AzureResourceGraphAPI, req arg.QueryRequest) ([]Resource, error) {
+func GetResourceData(ctx context.Context, client azclient.AzureResourceGraphAPI, req arg.QueryRequest) ([]Resource, error) {
 	dataRemaining := true // used to handle ARG responses > 1 page long
 	var data []Resource
 	for dataRemaining {

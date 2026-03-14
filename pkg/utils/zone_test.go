@@ -19,13 +19,13 @@ package utils_test
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 )
 
-func TestGetZone(t *testing.T) {
+func TestMakeAKSLabelZoneFromVM(t *testing.T) {
 	tc := []struct {
 		testName      string
 		input         *armcompute.VirtualMachine
@@ -40,22 +40,22 @@ func TestGetZone(t *testing.T) {
 		{
 			testName: "happy case",
 			input: &armcompute.VirtualMachine{
-				Location: to.Ptr("region"),
-				Zones:    []*string{to.Ptr("1")},
+				Location: lo.ToPtr("region"),
+				Zones:    []*string{lo.ToPtr("1")},
 			},
 			expectedZone: "region-1",
 		},
 		{
 			testName: "missing Location",
 			input: &armcompute.VirtualMachine{
-				Zones: []*string{to.Ptr("1")},
+				Zones: []*string{lo.ToPtr("1")},
 			},
 			expectedError: "virtual machine is missing location",
 		},
 		{
 			testName: "multiple zones",
 			input: &armcompute.VirtualMachine{
-				Zones: []*string{to.Ptr("1"), to.Ptr("2")},
+				Zones: []*string{lo.ToPtr("1"), lo.ToPtr("2")},
 			},
 			expectedError: "virtual machine has multiple zones",
 		},
@@ -74,13 +74,14 @@ func TestGetZone(t *testing.T) {
 	}
 
 	for _, c := range tc {
-		zone, err := utils.GetZone(c.input)
-		assert.Equal(t, c.expectedZone, zone, c.testName)
+		g := NewWithT(t)
+		zone, err := utils.MakeAKSLabelZoneFromVM(c.input)
+		g.Expect(zone).To(Equal(c.expectedZone), c.testName)
 		if err == nil && c.expectedError != "" {
-			assert.Fail(t, "expected error but got nil", c.testName)
+			g.Expect(err).To(HaveOccurred(), c.testName)
 		}
 		if err != nil {
-			assert.Equal(t, c.expectedError, err.Error(), c.testName)
+			g.Expect(err.Error()).To(Equal(c.expectedError), c.testName)
 		}
 	}
 }

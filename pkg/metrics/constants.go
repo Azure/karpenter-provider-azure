@@ -22,4 +22,13 @@ const (
 
 	// Subsystem(s).
 	imageFamilySubsystem = "image"
+
+	// Label key(s).
+	ImageLabel        = "image"
+	ErrorCodeLabel    = "error_code"
+	SizeLabel         = "size"
+	ZoneLabel         = "zone"
+	CapacityTypeLabel = "capacity_type"
+	NodePoolLabel     = "nodepool"
+	PhaseLabel        = "phase"
 )

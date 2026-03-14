@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"sort"
 
+	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
-	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -72,9 +72,11 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
-	nodeClass.Status.KubernetesVersion = testK8sVersion
+	nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 
 	conditions := []opstatus.Condition{}
 	for _, condition := range nodeClass.GetConditions() {
@@ -145,19 +147,24 @@ func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {
 }
 
 func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion string) {
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, nodeClass.Status.KubernetesVersion)
+	var kubernetesVersion string
+	if nodeClass.Status.KubernetesVersion != nil {
+		kubernetesVersion = *nodeClass.Status.KubernetesVersion
+	}
+	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
+func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
-	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages(true)
-	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
+	switch imageFamily {
+	case v1beta1.Ubuntu2204ImageFamily:
+		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode)
+	case v1beta1.AzureLinuxImageFamily:
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages(true)
+			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode)
 		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages(true)
+			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode)
 		}
 	}
 	nodeImages := []imagefamily.NodeImage{}

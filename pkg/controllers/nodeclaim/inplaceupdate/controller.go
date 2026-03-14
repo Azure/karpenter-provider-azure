@@ -18,12 +18,12 @@ package inplaceupdate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/samber/lo"
-	"k8s.io/apimachinery/pkg/types"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,27 +34,31 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
-	nodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
+	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
 type Controller struct {
-	kubeClient       client.Client
-	instanceProvider instance.Provider
+	kubeClient                 client.Client
+	vmInstanceProvider         instance.VMProvider
+	aksMachineInstanceProvider instance.AKSMachineProvider
 }
 
 func NewController(
 	kubeClient client.Client,
-	instanceProvider instance.Provider,
+	vmInstanceProvider instance.VMProvider,
+	aksMachineInstanceProvider instance.AKSMachineProvider,
 ) *Controller {
 	return &Controller{
-		kubeClient:       kubeClient,
-		instanceProvider: instanceProvider,
+		kubeClient:                 kubeClient,
+		vmInstanceProvider:         vmInstanceProvider,
+		aksMachineInstanceProvider: aksMachineInstanceProvider,
 	}
 }
 
@@ -63,7 +67,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	// No need to add nodeClaim name to the context as it's already there
 
 	// Get the NodeClass
-	nodeClass, err := c.resolveAKSNodeClass(ctx, nodeClaim)
+	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("resolving AKSNodeClass, %w", err)
 	}
@@ -93,14 +97,18 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	stored := nodeClaim.DeepCopy()
 
-	vm, err := c.getVM(ctx, nodeClaim)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
-	}
-
-	err = c.applyPatch(ctx, options, nodeClaim, nodeClass, vm)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
+	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+		// AKS machine-based nodeClaim
+		err := c.processAKSMachineInstance(ctx, options, nodeClaim, nodeClass, aksMachineName)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("processing AKS machine instance for nodeClaim %s: %w", nodeClaim.Name, err)
+		}
+	} else {
+		// VM-based nodeClaim
+		err := c.processVMInstance(ctx, options, nodeClaim, nodeClass)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("processing VM instance for nodeClaim %s: %w", nodeClaim.Name, err)
+		}
 	}
 
 	if nodeClaim.Annotations == nil {
@@ -115,28 +123,6 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	return reconcile.Result{}, nil
-}
-
-// TODO (matthchr): Refactor to utils/nodeclaim
-// TODO: duplicate from resolveNodeClassFromNodeClaim for CloudProvider
-// resolveAKSNodeClass resolves the AKSNodeClass from the NodeClaim's NodeClassRef
-func (c *Controller) resolveAKSNodeClass(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1beta1.AKSNodeClass, error) {
-	if nodeClaim.Spec.NodeClassRef == nil {
-		return nil, fmt.Errorf("nodeClaim %s does not have a nodeClassRef", nodeClaim.Name)
-	}
-
-	nodeClass := &v1beta1.AKSNodeClass{}
-	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
-		return nil, fmt.Errorf("getting AKSNodeClass %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
-	}
-
-	// For the purposes of in-place updates, we treat deleting NodeClasses as an error
-	// This error should ideally be transient and the NodeClaim itself will be deleted
-	if !nodeClass.DeletionTimestamp.IsZero() {
-		return nil, fmt.Errorf("AKSNodeClass %s is being deleted", nodeClass.Name)
-	}
-
-	return nodeClass, nil
 }
 
 func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeClaim) (bool, reconcile.Result) {
@@ -158,22 +144,46 @@ func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeCl
 	return true, reconcile.Result{}
 }
 
-// TODO (matthchr): Refactor to utils/nodeclaim
-func (c *Controller) getVM(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
-	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
+func (c *Controller) processVMInstance(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+) error {
+	vm, err := nodeclaimutils.GetVM(ctx, c.vmInstanceProvider, nodeClaim)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
 
-	vm, err := c.instanceProvider.Get(ctx, vmName)
+	err = c.applyVMPatch(ctx, options, nodeClaim, nodeClass, vm)
 	if err != nil {
-		return nil, fmt.Errorf("getting azure VM for machine, %w", err)
+		return fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
 
-	return vm, nil
+	return nil
 }
 
-func (c *Controller) applyPatch(
+func (c *Controller) processAKSMachineInstance(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	aksMachineName string,
+) error {
+	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+	if err != nil {
+		return fmt.Errorf("getting AKS machine %s from instance provider: %w", aksMachineName, err)
+	}
+
+	err = c.applyAKSMachinePatch(ctx, options, nodeClaim, nodeClass, aksMachineName, aksMachine)
+	if err != nil {
+		return fmt.Errorf("applying patch to AKS machine for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	return nil
+}
+
+func (c *Controller) applyVMPatch(
 	ctx context.Context,
 	options *options.Options,
 	nodeClaim *karpv1.NodeClaim,
@@ -187,9 +197,49 @@ func (c *Controller) applyPatch(
 
 	// Apply the update, if one is needed
 	if update != nil {
-		err := c.instanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
+		err := c.vmInstanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
 		if err != nil {
 			return fmt.Errorf("failed to apply update to VM, %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Controller) applyAKSMachinePatch(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	aksMachineName string,
+	aksMachine *armcontainerservice.Machine,
+) error {
+	// Create a deep copy of the original for diff comparison
+	originalBytes, _ := json.Marshal(aksMachine)
+	var originalAKSMachine armcontainerservice.Machine
+	err := json.Unmarshal(originalBytes, &originalAKSMachine)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal original AKS machine for comparison: %w", err)
+	}
+
+	patchExists := CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+	// This is safe only as long as we're not updating fields which we consider secret.
+	// If we do/are, we need to redact them.
+
+	// Apply the update, if one is needed
+	if patchExists {
+		logAKSMachinePatch(ctx, &originalAKSMachine, aksMachine)
+		// Extract ETag for optimistic concurrency control
+		var etag *string
+		if aksMachine.Properties != nil && aksMachine.Properties.ETag != nil {
+			etag = aksMachine.Properties.ETag
+		}
+
+		// Given AKS machine support PUT, but not PATCH, the AKS machine object will be updated directly w/ etag check
+		err := c.aksMachineInstanceProvider.Update(ctx, aksMachineName, *aksMachine, etag)
+		if err != nil {
+			// ASSUMPTION: if it is etag mismatch, the next try would work (if without another mismatch)
+			return fmt.Errorf("failed to apply update to AKS machine %s, %w", aksMachineName, err)
 		}
 	}
 
@@ -202,11 +252,12 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		For(
 			&karpv1.NodeClaim{},
 			builder.WithPredicates(
+				nodeclaimutils.UsingAKSNodeClassPredicate(),
 				predicate.Or(
 					predicate.GenerationChangedPredicate{}, // Note that this will trigger on pod restart for all Machines.
 				),
 			)).
-		Watches(&v1beta1.AKSNodeClass{}, nodeclaimutils.NodeClassEventHandler(m.GetClient()), builder.WithPredicates(tagsChangedPredicate{})).
+		Watches(&v1beta1.AKSNodeClass{}, corenodeclaimutils.NodeClassEventHandler(m.GetClient()), builder.WithPredicates(tagsChangedPredicate{})).
 		// TODO: Can add .Watches(&karpv1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
 		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
 		// TODO: if/when we need to monitor provisioner changes and flow updates on the NodePool down to the underlying VMs.

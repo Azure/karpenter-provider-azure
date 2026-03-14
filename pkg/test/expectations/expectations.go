@@ -24,7 +24,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/ginkgo/v2"
@@ -32,7 +33,14 @@ import (
 	"github.com/samber/lo"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/metrics"
+	coreexpectations "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
 func ExpectUnavailable(env *test.Environment, sku *skewer.SKU, zone string, capacityType string) {
@@ -40,7 +48,7 @@ func ExpectUnavailable(env *test.Environment, sku *skewer.SKU, zone string, capa
 	Expect(env.UnavailableOfferingsCache.IsUnavailable(sku, zone, capacityType)).To(BeTrue())
 }
 
-func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
+func ExpectKubeletFlags(_ *test.Environment, customData string, expectedFlags map[string]string) {
 	GinkgoHelper()
 	kubeletFlags := customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 	for flag, value := range expectedFlags {
@@ -120,7 +128,7 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 	GinkgoHelper()
 
 	// The VM should be updated
-	updatedVM, err := azureEnv.InstanceProvider.Get(ctx, name)
+	updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, name)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect(updatedVM.Tags).To(Equal(tags), "Expected VM tags to match")
@@ -143,4 +151,87 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 	}
 
 	return updatedVM
+}
+
+// TODO: Upstream this?
+func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider corecloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*corev1.Pod) {
+	GinkgoHelper()
+	// Persist objects
+	for _, pod := range pods {
+		coreexpectations.ExpectApplied(ctx, c, pod)
+	}
+	results, err := provisioner.Schedule(ctx)
+	Expect(err).ToNot(HaveOccurred())
+	for _, m := range results.NewNodeClaims {
+		var nodeClaimName string
+		nodeClaimName, err = provisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
+		Expect(err).ToNot(HaveOccurred())
+		createdNodeClaim := &karpv1.NodeClaim{}
+		Expect(c.Get(ctx, types.NamespacedName{Name: nodeClaimName}, createdNodeClaim)).To(Succeed())
+		_, err = coreexpectations.ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
+		Expect(err).ToNot(HaveOccurred())
+	}
+}
+
+func ExpectNodeClassHashUpdated(ctx context.Context, c client.Client, nodeClass *v1beta1.AKSNodeClass) {
+	GinkgoHelper()
+	nodeClass.Annotations = lo.Assign(nodeClass.Annotations, map[string]string{
+		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+	})
+	coreexpectations.ExpectApplied(ctx, c, nodeClass)
+}
+
+// instancePromiseWaiter breaks the import cycle between pkg/cloudprovider and
+// this package: cloudprovider tests import this package, so this package
+// cannot import cloudprovider back. *cloudprovider.CloudProvider satisfies it.
+type instancePromiseWaiter interface {
+	WaitForInstancePromises()
+}
+
+// ExpectProvisionedAndWaitForPromises provisions pods and waits for async polling goroutines to complete.
+// This ensures that any background Create operations (including GET poller) finish before
+// the test continues, preventing goroutines from interfering with subsequent assertions.
+//
+// Use this instead of upstream ExpectProvisioned to ensure proper async cleanup.
+func ExpectProvisionedAndWaitForPromises(
+	ctx context.Context,
+	c client.Client,
+	cluster *state.Cluster,
+	cp corecloudprovider.CloudProvider,
+	provisioner *provisioning.Provisioner,
+	azureEnv *test.Environment,
+	pods ...*corev1.Pod,
+) {
+	GinkgoHelper()
+	coreexpectations.ExpectProvisioned(ctx, c, cluster, cp, provisioner, pods...)
+	cp.(instancePromiseWaiter).WaitForInstancePromises()
+}
+
+// CreateAndWaitForPromises calls cloudProvider.Create and waits for async polling goroutines to complete.
+// It sets the Launched condition on the NodeClaim (mirroring what the core lifecycle controller
+// does in production) so that the async goroutine's waitUntilLaunched unblocks.
+// Returns the created NodeClaim and any error from the Create operation.
+//
+// Use this instead of direct cloudProvider.Create() calls in tests.
+func CreateAndWaitForPromises(
+	ctx context.Context,
+	cp corecloudprovider.CloudProvider,
+	azureEnv *test.Environment,
+	nodeClaim *karpv1.NodeClaim,
+) (*karpv1.NodeClaim, error) {
+	GinkgoHelper()
+	result, err := cp.Create(ctx, nodeClaim)
+	// Simulate what the core lifecycle Launch controller does after Create():
+	// set Launched=True so the async goroutine's waitUntilLaunched unblocks.
+	// We fetch a fresh copy from the API server and do a status-only update to
+	// avoid "spec is immutable" errors when the test has modified the spec
+	// (e.g., conflicted NodeClaim tests).
+	fresh := &karpv1.NodeClaim{}
+	if getErr := azureEnv.Client().Get(ctx, types.NamespacedName{Name: nodeClaim.Name, Namespace: nodeClaim.Namespace}, fresh); getErr == nil {
+		fresh.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+		Expect(azureEnv.Client().Status().Update(ctx, fresh)).To(Succeed())
+	}
+	cp.(instancePromiseWaiter).WaitForInstancePromises()
+	return result, err
 }

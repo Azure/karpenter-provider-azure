@@ -86,12 +86,6 @@ func getBaseKubeletFlags() map[string]string {
 	}
 }
 
-func getBaseKubeletNodeLabels() map[string]string {
-	return map[string]string{
-		"kubernetes.azure.com/mode": "user",
-	}
-}
-
 func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 	vnetCNILinuxPluginsURL := fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-amd64-v1.4.32.tgz", globalAKSMirror)
 	cniPluginsURL := fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-amd64-v1.1.1.tgz", globalAKSMirror)

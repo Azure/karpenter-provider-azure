@@ -46,6 +46,6 @@ kind: AKSNodeClass
 metadata:
   name: system-surge
   annotations:
-    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu2204 nodes"
+    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu nodes"
 spec:
-  imageFamily: Ubuntu2204
+  imageFamily: Ubuntu

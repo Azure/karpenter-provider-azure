@@ -21,11 +21,13 @@ import (
 	"encoding/json"
 	"maps"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -45,15 +47,47 @@ func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
 	}
 }
 
+func logAKSMachinePatch(ctx context.Context, before, after *armcontainerservice.Machine) {
+	if log.FromContext(ctx).V(1).Enabled() {
+		diff := cmp.Diff(before, after)
+		if diff == "" {
+			log.FromContext(ctx).V(1).Info("no changes to AKS machine")
+		} else {
+			log.FromContext(ctx).V(1).Info("patching AKS machine", "diff", diff)
+		}
+	} else {
+		log.FromContext(ctx).V(0).Info("patching AKS machine")
+	}
+}
+
 type patchParameters struct {
 	opts      *options.Options
 	nodeClaim *karpv1.NodeClaim
 	nodeClass *v1beta1.AKSNodeClass
 }
 
-var patchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
-	patchIdentities,
-	patchTags,
+var vmPatchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
+	patchVMIdentities,
+	patchVMTags,
+}
+
+var aksMachinePatchers = []func(*patchParameters, *armcontainerservice.Machine) bool{
+	// VM identities are handled server-side for AKS machines. No need here.
+	patchAKSMachineTags,
+}
+
+func stringPtrEqual(v1, v2 *string) bool {
+	if v1 == nil && v2 == nil {
+		return true
+	}
+	if v1 == nil || v2 == nil {
+		return false
+	}
+	return *v1 == *v2
+}
+
+func tagsEqual(expected, current map[string]*string) bool {
+	return maps.EqualFunc(expected, current, stringPtrEqual)
 }
 
 func CalculateVMPatch(
@@ -70,7 +104,7 @@ func CalculateVMPatch(
 		nodeClaim: nodeClaim,
 	}
 
-	for _, patcher := range patchers {
+	for _, patcher := range vmPatchers {
 		patched := patcher(update, params, currentVM)
 		hasPatches = hasPatches || patched
 	}
@@ -82,7 +116,30 @@ func CalculateVMPatch(
 	return update
 }
 
-func patchIdentities(
+// Note: AKS machine patching flow is different from VM patching, given AKS machine API supports PUT but not PATCH (i.e., send only diff to the API rather than the whole object).
+// Thus, the patch will be applied locally on the AKS machine object, before the object is sent to the API.
+func CalculateAKSMachinePatch(
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	patchingAKSMachine *armcontainerservice.Machine,
+) bool {
+	hasPatches := false
+	params := &patchParameters{
+		opts:      options,
+		nodeClass: nodeClass,
+		nodeClaim: nodeClaim,
+	}
+
+	for _, patcher := range aksMachinePatchers {
+		patched := patcher(params, patchingAKSMachine)
+		hasPatches = hasPatches || patched
+	}
+
+	return hasPatches
+}
+
+func patchVMIdentities(
 	update *armcompute.VirtualMachineUpdate,
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,
@@ -105,7 +162,7 @@ func patchIdentities(
 	return true
 }
 
-func patchTags(
+func patchVMTags(
 	update *armcompute.VirtualMachineUpdate,
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,
@@ -116,20 +173,41 @@ func patchTags(
 		params.nodeClaim,
 	)
 
-	eq := func(v1, v2 *string) bool {
-		if v1 == nil && v2 == nil {
-			return true
-		}
-		if v1 == nil || v2 == nil {
-			return false
-		}
-		return *v1 == *v2
-	}
-
-	if maps.EqualFunc(expectedTags, currentVM.Tags, eq) {
+	if tagsEqual(expectedTags, currentVM.Tags) {
 		return false // No update to perform
 	}
 
 	update.Tags = expectedTags
+	return true
+}
+
+func patchAKSMachineTags(
+	params *patchParameters,
+	patchingAKSMachine *armcontainerservice.Machine,
+) bool {
+	// For NodeClaim name tag, given this controller is based on actual NodeClaim like during Create(), the patch will repair the tag if needed.
+
+	expectedTags := instance.ConfigureAKSMachineTags(
+		params.opts,
+		params.nodeClass,
+		params.nodeClaim,
+	)
+
+	if patchingAKSMachine.Properties == nil {
+		// Should not be possible, but handle it gracefully
+		if len(expectedTags) == 0 {
+			return false // No update to perform
+		}
+		patchingAKSMachine.Properties = &armcontainerservice.MachineProperties{
+			Tags: expectedTags,
+		}
+		return true
+	}
+
+	if tagsEqual(expectedTags, patchingAKSMachine.Properties.Tags) {
+		return false // No update to perform
+	}
+
+	patchingAKSMachine.Properties.Tags = expectedTags
 	return true
 }

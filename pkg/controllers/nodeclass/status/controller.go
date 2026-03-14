@@ -32,7 +32,9 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
@@ -47,19 +49,29 @@ type Controller struct {
 
 	kubernetesVersion *KubernetesVersionReconciler
 	nodeImage         *NodeImageReconciler
+	subnet            *SubnetReconciler
+	validation        *ValidationReconciler
 }
 
+// TODO: Consider splitting this (and other similar constructors)
+// into some kind of builder struct to make the calling code easier to read.
 func NewController(
 	kubeClient client.Client,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
+	subnetClient azclient.SubnetsAPI,
+	diskEncryptionSetsClient azclient.DiskEncryptionSetsAPI,
+	parsedDiskEncryptionSetID *arm.ResourceID,
 ) *Controller {
 	return &Controller{
+
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
+		subnet:            NewSubnetReconciler(subnetClient),
+		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 	}
 }
 
@@ -80,6 +92,8 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	for _, reconciler := range []reconciler{
 		c.kubernetesVersion,
 		c.nodeImage,
+		c.subnet,
+		c.validation,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
