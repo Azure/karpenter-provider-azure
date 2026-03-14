@@ -328,6 +328,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	if minorVersion < 31 {
 		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
 	}
+	if minorVersion >= 35 {
+		delete(kubeletFlagsBase, "--pod-infra-container-image")
+	}
 
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
 	if credentialProviderURL != "" { // use OOT credential provider
