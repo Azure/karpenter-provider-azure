@@ -18,6 +18,7 @@ package instance
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -618,6 +619,223 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(config.ContainerLogMaxSizeMB).To(BeNil())
 			Expect(config.ContainerLogMaxFiles).To(BeNil())
 			Expect(config.PodMaxPids).To(BeNil())
+		})
+	})
+
+	Context("configureLocalDNSProfile", func() {
+		Context("nil and empty cases", func() {
+			It("should return nil when nodeClass is nil", func() {
+				result := configureLocalDNSProfile(nil)
+				Expect(result).To(BeNil())
+			})
+
+			It("should return nil when LocalDNS spec is nil", func() {
+				nodeClass.Spec.LocalDNS = nil
+				result := configureLocalDNSProfile(nodeClass)
+				Expect(result).To(BeNil())
+			})
+		})
+
+		Context("Mode conversion", func() {
+			It("should convert Required mode", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModeRequired,
+				}
+				result := configureLocalDNSProfile(nodeClass)
+				Expect(result).ToNot(BeNil())
+				Expect(result.Mode).ToNot(BeNil())
+				Expect(*result.Mode).To(Equal(armcontainerservice.LocalDNSModeRequired))
+			})
+
+			It("should convert Preferred mode", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModePreferred,
+				}
+				result := configureLocalDNSProfile(nodeClass)
+				Expect(result).ToNot(BeNil())
+				Expect(result.Mode).ToNot(BeNil())
+				Expect(*result.Mode).To(Equal(armcontainerservice.LocalDNSModePreferred))
+			})
+
+			It("should convert Disabled mode", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModeDisabled,
+				}
+				result := configureLocalDNSProfile(nodeClass)
+				Expect(result).ToNot(BeNil())
+				Expect(result.Mode).ToNot(BeNil())
+				Expect(*result.Mode).To(Equal(armcontainerservice.LocalDNSModeDisabled))
+			})
+
+			It("should return nil mode for empty mode string", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: "",
+				}
+				result := configureLocalDNSProfile(nodeClass)
+				Expect(result).ToNot(BeNil())
+				Expect(result.Mode).To(BeNil())
+			})
+		})
+
+		Context("Full configuration with overrides", func() {
+			var (
+				cacheDuration = 3600 * time.Second
+				staleDuration = 1800 * time.Second
+			)
+
+			It("should convert complete LocalDNS configuration with all override fields", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModeRequired,
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+							MaxConcurrent:      lo.ToPtr(int32(1000)),
+							CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+							ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+						},
+					},
+					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               "cluster.local",
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicyRoundRobin,
+							Protocol:           v1beta1.LocalDNSProtocolForceTCP,
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingLog,
+							ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
+							MaxConcurrent:      lo.ToPtr(int32(500)),
+							CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+							ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+						},
+					},
+				}
+
+				result := configureLocalDNSProfile(nodeClass)
+
+				Expect(result).ToNot(BeNil())
+				Expect(*result.Mode).To(Equal(armcontainerservice.LocalDNSModeRequired))
+
+				// VnetDNS overrides
+				Expect(result.VnetDNSOverrides).To(HaveLen(1))
+				Expect(result.VnetDNSOverrides).To(HaveKey("."))
+				vnetRoot := result.VnetDNSOverrides["."]
+				Expect(*vnetRoot.ForwardDestination).To(Equal(armcontainerservice.LocalDNSForwardDestinationVnetDNS))
+				Expect(*vnetRoot.ForwardPolicy).To(Equal(armcontainerservice.LocalDNSForwardPolicySequential))
+				Expect(*vnetRoot.Protocol).To(Equal(armcontainerservice.LocalDNSProtocolPreferUDP))
+				Expect(*vnetRoot.QueryLogging).To(Equal(armcontainerservice.LocalDNSQueryLoggingError))
+				Expect(*vnetRoot.ServeStale).To(Equal(armcontainerservice.LocalDNSServeStaleVerify))
+				Expect(*vnetRoot.MaxConcurrent).To(Equal(int32(1000)))
+				Expect(*vnetRoot.CacheDurationInSeconds).To(Equal(int32(3600)))
+				Expect(*vnetRoot.ServeStaleDurationInSeconds).To(Equal(int32(1800)))
+
+				// KubeDNS overrides
+				Expect(result.KubeDNSOverrides).To(HaveLen(1))
+				Expect(result.KubeDNSOverrides).To(HaveKey("cluster.local"))
+				kubeLocal := result.KubeDNSOverrides["cluster.local"]
+				Expect(*kubeLocal.ForwardDestination).To(Equal(armcontainerservice.LocalDNSForwardDestinationClusterCoreDNS))
+				Expect(*kubeLocal.ForwardPolicy).To(Equal(armcontainerservice.LocalDNSForwardPolicyRoundRobin))
+				Expect(*kubeLocal.Protocol).To(Equal(armcontainerservice.LocalDNSProtocolForceTCP))
+				Expect(*kubeLocal.QueryLogging).To(Equal(armcontainerservice.LocalDNSQueryLoggingLog))
+				Expect(*kubeLocal.ServeStale).To(Equal(armcontainerservice.LocalDNSServeStaleImmediate))
+				Expect(*kubeLocal.MaxConcurrent).To(Equal(int32(500)))
+				Expect(*kubeLocal.CacheDurationInSeconds).To(Equal(int32(3600)))
+				Expect(*kubeLocal.ServeStaleDurationInSeconds).To(Equal(int32(1800)))
+			})
+
+			It("should convert multiple zone overrides keyed by zone name", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModeRequired,
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+							ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+						},
+						{
+							Zone:               "cluster.local",
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicyRandom,
+							CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+							ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+						},
+					},
+				}
+
+				result := configureLocalDNSProfile(nodeClass)
+
+				Expect(result.VnetDNSOverrides).To(HaveLen(2))
+				Expect(result.VnetDNSOverrides).To(HaveKey("."))
+				Expect(result.VnetDNSOverrides).To(HaveKey("cluster.local"))
+				Expect(*result.VnetDNSOverrides["."].ForwardPolicy).To(Equal(armcontainerservice.LocalDNSForwardPolicySequential))
+				Expect(*result.VnetDNSOverrides["cluster.local"].ForwardPolicy).To(Equal(armcontainerservice.LocalDNSForwardPolicyRandom))
+			})
+
+			It("should handle nil durations gracefully", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModeRequired,
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+							CacheDuration:      karpv1.NillableDuration{Duration: nil},
+							ServeStaleDuration: karpv1.NillableDuration{Duration: nil},
+						},
+					},
+				}
+
+				result := configureLocalDNSProfile(nodeClass)
+
+				Expect(result.VnetDNSOverrides).To(HaveLen(1))
+				vnetRoot := result.VnetDNSOverrides["."]
+				Expect(vnetRoot.CacheDurationInSeconds).To(BeNil())
+				Expect(vnetRoot.ServeStaleDurationInSeconds).To(BeNil())
+			})
+
+			It("should convert ServeStale Disable correctly", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModeRequired,
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+							ServeStale:         v1beta1.LocalDNSServeStaleDisable,
+							CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+							ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+						},
+					},
+				}
+
+				result := configureLocalDNSProfile(nodeClass)
+
+				vnetRoot := result.VnetDNSOverrides["."]
+				Expect(*vnetRoot.ServeStale).To(Equal(armcontainerservice.LocalDNSServeStaleDisable))
+			})
+		})
+
+		Context("Empty overrides", func() {
+			It("should not set VnetDNSOverrides when empty", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode:             v1beta1.LocalDNSModeRequired,
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{},
+				}
+				result := configureLocalDNSProfile(nodeClass)
+				Expect(result.VnetDNSOverrides).To(BeNil())
+			})
+
+			It("should not set KubeDNSOverrides when empty", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode:             v1beta1.LocalDNSModeRequired,
+					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{},
+				}
+				result := configureLocalDNSProfile(nodeClass)
+				Expect(result.KubeDNSOverrides).To(BeNil())
+			})
 		})
 	})
 

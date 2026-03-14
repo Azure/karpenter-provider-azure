@@ -97,6 +97,13 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
+	// LocalDNS
+	localDNSProfile := configureLocalDNSProfile(nodeClass)
+	// TODO(LocalDNS Machine API): Uncomment the line below when the ARM SDK adds LocalDNSProfile to MachineProperties.
+	// The field exists in AKS RP (API version 2026-01-02-preview) but hasn't been released in the Go SDK yet.
+	// Tracked by: https://github.com/Azure/karpenter-poc/issues/1562
+	_ = localDNSProfile // Avoid unused variable error until SDK is updated.
+
 	return &armcontainerservice.Machine{
 		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
@@ -146,6 +153,9 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Priority: priority,
 
 			Tags: tags,
+
+			// TODO(LocalDNS Machine API): Uncomment when SDK adds LocalDNSProfile to MachineProperties (API version 2026-01-02-preview).
+			// LocalDNSProfile: localDNSProfile,
 		},
 	}, nil
 }
@@ -392,4 +402,114 @@ func parseVMImageID(vmImageID string) (subscriptionID, resourceGroup, gallery, i
 	}
 
 	return subscriptionID, resourceGroup, gallery, imageName, version, nil
+}
+
+// configureLocalDNSProfile converts the AKSNodeClass LocalDNS spec into the ARM SDK LocalDNSProfile for Machine API.
+// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/utils.go (convertLocalDNSToModel).
+func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LocalDNSProfile {
+	if nodeClass == nil || nodeClass.Spec.LocalDNS == nil {
+		return nil
+	}
+	localDNS := nodeClass.Spec.LocalDNS
+
+	profile := &armcontainerservice.LocalDNSProfile{
+		Mode: convertLocalDNSMode(localDNS.Mode),
+	}
+
+	if len(localDNS.VnetDNSOverrides) > 0 {
+		profile.VnetDNSOverrides = convertLocalDNSZoneOverridesToARM(localDNS.VnetDNSOverrides)
+	}
+	if len(localDNS.KubeDNSOverrides) > 0 {
+		profile.KubeDNSOverrides = convertLocalDNSZoneOverridesToARM(localDNS.KubeDNSOverrides)
+	}
+
+	return profile
+}
+
+func convertLocalDNSMode(mode v1beta1.LocalDNSMode) *armcontainerservice.LocalDNSMode {
+	switch mode {
+	case v1beta1.LocalDNSModeRequired:
+		return lo.ToPtr(armcontainerservice.LocalDNSModeRequired)
+	case v1beta1.LocalDNSModePreferred:
+		return lo.ToPtr(armcontainerservice.LocalDNSModePreferred)
+	case v1beta1.LocalDNSModeDisabled:
+		return lo.ToPtr(armcontainerservice.LocalDNSModeDisabled)
+	default:
+		return nil
+	}
+}
+
+func convertLocalDNSZoneOverridesToARM(overrides []v1beta1.LocalDNSZoneOverride) map[string]*armcontainerservice.LocalDNSOverride {
+	result := make(map[string]*armcontainerservice.LocalDNSOverride, len(overrides))
+	for i := range overrides {
+		override := &overrides[i]
+		result[override.Zone] = convertLocalDNSZoneOverrideToARM(override)
+	}
+	return result
+}
+
+func convertLocalDNSZoneOverrideToARM(override *v1beta1.LocalDNSZoneOverride) *armcontainerservice.LocalDNSOverride {
+	if override == nil {
+		return nil
+	}
+
+	armOverride := &armcontainerservice.LocalDNSOverride{
+		MaxConcurrent: override.MaxConcurrent,
+	}
+
+	// ForwardDestination
+	switch override.ForwardDestination {
+	case v1beta1.LocalDNSForwardDestinationClusterCoreDNS:
+		armOverride.ForwardDestination = lo.ToPtr(armcontainerservice.LocalDNSForwardDestinationClusterCoreDNS)
+	case v1beta1.LocalDNSForwardDestinationVnetDNS:
+		armOverride.ForwardDestination = lo.ToPtr(armcontainerservice.LocalDNSForwardDestinationVnetDNS)
+	}
+
+	// ForwardPolicy
+	switch override.ForwardPolicy {
+	case v1beta1.LocalDNSForwardPolicySequential:
+		armOverride.ForwardPolicy = lo.ToPtr(armcontainerservice.LocalDNSForwardPolicySequential)
+	case v1beta1.LocalDNSForwardPolicyRoundRobin:
+		armOverride.ForwardPolicy = lo.ToPtr(armcontainerservice.LocalDNSForwardPolicyRoundRobin)
+	case v1beta1.LocalDNSForwardPolicyRandom:
+		armOverride.ForwardPolicy = lo.ToPtr(armcontainerservice.LocalDNSForwardPolicyRandom)
+	}
+
+	// Protocol
+	switch override.Protocol {
+	case v1beta1.LocalDNSProtocolPreferUDP:
+		armOverride.Protocol = lo.ToPtr(armcontainerservice.LocalDNSProtocolPreferUDP)
+	case v1beta1.LocalDNSProtocolForceTCP:
+		armOverride.Protocol = lo.ToPtr(armcontainerservice.LocalDNSProtocolForceTCP)
+	}
+
+	// QueryLogging
+	switch override.QueryLogging {
+	case v1beta1.LocalDNSQueryLoggingError:
+		armOverride.QueryLogging = lo.ToPtr(armcontainerservice.LocalDNSQueryLoggingError)
+	case v1beta1.LocalDNSQueryLoggingLog:
+		armOverride.QueryLogging = lo.ToPtr(armcontainerservice.LocalDNSQueryLoggingLog)
+	}
+
+	// ServeStale
+	switch override.ServeStale {
+	case v1beta1.LocalDNSServeStaleVerify:
+		armOverride.ServeStale = lo.ToPtr(armcontainerservice.LocalDNSServeStaleVerify)
+	case v1beta1.LocalDNSServeStaleImmediate:
+		armOverride.ServeStale = lo.ToPtr(armcontainerservice.LocalDNSServeStaleImmediate)
+	case v1beta1.LocalDNSServeStaleDisable:
+		armOverride.ServeStale = lo.ToPtr(armcontainerservice.LocalDNSServeStaleDisable)
+	}
+
+	// CacheDuration: v1beta1 uses time.Duration, SDK uses int32 seconds
+	if override.CacheDuration.Duration != nil {
+		armOverride.CacheDurationInSeconds = lo.ToPtr(int32(override.CacheDuration.Duration.Seconds()))
+	}
+
+	// ServeStaleDuration: v1beta1 uses time.Duration, SDK uses int32 seconds
+	if override.ServeStaleDuration.Duration != nil {
+		armOverride.ServeStaleDurationInSeconds = lo.ToPtr(int32(override.ServeStaleDuration.Duration.Seconds()))
+	}
+
+	return armOverride
 }
