@@ -327,6 +327,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
 	}
 	if minorVersion >= 34 {
+		delete(kubeletFlagsBase, "--cloud-config")
+	}
+	if minorVersion >= 35 {
+		delete(kubeletFlagsBase, "--pod-infra-container-image")
 		delete(kubeletFlagsBase, "--cloud-config") // removed in 1.34
 	}
 
