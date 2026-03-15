@@ -498,8 +498,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 				// Could be quota error; will be handled with custom logic below
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-				failedAKSMachine, _ := p.getMachine(ctx, aksMachineName)
-				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
+				failedAKSMachine, getErr := p.getMachine(ctx, aksMachineName)
+				if getErr != nil {
+					log.FromContext(ctx).Error(getErr, "failed to get AKS machine for error details after LRO failure", "aksMachineName", aksMachineName)
+				} else if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, nodeClass, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 					return
 				}

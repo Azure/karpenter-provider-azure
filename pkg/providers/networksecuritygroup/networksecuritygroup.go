@@ -44,7 +44,7 @@ type Provider struct {
 	mu  sync.Mutex
 }
 
-// NewProvider creates a new LoadBalancer provider
+// NewProvider creates a new NetworkSecurityGroup provider
 func NewProvider(nsgAPI API, resourceGroup string) *Provider {
 	return &Provider{
 		nsgAPI:        nsgAPI,
