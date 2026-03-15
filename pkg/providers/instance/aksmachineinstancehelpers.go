@@ -163,7 +163,7 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType) *armconta
 
 func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
 	// Karpenter defaults to Managed, but decides whether to use Ephemeral
-	sku, err := instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	sku, err := instanceTypeProvider.Get(ctx, instanceType.Name)
 	if err != nil {
 		return nil, err
 	}

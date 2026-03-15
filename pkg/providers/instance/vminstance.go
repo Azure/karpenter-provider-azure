@@ -817,7 +817,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
 	})
 	if err != nil {
-		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 		if skuErr != nil {
 			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
@@ -861,7 +861,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
 				}).Inc()
 
-				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
