@@ -168,7 +168,7 @@ func NewAKSMachineProvider(
 		errorHandling:                   offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:                sets.New[string](),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
-		getSemaphore:                    make(chan struct{}, 200),
+		getSemaphore:                    make(chan struct{}, 500),
 	}
 	provider.limitpoller = aksmachinepoller.NewLimitedPoller(aksmachinepoller.DefaultOptions(), azClient.AKSMachinesClient(), clusterResourceGroup, clusterName, aksMachinesPoolName, provider.getSemaphore)
 
