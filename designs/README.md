@@ -8,6 +8,8 @@ These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
 
+- [CRD Validation Sync Strategy](./0010-crd-validation-sync-strategy.md)
+
 ## Completed
 
 These designs are implemented.
