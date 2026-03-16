@@ -127,7 +127,7 @@ type AKSMachineProvider interface {
 var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
-	azClient                *azclient.AZClient
+	azClient                azclient.MachineClients
 	instanceTypeProvider    instancetype.Provider
 	imageResolver           imagefamily.Resolver
 	subscriptionID          string
@@ -141,7 +141,7 @@ type DefaultAKSMachineProvider struct {
 }
 
 func NewAKSMachineProvider(
-	azClient *azclient.AZClient,
+	azClient azclient.MachineClients,
 	instanceTypeProvider instancetype.Provider,
 	imageResolver imagefamily.Resolver,
 	offeringsCache *cache.UnavailableOfferings,

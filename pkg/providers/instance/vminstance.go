@@ -158,7 +158,7 @@ var _ VMProvider = (*DefaultVMProvider)(nil)
 
 type DefaultVMProvider struct {
 	location                     string
-	azClient                     *azclient.AZClient
+	azClient                     azclient.VMClients
 	instanceTypeProvider         instancetype.Provider
 	launchTemplateProvider       *launchtemplate.Provider
 	loadBalancerProvider         *loadbalancer.Provider
@@ -176,7 +176,7 @@ type DefaultVMProvider struct {
 }
 
 func NewDefaultVMProvider(
-	azClient *azclient.AZClient,
+	azClient azclient.VMClients,
 	instanceTypeProvider instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,

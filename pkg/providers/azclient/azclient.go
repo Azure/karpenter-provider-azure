@@ -84,6 +84,33 @@ type DiskEncryptionSetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
 }
 
+// VMClients provides Azure clients needed by the VM provisioning path.
+type VMClients interface {
+	VirtualMachinesClient() VirtualMachinesAPI
+	VirtualMachineExtensionsClient() VirtualMachineExtensionsAPI
+	NetworkInterfacesClient() NetworkInterfacesAPI
+	AzureResourceGraphClient() AzureResourceGraphAPI
+}
+
+// MachineClients provides Azure clients needed by the AKS Machine provisioning path.
+type MachineClients interface {
+	AKSMachinesClient() AKSMachinesAPI
+	AgentPoolsClient() AKSAgentPoolsAPI
+}
+
+// NodeClassClients provides Azure clients needed by the AKSNodeClass validation/defaulting controllers.
+type NodeClassClients interface {
+	SubnetsClient() SubnetsAPI
+	DiskEncryptionSetsClient() DiskEncryptionSetsAPI
+}
+
+// Compile-time interface satisfaction checks.
+var (
+	_ VMClients        = (*AZClient)(nil)
+	_ MachineClients   = (*AZClient)(nil)
+	_ NodeClassClients = (*AZClient)(nil)
+)
+
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
