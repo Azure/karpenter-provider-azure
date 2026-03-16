@@ -17,12 +17,14 @@ limitations under the License.
 package allocationstrategy
 
 import (
+	"context"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy/stages"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 type Provider interface {
-	FilterInstanceOfferings(instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering
+	FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering
 }
 
 var _ Provider = &DefaultProvider{}
@@ -33,7 +35,7 @@ func NewProvider() *DefaultProvider {
 	return &DefaultProvider{}
 }
 
-func (p *DefaultProvider) FilterInstanceOfferings(instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering {
+func (p *DefaultProvider) FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering {
 	stages := []stages.Stage{
 		// TODO: One of these filters may need to evolve to be a "scoring" filter, which takes into account a variety of inputs (e.g. price, availability, performance)
 		// to determine the best instance types to launch. They're separate stages for now because that's what we've historically been doing, but as we consider more
@@ -42,7 +44,7 @@ func (p *DefaultProvider) FilterInstanceOfferings(instanceOfferings []InstanceOf
 		stages.NewPriceSortStage(),
 	}
 	for _, stage := range stages {
-		instanceOfferings = stage.Process(instanceOfferings)
+		instanceOfferings = stage.Process(ctx, instanceOfferings)
 	}
 	return instanceOfferings
 }

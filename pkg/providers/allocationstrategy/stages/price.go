@@ -17,6 +17,7 @@ limitations under the License.
 package stages
 
 import (
+	"context"
 	"math"
 	"sort"
 
@@ -30,7 +31,7 @@ func NewPriceSortStage() Stage {
 	return &priceSortStage{}
 }
 
-func (s *priceSortStage) Process(instanceOfferings []InstanceOffering) []InstanceOffering {
+func (s *priceSortStage) Process(_ context.Context, instanceOfferings []InstanceOffering) []InstanceOffering {
 	// Sort offerings within each instance type: by price, then spot before on-demand at equal price
 	for idx := range instanceOfferings {
 		sortOfferings(instanceOfferings[idx].Offerings)
