@@ -224,8 +224,28 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	// Deduplicate (original behavior used sets.NewString for deduplication)
 	allTaintsStr = lo.Uniq(allTaintsStr)
 
-	// Currently, we will use "nodeInitializationTaints" field for all taints, as "taints" field are subjected to server-side reconciliation and extra validation
-	// Server-side reconciliation is not necessarily a bad thing, but needs to resolve validation conflicts at least. E.g., system node cannot have hard taints other than CriticalAddonsOnly, per AKS Machine API.
+	// WORKAROUND: Taint redirection to nodeInitializationTaints
+	//
+	// WHY: The Machine API "nodeTaints" field enforces server-side validation rules inherited from
+	// the AgentPool API. Notably, system-mode nodes cannot have hard taints (NoSchedule/NoExecute)
+	// other than CriticalAddonsOnly. Karpenter's CRD (NodePool/NodeClaim) has no such restriction —
+	// users can specify arbitrary taints on any node, regardless of mode. Sending those taints via
+	// the "nodeTaints" field would cause Machine API to reject the request for system-mode nodes.
+	// Additionally, the "nodeTaints" field is subject to server-side reconciliation, which can
+	// interfere with Karpenter's own taint lifecycle management (e.g., startup taints).
+	//
+	// WHAT: All taints (both general and startup) are placed into the "nodeInitializationTaints"
+	// field instead of "nodeTaints". The "nodeInitializationTaints" field is applied at node
+	// bootstrap time and is not subject to the same server-side validation or reconciliation as
+	// "nodeTaints". The "nodeTaints" field is left empty. Karpenter manages the taint lifecycle
+	// on the Node object directly after the node registers.
+	//
+	// RISK: If Machine API adds server-side validation on "nodeInitializationTaints" matching the
+	// "nodeTaints" restrictions, this workaround will break and system-mode nodes with hard taints
+	// will fail to create. Monitor Machine API release notes for validation changes.
+	//
+	// TRACKING: Related to CRD-vs-Machine-API validation sync efforts.
+	//
 	// If changing, don't forget to update unit + acceptance tests accordingly.
 	nodeInitializationTaintPtrs := lo.Map(allTaintsStr, func(taint string, _ int) *string { return lo.ToPtr(taint) })
 	nodeTaintPtrs := []*string{}
@@ -254,7 +274,35 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
 	}
 
-	// TODO: also do the same for taints (which don't have sanitization logic like this yet)
+	// TODO: also do the same for taints (which don't have sanitization logic like this yet).
+	// Taints currently bypass this problem via the nodeInitializationTaints workaround above
+	// (see configureTaints), but if taints are ever moved back to the "nodeTaints" field,
+	// they will need analogous sanitization to strip values that conflict with Machine API
+	// validation (e.g., hard taints on system-mode nodes other than CriticalAddonsOnly).
+	//
+	// WORKAROUND: Label sanitization before Machine API call
+	//
+	// WHY: The Machine API "nodeLabels" field rejects labels in the "kubernetes.azure.com/*"
+	// domain and kubelet-managed labels (e.g., kubernetes.io/hostname, topology.kubernetes.io/zone).
+	// These labels are set by AKS or kubelet at node registration time, not by the caller. Sending
+	// them in the Machine API request causes a validation error and the machine creation fails.
+	// However, Karpenter needs these labels on the final Node object for scheduling correctness
+	// (e.g., mode=system, cluster name, os-sku, zone, arch).
+	//
+	// WHAT: Before calling Machine API, labels matching "kubernetes.azure.com/*" (via IsAKSLabel),
+	// kubelet-managed labels (via IsLabelKubeletManaged), and legacy AKS labels (e.g., "agentpool",
+	// "storageprofile") are stripped from the nodeLabels map. These labels are NOT lost — they are
+	// re-applied to the Node by the node bootstrap process (kubelet sets its managed labels, AKS
+	// node labeler sets kubernetes.azure.com/* labels). The "mode" label is extracted for the
+	// Machine's Mode field before stripping.
+	//
+	// RISK: If Machine API adds new restricted label domains or patterns beyond the current set,
+	// machine creation will fail with a validation error until this sanitization logic is updated
+	// to strip the newly restricted labels. Monitor Machine API error responses for label
+	// validation failures.
+	//
+	// TRACKING: Related to CRD-vs-Machine-API validation sync and label passthrough efforts.
+	//
 	// Remove all labels with kubernetes.azure.com prefix, as well as those managed by kubelet.
 	// Also remove legacy AKS managed labels
 	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {
