@@ -210,4 +210,114 @@ var _ = Describe("Pricing", func() {
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically(">", 0))
 	})
+
+	It("should update savings plan pricing with response from the pricing API", func() {
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{
+				fake.NewProductPriceWithSavingsPlan("Standard_D2s_v5", 0.096, []client.SavingsPlanPrice{
+					{UnitPrice: 0.066, RetailPrice: 0.066, Term: "1 Year"},
+					{UnitPrice: 0.044, RetailPrice: 0.044, Term: "3 Years"},
+				}),
+				fake.NewProductPriceWithSavingsPlan("Standard_D4s_v5", 0.192, []client.SavingsPlanPrice{
+					{UnitPrice: 0.132, RetailPrice: 0.132, Term: "1 Year"},
+					{UnitPrice: 0.088, RetailPrice: 0.088, Term: "3 Years"},
+				}),
+			},
+		})
+		updateStart := time.Now()
+		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
+		Eventually(func() bool { return p.SavingsPlanLastUpdated().After(updateStart) }).Should(BeTrue())
+
+		price, ok := p.SavingsPlanPrice("Standard_D2s_v5")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 0.044))
+
+		price, ok = p.SavingsPlanPrice("Standard_D4s_v5")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 0.088))
+
+		// On-demand prices should also be set from the same items
+		price, ok = p.OnDemandPrice("Standard_D2s_v5")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 0.096))
+	})
+
+	It("should store the best (lowest) savings plan price across terms", func() {
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{
+				fake.NewProductPriceWithSavingsPlan("Standard_D2s_v5", 0.096, []client.SavingsPlanPrice{
+					{UnitPrice: 0.066, RetailPrice: 0.066, Term: "1 Year"},
+					{UnitPrice: 0.044, RetailPrice: 0.044, Term: "3 Years"},
+				}),
+			},
+		})
+		updateStart := time.Now()
+		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
+		Eventually(func() bool { return p.SavingsPlanLastUpdated().After(updateStart) }).Should(BeTrue())
+
+		// Should pick the 3-year price (0.044) as the best
+		price, ok := p.SavingsPlanPrice("Standard_D2s_v5")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 0.044))
+	})
+
+	It("should return false for savings plan price when none exists", func() {
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{
+				// No savings plan data attached
+				fake.NewProductPrice("Standard_D1", 1.20),
+			},
+		})
+		updateStart := time.Now()
+		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
+		Eventually(func() bool { return p.OnDemandLastUpdated().After(updateStart) }).Should(BeTrue())
+
+		_, ok := p.SavingsPlanPrice("Standard_D1")
+		Expect(ok).To(BeFalse())
+
+		// Unknown SKU should also return false
+		_, ok = p.SavingsPlanPrice("Standard_NonExistent")
+		Expect(ok).To(BeFalse())
+	})
+
+	It("should handle items with and without savings plan data in the same response", func() {
+		fakePricingAPI.ProductsPricePage.Set(&client.ProductsPricePage{
+			Items: []client.Item{
+				fake.NewProductPrice("Standard_D1", 1.20),
+				fake.NewProductPriceWithSavingsPlan("Standard_D2s_v5", 0.096, []client.SavingsPlanPrice{
+					{UnitPrice: 0.044, RetailPrice: 0.044, Term: "3 Years"},
+				}),
+				fake.NewSpotProductPrice("Standard_D1", 0.80),
+			},
+		})
+		updateStart := time.Now()
+		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
+		Eventually(func() bool { return p.OnDemandLastUpdated().After(updateStart) }).Should(BeTrue())
+
+		// On-demand price for both
+		price, ok := p.OnDemandPrice("Standard_D1")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 1.20))
+
+		price, ok = p.OnDemandPrice("Standard_D2s_v5")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 0.096))
+
+		// Spot only for D1
+		price, ok = p.SpotPrice("Standard_D1")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 0.80))
+
+		// Savings plan only for D2s_v5
+		price, ok = p.SavingsPlanPrice("Standard_D2s_v5")
+		Expect(ok).To(BeTrue())
+		Expect(price).To(BeNumerically("==", 0.044))
+
+		_, ok = p.SavingsPlanPrice("Standard_D1")
+		Expect(ok).To(BeFalse())
+	})
 })
