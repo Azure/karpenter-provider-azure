@@ -98,6 +98,18 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 	)
+	// CapacityBlocks is a []CapacityBlockSpec (not behind a pointer), so mergo.Merge cannot add it to a base struct
+	// with nil slice. These tests use direct assignment instead.
+	It("should change hash when CapacityBlocks is set", func() {
+		hash := nodeClass.Hash()
+		nodeClass.Spec.CapacityBlocks = []v1beta1.CapacityBlockSpec{{ResourceID: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg1/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1"}}
+		updatedHash := nodeClass.Hash()
+		Expect(hash).ToNot(Equal(updatedHash))
+	})
+	It("should produce consistent hash for CapacityBlocks", func() {
+		nodeClass.Spec.CapacityBlocks = []v1beta1.CapacityBlockSpec{{ResourceID: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg1/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1"}}
+		Expect(nodeClass.Hash()).To(Equal("738925933597272782"))
+	})
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}

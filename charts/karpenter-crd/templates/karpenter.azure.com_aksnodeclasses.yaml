@@ -60,6 +60,50 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              capacityBlocks:
+                description: |-
+                  capacityBlocks is a list of Azure Capacity Block reservations that nodes created from this AKSNodeClass
+                  may be placed into. Each entry references an Azure Capacity Block resource and optionally constrains
+                  the VM SKU, time window, and quantity. When set, Karpenter will attempt to place nodes into one of the
+                  specified capacity blocks.
+                items:
+                  description: |-
+                    CapacityBlockSpec represents a reference to an Azure Capacity Block reservation.
+                    The resourceID is required; other fields are optional and used for validation or informational purposes.
+                  properties:
+                    endTime:
+                      description: |-
+                        endTime is the end time of the capacity block reservation window, in ISO 8601 format.
+                        Derived from the Azure resource if omitted.
+                      format: date-time
+                      type: string
+                    quantity:
+                      description: quantity is the number of reserved instances in
+                        this capacity block. Used for validation only.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    resourceID:
+                      description: |-
+                        resourceID is the ARM resource ID of the Azure Capacity Block reservation.
+                        Candidate resource types: Microsoft.Compute/capacityReservationGroups/capacityBlocks, Microsoft.Capacity/capacityBlocks.
+                      pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/[^\/]+\/[^\/]+(\/[^\/]+)*$
+                      type: string
+                    skuName:
+                      description: skuName is the VM SKU constrained to this capacity
+                        block (e.g., "Standard_GB200").
+                      type: string
+                    startTime:
+                      description: |-
+                        startTime is the start time of the capacity block reservation window, in ISO 8601 format.
+                        Derived from the Azure resource if omitted.
+                      format: date-time
+                      type: string
+                  required:
+                  - resourceID
+                  type: object
+                maxItems: 100
+                type: array
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -619,6 +663,50 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              capacityBlocks:
+                description: |-
+                  capacityBlocks is a list of Azure Capacity Block reservations that nodes created from this AKSNodeClass
+                  may be placed into. Each entry references an Azure Capacity Block resource and optionally constrains
+                  the VM SKU, time window, and quantity. When set, Karpenter will attempt to place nodes into one of the
+                  specified capacity blocks.
+                items:
+                  description: |-
+                    CapacityBlockSpec represents a reference to an Azure Capacity Block reservation.
+                    The resourceID is required; other fields are optional and used for validation or informational purposes.
+                  properties:
+                    endTime:
+                      description: |-
+                        endTime is the end time of the capacity block reservation window, in ISO 8601 format.
+                        Derived from the Azure resource if omitted.
+                      format: date-time
+                      type: string
+                    quantity:
+                      description: quantity is the number of reserved instances in
+                        this capacity block. Used for validation only.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    resourceID:
+                      description: |-
+                        resourceID is the ARM resource ID of the Azure Capacity Block reservation.
+                        Candidate resource types: Microsoft.Compute/capacityReservationGroups/capacityBlocks, Microsoft.Capacity/capacityBlocks.
+                      pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/[^\/]+\/[^\/]+(\/[^\/]+)*$
+                      type: string
+                    skuName:
+                      description: skuName is the VM SKU constrained to this capacity
+                        block (e.g., "Standard_GB200").
+                      type: string
+                    startTime:
+                      description: |-
+                        startTime is the start time of the capacity block reservation window, in ISO 8601 format.
+                        Derived from the Azure resource if omitted.
+                      format: date-time
+                      type: string
+                  required:
+                  - resourceID
+                  type: object
+                maxItems: 100
+                type: array
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
