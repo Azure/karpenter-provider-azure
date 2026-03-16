@@ -27,7 +27,6 @@ import (
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -304,39 +303,6 @@ func (c *MachineListCache) handleProvisioningState(ctx context.Context, aksMachi
 		return nil, fmt.Errorf("AKS machine %q sees unrecognized provisioning state %s after exhausting %d retry attempts", aksMachineName, provisioningState, c.maxRetries), true
 	}
 }
-
-// isTransientError determines if an error is retryable based on Azure SDK retry policy.
-// Matches Azure SDK RetryOptions.StatusCodes default behavior for GET operations.
-func isTransientError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check for Azure ResponseError with retryable status codes
-	// Based on Azure SDK policy.RetryOptions default StatusCodes:
-	// 408 (RequestTimeout), 429 (TooManyRequests), 500 (InternalServerError),
-	// 502 (BadGateway), 503 (ServiceUnavailable), 504 (GatewayTimeout)
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
-		switch respErr.StatusCode {
-		case http.StatusRequestTimeout, // 408
-			http.StatusTooManyRequests,     // 429
-			http.StatusInternalServerError, // 500
-			http.StatusBadGateway,          // 502
-			http.StatusServiceUnavailable,  // 503
-			http.StatusGatewayTimeout:      // 504
-			return true
-		default:
-			// Non-retryable status codes (e.g., 401 Unauthorized, 403 Forbidden, 404 Not Found)
-			return false
-		}
-	}
-
-	// Network errors, timeouts, and other transient errors should be retried
-	// This catches things like temporary DNS failures, connection resets, etc.
-	return true
-}
-
 
 // retryWithBackoff applies exponential backoff and returns true if retry should continue, false if exhausted.
 func (c *MachineListCache) retryWithBackoff(ctx context.Context, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (shouldRetry bool, err error) {
