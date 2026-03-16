@@ -110,25 +110,14 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
 
-	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey]; ok {
-		if parsedTime, err := AKSMachineTimestampFromTag(*tag); err == nil {
-			// Note: this assignment to NodeClaim is not effective to the actual object in the cluster, which still represents NodeClaim's (not instance's) creation time.
-			// By the time of writing, this "borrowed struct field" is being used by provider for instance garbage collection. AWS does the same.
-			// Suggestion: this "borrowing" pattern and its inconsistency is not intuitive..., should reconsider this implementation?
-			nodeClaim.CreationTimestamp = AKSMachineTimestampToMeta(parsedTime)
-			// Note: AWS and (legacy) VM instance provider relies on server-side creation timestamp. Instead, this tag value is client-side creation timestamp, generated before the request.
-			// For garbage collection:
-			// - The 5m grace period will have to cover (server-side create - client-side create) period, in addition to existing (Create() returns to core - server-side create) period.
-			//   - Which means it will be more aggressive, although, not significant statistically.
-			// - Suggestion: suggest API change to introduce server-side creation timestamp, if we really want to exclude that period.
-			// - Note that it is incorrect to use actual NodeClaim's creation time, as retries can occur on the same NodeClaim, hurting grace period with each.
-		}
-		// If tag value is irretrievable, then it is epoch.
-		// - By design, that is only possible if user intervenes and messes with the tag.
-		// - See inplaceupdate module for how this is being handled.
-		// For garbage collection:
-		// - Grace period will be effectively disabled, but no issue if that happens after it (5m) ended.
-		// - More details/updates in that module.
+	// Determine instance creation timestamp for garbage collection purposes.
+	// Note: this assignment to NodeClaim is not effective to the actual object in the cluster, which still represents NodeClaim's (not instance's) creation time.
+	// This "borrowed struct field" is used by provider for instance garbage collection. AWS does the same.
+	// Note that it is incorrect to use actual NodeClaim's creation time, as retries can occur on the same NodeClaim, hurting grace period with each.
+	//
+	// Use MachineStatus.CreationTimestamp (server-side) if available, otherwise fallback to epoch (zero value).
+	if aksMachineTemplate.Properties.Status != nil && aksMachineTemplate.Properties.Status.CreationTimestamp != nil {
+		nodeClaim.CreationTimestamp = AKSMachineTimestampToMeta(*aksMachineTemplate.Properties.Status.CreationTimestamp)
 	}
 
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
