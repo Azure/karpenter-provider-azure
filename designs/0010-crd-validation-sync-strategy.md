@@ -274,6 +274,19 @@ Both deployment paths use the same CRD schema and the same provisioning code (fo
 
 That would significantly accelerate Layer 2 — the `ValidationReconciler` could call dry-run on every AKSNodeClass reconcile to validate the entire template, catching constraints we haven't individually coded checks for. This is the most efficient path to high validation coverage with low maintenance. We should advocate for this with the RP team.
 
+**Update (Mar 2026 — RP-side investigation):** The RP-side validation architecture makes a dry-run endpoint **trivially feasible**:
+
+1. `PutMachineOperation.Validate()` is already cleanly separated from side effects (`EnqueueBatchPutMachines()` and `SaveMachineAndOperation()`)
+2. An existing preflight pattern (`DeploymentManager.PostDeploymentPreflightHandler` with `isPreflightValidation` flag) provides the model
+3. The change is mechanically a new `dryRun` query parameter check in `PutMachineOperation.Run()` that returns after `Validate()` without calling enqueue/save
+4. Main cost: route boilerplate + deciding whether to skip expensive calls (SKU listing ~100-500ms)
+
+Key RP-side validation details relevant to this design:
+- Machine validation **converts Machine → fake AgentPool** via `ConvertMachineToAgentPool()` and reuses the entire `MultiValidator` chain (nodetaints, customnodeconfig, labels, etc.)
+- The `nodeInitializationTaints` bypass of system pool taint restrictions is **intentional and tested** on the RP side — this is by design, not a loophole
+- `kubeletConfig` is **immutable after Machine creation** — CRD validation for kubelet fields only matters at create time
+- Label validation blocks `kubernetes.azure.com/` prefix and reserved k8s labels — matching exactly what Karpenter's sanitization strips
+
 ### How do we avoid false positives (CRD rejecting valid config)?
 
 By being conservative about Layer 1 (CEL rules). The guideline is: only add a CEL rule if the constraint is stable and a false positive would be less harmful than a false negative. For constraints where we're uncertain, use Layer 2 (reconciler) or Layer 3 (error surfacing) instead — those can be updated without CRD schema changes.
