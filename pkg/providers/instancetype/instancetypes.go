@@ -225,13 +225,22 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
 		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
+		// For OnDemand offerings, use the effective price: min(retail, savings_plan) when SP pricing
+		// is available. This causes SKUs with better Savings Plan discounts to naturally rank higher
+		// in offering selection, so Karpenter preferentially provisions instance types that cost less
+		// under the customer's existing Savings Plan commitments.
+		effectiveOnDemandPrice := onDemandPrice
+		if spPrice, hasSP := p.pricingProvider.SavingsPlanPrice(*sku.Name); hasSP && spPrice < onDemandPrice {
+			effectiveOnDemandPrice = spPrice
+		}
+
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 			),
-			Price:     onDemandPrice,
+			Price:     effectiveOnDemandPrice,
 			Available: availableOnDemand,
 		}
 
