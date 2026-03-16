@@ -44,7 +44,7 @@ import (
 
 var ctx context.Context
 var env *coretest.Environment
-var awsEnv *test.Environment
+var azureEnv *test.Environment
 var hashController *hash.Controller
 
 func TestAPIs(t *testing.T) {
@@ -57,7 +57,7 @@ var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(test.AKSNodeClassFieldIndexer(ctx)))
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
-	awsEnv = test.NewEnvironment(ctx, env)
+	azureEnv = test.NewEnvironment(ctx, env)
 
 	hashController = hash.NewController(env.Client)
 })
@@ -68,7 +68,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	awsEnv.Reset()
+	azureEnv.Reset()
 })
 
 var _ = AfterEach(func() {
