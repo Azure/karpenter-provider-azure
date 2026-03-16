@@ -26,7 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
@@ -53,8 +53,8 @@ type AzureResourceGraphAPI struct {
 
 func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
 	return &AzureResourceGraphAPI{
-		vmListQuery:  instance.GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: instance.GetNICListQueryBuilder(resourceGroup).String(),
+		vmListQuery:  vm.GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery: vm.GetNICListQueryBuilder(resourceGroup).String(),
 		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
 			VirtualMachinesAPI:   virtualMachinesAPI,
 			NetworkInterfacesAPI: networkInterfacesAPI,
@@ -127,7 +127,7 @@ func (c *AzureResourceGraphAPI) loadNicObjects() (nicList []armnetwork.Interface
 }
 
 func convertBytesToInterface(b []byte) interface{} {
-	jsonObj := instance.Resource{}
+	jsonObj := vm.Resource{}
 	_ = json.Unmarshal(b, &jsonObj)
 	return interface{}(jsonObj)
 }

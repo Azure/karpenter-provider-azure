@@ -33,7 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	vminstance "github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -340,7 +340,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 
 			// Create a managed NIC
 			nic := test.Interface(test.InterfaceOptions{
-				Name:         instance.GenerateResourceName(nodeClaim.Name),
+				Name:         vminstance.GenerateResourceName(nodeClaim.Name),
 				NodepoolName: nodePool.Name,
 			})
 			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)

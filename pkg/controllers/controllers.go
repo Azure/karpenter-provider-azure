@@ -39,7 +39,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 )
 
@@ -49,8 +50,8 @@ func NewControllers(
 	kubeClient client.Client,
 	recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider,
-	vmInstanceProvider instance.VMProvider,
-	aksMachineInstanceProvider instance.AKSMachineProvider,
+	vmInstanceProvider vm.VMProvider,
+	aksMachineInstanceProvider machine.AKSMachineProvider,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,

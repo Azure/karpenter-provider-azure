@@ -26,7 +26,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 )
@@ -66,7 +66,7 @@ func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, no
 	})
 
 	var hashStruct any
-	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+	if _, isAKSMachine := machine.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		// AKS machine-based node
 		hashStruct = &aksMachineInPlaceUpdateFields{
 			Tags: tagsForHash,

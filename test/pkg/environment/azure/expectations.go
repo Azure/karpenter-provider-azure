@@ -32,7 +32,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	vminstance "github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 )
 
 // ExpectRunInClusterControllerWithMachineMode confirms that the cluster has a Machine AgentPool created for it
@@ -257,7 +257,7 @@ func (env *Environment) EventuallyExpectAzureResources(
 		// Note that disks also exist, but are automatically created and managed by Azure so we don't check them here.
 
 		// VMs
-		managedExtensionNames := instance.GetManagedExtensionNames(
+		managedExtensionNames := vminstance.GetManagedExtensionNames(
 			lo.Ternary(env.InClusterController, consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient),
 			lo.Must(auth.EnvironmentFromName("AzurePublicCloud")),
 		)

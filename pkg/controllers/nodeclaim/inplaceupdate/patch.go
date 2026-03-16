@@ -30,7 +30,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
@@ -158,7 +159,7 @@ func patchVMIdentities(
 		return false // No update to perform
 	}
 
-	update.Identity = instance.ConvertToVirtualMachineIdentity(toAdd)
+	update.Identity = vm.ConvertToVirtualMachineIdentity(toAdd)
 	return true
 }
 
@@ -187,7 +188,7 @@ func patchAKSMachineTags(
 ) bool {
 	// For NodeClaim name tag, given this controller is based on actual NodeClaim like during Create(), the patch will repair the tag if needed.
 
-	expectedTags := instance.ConfigureAKSMachineTags(
+	expectedTags := machine.ConfigureAKSMachineTags(
 		params.opts,
 		params.nodeClass,
 		params.nodeClaim,

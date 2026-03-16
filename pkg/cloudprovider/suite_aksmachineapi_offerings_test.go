@@ -43,7 +43,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -110,7 +110,7 @@ var _ = Describe("CloudProvider", func() {
 				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 				vmSize := lo.FromPtr(createInput.AKSMachine.Properties.Hardware.VMSize)
 				testSKU := &skewer.SKU{Name: lo.ToPtr(vmSize)}
-				zone, err := instance.GetAKSLabelZoneFromAKSMachine(&createInput.AKSMachine, fake.Region)
+				zone, err := machine.GetAKSLabelZoneFromAKSMachine(&createInput.AKSMachine, fake.Region)
 				Expect(err).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, testSKU, zone, karpv1.CapacityTypeSpot)
 
@@ -147,7 +147,7 @@ var _ = Describe("CloudProvider", func() {
 				// Verify the create API was called but failed due to zonal allocation constraint
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
 				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				initialZone, err := instance.GetAKSLabelZoneFromAKSMachine(&createInput.AKSMachine, fake.Region)
+				initialZone, err := machine.GetAKSLabelZoneFromAKSMachine(&createInput.AKSMachine, fake.Region)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify initial zone marked as unavailable due to zonal allocation failure
@@ -188,7 +188,7 @@ var _ = Describe("CloudProvider", func() {
 				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 				vmSize := lo.FromPtr(createInput.AKSMachine.Properties.Hardware.VMSize)
 				testSKU := &skewer.SKU{Name: lo.ToPtr(vmSize)}
-				zone, err := instance.GetAKSLabelZoneFromAKSMachine(&createInput.AKSMachine, fake.Region)
+				zone, err := machine.GetAKSLabelZoneFromAKSMachine(&createInput.AKSMachine, fake.Region)
 				Expect(err).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, testSKU, zone, karpv1.CapacityTypeSpot)
 
@@ -224,7 +224,7 @@ var _ = Describe("CloudProvider", func() {
 				initialVMSize := lo.FromPtr(aksMachine.Properties.Hardware.VMSize)
 
 				// Verify initial VM size marked as unavailable due to allocation failure
-				zone, err := instance.GetAKSLabelZoneFromAKSMachine(&aksMachine, fake.Region)
+				zone, err := machine.GetAKSLabelZoneFromAKSMachine(&aksMachine, fake.Region)
 				Expect(err).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, &skewer.SKU{Name: lo.ToPtr(initialVMSize)}, zone, karpv1.CapacityTypeSpot)
 
@@ -611,7 +611,7 @@ var _ = Describe("CloudProvider", func() {
 				machineInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 
 				// Extract zone from AKS machine - similar to VM test pattern
-				failedZone, err := instance.GetAKSLabelZoneFromAKSMachine(&machineInput.AKSMachine, fake.Region)
+				failedZone, err := machine.GetAKSLabelZoneFromAKSMachine(&machineInput.AKSMachine, fake.Region)
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, skuToCheck := range expectedUnavailableSKUs {

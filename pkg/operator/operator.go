@@ -59,7 +59,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -90,8 +91,8 @@ type Operator struct {
 	LaunchTemplateProvider    *launchtemplate.Provider
 	PricingProvider           *pricing.Provider
 	InstanceTypesProvider     instancetype.Provider
-	VMInstanceProvider        *instance.DefaultVMProvider
-	AKSMachineProvider        *instance.DefaultAKSMachineProvider
+	VMInstanceProvider        *vm.DefaultVMProvider
+	AKSMachineProvider        *machine.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
 	AZClient                  *azclient.AZClient
 }
@@ -209,7 +210,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.NetworkSecurityGroupsClient,
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	vmInstanceProvider := instance.NewDefaultVMProvider(
+	vmInstanceProvider := vm.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,
@@ -223,7 +224,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).DiskEncryptionSetID,
 		env,
 	)
-	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
+	aksMachineInstanceProvider := machine.NewAKSMachineProvider(
 		azClient,
 		instanceTypeProvider,
 		imageResolver,

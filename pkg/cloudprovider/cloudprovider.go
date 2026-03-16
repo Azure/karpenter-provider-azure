@@ -53,6 +53,8 @@ import (
 	cloudproviderevents "github.com/Azure/karpenter-provider-azure/pkg/cloudprovider/events"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
+	vminstance "github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -80,8 +82,8 @@ var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
 type CloudProvider struct {
 	instanceTypeProvider       instancetype.Provider
-	vmInstanceProvider         instance.VMProvider // Note that even when provision mode does not create with VM instance provider, it is still being used to handle existing VM instances.
-	aksMachineInstanceProvider instance.AKSMachineProvider
+	vmInstanceProvider         vminstance.VMProvider // Note that even when provision mode does not create with VM instance provider, it is still being used to handle existing VM instances.
+	aksMachineInstanceProvider machine.AKSMachineProvider
 	kubeClient                 client.Client
 	imageProvider              imagefamily.NodeImageProvider
 	recorder                   events.Recorder
@@ -91,8 +93,8 @@ type CloudProvider struct {
 
 func New(
 	instanceTypeProvider instancetype.Provider,
-	vmInstanceProvider instance.VMProvider,
-	aksMachineInstanceProvider instance.AKSMachineProvider,
+	vmInstanceProvider vminstance.VMProvider,
+	aksMachineInstanceProvider machine.AKSMachineProvider,
 	recorder events.Recorder,
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
@@ -226,7 +228,7 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	}
 
 	// Convert the AKS machine to a NodeClaim
-	newNodeClaim, err := instance.BuildNodeClaimFromAKSMachineTemplate(
+	newNodeClaim, err := machine.BuildNodeClaimFromAKSMachineTemplate(
 		ctx, aksMachinePromise.AKSMachineTemplate,
 		aksMachinePromise.InstanceType,
 		aksMachinePromise.CapacityType,
@@ -416,7 +418,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("vmName", vmName))
 
-	if aksMachineName, err := instance.GetAKSMachineNameFromVMName(options.FromContext(ctx).AKSMachinesPoolName, vmName); err == nil {
+	if aksMachineName, err := machine.GetAKSMachineNameFromVMName(options.FromContext(ctx).AKSMachinesPoolName, vmName); err == nil {
 		// AKS machine-based node
 		ctx := log.IntoContext(ctx, log.FromContext(ctx).WithValues("aksMachineName", aksMachineName))
 
@@ -470,7 +472,7 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 
 	// AKS machine-based node
-	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+	if aksMachineName, isAKSMachine := machine.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		return c.aksMachineInstanceProvider.Delete(ctx, aksMachineName)
 	}
 
@@ -634,8 +636,8 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 		labels[corev1.LabelTopologyZone] = zone
 	}
 
-	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityTypeFromVM(vm)
-	labels[v1beta1.AKSLabelScaleSetPriority] = instance.GetScaleSetPriorityLabelFromVM(vm)
+	labels[karpv1.CapacityTypeLabelKey] = vminstance.GetCapacityTypeFromVM(vm)
+	labels[v1beta1.AKSLabelScaleSetPriority] = vminstance.GetScaleSetPriorityLabelFromVM(vm)
 
 	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
@@ -705,7 +707,7 @@ func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *kar
 
 func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine) (*karpv1.NodeClaim, error) {
 	var instanceTypes []*cloudprovider.InstanceType
-	nodePool, err := instance.FindNodePoolFromAKSMachine(ctx, aksMachine, c.kubeClient)
+	nodePool, err := machine.FindNodePoolFromAKSMachine(ctx, aksMachine, c.kubeClient)
 	if err == nil {
 		gotInstanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
 		if err == nil {
@@ -728,7 +730,7 @@ func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksM
 	// If FindNodePoolFromAKSMachine returns not found, we tolerate. But, possible instance types will be empty.
 
 	// ASSUMPTION: all machines are in the same location, and in the current pool.
-	nodeClaim, err := instance.BuildNodeClaimFromAKSMachine(ctx, aksMachine, instanceTypes, c.aksMachineInstanceProvider.GetMachinesPoolLocation())
+	nodeClaim, err := machine.BuildNodeClaimFromAKSMachine(ctx, aksMachine, instanceTypes, c.aksMachineInstanceProvider.GetMachinesPoolLocation())
 	if err != nil {
 		return nil, fmt.Errorf("converting AKS machine instance to node claim, %w", err)
 	}

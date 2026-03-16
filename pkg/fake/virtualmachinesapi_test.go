@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	vminstance "github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 )
 
 // test BeginCreateOrUpdate
@@ -32,7 +32,7 @@ func TestComputeAPI_BeginCreateOrUpdate(t *testing.T) {
 	//	return nil, nil
 	//})
 	// test
-	vm, err := instance.CreateVirtualMachine(context.Background(), computeAPI, "resourceGroupName", "vmName", armcompute.VirtualMachine{})
+	vm, err := vminstance.CreateVirtualMachine(context.Background(), computeAPI, "resourceGroupName", "vmName", armcompute.VirtualMachine{})
 	// verify
 	if err != nil {
 		t.Errorf("Unexpected error %v", err)

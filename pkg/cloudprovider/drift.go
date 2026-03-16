@@ -28,7 +28,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -57,7 +57,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	}
 
 	var checks []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error)
-	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+	if _, isAKSMachine := machine.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
 			c.areStaticFieldsDrifted,
 			c.isK8sVersionDrifted,
@@ -169,7 +169,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", fmt.Errorf("no image ID found in nodeClaim status")
 	}
 
-	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+	if _, isAKSMachine := machine.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		for _, availableImage := range nodeImages {
 			// Note: not supporting drift across galleries yet, as AKS machine does not hold gallery info, as of now.
 			// Alternatively, could call GET VM, if not propose API changes.
@@ -254,7 +254,7 @@ func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.N
 // isMachineDrifted checks the DriftAction field of the AKS machine to determine if drift exists
 func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, _ *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
-	aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim)
+	aksMachineName, isAKSMachine := machine.GetAKSMachineNameFromNodeClaim(nodeClaim)
 	if !isAKSMachine {
 		// Not an AKS machine node, no drift action to check
 		logger.V(1).Info("no AKS machine name found, skipping drift action check", "nodeClaim", nodeClaim.Name)

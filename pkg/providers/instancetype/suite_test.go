@@ -60,7 +60,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	vminstance "github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -197,7 +197,7 @@ var _ = Describe("InstanceType Provider", func() {
 				},
 				Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
 			})
-			vmName := instance.GenerateResourceName(nodeClaim.Name)
+			vmName := vminstance.GenerateResourceName(nodeClaim.Name)
 			vm := &armcompute.VirtualMachine{
 				Name:     lo.ToPtr(vmName),
 				ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
@@ -297,7 +297,7 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 					Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
 				})
-				vmName := instance.GenerateResourceName(nodeClaim.Name)
+				vmName := vminstance.GenerateResourceName(nodeClaim.Name)
 				vm := &armcompute.VirtualMachine{
 					Name:     lo.ToPtr(vmName),
 					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),

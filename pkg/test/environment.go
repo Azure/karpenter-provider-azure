@@ -39,7 +39,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -93,8 +94,8 @@ type Environment struct {
 
 	// Providers
 	InstanceTypesProvider        instancetype.Provider
-	VMInstanceProvider           instance.VMProvider
-	AKSMachineProvider           instance.AKSMachineProvider
+	VMInstanceProvider           vm.VMProvider
+	AKSMachineProvider           machine.AKSMachineProvider
 	PricingProvider              *pricing.Provider
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
 	ImageProvider                imagefamily.NodeImageProvider
@@ -210,7 +211,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 	)
-	vmInstanceProvider := instance.NewDefaultVMProvider(
+	vmInstanceProvider := vm.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,
@@ -238,7 +239,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		)
 	}
 
-	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
+	aksMachineInstanceProvider := machine.NewAKSMachineProvider(
 		azClient,
 		instanceTypesProvider,
 		imageFamilyResolver,
