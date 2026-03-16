@@ -45,6 +45,9 @@ type GPUSKUConfig map[string]GPUSKUInfo
 var (
 	nvidiaEnabledSKUs        = make(map[string]bool)
 	marinerNvidiaEnabledSKUs = make(map[string]bool)
+	amdEnabledSKUs           = make(map[string]bool)
+	allGPUSKUs               = make(map[string]string)   // sku -> manufacturer ("nvidia", "amd", etc.)
+	gpuSKUOSSupport          = make(map[string][]string) // sku -> supported OS list
 )
 
 //go:embed supported-gpus.yaml
@@ -63,7 +66,11 @@ func readGPUSKUConfig() {
 	}
 
 	for sku, info := range gpuSKUConfig {
-		if info.GPU == "nvidia" {
+		allGPUSKUs[sku] = info.GPU
+		gpuSKUOSSupport[sku] = info.OS
+
+		switch info.GPU {
+		case "nvidia":
 			nvidiaEnabledSKUs[sku] = true
 
 			// Check if this SKU supports azurelinux or azurelinux3
@@ -73,6 +80,8 @@ func readGPUSKUConfig() {
 					break
 				}
 			}
+		case "amd":
+			amdEnabledSKUs[sku] = true
 		}
 	}
 }
@@ -147,4 +156,45 @@ var ConvergedGPUDriverSizes = map[string]bool{
 	"standard_nc8ads_a10_v4":   true,
 	"standard_nc16ads_a10_v4":  true,
 	"standard_nc32ads_a10_v4":  true,
+}
+
+// normalizeVMSize applies standard normalization: lowercase and trim _promo suffix
+func normalizeVMSize(vmSize string) string {
+	vmSize = strings.ToLower(vmSize)
+	vmSize = strings.TrimSuffix(vmSize, "_promo")
+	return vmSize
+}
+
+// IsGPUSKU determines if a VM SKU is a known GPU SKU (any vendor: nvidia, amd, etc.)
+func IsGPUSKU(vmSize string) bool {
+	vmSize = normalizeVMSize(vmSize)
+	_, ok := allGPUSKUs[vmSize]
+	return ok
+}
+
+// IsAMDEnabledSKU determines if a VM SKU is an AMD GPU SKU
+func IsAMDEnabledSKU(vmSize string) bool {
+	vmSize = normalizeVMSize(vmSize)
+	return amdEnabledSKUs[vmSize]
+}
+
+// GetGPUManufacturer returns the GPU manufacturer for a VM SKU ("nvidia", "amd", or "")
+func GetGPUManufacturer(vmSize string) string {
+	vmSize = normalizeVMSize(vmSize)
+	return allGPUSKUs[vmSize]
+}
+
+// IsGPUSKUSupportedOnOS checks if a GPU SKU supports a given OS identifier (e.g., "ubuntu", "azurelinux", "azurelinux3")
+func IsGPUSKUSupportedOnOS(vmSize string, osName string) bool {
+	vmSize = normalizeVMSize(vmSize)
+	osList, ok := gpuSKUOSSupport[vmSize]
+	if !ok {
+		return false
+	}
+	for _, os := range osList {
+		if os == osName {
+			return true
+		}
+	}
+	return false
 }

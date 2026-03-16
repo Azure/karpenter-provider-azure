@@ -264,15 +264,16 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
-	// Currently only GPU has conditional support by image family
-	if !utils.IsNvidiaEnabledSKU(skuName) && !utils.IsMarinerEnabledGPUSKU(skuName) {
+	// Non-GPU SKUs are supported by all image families
+	if !utils.IsGPUSKU(skuName) {
 		return true
 	}
 	switch {
 	case v1beta1.UbuntuFamilies.Has(imageFamily):
-		return utils.IsNvidiaEnabledSKU(skuName)
+		return utils.IsGPUSKUSupportedOnOS(skuName, "ubuntu")
 	case imageFamily == v1beta1.AzureLinuxImageFamily:
-		return utils.IsMarinerEnabledGPUSKU(skuName)
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux") ||
+			utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux3")
 	default:
 		return false
 	}
@@ -383,14 +384,14 @@ func (p *DefaultProvider) isUnsupportedByAKS(sku *skewer.SKU) bool {
 	return AKSRestrictedVMSizes.Has(sku.GetName())
 }
 
-// GPU SKUs AKS does not support
+// GPU SKUs not in the supported GPU registry
 func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	name := lo.FromPtr(sku.Name)
 	gpu, err := sku.GPU()
 	if err != nil || gpu <= 0 {
 		return false
 	}
-	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
+	return !utils.IsGPUSKU(name)
 }
 
 // SKU with constrained CPUs
