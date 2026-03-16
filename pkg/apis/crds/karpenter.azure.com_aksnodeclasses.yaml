@@ -60,6 +60,13 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              capacityReservationGroupID:
+                description: |-
+                  capacityReservationGroupID is the ARM resource ID of a Capacity Reservation Group.
+                  When set, nodes created from this AKSNodeClass will be placed in the specified reservation group.
+                  The reservation group must exist in the same region as the cluster.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                type: string
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -619,6 +626,13 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              capacityReservationGroupID:
+                description: |-
+                  capacityReservationGroupID is the ARM resource ID of a Capacity Reservation Group.
+                  When set, nodes created from this AKSNodeClass will be placed in the specified reservation group.
+                  The reservation group must exist in the same region as the cluster.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                type: string
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes

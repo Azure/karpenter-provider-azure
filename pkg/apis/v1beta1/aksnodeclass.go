@@ -87,6 +87,13 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
+	// capacityReservationGroupID is the ARM resource ID of a Capacity Reservation Group.
+	// When set, nodes created from this AKSNodeClass will be placed in the specified reservation group.
+	// The reservation group must exist in the same region as the cluster.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$`
+	// +optional
+	CapacityReservationGroupID *string `json:"capacityReservationGroupID,omitempty"`
+
 	// security is a collection of security related karpenter fields
 	// +optional
 	Security *Security `json:"security,omitempty"`

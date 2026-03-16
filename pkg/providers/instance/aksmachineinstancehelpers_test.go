@@ -621,6 +621,32 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		})
 	})
 
+	Context("CapacityReservationGroupID", func() {
+		It("should store CapacityReservationGroupID on nodeClass spec", func() {
+			crgID := "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg1/providers/Microsoft.Compute/capacityReservationGroups/crg1"
+			nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(crgID)
+
+			Expect(nodeClass.Spec.CapacityReservationGroupID).ToNot(BeNil())
+			Expect(*nodeClass.Spec.CapacityReservationGroupID).To(Equal(crgID))
+		})
+
+		It("should default CapacityReservationGroupID to nil", func() {
+			Expect(nodeClass.Spec.CapacityReservationGroupID).To(BeNil())
+		})
+
+		It("should deep copy CapacityReservationGroupID", func() {
+			crgID := "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg1/providers/Microsoft.Compute/capacityReservationGroups/crg1"
+			nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(crgID)
+
+			copied := nodeClass.DeepCopy()
+			Expect(copied.Spec.CapacityReservationGroupID).ToNot(BeNil())
+			Expect(*copied.Spec.CapacityReservationGroupID).To(Equal(crgID))
+
+			// Verify it's a true deep copy (different pointer)
+			Expect(copied.Spec.CapacityReservationGroupID).ToNot(BeIdenticalTo(nodeClass.Spec.CapacityReservationGroupID))
+		})
+	})
+
 	Context("parseVMImageID", func() {
 		Context("Valid Image IDs", func() {
 			It("should parse a complete VM image ID correctly", func() {

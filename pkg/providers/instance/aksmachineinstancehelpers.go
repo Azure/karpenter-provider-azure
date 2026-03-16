@@ -97,6 +97,12 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
+	// TODO: Pass CapacityReservationGroupID to the Machine template once the Machine API schema
+	// supports it. Currently, CapacityReservationGroupID exists on ManagedClusterAgentPoolProfileProperties but not
+	// on MachineProperties. The RP-side change to add this field to the Machine API is tracked separately.
+	// When the SDK is updated with the field on MachineProperties, plumb it as:
+	//   CapacityReservationGroupID: nodeClass.Spec.CapacityReservationGroupID,
+
 	return &armcontainerservice.Machine{
 		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
