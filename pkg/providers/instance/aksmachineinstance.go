@@ -441,12 +441,34 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
 	}
 
-	// Decide on offerings
+	// Decide on offerings — use the ranked list for future SKU substitution support,
+	// but only try the first candidate for now. AKS Machine API capacity errors are typically
+	// detected asynchronously (during LRO polling or early provisioning state check), so
+	// sync-side retry is not effective here. Retry across scheduling cycles handles these cases.
 	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
 
+	promise, err := p.tryCreateMachineWithCandidate(ctx, nodeClass, nodeClaim, aksMachineName, instanceType, capacityType, zone)
+	if err != nil {
+		return nil, err
+	}
+
+	return promise, nil
+}
+
+// tryCreateMachineWithCandidate attempts to create a single AKS machine with the given SKU/priority/zone.
+// Returns the promise on success, or an error. The error may be a retriable capacity error.
+func (p *DefaultAKSMachineProvider) tryCreateMachineWithCandidate(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	aksMachineName string,
+	instanceType *corecloudprovider.InstanceType,
+	capacityType string,
+	zone string,
+) (*AKSMachinePromise, error) {
 	// Build the AKS machine template
 	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim)
 	if err != nil {

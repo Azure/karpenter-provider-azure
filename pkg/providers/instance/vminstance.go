@@ -738,13 +738,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
-	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
-	if instanceType == nil {
+	candidates := offerings.PickOrderedSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
+	if len(candidates) == 0 {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
-	}
-	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType)
-	if err != nil {
-		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
 
 	// resourceName for the NIC, VM, and Disk
@@ -757,134 +753,169 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
-	if err != nil {
-		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
-	}
-	var nsgID string
-	if !isAKSManagedVNET {
-		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+	// Try each candidate in order. On retriable capacity errors (sync side only),
+	// clean up and try the next alternative SKU/zone.
+	var lastErr error
+	for i, candidate := range candidates {
+		instanceType := candidate.InstanceType
+		capacityType := candidate.Priority
+		zone := candidate.Zone
+
+		if i > 0 {
+			log.FromContext(ctx).Info("retrying with alternative SKU after capacity error",
+				logging.InstanceType, instanceType.Name,
+				"zone", zone,
+				"capacity-type", capacityType,
+				"attempt", i+1,
+				"total-candidates", len(candidates))
+		}
+
+		launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType)
 		if err != nil {
-			return nil, fmt.Errorf("getting managed network security group: %w", err)
+			return nil, fmt.Errorf("getting launch template: %w", err)
 		}
-		nsgID = lo.FromPtr(nsg.ID)
-	}
 
-	// TODO: Not returning after launching this LRO because
-	// TODO: doing so would bypass the capacity and other errors that are currently handled by
-	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
-	// TODO: emitted in capacity failure cases that we probably want.
-	nicReference, err := p.createNetworkInterface(
-		ctx,
-		&createNICOptions{
-			NICName:                resourceName,
-			NetworkPlugin:          networkPlugin,
-			NetworkPluginMode:      networkPluginMode,
-			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:         launchTemplate,
-			BackendPools:           backendPools,
-			InstanceType:           instanceType,
-			NetworkSecurityGroupID: nsgID,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := p.createVirtualMachine(ctx, &createVMOptions{
-		VMName:              resourceName,
-		NicReference:        nicReference,
-		Zone:                zone,
-		CapacityType:        capacityType,
-		Location:            p.location,
-		SSHPublicKey:        options.FromContext(ctx).SSHPublicKey,
-		LinuxAdminUsername:  options.FromContext(ctx).LinuxAdminUsername,
-		NodeIdentities:      options.FromContext(ctx).NodeIdentities,
-		NodeClass:           nodeClass,
-		LaunchTemplate:      launchTemplate,
-		InstanceType:        instanceType,
-		ProvisionMode:       p.provisionMode,
-		UseSIG:              options.FromContext(ctx).UseSIG,
-		DiskEncryptionSetID: p.diskEncryptionSetID,
-		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
-	})
-	if err != nil {
-		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
-		if skuErr != nil {
-			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+		isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
+		if err != nil {
+			return nil, fmt.Errorf("checking if vnet is managed: %w", err)
 		}
-		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
-		if handledError != nil {
-			// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
-			// Thus the error needs to be returned.
-			// Assuming that `HandleResponseError` already format/convert the error for such (e.g., `InsufficientCapacityError`).
-			return nil, handledError
-		}
-		return nil, err
-	}
-
-	// Patch the VM object to fill out a few fields that are needed later.
-	// This is a bit of a hack that saves us doing a GET now.
-	// The reason to avoid a GET is that it can fail, and if it does the future above will be lost,
-	// which we don't want.
-	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
-	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
-
-	return &VirtualMachinePromise{
-		providerRef: p,
-		WaitFunc: func() error {
-			if result.Poller == nil {
-				// Poller is nil means the VM existed already and we're done.
-				// TODO: if the VM doesn't have extensions this will still happen and we will have to
-				// TODO: wait for the TTL for the claim to be deleted and recreated. This will most likely
-				// TODO: happen during Karpenter pod restart.
-				return nil
-			}
-
-			_, err = result.Poller.PollUntilDone(ctx, nil)
+		var nsgID string
+		if !isAKSManagedVNET {
+			nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
 			if err != nil {
-				VMCreateFailureMetric.With(map[string]string{
-					metrics.ImageLabel:        launchTemplate.ImageID,
-					metrics.SizeLabel:         instanceType.Name,
-					metrics.ZoneLabel:         zone,
-					metrics.CapacityTypeLabel: capacityType,
-					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
-					metrics.PhaseLabel:        phaseAsyncFailure,
-					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
-				}).Inc()
+				return nil, fmt.Errorf("getting managed network security group: %w", err)
+			}
+			nsgID = lo.FromPtr(nsg.ID)
+		}
 
-				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
-				if skuErr != nil {
-					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+		nicReference, err := p.createNetworkInterface(
+			ctx,
+			&createNICOptions{
+				NICName:                resourceName,
+				NetworkPlugin:          networkPlugin,
+				NetworkPluginMode:      networkPluginMode,
+				MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
+				LaunchTemplate:         launchTemplate,
+				BackendPools:           backendPools,
+				InstanceType:           instanceType,
+				NetworkSecurityGroupID: nsgID,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		result, err := p.createVirtualMachine(ctx, &createVMOptions{
+			VMName:              resourceName,
+			NicReference:        nicReference,
+			Zone:                zone,
+			CapacityType:        capacityType,
+			Location:            p.location,
+			SSHPublicKey:        options.FromContext(ctx).SSHPublicKey,
+			LinuxAdminUsername:  options.FromContext(ctx).LinuxAdminUsername,
+			NodeIdentities:      options.FromContext(ctx).NodeIdentities,
+			NodeClass:           nodeClass,
+			LaunchTemplate:      launchTemplate,
+			InstanceType:        instanceType,
+			ProvisionMode:       p.provisionMode,
+			UseSIG:              options.FromContext(ctx).UseSIG,
+			DiskEncryptionSetID: p.diskEncryptionSetID,
+			NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
+		})
+		if err != nil {
+			sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+			if skuErr != nil {
+				return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+			}
+			handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+
+			// If the error is a retriable capacity error and we have more candidates, clean up and try the next one
+			if handledError != nil && offerings.IsRetriableCapacityError(handledError) && i < len(candidates)-1 {
+				log.FromContext(ctx).Info("capacity error for SKU, will try alternative",
+					logging.InstanceType, instanceType.Name,
+					"zone", zone,
+					"capacity-type", capacityType,
+					"error", handledError.Error())
+				// Clean up NIC before retrying with a different SKU (VM was not created)
+				if cleanupErr := p.cleanupAzureResources(ctx, resourceName, true); cleanupErr != nil {
+					log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources before SKU substitution retry")
 				}
-				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
-				if handledError != nil {
-					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
-					// Thus the error needs to be returned.
-					// Assuming that `HandleResponseError` already format/convert the error for such (e.g., `InsufficientCapacityError`).
-					return handledError
-				}
-				return err
+				lastErr = handledError
+				continue
 			}
 
-			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
+			if handledError != nil {
+				return nil, handledError
+			}
+			return nil, err
+		}
+
+		// Success — patch the VM object and return the promise
+		result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+		result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
+
+		return &VirtualMachinePromise{
+			providerRef: p,
+			WaitFunc: func() error {
+				if result.Poller == nil {
+					// Poller is nil means the VM existed already and we're done.
+					// TODO: if the VM doesn't have extensions this will still happen and we will have to
+					// TODO: wait for the TTL for the claim to be deleted and recreated. This will most likely
+					// TODO: happen during Karpenter pod restart.
+					return nil
+				}
+
+				_, err = result.Poller.PollUntilDone(ctx, nil)
 				if err != nil {
-					// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
+					VMCreateFailureMetric.With(map[string]string{
+						metrics.ImageLabel:        launchTemplate.ImageID,
+						metrics.SizeLabel:         instanceType.Name,
+						metrics.ZoneLabel:         zone,
+						metrics.CapacityTypeLabel: capacityType,
+						metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+						metrics.PhaseLabel:        phaseAsyncFailure,
+						metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
+					}).Inc()
+
+					sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+					if skuErr != nil {
+						return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+					}
+					handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+					if handledError != nil {
+						// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
+						// Thus the error needs to be returned.
+						// Assuming that `HandleResponseError` already format/convert the error for such (e.g., `InsufficientCapacityError`).
+						return handledError
+					}
 					return err
 				}
-			}
-			if isAKSIdentifyingExtensionEnabled(p.env) {
-				err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
-				if err != nil {
-					return err
-				}
-			}
 
-			return nil
-		},
-		VM: result.VM,
-	}, nil
+				if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+					err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
+					if err != nil {
+						// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
+						return err
+					}
+				}
+				if isAKSIdentifyingExtensionEnabled(p.env) {
+					err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
+					if err != nil {
+						return err
+					}
+				}
+
+				return nil
+			},
+			VM: result.VM,
+		}, nil
+	}
+
+	// All candidates exhausted
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("all instance type candidates exhausted"))
 }
 
 func (p *DefaultVMProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
