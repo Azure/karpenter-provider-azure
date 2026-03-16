@@ -17,7 +17,9 @@ limitations under the License.
 package utils_test
 
 import (
+	"os"
 	"testing"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/skewer"
@@ -268,5 +270,58 @@ func TestGetAlphanumericHash(t *testing.T) {
 		hash, err := utils.GetAlphanumericHash(longInput, 6)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(hash).To(HaveLen(6))
+	})
+}
+
+func TestWithDefaultDuration(t *testing.T) {
+	const envKey = "TEST_WITH_DEFAULT_DURATION"
+
+	t.Run("returns default when env not set", func(t *testing.T) {
+		os.Unsetenv(envKey)
+		result := utils.WithDefaultDuration(envKey, 15*time.Second)
+		g := NewWithT(t)
+		g.Expect(result).To(Equal(15 * time.Second))
+	})
+
+	t.Run("parses Go duration string", func(t *testing.T) {
+		t.Setenv(envKey, "30s")
+		result := utils.WithDefaultDuration(envKey, 15*time.Second)
+		g := NewWithT(t)
+		g.Expect(result).To(Equal(30 * time.Second))
+	})
+
+	t.Run("parses Go duration string with minutes", func(t *testing.T) {
+		t.Setenv(envKey, "2m30s")
+		result := utils.WithDefaultDuration(envKey, 15*time.Second)
+		g := NewWithT(t)
+		g.Expect(result).To(Equal(2*time.Minute + 30*time.Second))
+	})
+
+	t.Run("parses plain seconds as fallback", func(t *testing.T) {
+		t.Setenv(envKey, "15")
+		result := utils.WithDefaultDuration(envKey, 30*time.Second)
+		g := NewWithT(t)
+		g.Expect(result).To(Equal(15 * time.Second))
+	})
+
+	t.Run("returns default for invalid value", func(t *testing.T) {
+		t.Setenv(envKey, "not-a-duration")
+		result := utils.WithDefaultDuration(envKey, 15*time.Second)
+		g := NewWithT(t)
+		g.Expect(result).To(Equal(15 * time.Second))
+	})
+
+	t.Run("parses zero value", func(t *testing.T) {
+		t.Setenv(envKey, "0")
+		result := utils.WithDefaultDuration(envKey, 15*time.Second)
+		g := NewWithT(t)
+		g.Expect(result).To(Equal(time.Duration(0)))
+	})
+
+	t.Run("parses zero duration string", func(t *testing.T) {
+		t.Setenv(envKey, "0s")
+		result := utils.WithDefaultDuration(envKey, 15*time.Second)
+		g := NewWithT(t)
+		g.Expect(result).To(Equal(time.Duration(0)))
 	})
 }
