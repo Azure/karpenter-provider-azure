@@ -52,7 +52,6 @@ import (
 )
 
 const (
-	InstanceTypesCacheKey = "types"
 	InstanceTypesCacheTTL = 23 * time.Hour
 )
 
@@ -62,8 +61,11 @@ type Provider interface {
 
 	// Return Azure Skewer Representation of the instance type
 	Get(context.Context, *v1beta1.AKSNodeClass, string) (*skewer.SKU, error)
-	//UpdateInstanceTypes(ctx context.Context) error
-	//UpdateInstanceTypeOfferings(ctx context.Context) error
+
+	// UpdateInstanceTypes fetches instance types from Azure and updates the cache
+	UpdateInstanceTypes(ctx context.Context) error
+
+	// UpdateInstanceTypeOfferings(ctx context.Context) error
 }
 
 // assert that DefaultProvider implements Provider interface
@@ -75,16 +77,17 @@ type DefaultProvider struct {
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
 
-	// Has one cache entry for all the instance types (key: InstanceTypesCacheKey)
 	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
 	// Fully initialized Instance Types are also cached based on the set of all instance types,
 	// unavailableOfferings cache, AWSNodeClass, and kubelet configuration from the NodePool
-	mu                 sync.Mutex
 	instanceTypesCache *cache.Cache
 
 	cm *pretty.ChangeMonitor
+
 	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
 	instanceTypesSeqNum uint64
+	muInstanceTypesInfo sync.RWMutex
+	instanceTypesInfo   map[string]*skewer.SKU
 }
 
 func NewDefaultProvider(
@@ -108,14 +111,17 @@ func NewDefaultProvider(
 
 // Get all instance type options
 func (p *DefaultProvider) List(
-	ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
-	kc := nodeClass.Spec.Kubelet
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+) ([]*cloudprovider.InstanceType, error) {
+	p.muInstanceTypesInfo.RLock()
+	defer p.muInstanceTypesInfo.RUnlock()
 
-	// Get SKUs from Azure
-	skus, err := p.getInstanceTypes(ctx)
-	if err != nil {
-		return nil, err
+	if len(p.instanceTypesInfo) == 0 {
+		return nil, fmt.Errorf("no instance types found")
 	}
+
+	kc := nodeClass.Spec.Kubelet
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
@@ -136,9 +142,9 @@ func (p *DefaultProvider) List(
 	}
 
 	// Get Viable offerings
-	/// Azure has zones availability directly from SKU info
+	// Azure has zones availability directly from SKU info
 	var result []*cloudprovider.InstanceType
-	for _, sku := range skus {
+	for _, sku := range p.instanceTypesInfo {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
@@ -181,11 +187,14 @@ func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 }
 
 func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
-	skus, err := p.getInstanceTypes(ctx)
-	if err != nil {
-		return nil, err
+	p.muInstanceTypesInfo.RLock()
+	defer p.muInstanceTypesInfo.RUnlock()
+
+	if len(p.instanceTypesInfo) == 0 {
+		return nil, fmt.Errorf("no instance types found")
 	}
-	if sku, ok := skus[instanceType]; ok {
+
+	if sku, ok := p.instanceTypesInfo[instanceType]; ok {
 		return sku, nil
 	}
 	return nil, fmt.Errorf("instance type %s not found", instanceType)
@@ -311,24 +320,21 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
 }
 
-// getInstanceTypes retrieves all instance types from skewer using some opinionated filters
-func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU, error) {
+// UpdateInstanceTypes fetches all instance types from Azure (using skewer) and updates the cache.
+// This is called periodically by the instance type controller.
+func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	// DO NOT REMOVE THIS LOCK ----------------------------------------------------------------------------
-	// We lock here so that multiple callers to GetInstanceTypes do not result in cache misses and multiple
+	// We lock here so that multiple callers to UpdateInstanceTypes do not result in multiple
 	// calls to Resource API when we could have just made one call. This lock is here because multiple callers result
 	// in A LOT of extra memory generated from the response for simultaneous callers.
-	// (This can be made more efficient by holding a Read lock and only obtaining the Write if not in cache)
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.muInstanceTypesInfo.Lock()
+	defer p.muInstanceTypesInfo.Unlock()
 
-	if cached, ok := p.instanceTypesCache.Get(InstanceTypesCacheKey); ok {
-		return cached.(map[string]*skewer.SKU), nil
-	}
 	instanceTypes := map[string]*skewer.SKU{}
 
 	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
-		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
+		return fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
@@ -345,14 +351,18 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		}
 	}
 
+	if len(instanceTypes) == 0 {
+		return fmt.Errorf("no instance types found")
+	}
+
 	if p.cm.HasChanged("instance-types", instanceTypes) {
-		// Only update instanceTypesSeqNun with the instance types have been changed
+		// Only update instanceTypesSeqNum with the instance types have been changed
 		// This is to not create new keys with duplicate instance types option
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
 		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
 	}
-	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
-	return instanceTypes, nil
+	p.instanceTypesInfo = instanceTypes
+	return nil
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
@@ -402,6 +412,13 @@ func (p *DefaultProvider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
 func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	size := sku.GetSize()
 	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
+}
+
+func (p *DefaultProvider) Reset() {
+	p.muInstanceTypesInfo.Lock()
+	defer p.muInstanceTypesInfo.Unlock()
+	p.instanceTypesInfo = map[string]*skewer.SKU{}
+	atomic.StoreUint64(&p.instanceTypesSeqNum, 0)
 }
 
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {

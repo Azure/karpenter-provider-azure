@@ -86,6 +86,11 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			v1beta1.LabelSKUGPUName,
 		)
 
+		if env.InClusterController {
+			// Can't test FIPS on self-hosted Karpenter
+			selectors.Insert(v1beta1.AKSLabelFIPSEnabled)
+		}
+
 		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
 		// ignore GPU labels in the coverage assertion.
 		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) {
@@ -221,6 +226,35 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			nodeSelector := map[string]string{
 				v1beta1.LabelSKUGPUManufacturer: "nvidia",
 				v1beta1.LabelSKUGPUCount:        "1",
+			}
+			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
+			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
+				return corev1.NodeSelectorRequirement{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}
+			})
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
+				NodeSelector:     nodeSelector,
+				NodePreferences:  requirements,
+				NodeRequirements: requirements,
+			}})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.ExpectCreatedNodeCount("==", 1)
+		})
+
+		It("should support FIPS label for instance type selection", func() {
+			if env.InClusterController {
+				Skip("FIPS tests require SIG access - skipping in self-hosted mode")
+			}
+
+			nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+
+			nodeSelector := map[string]string{
+				// Well Known
+				karpv1.NodePoolLabelKey:        nodePool.Name,
+				corev1.LabelInstanceTypeStable: "Standard_D2s_v3",
+				// Well Known to Azure
+				v1beta1.AKSLabelFIPSEnabled: "true",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {

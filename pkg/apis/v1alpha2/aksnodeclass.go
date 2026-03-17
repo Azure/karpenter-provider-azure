@@ -290,8 +290,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={none,static}
 	// +default="none"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+	CPUManagerPolicy *string `json:"cpuManagerPolicy,omitempty"`
 	// cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
 	// +default=true
@@ -336,8 +335,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={restricted,best-effort,none,single-numa-node}
 	// +default="none"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
+	TopologyManagerPolicy *string `json:"topologyManagerPolicy,omitempty"`
 	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
 	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
@@ -353,8 +351,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
 	// +default="50Mi"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
+	ContainerLogMaxSize *string `json:"containerLogMaxSize,omitempty"`
 	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
 	// Default: 5
 	// +kubebuilder:validation:Minimum:=2
@@ -426,7 +423,7 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // Returns true for Required mode, false for Disabled mode, and for Preferred mode,
-// returns true only if the Kubernetes version is >= 1.36.
+// returns true only if the Kubernetes version is >= 1.35.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
 		return false
@@ -438,7 +435,7 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	case LocalDNSModeDisabled:
 		return false
 	case LocalDNSModePreferred:
-		// For Preferred mode, check if K8s version >= 1.36
+		// For Preferred mode, check if K8s version >= 1.35
 		kubernetesVersion, err := in.GetKubernetesVersion()
 		if err != nil {
 			return false // If we can't get version, don't enable
@@ -450,7 +447,7 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 			return false
 		}
 
-		return parsedVersion.GE(semver.Version{Major: 1, Minor: 36})
+		return parsedVersion.GE(semver.Version{Major: 1, Minor: 35})
 	default:
 		return false
 	}

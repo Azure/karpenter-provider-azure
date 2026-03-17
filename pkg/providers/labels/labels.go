@@ -111,6 +111,10 @@ func Get(
 	labels[v1beta1.AKSLabelScaleSetPriority] = v1beta1.ScaleSetPriorityRegular
 	// Add os-sku label based on imageFamily
 	labels[v1beta1.AKSLabelOSSKU] = v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
+	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+		labels[v1beta1.AKSLabelFIPSEnabled] = "true"
+	}
+
 	// Add os-sku-requested label that exactly matches the imageFamily specified on the NodeClass
 	labels[v1beta1.AKSLabelOSSKURequested] = lo.FromPtr(nodeClass.Spec.ImageFamily)
 	// nil static parameters here is safe only because we're not using the resulting imageFamily for anything except to get its name
@@ -155,11 +159,11 @@ func Get(
 	return labels, nil
 }
 
-// IsKubeletLabel returns true if the given label is a label kubelet is allowed to set.
+// CanKubeletSetLabel returns true if the given label is a label kubelet is allowed to set.
 // This is similar to the method one used by the node restriction admission
 // https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
 // with the isKubernetesLabel check from https://github.com/kubernetes/kubernetes/blob/4bed36e03e7bd699b089d33da6f7d7c9ef9eb661/cmd/kubelet/app/options/options.go#L176C6-L176C23.
-func IsKubeletLabel(key string) bool {
+func CanKubeletSetLabel(key string) bool {
 	if kubeletLabels.Has(key) {
 		return true
 	}
@@ -176,6 +180,10 @@ func IsKubeletLabel(key string) bool {
 	}
 
 	return false
+}
+
+func IsLabelKubeletManaged(key string) bool {
+	return kubeletLabels.Has(key)
 }
 
 // GetWellKnownSingleValuedRequirementLabels converts well-known Azure single-value instanceType.Requirements to labels

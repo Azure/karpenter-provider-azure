@@ -35,7 +35,7 @@ import (
 
 // This test requires the Azure Disk CSI driver to be installed
 var _ = Describe("Dynamic PVC", func() {
-	It("should run a pod with a dynamic persistent volume", func() {
+	It("should run a pod with a dynamic persistent volume", Label("runner"), func() {
 		// Ensure that the Azure Disk driver is installed, or we can't run the test.
 		var ds appsv1.DaemonSet
 		if err := env.Client.Get(env.Context, client.ObjectKey{
@@ -79,7 +79,7 @@ var _ = Describe("Dynamic PVC", func() {
 })
 
 var _ = Describe("Static PVC", func() {
-	It("should run a pod with a static persistent volume using Azure File", func() {
+	It("should run a pod with a static persistent volume using Azure File", Label("runner"), func() {
 		storageClassName := lo.ToPtr("azurefile-test")
 		bindMode := storagev1.VolumeBindingImmediate
 		sc := test.StorageClass(test.StorageClassOptions{

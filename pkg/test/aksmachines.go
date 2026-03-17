@@ -22,6 +22,7 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/samber/lo"
 )
@@ -102,7 +103,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		}
 	}
 	if options.Properties.ProvisioningState == nil {
-		options.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+		options.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
 	}
 
 	// Set Priority field (required field that was missing) - must be set AFTER default Priority is established
@@ -119,10 +120,10 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	}
 
 	// Set ResourceID (required field) - simulates VM resource ID following AKS naming convention
-	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
+	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm
 	if options.Properties.ResourceID == nil {
 		// Generate a VM name following AKS convention: aks-{agentPoolName}-{machineName}-{randomId}-vm{id}
-		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", options.MachinesPoolName, options.Name)
+		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm", options.MachinesPoolName, options.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", "test-subscription", options.ClusterResourceGroup, vmName)
 		options.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}
@@ -137,7 +138,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		options.NodepoolName = "default"
 	}
 	if options.Properties.Tags == nil {
-		options.Properties.Tags = ManagedTags(options.NodepoolName)
+		options.Properties.Tags = ManagedTagsAKSMachine(options.NodepoolName, "some-nodeclaim")
 	}
 
 	// Construct the AKS Machine
