@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
 	"github.com/patrickmn/go-cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -91,7 +92,7 @@ type Environment struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	// Providers
-	InstanceTypesProvider        instancetype.Provider
+	InstanceTypesProvider        *instancetype.DefaultProvider
 	VMInstanceProvider           instance.VMProvider
 	AKSMachineProvider           instance.AKSMachineProvider
 	PricingProvider              *pricing.Provider
@@ -251,6 +252,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	store := nodeoverlay.NewInstanceTypeStore()
 
+	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
+	// We can update it in individual tests as needed.
+	lo.Must0(instanceTypesProvider.UpdateInstanceTypes(ctx))
+
 	return &Environment{
 		VirtualMachinesAPI:          virtualMachinesAPI,
 		AuxiliaryTokenServer:        auxiliaryTokenServer,
@@ -331,4 +336,9 @@ func (env *Environment) Zones() []string {
 	} else {
 		return []string{fake.Region + "-1", fake.Region + "-2", fake.Region + "-3"}
 	}
+}
+
+// Client returns the controller-runtime client from the underlying core test environment.
+func (env *Environment) Client() client.Client {
+	return env.coreEnv.Client
 }

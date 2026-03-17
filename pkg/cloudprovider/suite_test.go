@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -197,6 +198,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 		})
@@ -204,7 +207,7 @@ var _ = Describe("CloudProvider", func() {
 		It("should list nodeclaim created by the CloudProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
@@ -217,6 +220,31 @@ var _ = Describe("CloudProvider", func() {
 			validateVMNodeClaim(nodeClaims[0], nodePool)
 			resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)
 			Expect(resp.VirtualMachine).ToNot(BeNil())
+		})
+		It("should list nodeclaim with correct instance type even after capacity error marks offerings unavailable", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			// Get the instance type from the created VM
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			vmSize := string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
+			Expect(vmSize).ToNot(BeEmpty())
+
+			// Simulate a capacity error by marking all offerings for this instance type as unavailable
+			for _, zone := range azureEnv.Zones() {
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeOnDemand)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeSpot)
+			}
+
+			// List should still return the nodeclaim with the correct instance type
+			nodeClaims, err := cloudProvider.List(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaims).To(HaveLen(1))
+			validateVMNodeClaim(nodeClaims[0], nodePool)
+			Expect(nodeClaims[0].Labels[v1.LabelInstanceTypeStable]).To(Equal(vmSize))
 		})
 		It("should return an ICE error when there are no instance types to launch", func() {
 			// Specify no instance types and expect to receive a capacity error
@@ -231,7 +259,7 @@ var _ = Describe("CloudProvider", func() {
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-			cloudProviderMachine, err := cloudProvider.Create(ctx, nodeClaim)
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
 		})
@@ -240,7 +268,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should not call writes to AKS Machine API", func() {
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -251,7 +279,7 @@ var _ = Describe("CloudProvider", func() {
 					// First create a successful VM
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 					pod := coretest.UnschedulablePod()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 
 					// cloudprovider.List should return vm nodeclaim
@@ -286,6 +314,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 		})
@@ -293,7 +323,7 @@ var _ = Describe("CloudProvider", func() {
 		It("should list nodeclaim created by the CloudProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
@@ -320,7 +350,7 @@ var _ = Describe("CloudProvider", func() {
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-			cloudProviderMachine, err := cloudProvider.Create(ctx, nodeClaim)
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
 		})
@@ -329,7 +359,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should not call writes to AKS Machine API", func() {
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -340,7 +370,7 @@ var _ = Describe("CloudProvider", func() {
 					// First create a successful VM
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 					pod := coretest.UnschedulablePod()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 
 					// cloudprovider.List should return vm nodeclaim

@@ -252,6 +252,7 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		For(
 			&karpv1.NodeClaim{},
 			builder.WithPredicates(
+				nodeclaimutils.UsingAKSNodeClassPredicate(),
 				predicate.Or(
 					predicate.GenerationChangedPredicate{}, // Note that this will trigger on pod restart for all Machines.
 				),

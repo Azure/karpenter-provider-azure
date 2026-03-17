@@ -17,6 +17,8 @@ limitations under the License.
 package v1beta1
 
 import (
+	"strings"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -120,6 +122,20 @@ var (
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
 	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
 
+	// Legacy labels
+	AKSLabelLegacyAgentPool      = "agentpool"
+	AKSLabelLegacyStorageProfile = "storageprofile"
+	AKSLabelLegacyStorageTier    = "storagetier"
+	AKSLabelLegacyAccelerator    = "accelerator"
+
+	// aksLegacyLabels is the set of well-known AKS labels that are not members of the kubernetes.azure.com label namespace.
+	aksLegacyLabels = sets.NewString(
+		AKSLabelLegacyAgentPool,
+		AKSLabelLegacyStorageProfile,
+		AKSLabelLegacyStorageTier,
+		AKSLabelLegacyAccelerator,
+	)
+
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
 	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
@@ -168,4 +184,8 @@ func GetOSSKUFromImageFamily(imageFamily string) string {
 		return osSKU
 	}
 	return imageFamily // fallback for unknown image families
+}
+
+func IsAKSLabel(label string) bool {
+	return strings.HasPrefix(label, AKSLabelDomain+"/") || aksLegacyLabels.Has(label)
 }

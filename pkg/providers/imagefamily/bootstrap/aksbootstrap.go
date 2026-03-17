@@ -401,14 +401,14 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
 	}
-	if kubeletConfig.CPUManagerPolicy != "" {
-		args["--cpu-manager-policy"] = kubeletConfig.CPUManagerPolicy
+	if kubeletConfig.CPUManagerPolicy != nil && *kubeletConfig.CPUManagerPolicy != "" {
+		args["--cpu-manager-policy"] = *kubeletConfig.CPUManagerPolicy
 	}
-	if kubeletConfig.TopologyManagerPolicy != "" {
-		args["--topology-manager-policy"] = kubeletConfig.TopologyManagerPolicy
+	if kubeletConfig.TopologyManagerPolicy != nil && *kubeletConfig.TopologyManagerPolicy != "" {
+		args["--topology-manager-policy"] = *kubeletConfig.TopologyManagerPolicy
 	}
-	if kubeletConfig.ContainerLogMaxSize != "" {
-		args["--container-log-max-size"] = kubeletConfig.ContainerLogMaxSize
+	if kubeletConfig.ContainerLogMaxSize != nil && *kubeletConfig.ContainerLogMaxSize != "" {
+		args["--container-log-max-size"] = *kubeletConfig.ContainerLogMaxSize
 	}
 	if kubeletConfig.ContainerLogMaxFiles != nil {
 		args["--container-log-max-files"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ContainerLogMaxFiles))
