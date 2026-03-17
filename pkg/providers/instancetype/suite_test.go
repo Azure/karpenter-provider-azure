@@ -845,10 +845,15 @@ var _ = Describe("InstanceType Provider", func() {
 					test.Options(test.OptionsFields{
 						UseSIG: lo.ToPtr(true),
 					}))
+
+				// Repopilate instance types based on above ctx
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			AfterEach(func() {
 				ctx = options.ToContext(ctx, originalOptions)
+				// Clean up instance types
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
@@ -1793,7 +1798,11 @@ var _ = Describe("InstanceType Provider", func() {
 				// Reconcile the NodeClass to ensure status is updated
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-				azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
+				// Flush the cache to simulate the controller not having run yet.
+				// With the instance type controller, SKU API errors happen during
+				// UpdateInstanceTypes (controller reconcile), not during List.
+				// When the cache is empty, List returns an error.
+				azureEnv.InstanceTypesProvider.Reset()
 
 				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1815,6 +1824,9 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
 				Expect(err.Error()).To(ContainSubstring("resolving instance types"))
+
+				// Reset instance types
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			It("should return error when instance creation fails", func() {
@@ -2091,6 +2103,7 @@ var _ = Describe("InstanceType Provider", func() {
 			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
 
 			BeforeEach(func() {
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 			})
@@ -2127,10 +2140,11 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 
 			It("should not include AKSUbuntu GPU SKUs in list results", func() {
-				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC24ads_A100_v4"))))
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC16ads_A10_v4"))))
 			})
-			It("should include AKSUbuntu GPU SKUs in list results", func() {
+			It("should include AzureLinux GPU SKUs in list results", func() {
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC24ads_A100_v4"))))
 			})
 		})
 
