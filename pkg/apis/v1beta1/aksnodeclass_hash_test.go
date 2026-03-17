@@ -121,7 +121,7 @@ var _ = Describe("Hash", func() {
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
 	It("when hashing algorithm updates, we should update the hash version", func() {
-		currentHashVersion := "v4"
+		currentHashVersion := "v3"
 		if nodeClass.Hash() != staticHash {
 			Expect(v1beta1.AKSNodeClassHashVersion).ToNot(Equal(currentHashVersion))
 		} else {

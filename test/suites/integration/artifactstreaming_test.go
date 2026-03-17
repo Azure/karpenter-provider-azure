@@ -56,11 +56,10 @@ var _ = Describe("ArtifactStreaming", func() {
 
 		pod := coretest.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
-
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
-		expectNodeHasArtifactStreamingEnabledLabel(node)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		Expect(node.Labels).To(HaveKeyWithValue(artifactStreamingEnabledLabelKey, "true"))
 		verifyArtifactStreamingOnNode(node, true)
 	})
 
@@ -69,11 +68,10 @@ var _ = Describe("ArtifactStreaming", func() {
 
 		pod := coretest.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
-
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
-		expectNodeHasArtifactStreamingEnabledLabel(node)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		Expect(node.Labels).To(HaveKeyWithValue(artifactStreamingEnabledLabelKey, "true"))
 		verifyArtifactStreamingOnNode(node, true)
 	})
 
@@ -85,39 +83,13 @@ var _ = Describe("ArtifactStreaming", func() {
 
 		pod := coretest.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
-
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
-		expectNodeDoesNotHaveArtifactStreamingLabel(node)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		Expect(node.Labels).ToNot(HaveKey(artifactStreamingEnabledLabelKey))
 		verifyArtifactStreamingOnNode(node, false)
 	})
 })
-
-// expectNodeHasArtifactStreamingEnabledLabel verifies that a node has the artifactstreaming-enabled label set to "true".
-// Re-fetches the node since NPS may apply the label asynchronously.
-func expectNodeHasArtifactStreamingEnabledLabel(node *corev1.Node) {
-	By(fmt.Sprintf("Verifying node %s has artifactstreaming-enabled=true label", node.Name))
-	Eventually(func(g Gomega) {
-		var current corev1.Node
-		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), &current)).To(Succeed())
-		labelValue, exists := current.Labels[artifactStreamingEnabledLabelKey]
-		g.Expect(exists).To(BeTrue(), fmt.Sprintf("Node %s should have artifactstreaming-enabled label when enabled", node.Name))
-		g.Expect(labelValue).To(Equal("true"), "ArtifactStreaming label should be 'true' when enabled")
-	}).WithTimeout(artifactStreamingTestTimeout).Should(Succeed())
-}
-
-// expectNodeDoesNotHaveArtifactStreamingLabel verifies that a node does NOT have the artifactstreaming-enabled label.
-// Re-fetches the node and uses Consistently to confirm the label stays absent.
-func expectNodeDoesNotHaveArtifactStreamingLabel(node *corev1.Node) {
-	By(fmt.Sprintf("Verifying node %s does NOT have artifactstreaming-enabled label (disabled)", node.Name))
-	Consistently(func(g Gomega) {
-		var current corev1.Node
-		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), &current)).To(Succeed())
-		_, exists := current.Labels[artifactStreamingEnabledLabelKey]
-		g.Expect(exists).To(BeFalse(), fmt.Sprintf("Node %s should NOT have artifactstreaming-enabled label when disabled", node.Name))
-	}).WithTimeout(30 * time.Second).Should(Succeed())
-}
 
 // verifyArtifactStreamingOnNode checks for artifact streaming infrastructure (overlaybd process/config) on the node.
 func verifyArtifactStreamingOnNode(node *corev1.Node, expectEnabled bool) {

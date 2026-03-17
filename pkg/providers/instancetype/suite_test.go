@@ -836,6 +836,68 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		DescribeTable("Filtering by ArtifactStreaming",
+			func(artifactStreaming *v1beta1.ArtifactStreaming, shouldIncludeArm64 bool) {
+				nodeClass.Spec.ArtifactStreaming = artifactStreaming
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instanceTypes).ShouldNot(BeEmpty())
+
+				getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+				if shouldIncludeArm64 {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
+						"ARM64 instance type Standard_D16plds_v5 should be included")
+				} else {
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
+						"ARM64 instance type Standard_D16plds_v5 should be excluded")
+				}
+
+				// AMD64 instance types should always be included regardless of artifact streaming setting
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+					"AMD64 instance type Standard_D2s_v3 should always be included")
+			},
+			Entry("when artifact streaming is not set (default) - includes ARM64",
+				nil, true),
+			Entry("when artifact streaming is explicitly enabled - excludes ARM64",
+				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}, false),
+			Entry("when artifact streaming is explicitly disabled - includes ARM64",
+				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}, true),
+		)
+
+		Context("Cache invalidation with ArtifactStreaming", func() {
+			It("should return different instance type lists when artifact streaming changes", func() {
+				// First, get instance types with artifact streaming not set (default)
+				nodeClassDefault := test.AKSNodeClass()
+				test.ApplyDefaultStatus(nodeClassDefault, env, testOptions.UseSIG)
+				ExpectApplied(ctx, env.Client, nodeClassDefault)
+				instanceTypesDefault, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDefault)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Now get instance types with artifact streaming explicitly enabled
+				nodeClassEnabled := test.AKSNodeClass()
+				nodeClassEnabled.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}
+				test.ApplyDefaultStatus(nodeClassEnabled, env, testOptions.UseSIG)
+				ExpectApplied(ctx, env.Client, nodeClassEnabled)
+				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
+				Expect(err).ToNot(HaveOccurred())
+
+				// The explicitly-enabled list should be smaller (ARM64 SKUs filtered out)
+				Expect(len(instanceTypesEnabled)).To(BeNumerically("<", len(instanceTypesDefault)),
+					"Explicitly enabling artifact streaming should filter out ARM64 SKUs")
+
+				getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+				// ARM64 SKU should be present when default but absent when explicitly enabled
+				Expect(instanceTypesDefault).Should(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
+					"Standard_D16plds_v5 (ARM64) should be included with default settings")
+				Expect(instanceTypesEnabled).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
+					"Standard_D16plds_v5 (ARM64) should be excluded when artifact streaming is explicitly enabled")
+			})
+		})
+
 		Context("Ephemeral Disk", func() {
 			var originalOptions *options.Options
 			BeforeEach(func() {

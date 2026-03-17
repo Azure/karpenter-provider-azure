@@ -760,15 +760,6 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			description:                      "Artifact streaming should be disabled for ARM64 architecture even with supported OS",
 		},
 		{
-			name:                             "AMD64 AzureLinux3 - Artifact streaming enabled (default, duplicate)",
-			arch:                             karpv1.ArchitectureAmd64,
-			kubernetesVersion:                "1.32.0",
-			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
-			imageDistro:                      "aks-azurelinux-v3-gen2",
-			expectedArtifactStreamingEnabled: true,
-			description:                      "Artifact streaming should default to enabled for AzureLinux3 on AMD64",
-		},
-		{
 			name:                             "ARM64 AzureLinux3 - Artifact streaming disabled",
 			arch:                             karpv1.ArchitectureArm64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
@@ -999,25 +990,21 @@ func TestArtifactStreamingConfiguration(t *testing.T) {
 		name                           string
 		artifactStreaming              *v1beta1.ArtifactStreaming
 		expectedArtifactStreamingValue bool
-		description                    string
 	}{
 		{
 			name:                           "Artifact streaming explicitly enabled",
 			artifactStreaming:              &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedArtifactStreamingValue: true,
-			description:                    "When artifactStreaming.enabled is true, artifact streaming should be enabled",
 		},
 		{
 			name:                           "Artifact streaming explicitly disabled",
 			artifactStreaming:              &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
 			expectedArtifactStreamingValue: false,
-			description:                    "When artifactStreaming.enabled is false, artifact streaming should be disabled",
 		},
 		{
 			name:                           "Artifact streaming not specified (nil) - defaults to disabled",
 			artifactStreaming:              nil,
 			expectedArtifactStreamingValue: true,
-			description:                    "When artifactStreaming is nil, artifact streaming should default to enabled",
 		},
 	}
 
@@ -1037,15 +1024,15 @@ func TestArtifactStreamingConfiguration(t *testing.T) {
 			values, err := bootstrapper.ConstructProvisionValues(ctx)
 
 			// Expect success for all cases
-			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
 			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
 			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile).ToNot(BeNil(), "ArtifactStreamingProfile should not be nil")
 
 			// Verify artifact streaming configuration
 			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile.Enabled).To(Equal(lo.ToPtr(tt.expectedArtifactStreamingValue)),
-				"Artifact streaming enablement mismatch: %s. Expected: %t, Actual: %t",
-				tt.description, tt.expectedArtifactStreamingValue, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
+				"Artifact streaming enablement mismatch. Expected: %t, Actual: %t",
+				tt.expectedArtifactStreamingValue, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
 		})
 	}
 }
@@ -1058,7 +1045,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 		arch              string
 		artifactStreaming *v1beta1.ArtifactStreaming
 		expectedValue     bool
-		description       string
 	}{
 		{
 			name:              "Ubuntu 22.04 with artifact streaming enabled",
@@ -1066,7 +1052,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
-			description:       "Ubuntu 22.04 should support artifact streaming when explicitly enabled",
 		},
 		{
 			name:              "Ubuntu 22.04 with artifact streaming disabled",
@@ -1074,7 +1059,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
 			expectedValue:     false,
-			description:       "Ubuntu 22.04 should respect disabled artifact streaming",
 		},
 		{
 			name:              "Ubuntu 20.04 with artifact streaming enabled",
@@ -1082,7 +1066,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
-			description:       "Ubuntu 20.04 should allow artifact streaming to be enabled if configured",
 		},
 		{
 			name:              "Ubuntu 24.04 with artifact streaming enabled",
@@ -1090,7 +1073,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
-			description:       "Ubuntu 24.04 should allow artifact streaming to be enabled if configured",
 		},
 		{
 			name:              "Azure Linux v2 with artifact streaming enabled",
@@ -1098,7 +1080,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
-			description:       "Azure Linux v2 should support artifact streaming when explicitly enabled",
 		},
 		{
 			name:              "Azure Linux v3 with artifact streaming enabled",
@@ -1106,7 +1087,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectedValue:     true,
-			description:       "Azure Linux v3 should allow artifact streaming to be enabled if configured",
 		},
 		{
 			name:              "Default (nil) should be true for all OS SKUs",
@@ -1114,7 +1094,6 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			arch:              karpv1.ArchitectureAmd64,
 			artifactStreaming: nil,
 			expectedValue:     true,
-			description:       "When artifactStreaming is nil, it should default to true",
 		},
 	}
 
@@ -1153,15 +1132,15 @@ func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
 			values, err := bootstrapper.ConstructProvisionValues(ctx)
 
 			// Expect success for all cases
-			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
 			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
 			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile).ToNot(BeNil(), "ArtifactStreamingProfile should not be nil")
 
 			// Verify artifact streaming configuration
 			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile.Enabled).To(Equal(lo.ToPtr(tt.expectedValue)),
-				"Artifact streaming enablement mismatch: %s. Expected: %t, Actual: %t",
-				tt.description, tt.expectedValue, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
+				"Artifact streaming enablement mismatch. Expected: %t, Actual: %t",
+				tt.expectedValue, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
 		})
 	}
 }

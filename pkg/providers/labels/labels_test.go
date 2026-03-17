@@ -510,7 +510,6 @@ func TestArtifactStreamingLabel(t *testing.T) {
 		artifactStreaming  *v1beta1.ArtifactStreaming
 		expectLabel        bool
 		expectedLabelValue string
-		description        string
 	}{
 		{
 			name:               "AMD64 with nil (default) should have label set to true",
@@ -518,14 +517,12 @@ func TestArtifactStreamingLabel(t *testing.T) {
 			artifactStreaming:  nil,
 			expectLabel:        true,
 			expectedLabelValue: "true",
-			description:        "Default for AMD64 should enable artifact streaming",
 		},
 		{
 			name:              "ARM64 with nil (default) should NOT have label",
 			arch:              "arm64",
 			artifactStreaming: nil,
 			expectLabel:       false,
-			description:       "Default for ARM64 should disable artifact streaming (no label)",
 		},
 		{
 			name:               "AMD64 with explicitly enabled should have label set to true",
@@ -533,29 +530,24 @@ func TestArtifactStreamingLabel(t *testing.T) {
 			artifactStreaming:  &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
 			expectLabel:        true,
 			expectedLabelValue: "true",
-			description:        "Explicit enable on AMD64 should set label",
 		},
 		{
-			name:               "ARM64 with explicitly enabled should have label set to true",
-			arch:               "arm64",
-			artifactStreaming:  &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
-			expectLabel:        true,
-			expectedLabelValue: "true",
-			description:        "Explicit enable on ARM64 should override default and set label",
+			name:              "ARM64 with explicitly enabled should NOT have label",
+			arch:              "arm64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectLabel:       false,
 		},
 		{
 			name:              "AMD64 with explicitly disabled should NOT have label",
 			arch:              "amd64",
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
 			expectLabel:       false,
-			description:       "Explicit disable on AMD64 should not set label",
 		},
 		{
 			name:              "ARM64 with explicitly disabled should NOT have label",
 			arch:              "arm64",
 			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
 			expectLabel:       false,
-			description:       "Explicit disable on ARM64 should not set label",
 		},
 	}
 

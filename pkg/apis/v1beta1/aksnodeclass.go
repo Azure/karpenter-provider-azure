@@ -37,10 +37,23 @@ var (
 // ArtifactStreaming configures artifact streaming for provisioned nodes.
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreaming struct {
-	// enabled controls whether artifact streaming is enabled for provisioned nodes.
+	// enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
 	// If not specified, defaults to true.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// IsEnabled returns whether artifact streaming should be enabled for the given architecture.
+// ARM64 does not support artifact streaming and always returns false.
+// For AMD64, returns the explicit value if set, otherwise defaults to true.
+func (a *ArtifactStreaming) IsEnabled(arch string) bool {
+	if arch == karpv1.ArchitectureArm64 {
+		return false
+	}
+	if a != nil && a.Enabled != nil {
+		return *a.Enabled
+	}
+	return true
 }
 
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
@@ -407,7 +420,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v4"
+const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
@@ -435,18 +448,20 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 }
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class
-// based on the architecture. ARM64 nodes do not support artifact streaming.
-// If not explicitly specified (nil), defaults to true for AMD64 and false for ARM64.
+// based on the architecture. ARM64 nodes do not support artifact streaming and will always return false,
+// even if the user explicitly enables it in the spec.
+// For AMD64, if not explicitly specified (nil), defaults to true.
 func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
-	// If explicitly set, use that value regardless of architecture
-	if in.Spec.ArtifactStreaming != nil && in.Spec.ArtifactStreaming.Enabled != nil {
-		return *in.Spec.ArtifactStreaming.Enabled
-	}
+	return in.Spec.ArtifactStreaming.IsEnabled(arch)
+}
 
-	// If not specified (nil), default based on architecture
-	// ARM64 does not support artifact streaming, so default to false
-	// AMD64 supports artifact streaming, so default to true
-	return arch != "arm64"
+// IsArtifactStreamingExplicitlyEnabled returns true only when the user has explicitly
+// set artifact streaming to enabled (true) in the NodeClass spec. Returns false when
+// artifact streaming is not set (nil/default) or explicitly disabled.
+func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
+	return in.Spec.ArtifactStreaming != nil &&
+		in.Spec.ArtifactStreaming.Enabled != nil &&
+		*in.Spec.ArtifactStreaming.Enabled
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.

@@ -37,7 +37,7 @@ var (
 // ArtifactStreaming configures artifact streaming for provisioned nodes.
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreaming struct {
-	// enabled controls whether artifact streaming is enabled for provisioned nodes.
+	// enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
 	// If not specified, defaults to true.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
@@ -432,21 +432,6 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
-}
-
-// IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class
-// based on the architecture. ARM64 nodes do not support artifact streaming.
-// If not explicitly specified (nil), defaults to true for AMD64 and false for ARM64.
-func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
-	// If explicitly set, use that value regardless of architecture
-	if in.Spec.ArtifactStreaming != nil && in.Spec.ArtifactStreaming.Enabled != nil {
-		return *in.Spec.ArtifactStreaming.Enabled
-	}
-
-	// If not specified (nil), default based on architecture
-	// ARM64 does not support artifact streaming, so default to false
-	// AMD64 supports artifact streaming, so default to true
-	return arch != "arm64"
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.

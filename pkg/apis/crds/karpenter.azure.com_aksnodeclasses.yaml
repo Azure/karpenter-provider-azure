@@ -67,7 +67,7 @@ spec:
                 properties:
                   enabled:
                     description: |-
-                      enabled controls whether artifact streaming is enabled for provisioned nodes.
+                      enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
                       If not specified, defaults to true.
                     type: boolean
                 type: object
@@ -637,7 +637,7 @@ spec:
                 properties:
                   enabled:
                     description: |-
-                      enabled controls whether artifact streaming is enabled for provisioned nodes.
+                      enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
                       If not specified, defaults to true.
                     type: boolean
                 type: object
