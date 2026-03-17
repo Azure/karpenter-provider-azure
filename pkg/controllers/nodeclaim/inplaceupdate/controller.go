@@ -40,20 +40,21 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machine"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
 type Controller struct {
 	kubeClient                 client.Client
-	vmInstanceProvider         instance.VMProvider
-	aksMachineInstanceProvider instance.AKSMachineProvider
+	vmInstanceProvider         vm.VMProvider
+	aksMachineInstanceProvider machine.AKSMachineProvider
 }
 
 func NewController(
 	kubeClient client.Client,
-	vmInstanceProvider instance.VMProvider,
-	aksMachineInstanceProvider instance.AKSMachineProvider,
+	vmInstanceProvider vm.VMProvider,
+	aksMachineInstanceProvider machine.AKSMachineProvider,
 ) *Controller {
 	return &Controller{
 		kubeClient:                 kubeClient,
@@ -97,7 +98,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	stored := nodeClaim.DeepCopy()
 
-	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+	if aksMachineName, isAKSMachine := machine.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		// AKS machine-based nodeClaim
 		err := c.processAKSMachineInstance(ctx, options, nodeClaim, nodeClass, aksMachineName)
 		if err != nil {

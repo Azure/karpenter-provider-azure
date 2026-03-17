@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instance_test
+package vm_test
 
 import (
 	"context"
@@ -53,7 +53,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	instancemetrics "github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	instancemetrics "github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"

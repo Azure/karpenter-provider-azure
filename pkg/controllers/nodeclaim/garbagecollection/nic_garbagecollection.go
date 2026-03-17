@@ -34,7 +34,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 )
 
 const (
@@ -46,10 +46,10 @@ const (
 
 type NetworkInterface struct {
 	kubeClient         client.Client
-	vmInstanceProvider instance.VMProvider
+	vmInstanceProvider vm.VMProvider
 }
 
-func NewNetworkInterface(kubeClient client.Client, vmInstanceProvider instance.VMProvider) *NetworkInterface {
+func NewNetworkInterface(kubeClient client.Client, vmInstanceProvider vm.VMProvider) *NetworkInterface {
 	return &NetworkInterface{
 		kubeClient:         kubeClient,
 		vmInstanceProvider: vmInstanceProvider,
@@ -71,7 +71,7 @@ func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (s
 	}
 
 	for _, nodeClaim := range nodeClaimList.Items {
-		unremovableInterfaces.Insert(instance.GenerateResourceName(nodeClaim.Name))
+		unremovableInterfaces.Insert(vm.GenerateResourceName(nodeClaim.Name))
 	}
 	return unremovableInterfaces, nil
 }

@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	vminstance "github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -63,14 +63,14 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 		t.Run(c.testName, func(t *testing.T) {
 			g := NewWithT(t)
 			for _, name := range c.vmNames {
-				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags, Zones: []*string{lo.ToPtr("1")}})
+				_, err := vminstance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags, Zones: []*string{lo.ToPtr("1")}})
 				if err != nil {
 					t.Errorf("Unexpected error %v", err)
 					return
 				}
 			}
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetVMListQueryBuilder(resourceGroup).String())
-			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
+			queryRequest := vminstance.NewQueryRequest(&subscriptionID, vminstance.GetVMListQueryBuilder(resourceGroup).String())
+			data, err := vminstance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 			if err != nil {
 				t.Errorf("Unexpected error %v", err)
 				return
@@ -95,7 +95,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 	}
 }
 
-func checkVM(vm instance.Resource, rg string) error {
+func checkVM(vm vminstance.Resource, rg string) error {
 	name, ok := vm["name"]
 	if !ok {
 		return fmt.Errorf("VM is missing name")
@@ -112,7 +112,7 @@ func checkVM(vm instance.Resource, rg string) error {
 	if !ok {
 		return fmt.Errorf("VM is missing properties")
 	}
-	_, ok = properties.(instance.Resource)["timeCreated"]
+	_, ok = properties.(vminstance.Resource)["timeCreated"]
 	if !ok {
 		return fmt.Errorf("VM is missing timeCreated property")
 	}
@@ -198,7 +198,7 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 			g := NewWithT(t)
 			// Create VMs with different tag configurations
 			for _, vmConfig := range c.vmConfigs {
-				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, vmConfig.name, armcompute.VirtualMachine{
+				_, err := vminstance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, vmConfig.name, armcompute.VirtualMachine{
 					Tags:  vmConfig.tags,
 					Zones: []*string{lo.ToPtr("1")},
 				})
@@ -209,8 +209,8 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 			}
 
 			// Query for VMs
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetVMListQueryBuilder(resourceGroup).String())
-			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
+			queryRequest := vminstance.NewQueryRequest(&subscriptionID, vminstance.GetVMListQueryBuilder(resourceGroup).String())
+			data, err := vminstance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
@@ -350,8 +350,8 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 			}
 
 			// Query for NICs
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetNICListQueryBuilder(resourceGroup).String())
-			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
+			queryRequest := vminstance.NewQueryRequest(&subscriptionID, vminstance.GetNICListQueryBuilder(resourceGroup).String())
+			data, err := vminstance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)

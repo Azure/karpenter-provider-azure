@@ -30,7 +30,7 @@ import (
 	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/vm"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -69,7 +69,7 @@ func GetAKSNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *k
 
 // TODO: Could go onto vmInstanceProvider?
 // GetVM gets the Azure VM associated with the NodeClaim
-func GetVM(ctx context.Context, vmInstanceProvider instance.VMProvider, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
+func GetVM(ctx context.Context, vmInstanceProvider vm.VMProvider, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
 	vmName, err := GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return nil, err

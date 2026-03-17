@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package aksmachinepoller provides a GET-based poller for tracking individual AKS machine
+// Package poller provides a GET-based poller for tracking individual AKS machine
 // provisioning status by polling GET machine until terminal state. This is an alternative
 // to the Azure SDK poller, which polls on AKS operation objects (through GET operation).
 //
@@ -34,7 +34,7 @@ limitations under the License.
 // (potentially via upcoming ARM batch API) and rewriting error handling based on AKS error
 // formats instead of CRP error formats. If that transition happens, this approach would
 // need to be revisited.
-package aksmachinepoller
+package poller
 
 import (
 	"context"
