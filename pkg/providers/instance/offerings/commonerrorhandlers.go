@@ -41,7 +41,6 @@ var (
 	SKUNotAvailableSpotTTL           = 1 * time.Hour
 	SKUNotAvailableOnDemandTTL       = 23 * time.Hour
 	SKUFamilyQuotaNonZeroTTL         = 15 * time.Minute // Longer TTL for non-zero quota limits to prevent recycling before lower-weight NodePools are tried
-	RegionalQuotaExhaustedTTL        = 30 * time.Minute // Regional quota is unlikely to free up quickly
 )
 
 type errorHandle func(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
@@ -154,20 +153,6 @@ func handleOverconstrainedAllocationFailureError(ctx context.Context, unavailabl
 }
 
 func handleRegionalQuotaError(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error {
-	// Regional quota is exhausted — no instance type of any size can be created for this capacity type.
-	// Mark offerings as unavailable with a long TTL so the scheduler doesn't keep retrying.
-	// Without this cache update, the scheduler would repeatedly select instance types from this capacity type,
-	// and each launch would fail with the same regional quota error, preventing fallback to lower-weight NodePools.
-	if capacityType == karpv1.CapacityTypeSpot {
-		unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, RegionalQuotaExhaustedTTL)
-	} else {
-		// For on-demand regional quota, mark this specific instance type unavailable in all zones.
-		// This helps the scheduler skip it on subsequent loops. Since regional quota affects ALL instance types,
-		// each one that fails will also be marked, progressively draining the high-weight pool's available offerings
-		// until the scheduler falls through to lower-weight pools.
-		markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, instanceType, SubscriptionQuotaReachedReason, RegionalQuotaExhaustedTTL)
-	}
-
 	// InsufficientCapacityError is appropriate here because trying any other instance type will not help
 	return corecloudprovider.NewInsufficientCapacityError(
 		fmt.Errorf(
