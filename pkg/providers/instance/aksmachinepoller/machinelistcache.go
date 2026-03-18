@@ -18,7 +18,6 @@ package aksmachinepoller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -296,34 +295,6 @@ func (c *MachineListCache) pollOnce(ctx context.Context, aksMachineName string, 
 	}
 
 	return c.handleProvisioningState(ctx, machine, aksMachineName, retryAttemptsLeft, currentRetryDelay)
-}
-
-// handleGetError processes errors from cache update or cache miss during polling.
-func (c *MachineListCache) handleGetError(ctx context.Context, err error, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, fmt.Errorf("failed to update cache for AKS machine %q during polling as context is canceled: %w", aksMachineName, err), true
-	}
-
-	if !isTransientError(err) {
-		// Non-transient error (auth, permissions, etc.) - fail immediately
-		return nil, fmt.Errorf("failed to update cache for AKS machine %q during polling with non-retryable error: %w", aksMachineName, err), true
-	}
-
-	log.FromContext(ctx).V(2).Info("Cache poller: polling for AKS machine failed to update cache, may retry",
-		"aksMachineName", aksMachineName,
-		"error", err,
-		"retryAttemptsLeft", *retryAttemptsLeft,
-		"retryDelay", *currentRetryDelay,
-	)
-
-	shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
-	if backoffErr != nil {
-		return nil, backoffErr, true
-	}
-	if shouldRetry {
-		return nil, nil, false
-	}
-	return nil, fmt.Errorf("failed to update cache for AKS machine %q during polling: %w after exhausting %d retry attempts", aksMachineName, err, c.maxRetries), true
 }
 
 // handleNilProvisioningState handles the case where the machine's provisioning state is nil.
