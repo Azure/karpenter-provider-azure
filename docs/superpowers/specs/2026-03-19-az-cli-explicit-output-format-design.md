@@ -25,7 +25,13 @@ Fix every `az` command whose output is consumed programmatically. Leave commands
 - `docs/workshops/1_aks_cluster_creation_and_install_karpenter.md`
 
 **CI:**
-- `.github/actions/` YAML files (only commands that consume output programmatically)
+- `.github/actions/e2e/cleanup/action.yaml`
+- `.github/actions/e2e/create-cluster/action.yaml`
+- `.github/actions/e2e/create-acr/action.yaml`
+- `.github/actions/e2e/dump-logs/action.yaml`
+- `.github/actions/e2e/install-karpenter/action.yaml`
+
+(Only commands that consume output programmatically — most CI commands are fire-and-forget.)
 
 **Contributing guide:**
 - `CONTRIBUTING.md` — add developer note about the convention
@@ -64,6 +70,8 @@ KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity create --name karpentermsi --res
 ```
 
 **Exception:** If the same captured variable is consumed multiple times extracting different fields, AND the command is mutating (`az create`, `az update`), keep the captured variable approach and add `--output json`. Do not re-run a mutating command to extract each field. For read-only commands (`az show`, `az list`), separate `--query --output tsv` calls are acceptable.
+
+**Note:** This exception applies to `az identity create` and `az aks create` in `hack/deploy/create-cluster.sh`, `README.md`, and `docs/workshops/1_aks_cluster_creation_and_install_karpenter.md`, where the captured JSON is consumed multiple times for different fields.
 
 ### Pattern 3: Complex `jq` — add `--output json`
 
