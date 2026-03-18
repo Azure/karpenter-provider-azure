@@ -31,6 +31,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/samber/lo"
+	"golang.org/x/sync/singleflight"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
@@ -75,6 +76,7 @@ type MachineListCache struct {
 	ttl                  time.Duration
 	interval             time.Duration
 	client               AKSMachineNewListPager
+	updateGroup          singleflight.Group // deduplicates concurrent update() calls
 
 	clusterResourceGroup string
 	clusterName          string
@@ -110,6 +112,25 @@ func (c *MachineListCache) isFresh() bool {
 	}
 	lastUpdated := time.Unix(0, lastUpdatedNanos)
 	return time.Since(lastUpdated) < c.ttl
+}
+
+// Get retrieves a machine from the cache by name.
+// Returns the machine if cache is fresh and contains the machine.
+// Returns an error if the cache is stale or the machine is not found.
+func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if !c.isFresh() {
+		return nil, fmt.Errorf("cache is stale for machine %q", machineName)
+	}
+
+	machine, ok := c.machines[machineName]
+	if !ok {
+		return nil, fmt.Errorf("machine %q not found in cache", machineName)
+	}
+
+	return machine, nil
 }
 
 // get retrieves a machine from the cache by name.
@@ -327,11 +348,18 @@ func (c *MachineListCache) resetRetryState(retryAttemptsLeft *int, currentRetryD
 }
 
 func (c *MachineListCache) update(ctx context.Context) error {
-	// Update the cache with fresh data
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Use lastUpdatedUnixNanos as key: all goroutines seeing the same stale cache
+	// generation get deduplicated together. After successful update, timestamp changes
+	// and next batch gets a fresh execution with new key.
+	key := fmt.Sprintf("%d", c.lastUpdatedUnixNanos.Load())
+	_, err, _ := c.updateGroup.Do(key, func() (interface{}, error) {
+		return nil, c.doUpdate(ctx)
+	})
+	return err
+}
 
-	// Double-check freshness after acquiring lock to avoid redundant updates
+func (c *MachineListCache) doUpdate(ctx context.Context) error {
+	// Check freshness without lock (atomic operation)
 	if c.isFresh() {
 		return nil
 	}
@@ -344,13 +372,14 @@ func (c *MachineListCache) update(ctx context.Context) error {
 		)
 	}()
 
+	// Perform LIST API call WITHOUT holding lock (can take 17-29 seconds)
 	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
 	if pager == nil {
 		return fmt.Errorf("failed to list AKS machines: created pager is nil")
 	}
 
-	// Clear existing cache
-	c.machines = make(map[string]*armcontainerservice.Machine)
+	// Build new map outside of lock
+	newMachines := make(map[string]*armcontainerservice.Machine)
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -371,7 +400,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
 				if _, hasKarpenterTag := aksMachine.Properties.Tags[nodePoolTagKey]; hasKarpenterTag {
 					if aksMachine.Name != nil {
-						c.machines[*aksMachine.Name] = aksMachine
+						newMachines[*aksMachine.Name] = aksMachine
 					}
 				} else {
 					log.FromContext(ctx).V(1).Info("skipping AKS machine without Karpenter nodepool tag",
@@ -386,7 +415,12 @@ func (c *MachineListCache) update(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("Machine list cache updated with %d machines\n", len(c.machines))
+	fmt.Printf("Machine list cache updated with %d machines\n", len(newMachines))
+
+	// ONLY lock when swapping the map (fast operation - microseconds)
+	c.mu.Lock()
+	c.machines = newMachines
+	c.mu.Unlock()
 
 	c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 	return nil

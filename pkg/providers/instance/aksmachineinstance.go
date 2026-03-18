@@ -143,7 +143,6 @@ type DefaultAKSMachineProvider struct {
 	deletingMachinesMu              sync.RWMutex
 	machineListCache                *aksmachinepoller.MachineListCache
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
-	getMachineSemaphore             chan struct{}            // limits concurrent GET machine API calls to 500
 }
 
 func NewAKSMachineProvider(
@@ -170,7 +169,6 @@ func NewAKSMachineProvider(
 		deletingMachines:                sets.New[string](),
 		machineListCache:                aksmachinepoller.NewMachineListCache(time.Minute, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
-		getMachineSemaphore:             make(chan struct{}, 500),
 	}
 
 	return provider
@@ -348,19 +346,19 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
-	// Acquire semaphore to limit concurrent GET machine API calls
-	select {
-	case p.getMachineSemaphore <- struct{}{}:
-		defer func() { <-p.getMachineSemaphore }()
-	case <-ctx.Done():
-		return nil, fmt.Errorf("failed to acquire semaphore for GET machine %q: %w", aksMachineName, ctx.Err())
+	// Try to get from cache first
+	aksMachine, err := p.machineListCache.Get(aksMachineName)
+	if err == nil {
+		// Cache hit - return the cached machine
+		return aksMachine, nil
 	}
 
+	// Cache miss or stale - fall back to direct GET API call
 	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
 	}
-	aksMachine := lo.ToPtr(resp.Machine)
+	aksMachine = lo.ToPtr(resp.Machine)
 	p.rehydrateMachine(aksMachine)
 
 	return aksMachine, nil
