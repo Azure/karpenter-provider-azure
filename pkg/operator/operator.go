@@ -254,6 +254,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		env,
 	)
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
+		ctx,
 		azClient,
 		instanceTypeProvider,
 		imageResolver,

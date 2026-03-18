@@ -69,6 +69,11 @@ type AKSMachineNewListPager interface {
 //   - TTL-based: entries expire after cacheTTL (default 30s)
 //   - Explicit: mutating operations (Create, Update, Delete) invalidate the affected entry
 //   - Full refresh: List() replaces the entire cache
+//
+// Update strategy:
+//   - Background worker goroutine handles all cache updates
+//   - Periodic refresh every 5 minutes keeps cache fresh
+//   - On-demand updates via RequestUpdate() channel (non-blocking)
 type MachineListCache struct {
 	mu                   sync.RWMutex
 	machines             map[string]*armcontainerservice.Machine // keyed by machine name (not full ARM ID)
@@ -86,10 +91,19 @@ type MachineListCache struct {
 	maxRetries    int
 	retryDelay    time.Duration
 	maxRetryDelay time.Duration
+
+	// Background worker fields
+	updateRequests chan struct{}      // Buffered channel (size 1) for update requests
+	workerCtx      context.Context    // Worker lifecycle context
+	workerCancel   context.CancelFunc // Cancel function for shutdown
+	updateInterval time.Duration      // Periodic update frequency (default 5 minutes)
+	wg             sync.WaitGroup     // Tracks worker goroutine for shutdown
 }
 
-func NewMachineListCache(ttl time.Duration, client AKSMachineNewListPager, interval time.Duration, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineListCache {
-	return &MachineListCache{
+func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachineNewListPager, interval time.Duration, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineListCache {
+	workerCtx, workerCancel := context.WithCancel(ctx)
+
+	cache := &MachineListCache{
 		machines:             make(map[string]*armcontainerservice.Machine),
 		ttl:                  ttl,
 		interval:             interval,
@@ -100,7 +114,19 @@ func NewMachineListCache(ttl time.Duration, client AKSMachineNewListPager, inter
 		maxRetries:           10,
 		retryDelay:           1 * time.Second,
 		maxRetryDelay:        30 * time.Second,
+
+		// Initialize background worker
+		updateRequests: make(chan struct{}, 1), // Buffer of 1 coalesces requests
+		workerCtx:      workerCtx,
+		workerCancel:   workerCancel,
+		updateInterval: 5 * time.Minute, // Periodic refresh every 5 minutes
 	}
+
+	// Start background worker
+	cache.wg.Add(1)
+	go cache.updateWorker()
+
+	return cache
 }
 
 // isFresh returns true if the cache has been populated and hasn't expired.
@@ -167,6 +193,57 @@ func (c *MachineListCache) invalidateAll() {
 	c.lastUpdatedUnixNanos.Store(0) // zero value → isFresh() returns false
 }
 
+// updateWorker runs in a background goroutine and handles both periodic and on-demand cache updates.
+// It stops when workerCtx is canceled, ensuring clean shutdown via Shutdown().
+func (c *MachineListCache) updateWorker() {
+	defer c.wg.Done()
+
+	ticker := time.NewTicker(c.updateInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.workerCtx.Done():
+			// Shutdown signal received
+			return
+
+		case <-c.updateRequests:
+			// On-demand update requested via RequestUpdate()
+			if err := c.update(c.workerCtx); err != nil {
+				// Log error but continue - periodic refresh will retry
+				log.FromContext(c.workerCtx).Error(err, "background cache update failed (on-demand)")
+			}
+
+		case <-ticker.C:
+			// Periodic refresh to keep cache fresh
+			if err := c.update(c.workerCtx); err != nil {
+				// Log error but continue - next tick will retry
+				log.FromContext(c.workerCtx).Error(err, "background cache update failed (periodic)")
+			}
+		}
+	}
+}
+
+// RequestUpdate sends a non-blocking update request to the background worker.
+// If an update is already pending (channel buffer full), this is a no-op.
+// This method never blocks the caller - use it to hint that a cache refresh would be beneficial.
+func (c *MachineListCache) RequestUpdate() {
+	select {
+	case c.updateRequests <- struct{}{}:
+		// Update request successfully enqueued
+	default:
+		// Channel buffer full - update already pending, do nothing
+	}
+}
+
+// Shutdown stops the background update worker and waits for it to finish.
+// Call this during provider shutdown to prevent goroutine leaks.
+// After calling Shutdown, the cache will no longer receive automatic updates.
+func (c *MachineListCache) Shutdown() {
+	c.workerCancel() // Signal worker to stop
+	c.wg.Wait()      // Wait for worker goroutine to finish
+}
+
 func (c *MachineListCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name, "interval", c.interval.String())
 	ticker := time.NewTicker(c.interval)
@@ -192,20 +269,18 @@ func (c *MachineListCache) PollUntilDone(ctx context.Context, name string) (*arm
 
 // pollOnce performs a single cache-based poll and returns (provisioningErr, pollerErr, done).
 func (c *MachineListCache) pollOnce(ctx context.Context, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
-	// Refresh cache if stale
+	// Request cache refresh if stale (background worker will handle it)
 	if !c.isFresh() {
-		if err := c.update(ctx); err != nil {
-			return c.handleGetError(ctx, err, aksMachineName, retryAttemptsLeft, currentRetryDelay)
-		}
-		log.FromContext(ctx).Info("cache updated successfully during poll")
-		c.resetRetryState(retryAttemptsLeft, currentRetryDelay)
+		c.RequestUpdate()
+		return nil, nil, false
 	}
 
-	// Get machine from cache
+	// Get machine from cache (may be stale, but worker is updating)
 	machine, ok := c.get(aksMachineName)
 	if !ok {
-		// Cache miss - treat as transient error
-		log.FromContext(ctx).Info("cache miss for AKS machine during poll",
+		// Cache miss - request update and handle as transient error
+		c.RequestUpdate()
+		log.FromContext(ctx).Info("cache miss for AKS machine during poll, requested update",
 			"aksMachineName", aksMachineName,
 			"retryAttemptsLeft", *retryAttemptsLeft,
 		)
@@ -218,6 +293,9 @@ func (c *MachineListCache) pollOnce(ctx context.Context, aksMachineName string, 
 		}
 		return nil, fmt.Errorf("cache poller: exhausted retries due to repeated cache misses for AKS machine %q", aksMachineName), true
 	}
+
+	// Machine found - reset retry state
+	c.resetRetryState(retryAttemptsLeft, currentRetryDelay)
 
 	if machine.Properties == nil || machine.Properties.ProvisioningState == nil {
 		return c.handleNilProvisioningState(ctx, machine, aksMachineName, retryAttemptsLeft, currentRetryDelay)
