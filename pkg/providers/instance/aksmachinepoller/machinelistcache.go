@@ -157,6 +157,26 @@ func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine
 	return machine, nil
 }
 
+// List returns all machines in the cache.
+// Returns an error if the cache is not fresh and requests an update.
+func (c *MachineListCache) List() ([]*armcontainerservice.Machine, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if !c.isFresh() {
+		c.RequestUpdate()
+		return nil, fmt.Errorf("cache is not fresh")
+	}
+
+	// Create a slice with all machines
+	machines := make([]*armcontainerservice.Machine, 0, len(c.machines))
+	for _, machine := range c.machines {
+		machines = append(machines, machine)
+	}
+
+	return machines, nil
+}
+
 // get retrieves a machine from the cache by name.
 func (c *MachineListCache) get(machineName string) (*armcontainerservice.Machine, bool) {
 	c.mu.RLock()

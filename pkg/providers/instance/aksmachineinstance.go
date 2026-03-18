@@ -366,6 +366,18 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 }
 
 func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
+	// Try to get from cache first
+	if machines, err := p.machineListCache.List(); err == nil {
+		// Cache hit - return cached machines
+		// Note: machines are already filtered to only Karpenter machines and rehydrated by the cache
+		for _, machine := range machines {
+			p.rehydrateMachine(machine)
+		}
+		return machines, nil
+	}
+	// Cache miss or stale - fall back to API call
+	log.FromContext(ctx).V(1).Info("cache miss or stale, falling back to direct API list call")
+
 	var machines []*armcontainerservice.Machine
 	pager := p.azClient.AKSMachinesClient().NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
 	if pager == nil {
