@@ -67,6 +67,23 @@ spec:
                 - FIPS
                 - Disabled
                 type: string
+              gpu:
+                description: gpu contains configuration for GPU-enabled nodes.
+                properties:
+                  driverInstallation:
+                    default: Preferred
+                    description: |-
+                      driverInstallation controls whether GPU drivers are installed on
+                      nodes with GPU-capable VM sizes. When set to Preferred (or not specified),
+                      GPU drivers are installed automatically. When set to None, GPU
+                      driver installation is skipped — use this when managing GPU drivers
+                      via a GPU Operator or other external mechanism.
+                      This field is ignored for non-GPU VM sizes.
+                    enum:
+                    - Preferred
+                    - None
+                    type: string
+                type: object
               imageFamily:
                 default: Ubuntu
                 description: imageFamily is the image family that instances use.
@@ -626,6 +643,23 @@ spec:
                 - FIPS
                 - Disabled
                 type: string
+              gpu:
+                description: gpu contains configuration for GPU-enabled nodes.
+                properties:
+                  driverInstallation:
+                    default: Preferred
+                    description: |-
+                      driverInstallation controls whether GPU drivers are installed on
+                      nodes with GPU-capable VM sizes. When set to Preferred (or not specified),
+                      GPU drivers are installed automatically. When set to None, GPU
+                      driver installation is skipped — use this when managing GPU drivers
+                      via a GPU Operator or other external mechanism.
+                      This field is ignored for non-GPU VM sizes.
+                    enum:
+                    - Preferred
+                    - None
+                    type: string
+                type: object
               imageFamily:
                 default: Ubuntu
                 description: imageFamily is the image family that instances use.

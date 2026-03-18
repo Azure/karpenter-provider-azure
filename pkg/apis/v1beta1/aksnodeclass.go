@@ -95,6 +95,9 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// gpu contains configuration for GPU-enabled nodes.
+	// +optional
+	GPU *GPU `json:"gpu,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -277,6 +280,30 @@ const (
 	LocalDNSServeStaleDisable LocalDNSServeStale = "Disable"
 )
 
+// +kubebuilder:validation:Enum:={Preferred,None}
+type DriverInstallationMode string
+
+const (
+	// Install GPU drivers on GPU-enabled nodes. This is the default behavior.
+	DriverInstallationPreferred DriverInstallationMode = "Preferred"
+	// Do not install GPU drivers. Use this when running a GPU Operator or
+	// managing drivers outside of AKS.
+	DriverInstallationNone DriverInstallationMode = "None"
+)
+
+// GPU contains configuration for GPU-enabled nodes.
+type GPU struct {
+	// driverInstallation controls whether GPU drivers are installed on
+	// nodes with GPU-capable VM sizes. When set to Preferred (or not specified),
+	// GPU drivers are installed automatically. When set to None, GPU
+	// driver installation is skipped — use this when managing GPU drivers
+	// via a GPU Operator or other external mechanism.
+	// This field is ignored for non-GPU VM sizes.
+	// +default="Preferred"
+	// +optional
+	DriverInstallation *DriverInstallationMode `json:"driverInstallation,omitempty"`
+}
+
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
 // They are a subset of the upstream types, recognizing not all options may be supported.
 // Wherever possible, the types and names should reflect the upstream kubelet types.
@@ -451,4 +478,15 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	default:
 		return false
 	}
+}
+
+// IsGPUDriverInstallationEnabled returns whether GPU driver installation
+// is enabled. Returns true when gpu is nil, gpu.driverInstallation is nil,
+// or driverInstallation is "Preferred". Returns false only when explicitly
+// set to "None".
+func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
+	if in.Spec.GPU == nil || in.Spec.GPU.DriverInstallation == nil {
+		return true // backward compatible default
+	}
+	return *in.Spec.GPU.DriverInstallation != DriverInstallationNone
 }
