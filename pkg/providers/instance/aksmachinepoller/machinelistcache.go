@@ -108,7 +108,7 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 		clusterResourceGroup: clusterResourceGroup,
 		clusterName:          clusterName,
 		aksMachinesPoolName:  aksMachinesPoolName,
-		maxRetries:           10,
+		maxRetries:           500, // generous retries for now
 		retryDelay:           1 * time.Second,
 		maxRetryDelay:        30 * time.Second,
 
