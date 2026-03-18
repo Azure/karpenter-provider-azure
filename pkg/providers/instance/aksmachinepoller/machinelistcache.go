@@ -31,7 +31,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/samber/lo"
-	"golang.org/x/sync/singleflight"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
@@ -81,7 +80,6 @@ type MachineListCache struct {
 	ttl                  time.Duration
 	interval             time.Duration
 	client               AKSMachineNewListPager
-	updateGroup          singleflight.Group // deduplicates concurrent update() calls
 
 	clusterResourceGroup string
 	clusterName          string
@@ -148,6 +146,7 @@ func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine
 	defer c.mu.RUnlock()
 
 	if !c.isFresh() {
+		c.RequestUpdate()
 		return nil, fmt.Errorf("cache is stale for machine %q", machineName)
 	}
 
@@ -160,14 +159,9 @@ func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine
 }
 
 // get retrieves a machine from the cache by name.
-// Returns (machine, true) on cache hit, (nil, false) on miss or stale cache.
 func (c *MachineListCache) get(machineName string) (*armcontainerservice.Machine, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	if !c.isFresh() {
-		return nil, false
-	}
 
 	machine, ok := c.machines[machineName]
 	return machine, ok
@@ -426,17 +420,6 @@ func (c *MachineListCache) resetRetryState(retryAttemptsLeft *int, currentRetryD
 }
 
 func (c *MachineListCache) update(ctx context.Context) error {
-	// Use lastUpdatedUnixNanos as key: all goroutines seeing the same stale cache
-	// generation get deduplicated together. After successful update, timestamp changes
-	// and next batch gets a fresh execution with new key.
-	key := fmt.Sprintf("%d", c.lastUpdatedUnixNanos.Load())
-	_, err, _ := c.updateGroup.Do(key, func() (interface{}, error) {
-		return nil, c.doUpdate(ctx)
-	})
-	return err
-}
-
-func (c *MachineListCache) doUpdate(ctx context.Context) error {
 	// Check freshness without lock (atomic operation)
 	if c.isFresh() {
 		return nil
