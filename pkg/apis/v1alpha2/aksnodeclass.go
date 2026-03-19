@@ -436,9 +436,8 @@ type SysctlConfiguration struct {
 	FsNrOpen *int32 `json:"fsNrOpen,omitempty"`
 	// kernelThreadsMax specifies the maximum number of threads that can be created.
 	// Maps to kernel.threads-max.
-	// The default and effective maximum are dynamically calculated based on system memory (total_ram_pages / 4).
-	// No explicit range is documented; the AKS API validates server-side.
 	// +kubebuilder:validation:Minimum=20
+	// +kubebuilder:validation:Maximum=513785
 	// +optional
 	KernelThreadsMax *int32 `json:"kernelThreadsMax,omitempty"`
 	// netCoreNetdevMaxBacklog specifies the maximum number of packets queued on the INPUT side.
@@ -562,9 +561,8 @@ type SysctlConfiguration struct {
 	NetNetfilterNfConntrackMax *int32 `json:"netNetfilterNfConntrackMax,omitempty"`
 	// vmMaxMapCount specifies the maximum number of memory map areas a process may have.
 	// Maps to vm.max_map_count.
-	// No explicit range is documented in AKS docs. Default varies by distro:
-	// Ubuntu 22.04: 65530, Ubuntu 24.04: 1048576, Azure Linux 3.0: 1048576.
 	// +kubebuilder:validation:Minimum=65530
+	// +kubebuilder:validation:Maximum=262144
 	// +optional
 	VMMaxMapCount *int32 `json:"vmMaxMapCount,omitempty"`
 	// vmSwappiness specifies the kernel's tendency to swap memory pages. Higher values increase aggressiveness, lower values decrease it.
@@ -575,7 +573,7 @@ type SysctlConfiguration struct {
 	VMSwappiness *int32 `json:"vmSwappiness,omitempty"`
 	// vmVfsCachePressure specifies the tendency of the kernel to reclaim the memory which is used for caching of directory and inode objects.
 	// Maps to vm.vfs_cache_pressure.
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	// +optional
 	VMVfsCachePressure *int32 `json:"vmVfsCachePressure,omitempty"`

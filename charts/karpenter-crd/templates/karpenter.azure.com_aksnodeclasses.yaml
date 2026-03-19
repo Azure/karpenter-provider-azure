@@ -247,9 +247,8 @@ spec:
                         description: |-
                           kernelThreadsMax specifies the maximum number of threads that can be created.
                           Maps to kernel.threads-max.
-                          The default and effective maximum are dynamically calculated based on system memory (total_ram_pages / 4).
-                          No explicit range is documented; the AKS API validates server-side.
                         format: int32
+                        maximum: 513785
                         minimum: 20
                         type: integer
                       netCoreNetdevMaxBacklog:
@@ -413,9 +412,8 @@ spec:
                         description: |-
                           vmMaxMapCount specifies the maximum number of memory map areas a process may have.
                           Maps to vm.max_map_count.
-                          No explicit range is documented in AKS docs. Default varies by distro:
-                          Ubuntu 22.04: 65530, Ubuntu 24.04: 1048576, Azure Linux 3.0: 1048576.
                         format: int32
+                        maximum: 262144
                         minimum: 65530
                         type: integer
                       vmSwappiness:
@@ -432,7 +430,7 @@ spec:
                           Maps to vm.vfs_cache_pressure.
                         format: int32
                         maximum: 100
-                        minimum: 1
+                        minimum: 0
                         type: integer
                     type: object
                   transparentHugePageDefrag:
@@ -1079,9 +1077,8 @@ spec:
                         description: |-
                           kernelThreadsMax specifies the maximum number of threads that can be created.
                           Maps to kernel.threads-max.
-                          The default and effective maximum are dynamically calculated based on system memory (total_ram_pages / 4).
-                          No explicit range is documented; the AKS API validates server-side.
                         format: int32
+                        maximum: 513785
                         minimum: 20
                         type: integer
                       netCoreNetdevMaxBacklog:
@@ -1245,9 +1242,8 @@ spec:
                         description: |-
                           vmMaxMapCount specifies the maximum number of memory map areas a process may have.
                           Maps to vm.max_map_count.
-                          No explicit range is documented in AKS docs. Default varies by distro:
-                          Ubuntu 22.04: 65530, Ubuntu 24.04: 1048576, Azure Linux 3.0: 1048576.
                         format: int32
+                        maximum: 262144
                         minimum: 65530
                         type: integer
                       vmSwappiness:
@@ -1264,7 +1260,7 @@ spec:
                           Maps to vm.vfs_cache_pressure.
                         format: int32
                         maximum: 100
-                        minimum: 1
+                        minimum: 0
                         type: integer
                     type: object
                   transparentHugePageDefrag:
