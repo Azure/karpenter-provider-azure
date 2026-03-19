@@ -18,6 +18,7 @@ package offerings
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -604,6 +605,425 @@ func TestGetInstanceTypeFromVMSize(t *testing.T) {
 			g := NewWithT(t)
 			result := GetInstanceTypeFromVMSize(c.vmSize, possibleInstanceTypes)
 			g.Expect(result).To(Equal(c.expectedInstanceType))
+		})
+	}
+}
+
+func TestPickOrderedSkuSizePriorityAndZone(t *testing.T) {
+	cases := []struct {
+		name           string
+		instanceTypes  []*cloudprovider.InstanceType
+		nodeClaim      *karpv1.NodeClaim
+		expectedCount  int
+		expectedFirst  *SkuSizePriorityZone // nil means empty result
+		expectedAll    []SkuSizePriorityZone
+		checkAllFields bool // if true, verify all entries exactly
+	}{
+		{
+			name:          "Empty instance types returns empty list",
+			instanceTypes: []*cloudprovider.InstanceType{},
+			nodeClaim:     &karpv1.NodeClaim{},
+			expectedCount: 0,
+		},
+		{
+			name: "Single instance type with single offering returns one candidate",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-2"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim:     &karpv1.NodeClaim{},
+			expectedCount: 1,
+			expectedFirst: &SkuSizePriorityZone{
+				Priority: karpv1.CapacityTypeOnDemand,
+				Zone:     "westus-2",
+			},
+		},
+		{
+			name: "Multiple instance types produce multiple candidates ordered by instance type",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+					},
+				},
+				{
+					Name: "Standard_D4s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.2,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim:     &karpv1.NodeClaim{},
+			expectedCount: 2,
+		},
+		{
+			name: "Instance type with multiple zones produces one candidate per zone",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-2"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim: &karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelTopologyZone,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"westus-1", "westus-2"},
+							},
+						},
+					},
+				},
+			},
+			expectedCount: 2,
+		},
+		{
+			name: "Unavailable offerings are excluded",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: false, // Not available
+						},
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-2"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim: &karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelTopologyZone,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"westus-1", "westus-2"},
+							},
+						},
+					},
+				},
+			},
+			expectedCount: 1,
+			expectedFirst: &SkuSizePriorityZone{
+				Priority: karpv1.CapacityTypeOnDemand,
+				Zone:     "westus-2",
+			},
+		},
+		{
+			name: "Spot is selected when requested",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.05,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+								scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim: &karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      karpv1.CapacityTypeLabelKey,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{karpv1.CapacityTypeSpot},
+							},
+						},
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelTopologyZone,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"westus-1"},
+							},
+						},
+					},
+				},
+			},
+			expectedCount: 1,
+			expectedFirst: &SkuSizePriorityZone{
+				Priority: karpv1.CapacityTypeSpot,
+				Zone:     "westus-1",
+			},
+		},
+		{
+			name: "No matching zone returns empty",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim: &karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelTopologyZone,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"eastus-1"},
+							},
+						},
+					},
+				},
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "Duplicate zones within same instance type are deduplicated",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+						{
+							Price: 0.12, // Same zone, different price (e.g., different billing model)
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim: &karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelTopologyZone,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"westus-1"},
+							},
+						},
+					},
+				},
+			},
+			expectedCount: 1,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := PickOrderedSkuSizePriorityAndZone(context.TODO(), c.nodeClaim, c.instanceTypes)
+			g.Expect(result).To(HaveLen(c.expectedCount))
+
+			if c.expectedFirst != nil && len(result) > 0 {
+				g.Expect(result[0].Priority).To(Equal(c.expectedFirst.Priority))
+				g.Expect(result[0].Zone).To(Equal(c.expectedFirst.Zone))
+				g.Expect(result[0].InstanceType).ToNot(BeNil())
+			}
+		})
+	}
+}
+
+func TestPickOrderedSkuSizePriorityAndZone_BackwardCompatWithSinglePick(t *testing.T) {
+	// Verify that PickSkuSizePriorityAndZone returns the same result as the first element
+	// of PickOrderedSkuSizePriorityAndZone
+	g := NewWithT(t)
+
+	instanceTypes := []*cloudprovider.InstanceType{
+		{
+			Name: "Standard_D2s_v3",
+			Offerings: []*cloudprovider.Offering{
+				{
+					Price: 0.1,
+					Requirements: scheduling.NewRequirements(
+						scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+						scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+					),
+					Available: true,
+				},
+			},
+		},
+		{
+			Name: "Standard_D4s_v3",
+			Offerings: []*cloudprovider.Offering{
+				{
+					Price: 0.2,
+					Requirements: scheduling.NewRequirements(
+						scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+						scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+					),
+					Available: true,
+				},
+			},
+		},
+	}
+
+	nodeClaim := &karpv1.NodeClaim{
+		Spec: karpv1.NodeClaimSpec{
+			Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+				{
+					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+						Key:      corev1.LabelTopologyZone,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{"westus-1"},
+					},
+				},
+			},
+		},
+	}
+
+	// Get the ranked list
+	ordered := PickOrderedSkuSizePriorityAndZone(context.TODO(), nodeClaim, instanceTypes)
+	g.Expect(ordered).ToNot(BeEmpty())
+
+	// Get the single pick
+	it, priority, zone := PickSkuSizePriorityAndZone(context.TODO(), nodeClaim, instanceTypes)
+
+	// They should match
+	g.Expect(it.Name).To(Equal(ordered[0].InstanceType.Name))
+	g.Expect(priority).To(Equal(ordered[0].Priority))
+	g.Expect(zone).To(Equal(ordered[0].Zone))
+}
+
+func TestPickOrderedSkuSizePriorityAndZone_EmptyReturnsSameAsSinglePick(t *testing.T) {
+	g := NewWithT(t)
+
+	// Both functions should return nil/empty for no instance types
+	ordered := PickOrderedSkuSizePriorityAndZone(context.TODO(), &karpv1.NodeClaim{}, []*cloudprovider.InstanceType{})
+	g.Expect(ordered).To(BeEmpty())
+
+	it, priority, zone := PickSkuSizePriorityAndZone(context.TODO(), &karpv1.NodeClaim{}, []*cloudprovider.InstanceType{})
+	g.Expect(it).To(BeNil())
+	g.Expect(priority).To(Equal(""))
+	g.Expect(zone).To(Equal(""))
+}
+
+func TestIsRetriableCapacityError(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error is not retriable",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "InsufficientCapacityError is not retriable",
+			err:      cloudprovider.NewInsufficientCapacityError(fmt.Errorf("regional quota reached")),
+			expected: false,
+		},
+		{
+			name:     "Regular error is not retriable (not a capacity error)",
+			err:      fmt.Errorf("unable to allocate resources in the selected zone"),
+			expected: false,
+		},
+		{
+			name:     "CapacityError is retriable",
+			err:      NewCapacityError(fmt.Errorf("zonal allocation failure")),
+			expected: true,
+		},
+		{
+			name:     "Wrapped CapacityError is retriable",
+			err:      fmt.Errorf("failed to create: %w", NewCapacityError(fmt.Errorf("zonal allocation failure"))),
+			expected: true,
+		},
+		{
+			name:     "Wrapped ICE error is not retriable",
+			err:      fmt.Errorf("failed: %w", cloudprovider.NewInsufficientCapacityError(fmt.Errorf("quota"))),
+			expected: false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(IsRetriableCapacityError(c.err)).To(Equal(c.expected))
 		})
 	}
 }

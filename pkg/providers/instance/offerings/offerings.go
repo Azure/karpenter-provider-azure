@@ -33,30 +33,74 @@ import (
 
 // Suggestion: consider merging this package with instancetype package, as both of their responsibilities deal with instance types management
 
-// Pick the "best" SKU, priority and zone, from InstanceType options (and their offerings) in the request
+// SkuSizePriorityZone represents a single candidate offering: a specific instance type, capacity type (priority), and zone.
+// Used to provide a ranked list of alternatives for SKU substitution when the first choice has no capacity.
+type SkuSizePriorityZone struct {
+	InstanceType *corecloudprovider.InstanceType
+	Priority     string // karpv1.CapacityTypeSpot or karpv1.CapacityTypeOnDemand
+	Zone         string
+}
+
+// PickOrderedSkuSizePriorityAndZone returns a ranked list of (instanceType, priority, zone) candidates
+// from the given instance types and their offerings, ordered by price (cheapest first).
+// The instance types are expected to be pre-sorted by cheapest offering price.
+// For each instance type, all compatible available offerings matching the nodeClaim requirements
+// are included, producing one entry per unique (instanceType, priority, zone) combination.
+// Returns an empty slice if no compatible offerings are found.
+func PickOrderedSkuSizePriorityAndZone(
+	ctx context.Context,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) []SkuSizePriorityZone {
+	if len(instanceTypes) == 0 {
+		return nil
+	}
+
+	requestedZones := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
+
+	var result []SkuSizePriorityZone
+	for _, instanceType := range instanceTypes {
+		priority := getPriorityForInstanceType(nodeClaim, instanceType)
+		priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+			return getOfferingCapacityType(o) == priority && requestedZones.Has(getOfferingZone(o))
+		})
+		// Deduplicate zones for this instance type + priority (a zone may appear in multiple offerings)
+		seenZones := sets.New[string]()
+		for _, offering := range priorityOfferings {
+			zone := getOfferingZone(offering)
+			if seenZones.Has(zone) {
+				continue
+			}
+			seenZones.Insert(zone)
+			result = append(result, SkuSizePriorityZone{
+				InstanceType: instanceType,
+				Priority:     priority,
+				Zone:         zone,
+			})
+		}
+	}
+
+	if len(result) > 0 {
+		log.FromContext(ctx).Info("selected instance type candidates",
+			"count", len(result),
+			logging.InstanceType, result[0].InstanceType.Name)
+	}
+
+	return result
+}
+
+// PickSkuSizePriorityAndZone picks the single "best" SKU, priority and zone from InstanceType options.
+// This is a convenience wrapper around PickOrderedSkuSizePriorityAndZone that returns the first (best) candidate.
 func PickSkuSizePriorityAndZone(
 	ctx context.Context,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*corecloudprovider.InstanceType, string, string) {
-	if len(instanceTypes) == 0 {
+	candidates := PickOrderedSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
+	if len(candidates) == 0 {
 		return nil, "", ""
 	}
-	// InstanceType/VM SKU - just pick the first one for now. They are presorted by cheapest offering price (taking node requirements into account)
-	instanceType := instanceTypes[0]
-	log.FromContext(ctx).Info("selected instance type", logging.InstanceType, instanceType.Name)
-	// Priority - Nodepool defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
-	priority := getPriorityForInstanceType(nodeClaim, instanceType)
-	// Zone - ideally random/spread from requested zones that support given Priority
-	requestedZones := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
-	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
-		return getOfferingCapacityType(o) == priority && requestedZones.Has(getOfferingZone(o))
-	})
-	zonesWithPriority := lo.Map(priorityOfferings, func(o *corecloudprovider.Offering, _ int) string { return getOfferingZone(o) })
-	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
-		return instanceType, priority, zone
-	}
-	return nil, "", ""
+	return candidates[0].InstanceType, candidates[0].Priority, candidates[0].Zone
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.

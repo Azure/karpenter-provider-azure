@@ -297,7 +297,8 @@ func TestHandleResponseErrors(t *testing.T) {
 			if tc.expectedErr == nil {
 				g.Expect(err).To(BeNil())
 			} else {
-				g.Expect(err).To(Equal(tc.expectedErr))
+				g.Expect(err).ToNot(BeNil())
+				g.Expect(err.Error()).To(Equal(tc.expectedErr.Error()))
 			}
 			assertOfferingsState(t, provider.UnavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
