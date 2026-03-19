@@ -164,7 +164,7 @@ func (c *MachineListCache) List() ([]*armcontainerservice.Machine, error) {
 	defer c.mu.RUnlock()
 
 	if !c.isFresh() {
-		//c.RequestUpdate()
+		c.RequestUpdate()
 		return nil, fmt.Errorf("cache is not fresh")
 	}
 
