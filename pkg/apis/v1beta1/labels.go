@@ -41,6 +41,12 @@ var (
 		"x64":   karpv1.ArchitectureAmd64,
 		"Arm64": karpv1.ArchitectureArm64,
 	}
+	// RestrictedLabelDomains restricts entire label domains from user requirements.
+	// We don't include kubernetes.azure.com here because there are labels in that domain
+	// that we allow users to set but which are not WellKnownLabels (like
+	// kubernetes.azure.com/ebpf-dataplane). Instead we rely on CEL validation rules
+	// in the CRD to restrict the kubernetes.azure.com domain with an explicit allowlist.
+	// See hack/validation/labels.sh and hack/validation/requirements.sh.
 	RestrictedLabelDomains = []string{
 		Group,
 	}
