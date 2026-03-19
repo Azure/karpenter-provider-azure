@@ -156,11 +156,6 @@ func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine
 // List returns all machines in the cache.
 // Returns an error if the cache is not fresh and requests an update.
 func (c *MachineListCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
-	if !c.isFresh() {
-		c.RequestUpdate()
-		return nil, fmt.Errorf("cache is not fresh")
-	}
-
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
