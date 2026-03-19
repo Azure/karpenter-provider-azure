@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -43,6 +44,15 @@ import (
 
 var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
+
+	// DefaultMachineSyncWaitTimeout is the default duration to poll Machine status synchronously after creation.
+	// Configurable via MACHINE_SYNC_WAIT_TIMEOUT env var (Go duration string or plain seconds).
+	// Set to 0 to disable sync wait (restoring pre-feature behavior).
+	DefaultMachineSyncWaitTimeout = 15 * time.Second
+
+	// DefaultMachineSyncPollInterval is the interval between polls during the sync wait window.
+	// Configurable via MACHINE_SYNC_POLL_INTERVAL env var.
+	DefaultMachineSyncPollInterval = 3 * time.Second
 )
 
 // Notes on terminology:
@@ -138,6 +148,16 @@ type DefaultAKSMachineProvider struct {
 	errorHandling           *offerings.ErrorDetailHandler
 	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu      sync.RWMutex
+
+	// machineSyncWaitTimeout is the maximum duration to poll Machine status synchronously after PUT.
+	// If zero, sync wait is disabled and behavior matches the pre-feature path (single GET then hand off to LRO).
+	machineSyncWaitTimeout time.Duration
+	// machineSyncPollInterval is the interval between GET polls during the sync wait window.
+	machineSyncPollInterval time.Duration
+
+	// getMachineFunc, if set, overrides getMachine calls in syncWaitForMachineStatus.
+	// This is only intended for unit testing.
+	getMachineFunc func(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error)
 }
 
 func NewAKSMachineProvider(
@@ -162,6 +182,8 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
 		deletingMachines:        sets.New[string](),
+		machineSyncWaitTimeout:  utils.WithDefaultDuration("MACHINE_SYNC_WAIT_TIMEOUT", DefaultMachineSyncWaitTimeout),
+		machineSyncPollInterval: utils.WithDefaultDuration("MACHINE_SYNC_POLL_INTERVAL", DefaultMachineSyncPollInterval),
 	}
 
 	return provider
@@ -481,6 +503,19 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		}
 		return nil, p.handleMachineProvisioningError(ctx, "get once after begin creation", aksMachineName, nodeClass, instanceType, zone, capacityType, gotAKSMachine.Properties.Status.ProvisioningError)
 	}
+	// If already succeeded on first GET, skip the sync wait entirely.
+	if lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == consts.ProvisioningStateSucceeded {
+		log.FromContext(ctx).V(1).Info("AKS machine already succeeded on initial GET, skipping sync wait",
+			"aksMachineName", aksMachineName)
+	} else if p.machineSyncWaitTimeout > 0 {
+		// Short sync wait: poll Machine status to detect fast failures (e.g., quota errors)
+		// before handing off to the background LRO goroutine. This avoids launching additional
+		// NodeClaims against the same exhausted quota during the async wait window.
+		gotAKSMachine, err = p.syncWaitForMachineStatus(ctx, aksMachineName, nodeClass, instanceType, zone, capacityType, gotAKSMachine)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Return LRO
 	return NewAKSMachinePromise(
@@ -552,6 +587,95 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 	}
 
 	return fmt.Errorf("failed to create AKS machine %q during %s, unhandled provisioning error: code=%s, message=%s", aksMachineName, phase, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
+}
+
+// syncWaitForMachineStatus polls Machine status for a short configurable window after creation.
+// This catches fast failures (e.g., quota errors from NPS) synchronously, before they would
+// otherwise be discovered only after the full async LRO completes (30s-2min+).
+//
+// Exit conditions:
+//   - ProvisioningState=Failed: returns error via handleMachineProvisioningError (caller should return to core)
+//   - ProvisioningState=Succeeded: returns updated machine (no wasted wait)
+//   - Timeout while still Creating: returns the last-seen machine (caller proceeds to background LRO)
+//   - GET errors during polling: logged and skipped (non-fatal; we fall through to background LRO)
+func (p *DefaultAKSMachineProvider) syncWaitForMachineStatus(
+	ctx context.Context,
+	aksMachineName string,
+	nodeClass *v1beta1.AKSNodeClass,
+	instanceType *corecloudprovider.InstanceType,
+	zone string,
+	capacityType string,
+	currentMachine *armcontainerservice.Machine,
+) (*armcontainerservice.Machine, error) {
+	logger := log.FromContext(ctx)
+	logger.V(1).Info("starting sync wait for AKS machine status",
+		"aksMachineName", aksMachineName,
+		"timeout", p.machineSyncWaitTimeout,
+		"pollInterval", p.machineSyncPollInterval,
+	)
+
+	deadline := time.Now().Add(p.machineSyncWaitTimeout)
+	pollCount := 0
+	getMachine := p.getMachine
+	if p.getMachineFunc != nil {
+		getMachine = p.getMachineFunc
+	}
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			logger.V(1).Info("sync wait cancelled by context", "aksMachineName", aksMachineName)
+			return currentMachine, nil
+		case <-time.After(p.machineSyncPollInterval):
+		}
+
+		pollCount++
+		polledMachine, err := getMachine(ctx, aksMachineName)
+		if err != nil {
+			// GET failure during polling is non-fatal — log and continue to next poll or timeout
+			logger.V(1).Info("sync wait: GET failed during polling, will retry or timeout",
+				"aksMachineName", aksMachineName,
+				"error", err,
+				"pollCount", pollCount,
+			)
+			continue
+		}
+
+		provisioningState := lo.FromPtr(polledMachine.Properties.ProvisioningState)
+		switch provisioningState {
+		case consts.ProvisioningStateFailed:
+			logger.Info("sync wait caught early failure for AKS machine",
+				"aksMachineName", aksMachineName,
+				"pollCount", pollCount,
+			)
+			if polledMachine.Properties.Status == nil || polledMachine.Properties.Status.ProvisioningError == nil {
+				return nil, fmt.Errorf("sync wait: AKS machine %q reached Failed state but ProvisioningError is nil", aksMachineName)
+			}
+			return nil, p.handleMachineProvisioningError(ctx, "sync wait", aksMachineName, nodeClass, instanceType, zone, capacityType, polledMachine.Properties.Status.ProvisioningError)
+
+		case consts.ProvisioningStateSucceeded:
+			logger.V(1).Info("sync wait: AKS machine succeeded during sync wait",
+				"aksMachineName", aksMachineName,
+				"pollCount", pollCount,
+			)
+			return polledMachine, nil
+
+		default:
+			// Still Creating or other transitional state — continue polling
+			logger.V(1).Info("sync wait: AKS machine still provisioning",
+				"aksMachineName", aksMachineName,
+				"provisioningState", provisioningState,
+				"pollCount", pollCount,
+			)
+			currentMachine = polledMachine
+		}
+	}
+
+	logger.V(1).Info("sync wait timed out, handing off to async LRO",
+		"aksMachineName", aksMachineName,
+		"timeout", p.machineSyncWaitTimeout,
+		"pollCount", pollCount,
+	)
+	return currentMachine, nil
 }
 
 func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {

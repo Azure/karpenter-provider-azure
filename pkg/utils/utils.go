@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -93,6 +94,26 @@ func WithDefaultFloat64(key string, def float64) float64 {
 		return def
 	}
 	return f
+}
+
+// WithDefaultDuration returns the time.Duration value of the supplied environment variable or, if not present,
+// the supplied default value. Accepts Go duration strings (e.g., "15s", "2m30s") and plain seconds (e.g., "15").
+// If parsing fails, returns the default.
+func WithDefaultDuration(key string, def time.Duration) time.Duration {
+	val, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		// Try interpreting as plain seconds for convenience (e.g., "15" → 15s)
+		seconds, secErr := strconv.ParseFloat(val, 64)
+		if secErr != nil {
+			return def
+		}
+		return time.Duration(seconds * float64(time.Second))
+	}
+	return d
 }
 
 func ImageReferenceToString(imageRef *armcompute.ImageReference) string {
