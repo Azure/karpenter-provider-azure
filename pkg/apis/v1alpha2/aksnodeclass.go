@@ -389,7 +389,7 @@ type KubeletConfiguration struct {
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 type LinuxOSConfiguration struct {
 	// swapFileSizeMB specifies the size in MB of a swap file that will be created on each node.
-	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	SwapFileSizeMB *int32 `json:"swapFileSizeMB,omitempty"`
 	// sysctls specifies sysctl settings for Linux agent nodes.
@@ -416,6 +416,8 @@ type SysctlConfiguration struct {
 	FsAioMaxNr *int32 `json:"fsAioMaxNr,omitempty"`
 	// fsFileMax specifies the maximum number of file handles the kernel will allocate.
 	// Maps to fs.file-max.
+	// Note: The AKS documented maximum is 9223372036854775807 (int64 max), but the ARM API type is int32.
+	// The practical maximum here is constrained by the int32 type.
 	// +kubebuilder:validation:Minimum=8192
 	// +kubebuilder:validation:Maximum=12000500
 	// +optional
@@ -434,8 +436,9 @@ type SysctlConfiguration struct {
 	FsNrOpen *int32 `json:"fsNrOpen,omitempty"`
 	// kernelThreadsMax specifies the maximum number of threads that can be created.
 	// Maps to kernel.threads-max.
+	// The default and effective maximum are dynamically calculated based on system memory (total_ram_pages / 4).
+	// No explicit range is documented; the AKS API validates server-side.
 	// +kubebuilder:validation:Minimum=20
-	// +kubebuilder:validation:Maximum=513785
 	// +optional
 	KernelThreadsMax *int32 `json:"kernelThreadsMax,omitempty"`
 	// netCoreNetdevMaxBacklog specifies the maximum number of packets queued on the INPUT side.
@@ -481,8 +484,9 @@ type SysctlConfiguration struct {
 	// +optional
 	NetCoreWmemMax *int32 `json:"netCoreWmemMax,omitempty"`
 	// netIPv4IPLocalPortRange specifies the local port range that is used by TCP and UDP traffic.
-	// Must be in the format "first last". first must be at least 1024 and last must be at most 65535.
+	// Must be in the format "first last", where first is in the range 1024-60999 and last is in the range 32768-65535.
 	// Maps to net.ipv4.ip_local_port_range.
+	// +kubebuilder:validation:Pattern=`^\d+ \d+$`
 	// +optional
 	NetIPv4IPLocalPortRange *string `json:"netIPv4IPLocalPortRange,omitempty"`
 	// netIPv4NeighDefaultGcThresh1 specifies the minimum number of entries that may be in the ARP cache.
@@ -558,8 +562,9 @@ type SysctlConfiguration struct {
 	NetNetfilterNfConntrackMax *int32 `json:"netNetfilterNfConntrackMax,omitempty"`
 	// vmMaxMapCount specifies the maximum number of memory map areas a process may have.
 	// Maps to vm.max_map_count.
+	// No explicit range is documented in AKS docs. Default varies by distro:
+	// Ubuntu 22.04: 65530, Ubuntu 24.04: 1048576, Azure Linux 3.0: 1048576.
 	// +kubebuilder:validation:Minimum=65530
-	// +kubebuilder:validation:Maximum=262144
 	// +optional
 	VMMaxMapCount *int32 `json:"vmMaxMapCount,omitempty"`
 	// vmSwappiness specifies the kernel's tendency to swap memory pages. Higher values increase aggressiveness, lower values decrease it.
@@ -571,7 +576,7 @@ type SysctlConfiguration struct {
 	// vmVfsCachePressure specifies the tendency of the kernel to reclaim the memory which is used for caching of directory and inode objects.
 	// Maps to vm.vfs_cache_pressure.
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=500
+	// +kubebuilder:validation:Maximum=100
 	// +optional
 	VMVfsCachePressure *int32 `json:"vmVfsCachePressure,omitempty"`
 }
@@ -605,7 +610,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v4"
+const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
