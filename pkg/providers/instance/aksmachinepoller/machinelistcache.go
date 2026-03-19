@@ -434,6 +434,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	// Build new map outside of lock
 	newMachines := make(map[string]*armcontainerservice.Machine)
 
+	startPage := time.Now()
 	for pager.More() {
 		pageNow := time.Now()
 		page, err := pager.NextPage(ctx)
@@ -452,6 +453,8 @@ func (c *MachineListCache) update(ctx context.Context) error {
 			return fmt.Errorf("failed to list AKS machines: %w", err)
 		}
 
+		pageSize := len(page.Value)
+		nowPage := time.Now()
 		for _, aksMachine := range page.Value {
 			// Filter to only include machines created by Karpenter
 			// Check if the AKS machine has the Karpenter nodepool tag
@@ -471,7 +474,21 @@ func (c *MachineListCache) update(ctx context.Context) error {
 				)
 			}
 		}
+
+		log.FromContext(ctx).Info("processed page of AKS machines",
+			"duration", time.Since(nowPage).String(),
+			"pageSize", pageSize,
+			"filteredSize", len(newMachines),
+			"aksMachinesPoolName", c.aksMachinesPoolName,
+		)
+
 	}
+
+	log.FromContext(ctx).Info("completed LIST of AKS machines",
+		"duration", time.Since(startPage).String(),
+		"totalMachines", len(newMachines),
+		"aksMachinesPoolName", c.aksMachinesPoolName,
+	)
 
 	fmt.Printf("Machine list cache updated with %d machines\n", len(newMachines))
 
