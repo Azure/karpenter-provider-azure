@@ -167,7 +167,7 @@ func (c *MachineListCache) List(ctx context.Context) ([]*armcontainerservice.Mac
 	for {
 		select {
 		case <-ticker.C:
-			if c.isFresh() {
+			if !c.isFresh() {
 				c.RequestUpdate()
 			}
 		case <-ctx.Done():
