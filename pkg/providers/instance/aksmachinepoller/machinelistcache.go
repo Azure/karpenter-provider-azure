@@ -73,9 +73,8 @@ type AKSMachineNewListPager interface {
 //   - Periodic refresh every 5 minutes keeps cache fresh
 //   - On-demand updates via RequestUpdate() channel (non-blocking)
 type MachineListCache struct {
-	mu                   sync.RWMutex
-	machines             map[string]*armcontainerservice.Machine // keyed by machine name (not full ARM ID)
-	lastUpdatedUnixNanos atomic.Int64                            // nanoseconds since epoch; 0 means never updated
+	machines             sync.Map     // keyed by machine name (not full ARM ID), value is *armcontainerservice.Machine
+	lastUpdatedUnixNanos atomic.Int64 // nanoseconds since epoch; 0 means never updated
 	ttl                  time.Duration
 	interval             time.Duration
 	client               AKSMachineNewListPager
@@ -101,7 +100,7 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 	workerCtx, workerCancel := context.WithCancel(ctx)
 
 	cache := &MachineListCache{
-		machines:             make(map[string]*armcontainerservice.Machine),
+		// machines is a sync.Map, zero value is ready to use
 		ttl:                  ttl,
 		interval:             interval,
 		client:               client,
@@ -116,7 +115,7 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 		updateRequests: make(chan struct{}, 1), // Buffer of 1 coalesces requests
 		workerCtx:      workerCtx,
 		workerCancel:   workerCancel,
-		updateInterval: 2 * time.Minute, // Periodic refresh every 5 minutes
+		updateInterval: 5 * time.Minute, // Periodic refresh every 5 minutes
 	}
 
 	// Start background worker
@@ -141,68 +140,79 @@ func (c *MachineListCache) isFresh() bool {
 // Returns the machine if cache is fresh and contains the machine.
 // Returns an error if the cache is stale or the machine is not found.
 func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	if !c.isFresh() {
 		c.RequestUpdate()
 		return nil, fmt.Errorf("cache is stale for machine %q", machineName)
 	}
 
-	machine, ok := c.machines[machineName]
+	value, ok := c.machines.Load(machineName)
 	if !ok {
 		return nil, fmt.Errorf("machine %q not found in cache", machineName)
 	}
 
-	return machine, nil
+	return value.(*armcontainerservice.Machine), nil
 }
 
 // List returns all machines in the cache.
 // Returns an error if the cache is not fresh and requests an update.
-func (c *MachineListCache) List() ([]*armcontainerservice.Machine, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
+func (c *MachineListCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
 	if !c.isFresh() {
 		c.RequestUpdate()
 		return nil, fmt.Errorf("cache is not fresh")
 	}
 
-	// Create a slice with all machines
-	machines := make([]*armcontainerservice.Machine, 0, len(c.machines))
-	for _, machine := range c.machines {
-		machines = append(machines, machine)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if c.isFresh() {
+				c.RequestUpdate()
+			}
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context canceled while waiting for fresh cache: %w", ctx.Err())
+		}
+
+		if c.isFresh() {
+			break
+		}
 	}
+
+	// Create a slice with all machines
+	machines := make([]*armcontainerservice.Machine, 0)
+	c.machines.Range(func(key, value any) bool {
+		machines = append(machines, value.(*armcontainerservice.Machine))
+		return true // continue iteration
+	})
 
 	return machines, nil
 }
 
 // get retrieves a machine from the cache by name.
 func (c *MachineListCache) get(machineName string) (*armcontainerservice.Machine, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	machine, ok := c.machines[machineName]
-	return machine, ok
+	value, ok := c.machines.Load(machineName)
+	if !ok {
+		return nil, false
+	}
+	return value.(*armcontainerservice.Machine), true
 }
 
 // invalidate removes a specific machine from the cache, forcing the next Get()
 // for that machine to fall through to the API. This is called after mutating
 // operations (Create, Update, Delete) to prevent serving stale data.
 func (c *MachineListCache) invalidate(machineName string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	delete(c.machines, machineName)
+	c.machines.Delete(machineName)
 }
 
 // invalidateAll clears the entire cache, forcing all subsequent Get() calls
 // to fall through to the API until the next List() repopulates the cache.
 func (c *MachineListCache) invalidateAll() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.machines = make(map[string]*armcontainerservice.Machine)
+	// Delete all entries by ranging over the map
+	c.machines.Range(func(key, value any) bool {
+		c.machines.Delete(key)
+		return true // continue iteration
+	})
 	c.lastUpdatedUnixNanos.Store(0) // zero value → isFresh() returns false
 }
 
@@ -431,10 +441,11 @@ func (c *MachineListCache) update(ctx context.Context) error {
 		return fmt.Errorf("failed to list AKS machines: created pager is nil")
 	}
 
-	// Build new map outside of lock
-	newMachines := make(map[string]*armcontainerservice.Machine)
+	// Track machine names returned from API to detect stale cache entries
+	fetchedMachineNames := make(map[string]struct{})
 
 	startPage := time.Now()
+	totalMachinesStored := 0
 	for pager.More() {
 		pageNow := time.Now()
 		page, err := pager.NextPage(ctx)
@@ -455,13 +466,17 @@ func (c *MachineListCache) update(ctx context.Context) error {
 
 		pageSize := len(page.Value)
 		nowPage := time.Now()
+		pageStoredCount := 0
 		for _, aksMachine := range page.Value {
 			// Filter to only include machines created by Karpenter
 			// Check if the AKS machine has the Karpenter nodepool tag
 			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
 				if _, hasKarpenterTag := aksMachine.Properties.Tags[nodePoolTagKey]; hasKarpenterTag {
 					if aksMachine.Name != nil {
-						newMachines[*aksMachine.Name] = aksMachine
+						// Store directly into cache as we fetch (rolling update)
+						c.machines.Store(*aksMachine.Name, aksMachine)
+						fetchedMachineNames[*aksMachine.Name] = struct{}{}
+						pageStoredCount++
 					}
 				} else {
 					log.FromContext(ctx).V(1).Info("skipping AKS machine without Karpenter nodepool tag",
@@ -474,11 +489,12 @@ func (c *MachineListCache) update(ctx context.Context) error {
 				)
 			}
 		}
+		totalMachinesStored += pageStoredCount
 
 		log.FromContext(ctx).Info("processed page of AKS machines",
 			"duration", time.Since(nowPage).String(),
 			"pageSize", pageSize,
-			"filteredSize", len(newMachines),
+			"filteredSize", pageStoredCount,
 			"aksMachinesPoolName", c.aksMachinesPoolName,
 		)
 
@@ -486,16 +502,20 @@ func (c *MachineListCache) update(ctx context.Context) error {
 
 	log.FromContext(ctx).Info("completed LIST of AKS machines",
 		"duration", time.Since(startPage).String(),
-		"totalMachines", len(newMachines),
+		"totalMachines", totalMachinesStored,
 		"aksMachinesPoolName", c.aksMachinesPoolName,
 	)
 
-	fmt.Printf("Machine list cache updated with %d machines\n", len(newMachines))
+	// Remove stale entries: delete cache keys not in fetchedMachineNames
+	c.machines.Range(func(key, value any) bool {
+		machineName := key.(string)
+		if _, exists := fetchedMachineNames[machineName]; !exists {
+			c.machines.Delete(machineName)
+		}
+		return true
+	})
 
-	// ONLY lock when swapping the map (fast operation - microseconds)
-	c.mu.Lock()
-	c.machines = newMachines
-	c.mu.Unlock()
+	fmt.Printf("Machine list cache updated with %d machines\n", totalMachinesStored)
 
 	c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 	return nil

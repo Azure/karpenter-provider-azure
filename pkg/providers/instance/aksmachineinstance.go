@@ -367,7 +367,10 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 
 func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
 	// Try to get from cache first
-	if machines, err := p.machineListCache.List(); err == nil {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	if machines, err := p.machineListCache.List(ctxWithTimeout); err == nil {
 		// Cache hit - return cached machines
 		// Note: machines are already filtered to only Karpenter machines and rehydrated by the cache
 		for _, machine := range machines {
