@@ -91,7 +91,7 @@ spec:
                       Default: []
                     items:
                       type: string
-                    maxItems: 50
+                    maxItems: 16
                     type: array
                   containerLogMaxFiles:
                     default: 5
@@ -450,6 +450,7 @@ spec:
                 additionalProperties:
                   type: string
                 description: tags to be applied on Azure resources like instances.
+                maxProperties: 50
                 type: object
                 x-kubernetes-validations:
                 - message: tags keys must be less than 512 characters
@@ -663,7 +664,7 @@ spec:
                       Default: []
                     items:
                       type: string
-                    maxItems: 50
+                    maxItems: 16
                     type: array
                   containerLogMaxFiles:
                     default: 5
@@ -1022,6 +1023,7 @@ spec:
                 additionalProperties:
                   type: string
                 description: tags to be applied on Azure resources like instances.
+                maxProperties: 50
                 type: object
                 x-kubernetes-validations:
                 - message: tags keys must be less than 512 characters

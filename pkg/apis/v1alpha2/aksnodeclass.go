@@ -66,6 +66,7 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
 	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
+	// +kubebuilder:validation:MaxProperties=50
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
 	// kubelet defines args to be used when configuring kubelet on provisioned nodes.
@@ -343,7 +344,7 @@ type KubeletConfiguration struct {
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
 	// and `net.*`. For example: ["kernel.msgmax", "net.ipv4.route.min_pmtu"]
 	// Default: []
-	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:MaxItems=16
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
