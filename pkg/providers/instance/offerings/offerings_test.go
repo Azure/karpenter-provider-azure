@@ -448,6 +448,43 @@ func TestOrderInstanceTypesByPrice(t *testing.T) {
 			expectedOrder: []string{"Cheap", "Medium", "Expensive"},
 		},
 		{
+			// Simulates the effect of Savings Plan pricing on offering selection:
+			// createOfferings() sets Price = min(retail, savings_plan) for OnDemand offerings,
+			// so a SKU with a good SP discount gets a lower Price and ranks higher here.
+			// "WithSP" has retail $0.50 but SP brought it to $0.20; "NoSP" has retail $0.30.
+			name: "SKU with Savings Plan discount ranks higher than cheaper retail SKU",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "NoSP",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.30, // retail price, no SP discount
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+							),
+							Available: true,
+						},
+					},
+				},
+				{
+					Name: "WithSP",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.20, // effective price after SP discount (retail was $0.50)
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+			),
+			expectedOrder: []string{"WithSP", "NoSP"},
+		},
+		{
 			name: "Handle instances with no compatible offerings",
 			instanceTypes: []*cloudprovider.InstanceType{
 				{

@@ -54,7 +54,13 @@ type Provider struct {
 	onDemandPrices     map[string]float64
 	spotUpdateTime     time.Time
 	spotPrices         map[string]float64
-	done               chan struct{}
+	// savingsPlanPrices holds the best (lowest) Savings Plan price per instance type.
+	// TODO(eidolon/savings-plan-pricing): The full implementation — including API fetching
+	// and categorization — is in the eidolon/savings-plan-pricing branch. This field is added
+	// here so that createOfferings() can reference SP prices for offering selection ordering.
+	// When the SP pricing branch lands, it will replace this with its full implementation.
+	savingsPlanPrices map[string]float64
+	done              chan struct{}
 }
 
 type Err struct {
@@ -88,10 +94,11 @@ func NewProvider(
 		onDemandPrices:     staticPricing,
 		spotUpdateTime:     initialPriceUpdate,
 		// default our spot pricing to the same as the on-demand pricing until a price update
-		spotPrices: staticPricing,
-		pricing:    pricing,
-		cm:         pretty.NewChangeMonitor(),
-		done:       make(chan struct{}),
+		spotPrices:        staticPricing,
+		savingsPlanPrices: map[string]float64{},
+		pricing:           pricing,
+		cm:                pretty.NewChangeMonitor(),
+		done:              make(chan struct{}),
 	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing").WithValues("region", region))
 
@@ -136,7 +143,7 @@ func NewProvider(
 func (p *Provider) InstanceTypes() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return lo.Union(lo.Keys(p.onDemandPrices), lo.Keys(p.spotPrices))
+	return lo.Union(lo.Keys(p.onDemandPrices), lo.Keys(p.spotPrices), lo.Keys(p.savingsPlanPrices))
 }
 
 // OnDemandLastUpdated returns the time that the on-demand pricing was last updated
@@ -326,6 +333,33 @@ func categorizePrices(prices map[client.Item]bool) (map[string]float64, map[stri
 	return onDemandPrices, spotPrices
 }
 
+// SavingsPlanPrice returns the best (lowest) known savings plan price for a given instance type,
+// returning false if there is no known savings plan pricing for that instance type.
+//
+// TODO(eidolon/savings-plan-pricing): The full implementation — including API fetching and
+// categorization of Savings Plan prices — is in the eidolon/savings-plan-pricing branch.
+// On this branch, the savingsPlanPrices map is only populated via UpdateSavingsPlanPricing()
+// (used in tests). When the SP pricing branch lands, this method is replaced by the real one
+// during rebase/merge.
+func (p *Provider) SavingsPlanPrice(instanceType string) (float64, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	price, ok := p.savingsPlanPrices[instanceType]
+	if !ok {
+		return 0.0, false
+	}
+	return price, true
+}
+
+// UpdateSavingsPlanPricing sets savings plan prices. On this branch, SP prices are not
+// fetched from the API (that's in eidolon/savings-plan-pricing); this method exists to
+// enable testing of the offering selection ordering with SP prices.
+func (p *Provider) UpdateSavingsPlanPricing(savingsPlanPrices map[string]float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.savingsPlanPrices = lo.Assign(savingsPlanPrices)
+}
+
 func (p *Provider) LivenessProbe(_ *http.Request) error {
 	// ensure we don't deadlock and nolint for the empty critical section
 	p.mu.Lock()
@@ -346,6 +380,7 @@ func (p *Provider) Reset() {
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = initialPriceUpdate
+	p.savingsPlanPrices = map[string]float64{}
 }
 
 // WaitUntilDone should be called after canceling the context passed to NewProvider to wait until all goroutines have exited
