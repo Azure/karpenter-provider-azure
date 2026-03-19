@@ -116,7 +116,7 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 		updateRequests: make(chan struct{}, 1), // Buffer of 1 coalesces requests
 		workerCtx:      workerCtx,
 		workerCancel:   workerCancel,
-		updateInterval: 5 * time.Minute, // Periodic refresh every 5 minutes
+		updateInterval: 2 * time.Minute, // Periodic refresh every 5 minutes
 	}
 
 	// Start background worker
@@ -164,7 +164,7 @@ func (c *MachineListCache) List() ([]*armcontainerservice.Machine, error) {
 	defer c.mu.RUnlock()
 
 	if !c.isFresh() {
-		c.RequestUpdate()
+		//c.RequestUpdate()
 		return nil, fmt.Errorf("cache is not fresh")
 	}
 
