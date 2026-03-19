@@ -553,11 +553,13 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 					provisioningErr, pollErr := p.machineListCache.PollUntilDone(ctx, aksMachineName)
 					if pollErr != nil {
 						pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (list poller), poller error: %w", aksMachineName, pollErr)
+						log.FromContext(ctx).Error(pollingErr, "failed to create AKS machine during LRO (list poller)")
 						return
 					}
 
 					if provisioningErr != nil {
 						pollingErr = p.handleMachineProvisioningError(ctx, "LRO (list poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+						log.FromContext(ctx).Error(pollingErr, "failed to create AKS machine during LRO (list poller)")
 						return
 					}
 
