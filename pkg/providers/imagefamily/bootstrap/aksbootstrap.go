@@ -329,6 +329,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	if minorVersion >= 34 {
 		delete(kubeletFlagsBase, "--cloud-config") // removed in 1.34
 	}
+	if minorVersion >= 35 {
+		delete(kubeletFlagsBase, "--pod-infra-container-image") // removed in 1.35 (https://github.com/kubernetes/kubernetes/pull/133779)
+	}
 
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
 	if credentialProviderURL != "" { // use OOT credential provider
