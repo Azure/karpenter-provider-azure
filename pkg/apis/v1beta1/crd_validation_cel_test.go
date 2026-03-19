@@ -855,4 +855,74 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
+
+	Context("VMSizeProperties", func() {
+		It("should allow vmSizeProperties with vCPUsPerCore set to 1 (SMT disabled)", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					VMSizeProperties: &v1beta1.VMSizeProperties{
+						VCPUsPerCore: lo.ToPtr(int32(1)),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should allow vmSizeProperties with vCPUsPerCore set to 2 (SMT enabled)", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					VMSizeProperties: &v1beta1.VMSizeProperties{
+						VCPUsPerCore: lo.ToPtr(int32(2)),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should allow AKSNodeClass without vmSizeProperties", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should reject vmSizeProperties with vCPUsPerCore set to 0", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					VMSizeProperties: &v1beta1.VMSizeProperties{
+						VCPUsPerCore: lo.ToPtr(int32(0)),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should reject vmSizeProperties with vCPUsPerCore set to 3", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					VMSizeProperties: &v1beta1.VMSizeProperties{
+						VCPUsPerCore: lo.ToPtr(int32(3)),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should reject vmSizeProperties with negative vCPUsPerCore", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					VMSizeProperties: &v1beta1.VMSizeProperties{
+						VCPUsPerCore: lo.ToPtr(int32(-1)),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
 })

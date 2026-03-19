@@ -95,6 +95,24 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// vmSizeProperties configures VM size customization options such as vCPU-to-physical-core ratio.
+	// This allows disabling hyperthreading (SMT) by setting vCPUsPerCore to 1.
+	// For more details see https://learn.microsoft.com/en-us/azure/virtual-machines/vm-customization
+	// +optional
+	VMSizeProperties *VMSizeProperties `json:"vmSizeProperties,omitempty"`
+}
+
+// VMSizeProperties specifies VM size customization options.
+// See: https://learn.microsoft.com/en-us/azure/virtual-machines/vm-customization
+type VMSizeProperties struct {
+	// vCPUsPerCore specifies the vCPU to physical core ratio.
+	// Setting this to 1 disables hyperthreading (SMT).
+	// Setting this to 2 or omitting enables hyperthreading (default).
+	// Note: Can only be set at VM creation time, not on running VMs.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2
+	// +optional
+	VCPUsPerCore *int32 `json:"vCPUsPerCore,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
