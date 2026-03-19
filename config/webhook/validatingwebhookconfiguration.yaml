@@ -1,0 +1,44 @@
+# ValidatingWebhookConfiguration for Karpenter Azure provider.
+#
+# This validates NodePool resources against AKS Machine API constraints at admission time,
+# preventing late-binding errors during node provisioning.
+#
+# For self-hosted Karpenter installations:
+#   - Deploy this resource to the cluster.
+#   - Ensure TLS certificates are configured (e.g., via cert-manager).
+#   - Update caBundle and service name/namespace to match your deployment.
+#
+# For NAP (managed Karpenter), this is managed by the AKS RP.
+#
+# See: Azure/karpenter-poc#1507
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: karpenter-azure-validation
+  labels:
+    app.kubernetes.io/name: karpenter
+    app.kubernetes.io/component: webhook
+webhooks:
+  - name: validate.nodepool.karpenter.azure.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    # For NAP: Fail — Karpenter availability is guaranteed.
+    # For self-hosted: Consider Ignore if Karpenter pod restarts are tolerable.
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    clientConfig:
+      service:
+        name: karpenter
+        namespace: kube-system
+        path: /validate-karpenter-sh-v1-nodepool
+        port: 9443
+      # caBundle will be injected by cert-manager or the operator.
+      # For manual setup, base64-encode the CA certificate here.
+      # caBundle: <base64-encoded-ca-cert>
+    rules:
+      - apiGroups: ["karpenter.sh"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["nodepools"]
+        scope: "Cluster"
