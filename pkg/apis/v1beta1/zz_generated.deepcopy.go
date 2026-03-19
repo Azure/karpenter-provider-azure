@@ -130,6 +130,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.CapacityReservationGroupID != nil {
+		in, out := &in.CapacityReservationGroupID, &out.CapacityReservationGroupID
+		*out = new(string)
+		**out = **in
+	}
 	if in.Security != nil {
 		in, out := &in.Security, &out.Security
 		*out = new(Security)

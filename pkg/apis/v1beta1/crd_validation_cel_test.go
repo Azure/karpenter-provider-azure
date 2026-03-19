@@ -127,6 +127,33 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
+	Context("CapacityReservationGroupID", func() {
+		DescribeTable("Should only accept valid CapacityReservationGroupID", func(crgID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityReservationGroupID: &crgID,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid CapacityReservationGroupID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1", true),
+			Entry("valid with mixed case", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/MyResourceGroup/providers/Microsoft.Compute/capacityReservationGroups/MyCRG", true),
+			Entry("valid with case-insensitive path keywords", "/Subscriptions/12345678-1234-1234-1234-123456789012/ResourceGroups/rgname/Providers/microsoft.compute/capacityreservationgroups/crg1", true),
+			Entry("valid resource group name with hyphens", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-resource-group/providers/Microsoft.Compute/capacityReservationGroups/crg1", true),
+			Entry("valid resource group name with parentheses", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/contains.(parentheses)/providers/Microsoft.Compute/capacityReservationGroups/crg1", true),
+			Entry("missing resourceGroups in path", "/subscriptions/12345678-1234-1234-1234-123456789012/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1", false),
+			Entry("wrong provider", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/capacityReservationGroups/crg1", false),
+			Entry("wrong resource type", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/virtualMachines/vm1", false),
+			Entry("extra path segment", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1/extra", false),
+			Entry("invalid resource group name ending with dot", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends.with.dot./providers/Microsoft.Compute/capacityReservationGroups/crg1", false),
+		)
+	})
+
 	Context("ImageFamily", func() {
 		It("should reject invalid ImageFamily", func() {
 			invalidImageFamily := "123"
