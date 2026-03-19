@@ -41,6 +41,12 @@ var (
 		"x64":   karpv1.ArchitectureAmd64,
 		"Arm64": karpv1.ArchitectureArm64,
 	}
+	// RestrictedLabelDomains restricts entire label domains from user requirements.
+	// We don't include kubernetes.azure.com here because there are labels in that domain
+	// that we allow users to set but which are not WellKnownLabels (like
+	// kubernetes.azure.com/ebpf-dataplane). Instead we rely on CEL validation rules
+	// in the CRD to restrict the kubernetes.azure.com domain with an explicit allowlist.
+	// See hack/validation/labels.sh and hack/validation/requirements.sh.
 	RestrictedLabelDomains = []string{
 		Group,
 	}
@@ -121,6 +127,10 @@ var (
 
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
 	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
+
+	// Special-purpose AKS labels allowed in CRD validation despite kubernetes.azure.com block
+	AKSLabelEBPFDataplane    = AKSLabelDomain + "/ebpf-dataplane"                          // required for Cilium networking
+	AKSLabelClusterHealthSyn = AKSLabelDomain + "/cluster-health-monitor-checker-synthetic" // written by AKS Automatic clusters
 
 	// Legacy labels
 	AKSLabelLegacyAgentPool      = "agentpool"
