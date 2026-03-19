@@ -64,6 +64,14 @@ func TestValidationSyncContract(t *testing.T) {
 			"agentpool label restriction not found in NodePool CRD")
 	})
 
+	t.Run("AgentBaker-generated labels are blocked in CEL", func(t *testing.T) {
+		g := NewWithT(t)
+		for _, label := range []string{"storageprofile", "storagetier", "accelerator"} {
+			g.Expect(crd).To(ContainSubstring(label),
+				"AgentBaker-generated label %q restriction not found in NodePool CRD", label)
+		}
+	})
+
 	t.Run("AllowedAKSTaintKeys are in CEL taint rules", func(t *testing.T) {
 		g := NewWithT(t)
 		for key := range v1beta1.AllowedAKSTaintKeys {

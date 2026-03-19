@@ -48,12 +48,13 @@ aks_rule=${aks_rule//\"/\\\"}            # escape double quotes
 aks_rule=${aks_rule//$'\n'/}             # remove newlines
 aks_rule=$(echo "$aks_rule" | tr -s ' ') # remove extra spaces
 
-# agentpool requirement restriction
-agentpool_rule=$'self != \x27agentpool\x27'
+# AgentBaker-generated requirement restriction
+# See: toolkit/constvalues/k8slabels/labels.go GetAgentBakerGeneratedLabelKeys()
+agentbaker_rule=$'!(self in [\x27agentpool\x27, \x27storageprofile\x27, \x27storagetier\x27, \x27accelerator\x27])'
 
-agentpool_rule=${agentpool_rule//\"/\\\"}            # escape double quotes
-agentpool_rule=${agentpool_rule//$'\n'/}             # remove newlines
-agentpool_rule=$(echo "$agentpool_rule" | tr -s ' ') # remove extra spaces
+agentbaker_rule=${agentbaker_rule//\"/\\\"}            # escape double quotes
+agentbaker_rule=${agentbaker_rule//$'\n'/}             # remove newlines
+agentbaker_rule=$(echo "$agentbaker_rule" | tr -s ' ') # remove extra spaces
 
 # check that .spec.versions has 1 entry
 [[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml)  -eq 1 ]] || { echo "expected one version"; exit 1; }
@@ -70,7 +71,7 @@ printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.propert
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeclaims.yaml
 
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
-    [{"message": "label \\"agentpool\\" is restricted", "rule": "%s"}]' "$agentpool_rule"
+    [{"message": "labels \\"agentpool\\", \\"storageprofile\\", \\"storagetier\\", \\"accelerator\\" are restricted", "rule": "%s"}]' "$agentbaker_rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeclaims.yaml
 
 # nodepool
@@ -83,7 +84,7 @@ printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.propert
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
 
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
-    [{"message": "label \\"agentpool\\" is restricted", "rule": "%s"}]' "$agentpool_rule"
+    [{"message": "labels \\"agentpool\\", \\"storageprofile\\", \\"storagetier\\", \\"accelerator\\" are restricted", "rule": "%s"}]' "$agentbaker_rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
 
 # overlays
@@ -96,5 +97,5 @@ printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.propert
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeoverlays.yaml
 
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
-    [{"message": "label \\"agentpool\\" is restricted", "rule": "%s"}]' "$agentpool_rule"
+    [{"message": "labels \\"agentpool\\", \\"storageprofile\\", \\"storagetier\\", \\"accelerator\\" are restricted", "rule": "%s"}]' "$agentbaker_rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeoverlays.yaml

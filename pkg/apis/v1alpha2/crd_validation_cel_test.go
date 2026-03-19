@@ -772,6 +772,16 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 		})
+		It("should not allow AgentBaker-generated label requirements", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{"storageprofile", "storagetier", "accelerator"} {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
 	})
 	Context("Labels", func() {
 		It("should allow restricted domains exceptions", func() {
@@ -827,6 +837,16 @@ var _ = Describe("CEL/Validation", func() {
 				"agentpool": "test",
 			}
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should not allow AgentBaker-generated labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{"storageprofile", "storagetier", "accelerator"} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
 		})
 	})
 
