@@ -549,7 +549,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			// with the non-batch case too, but the SDK poller is preferred when available.
 			if poller == nil {
 				if options.FromContext(ctx).ListPollerEnabled {
-					fmt.Printf("Using list poller for AKS machine %q\n", aksMachineName)
+					log.FromContext(ctx).Info("Using list poller for AKS machine",
+						"aksMachineName", aksMachineName)
 					provisioningErr, pollErr := p.machineListCache.PollUntilDone(ctx, aksMachineName)
 					if pollErr != nil {
 						pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (list poller), poller error: %w", aksMachineName, pollErr)
@@ -568,7 +569,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 						"aksMachineID", gotAKSMachine.ID)
 					return
 				} else {
-					fmt.Printf("List poller is disabled, falling back to GET poller for AKS machine %q\n", aksMachineName)
+					log.FromContext(ctx).Info("List poller is disabled, falling back to GET poller for AKS machine",
+						"aksMachineName", aksMachineName)
 				}
 
 				getPoller := aksmachinepoller.NewPoller(

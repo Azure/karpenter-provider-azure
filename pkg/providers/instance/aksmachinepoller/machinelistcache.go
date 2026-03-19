@@ -415,6 +415,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	if c.isFresh() {
 		return nil
 	}
+	log.FromContext(ctx).Info("Start update for machine list cache", "aksMachinesPoolName", c.aksMachinesPoolName)
 
 	now := time.Now()
 	defer func() {
