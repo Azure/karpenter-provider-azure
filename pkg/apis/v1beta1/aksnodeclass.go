@@ -87,6 +87,14 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
+	// capacityBlocks is a list of Azure Capacity Block reservations that nodes created from this AKSNodeClass
+	// may be placed into. Each entry references an Azure Capacity Block resource and optionally constrains
+	// the VM SKU, time window, and quantity. When set, Karpenter will attempt to place nodes into one of the
+	// specified capacity blocks.
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	CapacityBlocks []CapacityBlockSpec `json:"capacityBlocks,omitempty"`
+
 	// security is a collection of security related karpenter fields
 	// +optional
 	Security *Security `json:"security,omitempty"`
@@ -95,6 +103,34 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+}
+
+// CapacityBlockSpec represents a reference to an Azure Capacity Block reservation.
+// The resourceID is required; other fields are optional and used for validation or informational purposes.
+type CapacityBlockSpec struct {
+	// resourceID is the ARM resource ID of the Azure Capacity Block reservation.
+	// TODO: Tighten this pattern once the final ARM resource type for Capacity Blocks is confirmed.
+	// Candidate resource types: Microsoft.Compute/capacityReservationGroups/capacityBlocks, Microsoft.Capacity/capacityBlocks.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/[^\/]+\/[^\/]+(\/[^\/]+)*$`
+	// +required
+	ResourceID string `json:"resourceID"`
+	// skuName is the VM SKU constrained to this capacity block (e.g., "Standard_GB200").
+	// +optional
+	SKUName *string `json:"skuName,omitempty"`
+	// startTime is the start time of the capacity block reservation window, in ISO 8601 format.
+	// Derived from the Azure resource if omitted.
+	// +optional
+	// +kubebuilder:validation:Format=date-time
+	StartTime *metav1.Time `json:"startTime,omitempty"`
+	// endTime is the end time of the capacity block reservation window, in ISO 8601 format.
+	// Derived from the Azure resource if omitted.
+	// +optional
+	// +kubebuilder:validation:Format=date-time
+	EndTime *metav1.Time `json:"endTime,omitempty"`
+	// quantity is the number of reserved instances in this capacity block. Used for validation only.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Quantity *int32 `json:"quantity,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs

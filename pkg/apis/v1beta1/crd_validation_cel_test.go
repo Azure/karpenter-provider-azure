@@ -93,6 +93,84 @@ var _ = Describe("CEL/Validation", func() {
 			},
 		}
 	})
+	Context("CapacityBlocks", func() {
+		DescribeTable("Should only accept valid CapacityBlocks resourceID", func(resourceID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityBlocks: []v1beta1.CapacityBlockSpec{
+						{ResourceID: resourceID},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid Microsoft.Compute capacityReservationGroups/capacityBlocks", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1", true),
+			Entry("valid Microsoft.Capacity capacityBlocks", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Capacity/capacityBlocks/cb1", true),
+			Entry("valid with mixed case", "/Subscriptions/12345678-1234-1234-1234-123456789012/ResourceGroups/MyResourceGroup/Providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1", true),
+			Entry("valid resource group name with hyphens", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-resource-group/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1", true),
+			Entry("valid resource group name with parentheses", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/contains.(parentheses)/providers/Microsoft.Capacity/capacityBlocks/cb1", true),
+			Entry("missing resourceGroups in path", "/subscriptions/12345678-1234-1234-1234-123456789012/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1", false),
+			Entry("missing leading slash", "subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1", false),
+			Entry("empty string", "", false),
+			Entry("invalid resource group name ending with dot", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends.with.dot./providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1", false),
+		)
+		It("should accept empty capacityBlocks list", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityBlocks: []v1beta1.CapacityBlockSpec{},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept capacityBlocks with optional fields", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityBlocks: []v1beta1.CapacityBlockSpec{
+						{
+							ResourceID: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1",
+							SKUName:    lo.ToPtr("Standard_GB200"),
+							Quantity:   lo.ToPtr(int32(4)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject quantity less than 1", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityBlocks: []v1beta1.CapacityBlockSpec{
+						{
+							ResourceID: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1",
+							Quantity:   lo.ToPtr(int32(0)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept multiple capacity blocks", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityBlocks: []v1beta1.CapacityBlockSpec{
+						{ResourceID: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg1/capacityBlocks/cb1"},
+						{ResourceID: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Capacity/capacityBlocks/cb2"},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {
 			nodeClass := &v1beta1.AKSNodeClass{

@@ -97,6 +97,11 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
+	// TODO: Pass CapacityBlocks information to the Machine template once the Machine API schema
+	// supports capacity block placement. Currently, the AKSNodeClass CRD accepts a capacityBlocks list, but the
+	// Machine API does not have a corresponding field. The RP-side change to add capacity block support to the
+	// Machine API is tracked separately. When the SDK is updated, plumb the selected capacity block's resourceID here.
+
 	return &armcontainerservice.Machine{
 		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
