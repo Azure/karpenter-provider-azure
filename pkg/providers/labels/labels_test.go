@@ -382,12 +382,16 @@ func TestLabelsGet(t *testing.T) {
 		name              string
 		imageFamily       string
 		kubernetesVersion string
+		arch              string
+		artifactStreaming *v1beta1.ArtifactStreaming
 		expectedLabels    map[string]string
+		unexpectedLabels  []string
 	}{
 		{
 			name:              "Ubuntu default with k8s < 1.34 should use Ubuntu2204",
 			imageFamily:       v1beta1.UbuntuImageFamily,
 			kubernetesVersion: "1.33.9",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "Ubuntu",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.UbuntuImageFamily,
@@ -398,6 +402,7 @@ func TestLabelsGet(t *testing.T) {
 			name:              "Ubuntu default with k8s >= 1.34 should use Ubuntu2404",
 			imageFamily:       v1beta1.UbuntuImageFamily,
 			kubernetesVersion: "1.34.0",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "Ubuntu",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.UbuntuImageFamily,
@@ -408,6 +413,7 @@ func TestLabelsGet(t *testing.T) {
 			name:              "Explicit Ubuntu2204 with k8s < 1.34 still uses Ubuntu2204",
 			imageFamily:       v1beta1.Ubuntu2204ImageFamily,
 			kubernetesVersion: "1.31.0",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "Ubuntu",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2204ImageFamily,
@@ -418,6 +424,7 @@ func TestLabelsGet(t *testing.T) {
 			name:              "Explicit Ubuntu2204 with k8s >= 1.34 still uses Ubuntu2204",
 			imageFamily:       v1beta1.Ubuntu2204ImageFamily,
 			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "Ubuntu",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2204ImageFamily,
@@ -428,6 +435,7 @@ func TestLabelsGet(t *testing.T) {
 			name:              "Explicit Ubuntu2404 with k8s < 1.34 still uses Ubuntu2404",
 			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
 			kubernetesVersion: "1.31.0",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "Ubuntu",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2404ImageFamily,
@@ -438,6 +446,7 @@ func TestLabelsGet(t *testing.T) {
 			name:              "Explicit Ubuntu2404 with k8s >= 1.34 still uses Ubuntu2404",
 			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
 			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "Ubuntu",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2404ImageFamily,
@@ -448,6 +457,7 @@ func TestLabelsGet(t *testing.T) {
 			name:              "AzureLinux with k8s < 1.32 should use AzureLinux2",
 			imageFamily:       v1beta1.AzureLinuxImageFamily,
 			kubernetesVersion: "1.31.9",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "AzureLinux",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.AzureLinuxImageFamily,
@@ -458,11 +468,63 @@ func TestLabelsGet(t *testing.T) {
 			name:              "AzureLinux with k8s >= 1.32 should use AzureLinux3",
 			imageFamily:       v1beta1.AzureLinuxImageFamily,
 			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelOSSKU:          "AzureLinux",
 				v1beta1.AKSLabelOSSKURequested: v1beta1.AzureLinuxImageFamily,
 				v1beta1.AKSLabelOSSKUEffective: "AzureLinux3",
 			},
+		},
+		// Artifact streaming label cases
+		{
+			name:              "AMD64 with nil artifact streaming (default) should have label set to true",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				labels.AKSArtifactStreamingEnabledLabelKey: "true",
+			},
+		},
+		{
+			name:              "ARM64 with nil artifact streaming (default) should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "arm64",
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
+		},
+		{
+			name:              "AMD64 with explicitly enabled artifact streaming should have label set to true",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedLabels: map[string]string{
+				labels.AKSArtifactStreamingEnabledLabelKey: "true",
+			},
+		},
+		{
+			name:              "ARM64 with explicitly enabled artifact streaming should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "arm64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
+		},
+		{
+			name:              "AMD64 with explicitly disabled artifact streaming should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
+		},
+		{
+			name:              "ARM64 with explicitly disabled artifact streaming should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "arm64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
 		},
 	}
 
@@ -481,7 +543,8 @@ func TestLabelsGet(t *testing.T) {
 					Name: "test-nodeclass",
 				},
 				Spec: v1beta1.AKSNodeClassSpec{
-					ImageFamily: &imageFamily,
+					ImageFamily:       &imageFamily,
+					ArtifactStreaming: tc.artifactStreaming,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
 					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
@@ -494,99 +557,13 @@ func TestLabelsGet(t *testing.T) {
 				},
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
+			labelMap, err := labels.Get(ctx, nodeClass, tc.arch)
 			g.Expect(err).ToNot(HaveOccurred())
 			for key, expectedValue := range tc.expectedLabels {
 				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)
 			}
-		})
-	}
-}
-
-func TestArtifactStreamingLabel(t *testing.T) {
-	testCases := []struct {
-		name               string
-		arch               string
-		artifactStreaming  *v1beta1.ArtifactStreaming
-		expectLabel        bool
-		expectedLabelValue string
-	}{
-		{
-			name:               "AMD64 with nil (default) should have label set to true",
-			arch:               "amd64",
-			artifactStreaming:  nil,
-			expectLabel:        true,
-			expectedLabelValue: "true",
-		},
-		{
-			name:              "ARM64 with nil (default) should NOT have label",
-			arch:              "arm64",
-			artifactStreaming: nil,
-			expectLabel:       false,
-		},
-		{
-			name:               "AMD64 with explicitly enabled should have label set to true",
-			arch:               "amd64",
-			artifactStreaming:  &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
-			expectLabel:        true,
-			expectedLabelValue: "true",
-		},
-		{
-			name:              "ARM64 with explicitly enabled should NOT have label",
-			arch:              "arm64",
-			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
-			expectLabel:       false,
-		},
-		{
-			name:              "AMD64 with explicitly disabled should NOT have label",
-			arch:              "amd64",
-			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
-			expectLabel:       false,
-		},
-		{
-			name:              "ARM64 with explicitly disabled should NOT have label",
-			arch:              "arm64",
-			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
-			expectLabel:       false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			ctx := options.ToContext(context.Background(), &options.Options{
-				NodeResourceGroup:       "test-rg",
-				KubeletIdentityClientID: "test-client-id",
-				SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
-			})
-
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: v1beta1.AKSNodeClassSpec{
-					ArtifactStreaming: tc.artifactStreaming,
-				},
-				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: lo.ToPtr("1.35.0"),
-					Conditions: []status.Condition{
-						{
-							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
-							Status: metav1.ConditionTrue,
-						},
-					},
-				},
-			}
-
-			labelMap, err := labels.Get(ctx, nodeClass, tc.arch)
-			g.Expect(err).ToNot(HaveOccurred())
-
-			labelValue, exists := labelMap[labels.AKSArtifactStreamingEnabledLabelKey]
-			if tc.expectLabel {
-				g.Expect(exists).To(BeTrue(), "Expected artifact streaming label to exist")
-				g.Expect(labelValue).To(Equal(tc.expectedLabelValue), "Expected artifact streaming label value to match")
-			} else {
-				g.Expect(exists).To(BeFalse(), "Expected artifact streaming label to NOT exist")
+			for _, key := range tc.unexpectedLabels {
+				g.Expect(labelMap).ToNot(HaveKey(key), "label %s should not exist", key)
 			}
 		})
 	}
