@@ -180,6 +180,12 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		pricingProvider,
 		unavailableOfferingsCache,
 	)
+
+	// Ensure we're able to hydrate instance types before starting any controllers
+	// that depend on them. The instance type controller will refresh this list
+	// perioidcally once all controllers are running.
+	lo.Must0(instanceTypeProvider.UpdateInstanceTypes(ctx))
+
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
 		imageProvider,
