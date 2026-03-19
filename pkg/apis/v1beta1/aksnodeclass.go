@@ -420,6 +420,8 @@ type LinuxOSConfiguration struct {
 
 // SysctlConfiguration defines sysctl settings for Linux agent nodes.
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+// +kubebuilder:validation:XValidation:message="netCoreRmemDefault must be <= netCoreRmemMax",rule="has(self.netCoreRmemDefault) && has(self.netCoreRmemMax) ? self.netCoreRmemDefault <= self.netCoreRmemMax : true"
+// +kubebuilder:validation:XValidation:message="netCoreWmemDefault must be <= netCoreWmemMax",rule="has(self.netCoreWmemDefault) && has(self.netCoreWmemMax) ? self.netCoreWmemDefault <= self.netCoreWmemMax : true"
 type SysctlConfiguration struct {
 	// fsAioMaxNr specifies the maximum number of AIO (Asynchronous I/O) requests.
 	// Maps to fs.aio-max-nr.
