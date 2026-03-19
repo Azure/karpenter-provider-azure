@@ -84,12 +84,14 @@ spec:
                 properties:
                   allowedUnsafeSysctls:
                     description: |-
-                      allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+                      allowedUnsafeSysctls is a list of unsafe sysctls or sysctl patterns (ending in `*`)
+                      that are allowed to be set on pods running on nodes provisioned with this configuration.
                       Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
-                      and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
+                      and `net.*`. For example: ["kernel.msgmax", "net.ipv4.route.min_pmtu"]
                       Default: []
                     items:
                       type: string
+                    maxItems: 50
                     type: array
                   containerLogMaxFiles:
                     default: 5
@@ -120,6 +122,7 @@ spec:
                       cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
                       The value must be between 1 ms and 1 second, inclusive.
                       Default: "100ms"
+                    format: duration
                     type: string
                   cpuManagerPolicy:
                     default: none
@@ -181,6 +184,16 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+                - message: cpuCFSQuotaPeriod must be between 1ms and 1s
+                  rule: 'has(self.cpuCFSQuotaPeriod) ? duration(self.cpuCFSQuotaPeriod)
+                    >= duration(''1ms'') && duration(self.cpuCFSQuotaPeriod) <= duration(''1s'')
+                    : true'
+                - message: allowedUnsafeSysctls items must match kernel.shm*, kernel.msg*,
+                    kernel.sem, fs.mqueue.*, or net.*
+                  rule: '!has(self.allowedUnsafeSysctls) || self.allowedUnsafeSysctls.all(s,
+                    s.matches(''^kernel\\.shm.+$'') || s.matches(''^kernel\\.msg.+$'')
+                    || s.matches(''^kernel\\.sem$'') || s.matches(''^fs\\.mqueue\\..+$'')
+                    || s.matches(''^net\\..+$''))'
               localDNS:
                 description: |-
                   localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
@@ -643,12 +656,14 @@ spec:
                 properties:
                   allowedUnsafeSysctls:
                     description: |-
-                      allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+                      allowedUnsafeSysctls is a list of unsafe sysctls or sysctl patterns (ending in `*`)
+                      that are allowed to be set on pods running on nodes provisioned with this configuration.
                       Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
-                      and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
+                      and `net.*`. For example: ["kernel.msgmax", "net.ipv4.route.min_pmtu"]
                       Default: []
                     items:
                       type: string
+                    maxItems: 50
                     type: array
                   containerLogMaxFiles:
                     default: 5
@@ -679,6 +694,7 @@ spec:
                       cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
                       The value must be between 1 ms and 1 second, inclusive.
                       Default: "100ms"
+                    format: duration
                     type: string
                   cpuManagerPolicy:
                     default: none
@@ -740,6 +756,16 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+                - message: cpuCFSQuotaPeriod must be between 1ms and 1s
+                  rule: 'has(self.cpuCFSQuotaPeriod) ? duration(self.cpuCFSQuotaPeriod)
+                    >= duration(''1ms'') && duration(self.cpuCFSQuotaPeriod) <= duration(''1s'')
+                    : true'
+                - message: allowedUnsafeSysctls items must match kernel.shm*, kernel.msg*,
+                    kernel.sem, fs.mqueue.*, or net.*
+                  rule: '!has(self.allowedUnsafeSysctls) || self.allowedUnsafeSysctls.all(s,
+                    s.matches(''^kernel\\.shm.+$'') || s.matches(''^kernel\\.msg.+$'')
+                    || s.matches(''^kernel\\.sem$'') || s.matches(''^fs\\.mqueue\\..+$'')
+                    || s.matches(''^net\\..+$''))'
               localDNS:
                 description: |-
                   localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
