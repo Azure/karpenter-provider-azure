@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	DiskEncryptionSetRBACMissing    = "DiskEncryptionSetRBACMissing"
+	DiskEncryptionSetRBACMissing   = "DiskEncryptionSetRBACMissing"
 	NetIPv4IPLocalPortRangeInvalid = "NetIPv4IPLocalPortRangeInvalid"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
@@ -128,13 +128,12 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 
 // validateNetIPv4IPLocalPortRange checks that the port range string has valid numeric bounds.
 // CRD pattern validation ensures the format is "first last", but numeric range checks require parsing.
-// AKS RP enforces: first ∈ [1024, 60999], last ∈ [32768, 65535], first ≤ last.
+// AKS API enforces: first ∈ [1024, 60999], last ∈ [32768, 65535], first ≤ last.
 func validateNetIPv4IPLocalPortRange(nodeClass *v1beta1.AKSNodeClass) string {
-	if nodeClass.Spec.LinuxOSConfig == nil || nodeClass.Spec.LinuxOSConfig.Sysctls == nil ||
-		nodeClass.Spec.LinuxOSConfig.Sysctls.NetIPv4IPLocalPortRange == nil {
+	portRange := getNetIPv4IPLocalPortRange(nodeClass)
+	if portRange == "" {
 		return ""
 	}
-	portRange := *nodeClass.Spec.LinuxOSConfig.Sysctls.NetIPv4IPLocalPortRange
 	parts := strings.Split(portRange, " ")
 	if len(parts) != 2 {
 		return fmt.Sprintf("netIPv4IPLocalPortRange must be in format 'first last', got: %q", portRange)
@@ -144,6 +143,18 @@ func validateNetIPv4IPLocalPortRange(nodeClass *v1beta1.AKSNodeClass) string {
 	if err1 != nil || err2 != nil {
 		return fmt.Sprintf("netIPv4IPLocalPortRange contains non-numeric values: %q", portRange)
 	}
+	return validatePortBounds(first, last)
+}
+
+func getNetIPv4IPLocalPortRange(nodeClass *v1beta1.AKSNodeClass) string {
+	if nodeClass.Spec.LinuxOSConfig == nil || nodeClass.Spec.LinuxOSConfig.Sysctls == nil ||
+		nodeClass.Spec.LinuxOSConfig.Sysctls.NetIPv4IPLocalPortRange == nil {
+		return ""
+	}
+	return *nodeClass.Spec.LinuxOSConfig.Sysctls.NetIPv4IPLocalPortRange
+}
+
+func validatePortBounds(first, last int) string {
 	if first < 1024 || first > 60999 {
 		return fmt.Sprintf("netIPv4IPLocalPortRange first port must be in [1024, 60999], got %d", first)
 	}
