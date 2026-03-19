@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -42,7 +41,7 @@ import (
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
 // May return error whenever required fields are not set (check carefully).
-func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, creationTimestamp time.Time) (*armcontainerservice.Machine, error) {
+func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
 	}
@@ -96,7 +95,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 
 	// Tags (to be put on AKS machine and all affiliated resources)
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
-	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim, creationTimestamp)
+	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
 	return &armcontainerservice.Machine{
 		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
@@ -244,7 +243,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 		func(k string, req *scheduling.Requirement) bool {
-			return labels.IsKubeletLabel(k)
+			return labels.CanKubeletSetLabel(k)
 		},
 	)
 	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
@@ -255,25 +254,11 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
 	}
 
-	// TEMPORARY
-	// TODO(mattchr): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
-	labelsToRemove := []string{
-		"beta.kubernetes.io/instance-type",
-		"failure-domain.beta.kubernetes.io/region",
-		"beta.kubernetes.io/os",
-		"beta.kubernetes.io/arch",
-		"failure-domain.beta.kubernetes.io/zone",
-		"topology.kubernetes.io/zone",
-		"topology.kubernetes.io/region",
-		"node.kubernetes.io/instance-type",
-		"kubernetes.io/arch",
-		"kubernetes.io/os",
-		"node.kubernetes.io/windows-build",
-	}
-	nodeLabels = lo.OmitByKeys(nodeLabels, labelsToRemove)
-	// Remove all labels with kubernetes.azure.com prefix
+	// TODO: also do the same for taints (which don't have sanitization logic like this yet)
+	// Remove all labels with kubernetes.azure.com prefix, as well as those managed by kubelet.
+	// Also remove legacy AKS managed labels
 	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {
-		return strings.HasPrefix(key, "kubernetes.azure.com/")
+		return v1beta1.IsAKSLabel(key) || labels.IsLabelKubeletManaged(key)
 	})
 
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))
@@ -286,7 +271,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 
 // ConfigureAKSMachineTags returns the tags to be applied to AKS machine instances and their affiliated resources.
 // This includes all standard tags plus the AKS machine distinguishing tag.
-func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, creationTimestamp time.Time) map[string]*string {
+func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) map[string]*string {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
@@ -294,11 +279,11 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 
 	// Add AKS machine distinguishing tags
 	tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)
-	tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey] = lo.ToPtr(AKSMachineTimestampToTag(creationTimestamp))
 
 	return tags
 }
 
+//nolint:gocyclo // borderline complexity violation, code is not hard to read
 func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.KubeletConfig {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
 
@@ -309,8 +294,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig := &armcontainerservice.KubeletConfig{}
 
 	// Map from v1beta1.KubeletConfiguration to AKS machine KubeletConfig
-	if nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
-		kubeletConfig.CPUManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.CPUManagerPolicy)
+	if nodeClass.Spec.Kubelet.CPUManagerPolicy != nil && *nodeClass.Spec.Kubelet.CPUManagerPolicy != "" {
+		kubeletConfig.CPUManagerPolicy = nodeClass.Spec.Kubelet.CPUManagerPolicy
 	}
 
 	kubeletConfig.CPUCfsQuota = nodeClass.Spec.Kubelet.CPUCFSQuota
@@ -322,8 +307,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig.ImageGcHighThreshold = nodeClass.Spec.Kubelet.ImageGCHighThresholdPercent
 	kubeletConfig.ImageGcLowThreshold = nodeClass.Spec.Kubelet.ImageGCLowThresholdPercent
 
-	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
-		kubeletConfig.TopologyManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.TopologyManagerPolicy)
+	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != nil && *nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
+		kubeletConfig.TopologyManagerPolicy = nodeClass.Spec.Kubelet.TopologyManagerPolicy
 	}
 
 	if len(nodeClass.Spec.Kubelet.AllowedUnsafeSysctls) > 0 {
@@ -331,8 +316,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	}
 
 	// Convert container log max size to MB
-	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
-		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(nodeClass.Spec.Kubelet.ContainerLogMaxSize)
+	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != nil && *nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
+		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(*nodeClass.Spec.Kubelet.ContainerLogMaxSize)
 	}
 
 	kubeletConfig.ContainerLogMaxFiles = nodeClass.Spec.Kubelet.ContainerLogMaxFiles

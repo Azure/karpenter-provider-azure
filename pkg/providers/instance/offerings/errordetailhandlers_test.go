@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -99,8 +99,8 @@ type errorDetailTestCase struct {
 
 func createErrorDetail(code, message string) armcontainerservice.ErrorDetail {
 	return armcontainerservice.ErrorDetail{
-		Code:    to.Ptr(code),
-		Message: to.Ptr(message),
+		Code:    lo.ToPtr(code),
+		Message: lo.ToPtr(message),
 	}
 }
 

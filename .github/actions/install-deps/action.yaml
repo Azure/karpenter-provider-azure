@@ -7,7 +7,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+    - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
       id: setup-go
       with:
         go-version-file: go.mod
@@ -23,7 +23,7 @@ runs:
           /usr/local/kubebuilder/bin
           ~/go/bin
         # Include runner.environment in key because ~/go/bin expands differently on github-hosted vs self-hosted runners
-        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
+        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-go-${{ steps.setup-go.outputs.go-version }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
       env:

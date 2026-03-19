@@ -24,7 +24,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
@@ -349,18 +348,18 @@ func createKeyVaultDESResources(ctx SpecContext, env *azure.Environment, keyVaul
 // createKeyVault creates an Azure Key Vault
 func createKeyVault(ctx SpecContext, env *azure.Environment, keyVaultName, clusterTenant string) (*armkeyvault.Vault, error) {
 	keyVault := armkeyvault.Vault{
-		Location: to.Ptr(env.Region),
+		Location: lo.ToPtr(env.Region),
 		Properties: &armkeyvault.VaultProperties{
-			TenantID: to.Ptr(clusterTenant),
+			TenantID: lo.ToPtr(clusterTenant),
 			SKU: &armkeyvault.SKU{
-				Family: to.Ptr(armkeyvault.SKUFamilyA),
-				Name:   to.Ptr(armkeyvault.SKUNameStandard),
+				Family: lo.ToPtr(armkeyvault.SKUFamilyA),
+				Name:   lo.ToPtr(armkeyvault.SKUNameStandard),
 			},
-			EnableRbacAuthorization:   to.Ptr(true),
+			EnableRbacAuthorization:   lo.ToPtr(true),
 			AccessPolicies:            []*armkeyvault.AccessPolicyEntry{},
-			EnabledForDiskEncryption:  to.Ptr(true),
-			EnablePurgeProtection:     to.Ptr(true),
-			SoftDeleteRetentionInDays: to.Ptr(int32(7)),
+			EnabledForDiskEncryption:  lo.ToPtr(true),
+			EnablePurgeProtection:     lo.ToPtr(true),
+			SoftDeleteRetentionInDays: lo.ToPtr(int32(7)),
 		},
 	}
 
@@ -423,8 +422,8 @@ func createKeyVaultKey(ctx SpecContext, keyVaultName, keyName string, cred azcor
 	}
 
 	keyResp, err := keyClient.CreateKey(ctx, keyName, azkeys.CreateKeyParameters{
-		Kty:     to.Ptr(azkeys.KeyTypeRSA),
-		KeySize: to.Ptr(int32(2048)),
+		Kty:     lo.ToPtr(azkeys.KeyTypeRSA),
+		KeySize: lo.ToPtr(int32(2048)),
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -436,13 +435,13 @@ func createKeyVaultKey(ctx SpecContext, keyVaultName, keyName string, cred azcor
 // createDiskEncryptionSet creates a Disk Encryption Set
 func createDiskEncryptionSet(ctx SpecContext, env *azure.Environment, desName string, keyVault *armkeyvault.Vault, key *azkeys.KeyBundle) (*armcompute.DiskEncryptionSet, error) {
 	des := armcompute.DiskEncryptionSet{
-		Location: to.Ptr(env.Region),
+		Location: lo.ToPtr(env.Region),
 		Identity: &armcompute.EncryptionSetIdentity{
-			Type: to.Ptr(armcompute.DiskEncryptionSetIdentityTypeSystemAssigned),
+			Type: lo.ToPtr(armcompute.DiskEncryptionSetIdentityTypeSystemAssigned),
 		},
 		Properties: &armcompute.EncryptionSetProperties{
 			ActiveKey: &armcompute.KeyForDiskEncryptionSet{
-				KeyURL: to.Ptr(string(*key.Key.KID)),
+				KeyURL: lo.ToPtr(string(*key.Key.KID)),
 				SourceVault: &armcompute.SourceVault{
 					ID: keyVault.ID,
 				},

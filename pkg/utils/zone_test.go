@@ -19,10 +19,10 @@ package utils_test
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 )
 
 func TestMakeAKSLabelZoneFromVM(t *testing.T) {
@@ -40,22 +40,22 @@ func TestMakeAKSLabelZoneFromVM(t *testing.T) {
 		{
 			testName: "happy case",
 			input: &armcompute.VirtualMachine{
-				Location: to.Ptr("region"),
-				Zones:    []*string{to.Ptr("1")},
+				Location: lo.ToPtr("region"),
+				Zones:    []*string{lo.ToPtr("1")},
 			},
 			expectedZone: "region-1",
 		},
 		{
 			testName: "missing Location",
 			input: &armcompute.VirtualMachine{
-				Zones: []*string{to.Ptr("1")},
+				Zones: []*string{lo.ToPtr("1")},
 			},
 			expectedError: "virtual machine is missing location",
 		},
 		{
 			testName: "multiple zones",
 			input: &armcompute.VirtualMachine{
-				Zones: []*string{to.Ptr("1"), to.Ptr("2")},
+				Zones: []*string{lo.ToPtr("1"), lo.ToPtr("2")},
 			},
 			expectedError: "virtual machine has multiple zones",
 		},
