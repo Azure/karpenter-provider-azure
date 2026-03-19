@@ -434,7 +434,12 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	newMachines := make(map[string]*armcontainerservice.Machine)
 
 	for pager.More() {
+		pageNow := time.Now()
 		page, err := pager.NextPage(ctx)
+		log.FromContext(ctx).Info("fetched page of AKS machines",
+			"duration", time.Since(pageNow).String(),
+			"aksMachinesPoolName", c.aksMachinesPoolName,
+		)
 		if err != nil {
 			if isAKSMachineOrMachinesPoolNotFound(err) {
 				// AKS machines pool not found. Handle gracefully.
