@@ -278,6 +278,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		if err != nil {
 			return nil, err
 		}
+
 		agentPoolsClient, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			return nil, err
