@@ -418,7 +418,11 @@ var _ = Describe("CloudProvider", func() {
 				// Reconcile the NodeClass to ensure status is updated
 				ExpectObjectReconciled(ctx, env.Client, localStatusController, nodeClass)
 
-				azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
+				// Flush the cache to simulate the controller not having run yet.
+				// With the instance type controller, SKU API errors happen during
+				// UpdateInstanceTypes (controller reconcile), not during List.
+				// When the cache is empty, List returns an error.
+				azureEnv.InstanceTypesProvider.Reset()
 
 				testNodeClaim3 := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
@@ -439,10 +443,10 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
-				Expect(err.Error()).To(ContainSubstring("failed to list SKUs"))
+				Expect(err.Error()).To(ContainSubstring("resolving instance types"))
 
-				// Clean up the error for other tests
-				azureEnv.SKUsAPI.Error = nil
+				// Reset instance types
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			// Ported from VM test: "should return error when instance creation fails"

@@ -221,6 +221,31 @@ var _ = Describe("CloudProvider", func() {
 			resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)
 			Expect(resp.VirtualMachine).ToNot(BeNil())
 		})
+		It("should list nodeclaim with correct instance type even after capacity error marks offerings unavailable", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			// Get the instance type from the created VM
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			vmSize := string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
+			Expect(vmSize).ToNot(BeEmpty())
+
+			// Simulate a capacity error by marking all offerings for this instance type as unavailable
+			for _, zone := range azureEnv.Zones() {
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeOnDemand)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeSpot)
+			}
+
+			// List should still return the nodeclaim with the correct instance type
+			nodeClaims, err := cloudProvider.List(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaims).To(HaveLen(1))
+			validateVMNodeClaim(nodeClaims[0], nodePool)
+			Expect(nodeClaims[0].Labels[v1.LabelInstanceTypeStable]).To(Equal(vmSize))
+		})
 		It("should return an ICE error when there are no instance types to launch", func() {
 			// Specify no instance types and expect to receive a capacity error
 			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{

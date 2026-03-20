@@ -21,6 +21,7 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/samber/lo"
 )
@@ -84,7 +85,7 @@ func AKSAgentPool(overrides ...AKSAgentPoolOptions) *armcontainerservice.AgentPo
 			Count:               lo.ToPtr(options.Count),
 			VMSize:              lo.ToPtr(options.VMSize),
 			OrchestratorVersion: lo.ToPtr(options.OrchestratorVersion),
-			ProvisioningState:   lo.ToPtr("Succeeded"),
+			ProvisioningState:   lo.ToPtr(consts.ProvisioningStateSucceeded),
 			Tags:                options.Tags,
 			Mode:                lo.ToPtr(armcontainerservice.AgentPoolModeMachines),
 		},

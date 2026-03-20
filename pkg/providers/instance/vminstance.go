@@ -911,7 +911,7 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 		func(k string, req *scheduling.Requirement) bool {
-			return labels.IsKubeletLabel(k)
+			return labels.CanKubeletSetLabel(k)
 		},
 	)
 	additionalLabels := lo.Assign(

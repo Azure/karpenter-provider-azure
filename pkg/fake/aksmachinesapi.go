@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/samber/lo"
 )
@@ -274,7 +275,7 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 
 	// Default values + update status, for sync phase
 	c.setDefaultMachineValues(&aksMachine, input.ResourceGroupName, input.AgentPoolName)
-	aksMachine.Properties.ProvisioningState = lo.ToPtr("Creating")
+	aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateCreating)
 	c.aksDataStorage.AKSMachines.Store(id, aksMachine)
 
 	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
@@ -325,14 +326,14 @@ func (c *AKSMachinesAPI) updateExistingAKSMachine(input *AKSMachineCreateOrUpdat
 func (c *AKSMachinesAPI) simulateCreateStatusAtAsync(aksMachine armcontainerservice.Machine) (armcontainerservice.Machine, error) {
 	var pollingError error
 	if c.AfterPollProvisioningErrorOverride != nil {
-		aksMachine.Properties.ProvisioningState = lo.ToPtr("Failed")
+		aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateFailed)
 		if aksMachine.Properties.Status == nil {
 			aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
 		}
 		aksMachine.Properties.Status.ProvisioningError = c.AfterPollProvisioningErrorOverride
 		pollingError = AKSMachineAPIErrorAny
 	} else {
-		aksMachine.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+		aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
 	}
 
 	return aksMachine, pollingError
@@ -488,7 +489,7 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 
 	// Set ProvisioningState
 	if machine.Properties.ProvisioningState == nil {
-		machine.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+		machine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
 	}
 
 	// Set Priority - default to Regular if not set

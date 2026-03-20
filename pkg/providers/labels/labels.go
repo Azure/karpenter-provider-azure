@@ -37,13 +37,14 @@ import (
 // These labels are defined here rather than v1beta1 because we do not support scheduling simulation
 // on these labels
 var (
-	AKSLabelEBPFDataplane       = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
-	AKSLabelAzureCNIOverlay     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
-	AKSLabelSubnetName          = v1beta1.AKSLabelDomain + "/network-subnet"
-	AKSLabelVNetGUID            = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
-	AKSLabelPodNetworkType      = v1beta1.AKSLabelDomain + "/podnetwork-type"
-	AKSLabelNetworkStatelessCNI = v1beta1.AKSLabelDomain + "/network-stateless-cni"
-	AKSLocalDNSStateLabelKey    = v1beta1.AKSLabelDomain + "/localdns-state"
+	AKSLabelEBPFDataplane               = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
+	AKSLabelAzureCNIOverlay             = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	AKSLabelSubnetName                  = v1beta1.AKSLabelDomain + "/network-subnet"
+	AKSLabelVNetGUID                    = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
+	AKSLabelPodNetworkType              = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	AKSLabelNetworkStatelessCNI         = v1beta1.AKSLabelDomain + "/network-stateless-cni"
+	AKSLocalDNSStateLabelKey            = v1beta1.AKSLabelDomain + "/localdns-state"
+	AKSArtifactStreamingEnabledLabelKey = v1beta1.AKSLabelDomain + "/artifactstreaming-enabled"
 
 	AKSLabelRole = v1beta1.AKSLabelDomain + "/role"
 
@@ -86,6 +87,7 @@ const (
 func Get(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
+	arch string,
 ) (map[string]string, error) {
 	labels := map[string]string{}
 	opts := options.FromContext(ctx)
@@ -156,14 +158,20 @@ func Get(
 		labels[AKSLocalDNSStateLabelKey] = "disabled"
 	}
 
+	// Only set the artifact streaming label when it's enabled (matching AKS RP behavior)
+	// ARM64 nodes do not support artifact streaming
+	if nodeClass.IsArtifactStreamingEnabled(arch) {
+		labels[AKSArtifactStreamingEnabledLabelKey] = "true"
+	}
+
 	return labels, nil
 }
 
-// IsKubeletLabel returns true if the given label is a label kubelet is allowed to set.
+// CanKubeletSetLabel returns true if the given label is a label kubelet is allowed to set.
 // This is similar to the method one used by the node restriction admission
 // https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
 // with the isKubernetesLabel check from https://github.com/kubernetes/kubernetes/blob/4bed36e03e7bd699b089d33da6f7d7c9ef9eb661/cmd/kubelet/app/options/options.go#L176C6-L176C23.
-func IsKubeletLabel(key string) bool {
+func CanKubeletSetLabel(key string) bool {
 	if kubeletLabels.Has(key) {
 		return true
 	}
@@ -180,6 +188,10 @@ func IsKubeletLabel(key string) bool {
 	}
 
 	return false
+}
+
+func IsLabelKubeletManaged(key string) bool {
+	return kubeletLabels.Has(key)
 }
 
 // GetWellKnownSingleValuedRequirementLabels converts well-known Azure single-value instanceType.Requirements to labels
