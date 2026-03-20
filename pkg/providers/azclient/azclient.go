@@ -88,6 +88,7 @@ type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
 	aksMachinesClient              AKSMachinesAPI
+	aksMachinesDryRunClient        AKSMachinesAPI // dry-run variant — appends ?dryRun=true to PUT requests for validation-only
 	agentPoolsClient               AKSAgentPoolsAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
@@ -114,6 +115,14 @@ func (c *AZClient) DiskEncryptionSetsClient() DiskEncryptionSetsAPI {
 
 func (c *AZClient) AKSMachinesClient() AKSMachinesAPI {
 	return c.aksMachinesClient
+}
+
+// AKSMachinesDryRunClient returns a Machines API client that appends ?dryRun=true
+// to PUT requests. This runs the full RP validation pipeline without creating or
+// persisting any resources. Used by the ValidationReconciler to pre-validate
+// Machine templates against the real RP validator.
+func (c *AZClient) AKSMachinesDryRunClient() AKSMachinesAPI {
+	return c.aksMachinesDryRunClient
 }
 
 // SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
@@ -253,6 +262,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	var aksMachinesClient AKSMachinesAPI
+	var aksMachinesDryRunClient AKSMachinesAPI
 	var agentPoolsClient AKSAgentPoolsAPI
 
 	// Only create the bootstrapping client if we need to use it.
@@ -281,12 +291,21 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		if err != nil {
 			return nil, err
 		}
+		// Create a dry-run variant that appends ?dryRun=true to PUT requests.
+		// Used by the ValidationReconciler for pre-creation validation.
+		var dryRunClientOptions = *opts
+		dryRunClientOptions.PerCallPolicies = append(dryRunClientOptions.PerCallPolicies, &spotSystemNodePolicy{}, &dryRunPolicy{})
+		aksMachinesDryRunClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, &dryRunClientOptions)
+		if err != nil {
+			return nil, err
+		}
 		agentPoolsClient, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		aksMachinesClient = NewNoAKSMachinesClient()
+		aksMachinesDryRunClient = NewNoAKSMachinesClient()
 		agentPoolsClient = NewNoAKSAgentPoolsClient()
 
 		// Try create true clients. This is just for diagnostic purposes and serves no real functionality.
@@ -301,7 +320,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		}
 	}
 
-	return NewAZClientFromAPI(
+	client := NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
 		aksMachinesClient,
@@ -317,5 +336,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		nodeBootstrappingClient,
 		skuClient,
 		subscriptionsClient,
-	), nil
+	)
+	client.aksMachinesDryRunClient = aksMachinesDryRunClient
+	return client, nil
 }
