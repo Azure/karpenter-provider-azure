@@ -337,8 +337,8 @@ func TestConstructProvisionValues(t *testing.T) {
 				// Check system mode
 				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeSystem))
 
-				// Check artifact streaming is disabled
-				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
+				// Check artifact streaming defaults to enabled (nil ArtifactStreaming)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeTrue())
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
 				g.Expect(*profile.EnableFIPS).To(BeFalse())
@@ -378,8 +378,8 @@ func TestConstructProvisionValues(t *testing.T) {
 				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-gen2"))
 				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
 
-				// Check artifact streaming is disabled for AzureLinux3
-				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
+				// Check artifact streaming defaults to enabled (nil ArtifactStreaming)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeTrue())
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
 				g.Expect(*profile.EnableFIPS).To(BeFalse())
@@ -693,53 +693,51 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 		ossku                            string
 		kubernetesVersion                string
 		imageDistro                      string
+		artifactStreaming                *v1beta1.ArtifactStreaming
 		expectedArtifactStreamingEnabled bool
-		description                      string
+		expectError                      bool
+		expectedErrorSubstring           string
 	}{
+		// Default behavior (artifactStreaming = nil)
 		{
-			name:                             "AMD64 Ubuntu2004 FIPS - Artifact streaming disabled",
+			name:                             "AMD64 Ubuntu2004 FIPS - Artifact streaming enabled (default)",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-fips-containerd-20.04-gen2",
-			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2004 FIPS",
+			expectedArtifactStreamingEnabled: true,
 		},
 		{
-			name:                             "AMD64 Ubuntu2204 - Artifact streaming enabled",
+			name:                             "AMD64 Ubuntu2204 - Artifact streaming enabled (default)",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
-			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2204",
+			expectedArtifactStreamingEnabled: true,
 		},
 		{
-			name:                             "AMD64 Ubuntu2404 - Artifact streaming disabled",
+			name:                             "AMD64 Ubuntu2404 - Artifact streaming enabled (default)",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404,
 			kubernetesVersion:                "1.34.0",
 			imageDistro:                      "aks-ubuntu-containerd-24.04-gen2",
-			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2404",
+			expectedArtifactStreamingEnabled: true,
 		},
 		{
-			name:                             "AMD64 AzureLinux2 - Artifact streaming enabled",
+			name:                             "AMD64 AzureLinux2 - Artifact streaming enabled (default)",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-azurelinux-v2-gen2",
-			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for AMD64 with AzureLinux2",
+			expectedArtifactStreamingEnabled: true,
 		},
 		{
-			name:                             "AMD64 AzureLinux3 - Artifact streaming disabled",
+			name:                             "AMD64 AzureLinux3 - Artifact streaming enabled (default)",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
 			kubernetesVersion:                "1.32.0",
 			imageDistro:                      "aks-azurelinux-v3-gen2",
-			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for AzureLinux3 even on AMD64",
+			expectedArtifactStreamingEnabled: true,
 		},
 		{
 			name:                             "ARM64 Ubuntu2204 - Artifact streaming disabled",
@@ -748,7 +746,6 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-arm64-containerd-22.04-gen2",
 			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for ARM64 architecture",
 		},
 		{
 			name:                             "ARM64 AzureLinux2 - Artifact streaming disabled",
@@ -757,16 +754,6 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-azurelinux-v2-arm64-gen2",
 			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for ARM64 architecture even with supported OS",
-		},
-		{
-			name:                             "AMD64 AzureLinux3 - Artifact streaming disabled",
-			arch:                             karpv1.ArchitectureAmd64,
-			kubernetesVersion:                "1.32.0",
-			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
-			imageDistro:                      "aks-azurelinux-v3-gen2",
-			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for AzureLinux3 even on AMD64",
 		},
 		{
 			name:                             "ARM64 AzureLinux3 - Artifact streaming disabled",
@@ -775,16 +762,70 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			kubernetesVersion:                "1.32.0",
 			imageDistro:                      "aks-azurelinux-v3-arm64-gen2",
 			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for ARM64 + AzureLinux3 combination",
 		},
 		{
-			name:                             "AMD64 Custom OSSKU - Artifact streaming disabled",
+			name:                   "AMD64 Custom OSSKU - error",
+			arch:                   karpv1.ArchitectureAmd64,
+			ossku:                  "CustomUnsupportedOSSKU",
+			kubernetesVersion:      "1.31.0",
+			imageDistro:            "aks-custom-distro",
+			expectError:            true,
+			expectedErrorSubstring: "unsupported OSSKU",
+		},
+		// Explicit artifact streaming values
+		{
+			name:                             "AMD64 Ubuntu2204 - Artifact streaming explicitly enabled",
 			arch:                             karpv1.ArchitectureAmd64,
-			ossku:                            "CustomUnsupportedOSSKU",
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			kubernetesVersion:                "1.31.0",
-			imageDistro:                      "aks-custom-distro",
+			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedArtifactStreamingEnabled: true,
+		},
+		{
+			name:                             "AMD64 Ubuntu2204 - Artifact streaming explicitly disabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
 			expectedArtifactStreamingEnabled: false,
-			description:                      "Artifact streaming should be disabled for unsupported OSSKU",
+		},
+		{
+			name:                             "AMD64 Ubuntu2004 - Artifact streaming explicitly enabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-ubuntu-fips-containerd-20.04-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedArtifactStreamingEnabled: true,
+		},
+		{
+			name:                             "AMD64 Ubuntu2404 - Artifact streaming explicitly enabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404,
+			kubernetesVersion:                "1.34.0",
+			imageDistro:                      "aks-ubuntu-containerd-24.04-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedArtifactStreamingEnabled: true,
+		},
+		{
+			name:                             "AMD64 AzureLinux2 - Artifact streaming explicitly enabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:                "1.31.0",
+			imageDistro:                      "aks-azurelinux-v2-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedArtifactStreamingEnabled: true,
+		},
+		{
+			name:                             "AMD64 AzureLinux3 - Artifact streaming explicitly enabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:                "1.32.0",
+			imageDistro:                      "aks-azurelinux-v3-gen2",
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedArtifactStreamingEnabled: true,
 		},
 	}
 
@@ -797,6 +838,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			bootstrapper.OSSKU = tt.ossku
 			bootstrapper.KubernetesVersion = tt.kubernetesVersion
 			bootstrapper.ImageDistro = tt.imageDistro
+			bootstrapper.ArtifactStreaming = tt.artifactStreaming
 
 			// Setup context with options
 			ctx := options.ToContext(context.Background(), &options.Options{
@@ -806,37 +848,22 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 
 			values, err := bootstrapper.ConstructProvisionValues(ctx)
 
-			// For unsupported OSSKU, we expect an error and should not continue validation
-			if tt.ossku == "CustomUnsupportedOSSKU" {
+			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring("unsupported OSSKU"))
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErrorSubstring))
 				return
 			}
 
-			// For all other cases, expect success
-			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(err).ToNot(HaveOccurred(), tt.name)
 			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
 			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
 			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile).ToNot(BeNil(), "ArtifactStreamingProfile should not be nil")
 			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile.Enabled).ToNot(BeNil(), "ArtifactStreamingProfile.Enabled should not be nil")
 
-			// Check artifact streaming enablement
 			actualEnabled := *values.ProvisionProfile.ArtifactStreamingProfile.Enabled
 			g.Expect(actualEnabled).To(Equal(tt.expectedArtifactStreamingEnabled),
 				"Artifact streaming enablement mismatch: %s. Expected: %v, Actual: %v",
-				tt.description, tt.expectedArtifactStreamingEnabled, actualEnabled)
-
-			// Additional validation for enabled cases
-			if tt.expectedArtifactStreamingEnabled {
-				g.Expect(actualEnabled).To(BeTrue(), "Artifact streaming should be enabled for %s", tt.description)
-				g.Expect(tt.arch).To(Equal(karpv1.ArchitectureAmd64), "Architecture should be AMD64 when artifact streaming is enabled")
-				g.Expect([]string{
-					customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
-					customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
-				}).To(ContainElement(tt.ossku), "OSSKU should be Ubuntu2204 or AzureLinux2 when artifact streaming is enabled")
-			} else {
-				g.Expect(actualEnabled).To(BeFalse(), "Artifact streaming should be disabled for %s", tt.description)
-			}
+				tt.name, tt.expectedArtifactStreamingEnabled, actualEnabled)
 		})
 	}
 }
