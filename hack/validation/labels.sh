@@ -2,9 +2,22 @@
 set -euo pipefail
 
 # labels validation for nodepool
-# checking for restricted labels while filtering out well known labels
+# Adds two CEL rules to restrict label domains:
+# 1. karpenter.azure.com — Karpenter provider-specific labels (well-known SKU labels, etc.)
+# 2. kubernetes.azure.com — AKS system labels (generated from pkg/apis/validation/aksrules.go)
+#
+# Rule (1) uses a hardcoded allowlist of karpenter.azure.com well-known labels.
+# Rule (2) is generated from the authoritative Go source to stay in sync with AKS RP validation.
+# See: https://github.com/Azure/karpenter-poc/issues/1710
 
-rule=$'self.all(x, x in
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# check that .spec.versions has 1 entry
+[[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml) -eq 1 ]] || { echo "expected one version"; exit 1; }
+
+# --- Rule 1: karpenter.azure.com domain restriction (existing, provider-specific) ---
+karpenter_rule=$'self.all(x, x in
     [
         "karpenter.azure.com/aksnodeclass",
         "karpenter.azure.com/sku-name",
@@ -23,16 +36,20 @@ rule=$'self.all(x, x in
     || !x.find("^([^/]+)").endsWith("karpenter.azure.com")
 )
 '
-# above regex: everything before the first '/' (any characters except '/' at the beginning of the string)
+karpenter_rule=${karpenter_rule//\"/\\\"}
+karpenter_rule=${karpenter_rule//$'\n'/}
+karpenter_rule=$(echo "$karpenter_rule" | tr -s ' ')
 
-rule=${rule//\"/\\\"}            # escape double quotes
-rule=${rule//$'\n'/}             # remove newlines
-rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
-
-# check that .spec.versions has 1 entry
-[[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml) -eq 1 ]] || { echo "expected one version"; exit 1; }
-
-# nodepool
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.metadata.properties.labels.x-kubernetes-validations +=
-    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
+    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$karpenter_rule"
+yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
+
+# --- Rule 2: kubernetes.azure.com domain restriction (AKS RP sync, generated) ---
+aks_rule=$(go run "${REPO_ROOT}/hack/validation/cmd/gencel" -type labels)
+aks_rule=${aks_rule//\"/\\\"}
+aks_rule=${aks_rule//$'\n'/}
+aks_rule=$(echo "$aks_rule" | tr -s ' ')
+
+printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.metadata.properties.labels.x-kubernetes-validations +=
+    [{"message": "label domain \\"kubernetes.azure.com\\" is restricted", "rule": "%s"}]' "$aks_rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
