@@ -225,6 +225,9 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	// These are AKS system taints assigned server-side by Machine API (e.g., scalesetpriority=spot, mode=gateway).
 	// This mirrors the label sanitization in configureLabelsAndMode() and aligns with AKS Machine API validation
 	// which blocks user-specified taints under this domain.
+	// Note: stripping is silent (no logging) — same pattern as label sanitization. The CRD-level CEL validation
+	// provides user-facing feedback at admission time; this runtime filter is defense-in-depth for pre-existing
+	// NodePools or direct API writes that bypass CRD validation.
 	allTaints = lo.Filter(allTaints, func(taint v1.Taint, _ int) bool {
 		return !v1beta1.IsAKSTaintKey(taint.Key)
 	})

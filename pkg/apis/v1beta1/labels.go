@@ -193,6 +193,10 @@ func IsAKSLabel(label string) bool {
 // IsAKSTaintKey returns true if the taint key has the kubernetes.azure.com/ prefix,
 // matching AKS Machine API validation which blocks user-specified taints under this domain.
 // System taints (e.g., scalesetpriority=spot, mode=gateway) are assigned server-side by Machine API.
+//
+// Note: unlike IsAKSLabel, this does not check legacy label keys (agentpool, storageprofile, etc.)
+// because RP's taint validator (nodetaintsvalidator.go) only blocks the kubernetes.azure.com/ prefix —
+// there are no legacy taint keys equivalent to the legacy label keys.
 func IsAKSTaintKey(key string) bool {
 	return strings.HasPrefix(key, AKSLabelDomain+"/")
 }
