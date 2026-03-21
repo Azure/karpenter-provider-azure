@@ -4,6 +4,7 @@ set -euo pipefail
 # requirements validation for nodeclaim and nodepool
 # checking for restricted labels while filtering out well known labels
 
+# karpenter.azure.com domain restriction
 rule=$'self in
     [
         "karpenter.azure.com/aksnodeclass",
@@ -28,22 +29,57 @@ rule=${rule//\"/\\\"}            # escape double quotes
 rule=${rule//$'\n'/}             # remove newlines
 rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
 
+# kubernetes.azure.com domain restriction
+# These are the only kubernetes.azure.com labels users may use in requirements;
+# all others are system-assigned and will be rejected by AKS Machine API.
+aks_rule=$'self in
+    [
+        "kubernetes.azure.com/sku-cpu",
+        "kubernetes.azure.com/sku-memory",
+        "kubernetes.azure.com/cluster",
+        "kubernetes.azure.com/mode",
+        "kubernetes.azure.com/scalesetpriority",
+        "kubernetes.azure.com/os-sku",
+        "kubernetes.azure.com/fips_enabled"
+    ]
+    || !self.find("^([^/]+)").endsWith("kubernetes.azure.com")
+'
+
+aks_rule=${aks_rule//\"/\\\"}            # escape double quotes
+aks_rule=${aks_rule//$'\n'/}             # remove newlines
+aks_rule=$(echo "$aks_rule" | tr -s ' ') # remove extra spaces
+
 # check that .spec.versions has 1 entry
 [[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml)  -eq 1 ]] || { echo "expected one version"; exit 1; }
 [[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodeclaims.yaml) -eq 1 ]] || { echo "expected one version"; exit 1; }
 [[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodeoverlays.yaml) -eq 1 ]] || { echo "expected one version"; exit 1; }
 
-# nodeclaim
+# nodeclaim - karpenter.azure.com
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
-    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
+    [{"message": "label domain \"karpenter.azure.com\" is restricted", "rule": "%s"}]' "$rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeclaims.yaml
 
-# nodepool
+# nodepool - karpenter.azure.com
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
-    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
+    [{"message": "label domain \"karpenter.azure.com\" is restricted", "rule": "%s"}]' "$rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
 
-# overlays
+# overlays - karpenter.azure.com
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
-    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
+    [{"message": "label domain \"karpenter.azure.com\" is restricted", "rule": "%s"}]' "$rule"
+yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeoverlays.yaml
+
+# nodeclaim - kubernetes.azure.com
+printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
+    [{"message": "label domain \"kubernetes.azure.com\" is restricted", "rule": "%s"}]' "$aks_rule"
+yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+
+# nodepool - kubernetes.azure.com
+printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
+    [{"message": "label domain \"kubernetes.azure.com\" is restricted", "rule": "%s"}]' "$aks_rule"
+yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
+
+# overlays - kubernetes.azure.com
+printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
+    [{"message": "label domain \"kubernetes.azure.com\" is restricted", "rule": "%s"}]' "$aks_rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeoverlays.yaml

@@ -43,6 +43,7 @@ var (
 	}
 	RestrictedLabelDomains = []string{
 		Group,
+		AKSLabelDomain,
 	}
 
 	AzureWellKnownLabels = sets.New(
