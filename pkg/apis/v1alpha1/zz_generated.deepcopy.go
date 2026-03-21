@@ -132,6 +132,16 @@ func (in *AzureNodeClassSpec) DeepCopyInto(out *AzureNodeClassSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.DataDiskSizeGB != nil {
+		in, out := &in.DataDiskSizeGB, &out.DataDiskSizeGB
+		*out = new(int32)
+		**out = **in
+	}
+	if in.InstanceTypes != nil {
+		in, out := &in.InstanceTypes, &out.InstanceTypes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make(map[string]string, len(*in))
