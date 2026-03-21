@@ -77,12 +77,6 @@ var (
 
 	RestrictedLabels = sets.New(
 		LabelSKUHyperVGeneration,
-		// AgentBaker-generated labels that are system-managed and should not be
-		// user-assignable in NodePool labels, aligning with AKS RP validation.
-		AKSLabelLegacyAgentPool,
-		AKSLabelLegacyStorageProfile,
-		AKSLabelLegacyStorageTier,
-		AKSLabelLegacyAccelerator,
 	)
 
 	AllowUndefinedWellKnownAndRestrictedLabels = func(options *scheduling.CompatibilityOptions) {
