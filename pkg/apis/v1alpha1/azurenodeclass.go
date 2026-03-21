@@ -28,6 +28,19 @@ import (
 // This will contain configuration necessary to launch instances in Azure,
 // independent of a specific managed control plane (e.g. AKS).
 type AzureNodeClassSpec struct {
+	// subscriptionID overrides the controller-level AZURE_SUBSCRIPTION_ID.
+	// When set, VMs for this NodeClass are created in this Azure subscription.
+	// The controller's Azure identity must have appropriate RBAC on the target subscription.
+	// +optional
+	SubscriptionID *string `json:"subscriptionID,omitempty"`
+	// resourceGroup overrides the controller-level AZURE_NODE_RESOURCE_GROUP.
+	// When set, VMs for this NodeClass are created in this resource group.
+	// +optional
+	ResourceGroup *string `json:"resourceGroup,omitempty"`
+	// location overrides the controller-level LOCATION.
+	// When set, VMs for this NodeClass are created in this Azure region.
+	// +optional
+	Location *string `json:"location,omitempty"`
 	// imageID is the ARM resource ID of the image that instances use.
 	// This can be a Compute Gallery image, Shared Image Gallery image, Community Gallery image,
 	// or any valid Azure image resource ID.
