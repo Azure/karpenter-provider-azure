@@ -18,6 +18,7 @@ package aksmachinepoller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -158,17 +159,8 @@ func (c *MachineListCache) isFresh(machineName string) bool {
 // Get retrieves a machine from the cache by name.
 // Returns the machine if cache is fresh and contains the machine.
 // Returns an error if the cache is stale or the machine is not found.
-func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine, error) {
-	if !c.isFresh(machineName) {
-		return nil, fmt.Errorf("cache is stale for machine %q", machineName)
-	}
-
-	value, ok := c.machines.Load(machineName)
-	if !ok {
-		return nil, fmt.Errorf("machine %q not found in cache", machineName)
-	}
-
-	return value.(*machineListItem).machine, value.(*machineListItem).err
+func (c *MachineListCache) Get(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
+	return c.freshGet(ctx, machineName)
 }
 
 /*
@@ -218,19 +210,12 @@ func (c *MachineListCache) refreshWorker() {
 
 		case <-ticker.C:
 			// Periodic refresh to keep cache fresh
-			c.machines.Range(c.update)
+			c.machines.Range(func(k, v any) bool {
+				c.workerChan <- k.(string)
+				return true
+			})
 		}
 	}
-}
-
-func (c *MachineListCache) update(k, _ any) bool {
-	key := k.(string)
-
-	if !c.isFresh(key) {
-		c.workerChan <- key
-	}
-
-	return true
 }
 
 func (c *MachineListCache) worker() {
@@ -241,30 +226,27 @@ func (c *MachineListCache) worker() {
 		case <-c.workerCtx.Done():
 			return
 		case m := <-c.workerChan:
-			if !c.isFresh(m) {
-				if err := c.add(c.workerCtx, m); err != nil {
-					log.FromContext(c.workerCtx).Error(err, "failed to get machine", "machine", m)
-					continue
-				}
-			}
+			c.freshGet(c.workerCtx, m)
 		}
 	}
 }
 
-func (c *MachineListCache) get(machineName string) (*armcontainerservice.Machine, error, bool) {
-	value, ok := c.machines.Load(machineName)
-	if !ok {
-		return nil, nil, false
+func (c *MachineListCache) freshGet(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
+	if !c.isFresh(machineName) {
+		c.add(ctx, machineName)
 	}
-	item := value.(*machineListItem)
-	return item.machine, item.err, true
+
+	item, err, ok := c.load(machineName)
+	if !ok {
+		return nil, fmt.Errorf("machine %q not found in cache", machineName)
+	}
+	return item, err
 }
 
-func (c *MachineListCache) add(ctx context.Context, machine string) error {
+func (c *MachineListCache) add(ctx context.Context, machine string) {
 	resp, getErr := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machine, nil)
 	if getErr != nil {
 		log.FromContext(ctx).Error(getErr, "failed to get AKS machine", "aksMachineName", machine)
-		return getErr
 	}
 
 	item := &machineListItem{
@@ -273,19 +255,15 @@ func (c *MachineListCache) add(ctx context.Context, machine string) error {
 	}
 	item.lastUpdatedTime.Store(time.Now().UnixNano())
 	c.machines.Store(machine, item)
-	return nil
 }
 
-func (c *MachineListCache) freshGet(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
-	if !c.isFresh(machineName) {
-		c.add(ctx, machineName)
-	}
-
-	item, err, ok := c.get(machineName)
+func (c *MachineListCache) load(machineName string) (*armcontainerservice.Machine, error, bool) {
+	value, ok := c.machines.Load(machineName)
 	if !ok {
-		return nil, fmt.Errorf("machine %q not found in cache", machineName)
+		return nil, nil, false
 	}
-	return item, err
+	item := value.(*machineListItem)
+	return item.machine, item.err, true
 }
 
 // Shutdown stops the background update worker and waits for it to finish.
@@ -321,26 +299,10 @@ func (c *MachineListCache) PollUntilDone(ctx context.Context, name string) (*arm
 
 // pollOnce performs a single cache-based poll and returns (provisioningErr, pollerErr, done).
 func (c *MachineListCache) pollOnce(ctx context.Context, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
-	// Request cache refresh if stale (background worker will handle it)
-	if !c.isFresh(aksMachineName) {
-		return nil, nil, false
+	machine, err := c.freshGet(ctx, aksMachineName)
+	if err != nil {
+		return c.handleGetError(ctx, err, aksMachineName, retryAttemptsLeft, currentRetryDelay)
 	}
-
-	// Get machine from cache (may be stale, but worker is updating)
-	machine, ok := c.get(aksMachineName)
-	if !ok {
-		shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
-		if backoffErr != nil {
-			return nil, backoffErr, true
-		}
-		if shouldRetry {
-			return nil, nil, false
-		}
-		return nil, fmt.Errorf("cache poller: exhausted retries due to repeated cache misses for AKS machine %q", aksMachineName), true
-	}
-
-	// Machine found - reset retry state
-	c.resetRetryState(retryAttemptsLeft, currentRetryDelay)
 
 	if machine.Properties == nil || machine.Properties.ProvisioningState == nil {
 		return c.handleNilProvisioningState(ctx, machine, aksMachineName, retryAttemptsLeft, currentRetryDelay)
@@ -418,6 +380,35 @@ func (c *MachineListCache) handleProvisioningState(ctx context.Context, aksMachi
 		}
 		return nil, fmt.Errorf("AKS machine %q sees unrecognized provisioning state %s after exhausting %d retry attempts", aksMachineName, provisioningState, c.maxRetries), true
 	}
+}
+
+func (c *MachineListCache) handleGetError(ctx context.Context, err error, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, fmt.Errorf("failed to get AKS machine %q during polling as context is canceled: %w", aksMachineName, err), true
+	}
+
+	if !isTransientError(err) {
+		// Non-transient error (not found, auth, permissions, etc.) - fail immediately
+		// Not found is possible if the AKS machine is deleted mid-way.
+		// If the deletion takes time, it might appear with provisioning state "Deleting" before this can be reached.
+		return nil, fmt.Errorf("failed to get AKS machine %q during polling with non-retryable error: %w", aksMachineName, err), true
+	}
+
+	log.FromContext(ctx).V(1).Info("Poller: polling for AKS machine failed to get AKS machine, may retry",
+		"aksMachineName", aksMachineName,
+		"error", err,
+		"retryAttemptsLeft", *retryAttemptsLeft,
+		"retryDelay", *currentRetryDelay,
+	)
+
+	shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
+	if backoffErr != nil {
+		return nil, backoffErr, true
+	}
+	if shouldRetry {
+		return nil, nil, false
+	}
+	return nil, fmt.Errorf("failed to get AKS machine %q during polling: %w after exhausting %d retry attempts", aksMachineName, err, c.maxRetries), true
 }
 
 // retryWithBackoff applies exponential backoff and returns true if retry should continue, false if exhausted.
