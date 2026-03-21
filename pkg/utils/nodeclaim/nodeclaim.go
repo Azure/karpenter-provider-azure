@@ -120,6 +120,7 @@ func AKSNodeClassFromAzureNodeClass(azureNC *v1alpha1.AzureNodeClass) *v1beta1.A
 	aksNC.Spec.SubscriptionID = azureNC.Spec.SubscriptionID
 	aksNC.Spec.ResourceGroup = azureNC.Spec.ResourceGroup
 	aksNC.Spec.Location = azureNC.Spec.Location
+	aksNC.Spec.InstanceTypes = azureNC.Spec.InstanceTypes
 
 	return aksNC
 }
