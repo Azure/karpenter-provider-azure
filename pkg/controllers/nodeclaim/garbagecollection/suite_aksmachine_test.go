@@ -216,7 +216,6 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 			ExpectNotFound(ctx, env.Client, node)
 		})
-
 	})
 
 	var _ = Context("Mixed VM and AKS machine instances", func() {

@@ -168,6 +168,26 @@ func TestBuildNodeClaimFromAKSMachine(t *testing.T) {
 		}
 	})
 
+	t.Run("should handle missing creation time gracefully", func(t *testing.T) {
+		aksMachine := makeBaseMachine()
+		aksMachine.Properties.Status.CreationTimestamp = nil
+		nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if nodeClaim == nil {
+			t.Fatal("nodeClaim is nil")
+			return
+		}
+		if nodeClaim.Name != "test-nodeclaim" {
+			t.Errorf("Name = %q, want %q", nodeClaim.Name, "test-nodeclaim")
+		}
+		expected := metav1.Time{}
+		if !nodeClaim.CreationTimestamp.Equal(&expected) {
+			t.Errorf("CreationTimestamp = %v, want zero value", nodeClaim.CreationTimestamp)
+		}
+	})
+
 	t.Run("should return error when properties is missing", func(t *testing.T) {
 		aksMachine := makeBaseMachine()
 		aksMachine.Properties = nil
