@@ -236,6 +236,7 @@ func BindPodsToNode(ctx context.Context, client client.Client, cluster *state.Cl
 
 	for _, pod := range scheduledClaim.Pods {
 		// We have to manually bind the pod to the node when using a fakeClient by setting the value for pod.Spec.NodeName
+		// Note: This is a bit hacky but is what upstream does, see https://github.com/kubernetes-sigs/karpenter/blob/defdfae64097b8e58a211c429fa955896e515400/pkg/test/expectations/expectations.go#L307
 		if strings.Contains(reflect.TypeOf(client).String(), "fake") {
 			pod.Spec.NodeName = node.Name
 			err := client.Update(ctx, pod)

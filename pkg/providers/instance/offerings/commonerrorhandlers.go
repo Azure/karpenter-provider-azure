@@ -36,11 +36,32 @@ var (
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
 	SKUNotAvailableReason                       = "SKUNotAvailable"
 
-	LowQuotaTTL                 = 10 * time.Minute
+	// LowQuotaTTL is the TTL for offerings that return a quota error but the quota limit is not 0.
+	// This means there is still some quota available, just not enough to fulfill the current request.
+	// We set this to some value "reasonably lower" than SubscriptionQuotaReachedTTL.
+	// It needs to be long enough that we can attempt multiple sizes in the same family in descending order and still have the entry
+	// in the cache when we get to the smaller sizes, to allow failover to another family.
+	// For example, if we're trying to fit 64 cores worth of pods and we only have quota for 10 cores of Dv2:
+	// D64_v2  -> D32_v2 -> D16_v2 all fail before one D8_v2 finally succeeds, but we need more cores than that so we proceed on to D4_v2 and D2_v2 (one of which succeeds).
+	// This effectively utilizes all the quota, but requires that we don't have the D64 cache entry expire before we've tried all the sizes in the family down to the one that works,
+	// otherwise we might allocate a D8_v2 and then go back and try D64_v2 again - in the worst case we can get caught in a "loop" doing this and never actually proceed to a size
+	// that works.
+	// TODO: If/when we factor in actual quota API usage we may be able to reduce this TTL and use the quota API data to inform which sizes we try first.
+	LowQuotaTTL = 10 * time.Minute
+	// SubscriptionQuotaReachedTTL is the TTL for offerings that return a quota error with a limit of 0, meaning there is no quota available for that SKU family at all in the subscription.
+	// This is often the case if the user doesn't have any quota for that offering at all, hence the longer TTL.
+	// TODO: If/when we factor in actual quota API usage in the future we may be able to get rid of this longer TTL and just rely on LowQuotaTTL.
 	SubscriptionQuotaReachedTTL = 1 * time.Hour
-	AllocationFailureTTL        = 1 * time.Hour
-	SKUNotAvailableSpotTTL      = 1 * time.Hour
-	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
+	// AllocationFailureTTL is the TTL for offerings that returned an allocation failure from Azure. AllocationFailure usually means that there is a capacity
+	// crunch of some kind (for that zone, for that offering, etc). It's unlikely that the capacity crunch resolves itself in a very short amount of time, hence the longer TTL.
+	AllocationFailureTTL = 1 * time.Hour
+	// SKUNotAvailableSpotTTL can happen if the SKU isn't available at all, OR if it's out of capacity for Spot.
+	// In the first case we'd ideally set a longer TTL like we do for on-demand below, but in the other case it may resolve more quickly,
+	// so we set a 1h TTL.
+	SKUNotAvailableSpotTTL = 1 * time.Hour
+	// SKUNotAvailableOnDemandTTL is the TTL for SKU not available errors for on-demand capacity.
+	// This generally indicates that the SKU is not available in the region. It is unlikely to resolve quickly so we set a very long TTL.
+	SKUNotAvailableOnDemandTTL = 23 * time.Hour
 )
 
 type errorHandle func(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
