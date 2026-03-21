@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,7 +31,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -52,6 +50,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/skewer"
+
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 var ctx context.Context
@@ -175,7 +175,6 @@ func validateVMNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool)
 	// VM-specific validation (should NOT have AKS machine annotation)
 	Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 }
-
 var _ = Describe("CloudProvider", func() {
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
