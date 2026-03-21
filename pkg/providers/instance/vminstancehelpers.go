@@ -65,7 +65,7 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 	claimLabels := labelpkg.GetFilteredSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 		func(k string, req *scheduling.Requirement) bool {
-			return labelpkg.IsKubeletLabel(k)
+			return labelpkg.CanKubeletSetLabel(k)
 		},
 	)
 	additionalLabels := lo.Assign(
@@ -82,7 +82,7 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 	}
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
-	baseLabels, err := labelpkg.Get(ctx, nodeClass)
+	baseLabels, err := labelpkg.Get(ctx, nodeClass, arch)
 	if err != nil {
 		return nil, err
 	}
