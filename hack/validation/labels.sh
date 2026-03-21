@@ -33,6 +33,7 @@ rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
 # kubernetes.azure.com domain restriction
 # These are the only kubernetes.azure.com labels users may set on NodePool;
 # all others are system-assigned and will be rejected by AKS Machine API.
+# Includes labels used for scheduling (e.g., ebpf-dataplane for cilium DaemonSet affinity).
 aks_rule=$'self.all(x, x in
     [
         "kubernetes.azure.com/sku-cpu",
@@ -41,7 +42,12 @@ aks_rule=$'self.all(x, x in
         "kubernetes.azure.com/mode",
         "kubernetes.azure.com/scalesetpriority",
         "kubernetes.azure.com/os-sku",
-        "kubernetes.azure.com/fips_enabled"
+        "kubernetes.azure.com/os-sku-effective",
+        "kubernetes.azure.com/os-sku-requested",
+        "kubernetes.azure.com/fips_enabled",
+        "kubernetes.azure.com/ebpf-dataplane",
+        "kubernetes.azure.com/network-subnet",
+        "kubernetes.azure.com/podnetwork-type"
     ]
     || !x.find("^([^/]+)").endsWith("kubernetes.azure.com")
 )

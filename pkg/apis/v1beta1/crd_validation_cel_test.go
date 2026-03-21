@@ -795,7 +795,6 @@ var _ = Describe("CEL/Validation", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for _, label := range []string{
 				"kubernetes.azure.com/unknown-label",
-				"kubernetes.azure.com/ebpf-dataplane",
 				"kubernetes.azure.com/network-name",
 				"kubernetes.azure.com/kubelet-identity-client-id",
 			} {
@@ -816,6 +815,7 @@ var _ = Describe("CEL/Validation", func() {
 				"kubernetes.azure.com/scalesetpriority",
 				"kubernetes.azure.com/os-sku",
 				"kubernetes.azure.com/fips_enabled",
+				"kubernetes.azure.com/ebpf-dataplane",
 			} {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
@@ -865,7 +865,6 @@ var _ = Describe("CEL/Validation", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for _, label := range []string{
 				"kubernetes.azure.com/unknown-label",
-				"kubernetes.azure.com/ebpf-dataplane",
 				"kubernetes.azure.com/network-name",
 				"kubernetes.azure.com/kubelet-identity-client-id",
 			} {
@@ -886,6 +885,7 @@ var _ = Describe("CEL/Validation", func() {
 				"kubernetes.azure.com/scalesetpriority",
 				"kubernetes.azure.com/os-sku",
 				"kubernetes.azure.com/fips_enabled",
+				"kubernetes.azure.com/ebpf-dataplane",
 			} {
 				nodePool.Spec.Template.Labels = map[string]string{
 					label: "test",
