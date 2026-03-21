@@ -72,6 +72,21 @@ type AzureNodeClassSpec struct {
 	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
+	// dataDiskSizeGB is the size of an additional data disk in GB to attach for
+	// container runtime storage (e.g., containerd root). A Premium_LRS managed disk
+	// is attached at LUN 0. The image's bootstrap must handle mounting this disk.
+	// +kubebuilder:validation:Minimum=10
+	// +kubebuilder:validation:Maximum=4096
+	// +optional
+	DataDiskSizeGB *int32 `json:"dataDiskSizeGB,omitempty"`
+	// instanceTypes overrides the instance types discovered by the pricing/SKU provider.
+	// When set, only these instance types are considered for this NodeClass.
+	// Use this for pinned capacity (e.g. GPU SKUs) where the SKU may not appear
+	// in standard pricing APIs or may be filtered by default compatibility checks.
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	//nolint:kubeapilinter // ssatags: adding listType marker is unnecessary for this new field
+	InstanceTypes []string `json:"instanceTypes,omitempty"`
 	// security is a collection of security related karpenter fields.
 	// +optional
 	Security *AzureNodeClassSecurity `json:"security,omitempty"`
@@ -118,7 +133,7 @@ type AzureNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AzureNodeClassHashVersion = "v1"
+const AzureNodeClassHashVersion = "v2"
 
 func (in *AzureNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
