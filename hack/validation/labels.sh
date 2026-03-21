@@ -56,10 +56,10 @@ aks_rule=$(echo "$aks_rule" | tr -s ' ') # remove extra spaces
 
 # nodepool - karpenter.azure.com
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.metadata.properties.labels.x-kubernetes-validations +=
-    [{"message": "label domain \"karpenter.azure.com\" is restricted", "rule": "%s"}]' "$rule"
+    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
 
 # nodepool - kubernetes.azure.com
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.metadata.properties.labels.x-kubernetes-validations +=
-    [{"message": "label domain \"kubernetes.azure.com\" is restricted", "rule": "%s"}]' "$aks_rule"
+    [{"message": "label domain \\"kubernetes.azure.com\\" is restricted", "rule": "%s"}]' "$aks_rule"
 yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
