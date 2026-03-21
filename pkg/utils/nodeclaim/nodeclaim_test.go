@@ -150,6 +150,23 @@ func TestAKSNodeClassFromAzureNodeClass_NilUserDataAndIdentities(t *testing.T) {
 
 	g.Expect(aksNC.Spec.UserData).To(BeNil())
 	g.Expect(aksNC.Spec.ManagedIdentities).To(BeNil())
+	g.Expect(aksNC.Spec.InstanceTypes).To(BeNil())
+}
+
+func TestAKSNodeClassFromAzureNodeClass_InstanceTypes(t *testing.T) {
+	g := NewWithT(t)
+
+	azureNC := &v1alpha1.AzureNodeClass{
+		Spec: v1alpha1.AzureNodeClassSpec{
+			InstanceTypes: []string{"Standard_D4s_v3", "Standard_ND96isrf_H200_v5"},
+		},
+	}
+
+	aksNC := AKSNodeClassFromAzureNodeClass(azureNC)
+
+	g.Expect(aksNC.Spec.InstanceTypes).To(HaveLen(2))
+	g.Expect(aksNC.Spec.InstanceTypes).To(ContainElement("Standard_D4s_v3"))
+	g.Expect(aksNC.Spec.InstanceTypes).To(ContainElement("Standard_ND96isrf_H200_v5"))
 }
 
 func TestGetVMName_ValidProviderID(t *testing.T) {

@@ -96,6 +96,11 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
+	// InstanceTypes overrides the instance types discovered by the pricing/SKU provider.
+	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
+	// Not exposed in the AKSNodeClass API.
+	InstanceTypes []string `json:"-"`
+
 	// security is a collection of security related karpenter fields
 	// +optional
 	Security *Security `json:"security,omitempty"`

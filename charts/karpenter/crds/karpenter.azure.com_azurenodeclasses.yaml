@@ -63,9 +63,9 @@ spec:
             properties:
               dataDiskSizeGB:
                 description: |-
-                  dataDiskSizeGB is the size of an additional data disk in GB to attach for
-                  container runtime storage (e.g., containerd root). A Premium_LRS managed disk
-                  is attached at LUN 0. The image's bootstrap must handle mounting this disk.
+                  dataDiskSizeGB is the size of an additional data disk to attach to provisioned VMs, in GB.
+                  When set, a Premium_LRS managed data disk of this size is attached at LUN 0.
+                  Useful for container runtime storage or scratch space.
                 format: int32
                 maximum: 4096
                 minimum: 10
@@ -73,30 +73,16 @@ spec:
               imageID:
                 description: |-
                   imageID is the ARM resource ID of the image that instances use.
-                  This can be a Compute Gallery image, Shared Image Gallery image, Community Gallery image,
-                  or any valid Azure image resource ID.
+                  This can be a Compute Gallery image, Shared Image Gallery image, or any valid Azure image resource ID.
                   When set, imageFamily-based image resolution is bypassed entirely.
                   The user is responsible for ensuring the image is compatible with the selected instance types.
-                  Examples:
-                    /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/galleries/{gallery}/images/{image}/versions/{version}
-                    /CommunityGalleries/{gallery}/images/{image}/versions/{version}
-                maxLength: 1024
-                pattern: (?i)^(\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.Compute\/.*|\/CommunityGalleries\/[^\/]+\/images\/[^\/]+\/versions\/[^\/]+)$
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.(Compute|AzureHybridBenefit)\/.*$
                 type: string
-              instanceTypes:
-                description: |-
-                  instanceTypes overrides the instance types discovered by the pricing/SKU provider.
-                  When set, only these instance types are considered for this NodeClass.
-                  Use this for pinned capacity (e.g. GPU SKUs) where the SKU may not appear
-                  in standard pricing APIs or may be filtered by default compatibility checks.
-                items:
-                  type: string
-                maxItems: 100
-                type: array
               location:
                 description: |-
-                  location overrides the controller-level LOCATION.
-                  When set, VMs for this NodeClass are created in this Azure region.
+                  location overrides the controller-level Azure region for this NodeClass.
+                  When set, VMs are created in this region instead of the default.
+                minLength: 1
                 type: string
               managedIdentities:
                 description: |-
@@ -115,8 +101,10 @@ spec:
                 type: integer
               resourceGroup:
                 description: |-
-                  resourceGroup overrides the controller-level AZURE_NODE_RESOURCE_GROUP.
-                  When set, VMs for this NodeClass are created in this resource group.
+                  resourceGroup overrides the controller-level resource group for this NodeClass.
+                  When set, VMs and NICs are created in this resource group instead of the default --node-resource-group.
+                maxLength: 90
+                minLength: 1
                 type: string
               security:
                 description: security is a collection of security related karpenter
@@ -131,9 +119,10 @@ spec:
                 type: object
               subscriptionID:
                 description: |-
-                  subscriptionID overrides the controller-level AZURE_SUBSCRIPTION_ID.
-                  When set, VMs for this NodeClass are created in this Azure subscription.
-                  The controller's Azure identity must have appropriate RBAC on the target subscription.
+                  subscriptionID overrides the controller-level Azure subscription for this NodeClass.
+                  When set, VMs and NICs are created in this subscription instead of the default.
+                  The controller's managed identity / service principal must have permissions in this subscription.
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                 type: string
               tags:
                 additionalProperties:
@@ -151,12 +140,10 @@ spec:
                   rule: self.all(k, size(self[k]) <= 256)
               userData:
                 description: |-
-                  userData is the base64-encoded custom data that will be passed to the VM at creation time.
-                  The caller must pre-encode their cloud-init or bootstrap script to base64, as the Azure API
-                  expects this field to contain a base64-encoded string.
+                  userData is verbatim CustomData that will be passed to the VM at creation time.
+                  The Azure SDK will base64-encode this value before sending it to the Azure API.
                   The user is fully responsible for providing valid bootstrap/cloud-init data.
                   When this field is set, no Karpenter-managed bootstrapping is performed.
-                maxLength: 87380
                 type: string
               vnetSubnetID:
                 description: |-
