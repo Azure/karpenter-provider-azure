@@ -829,6 +829,53 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Taints", func() {
+		It("should allow taints with non-AKS domains", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, taintKey := range []string{"example.com/test", "custom-taint", "node.kubernetes.io/not-ready"} {
+				nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+					{Key: taintKey, Value: "true", Effect: corev1.TaintEffectNoSchedule},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow taints with kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, taintKey := range []string{
+				"kubernetes.azure.com/scalesetpriority",
+				"kubernetes.azure.com/test",
+				"kubernetes.azure.com/mode",
+			} {
+				nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+					{Key: taintKey, Value: "test", Effect: corev1.TaintEffectNoSchedule},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow startup taints with kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, taintKey := range []string{
+				"kubernetes.azure.com/scalesetpriority",
+				"kubernetes.azure.com/test",
+			} {
+				nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+					{Key: taintKey, Value: "test", Effect: corev1.TaintEffectNoSchedule},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow CriticalAddonsOnly taint", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "CriticalAddonsOnly", Value: "true", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+		})
+	})
+
 	Context("Tags", func() {
 		It("should allow tags with valid keys and values", func() {
 			nodeClass := &v1beta1.AKSNodeClass{

@@ -376,6 +376,67 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(taintStrings).To(ContainElement("empty-startup-taint:NoExecute"))
 			})
 		})
+
+		Context("AKS System Taint Sanitization", func() {
+			It("should strip taints with kubernetes.azure.com prefix", func() {
+				nodeClaim.Spec.Taints = []v1.Taint{
+					{Key: "kubernetes.azure.com/scalesetpriority", Value: "spot", Effect: v1.TaintEffectNoSchedule},
+					{Key: "valid-taint", Value: "true", Effect: v1.TaintEffectNoSchedule},
+				}
+				nodeClaim.Spec.StartupTaints = []v1.Taint{}
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(nodeTaints).To(HaveLen(0))
+				// Should have: valid-taint + UnregisteredNoExecuteTaint (AKS taint stripped)
+				taintStrings := make([]string, len(initTaints))
+				for i, taint := range initTaints {
+					taintStrings[i] = *taint
+				}
+				Expect(taintStrings).To(ContainElement("valid-taint=true:NoSchedule"))
+				Expect(taintStrings).ToNot(ContainElement(ContainSubstring("kubernetes.azure.com")))
+			})
+
+			It("should strip AKS system taints from startup taints", func() {
+				nodeClaim.Spec.Taints = []v1.Taint{}
+				nodeClaim.Spec.StartupTaints = []v1.Taint{
+					{Key: "kubernetes.azure.com/mode", Value: "gateway", Effect: v1.TaintEffectNoSchedule},
+					{Key: "valid-startup-taint", Value: "true", Effect: v1.TaintEffectNoExecute},
+				}
+
+				initTaints, nodeTaints := configureTaints(nodeClaim)
+
+				Expect(nodeTaints).To(HaveLen(0))
+				taintStrings := make([]string, len(initTaints))
+				for i, taint := range initTaints {
+					taintStrings[i] = *taint
+				}
+				Expect(taintStrings).To(ContainElement("valid-startup-taint=true:NoExecute"))
+				Expect(taintStrings).ToNot(ContainElement(ContainSubstring("kubernetes.azure.com")))
+			})
+
+			It("should preserve non-AKS taints while stripping all AKS taints", func() {
+				nodeClaim.Spec.Taints = []v1.Taint{
+					{Key: "kubernetes.azure.com/scalesetpriority", Value: "spot", Effect: v1.TaintEffectNoSchedule},
+					{Key: "kubernetes.azure.com/hostedvm", Value: "true", Effect: v1.TaintEffectNoSchedule},
+					{Key: "example.com/custom", Value: "true", Effect: v1.TaintEffectNoSchedule},
+					{Key: "another-taint", Value: "val", Effect: v1.TaintEffectNoExecute},
+				}
+				nodeClaim.Spec.StartupTaints = []v1.Taint{}
+
+				initTaints, _ := configureTaints(nodeClaim)
+
+				taintStrings := make([]string, len(initTaints))
+				for i, taint := range initTaints {
+					taintStrings[i] = *taint
+				}
+				Expect(taintStrings).To(ContainElement("example.com/custom=true:NoSchedule"))
+				Expect(taintStrings).To(ContainElement("another-taint=val:NoExecute"))
+				for _, s := range taintStrings {
+					Expect(s).ToNot(ContainSubstring("kubernetes.azure.com"))
+				}
+			})
+		})
 	})
 
 	Context("configureLabelsAndMode", func() {

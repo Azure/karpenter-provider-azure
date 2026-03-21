@@ -366,6 +366,9 @@ spec:
                               - key
                             type: object
                           type: array
+                          x-kubernetes-validations:
+                            - message: taint domain "kubernetes.azure.com" is restricted
+                              rule: self.all(x, !x.key.startsWith("kubernetes.azure.com/"))
                         taints:
                           description: Taints will be applied to the NodeClaim's node.
                           items:
@@ -401,6 +404,9 @@ spec:
                               - key
                             type: object
                           type: array
+                          x-kubernetes-validations:
+                            - message: taint domain "kubernetes.azure.com" is restricted
+                              rule: self.all(x, !x.key.startsWith("kubernetes.azure.com/"))
                         terminationGracePeriod:
                           description: |-
                             TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.

@@ -69,3 +69,55 @@ func TestGetOSSKUFromImageFamily(t *testing.T) {
 		})
 	}
 }
+
+func TestIsAKSLabel(t *testing.T) {
+	cases := []struct {
+		name     string
+		label    string
+		expected bool
+	}{
+		{"AKS domain label", "kubernetes.azure.com/mode", true},
+		{"AKS domain label - scalesetpriority", "kubernetes.azure.com/scalesetpriority", true},
+		{"AKS domain label - arbitrary", "kubernetes.azure.com/anything", true},
+		{"legacy label - agentpool", "agentpool", true},
+		{"legacy label - storageprofile", "storageprofile", true},
+		{"legacy label - storagetier", "storagetier", true},
+		{"legacy label - accelerator", "accelerator", true},
+		{"non-AKS label", "example.com/test", false},
+		{"karpenter label", "karpenter.azure.com/sku-name", false},
+		{"plain label", "my-label", false},
+		{"kubernetes.io label", "kubernetes.io/os", false},
+		{"prefix without slash", "kubernetes.azure.com", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(v1beta1.IsAKSLabel(c.label)).To(Equal(c.expected))
+		})
+	}
+}
+
+func TestIsAKSTaint(t *testing.T) {
+	cases := []struct {
+		name     string
+		taintKey string
+		expected bool
+	}{
+		{"AKS domain taint", "kubernetes.azure.com/scalesetpriority", true},
+		{"AKS domain taint - mode", "kubernetes.azure.com/mode", true},
+		{"AKS domain taint - arbitrary", "kubernetes.azure.com/anything", true},
+		{"non-AKS taint", "example.com/test", false},
+		{"plain taint key", "CriticalAddonsOnly", false},
+		{"karpenter domain taint", "karpenter.azure.com/test", false},
+		{"kubernetes.io taint", "node.kubernetes.io/not-ready", false},
+		{"prefix without slash", "kubernetes.azure.com", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(v1beta1.IsAKSTaint(c.taintKey)).To(Equal(c.expected))
+		})
+	}
+}
