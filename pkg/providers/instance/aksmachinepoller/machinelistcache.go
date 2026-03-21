@@ -97,7 +97,6 @@ type MachineListCache struct {
 	maxRetryDelay time.Duration
 
 	// Background worker fields
-	updateRequests chan struct{}      // Buffered channel (size 1) for update requests
 	workerCtx      context.Context    // Worker lifecycle context
 	workerCancel   context.CancelFunc // Cancel function for shutdown
 	updateInterval time.Duration      // Periodic update frequency (default 5 minutes)
@@ -122,9 +121,9 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 		maxRetryDelay:        30 * time.Second,
 
 		// Initialize background worker
-		updateRequests: make(chan struct{}, 1), // Buffer of 1 coalesces requests
 		workerCtx:      workerCtx,
 		workerCancel:   workerCancel,
+		workerChan:     make(chan string),
 		updateInterval: 5 * time.Minute, // Periodic refresh every 5 minutes
 	}
 
@@ -264,14 +263,6 @@ func (c *MachineListCache) load(machineName string) (*armcontainerservice.Machin
 	}
 	item := value.(*machineListItem)
 	return item.machine, item.err, true
-}
-
-// Shutdown stops the background update worker and waits for it to finish.
-// Call this during provider shutdown to prevent goroutine leaks.
-// After calling Shutdown, the cache will no longer receive automatic updates.
-func (c *MachineListCache) Shutdown() {
-	c.workerCancel() // Signal worker to stop
-	c.wg.Wait()      // Wait for worker goroutine to finish
 }
 
 func (c *MachineListCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
@@ -431,6 +422,14 @@ func (c *MachineListCache) retryWithBackoff(ctx context.Context, retryAttemptsLe
 func (c *MachineListCache) resetRetryState(retryAttemptsLeft *int, currentRetryDelay *time.Duration) {
 	*retryAttemptsLeft = c.maxRetries
 	*currentRetryDelay = c.retryDelay
+}
+
+// Shutdown stops the background update worker and waits for it to finish.
+// Call this during provider shutdown to prevent goroutine leaks.
+// After calling Shutdown, the cache will no longer receive automatic updates.
+func (c *MachineListCache) Shutdown() {
+	c.workerCancel() // Signal worker to stop
+	c.wg.Wait()      // Wait for worker goroutine to finish
 }
 
 func isAKSMachineOrMachinesPoolNotFound(err error) bool {
