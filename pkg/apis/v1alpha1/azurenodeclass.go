@@ -96,13 +96,6 @@ type AzureNodeClassSpec struct {
 	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
-	// dataDiskSizeGB is the size of an additional data disk in GB to attach for
-	// container runtime storage (e.g., containerd root). A Premium_LRS managed disk
-	// is attached at LUN 0. The image's bootstrap must handle mounting this disk.
-	// +kubebuilder:validation:Minimum=10
-	// +kubebuilder:validation:Maximum=4096
-	// +optional
-	DataDiskSizeGB *int32 `json:"dataDiskSizeGB,omitempty"`
 	// instanceTypes overrides the instance types discovered by the pricing/SKU provider.
 	// When set, only these instance types are considered for this NodeClass.
 	// Use this for pinned capacity (e.g. GPU SKUs) where the SKU may not appear
