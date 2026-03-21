@@ -897,6 +897,49 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Taints", func() {
+		It("should reject taints with non-well-known kubernetes.azure.com key", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, key := range []string{
+				"kubernetes.azure.com/unknown-taint",
+				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/mode",
+			} {
+				nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+					{Key: key, Value: "test", Effect: corev1.TaintEffectNoSchedule},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow taints with well-known kubernetes.azure.com key", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/scalesetpriority", Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow taints with non-kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "example.com/my-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject startupTaints with non-well-known kubernetes.azure.com key", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/unknown-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+	})
+
 	Context("Tags", func() {
 		It("should allow tags with valid keys and values", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
