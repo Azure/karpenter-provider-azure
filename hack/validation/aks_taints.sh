@@ -25,6 +25,28 @@ rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
 [[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml) -eq 1 ]] || { echo "expected one version"; exit 1; }
 [[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodeclaims.yaml) -eq 1 ]] || { echo "expected one version"; exit 1; }
 
+# Add maxLength to taint key fields to keep CEL cost estimation within budget.
+# K8s qualified names are limited to 253 chars for prefix + 63 for name + 1 for slash = 317 max.
+# Without maxLength, CEL estimates worst-case unbounded string cost, exceeding the budget.
+
+# nodepool - taints key maxLength
+yq eval '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.spec.properties.taints.items.properties.key.maxLength = 317' \
+    -i pkg/apis/crds/karpenter.sh_nodepools.yaml
+
+# nodepool - startupTaints key maxLength
+yq eval '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.spec.properties.startupTaints.items.properties.key.maxLength = 317' \
+    -i pkg/apis/crds/karpenter.sh_nodepools.yaml
+
+# nodeclaim - taints key maxLength
+yq eval '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.taints.items.properties.key.maxLength = 317' \
+    -i pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+
+# nodeclaim - startupTaints key maxLength
+yq eval '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.startupTaints.items.properties.key.maxLength = 317' \
+    -i pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+
+# Now add the CEL validation rules
+
 # nodepool - taints
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.spec.properties.taints.items.properties.key.x-kubernetes-validations +=
     [{"message": "taint key domain \\"kubernetes.azure.com\\" is restricted", "rule": "%s"}]' "$rule"

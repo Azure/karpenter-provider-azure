@@ -177,7 +177,7 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.AKSLabelMode, corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser),
 		scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
 		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))),
-		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist), // AKS only sets this label if FIPS is enabled, otherwise it's expected to be empty
+		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist),    // AKS only sets this label if FIPS is enabled, otherwise it's expected to be empty
 		scheduling.NewRequirement(v1beta1.AKSLabelOSSKUEffective, corev1.NodeSelectorOpDoesNotExist), // set by label provider based on imageFamily and K8s version
 		scheduling.NewRequirement(v1beta1.AKSLabelOSSKURequested, corev1.NodeSelectorOpDoesNotExist), // set by label provider based on imageFamily
 
