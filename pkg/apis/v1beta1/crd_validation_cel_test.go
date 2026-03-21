@@ -827,6 +827,84 @@ var _ = Describe("CEL/Validation", func() {
 				nodePool = oldNodePool.DeepCopy()
 			}
 		})
+		It("should not allow unknown kubernetes.azure.com labels", func() {
+			nodePool.Spec.Template.Labels = map[string]string{
+				"kubernetes.azure.com/unknown-label": "test",
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should allow known kubernetes.azure.com labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/cluster",
+				"kubernetes.azure.com/mode",
+				"kubernetes.azure.com/scalesetpriority",
+				"kubernetes.azure.com/os-sku",
+				"kubernetes.azure.com/fips_enabled",
+				"kubernetes.azure.com/os-sku-effective",
+				"kubernetes.azure.com/os-sku-requested",
+				"kubernetes.azure.com/sku-cpu",
+				"kubernetes.azure.com/sku-memory",
+			} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+	})
+
+	Context("Taints", func() {
+		It("should not allow unknown kubernetes.azure.com taint keys", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/unknown-taint",
+					Value:  "test",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should allow known kubernetes.azure.com taint keys", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, key := range []string{
+				"kubernetes.azure.com/scalesetpriority",
+				"kubernetes.azure.com/mode",
+			} {
+				nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+					{
+						Key:    key,
+						Value:  "test",
+						Effect: corev1.TaintEffectNoSchedule,
+					},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should not allow unknown kubernetes.azure.com startup taint keys", func() {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/unknown-taint",
+					Value:  "test",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+		It("should allow non-AKS-domain taints", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "custom.example.com/my-taint",
+					Value:  "test",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+		})
 	})
 
 	Context("Tags", func() {
