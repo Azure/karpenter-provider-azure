@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -85,7 +86,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// NodeTaints, NodeInitializationTaints
-	nodeInitializationTaints, nodeTaints := configureTaints(nodeClaim)
+	nodeInitializationTaints, nodeTaints := configureTaints(ctx, nodeClaim)
 
 	// NodeLabels, Mode
 	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType)
@@ -217,13 +218,20 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 	return lo.ToPtr(ossku), lo.ToPtr(enableFIPS), nil
 }
 
-func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
+func configureTaints(ctx context.Context, nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := lo.Flatten([][]v1.Taint{generalTaints, startupTaints})
 
 	// Remove AKS system taints (kubernetes.azure.com/ prefix) — these are managed server-side
 	// by AKS Machine API and would be rejected by RP validation. CRD-level CEL validation also
 	// blocks these at admission time; this provides defense-in-depth.
+	strippedTaints := lo.Filter(allTaints, func(taint v1.Taint, _ int) bool {
+		return v1beta1.IsAKSTaint(taint.Key)
+	})
+	if len(strippedTaints) > 0 {
+		log.FromContext(ctx).V(1).Info("stripped AKS system taints from Machine API request",
+			"strippedTaints", lo.Map(strippedTaints, func(t v1.Taint, _ int) string { return t.Key }))
+	}
 	allTaints = lo.Filter(allTaints, func(taint v1.Taint, _ int) bool {
 		return !v1beta1.IsAKSTaint(taint.Key)
 	})

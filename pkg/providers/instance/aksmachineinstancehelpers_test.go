@@ -17,6 +17,7 @@ limitations under the License.
 package instance
 
 import (
+	"context"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -203,7 +204,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 	Context("configureTaints", func() {
 		Context("Basic Functionality", func() {
 			It("should configure taints correctly with startup and regular taints", func() {
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(3)) // startup-taint + test-taint + UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
@@ -243,7 +244,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				// Add UnregisteredNoExecuteTaint to startup taints
 				nodeClaim.Spec.StartupTaints = append(nodeClaim.Spec.StartupTaints, karpv1.UnregisteredNoExecuteTaint)
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				// Should be 3 (startup-taint + test-taint + UnregisteredNoExecuteTaint, no duplicate)
 				Expect(initTaints).To(HaveLen(3))
@@ -263,7 +264,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				// Add UnregisteredNoExecuteTaint to regular taints
 				nodeClaim.Spec.Taints = append(nodeClaim.Spec.Taints, karpv1.UnregisteredNoExecuteTaint)
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				// Should be 3 in init taints (startup-taint + test-taint + UnregisteredNoExecuteTaint, no duplicate)
 				Expect(initTaints).To(HaveLen(3))
@@ -287,7 +288,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				nodeClaim.Spec.Taints = nil
 				nodeClaim.Spec.StartupTaints = nil
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(1)) // Only UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0))
@@ -297,7 +298,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should handle empty startup taints but regular taints present", func() {
 				nodeClaim.Spec.StartupTaints = nil
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(2)) // test-taint + UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
@@ -306,7 +307,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should handle empty regular taints but startup taints present", func() {
 				nodeClaim.Spec.Taints = nil
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(2)) // startup-taint + UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0))
@@ -316,7 +317,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				nodeClaim.Spec.StartupTaints = append(nodeClaim.Spec.StartupTaints,
 					v1.Taint{Key: "another-startup", Value: "value", Effect: v1.TaintEffectNoExecute})
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(4)) // 2 startup taints + test-taint + UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
@@ -326,7 +327,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				nodeClaim.Spec.Taints = append(nodeClaim.Spec.Taints,
 					v1.Taint{Key: "another-regular", Value: "value", Effect: v1.TaintEffectNoSchedule})
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(4)) // startup-taint + 2 regular taints + UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
@@ -339,7 +340,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					{Key: "taint3", Value: "value3", Effect: v1.TaintEffectPreferNoSchedule},
 				}
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(5)) // startup-taint + 3 regular taints + UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
@@ -362,7 +363,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					{Key: "empty-startup-taint", Value: "", Effect: v1.TaintEffectNoExecute},
 				}
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(initTaints).To(HaveLen(3)) // empty-startup-taint + empty-value-taint + UnregisteredNoExecuteTaint
 				Expect(nodeTaints).To(HaveLen(0)) // NodeTaints should now be empty
@@ -385,7 +386,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				}
 				nodeClaim.Spec.StartupTaints = []v1.Taint{}
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(nodeTaints).To(HaveLen(0))
 				// Should have: valid-taint + UnregisteredNoExecuteTaint (AKS taint stripped)
@@ -404,7 +405,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					{Key: "valid-startup-taint", Value: "true", Effect: v1.TaintEffectNoExecute},
 				}
 
-				initTaints, nodeTaints := configureTaints(nodeClaim)
+				initTaints, nodeTaints := configureTaints(context.Background(), nodeClaim)
 
 				Expect(nodeTaints).To(HaveLen(0))
 				taintStrings := make([]string, len(initTaints))
@@ -424,7 +425,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				}
 				nodeClaim.Spec.StartupTaints = []v1.Taint{}
 
-				initTaints, _ := configureTaints(nodeClaim)
+				initTaints, _ := configureTaints(context.Background(), nodeClaim)
 
 				taintStrings := make([]string, len(initTaints))
 				for i, taint := range initTaints {
