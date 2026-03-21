@@ -32,6 +32,7 @@ func init() {
 	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
 	// Karpenter core expects that WellKnownLabels are mapped to requirements.
 	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Union(AzureWellKnownLabels)
+	karpv1.RestrictedLabels = karpv1.RestrictedLabels.Union(AKSRestrictedLabels)
 }
 
 var (
@@ -43,6 +44,7 @@ var (
 	}
 	RestrictedLabelDomains = []string{
 		Group,
+		AKSLabelDomain,
 	}
 
 	AzureWellKnownLabels = sets.New(
@@ -70,10 +72,26 @@ var (
 		AKSLabelScaleSetPriority,
 		AKSLabelOSSKU,
 		AKSLabelFIPSEnabled,
+		AKSLabelOSSKUEffective,
+		AKSLabelOSSKURequested,
 	)
 
 	RestrictedLabels = sets.New(
 		LabelSKUHyperVGeneration,
+		// AgentBaker-generated labels that are system-managed and should not be
+		// user-assignable in NodePool labels, aligning with AKS RP validation.
+		AKSLabelLegacyAgentPool,
+		AKSLabelLegacyStorageProfile,
+		AKSLabelLegacyStorageTier,
+		AKSLabelLegacyAccelerator,
+	)
+
+	// AKSRestrictedLabels are AKS-domain labels that should not be user-assignable
+	// as NodePool labels (they are system-managed), but are allowed as requirement
+	// keys for scheduling purposes.
+	AKSRestrictedLabels = sets.New(
+		AKSLabelCluster,
+		AKSLabelKubeletIdentityClientID,
 	)
 
 	AllowUndefinedWellKnownAndRestrictedLabels = func(options *scheduling.CompatibilityOptions) {
