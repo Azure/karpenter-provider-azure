@@ -17,16 +17,24 @@ limitations under the License.
 package instancetype_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/awslabs/operatorpkg/object"
+	corestatus "github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
@@ -44,16 +52,22 @@ import (
 
 	"github.com/Azure/skewer"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var ctx context.Context
@@ -65,6 +79,9 @@ var fakeClock *clock.FakeClock
 var coreProvisioner, coreProvisionerNonZonal, coreProvisionerBootstrap *provisioning.Provisioner
 var cluster, clusterNonZonal, clusterBootstrap *state.Cluster
 var cloudProvider, cloudProviderNonZonal, cloudProviderBootstrap *cloudprovider.CloudProvider
+
+var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
+var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -109,6 +126,7 @@ var _ = AfterSuite(func() {
 
 var _ = Describe("InstanceType Provider", func() {
 	var nodeClass *v1beta1.AKSNodeClass
+	var nodePool *karpv1.NodePool
 
 	BeforeEach(func() {
 		// Reset testOptions and ctx in case a test edited them
@@ -118,6 +136,20 @@ var _ = Describe("InstanceType Provider", func() {
 
 		nodeClass = test.AKSNodeClass()
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+
+		nodePool = coretest.NodePool(karpv1.NodePool{
+			Spec: karpv1.NodePoolSpec{
+				Template: karpv1.NodeClaimTemplate{
+					Spec: karpv1.NodeClaimTemplateSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+							Name:  nodeClass.Name,
+						},
+					},
+				},
+			},
+		})
 
 		cluster.Reset()
 		clusterNonZonal.Reset()
@@ -1212,4 +1244,8 @@ func ExpectKubeletNodeLabelsNotInCustomData(vm *armcompute.VirtualMachine, key s
 	// Extract and check KUBELET_NODE_LABELS contains the expected label
 	kubeletNodeLabels := ExpectKubeletNodeLabelsPassed(decodedString)
 	Expect(kubeletNodeLabels).ToNot(ContainSubstring(fmt.Sprintf("%s=%s", key, value)))
+}
+
+func createSDKErrorBody(code, message string) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }

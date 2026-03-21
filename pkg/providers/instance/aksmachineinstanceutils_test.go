@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -103,13 +102,12 @@ func TestBuildNodeClaimFromAKSMachine(t *testing.T) {
 				Priority:   lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
 				ResourceID: lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
 				Status: &armcontainerservice.MachineStatus{
-					CreationTimestamp: lo.ToPtr(creationTime.Add(10 * time.Minute)),
+					CreationTimestamp: lo.ToPtr(creationTime),
 				},
 				NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 				Tags: map[string]*string{
-					NodePoolTagKey: lo.ToPtr("test-nodepool"),
-					launchtemplate.KarpenterAKSMachineNodeClaimTagKey:         lo.ToPtr("test-nodeclaim"),
-					launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(AKSMachineTimestampToTag(creationTime)),
+					NodePoolTagKey:                                    lo.ToPtr("test-nodepool"),
+					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 				},
 			},
 		}
@@ -172,7 +170,7 @@ func TestBuildNodeClaimFromAKSMachine(t *testing.T) {
 
 	t.Run("should handle missing creation time gracefully", func(t *testing.T) {
 		aksMachine := makeBaseMachine()
-		delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineCreationTimestampTagKey)
+		aksMachine.Properties.Status.CreationTimestamp = nil
 		nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
