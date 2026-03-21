@@ -829,6 +829,64 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Taints", func() {
+		It("should reject taints with kubernetes.azure.com/ prefix key", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/scalesetpriority", Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+
+		It("should reject startupTaints with kubernetes.azure.com/ prefix key", func() {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/mode", Value: "gateway", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+
+		It("should reject taints with kubernetes.azure.com/hostedvm key", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/hostedvm", Value: "true", Effect: corev1.TaintEffectNoExecute},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+
+		It("should allow taints with non-AKS domain keys", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "custom-taint", Value: "value", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should allow taints with different domain keys", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "example.com/taint", Value: "value", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should allow taints without domain prefix", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "simple-taint", Value: "value", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should allow CriticalAddonsOnly taint", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "CriticalAddonsOnly", Value: "true", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should not block taints with similar but non-matching domains", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.io/taint", Value: "value", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+		})
+	})
+
 	Context("Tags", func() {
 		It("should allow tags with valid keys and values", func() {
 			nodeClass := &v1beta1.AKSNodeClass{

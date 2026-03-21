@@ -220,6 +220,15 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := lo.Flatten([][]v1.Taint{generalTaints, startupTaints})
+
+	// Sanitize: remove taints with kubernetes.azure.com/ prefix keys.
+	// These are AKS system taints assigned server-side by Machine API (e.g., scalesetpriority=spot, mode=gateway).
+	// This mirrors the label sanitization in configureLabelsAndMode() and aligns with AKS Machine API validation
+	// which blocks user-specified taints under this domain.
+	allTaints = lo.Filter(allTaints, func(taint v1.Taint, _ int) bool {
+		return !v1beta1.IsAKSTaintKey(taint.Key)
+	})
+
 	allTaintsStr := lo.Map(allTaints, func(taint v1.Taint, _ int) string { return taint.ToString() })
 	// Deduplicate (original behavior used sets.NewString for deduplication)
 	allTaintsStr = lo.Uniq(allTaintsStr)
@@ -254,7 +263,6 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
 	}
 
-	// TODO: also do the same for taints (which don't have sanitization logic like this yet)
 	// Remove all labels with kubernetes.azure.com prefix, as well as those managed by kubelet.
 	// Also remove legacy AKS managed labels
 	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {

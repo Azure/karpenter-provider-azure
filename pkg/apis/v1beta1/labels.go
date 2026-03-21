@@ -189,3 +189,10 @@ func GetOSSKUFromImageFamily(imageFamily string) string {
 func IsAKSLabel(label string) bool {
 	return strings.HasPrefix(label, AKSLabelDomain+"/") || aksLegacyLabels.Has(label)
 }
+
+// IsAKSTaintKey returns true if the taint key has the kubernetes.azure.com/ prefix,
+// matching AKS Machine API validation which blocks user-specified taints under this domain.
+// System taints (e.g., scalesetpriority=spot, mode=gateway) are assigned server-side by Machine API.
+func IsAKSTaintKey(key string) bool {
+	return strings.HasPrefix(key, AKSLabelDomain+"/")
+}
