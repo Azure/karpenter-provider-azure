@@ -162,7 +162,7 @@ kind: AzureNodeClass
 metadata:
   name: poc-azurevm
 spec:
-  imageID: "/subscriptions/$SUB_ID/resourceGroups/$RG/providers/Microsoft.Compute/images/poc-image"
+  imageID: "/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0"
   userData: "IyEvYmluL2Jhc2gKZWNobyBoZWxsbw=="
   vnetSubnetID: "$SUBNET_ID"
   osDiskSizeGB: 128
