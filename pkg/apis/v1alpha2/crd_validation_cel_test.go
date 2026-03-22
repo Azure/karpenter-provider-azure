@@ -780,6 +780,40 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		})
+		It("should reject requirements with non-well-known kubernetes.azure.com labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/unknown-label",
+				"kubernetes.azure.com/network-name",
+				"kubernetes.azure.com/kubelet-identity-client-id",
+			} {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow requirements with well-known kubernetes.azure.com labels", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/sku-cpu",
+				"kubernetes.azure.com/sku-memory",
+				"kubernetes.azure.com/cluster",
+				"kubernetes.azure.com/mode",
+				"kubernetes.azure.com/scalesetpriority",
+				"kubernetes.azure.com/os-sku",
+				"kubernetes.azure.com/fips_enabled",
+				"kubernetes.azure.com/ebpf-dataplane",
+			} {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
 	})
 	Context("Labels", func() {
 		It("should allow restricted domains exceptions", func() {
@@ -805,6 +839,83 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 				nodePool = oldNodePool.DeepCopy()
 			}
+		})
+		It("should reject labels from non-well-known kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/unknown-label",
+				"kubernetes.azure.com/network-name",
+				"kubernetes.azure.com/kubelet-identity-client-id",
+			} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow labels from well-known kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, label := range []string{
+				"kubernetes.azure.com/sku-cpu",
+				"kubernetes.azure.com/sku-memory",
+				"kubernetes.azure.com/cluster",
+				"kubernetes.azure.com/mode",
+				"kubernetes.azure.com/scalesetpriority",
+				"kubernetes.azure.com/os-sku",
+				"kubernetes.azure.com/fips_enabled",
+				"kubernetes.azure.com/ebpf-dataplane",
+			} {
+				nodePool.Spec.Template.Labels = map[string]string{
+					label: "test",
+				}
+				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+	})
+
+	Context("Taints", func() {
+		It("should reject taints with non-well-known kubernetes.azure.com key", func() {
+			oldNodePool := nodePool.DeepCopy()
+			for _, key := range []string{
+				"kubernetes.azure.com/unknown-taint",
+				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/mode",
+			} {
+				nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+					{Key: key, Value: "test", Effect: corev1.TaintEffectNoSchedule},
+				}
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
+			}
+		})
+		It("should allow taints with well-known kubernetes.azure.com key", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/scalesetpriority", Value: "spot", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should allow taints with non-kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{Key: "example.com/my-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+		It("should reject startupTaints with non-well-known kubernetes.azure.com key", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{Key: "kubernetes.azure.com/unknown-taint", Value: "test", Effect: corev1.TaintEffectNoSchedule},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
 		})
 	})
 
