@@ -37,13 +37,14 @@ import (
 // These labels are defined here rather than v1beta1 because we do not support scheduling simulation
 // on these labels
 var (
-	AKSLabelEBPFDataplane       = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
-	AKSLabelAzureCNIOverlay     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
-	AKSLabelSubnetName          = v1beta1.AKSLabelDomain + "/network-subnet"
-	AKSLabelVNetGUID            = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
-	AKSLabelPodNetworkType      = v1beta1.AKSLabelDomain + "/podnetwork-type"
-	AKSLabelNetworkStatelessCNI = v1beta1.AKSLabelDomain + "/network-stateless-cni"
-	AKSLocalDNSStateLabelKey    = v1beta1.AKSLabelDomain + "/localdns-state"
+	AKSLabelEBPFDataplane               = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
+	AKSLabelAzureCNIOverlay             = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	AKSLabelSubnetName                  = v1beta1.AKSLabelDomain + "/network-subnet"
+	AKSLabelVNetGUID                    = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
+	AKSLabelPodNetworkType              = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	AKSLabelNetworkStatelessCNI         = v1beta1.AKSLabelDomain + "/network-stateless-cni"
+	AKSLocalDNSStateLabelKey            = v1beta1.AKSLabelDomain + "/localdns-state"
+	AKSArtifactStreamingEnabledLabelKey = v1beta1.AKSLabelDomain + "/artifactstreaming-enabled"
 
 	AKSLabelRole = v1beta1.AKSLabelDomain + "/role"
 
@@ -86,6 +87,7 @@ const (
 func Get(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
+	arch string,
 ) (map[string]string, error) {
 	labels := map[string]string{}
 	opts := options.FromContext(ctx)
@@ -154,6 +156,12 @@ func Get(
 		labels[AKSLocalDNSStateLabelKey] = "enabled"
 	} else {
 		labels[AKSLocalDNSStateLabelKey] = "disabled"
+	}
+
+	// Only set the artifact streaming label when it's enabled (matching AKS RP behavior)
+	// ARM64 nodes do not support artifact streaming
+	if nodeClass.IsArtifactStreamingEnabled(arch) {
+		labels[AKSArtifactStreamingEnabledLabelKey] = "true"
 	}
 
 	return labels, nil

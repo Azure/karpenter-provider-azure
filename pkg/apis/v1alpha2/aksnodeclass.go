@@ -34,6 +34,15 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+// ArtifactStreaming configures artifact streaming for provisioned nodes.
+// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+type ArtifactStreaming struct {
+	// enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
+	// If not specified, defaults to true.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -95,6 +104,10 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// artifactStreaming configures artifact streaming for provisioned nodes.
+	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+	// +optional
+	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs

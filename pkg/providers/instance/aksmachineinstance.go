@@ -33,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
@@ -127,22 +128,24 @@ type AKSMachineProvider interface {
 var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
-	azClient                *azclient.AZClient
-	instanceTypeProvider    instancetype.Provider
-	imageResolver           imagefamily.Resolver
-	subscriptionID          string
-	clusterResourceGroup    string
-	clusterName             string
-	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
-	aksMachinesPoolLocation string
-	errorHandling           *offerings.ErrorDetailHandler
-	deletingMachines        sets.Set[string] // tracks in-flight delete operations by machine name
-	deletingMachinesMu      sync.RWMutex
+	azClient                   *azclient.AZClient
+	instanceTypeProvider       instancetype.Provider
+	allocationStrategyProvider allocationstrategy.Provider
+	imageResolver              imagefamily.Resolver
+	subscriptionID             string
+	clusterResourceGroup       string
+	clusterName                string
+	aksMachinesPoolName        string // Only support one AKS machine pool at a time, for now.
+	aksMachinesPoolLocation    string
+	errorHandling              *offerings.ErrorDetailHandler
+	deletingMachines           sets.Set[string] // tracks in-flight delete operations by machine name
+	deletingMachinesMu         sync.RWMutex
 }
 
 func NewAKSMachineProvider(
 	azClient *azclient.AZClient,
 	instanceTypeProvider instancetype.Provider,
+	allocationStrategyProvider allocationstrategy.Provider,
 	imageResolver imagefamily.Resolver,
 	offeringsCache *cache.UnavailableOfferings,
 	subscriptionID string,
@@ -152,16 +155,17 @@ func NewAKSMachineProvider(
 	aksMachinesPoolLocation string,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
-		azClient:                azClient,
-		instanceTypeProvider:    instanceTypeProvider,
-		imageResolver:           imageResolver,
-		subscriptionID:          subscriptionID,
-		clusterResourceGroup:    clusterResourceGroup,
-		clusterName:             clusterName,
-		aksMachinesPoolName:     aksMachinesPoolName,
-		aksMachinesPoolLocation: aksMachinesPoolLocation,
-		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
-		deletingMachines:        sets.New[string](),
+		azClient:                   azClient,
+		instanceTypeProvider:       instanceTypeProvider,
+		allocationStrategyProvider: allocationStrategyProvider,
+		imageResolver:              imageResolver,
+		subscriptionID:             subscriptionID,
+		clusterResourceGroup:       clusterResourceGroup,
+		clusterName:                clusterName,
+		aksMachinesPoolName:        aksMachinesPoolName,
+		aksMachinesPoolLocation:    aksMachinesPoolLocation,
+		errorHandling:              offerings.NewErrorDetailHandler(offeringsCache),
+		deletingMachines:           sets.New[string](),
 	}
 
 	return provider
@@ -181,7 +185,6 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AKS machine name from NodeClaim name %q: %w", nodeClaim.Name, err)
 	}
-	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 
 	aksMachinePromise, err := p.beginCreateMachine(ctx, nodeClass, nodeClaim, instanceTypes, aksMachineName)
 	if err != nil {
@@ -441,8 +444,13 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
 	}
 
+	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		allocationstrategy.NewInstanceOfferings(instanceTypes),
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+	)
+
 	// Decide on offerings
-	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
+	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}

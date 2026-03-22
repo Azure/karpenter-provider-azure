@@ -153,6 +153,44 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("ArtifactStreaming", func() {
+		It("should accept when ArtifactStreaming is completely omitted", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// ArtifactStreaming is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled true", func() {
+			enabled := true
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{
+						Enabled: &enabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled false", func() {
+			disabled := false
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{
+						Enabled: &disabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
 	Context("LocalDNS", func() {
 		It("should accept when LocalDNS is completely omitted", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
