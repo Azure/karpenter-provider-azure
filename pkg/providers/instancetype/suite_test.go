@@ -1158,6 +1158,45 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 	})
+
+	Context("InstanceTypes Override", func() {
+		It("should filter to only requested instance types when instanceTypes is set", func() {
+			nodeClass.Spec.InstanceTypes = []string{"Standard_D2_v2"}
+			ExpectApplied(ctx, env.Client, nodeClass)
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			Expect(len(instanceTypes)).To(BeNumerically(">", 0))
+
+			for _, it := range instanceTypes {
+				Expect(it.Name).To(Equal("Standard_D2_v2"))
+			}
+		})
+
+		It("should return all instance types when instanceTypes is not set", func() {
+			nodeClass.Spec.InstanceTypes = nil
+			ExpectApplied(ctx, env.Client, nodeClass)
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			Expect(len(instanceTypes)).To(BeNumerically(">", 1))
+		})
+
+		It("should include instanceTypes filter in cache key", func() {
+			// First call with no filter
+			nodeClass.Spec.InstanceTypes = nil
+			ExpectApplied(ctx, env.Client, nodeClass)
+			allTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			// Second call with filter — should return different (fewer) results
+			nodeClass.Spec.InstanceTypes = []string{"Standard_D2_v2"}
+			filteredTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			Expect(len(filteredTypes)).To(BeNumerically("<", len(allTypes)))
+		})
+	})
 })
 
 // KubeReservedResources tests have been moved to kube_reserved_test.go (table-driven)
