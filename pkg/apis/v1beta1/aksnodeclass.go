@@ -84,6 +84,10 @@ type AKSNodeClassSpec struct {
 	// These are merged with the global --node-identities at VM creation time.
 	// Not exposed in the AKSNodeClass API.
 	ManagedIdentities []string `json:"-"`
+	// DataDiskSizeGB is the size of an additional data disk to attach to provisioned VMs.
+	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
+	// Not exposed in the AKSNodeClass API.
+	DataDiskSizeGB *int32 `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}

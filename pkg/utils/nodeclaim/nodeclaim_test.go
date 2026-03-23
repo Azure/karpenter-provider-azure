@@ -150,6 +150,22 @@ func TestAKSNodeClassFromAzureNodeClass_NilUserDataAndIdentities(t *testing.T) {
 
 	g.Expect(aksNC.Spec.UserData).To(BeNil())
 	g.Expect(aksNC.Spec.ManagedIdentities).To(BeNil())
+	g.Expect(aksNC.Spec.DataDiskSizeGB).To(BeNil())
+}
+
+func TestAKSNodeClassFromAzureNodeClass_DataDiskSizeGB(t *testing.T) {
+	g := NewWithT(t)
+
+	azureNC := &v1alpha1.AzureNodeClass{
+		Spec: v1alpha1.AzureNodeClassSpec{
+			DataDiskSizeGB: lo.ToPtr(int32(256)),
+		},
+	}
+
+	aksNC := AKSNodeClassFromAzureNodeClass(azureNC)
+
+	g.Expect(aksNC.Spec.DataDiskSizeGB).NotTo(BeNil())
+	g.Expect(*aksNC.Spec.DataDiskSizeGB).To(Equal(int32(256)))
 }
 
 func TestGetVMName_ValidProviderID(t *testing.T) {
