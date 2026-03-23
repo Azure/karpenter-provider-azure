@@ -61,6 +61,15 @@ spec:
               spec is the top level specification for the Azure Karpenter Provider.
               This will contain configuration necessary to launch instances in Azure.
             properties:
+              dataDiskSizeGB:
+                description: |-
+                  dataDiskSizeGB is the size of an additional data disk in GB to attach for
+                  container runtime storage (e.g., containerd root). A Premium_LRS managed disk
+                  is attached at LUN 0. The image's bootstrap must handle mounting this disk.
+                format: int32
+                maximum: 4096
+                minimum: 10
+                type: integer
               imageID:
                 description: |-
                   imageID is the ARM resource ID of the image that instances use.
@@ -73,6 +82,21 @@ spec:
                     /CommunityGalleries/{gallery}/images/{image}/versions/{version}
                 maxLength: 1024
                 pattern: (?i)^(\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/Microsoft\.Compute\/.*|\/CommunityGalleries\/[^\/]+\/images\/[^\/]+\/versions\/[^\/]+)$
+                type: string
+              instanceTypes:
+                description: |-
+                  instanceTypes overrides the instance types discovered by the pricing/SKU provider.
+                  When set, only these instance types are considered for this NodeClass.
+                  Use this for pinned capacity (e.g. GPU SKUs) where the SKU may not appear
+                  in standard pricing APIs or may be filtered by default compatibility checks.
+                items:
+                  type: string
+                maxItems: 100
+                type: array
+              location:
+                description: |-
+                  location overrides the controller-level LOCATION.
+                  When set, VMs for this NodeClass are created in this Azure region.
                 type: string
               managedIdentities:
                 description: |-
@@ -89,6 +113,11 @@ spec:
                 maximum: 4096
                 minimum: 30
                 type: integer
+              resourceGroup:
+                description: |-
+                  resourceGroup overrides the controller-level AZURE_NODE_RESOURCE_GROUP.
+                  When set, VMs for this NodeClass are created in this resource group.
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields.
@@ -100,6 +129,12 @@ spec:
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
                 type: object
+              subscriptionID:
+                description: |-
+                  subscriptionID overrides the controller-level AZURE_SUBSCRIPTION_ID.
+                  When set, VMs for this NodeClass are created in this Azure subscription.
+                  The controller's Azure identity must have appropriate RBAC on the target subscription.
+                type: string
               tags:
                 additionalProperties:
                   type: string
@@ -116,12 +151,11 @@ spec:
                   rule: self.all(k, size(self[k]) <= 256)
               userData:
                 description: |-
-                  userData is the base64-encoded custom data that will be passed to the VM at creation time.
-                  The caller must pre-encode their cloud-init or bootstrap script to base64, as the Azure API
-                  expects this field to contain a base64-encoded string.
-                  The user is fully responsible for providing valid bootstrap/cloud-init data.
+                  userData is the cloud-init or bootstrap script that will be passed to the VM at creation time.
+                  Provide the raw text (e.g. a cloud-init YAML or shell script); the provider will base64-encode
+                  it before passing to the Azure API. The user is responsible for providing valid bootstrap data.
                   When this field is set, no Karpenter-managed bootstrapping is performed.
-                maxLength: 87380
+                maxLength: 65536
                 type: string
               vnetSubnetID:
                 description: |-

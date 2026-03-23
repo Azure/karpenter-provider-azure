@@ -53,12 +53,11 @@ type AzureNodeClassSpec struct {
 	// +kubebuilder:validation:MaxLength=1024
 	// +optional
 	ImageID *string `json:"imageID,omitempty"`
-	// userData is the base64-encoded custom data that will be passed to the VM at creation time.
-	// The caller must pre-encode their cloud-init or bootstrap script to base64, as the Azure API
-	// expects this field to contain a base64-encoded string.
-	// The user is fully responsible for providing valid bootstrap/cloud-init data.
+	// userData is the cloud-init or bootstrap script that will be passed to the VM at creation time.
+	// Provide the raw text (e.g. a cloud-init YAML or shell script); the provider will base64-encode
+	// it before passing to the Azure API. The user is responsible for providing valid bootstrap data.
 	// When this field is set, no Karpenter-managed bootstrapping is performed.
-	// +kubebuilder:validation:MaxLength=87380
+	// +kubebuilder:validation:MaxLength=65536
 	// +optional
 	UserData *string `json:"userData,omitempty"`
 	// managedIdentities is a list of user-assigned managed identity resource IDs
