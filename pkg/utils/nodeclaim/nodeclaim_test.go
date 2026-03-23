@@ -150,6 +150,30 @@ func TestAKSNodeClassFromAzureNodeClass_NilUserDataAndIdentities(t *testing.T) {
 
 	g.Expect(aksNC.Spec.UserData).To(BeNil())
 	g.Expect(aksNC.Spec.ManagedIdentities).To(BeNil())
+	g.Expect(aksNC.Spec.SubscriptionID).To(BeNil())
+	g.Expect(aksNC.Spec.ResourceGroup).To(BeNil())
+	g.Expect(aksNC.Spec.Location).To(BeNil())
+}
+
+func TestAKSNodeClassFromAzureNodeClass_MultiSubFields(t *testing.T) {
+	g := NewWithT(t)
+
+	azureNC := &v1alpha1.AzureNodeClass{
+		Spec: v1alpha1.AzureNodeClassSpec{
+			SubscriptionID: lo.ToPtr("sub-123"),
+			ResourceGroup:  lo.ToPtr("my-rg"),
+			Location:       lo.ToPtr("westus2"),
+		},
+	}
+
+	aksNC := AKSNodeClassFromAzureNodeClass(azureNC)
+
+	g.Expect(aksNC.Spec.SubscriptionID).NotTo(BeNil())
+	g.Expect(*aksNC.Spec.SubscriptionID).To(Equal("sub-123"))
+	g.Expect(aksNC.Spec.ResourceGroup).NotTo(BeNil())
+	g.Expect(*aksNC.Spec.ResourceGroup).To(Equal("my-rg"))
+	g.Expect(aksNC.Spec.Location).NotTo(BeNil())
+	g.Expect(*aksNC.Spec.Location).To(Equal("westus2"))
 }
 
 func TestGetVMName_ValidProviderID(t *testing.T) {
