@@ -52,7 +52,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 
@@ -607,7 +606,7 @@ func (c *CloudProvider) resolveInstanceTypeFromVMInstance(ctx context.Context, v
 }
 
 func (c *CloudProvider) resolveNodePoolFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
-	nodePoolName, ok := vm.Tags[launchtemplate.NodePoolTagKey]
+	nodePoolName, ok := vm.Tags[instance.NodePoolTagKey]
 	if ok && *nodePoolName != "" {
 		nodePool := &karpv1.NodePool{}
 		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: *nodePoolName}, nodePool); err != nil {

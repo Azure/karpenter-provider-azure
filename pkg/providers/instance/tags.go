@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package launchtemplate
+package instance
 
 import (
 	"strings"
@@ -37,7 +37,6 @@ var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
-// TODO: Would like to refactor this out of launchtemplate at some point
 // Tags returns the tags to be applied to a resource (VM, Disk, NIC, etc)
 func Tags(
 	options *options.Options,

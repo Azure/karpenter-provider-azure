@@ -48,7 +48,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -440,7 +439,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 
 	// Resolve subnet, tags (independent of bootstrap — no intermediate struct needed)
 	subnetID := resolveSubnetID(nodeClass, opts)
-	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
+	tags := Tags(opts, nodeClass, nodeClaim)
 
 	// Create NIC
 	nicReference, err := p.buildAndCreateNIC(ctx, resourceName, instanceType, nodeClass, subnetID, tags)

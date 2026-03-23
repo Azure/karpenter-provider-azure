@@ -27,7 +27,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 )
 
@@ -60,7 +59,7 @@ func CalculateHash(data any) (string, error) {
 
 // HashFromNodeClaim calculates an inplace update hash from the specified options, nodeClaim, and nodeClass
 func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
-	tags := launchtemplate.Tags(options, nodeClass, nodeClaim)
+	tags := instance.Tags(options, nodeClass, nodeClaim)
 	tagsForHash := lo.MapValues(tags, func(v *string, _ string) string {
 		return lo.FromPtr(v)
 	})

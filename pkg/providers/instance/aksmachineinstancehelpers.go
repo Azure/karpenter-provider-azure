@@ -32,10 +32,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -275,10 +274,10 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
-	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
+	tags := Tags(opts, nodeClass, nodeClaim)
 
 	// Add AKS machine distinguishing tags
-	tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)
+	tags[KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)
 
 	return tags
 }

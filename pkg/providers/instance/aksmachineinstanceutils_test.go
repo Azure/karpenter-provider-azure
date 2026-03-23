@@ -38,7 +38,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
 // createTestAzureResponseError creates a proper Azure SDK error with the given error code and message
@@ -106,8 +105,8 @@ func TestBuildNodeClaimFromAKSMachine(t *testing.T) {
 				},
 				NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 				Tags: map[string]*string{
-					NodePoolTagKey: lo.ToPtr("test-nodepool"),
-					launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
+					NodePoolTagKey:                                    lo.ToPtr("test-nodepool"),
+					KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 				},
 			},
 		}
