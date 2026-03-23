@@ -41,6 +41,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -128,37 +129,54 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
-	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+	isAzureNodeClass := nodeClaim.Spec.NodeClassRef != nil && nodeClaim.Spec.NodeClassRef.Kind == "AzureNodeClass"
+
+	// Resolve NodeClass — type-specific
+	var aksNodeClass *v1beta1.AKSNodeClass
+	var azureNodeClass *v1alpha1.AzureNodeClass
+	if isAzureNodeClass {
+		var err error
+		azureNodeClass, err = nodeclaimutils.GetAzureNodeClass(ctx, c.kubeClient, nodeClaim)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+			}
+			return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving AzureNodeClass, %w", err))
 		}
-		// We treat a failure to resolve the NodeClass as an ICE since this means there is no capacity possibilities for this NodeClaim
-		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class, %w", err))
+	} else {
+		var err error
+		aksNodeClass, err = nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+			}
+			return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class, %w", err))
+		}
 	}
 
-	/*
-		// TODO: Remove this after v1
-		nodePool, err := utils.ResolveNodePoolFromNodeClaim(ctx, c.kubeClient, nodeClaim)
-		if err != nil {
+	// Validate — AKS only
+	if aksNodeClass != nil {
+		if err := c.validateNodeClass(aksNodeClass); err != nil {
 			return nil, err
 		}
-		kubeletHash, err := utils.GetHashKubelet(nodePool, nodeClass)
-		if err != nil {
-			return nil, err
-		}
-	*/
-	if err = c.validateNodeClass(nodeClass); err != nil {
-		return nil, err
 	}
 
-	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
+	// Resolve instance types — shared logic, type-specific provider call
+	var instanceTypes []*cloudprovider.InstanceType
+	var err error
+	if aksNodeClass != nil {
+		instanceTypes, err = c.resolveInstanceTypes(ctx, nodeClaim, aksNodeClass)
+	} else {
+		instanceTypes, err = c.resolveInstanceTypesGeneric(ctx, nodeClaim)
+	}
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
+
+	// Node overlay — shared
 	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
 		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
 			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
@@ -168,60 +186,55 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		}
 	}
 
-	// Choose provider based on provision mode
-	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI {
-		return c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	// Create VM — type-specific entry point
+	var vmPromise *instance.VirtualMachinePromise
+	if aksNodeClass != nil {
+		// AKS modes: choose VM or AKS Machine provider
+		if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+			return c.createAKSMachineInstance(ctx, aksNodeClass, nodeClaim, instanceTypes)
+		}
+		vmPromise, err = c.vmInstanceProvider.BeginCreateAKS(ctx, aksNodeClass, nodeClaim, instanceTypes)
+	} else {
+		vmPromise, err = c.vmInstanceProvider.BeginCreateAzureVM(ctx, azureNodeClass, nodeClaim, instanceTypes)
 	}
-
-	return c.createVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
-}
-
-func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
-	vmPromise, err := c.vmInstanceProvider.BeginCreateAKS(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
+	// Handle promise — shared
 	if err := c.handleInstancePromise(ctx, vmPromise, nodeClaim); err != nil {
 		return nil, err
 	}
 
-	vm := vmPromise.VM // This is best-effort populated by Karpenter to be used to create the VM server-side. Not all fields are guaranteed to be populated, especially status fields.
-	// Double-check the code before making assumptions on their presence.
+	// Build NodeClaim from VM — shared
+	vm := vmPromise.VM
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
 	newNodeClaim, err := instance.BuildNodeClaimFromVM(ctx, vm, instanceType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("converting instance to node claim, %w", err)
 	}
-	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels.
-	// This is required for scheduling in core to work correctly. If this is not done, on subsequent scheduling passes before the Node is
-	// registered, the NodeClaim will not have the labels required to match the Pod and so a new NodeClaim will be created each time.
-	// Note that AWS does this by explicitly setting the labels in their CloudProvider (see https://github.com/aws/karpenter-provider-aws/blob/main/pkg/cloudprovider/cloudprovider.go#L456)
-	// rather than doing it in bulk here.
-	// TODO: should we do like AWS and smuggle all of these labels through VM tags rather than just setting them here?
 	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
 
-	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
-		return nil, err
+	// Annotations — AKS only
+	if aksNodeClass != nil {
+		if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, aksNodeClass); err != nil {
+			return nil, err
+		}
 	}
+
 	return newNodeClaim, nil
 }
 
 func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
-	// Begin the creation of the instance
 	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating AKS machine failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
-
-	// Handle the promise
 	if err := c.handleInstancePromise(ctx, aksMachinePromise, nodeClaim); err != nil {
 		return nil, err
 	}
-
-	// Convert the AKS machine to a NodeClaim
 	newNodeClaim, err := instance.BuildNodeClaimFromAKSMachineTemplate(
 		ctx, aksMachinePromise.AKSMachineTemplate,
 		aksMachinePromise.InstanceType,
@@ -234,19 +247,10 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
-
-	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels.
-	// This is required for scheduling in core to work correctly. If this is not done, on subsequent scheduling passes before the Node is
-	// registered, the NodeClaim will not have the labels required to match the Pod and so a new NodeClaim will be created each time.
-	// Note that AWS does this by explicitly setting the labels in their CloudProvider (see https://github.com/aws/karpenter-provider-aws/blob/main/pkg/cloudprovider/cloudprovider.go#L456)
-	// rather than doing it in bulk here.
-	// TODO: should we do like AWS and smuggle all of these labels through VM tags rather than just setting them here?
 	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
-
 	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
 		return nil, err
 	}
-
 	return newNodeClaim, nil
 }
 
@@ -580,6 +584,12 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 	//	return reqs.Get(v1.LabelInstanceTypeStable).Has(i.Name) &&
 	//		len(i.Offerings.Requirements(reqs).Available()) > 0
 	// }), nil
+}
+
+// resolveInstanceTypesGeneric resolves instance types without AKS-specific filtering.
+// TODO: Merge with resolveInstanceTypes once the instance type provider accepts VMNodeClass.
+func (c *CloudProvider) resolveInstanceTypesGeneric(ctx context.Context, nodeClaim *karpv1.NodeClaim) ([]*cloudprovider.InstanceType, error) {
+	return c.resolveInstanceTypes(ctx, nodeClaim, &v1beta1.AKSNodeClass{})
 }
 
 func (c *CloudProvider) resolveInstanceTypeFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*cloudprovider.InstanceType, error) {

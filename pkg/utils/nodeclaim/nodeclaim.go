@@ -30,6 +30,7 @@ import (
 	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -64,6 +65,21 @@ func GetAKSNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *k
 		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "aksnodeclasses"}, nodeClass.Name)
 	}
 
+	return nodeClass, nil
+}
+
+// GetAzureNodeClass resolves the AzureNodeClass from the NodeClaim's NodeClassRef.
+func GetAzureNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *karpv1.NodeClaim) (*v1alpha1.AzureNodeClass, error) {
+	if nodeClaim.Spec.NodeClassRef == nil {
+		return nil, fmt.Errorf("nodeClaim %s does not have a nodeClassRef", nodeClaim.Name)
+	}
+	nodeClass := &v1alpha1.AzureNodeClass{}
+	if err := kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
+		return nil, err
+	}
+	if !nodeClass.DeletionTimestamp.IsZero() {
+		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: v1alpha1.Group, Resource: "azurenodeclasses"}, nodeClass.Name)
+	}
 	return nodeClass, nil
 }
 

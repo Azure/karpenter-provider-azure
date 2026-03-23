@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	nctypes "github.com/Azure/karpenter-provider-azure/pkg/apis/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -56,8 +57,11 @@ func (p *DefaultVMProvider) resolveImageID(nodeClass *v1beta1.AKSNodeClass, inst
 }
 
 // resolveSubnetID returns the subnet to use for the VM's NIC.
-func resolveSubnetID(nodeClass *v1beta1.AKSNodeClass, opts *options.Options) string {
-	return lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
+func resolveSubnetID(nodeClass nctypes.VMNodeClass, opts *options.Options) string {
+	if subnetID := nodeClass.GetVNETSubnetID(); subnetID != nil {
+		return *subnetID
+	}
+	return opts.SubnetID
 }
 
 // resolveBootstrap builds bootstrap data (custom data + CSE) for the VM.
@@ -409,12 +413,12 @@ func configureBillingProfile(vmProps *armcompute.VirtualMachineProperties, capac
 }
 
 // configureSecurityProfile sets security-related properties.
-func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass nctypes.VMNodeClass) {
+	if nodeClass.GetEncryptionAtHost() {
 		if vmProps.SecurityProfile == nil {
 			vmProps.SecurityProfile = &armcompute.SecurityProfile{}
 		}
-		vmProps.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+		vmProps.SecurityProfile.EncryptionAtHost = lo.ToPtr(true)
 	}
 }
 

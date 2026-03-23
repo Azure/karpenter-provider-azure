@@ -1123,20 +1123,20 @@ func TestAzureVMProvisionMode(t *testing.T) {
 			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg", "--network-plugin", "kubenet"},
 		},
 		{
-			name: "IsAzureVMMode returns true for azurevm provision mode",
+			name: "azurevm provision mode is accepted",
 			args: []string{"--provision-mode", "azurevm", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
 			validate: func(t *testing.T, opts *options.Options) {
-				if !opts.IsAzureVMMode() {
-					t.Error("expected IsAzureVMMode() to return true")
+				if opts.ProvisionMode != "azurevm" {
+					t.Error("expected provision mode azurevm")
 				}
 			},
 		},
 		{
-			name: "IsAzureVMMode returns false for aksscriptless provision mode",
+			name: "aksscriptless is not azurevm mode",
 			args: []string{"--cluster-name", "my-name", "--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io", "--kubelet-bootstrap-token", "flag-bootstrap-token", "--ssh-public-key", "flag-ssh-public-key", "--vnet-subnet-id", azurevmSubnetID, "--node-resource-group", "my-node-rg"},
 			validate: func(t *testing.T, opts *options.Options) {
-				if opts.IsAzureVMMode() {
-					t.Error("expected IsAzureVMMode() to return false")
+				if opts.ProvisionMode == "azurevm" {
+					t.Error("expected provision mode to not be azurevm")
 				}
 			},
 		},

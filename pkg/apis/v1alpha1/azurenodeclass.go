@@ -155,6 +155,14 @@ func (in *AzureNodeClass) Hash() string {
 	})))
 }
 
+// VMNodeClass interface implementation.
+func (in *AzureNodeClass) GetVNETSubnetID() *string      { return in.Spec.VNETSubnetID }
+func (in *AzureNodeClass) GetOSDiskSizeGB() *int32        { return in.Spec.OSDiskSizeGB }
+func (in *AzureNodeClass) GetImageID() *string            { return in.Spec.ImageID }
+func (in *AzureNodeClass) GetUserData() *string           { return in.Spec.UserData }
+func (in *AzureNodeClass) GetTags() map[string]string     { return in.Spec.Tags }
+func (in *AzureNodeClass) GetManagedIdentities() []string { return in.Spec.ManagedIdentities }
+
 // AzureNodeClassList contains a list of AzureNodeClass
 // +kubebuilder:object:root=true
 type AzureNodeClassList struct {

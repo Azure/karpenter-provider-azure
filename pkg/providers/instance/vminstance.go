@@ -18,9 +18,11 @@ package instance
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +37,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -78,6 +81,7 @@ func (p *VirtualMachinePromise) GetInstanceName() string {
 
 type VMProvider interface {
 	BeginCreateAKS(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
+	BeginCreateAzureVM(context.Context, *v1alpha1.AzureNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
@@ -197,6 +201,162 @@ func (p *DefaultVMProvider) BeginCreateAKS(
 		"capacity-type", GetCapacityTypeFromVM(vm))
 
 	return vmPromise, nil
+}
+
+// BeginCreateAzureVM creates an Azure VM for an AzureNodeClass (non-AKS provisioning).
+// Parallel to BeginCreateAKS but uses AzureNodeClass directly — no adapter conversion.
+// Skips AKS-specific bootstrapping, load balancer, NSG, and extensions.
+func (p *DefaultVMProvider) BeginCreateAzureVM(
+	ctx context.Context,
+	nodeClass *v1alpha1.AzureNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*VirtualMachinePromise, error) {
+	vmPromise, err := p.beginLaunchAzureVM(ctx, nodeClass, nodeClaim, instanceTypes)
+	if err != nil {
+		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
+			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
+		}
+		return nil, err
+	}
+	vm := vmPromise.VM
+	zone, err := utils.MakeAKSLabelZoneFromVM(vm)
+	if err != nil {
+		log.FromContext(ctx).V(1).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
+	}
+
+	log.FromContext(ctx).Info("launched new instance",
+		"launchedInstance", *vm.ID,
+		"hostname", *vm.Name,
+		"type", string(*vm.Properties.HardwareProfile.VMSize),
+		"zone", zone,
+		"capacity-type", GetCapacityTypeFromVM(vm))
+
+	return vmPromise, nil
+}
+
+// beginLaunchAzureVM is the AzureVM-mode equivalent of beginLaunchInstance.
+// Uses AzureNodeClass directly for image, subnet, userData, and identities.
+// Reuses shared helpers (NIC creation, VM creation) with the AKS path.
+func (p *DefaultVMProvider) beginLaunchAzureVM(
+	ctx context.Context,
+	nodeClass *v1alpha1.AzureNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*VirtualMachinePromise, error) {
+	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		allocationstrategy.NewInstanceOfferings(instanceTypes),
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+	)
+
+	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
+	if instanceType == nil {
+		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
+	}
+
+	opts := options.FromContext(ctx)
+	resourceName := GenerateResourceName(nodeClaim.Name)
+
+	// Resolve image — user-provided imageID from AzureNodeClass
+	imageID := lo.FromPtr(nodeClass.GetImageID())
+	if imageID == "" {
+		return nil, fmt.Errorf("imageID is required for AzureNodeClass")
+	}
+
+	// Resolve subnet and tags — shared helpers accepting VMNodeClass
+	subnetID := resolveSubnetID(nodeClass, opts)
+	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
+
+	// Create NIC — skip AKS load balancer and NSG (not applicable to non-AKS VMs)
+	nicReference, err := p.createNetworkInterface(ctx, &createNICOptions{
+		NICName:      resourceName,
+		SubnetID:     subnetID,
+		Tags:         tags,
+		InstanceType: instanceType,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Storage profile — user-provided image
+	storageProfile := &armcompute.StorageProfile{
+		OSDisk: &armcompute.OSDisk{
+			Name:         lo.ToPtr(resourceName),
+			DiskSizeGB:   nodeClass.GetOSDiskSizeGB(),
+			CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
+			DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
+		},
+		ImageReference: &armcompute.ImageReference{
+			ID: lo.ToPtr(imageID),
+		},
+	}
+
+	// OS profile — base64-encode user-provided userData
+	customData := ""
+	if userData := nodeClass.GetUserData(); userData != nil && *userData != "" {
+		customData = base64.StdEncoding.EncodeToString([]byte(*userData))
+	}
+	osProfile := configureOSProfile(opts, resourceName, customData)
+
+	// VM identity — merge global + per-NodeClass identities
+	allIdentities := opts.NodeIdentities
+	if ncIdentities := nodeClass.GetManagedIdentities(); len(ncIdentities) > 0 {
+		allIdentities = mergeIdentities(allIdentities, ncIdentities)
+	}
+
+	// Assemble VM
+	vm := &armcompute.VirtualMachine{
+		Name:     lo.ToPtr(resourceName),
+		Location: lo.ToPtr(p.location),
+		Identity: ConvertToVirtualMachineIdentity(allIdentities),
+		Properties: &armcompute.VirtualMachineProperties{
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+			},
+			StorageProfile: storageProfile,
+			NetworkProfile: configureNetworkProfile(nicReference),
+			OSProfile:      osProfile,
+			Priority:       lo.ToPtr(KarpCapacityTypeToVMPriority[capacityType]),
+		},
+		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
+		Tags:  tags,
+	}
+	configureBillingProfile(vm.Properties, capacityType)
+	configureSecurityProfile(vm.Properties, nodeClass)
+
+	// Create VM
+	result, err := p.createVirtualMachine(ctx, resourceName, vm, imageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
+	if err != nil {
+		return nil, err
+	}
+
+	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
+
+	return &VirtualMachinePromise{
+		providerRef: p,
+		WaitFunc: func() error {
+			if result.Poller == nil {
+				return nil
+			}
+			_, err = result.Poller.PollUntilDone(ctx, nil)
+			if err != nil {
+				VMCreateFailureMetric.With(map[string]string{
+					metrics.ImageLabel:        imageID,
+					metrics.SizeLabel:         instanceType.Name,
+					metrics.ZoneLabel:         zone,
+					metrics.CapacityTypeLabel: capacityType,
+					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+					metrics.PhaseLabel:        phaseAsyncFailure,
+					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
+				}).Inc()
+				return err
+			}
+			// No CSE or AKS identifying extension in azurevm mode
+			return nil
+		},
+		VM: result.VM,
+	}, nil
 }
 
 // Update updates the VM with the given updates. If Tags are specified, the tags are also updated on the associated network interface and VM extensions.
@@ -623,4 +783,26 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 		return err
 	}
 	return nil
+}
+
+// mergeIdentities combines global node identities with per-NodeClass managed identities,
+// deduplicating by case-insensitive resource ID comparison.
+func mergeIdentities(global []string, perNodeClass []string) []string {
+	seen := make(map[string]bool, len(global)+len(perNodeClass))
+	result := make([]string, 0, len(global)+len(perNodeClass))
+	for _, id := range global {
+		lower := strings.ToLower(id)
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, id)
+		}
+	}
+	for _, id := range perNodeClass {
+		lower := strings.ToLower(id)
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, id)
+		}
+	}
+	return result
 }

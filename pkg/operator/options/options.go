@@ -171,10 +171,10 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		return fmt.Errorf("validating options, %w", err)
 	}
 
-	// ClusterID is generated from cluster endpoint (only for AKS modes).
-	// In AzureVM mode, cluster ID is not needed and the endpoint format
-	// may not match AKS conventions, so we skip this.
-	if o.ClusterEndpoint != "" && o.ProvisionMode != consts.ProvisionModeAzureVM {
+	// ClusterID is derived from the AKS API server name — only meaningful for AKS provision modes.
+	if o.ClusterEndpoint != "" && (o.ProvisionMode == consts.ProvisionModeAKSScriptless ||
+		o.ProvisionMode == consts.ProvisionModeBootstrappingClient ||
+		o.ProvisionMode == consts.ProvisionModeAKSMachineAPI) {
 		o.ClusterID = getAKSClusterID(o.GetAPIServerName())
 	}
 
