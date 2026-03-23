@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -61,7 +60,7 @@ type ProvisionClientBootstrap struct {
 	InstanceType                   *cloudprovider.InstanceType
 	StorageProfile                 string
 	OSSKU                          string
-	NodeBootstrappingProvider      types.NodeBootstrappingAPI
+	NodeBootstrappingProvider      NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
 	ArtifactStreaming              *v1beta1.ArtifactStreaming

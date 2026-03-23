@@ -44,10 +44,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
-	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -98,7 +98,7 @@ type DefaultVMProvider struct {
 	imageResolver                imagefamily.Resolver
 	loadBalancerProvider         *loadbalancer.Provider
 	networkSecurityGroupProvider *networksecuritygroup.Provider
-	nodeBootstrappingProvider    imagefamilytypes.NodeBootstrappingAPI
+	nodeBootstrappingProvider    customscriptsbootstrap.NodeBootstrappingAPI
 	resourceGroup                string
 	subscriptionID               string
 	provisionMode                string
@@ -123,7 +123,7 @@ func NewDefaultVMProvider(
 	imageResolver imagefamily.Resolver,
 	loadBalancerProvider *loadbalancer.Provider,
 	networkSecurityGroupProvider *networksecuritygroup.Provider,
-	nodeBootstrappingProvider imagefamilytypes.NodeBootstrappingAPI,
+	nodeBootstrappingProvider customscriptsbootstrap.NodeBootstrappingAPI,
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
