@@ -21,23 +21,17 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
-	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	. "github.com/onsi/gomega"
 )
 
 func TestUbuntu2404_Name(t *testing.T) {
 	g := NewWithT(t)
-	ubuntu := &imagefamily.Ubuntu2404{
-		Options: &template.StaticParameters{},
-	}
+	ubuntu := &imagefamily.Ubuntu2404{}
 	g.Expect(ubuntu.Name()).To(Equal(v1beta1.Ubuntu2404ImageFamily))
 }
 
 func TestUbuntu2404_DefaultImages(t *testing.T) {
-	ubuntu := &imagefamily.Ubuntu2404{
-		Options: &template.StaticParameters{},
-	}
+	ubuntu := &imagefamily.Ubuntu2404{}
 
 	t.Run("should return correct default images", func(t *testing.T) {
 		g := NewWithT(t)
@@ -67,35 +61,4 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 		images := ubuntu.DefaultImages(true, &fipsMode)
 		g.Expect(images).To(BeEmpty())
 	})
-}
-
-func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
-	g := NewWithT(t)
-	ubuntu := &imagefamily.Ubuntu2404{
-		Options: &template.StaticParameters{
-			ClusterName:                    "test-cluster",
-			ClusterEndpoint:                "https://test-cluster.hcp.westus2.azmk8s.io:443",
-			KubeletIdentityClientID:        "test-client-id",
-			TenantID:                       "test-tenant-id",
-			SubscriptionID:                 "test-subscription-id",
-			ResourceGroup:                  "test-resource-group",
-			Location:                       "westus2",
-			ClusterResourceGroup:           "test-cluster-resource-group",
-			ClusterID:                      "test-cluster-id",
-			APIServerName:                  "test-api-server",
-			KubeletClientTLSBootstrapToken: "test-bootstrap-token",
-			NetworkPlugin:                  "azure",
-			NetworkPolicy:                  "none",
-			KubernetesVersion:              "1.34.0",
-			Arch:                           "amd64",
-			SubnetID:                       "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
-		},
-	}
-
-	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
-		nil, nil, nil, nil, nil, "test-distro", "Standard_LRS", nil, nil, nil, nil,
-	)
-	provisionBootstrapper, ok := bootstrapper.(customscriptsbootstrap.ProvisionClientBootstrap)
-	g.Expect(ok).To(BeTrue(), "Expected ProvisionClientBootstrap type")
-	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404), "ImageFamily field must be set to prevent unsupported image family errors")
 }

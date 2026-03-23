@@ -204,6 +204,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		imageFamilyResolver,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
+		nodeBootstrappingAPI,
 		unavailableOfferingsCache,
 		region,
 		testOptions.NodeResourceGroup,
