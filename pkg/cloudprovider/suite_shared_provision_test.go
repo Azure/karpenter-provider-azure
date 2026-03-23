@@ -68,7 +68,7 @@ type creationResult struct {
 	isEphemeral bool
 	diskSizeGB  *int32
 	imageRef    string
-	osDiskType  string // AKS Machine: OSDiskType value ("Managed"/"Ephemeral"); VM: empty (use isEphemeral/diffDiskOption instead)
+	osDiskType  string                                // AKS Machine: OSDiskType value ("Managed"/"Ephemeral"); VM: empty (use isEphemeral/diffDiskOption instead)
 	priority    *armcontainerservice.ScaleSetPriority // AKS Machine only: the priority (Spot/Regular) of the creation request
 	// VM-specific fields (populated only for AKSScriptless/BootstrappingClient mode)
 	customData              string // decoded base64 custom data from OSProfile
