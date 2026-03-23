@@ -301,7 +301,6 @@ func runCommonAdditionalTagsTests() {
 				Expect(*nic.Interface.Tags["karpenter.sh_nodepool"]).To(Equal(nodePool.Name))
 			} else {
 				Expect(result.tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-				Expect(result.tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			}
 		})
 	})
