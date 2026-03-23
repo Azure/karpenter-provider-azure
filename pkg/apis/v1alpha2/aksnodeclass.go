@@ -96,11 +96,10 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
-	// instanceTypes overrides the instance types discovered by the pricing/SKU provider.
-	// When set, only these instance types are considered for this NodeClass.
-	// Use this for pinned GPU capacity where the SKU may not appear in standard pricing APIs.
-	// +optional
-	InstanceTypes []string `json:"instanceTypes,omitempty"`
+	// InstanceTypes overrides the instance types discovered by the pricing/SKU provider.
+	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
+	// Not exposed in the AKSNodeClass API.
+	InstanceTypes []string `json:"-"`
 
 	// security is a collection of security related karpenter fields
 	// +optional
@@ -413,7 +412,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v4"
+const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{

@@ -87,14 +87,6 @@ spec:
                 - Ubuntu2404
                 - AzureLinux
                 type: string
-              instanceTypes:
-                description: |-
-                  instanceTypes overrides the instance types discovered by the pricing/SKU provider.
-                  When set, only these instance types are considered for this NodeClass.
-                  Use this for pinned GPU capacity where the SKU may not appear in standard pricing APIs.
-                items:
-                  type: string
-                type: array
               kubelet:
                 description: |-
                   kubelet defines args to be used when configuring kubelet on provisioned nodes.
@@ -665,14 +657,6 @@ spec:
                 - Ubuntu2404
                 - AzureLinux
                 type: string
-              instanceTypes:
-                description: |-
-                  instanceTypes overrides the instance types discovered by the pricing/SKU provider.
-                  When set, only these instance types are considered for this NodeClass.
-                  Use this for pinned GPU capacity where the SKU may not appear in standard pricing APIs.
-                items:
-                  type: string
-                type: array
               kubelet:
                 description: |-
                   kubelet defines args to be used when configuring kubelet on provisioned nodes.

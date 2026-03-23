@@ -1161,10 +1161,12 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("InstanceTypes Override", func() {
 		It("should filter to only requested instance types when instanceTypes is set", func() {
-			nodeClass.Spec.InstanceTypes = []string{"Standard_D2_v2"}
-			ExpectApplied(ctx, env.Client, nodeClass)
+			// InstanceTypes is json:"-" on AKSNodeClass (only exposed via AzureNodeClass adapter),
+			// so we set it directly on the in-memory object, not via ExpectApplied.
+			filteredNodeClass := nodeClass.DeepCopy()
+			filteredNodeClass.Spec.InstanceTypes = []string{"Standard_D2_v2"}
 
-			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, filteredNodeClass)
 			Expect(err).To(BeNil())
 			Expect(len(instanceTypes)).To(BeNumerically(">", 0))
 
@@ -1184,14 +1186,13 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should include instanceTypes filter in cache key", func() {
 			// First call with no filter
-			nodeClass.Spec.InstanceTypes = nil
-			ExpectApplied(ctx, env.Client, nodeClass)
 			allTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).To(BeNil())
 
 			// Second call with filter — should return different (fewer) results
-			nodeClass.Spec.InstanceTypes = []string{"Standard_D2_v2"}
-			filteredTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			filteredNodeClass := nodeClass.DeepCopy()
+			filteredNodeClass.Spec.InstanceTypes = []string{"Standard_D2_v2"}
+			filteredTypes, err := azureEnv.InstanceTypesProvider.List(ctx, filteredNodeClass)
 			Expect(err).To(BeNil())
 
 			Expect(len(filteredTypes)).To(BeNumerically("<", len(allTypes)))

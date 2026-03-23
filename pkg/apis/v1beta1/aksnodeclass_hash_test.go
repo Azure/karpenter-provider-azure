@@ -159,7 +159,7 @@ func TestHash(t *testing.T) {
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
 	t.Run("when hashing algorithm updates, we should update the hash version", func(t *testing.T) {
 		nodeClass := newHashTestNodeClass()
-		currentHashVersion := "v4"
+		currentHashVersion := "v3"
 		if nodeClass.Hash() != staticHash {
 			if v1beta1.AKSNodeClassHashVersion == currentHashVersion {
 				t.Errorf("hash changed from static hash, expected AKSNodeClassHashVersion to differ from %s", currentHashVersion)
