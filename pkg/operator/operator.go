@@ -208,6 +208,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		imageResolver,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
+		azClient.NodeBootstrappingClient,
 		unavailableOfferingsCache,
 		azConfig.Location,
 		options.FromContext(ctx).NodeResourceGroup,

@@ -47,6 +47,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
@@ -98,6 +99,7 @@ type DefaultVMProvider struct {
 	imageResolver                imagefamily.Resolver
 	loadBalancerProvider         *loadbalancer.Provider
 	networkSecurityGroupProvider *networksecuritygroup.Provider
+	nodeBootstrappingProvider    imagefamilytypes.NodeBootstrappingAPI
 	resourceGroup                string
 	subscriptionID               string
 	provisionMode                string
@@ -105,7 +107,6 @@ type DefaultVMProvider struct {
 	errorHandling                *offerings.ResponseErrorHandler
 	env                          *auth.Environment
 
-	// Fields previously on launchtemplate.Provider, now inlined
 	caBundle             *string
 	clusterEndpoint      string
 	tenantID             string
@@ -123,6 +124,7 @@ func NewDefaultVMProvider(
 	imageResolver imagefamily.Resolver,
 	loadBalancerProvider *loadbalancer.Provider,
 	networkSecurityGroupProvider *networksecuritygroup.Provider,
+	nodeBootstrappingProvider imagefamilytypes.NodeBootstrappingAPI,
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
@@ -142,6 +144,7 @@ func NewDefaultVMProvider(
 		imageResolver:                imageResolver,
 		loadBalancerProvider:         loadBalancerProvider,
 		networkSecurityGroupProvider: networkSecurityGroupProvider,
+		nodeBootstrappingProvider:    nodeBootstrappingProvider,
 		location:                     location,
 		resourceGroup:                resourceGroup,
 		subscriptionID:               subscriptionID,
@@ -445,8 +448,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, err
 	}
 
-	// Resolve bootstrap data (StaticParameters built and consumed internally)
-	bootstrap, err := p.resolveBootstrap(ctx, nodeClass, nodeClaim, instanceType, capacityType)
+	// Resolve bootstrap data — each parameter flows directly, no intermediate StaticParameters
+	bootstrap, err := p.resolveBootstrap(ctx, nodeClass, nodeClaim, instanceType, capacityType, imageID)
 	if err != nil {
 		return nil, err
 	}

@@ -119,8 +119,7 @@ func Get(
 
 	// Add os-sku-requested label that exactly matches the imageFamily specified on the NodeClass
 	labels[v1beta1.AKSLabelOSSKURequested] = lo.FromPtr(nodeClass.Spec.ImageFamily)
-	// nil static parameters here is safe only because we're not using the resulting imageFamily for anything except to get its name
-	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, nil)
+	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion)
 	labels[v1beta1.AKSLabelOSSKUEffective] = imageFamily.Name()
 
 	if opts.IsAzureCNIOverlay() {

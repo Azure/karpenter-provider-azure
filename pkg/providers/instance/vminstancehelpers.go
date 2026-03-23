@@ -31,15 +31,15 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	labelpkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 // resolvedBootstrap carries the rendered bootstrap output needed for VM creation.
-// Unlike the old resolvedBootstrapData, this struct only carries the rendered strings
-// that the VM template and extensions need — not image, subnet, tags, or storage info.
 type resolvedBootstrap struct {
 	CustomData string // base64-encoded cloud-init custom data
 	CSE        string // CSE command (only for BootstrappingClient mode)
@@ -47,7 +47,6 @@ type resolvedBootstrap struct {
 }
 
 // resolveImageID resolves the VM image to use for the given nodeClass and instanceType.
-// Parallel to aksmachineinstancehelpers.go's imageResolver.ResolveNodeImageFromNodeClass call.
 func (p *DefaultVMProvider) resolveImageID(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (string, error) {
 	imageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {
@@ -61,61 +60,21 @@ func resolveSubnetID(nodeClass *v1beta1.AKSNodeClass, opts *options.Options) str
 	return lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
 }
 
-// resolveBootstrap resolves bootstrap data (custom data + CSE) for the VM.
-// StaticParameters and the imagefamily.Resolve() chain are internal to this function
-// and do not leak to the caller.
+// resolveBootstrap builds bootstrap data (custom data + CSE) for the VM.
+// Each parameter flows directly to the bootstrap struct — no intermediate StaticParameters bag.
+// Parallel to how aksmachineinstancehelpers.go's buildAKSMachineTemplate builds its template directly.
 func (p *DefaultVMProvider) resolveBootstrap(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
+	imageID string,
 ) (*resolvedBootstrap, error) {
-	staticParams, err := p.buildStaticParameters(ctx, nodeClass, nodeClaim, instanceType, capacityType)
-	if err != nil {
-		return nil, err
-	}
-
-	templateParams, err := p.imageResolver.Resolve(ctx, nodeClass, nodeClaim, instanceType, staticParams)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &resolvedBootstrap{
-		IsWindows: templateParams.IsWindows,
-	}
-
-	switch p.provisionMode {
-	case consts.ProvisionModeBootstrappingClient:
-		customData, cse, err := templateParams.CustomScriptsNodeBootstrapping.GetCustomDataAndCSE(ctx)
-		if err != nil {
-			return nil, err
-		}
-		result.CustomData = customData
-		result.CSE = cse
-	case consts.ProvisionModeAKSScriptless:
-		userData, err := templateParams.ScriptlessCustomData.Script()
-		if err != nil {
-			return nil, err
-		}
-		result.CustomData = userData
-	}
-
-	return result, nil
-}
-
-// buildStaticParameters constructs the StaticParameters needed by imagefamily.Resolve().
-// This is an internal detail of the bootstrap resolution — the caller never sees StaticParameters.
-func (p *DefaultVMProvider) buildStaticParameters(
-	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
-	nodeClaim *karpv1.NodeClaim,
-	instanceType *corecloudprovider.InstanceType,
-	capacityType string,
-) (*parameters.StaticParameters, error) {
 	opts := options.FromContext(ctx)
 	arch := resolveArch(instanceType)
 	subnetID := resolveSubnetID(nodeClass, opts)
+
 	labels, err := resolveLabels(ctx, nodeClass, nodeClaim, instanceType, capacityType, arch)
 	if err != nil {
 		return nil, err
@@ -126,30 +85,178 @@ func (p *DefaultVMProvider) buildStaticParameters(
 		return nil, err
 	}
 
-	return &parameters.StaticParameters{
-		ClusterName:                    opts.ClusterName,
-		ClusterEndpoint:                p.clusterEndpoint,
-		Labels:                         labels,
-		CABundle:                       p.caBundle,
+	kubeletConfig := prepareKubeletConfiguration(ctx, instanceType, nodeClass)
+	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
+
+	result := &resolvedBootstrap{
+		IsWindows: false, // TODO(Windows)
+	}
+
+	switch p.provisionMode {
+	case consts.ProvisionModeAKSScriptless:
+		bootstrapper := p.buildScriptlessBootstrapper(opts, instanceType, kubeletConfig, generalTaints, startupTaints, labels, subnetID, arch, kubernetesVersion)
+		customData, err := bootstrapper.Script()
+		if err != nil {
+			return nil, fmt.Errorf("rendering scriptless custom data: %w", err)
+		}
+		result.CustomData = customData
+
+	case consts.ProvisionModeBootstrappingClient:
+		bootstrapper, err := p.buildCustomScriptsBootstrapper(ctx, nodeClass, instanceType, imageID, kubeletConfig, generalTaints, startupTaints, labels, subnetID, arch, kubernetesVersion)
+		if err != nil {
+			return nil, err
+		}
+		customData, cse, err := bootstrapper.GetCustomDataAndCSE(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("rendering custom scripts bootstrap data: %w", err)
+		}
+		result.CustomData = customData
+		result.CSE = cse
+	}
+
+	return result, nil
+}
+
+// buildScriptlessBootstrapper constructs a bootstrap.AKS directly from provider fields and parameters.
+// This replaces the ImageFamily.ScriptlessCustomData() indirection — all 5 image families
+// built identical bootstrap.AKS structs, so no polymorphism was needed.
+func (p *DefaultVMProvider) buildScriptlessBootstrapper(
+	opts *options.Options,
+	instanceType *corecloudprovider.InstanceType,
+	kubeletConfig *bootstrap.KubeletConfiguration,
+	generalTaints, startupTaints []v1.Taint,
+	labels map[string]string,
+	subnetID, arch, kubernetesVersion string,
+) bootstrap.AKS {
+	allTaints := lo.Flatten([][]v1.Taint{generalTaints, startupTaints})
+	return bootstrap.AKS{
+		Options: bootstrap.Options{
+			ClusterName:      opts.ClusterName,
+			ClusterEndpoint:  p.clusterEndpoint,
+			KubeletConfig:    kubeletConfig,
+			Taints:           allTaints,
+			Labels:           labels,
+			CABundle:         p.caBundle,
+			GPUNode:          utils.IsNvidiaEnabledSKU(instanceType.Name),
+			GPUDriverVersion: utils.GetGPUDriverVersion(instanceType.Name),
+			GPUDriverType:    utils.GetGPUDriverType(instanceType.Name),
+			GPUImageSHA:      utils.GetAKSGPUImageSHA(instanceType.Name),
+			SubnetID:         subnetID,
+		},
 		Arch:                           arch,
-		GPUNode:                        utils.IsNvidiaEnabledSKU(instanceType.Name),
-		GPUDriverVersion:               utils.GetGPUDriverVersion(instanceType.Name),
-		GPUDriverType:                  utils.GetGPUDriverType(instanceType.Name),
-		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
 		KubeletIdentityClientID:        opts.KubeletIdentityClientID,
-		ResourceGroup:                  p.resourceGroup,
 		Location:                       p.location,
+		ResourceGroup:                  p.resourceGroup,
 		ClusterID:                      opts.ClusterID,
 		APIServerName:                  opts.GetAPIServerName(),
 		KubeletClientTLSBootstrapToken: opts.KubeletClientTLSBootstrapToken,
-		NetworkPlugin:                  getAgentbakerNetworkPlugin(ctx),
+		NetworkPlugin:                  getAgentbakerNetworkPlugin(opts),
 		NetworkPolicy:                  opts.NetworkPolicy,
-		SubnetID:                       subnetID,
-		ClusterResourceGroup:           p.clusterResourceGroup,
 		KubernetesVersion:              kubernetesVersion,
+	}
+}
+
+// buildCustomScriptsBootstrapper constructs a ProvisionClientBootstrap directly.
+// This replaces the ImageFamily.CustomScriptsNodeBootstrapping() indirection — the only
+// per-family difference was the OSSKU constant, which we derive from the image family name.
+func (p *DefaultVMProvider) buildCustomScriptsBootstrapper(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	instanceType *corecloudprovider.InstanceType,
+	imageID string,
+	kubeletConfig *bootstrap.KubeletConfiguration,
+	generalTaints, startupTaints []v1.Taint,
+	labels map[string]string,
+	subnetID, arch, kubernetesVersion string,
+) (customscriptsbootstrap.Bootstrapper, error) {
+	opts := options.FromContext(ctx)
+
+	// Resolve imageDistro — needed by the RP's node bootstrapping API
+	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion)
+	useSIG := opts.UseSIG
+	imageDistro, err := imagefamily.MapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
+	if err != nil {
+		return nil, fmt.Errorf("mapping image to distro: %w", err)
+	}
+
+	// Resolve storage profile (ephemeral vs managed) — needed by bootstrapping API
+	sku, err := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	if err != nil {
+		return nil, fmt.Errorf("getting instance type %q for storage profile: %w", instanceType.Name, err)
+	}
+	storageProfile := consts.StorageProfileManagedDisks
+	if instancetype.UseEphemeralDisk(sku, nodeClass) {
+		storageProfile = consts.StorageProfileEphemeral
+	}
+
+	// Derive OSSKU from image family name — the only per-family difference
+	ossku := imageFamilyToOSSKU(nodeClass.Spec.ImageFamily, kubernetesVersion)
+
+	return customscriptsbootstrap.ProvisionClientBootstrap{
+		ClusterName:                    opts.ClusterName,
+		KubeletConfig:                  kubeletConfig,
+		Taints:                         generalTaints,
+		StartupTaints:                  startupTaints,
+		Labels:                         labels,
+		SubnetID:                       subnetID,
+		Arch:                           arch,
+		SubscriptionID:                 p.subscriptionID,
+		ResourceGroup:                  p.resourceGroup,
+		ClusterResourceGroup:           p.clusterResourceGroup,
+		KubeletClientTLSBootstrapToken: opts.KubeletClientTLSBootstrapToken,
+		KubernetesVersion:              kubernetesVersion,
+		ImageDistro:                    imageDistro,
+		InstanceType:                   instanceType,
+		StorageProfile:                 storageProfile,
+		NodeBootstrappingProvider:      p.nodeBootstrappingProvider,
+		OSSKU:                          ossku,
+		FIPSMode:                       nodeClass.Spec.FIPSMode,
+		LocalDNSProfile:                nodeClass.Spec.LocalDNS,
+		ArtifactStreaming:              nodeClass.Spec.ArtifactStreaming,
 	}, nil
+}
+
+// imageFamilyToOSSKU maps the image family name to the OSSKU constant used by the
+// node bootstrapping API. This was previously the only per-family logic in the
+// ImageFamily.CustomScriptsNodeBootstrapping() methods.
+func imageFamilyToOSSKU(familyName *string, kubernetesVersion string) string {
+	switch lo.FromPtr(familyName) {
+	case v1beta1.Ubuntu2204ImageFamily:
+		return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204
+	case v1beta1.Ubuntu2404ImageFamily:
+		return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404
+	case v1beta1.AzureLinuxImageFamily:
+		if imagefamily.UseAzureLinux3(kubernetesVersion) {
+			return customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3
+		}
+		return customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2
+	case v1beta1.UbuntuImageFamily:
+		fallthrough
+	default:
+		if lo.FromPtr(familyName) == "" || imagefamily.UseUbuntu2404(kubernetesVersion) {
+			return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404
+		}
+		return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204
+	}
+}
+
+// prepareKubeletConfiguration builds the KubeletConfiguration from nodeClass, instance type, and options.
+func prepareKubeletConfiguration(ctx context.Context, instanceType *corecloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *bootstrap.KubeletConfiguration {
+	opts := options.FromContext(ctx)
+	kubeletConfig := &bootstrap.KubeletConfiguration{}
+
+	if nodeClass.Spec.Kubelet != nil {
+		kubeletConfig.KubeletConfiguration = *nodeClass.Spec.Kubelet
+	}
+
+	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, opts.NetworkPlugin, opts.NetworkPluginMode)
+	kubeletConfig.ClusterDNSServiceIP = opts.DNSServiceIP
+	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
+	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
+	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	return kubeletConfig
 }
 
 // resolveLabels computes the merged labels for the node.
@@ -190,8 +297,7 @@ func resolveArch(instanceType *corecloudprovider.InstanceType) string {
 	return karpv1.ArchitectureAmd64
 }
 
-func getAgentbakerNetworkPlugin(ctx context.Context) string {
-	opts := options.FromContext(ctx)
+func getAgentbakerNetworkPlugin(opts *options.Options) string {
 	if opts.IsAzureCNIOverlay() || opts.IsCiliumNodeSubnet() || opts.IsNetworkPluginNone() {
 		return consts.NetworkPluginNone
 	}
@@ -199,7 +305,6 @@ func getAgentbakerNetworkPlugin(ctx context.Context) string {
 }
 
 // configureStorageProfile builds the StorageProfile for the VM.
-// Parallel to aksmachineinstancehelpers.go's configureOSDiskType.
 func (p *DefaultVMProvider) configureStorageProfile(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
