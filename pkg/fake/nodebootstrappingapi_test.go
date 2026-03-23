@@ -23,12 +23,13 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 )
 
 // Note that we want this to represent the real contract, rather than the fake
 func TestNodeBootstrappingAPI_Get_Success(t *testing.T) {
+	g := NewWithT(t)
 	api := &NodeBootstrappingAPI{}
 
 	params := &models.ProvisionValues{
@@ -37,19 +38,20 @@ func TestNodeBootstrappingAPI_Get_Success(t *testing.T) {
 	}
 
 	nb, err := api.Get(context.TODO(), params)
-	assert.NoError(t, err)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	// Suggestion: verify legitimacy of CSE + CustomData
 	// However, given that Karpenter does not contain that knowledge, the validation logic should be imported from CRP, if there is a well-contained one
 	// Even the omit of bootstrap token, where not having them in the first place is a valid case, and Karpenter's contract is to only replace only if they (the templated fields) are present
 
 	_, err = base64.StdEncoding.DecodeString(nb.CustomDataEncodedDehydratable)
-	assert.NoError(t, err) // CustomData should be encoded
+	g.Expect(err).ToNot(HaveOccurred()) // CustomData should be encoded
 	_, err = base64.StdEncoding.DecodeString(nb.CSEDehydratable)
-	assert.Error(t, err) // CSE should not be encoded
+	g.Expect(err).To(HaveOccurred()) // CSE should not be encoded
 }
 
 func TestNodeBootstrappingAPI_Get_MissingProvisionProfile(t *testing.T) {
+	g := NewWithT(t)
 	api := &NodeBootstrappingAPI{}
 
 	params := &models.ProvisionValues{
@@ -58,12 +60,13 @@ func TestNodeBootstrappingAPI_Get_MissingProvisionProfile(t *testing.T) {
 	}
 
 	_, err := api.Get(context.TODO(), params)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "MissingRequiredProperty")
-	assert.Contains(t, err.Error(), "ProvisionProfile cannot be empty")
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("MissingRequiredProperty"))
+	g.Expect(err.Error()).To(ContainSubstring("ProvisionProfile cannot be empty"))
 }
 
 func TestNodeBootstrappingAPI_Get_MissingProvisionHelperValues(t *testing.T) {
+	g := NewWithT(t)
 	api := &NodeBootstrappingAPI{}
 
 	params := &models.ProvisionValues{
@@ -72,9 +75,9 @@ func TestNodeBootstrappingAPI_Get_MissingProvisionHelperValues(t *testing.T) {
 	}
 
 	_, err := api.Get(context.TODO(), params)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "MissingRequiredProperty")
-	assert.Contains(t, err.Error(), "ProvisionHelperValues cannot be empty")
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("MissingRequiredProperty"))
+	g.Expect(err.Error()).To(ContainSubstring("ProvisionHelperValues cannot be empty"))
 }
 
 // Helper functions
@@ -103,6 +106,7 @@ func createValidProvisionHelperValues() *models.ProvisionHelperValues {
 }
 
 func TestNodeBootstrappingAPI_RecordsRequests(t *testing.T) {
+	g := NewWithT(t)
 	api := &NodeBootstrappingAPI{}
 
 	params := &models.ProvisionValues{
@@ -111,20 +115,21 @@ func TestNodeBootstrappingAPI_RecordsRequests(t *testing.T) {
 	}
 
 	_, err := api.Get(context.TODO(), params)
-	assert.NoError(t, err)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	// Verify that the request was recorded
-	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
+	g.Expect(api.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
 	recordedInput := api.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-	assert.Equal(t, params, recordedInput.Params)
+	g.Expect(recordedInput.Params).To(Equal(params))
 
 	// Verify call counts
-	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.Calls())
-	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.SuccessfulCalls())
-	assert.Equal(t, 0, api.NodeBootstrappingGetBehavior.FailedCalls())
+	g.Expect(api.NodeBootstrappingGetBehavior.Calls()).To(Equal(1))
+	g.Expect(api.NodeBootstrappingGetBehavior.SuccessfulCalls()).To(Equal(1))
+	g.Expect(api.NodeBootstrappingGetBehavior.FailedCalls()).To(Equal(0))
 }
 
 func TestNodeBootstrappingAPI_RecordsMultipleRequests(t *testing.T) {
+	g := NewWithT(t)
 	api := &NodeBootstrappingAPI{}
 
 	params1 := &models.ProvisionValues{
@@ -151,25 +156,26 @@ func TestNodeBootstrappingAPI_RecordsMultipleRequests(t *testing.T) {
 	}
 
 	_, err := api.Get(context.TODO(), params1)
-	assert.NoError(t, err)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	_, err = api.Get(context.TODO(), params2)
-	assert.NoError(t, err)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	// Verify that both requests were recorded
-	assert.Equal(t, 2, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
-	assert.Equal(t, 2, api.NodeBootstrappingGetBehavior.Calls())
-	assert.Equal(t, 2, api.NodeBootstrappingGetBehavior.SuccessfulCalls())
+	g.Expect(api.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(2))
+	g.Expect(api.NodeBootstrappingGetBehavior.Calls()).To(Equal(2))
+	g.Expect(api.NodeBootstrappingGetBehavior.SuccessfulCalls()).To(Equal(2))
 
 	// Verify requests in LIFO order (stack behavior)
 	recordedInput2 := api.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-	assert.Equal(t, params2, recordedInput2.Params)
+	g.Expect(recordedInput2.Params).To(Equal(params2))
 
 	recordedInput1 := api.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-	assert.Equal(t, params1, recordedInput1.Params)
+	g.Expect(recordedInput1.Params).To(Equal(params1))
 }
 
 func TestNodeBootstrappingAPI_Reset(t *testing.T) {
+	g := NewWithT(t)
 	api := &NodeBootstrappingAPI{}
 
 	params := &models.ProvisionValues{
@@ -178,10 +184,10 @@ func TestNodeBootstrappingAPI_Reset(t *testing.T) {
 	}
 
 	_, err := api.Get(context.TODO(), params)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(api.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
 
 	// Reset should clear recorded requests
 	api.Reset()
-	assert.Equal(t, 0, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
+	g.Expect(api.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(0))
 }

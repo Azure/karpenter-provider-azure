@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instance
+package azclient
 
 import (
 	"context"
@@ -39,7 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/skewer"
 
-	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
+	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
 type AKSMachinesAPI interface {
@@ -80,7 +80,10 @@ type SubnetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
 }
 
-// TODO: Move this to another package that more correctly reflects its usage across multiple providers
+type DiskEncryptionSetsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
+}
+
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
@@ -89,6 +92,7 @@ type AZClient struct {
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
 	subnetsClient                  SubnetsAPI
+	diskEncryptionSetsClient       DiskEncryptionSetsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -104,6 +108,40 @@ func (c *AZClient) SubnetsClient() SubnetsAPI {
 	return c.subnetsClient
 }
 
+func (c *AZClient) DiskEncryptionSetsClient() DiskEncryptionSetsAPI {
+	return c.diskEncryptionSetsClient
+}
+
+func (c *AZClient) AKSMachinesClient() AKSMachinesAPI {
+	return c.aksMachinesClient
+}
+
+// SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
+// with a batching layer when BatchCreationEnabled is true.
+func (c *AZClient) SetAKSMachinesClient(client AKSMachinesAPI) {
+	c.aksMachinesClient = client
+}
+
+func (c *AZClient) AgentPoolsClient() AKSAgentPoolsAPI {
+	return c.agentPoolsClient
+}
+
+func (c *AZClient) VirtualMachinesClient() VirtualMachinesAPI {
+	return c.virtualMachinesClient
+}
+
+func (c *AZClient) VirtualMachineExtensionsClient() VirtualMachineExtensionsAPI {
+	return c.virtualMachinesExtensionClient
+}
+
+func (c *AZClient) NetworkInterfacesClient() NetworkInterfacesAPI {
+	return c.networkInterfacesClient
+}
+
+func (c *AZClient) AzureResourceGraphClient() AzureResourceGraphAPI {
+	return c.azureResourceGraphClient
+}
+
 func NewAZClientFromAPI(
 	virtualMachinesClient VirtualMachinesAPI,
 	azureResourceGraphClient AzureResourceGraphAPI,
@@ -112,6 +150,7 @@ func NewAZClientFromAPI(
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
 	subnetsClient SubnetsAPI,
+	diskEncryptionSetsClient DiskEncryptionSetsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
@@ -128,6 +167,7 @@ func NewAZClientFromAPI(
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
 		subnetsClient:                  subnetsClient,
+		diskEncryptionSetsClient:       diskEncryptionSetsClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
 		NodeBootstrappingClient:        nodeBootstrappingClient,
@@ -138,7 +178,7 @@ func NewAZClientFromAPI(
 	}
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
 	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
@@ -160,11 +200,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
-	if o.UseSIG {
+	if o.UseSIG && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI { // Not doing this if PROVISION_MODE is aksmachineapi as Create will never use VM client, but want to allow other VM client operations
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
-		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
+		vmClientOptions.PerRetryPolicies = append(vmClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {
@@ -201,6 +241,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
+	diskEncryptionSetsClient, err := armcompute.NewDiskEncryptionSetsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
@@ -228,8 +273,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
-	if o.ManageExistingAKSMachines {
-		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
+		// copy the options to avoid modifying the original
+		var machinesClientOptions = *opts
+		machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{})
+		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, &machinesClientOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -261,6 +309,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		extensionsClient,
 		interfacesClient,
 		subnetsClient,
+		diskEncryptionSetsClient,
 		loadBalancersClient,
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,

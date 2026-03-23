@@ -20,7 +20,7 @@ import (
 	_ "embed"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 // TODO: Get these from agentbaker
@@ -35,10 +35,12 @@ const (
 	AKSGPUGridVersionSuffix = "20250512225043"
 )
 
-type NvidiaSKUConfig struct {
-	NvidiaEnabledSKUFamilies        map[string][]string `yaml:"nvidiaEnabledSKUs"`
-	MarinerNvidiaEnabledSKUFamilies map[string][]string `yaml:"marinerNvidiaEnabledSKUs"`
+type GPUSKUInfo struct {
+	GPU string   `yaml:"gpu"`
+	OS  []string `yaml:"os"`
 }
+
+type GPUSKUConfig map[string]GPUSKUInfo
 
 var (
 	nvidiaEnabledSKUs        = make(map[string]bool)
@@ -49,24 +51,28 @@ var (
 var configFile []byte
 
 func init() {
-	readNvidiaSKUConfig()
+	readGPUSKUConfig()
 }
 
-func readNvidiaSKUConfig() {
-	var nvidiaSKUConfig NvidiaSKUConfig
+func readGPUSKUConfig() {
+	var gpuSKUConfig GPUSKUConfig
 
-	err := yaml.Unmarshal(configFile, &nvidiaSKUConfig)
+	err := yaml.Unmarshal(configFile, &gpuSKUConfig)
 	if err != nil {
 		panic(err)
 	}
-	for _, skus := range nvidiaSKUConfig.NvidiaEnabledSKUFamilies {
-		for _, sku := range skus {
+
+	for sku, info := range gpuSKUConfig {
+		if info.GPU == "nvidia" {
 			nvidiaEnabledSKUs[sku] = true
-		}
-	}
-	for _, skus := range nvidiaSKUConfig.MarinerNvidiaEnabledSKUFamilies {
-		for _, sku := range skus {
-			marinerNvidiaEnabledSKUs[sku] = true
+
+			// Check if this SKU supports azurelinux or azurelinux3
+			for _, os := range info.OS {
+				if os == "azurelinux" || os == "azurelinux3" {
+					marinerNvidiaEnabledSKUs[sku] = true
+					break
+				}
+			}
 		}
 	}
 }

@@ -1,13 +1,13 @@
 name: DumpLogs
 description: 'Dump logs and debug information from the cluster after a test run'
 inputs:
-  client-id:
+  client_id:
     description: "Client ID"
     required: true
-  tenant-id:
+  tenant_id:
     description: "Tenant ID"
     required: true
-  subscription-id:
+  subscription_id:
     description: "Subscription ID"
     required: true
   resource_group:
@@ -22,15 +22,15 @@ inputs:
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+  - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
     with:
       ref: ${{ inputs.git_ref }}
   - name: az login
     uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
     with:
-      client-id: ${{ inputs.client-id }}
-      tenant-id: ${{ inputs.tenant-id }}
-      subscription-id: ${{ inputs.subscription-id }}
+      client-id: ${{ inputs.client_id }}
+      tenant-id: ${{ inputs.tenant_id }}
+      subscription-id: ${{ inputs.subscription_id }}
   - name: update cluster context
     shell: bash
     env:

@@ -19,11 +19,10 @@ package utils
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 )
 
 func TestGetAKSGPUImageSHA(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name          string
 		size          string
@@ -41,14 +40,14 @@ func TestGetAKSGPUImageSHA(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(test.gpuDriverSha, GetAKSGPUImageSHA(test.size), "Failed for size: %s", test.size)
-			assert.Equal(test.gpuDriverType, GetGPUDriverType(test.size), "Failed for size: %s", test.size)
+			g := NewWithT(t)
+			g.Expect(GetAKSGPUImageSHA(test.size)).To(Equal(test.gpuDriverSha), "Failed for size: %s", test.size)
+			g.Expect(GetGPUDriverType(test.size)).To(Equal(test.gpuDriverType), "Failed for size: %s", test.size)
 		})
 	}
 }
 
 func TestGetGPUDriverVersion(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name   string
 		size   string
@@ -64,14 +63,14 @@ func TestGetGPUDriverVersion(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := GetGPUDriverVersion(test.size)
-			assert.Equal(test.output, result, "Failed for size: %s", test.size)
+			g.Expect(result).To(Equal(test.output), "Failed for size: %s", test.size)
 		})
 	}
 }
 
 func TestIsNvidiaEnabledSKU(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name   string
 		input  string
@@ -88,14 +87,14 @@ func TestIsNvidiaEnabledSKU(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := IsNvidiaEnabledSKU(test.input)
-			assert.Equal(test.output, result, "Failed for input: %s", test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
 		})
 	}
 }
 
 func TestIsMarinerEnabledGPUSKU(t *testing.T) {
-	assert := assert.New(t)
 	tests := []struct {
 		name   string
 		input  string
@@ -112,8 +111,9 @@ func TestIsMarinerEnabledGPUSKU(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := IsMarinerEnabledGPUSKU(test.input)
-			assert.Equal(test.output, result, "Failed for input: %s", test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
 		})
 	}
 }

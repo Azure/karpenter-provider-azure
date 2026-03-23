@@ -190,7 +190,8 @@ func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 // TODO (charliedmcb): remove nolint on gocyclo. Added for now in order to pass "make verify"
 // I think the best way to get rid of gocyclo is to break the section retrieving the maintenance window
 // range from the ConfigMap into its own helper function using channel as a parameter.
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
 	logger := log.FromContext(ctx)
 	if r.systemNamespace == "" {
@@ -223,6 +224,13 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 
 	nextNodeOSMWStartStr, okStart := mwConfigMap.Data[fmt.Sprintf(configMapStartTimeFormat, nodeOSMaintenanceWindowChannel)]
 	nextNodeOSMWEndStr, okEnd := mwConfigMap.Data[fmt.Sprintf(configMapEndTimeFormat, nodeOSMaintenanceWindowChannel)]
+	// Treat empty string values as missing, since the ConfigMap may have keys present with empty values
+	if nextNodeOSMWStartStr == "" {
+		okStart = false
+	}
+	if nextNodeOSMWEndStr == "" {
+		okEnd = false
+	}
 	if !okStart && !okEnd {
 		// No maintenance window defined for aksManagedNodeOSUpgradeSchedule, so its up to us when to preform maintenance
 		return true, nil

@@ -17,6 +17,8 @@ limitations under the License.
 package v1beta1
 
 import (
+	"strings"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -66,6 +68,8 @@ var (
 		AKSLabelCluster,
 		AKSLabelMode,
 		AKSLabelScaleSetPriority,
+		AKSLabelOSSKU,
+		AKSLabelFIPSEnabled,
 	)
 
 	RestrictedLabels = sets.New(
@@ -112,9 +116,29 @@ var (
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
 	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
 	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
+	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
+
+	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
+	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
+
+	// Legacy labels
+	AKSLabelLegacyAgentPool      = "agentpool"
+	AKSLabelLegacyStorageProfile = "storageprofile"
+	AKSLabelLegacyStorageTier    = "storagetier"
+	AKSLabelLegacyAccelerator    = "accelerator"
+
+	// aksLegacyLabels is the set of well-known AKS labels that are not members of the kubernetes.azure.com label namespace.
+	aksLegacyLabels = sets.NewString(
+		AKSLabelLegacyAgentPool,
+		AKSLabelLegacyStorageProfile,
+		AKSLabelLegacyStorageTier,
+		AKSLabelLegacyAccelerator,
+	)
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
 )
 
 const (
@@ -139,3 +163,29 @@ var UbuntuFamilies = sets.New(
 	Ubuntu2204ImageFamily,
 	Ubuntu2404ImageFamily,
 )
+
+// imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
+// These values match what AKS writes for kubernetes.azure.com/os-sku.
+var imageFamilyToOSSKU = map[string]string{
+	UbuntuImageFamily:     "Ubuntu",
+	Ubuntu2204ImageFamily: "Ubuntu",
+	Ubuntu2404ImageFamily: "Ubuntu",
+	AzureLinuxImageFamily: "AzureLinux",
+}
+
+// GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
+// If imageFamily is empty, it defaults to Ubuntu.
+// If the imageFamily is not recognized, it returns the imageFamily as-is.
+func GetOSSKUFromImageFamily(imageFamily string) string {
+	if imageFamily == "" {
+		imageFamily = UbuntuImageFamily
+	}
+	if osSKU, ok := imageFamilyToOSSKU[imageFamily]; ok {
+		return osSKU
+	}
+	return imageFamily // fallback for unknown image families
+}
+
+func IsAKSLabel(label string) bool {
+	return strings.HasPrefix(label, AKSLabelDomain+"/") || aksLegacyLabels.Has(label)
+}

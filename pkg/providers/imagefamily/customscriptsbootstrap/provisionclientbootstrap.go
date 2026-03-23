@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -65,11 +64,11 @@ type ProvisionClientBootstrap struct {
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
+	ArtifactStreaming              *v1beta1.ArtifactStreaming
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
 
-// nolint gocyclo - will be refactored later
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
 	provisionValues, err := p.ConstructProvisionValues(ctx)
 	if err != nil {
@@ -93,9 +92,10 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	return customDataHydrated, cseHydrated, nil
 }
 
-// nolint: gocyclo
 // ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 // Refactoring for code unification is not being invested immediately.
+//
+//nolint:gocyclo
 func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context) (*models.ProvisionValues, error) {
 	if p.IsWindows {
 		// TODO(Windows)
@@ -104,12 +104,10 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
-	// enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-	//		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
-	// Temporarily disable artifact streaming altogether, until node provisioning performance is fixed
-	// (or until we make artifact streaming configurable)
-	enableArtifactStreaming := false
+	// Artifact streaming is configurable through the AKSNodeClass spec
+	// ARM64 does not support artifact streaming and is always disabled
+	// If not specified, defaults to enabled for AMD64
+	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
@@ -152,32 +150,35 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	switch p.OSSKU {
 	// https://go.dev/wiki/Switch#multiple-cases
 	case ImageFamilyOSSKUUbuntu2004, ImageFamilyOSSKUUbuntu2204, ImageFamilyOSSKUUbuntu2404:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
+		provisionProfile.OsSku = lo.ToPtr(models.OSSKUAzureLinux)
 	default:
 		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}
 
 	if p.KubeletConfig != nil {
 		provisionProfile.CustomKubeletConfig = &models.CustomKubeletConfig{
-			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
-			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
-			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
-			ContainerLogMaxSizeMB: ConvertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
-			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
-			PodMaxPids:            ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			CPUCfsQuota:          p.KubeletConfig.CPUCFSQuota,
+			ImageGcHighThreshold: p.KubeletConfig.ImageGCHighThresholdPercent,
+			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
+			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
+			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+		}
+
+		if p.KubeletConfig.ContainerLogMaxSize != nil {
+			provisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB = ConvertContainerLogMaxSizeToMB(*p.KubeletConfig.ContainerLogMaxSize)
 		}
 
 		// NodeClaim defaults don't work somehow and keep giving invalid values. Can be improved later.
 		if p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String() != "0s" {
 			provisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod = lo.ToPtr(p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String())
 		}
-		if p.KubeletConfig.CPUManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = lo.ToPtr(p.KubeletConfig.CPUManagerPolicy)
+		if p.KubeletConfig.CPUManagerPolicy != nil && *p.KubeletConfig.CPUManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = p.KubeletConfig.CPUManagerPolicy
 		}
-		if p.KubeletConfig.TopologyManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = lo.ToPtr(p.KubeletConfig.TopologyManagerPolicy)
+		if p.KubeletConfig.TopologyManagerPolicy != nil && *p.KubeletConfig.TopologyManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = p.KubeletConfig.TopologyManagerPolicy
 		}
 		if len(p.KubeletConfig.AllowedUnsafeSysctls) > 0 {
 			provisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls = p.KubeletConfig.AllowedUnsafeSysctls

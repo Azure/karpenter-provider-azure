@@ -14,40 +14,42 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instance
+package azclient_test
 
 import (
 	"context"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestNoAKSMachinesClient_BeginCreateOrUpdate(t *testing.T) {
 	ctx := context.Background()
-	client := NewNoAKSMachinesClient()
+	client := azclient.NewNoAKSMachinesClient()
 
 	_, err := client.BeginCreateOrUpdate(ctx, "test-rg", "test-cluster", "test-pool", "test-machine", armcontainerservice.Machine{}, nil)
 
 	assert.Error(t, err)
-	assert.True(t, IsAKSMachineOrMachinesPoolNotFound(err))
+	assert.True(t, instance.IsAKSMachineOrMachinesPoolNotFound(err))
 }
 
 func TestNoAKSMachinesClient_Get(t *testing.T) {
 	ctx := context.Background()
-	client := NewNoAKSMachinesClient()
+	client := azclient.NewNoAKSMachinesClient()
 
 	_, err := client.Get(ctx, "test-rg", "test-cluster", "test-pool", "test-machine", nil)
 
 	assert.Error(t, err)
-	assert.True(t, IsAKSMachineOrMachinesPoolNotFound(err))
+	assert.True(t, instance.IsAKSMachineOrMachinesPoolNotFound(err))
 }
 
 func TestNoAKSMachinesClient_NewListPager(t *testing.T) {
 	ctx := context.Background()
-	client := NewNoAKSMachinesClient()
+	client := azclient.NewNoAKSMachinesClient()
 
 	pager := client.NewListPager("test-rg", "test-cluster", "test-pool", nil)
 
@@ -56,22 +58,22 @@ func TestNoAKSMachinesClient_NewListPager(t *testing.T) {
 	assert.True(t, pager.More())
 	_, err := pager.NextPage(ctx)
 	assert.Error(t, err)
-	assert.True(t, IsAKSMachineOrMachinesPoolNotFound(err))
+	assert.True(t, instance.IsAKSMachineOrMachinesPoolNotFound(err))
 }
 
 func TestNoAKSAgentPoolsClient_Get(t *testing.T) {
 	ctx := context.Background()
-	client := NewNoAKSAgentPoolsClient()
+	client := azclient.NewNoAKSAgentPoolsClient()
 
 	_, err := client.Get(ctx, "test-rg", "test-cluster", "test-pool", nil)
 
 	assert.Error(t, err)
-	assert.True(t, IsAKSMachineOrMachinesPoolNotFound(err))
+	assert.True(t, instance.IsAKSMachineOrMachinesPoolNotFound(err))
 }
 
 func TestNoAKSAgentPoolsClient_BeginDeleteMachines(t *testing.T) {
 	ctx := context.Background()
-	client := NewNoAKSAgentPoolsClient()
+	client := azclient.NewNoAKSAgentPoolsClient()
 
 	_, err := client.BeginDeleteMachines(ctx, "test-rg", "test-cluster", "test-pool", armcontainerservice.AgentPoolDeleteMachinesParameter{
 		MachineNames: []*string{
@@ -80,5 +82,5 @@ func TestNoAKSAgentPoolsClient_BeginDeleteMachines(t *testing.T) {
 	}, nil)
 
 	assert.Error(t, err)
-	assert.True(t, IsAKSMachineOrMachinesPoolNotFound(err))
+	assert.True(t, instance.IsAKSMachineOrMachinesPoolNotFound(err))
 }

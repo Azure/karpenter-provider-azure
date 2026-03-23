@@ -21,17 +21,18 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
+	g := NewWithT(t)
 	nodeImageVersionAPI := NodeImageVersionsAPI{}
 	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "")
 	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
 	for _, val := range filteredNodeImages {
-		assert.NotEqual(t, lo.FromPtr(val.OS), "AKSWindows")
-		assert.NotEqual(t, lo.FromPtr(val.OS), "AKSUbuntuEdgeZone")
+		g.Expect(lo.FromPtr(val.OS)).ToNot(Equal("AKSWindows"))
+		g.Expect(lo.FromPtr(val.OS)).ToNot(Equal("AKSUbuntuEdgeZone"))
 	}
 }
 
@@ -82,9 +83,10 @@ func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
 // similar to the behavior we would see if someone is using the node image versions api call.
 // the fake imports the same clientside filtering so we need to assert that behavior is the same
 func TestFilteredNodeImageVersionsFromProviderList(t *testing.T) {
+	g := NewWithT(t)
 	nodeImageVersionsAPI := NodeImageVersionsAPI{}
 	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "")
-	assert.Nil(t, err)
+	g.Expect(err).To(BeNil())
 
 	expectedVersion := "202512.18.0"
 	found := false

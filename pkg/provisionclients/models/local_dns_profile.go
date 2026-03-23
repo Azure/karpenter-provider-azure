@@ -23,6 +23,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -75,11 +76,15 @@ func (m *LocalDNSProfile) validateKubeDNSOverrides(formats strfmt.Registry) erro
 
 	if m.KubeDNSOverrides != nil {
 		if err := m.KubeDNSOverrides.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("kubeDNSOverrides")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("kubeDNSOverrides")
 			}
+
 			return err
 		}
 	}
@@ -87,7 +92,7 @@ func (m *LocalDNSProfile) validateKubeDNSOverrides(formats strfmt.Registry) erro
 	return nil
 }
 
-var localDnsProfileTypeModePropEnum []interface{}
+var localDnsProfileTypeModePropEnum []any
 
 func init() {
 	var res []string
@@ -139,11 +144,15 @@ func (m *LocalDNSProfile) validateVnetDNSOverrides(formats strfmt.Registry) erro
 
 	if m.VnetDNSOverrides != nil {
 		if err := m.VnetDNSOverrides.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("vnetDNSOverrides")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("vnetDNSOverrides")
 			}
+
 			return err
 		}
 	}
@@ -176,11 +185,15 @@ func (m *LocalDNSProfile) contextValidateKubeDNSOverrides(ctx context.Context, f
 	}
 
 	if err := m.KubeDNSOverrides.ContextValidate(ctx, formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("kubeDNSOverrides")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("kubeDNSOverrides")
 		}
+
 		return err
 	}
 
@@ -194,11 +207,15 @@ func (m *LocalDNSProfile) contextValidateVnetDNSOverrides(ctx context.Context, f
 	}
 
 	if err := m.VnetDNSOverrides.ContextValidate(ctx, formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("vnetDNSOverrides")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("vnetDNSOverrides")
 		}
+
 		return err
 	}
 

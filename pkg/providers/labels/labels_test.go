@@ -24,7 +24,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -80,8 +81,9 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			labels := labels.GetAllSingleValuedRequirementLabels(c.requirements)
-			assert.Equal(t, c.expectedLabels, labels)
+			g.Expect(labels).To(Equal(c.expectedLabels))
 		})
 	}
 }
@@ -158,8 +160,9 @@ func TestGetWellKnownSingleValuedRequirementLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			labels := labels.GetWellKnownSingleValuedRequirementLabels(c.requirements)
-			assert.Equal(t, c.expectedLabels, labels)
+			g.Expect(labels).To(Equal(c.expectedLabels))
 		})
 	}
 }
@@ -234,8 +237,9 @@ func TestIsKubeletLabel(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			result := labels.IsKubeletLabel(c.label)
-			assert.Equal(t, c.expectedKubelet, result)
+			g := NewWithT(t)
+			result := labels.CanKubeletSetLabel(c.label)
+			g.Expect(result).To(Equal(c.expectedKubelet))
 		})
 	}
 }
@@ -264,7 +268,15 @@ func TestLocalDNSLabels(t *testing.T) {
 			expectedLabel:     "disabled",
 		},
 		{
-			name: "LocalDNS mode is Preferred with k8s >= 1.36",
+			name: "LocalDNS mode is Preferred with k8s >= 1.35",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModePreferred,
+			},
+			kubernetesVersion: "1.35.0",
+			expectedLabel:     "enabled",
+		},
+		{
+			name: "LocalDNS mode is Preferred with k8s 1.36",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
@@ -272,33 +284,25 @@ func TestLocalDNSLabels(t *testing.T) {
 			expectedLabel:     "enabled",
 		},
 		{
-			name: "LocalDNS mode is Preferred with k8s 1.37",
+			name: "LocalDNS mode is Preferred with k8s < 1.35",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
-			kubernetesVersion: "1.37.0",
-			expectedLabel:     "enabled",
-		},
-		{
-			name: "LocalDNS mode is Preferred with k8s < 1.36",
-			localDNS: &v1beta1.LocalDNS{
-				Mode: v1beta1.LocalDNSModePreferred,
-			},
-			kubernetesVersion: "1.35.0",
+			kubernetesVersion: "1.34.0",
 			expectedLabel:     "disabled",
 		},
 		{
-			name: "LocalDNS mode is Preferred with k8s 1.35.9",
+			name: "LocalDNS mode is Preferred with k8s 1.34.9",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
-			kubernetesVersion: "1.35.9",
+			kubernetesVersion: "1.34.9",
 			expectedLabel:     "disabled",
 		},
 		{
 			name:              "LocalDNS is nil",
 			localDNS:          nil,
-			kubernetesVersion: "1.36.0",
+			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
 		},
 		{
@@ -306,13 +310,14 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: "",
 			},
-			kubernetesVersion: "1.36.0",
+			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 			ctx := options.ToContext(context.Background(), &options.Options{
 				NodeResourceGroup:       "test-rg",
 				KubeletIdentityClientID: "test-client-id",
@@ -327,7 +332,7 @@ func TestLocalDNSLabels(t *testing.T) {
 					LocalDNS: tc.localDNS,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: tc.kubernetesVersion,
+					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -337,14 +342,15 @@ func TestLocalDNSLabels(t *testing.T) {
 				},
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedLabel, labelMap[labels.AKSLocalDNSStateLabelKey])
+			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(labelMap[labels.AKSLocalDNSStateLabelKey]).To(Equal(tc.expectedLabel))
 		})
 	}
 }
 
 func TestDoNotSyncTaintsLabel(t *testing.T) {
+	g := NewWithT(t)
 	ctx := options.ToContext(context.Background(), &options.Options{
 		NodeResourceGroup:       "test-rg",
 		KubeletIdentityClientID: "test-client-id",
@@ -356,7 +362,7 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 			Name: "test-nodeclass",
 		},
 		Status: v1beta1.AKSNodeClassStatus{
-			KubernetesVersion: "1.35.0",
+			KubernetesVersion: lo.ToPtr("1.35.0"),
 			Conditions: []status.Condition{
 				{
 					Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -366,7 +372,199 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 		},
 	}
 
-	labelMap, err := labels.Get(ctx, nodeClass)
-	assert.NoError(t, err)
-	assert.Equal(t, "true", labelMap[karpv1.NodeDoNotSyncTaintsLabelKey])
+	labelMap, err := labels.Get(ctx, nodeClass, "amd64")
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
+}
+
+func TestLabelsGet(t *testing.T) {
+	testCases := []struct {
+		name              string
+		imageFamily       string
+		kubernetesVersion string
+		arch              string
+		artifactStreaming *v1beta1.ArtifactStreaming
+		expectedLabels    map[string]string
+		unexpectedLabels  []string
+	}{
+		{
+			name:              "Ubuntu default with k8s < 1.34 should use Ubuntu2204",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.33.9",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.UbuntuImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2204ImageFamily,
+			},
+		},
+		{
+			name:              "Ubuntu default with k8s >= 1.34 should use Ubuntu2404",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.34.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.UbuntuImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2404ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2204 with k8s < 1.34 still uses Ubuntu2204",
+			imageFamily:       v1beta1.Ubuntu2204ImageFamily,
+			kubernetesVersion: "1.31.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2204ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2204 with k8s >= 1.34 still uses Ubuntu2204",
+			imageFamily:       v1beta1.Ubuntu2204ImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2204ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2404 with k8s < 1.34 still uses Ubuntu2404",
+			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
+			kubernetesVersion: "1.31.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2404ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2404 with k8s >= 1.34 still uses Ubuntu2404",
+			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2404ImageFamily,
+			},
+		},
+		{
+			name:              "AzureLinux with k8s < 1.32 should use AzureLinux2",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.31.9",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "AzureLinux",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.AzureLinuxImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: "AzureLinux2",
+			},
+		},
+		{
+			name:              "AzureLinux with k8s >= 1.32 should use AzureLinux3",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "AzureLinux",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.AzureLinuxImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: "AzureLinux3",
+			},
+		},
+		// Artifact streaming label cases
+		{
+			name:              "AMD64 with nil artifact streaming (default) should have label set to true",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				labels.AKSArtifactStreamingEnabledLabelKey: "true",
+			},
+		},
+		{
+			name:              "ARM64 with nil artifact streaming (default) should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "arm64",
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
+		},
+		{
+			name:              "AMD64 with explicitly enabled artifact streaming should have label set to true",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			expectedLabels: map[string]string{
+				labels.AKSArtifactStreamingEnabledLabelKey: "true",
+			},
+		},
+		{
+			name:              "ARM64 with explicitly enabled artifact streaming should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "arm64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
+		},
+		{
+			name:              "AMD64 with explicitly disabled artifact streaming should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "amd64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
+		},
+		{
+			name:              "ARM64 with explicitly disabled artifact streaming should NOT have label",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.35.0",
+			arch:              "arm64",
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := options.ToContext(context.Background(), &options.Options{
+				NodeResourceGroup:       "test-rg",
+				KubeletIdentityClientID: "test-client-id",
+				SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
+			})
+
+			imageFamily := tc.imageFamily
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:       &imageFamily,
+					ArtifactStreaming: tc.artifactStreaming,
+				},
+				Status: v1beta1.AKSNodeClassStatus{
+					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
+					Conditions: []status.Condition{
+						{
+							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
+							Status: metav1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			labelMap, err := labels.Get(ctx, nodeClass, tc.arch)
+			g.Expect(err).ToNot(HaveOccurred())
+			for key, expectedValue := range tc.expectedLabels {
+				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)
+			}
+			for _, key := range tc.unexpectedLabels {
+				g.Expect(labelMap).ToNot(HaveKey(key), "label %s should not exist", key)
+			}
+		})
+	}
 }

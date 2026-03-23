@@ -63,7 +63,6 @@ type Provider struct {
 	resourceGroup           string
 	clusterResourceGroup    string
 	location                string
-	vnetGUID                string
 	provisionMode           string
 }
 
@@ -71,8 +70,19 @@ type Provider struct {
 
 // ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 // Refactoring for code unification is not being invested immediately.
-func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvider imagefamily.NodeImageProvider, caBundle *string, clusterEndpoint string,
-	tenantID, subscriptionID, clusterResourceGroup string, kubeletIdentityClientID, resourceGroup, location, vnetGUID, provisionMode string,
+func NewProvider(
+	_ context.Context,
+	imageFamily imagefamily.Resolver,
+	imageProvider imagefamily.NodeImageProvider,
+	caBundle *string,
+	clusterEndpoint string,
+	tenantID,
+	subscriptionID,
+	clusterResourceGroup string,
+	kubeletIdentityClientID,
+	resourceGroup,
+	location,
+	provisionMode string,
 ) *Provider {
 	return &Provider{
 		imageFamily:             imageFamily,
@@ -85,7 +95,6 @@ func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvi
 		resourceGroup:           resourceGroup,
 		clusterResourceGroup:    clusterResourceGroup,
 		location:                location,
-		vnetGUID:                vnetGUID,
 		provisionMode:           provisionMode,
 	}
 }
@@ -132,13 +141,13 @@ func (p *Provider) getStaticParameters(
 	nodeClass *v1beta1.AKSNodeClass,
 	labels map[string]string,
 ) (*parameters.StaticParameters, error) {
-	var arch string = karpv1.ArchitectureAmd64
+	var arch = karpv1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		arch = karpv1.ArchitectureArm64
 	}
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-	baseLabels, err := karplabels.Get(ctx, nodeClass)
+	baseLabels, err := karplabels.Get(ctx, nodeClass, arch)
 	if err != nil {
 		return nil, err
 	}
