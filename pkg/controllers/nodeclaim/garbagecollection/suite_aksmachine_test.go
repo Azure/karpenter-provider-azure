@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -160,7 +159,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			// Remove the managed-by tag (this isn't launched by a NodeClaim)
 			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			aksMachine.Properties.Tags = lo.OmitBy(aksMachine.Properties.Tags, func(key string, value *string) bool {
-				return key == launchtemplate.NodePoolTagKey
+				return key == instance.NodePoolTagKey
 			})
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
@@ -338,7 +337,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 							TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 						}
 						vm.Tags = lo.OmitBy(vm.Tags, func(key string, value *string) bool {
-							return key == launchtemplate.NodePoolTagKey
+							return key == instance.NodePoolTagKey
 						})
 						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 					},

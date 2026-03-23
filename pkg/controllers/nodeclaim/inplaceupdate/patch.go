@@ -31,7 +31,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
 func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
@@ -167,7 +166,7 @@ func patchVMTags(
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,
 ) bool {
-	expectedTags := launchtemplate.Tags(
+	expectedTags := instance.Tags(
 		params.opts,
 		params.nodeClass,
 		params.nodeClaim,

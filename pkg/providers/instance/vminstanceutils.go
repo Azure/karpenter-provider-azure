@@ -38,7 +38,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -162,7 +161,7 @@ func BuildNodeClaimFromVM(ctx context.Context, vm *armcompute.VirtualMachine, in
 	labels[karpv1.CapacityTypeLabelKey] = GetCapacityTypeFromVM(vm)
 	labels[v1beta1.AKSLabelScaleSetPriority] = GetScaleSetPriorityLabelFromVM(vm)
 
-	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
+	if tag, ok := vm.Tags[NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 

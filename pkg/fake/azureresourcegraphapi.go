@@ -27,7 +27,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
 type AzureResourceGraphResourcesInput struct {
@@ -86,8 +85,8 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	switch query {
 	case c.vmListQuery:
 		vmList := lo.Filter(c.loadVMObjects(), func(vm armcompute.VirtualMachine, _ int) bool {
-			return vm.Tags != nil && vm.Tags[launchtemplate.NodePoolTagKey] != nil &&
-				vm.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil
+			return vm.Tags != nil && vm.Tags[instance.NodePoolTagKey] != nil &&
+				vm.Tags[instance.KarpenterAKSMachineNodeClaimTagKey] == nil
 		})
 		resourceList := lo.Map(vmList, func(vm armcompute.VirtualMachine, _ int) interface{} {
 			b, _ := json.Marshal(vm)
@@ -96,8 +95,8 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 		return resourceList
 	case c.nicListQuery:
 		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
-			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
-				nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil
+			return nic.Tags != nil && nic.Tags[instance.NodePoolTagKey] != nil &&
+				nic.Tags[instance.KarpenterAKSMachineNodeClaimTagKey] == nil
 		})
 		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
 			b, _ := json.Marshal(nic)
