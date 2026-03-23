@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -337,12 +338,11 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 				DisablePasswordAuthentication: lo.ToPtr(true),
 			}
 		}
-		// In AzureVM mode, pass through pre-base64-encoded userData from the
-		// AzureNodeClass adapter directly to osProfile.CustomData. The Azure API
-		// expects base64, and the SDK does NOT auto-encode.
-		// UserData may be nil/empty — it's the user's responsibility to provide valid bootstrap data.
-		if nodeClass.Spec.UserData != nil {
-			osProfile.CustomData = nodeClass.Spec.UserData
+		// In AzureVM mode, base64-encode the raw userData from AzureNodeClass and
+		// set as osProfile.CustomData. The Azure API expects base64-encoded data.
+		if nodeClass.Spec.UserData != nil && *nodeClass.Spec.UserData != "" {
+			encoded := base64.StdEncoding.EncodeToString([]byte(*nodeClass.Spec.UserData))
+			osProfile.CustomData = &encoded
 		}
 	} else {
 		// AKS modes: SSH key and admin username are required

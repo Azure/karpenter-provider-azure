@@ -74,9 +74,8 @@ type AKSNodeClassSpec struct {
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
-	// UserData is pre-base64-encoded CustomData that will be passed directly to
-	// osProfile.CustomData at VM creation time. The Azure API expects base64, and the
-	// SDK does NOT auto-encode, so the caller must provide already-encoded data.
+	// UserData is the raw cloud-init or bootstrap script from AzureNodeClass.
+	// The provider base64-encodes it before setting osProfile.CustomData.
 	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
 	// Not exposed in the AKSNodeClass API.
 	UserData *string `json:"-"`
