@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-kusto-go/kusto/kql"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 )
 
@@ -39,8 +38,8 @@ func getResourceListQueryBuilder(rg string, resourceType string) *kql.Builder {
 	return kql.New(`Resources`).
 		AddLiteral(` | where type == `).AddString(resourceType).
 		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)). // ARG resources appear to have lowercase RG
-		AddLiteral(` | where tags has_cs `).AddString(launchtemplate.NodePoolTagKey).
-		AddLiteral(` | where not(tags has_cs `).AddString(launchtemplate.KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
+		AddLiteral(` | where tags has_cs `).AddString(NodePoolTagKey).
+		AddLiteral(` | where not(tags has_cs `).AddString(KarpenterAKSMachineNodeClaimTagKey).AddLiteral(`)`)
 }
 
 // GetVMListQueryBuilder returns a KQL query builder for listing VMs with nodepool tags
