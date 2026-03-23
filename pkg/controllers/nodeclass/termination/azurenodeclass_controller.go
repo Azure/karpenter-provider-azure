@@ -41,11 +41,8 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/events"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 // AzureNodeClassController handles termination (finalizer removal) for AzureNodeClass.
@@ -81,13 +78,7 @@ func (c *AzureNodeClassController) finalize(ctx context.Context, nodeClass *v1al
 		return reconcile.Result{}, fmt.Errorf("listing nodeclaims that are using nodeclass, %w", err)
 	}
 	if len(nodeClaimList.Items) > 0 {
-		c.recorder.Publish(events.Event{
-			InvolvedObject: nodeClass,
-			Type:           corev1.EventTypeNormal,
-			Reason:         "WaitingOnNodeClaimTermination",
-			Message:        fmt.Sprintf("Waiting on NodeClaim termination for %s", utils.PrettySlice(lo.Map(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) string { return nc.Name }), 5)),
-			DedupeValues:   []string{string(nodeClass.UID)},
-		})
+		c.recorder.Publish(WaitingOnNodeClaimTerminationEvent(nodeClass, lo.Map(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) string { return nc.Name })))
 		return reconcile.Result{RequeueAfter: time.Minute * 10}, nil
 	}
 
