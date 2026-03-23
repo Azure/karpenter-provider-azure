@@ -445,21 +445,30 @@ func (c *CloudProvider) LivenessProbe(req *http.Request) error {
 // GetInstanceTypes returns all available InstanceTypes
 // May return apimachinery.NotFoundError if NodeClass is not found.
 func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.NodePool) ([]*cloudprovider.InstanceType, error) {
+	ref := nodePool.Spec.Template.Spec.NodeClassRef
+
+	// AzureNodeClass — verify it exists, return all instance types
+	if ref.Group == v1alpha1.Group && ref.Kind == "AzureNodeClass" {
+		azureNC := &v1alpha1.AzureNodeClass{}
+		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: ref.Name}, azureNC); err != nil {
+			if errors.IsNotFound(err) {
+				c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+			}
+			return nil, fmt.Errorf("resolving node class, %w", err)
+		}
+		// Use zero-value AKSNodeClass for instance type provider (returns all types)
+		return c.instanceTypeProvider.List(ctx, &v1beta1.AKSNodeClass{})
+	}
+
+	// AKSNodeClass
 	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
 		}
-		// We must return an error here in the event of the node class not being found. Otherwise users just get
-		// no instance types and a failure to schedule with no indicator pointing to a bad configuration
-		// as the cause.
 		return nil, fmt.Errorf("resolving node class, %w", err)
 	}
-	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
-	if err != nil {
-		return nil, err
-	}
-	return instanceTypes, nil
+	return c.instanceTypeProvider.List(ctx, nodeClass)
 }
 
 // Delete deletes the underlying node
@@ -507,6 +516,14 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeCla
 	if nodePool.Spec.Template.Spec.NodeClassRef == nil {
 		return "", nil
 	}
+
+	// AzureNodeClass — only hash-based drift (no AKS-specific checks)
+	ref := nodePool.Spec.Template.Spec.NodeClassRef
+	if ref.Group == v1alpha1.Group && ref.Kind == "AzureNodeClass" {
+		// TODO: implement AzureNodeClass hash-based drift
+		return "", nil
+	}
+
 	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -527,7 +544,7 @@ func (c *CloudProvider) Name() string {
 }
 
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
-	return []status.Object{&v1beta1.AKSNodeClass{}}
+	return []status.Object{&v1beta1.AKSNodeClass{}, &v1alpha1.AzureNodeClass{}}
 }
 
 // TODO: review repair policies
