@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package imagefamily
+package customscriptsbootstrap
 
 import (
 	"context"
@@ -29,7 +29,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
-	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
@@ -100,13 +99,13 @@ func NewNodeBootstrappingClient(
 func (c *NodeBootstrappingClient) Get(
 	ctx context.Context,
 	parameters *models.ProvisionValues,
-) (types.NodeBootstrapping, error) {
+) (NodeBootstrapping, error) {
 	transport := httptransport.New(c.serverURL, "/", []string{"http"})
 
 	// Add Authorization Bearer token header
 	token, err := c.tokenProvider.getToken(ctx, c.credential)
 	if err != nil {
-		return types.NodeBootstrapping{}, fmt.Errorf("failed to get token: %w", err)
+		return NodeBootstrapping{}, fmt.Errorf("failed to get token: %w", err)
 	}
 	transport.DefaultAuthentication = httptransport.BearerToken(token.Token)
 
@@ -132,20 +131,20 @@ func (c *NodeBootstrappingClient) Get(
 
 	resp, err := client.Operations.NodeBootstrappingGet(params)
 	if err != nil {
-		return types.NodeBootstrapping{}, err
+		return NodeBootstrapping{}, err
 	}
 
 	if resp.Payload == nil {
-		return types.NodeBootstrapping{}, fmt.Errorf("no payload in response")
+		return NodeBootstrapping{}, fmt.Errorf("no payload in response")
 	}
 	if resp.Payload.Cse == nil || *resp.Payload.Cse == "" {
-		return types.NodeBootstrapping{}, fmt.Errorf("no CSE in response")
+		return NodeBootstrapping{}, fmt.Errorf("no CSE in response")
 	}
 	if resp.Payload.CustomData == nil || *resp.Payload.CustomData == "" {
-		return types.NodeBootstrapping{}, fmt.Errorf("no CustomData in response")
+		return NodeBootstrapping{}, fmt.Errorf("no CustomData in response")
 	}
 
-	return types.NodeBootstrapping{
+	return NodeBootstrapping{
 		CustomDataEncodedDehydratable: *resp.Payload.CustomData,
 		CSEDehydratable:               *resp.Payload.Cse,
 	}, nil

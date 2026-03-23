@@ -23,7 +23,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -63,16 +62,3 @@ type NodeImageVersionsAPI interface {
 	List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error)
 }
 
-// NodeBootstrappingAPI defines the interface for retrieving node bootstrapping data
-type NodeBootstrappingAPI interface {
-	Get(ctx context.Context, parameters *models.ProvisionValues) (NodeBootstrapping, error)
-}
-
-type NodeBootstrapping struct {
-	// CustomDataEncodedDehydratable is the base64 encoded custom data, which might contains template strings for TLS bootstrap token in the format of `{{.TokenID}}.{{.TokenSecret}}`
-	// It is to be used in VM creation
-	CustomDataEncodedDehydratable string
-	// CSEDehydratable is CSE script, which might contains template strings for TLS bootstrap token in the format of `{{.TokenID}}.{{.TokenSecret}}`
-	// It is to be used in VM CSE creation
-	CSEDehydratable string
-}

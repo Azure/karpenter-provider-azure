@@ -30,8 +30,6 @@ import (
 )
 
 // Resolver resolves VM images for node provisioning.
-// Bootstrap data construction has been moved to the instance package (vminstancehelpers.go),
-// where it's built directly without the intermediate StaticParameters/Parameters layer.
 type Resolver interface {
 	ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error)
 }
@@ -45,9 +43,6 @@ type defaultResolver struct {
 }
 
 // ImageFamily provides image metadata for a specific OS family.
-// Bootstrap data construction (ScriptlessCustomData, CustomScriptsNodeBootstrapping)
-// has been moved to the instance package — the 5 image families all produced identical
-// bootstrap structs (the only per-family difference was the OSSKU constant).
 type ImageFamily interface {
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -58,7 +53,7 @@ type ImageFamily interface {
 }
 
 // NewDefaultResolver constructs a new image Resolver
-func NewDefaultResolver(_ client.Client, imageProvider *provider, instanceTypeProvider instancetype.Provider, _ types.NodeBootstrappingAPI) *defaultResolver {
+func NewDefaultResolver(_ client.Client, imageProvider *provider, instanceTypeProvider instancetype.Provider) *defaultResolver {
 	return &defaultResolver{
 		imageProvider:        imageProvider,
 		instanceTypeProvider: instanceTypeProvider,
@@ -83,7 +78,6 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 }
 
 // MapToImageDistro maps an image ID to its distro string by matching against DefaultImages.
-// Used by the instance package to resolve the imageDistro for the BootstrappingClient provision mode.
 func MapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {
 	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
