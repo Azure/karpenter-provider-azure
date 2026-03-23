@@ -65,6 +65,12 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// OSDiskType is the type of disk to use for the OS.
+	// If EphemeralWithFallbackToManaged, but the VM type does not support ephemeral disks
+	// of at least OSDiskSizeGB size, we will fall back to Managed.
+	// +default="EphemeralWithFallbackToManaged"
+	// +kubebuilder:validation:Enum:={"EphemeralWithFallbackToManaged","Managed"}
+	OSDiskType *string `json:"osDiskType,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +default=128
 	// +kubebuilder:validation:Minimum=30
