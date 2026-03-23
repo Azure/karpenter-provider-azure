@@ -21,7 +21,7 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/samber/lo"
 )
@@ -41,7 +41,7 @@ var (
 // Tags returns the tags to be applied to a resource (VM, Disk, NIC, etc)
 func Tags(
 	options *options.Options,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass types.VMNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 ) map[string]*string {
 	defaultTags := map[string]string{
@@ -58,7 +58,7 @@ func Tags(
 
 	// MapEntries first so that karpenter.azure.com_cluster and karpenter.azure.com/cluster collide
 	additionalTags := lo.MapEntries(options.AdditionalTags, mapTags)
-	nodeClassTags := lo.MapEntries(nodeClass.Spec.Tags, mapTags)
+	nodeClassTags := lo.MapEntries(nodeClass.GetTags(), mapTags)
 	defaultTagsMapped := lo.MapEntries(defaultTags, mapTags)
 
 	return lo.Assign(additionalTags, nodeClassTags, defaultTagsMapped)

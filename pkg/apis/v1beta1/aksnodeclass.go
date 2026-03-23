@@ -74,16 +74,6 @@ type AKSNodeClassSpec struct {
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
-	// UserData is the raw cloud-init or bootstrap script from AzureNodeClass.
-	// The provider base64-encodes it before setting osProfile.CustomData.
-	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
-	// Not exposed in the AKSNodeClass API.
-	UserData *string `json:"-"`
-	// ManagedIdentities is a list of user-assigned managed identity resource IDs
-	// from AzureNodeClass. Only used in AzureVM provision mode via the adapter.
-	// These are merged with the global --node-identities at VM creation time.
-	// Not exposed in the AKSNodeClass API.
-	ManagedIdentities []string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
@@ -450,12 +440,13 @@ type AKSNodeClassList struct {
 
 // VMNodeClass interface implementation — makes AKSNodeClass satisfy the same
 // interface as AzureNodeClass for the VM provider.
+// Fields not applicable to AKS (UserData, ManagedIdentities) return nil/empty.
 func (in *AKSNodeClass) GetVNETSubnetID() *string      { return in.Spec.VNETSubnetID }
 func (in *AKSNodeClass) GetOSDiskSizeGB() *int32        { return in.Spec.OSDiskSizeGB }
 func (in *AKSNodeClass) GetImageID() *string            { return in.Spec.ImageID }
-func (in *AKSNodeClass) GetUserData() *string           { return in.Spec.UserData }
+func (in *AKSNodeClass) GetUserData() *string           { return nil } // Not supported on AKS — bootstrap is managed
 func (in *AKSNodeClass) GetTags() map[string]string     { return in.Spec.Tags }
-func (in *AKSNodeClass) GetManagedIdentities() []string { return in.Spec.ManagedIdentities }
+func (in *AKSNodeClass) GetManagedIdentities() []string { return nil } // Not supported on AKS — identity is controller-level
 
 // GetEncryptionAtHost returns whether encryption at host is enabled for the node class.
 // Returns false if Security or EncryptionAtHost is nil.

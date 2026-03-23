@@ -59,7 +59,7 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
 	azureEnv = test.NewEnvironment(ctx, env)
 
-	hashController = hash.NewController(env.Client)
+	hashController = hash.NewAKSNodeClassController(env.Client)
 })
 
 var _ = AfterSuite(func() {

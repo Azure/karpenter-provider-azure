@@ -34,7 +34,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
 // AzureNodeClassController is the hash controller for AzureNodeClass.
@@ -57,17 +56,16 @@ func (c *AzureNodeClassController) Reconcile(ctx context.Context, nodeClass *v1a
 
 	stored := nodeClass.DeepCopy()
 
-	// Compute the hash via the adapter so it matches what setAdditionalAnnotationsForNewNodeClaim writes on NodeClaims.
-	adapted := nodeclaimutils.AKSNodeClassFromAzureNodeClass(nodeClass)
-	adaptedHash := adapted.Hash()
+	// Compute hash directly from AzureNodeClass — no adapter needed.
+	nodeClassHash := nodeClass.Hash()
 
-	if nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion] != v1beta1.AKSNodeClassHashVersion {
-		if err := c.updateNodeClaimHash(ctx, nodeClass, adaptedHash); err != nil {
+	if nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion] != v1alpha1.AzureNodeClassHashVersion {
+		if err := c.updateNodeClaimHash(ctx, nodeClass, nodeClassHash); err != nil {
 			return reconcile.Result{}, err
 		}
 	}
 	nodeClass.Annotations = lo.Assign(nodeClass.Annotations, map[string]string{
-		v1beta1.AnnotationAKSNodeClassHash:        adaptedHash,
+		v1beta1.AnnotationAKSNodeClassHash:        nodeClassHash,
 		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
 	})
 
@@ -93,7 +91,7 @@ func (c *AzureNodeClassController) Register(_ context.Context, m manager.Manager
 
 // updateNodeClaimHash updates the hash annotations on all NodeClaims referencing this AzureNodeClass
 // when the hash version changes (indicating a breaking change in the hash algorithm).
-func (c *AzureNodeClassController) updateNodeClaimHash(ctx context.Context, nodeClass *v1alpha1.AzureNodeClass, adaptedHash string) error {
+func (c *AzureNodeClassController) updateNodeClaimHash(ctx context.Context, nodeClass *v1alpha1.AzureNodeClass, nodeClassHash string) error {
 	ncList := &karpv1.NodeClaimList{}
 	if err := c.kubeClient.List(ctx, ncList, client.MatchingFields{"spec.nodeClassRef.name": nodeClass.Name}); err != nil {
 		return err
@@ -113,7 +111,7 @@ func (c *AzureNodeClassController) updateNodeClaimHash(ctx context.Context, node
 			// Since the hashing mechanism has changed we will not be able to determine if the drifted status has changed.
 			if nc.StatusConditions().Get(karpv1.ConditionTypeDrifted) == nil {
 				nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
-					v1beta1.AnnotationAKSNodeClassHash: adaptedHash,
+					v1beta1.AnnotationAKSNodeClassHash: nodeClassHash,
 				})
 			}
 

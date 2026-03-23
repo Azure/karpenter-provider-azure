@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -263,8 +264,8 @@ func TestBuildVMIdentity_GlobalOnly(t *testing.T) {
 func TestBuildVMIdentity_MergedIdentities(t *testing.T) {
 	g := NewWithT(t)
 	nodeIdentities := []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/global-id"}
-	nodeClass := &v1beta1.AKSNodeClass{
-		Spec: v1beta1.AKSNodeClassSpec{
+	nodeClass := &v1alpha1.AzureNodeClass{
+		Spec: v1alpha1.AzureNodeClassSpec{
 			ManagedIdentities: []string{
 				"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/nc-id",
 			},
@@ -281,8 +282,8 @@ func TestBuildVMIdentity_DeduplicatesIdentities(t *testing.T) {
 	g := NewWithT(t)
 	sameID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/same-id"
 	nodeIdentities := []string{sameID}
-	nodeClass := &v1beta1.AKSNodeClass{
-		Spec: v1beta1.AKSNodeClassSpec{
+	nodeClass := &v1alpha1.AzureNodeClass{
+		Spec: v1alpha1.AzureNodeClassSpec{
 			ManagedIdentities: []string{sameID},
 		},
 	}

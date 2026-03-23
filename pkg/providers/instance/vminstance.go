@@ -35,6 +35,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -75,7 +76,7 @@ func (p *VirtualMachinePromise) GetInstanceName() string {
 }
 
 type VMProvider interface {
-	BeginCreate(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
+	BeginCreate(context.Context, types.VMNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
@@ -166,7 +167,7 @@ func NewDefaultVMProvider(
 // Errors that occur on the "async side" of the VM create (after the request is accepted) will be returned from VirtualMachinePromise.Wait().
 func (p *DefaultVMProvider) BeginCreate(
 	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass types.VMNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
@@ -410,7 +411,7 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, vmName str
 //nolint:gocyclo
 func (p *DefaultVMProvider) beginLaunchInstance(
 	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass types.VMNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
@@ -445,7 +446,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// Create or retrieve existing VM
 	result, err := p.createVirtualMachine(ctx, resourceName, vm, bootstrap.ImageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
 	if err != nil {
-		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, toAKSNodeClassOrNil(nodeClass), instanceType.Name)
 		if skuErr != nil {
 			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
@@ -483,7 +484,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
 				}).Inc()
 
-				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, toAKSNodeClassOrNil(nodeClass), instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
@@ -585,6 +586,17 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 			return nil
 		}
 		return err
+	}
+	return nil
+}
+
+// toAKSNodeClassOrNil attempts to type-assert VMNodeClass to *AKSNodeClass.
+// Returns nil if the assertion fails (e.g., when nodeClass is *AzureNodeClass).
+// Used for instance type provider calls that accept *AKSNodeClass but only
+// use it for cache key purposes, not AKS-specific fields.
+func toAKSNodeClassOrNil(nc types.VMNodeClass) *v1beta1.AKSNodeClass {
+	if aksNC, ok := nc.(*v1beta1.AKSNodeClass); ok {
+		return aksNC
 	}
 	return nil
 }

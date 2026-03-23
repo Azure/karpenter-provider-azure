@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	labelpkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
@@ -58,7 +59,7 @@ type resolvedBootstrapData struct {
 // In AzureVM mode, it bypasses image family resolution entirely and uses user-provided imageID/userData.
 func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass types.VMNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
@@ -67,6 +68,12 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 	// The user provides their own imageID and userData via AzureNodeClass.
 	if p.provisionMode == consts.ProvisionModeAzureVM {
 		return p.resolveAzureVMBootstrapData(ctx, nodeClass, nodeClaim)
+	}
+
+	// AKS bootstrap path — type-assert to access AKS-specific fields
+	aksNodeClass, ok := nodeClass.(*v1beta1.AKSNodeClass)
+	if !ok {
+		return nil, fmt.Errorf("expected *AKSNodeClass for AKS provision mode, got %T", nodeClass)
 	}
 
 	// Build additional labels (same logic as old getLaunchTemplate)
@@ -89,8 +96,8 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 		arch = karpv1.ArchitectureArm64
 	}
 
-	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
-	baseLabels, err := labelpkg.Get(ctx, nodeClass, arch)
+	subnetID := lo.Ternary(aksNodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(aksNodeClass.Spec.VNETSubnetID), opts.SubnetID)
+	baseLabels, err := labelpkg.Get(ctx, aksNodeClass, arch)
 	if err != nil {
 		return nil, err
 	}
@@ -120,14 +127,14 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 		ClusterResourceGroup:           p.clusterResourceGroup,
 	}
 
-	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	kubernetesVersion, err := aksNodeClass.GetKubernetesVersion()
 	if err != nil {
 		return nil, err
 	}
 	staticParams.KubernetesVersion = kubernetesVersion
 
 	// Resolve image and bootstrap via imagefamily
-	templateParams, err := p.imageResolver.Resolve(ctx, nodeClass, nodeClaim, instanceType, staticParams)
+	templateParams, err := p.imageResolver.Resolve(ctx, aksNodeClass, nodeClaim, instanceType, staticParams)
 	if err != nil {
 		return nil, err
 	}
@@ -169,15 +176,15 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 // The user provides imageID and userData directly via AzureNodeClass.
 func (p *DefaultVMProvider) resolveAzureVMBootstrapData(
 	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass types.VMNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 ) (*resolvedBootstrapData, error) {
 	opts := options.FromContext(ctx)
-	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
+	subnetID := lo.Ternary(nodeClass.GetVNETSubnetID() != nil, lo.FromPtr(nodeClass.GetVNETSubnetID()), opts.SubnetID)
 
 	imageID := ""
-	if nodeClass.Spec.ImageID != nil {
-		imageID = *nodeClass.Spec.ImageID
+	if nodeClass.GetImageID() != nil {
+		imageID = *nodeClass.GetImageID()
 	}
 	if imageID == "" {
 		return nil, fmt.Errorf("imageID is required in AzureVM mode")
@@ -203,7 +210,7 @@ func (p *DefaultVMProvider) buildVMTemplate(
 	ctx context.Context,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType, zone string,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass types.VMNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	nicReference string,
 ) (*armcompute.VirtualMachine, *resolvedBootstrapData, error) {
@@ -243,10 +250,10 @@ func (p *DefaultVMProvider) buildVMTemplate(
 }
 
 // configureStorageProfile builds the StorageProfile for the VM.
-func configureStorageProfile(bootstrap *resolvedBootstrapData, nodeClass *v1beta1.AKSNodeClass, diskEncryptionSetID string, useSIG bool, provisionMode string, vmName string) *armcompute.StorageProfile {
+func configureStorageProfile(bootstrap *resolvedBootstrapData, nodeClass types.VMNodeClass, diskEncryptionSetID string, useSIG bool, provisionMode string, vmName string) *armcompute.StorageProfile {
 	osDisk := &armcompute.OSDisk{
 		Name:         lo.ToPtr(vmName),
-		DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
+		DiskSizeGB:   nodeClass.GetOSDiskSizeGB(),
 		CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 		DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 	}
@@ -310,7 +317,7 @@ func configureNetworkProfile(nicReference string) *armcompute.NetworkProfile {
 }
 
 // configureOSProfile builds the OSProfile for the VM.
-func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolvedBootstrapData, provisionMode string, nodeClass *v1beta1.AKSNodeClass) *armcompute.OSProfile {
+func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolvedBootstrapData, provisionMode string, nodeClass types.VMNodeClass) *armcompute.OSProfile {
 	osProfile := &armcompute.OSProfile{
 		ComputerName: &vmName,
 	}
@@ -342,8 +349,8 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 	switch provisionMode {
 	case consts.ProvisionModeAzureVM:
 		// AzureVM mode: base64-encode raw userData from AzureNodeClass
-		if nodeClass.Spec.UserData != nil && *nodeClass.Spec.UserData != "" {
-			encoded := base64.StdEncoding.EncodeToString([]byte(*nodeClass.Spec.UserData))
+		if nodeClass.GetUserData() != nil && *nodeClass.GetUserData() != "" {
+			encoded := base64.StdEncoding.EncodeToString([]byte(*nodeClass.GetUserData()))
 			osProfile.CustomData = &encoded
 		}
 	case consts.ProvisionModeBootstrappingClient:
@@ -357,15 +364,15 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 
 // buildVMIdentity creates the VM identity configuration, merging global node identities
 // with any per-NodeClass managed identities (from AzureNodeClass in AzureVM mode).
-func buildVMIdentity(nodeIdentities []string, nodeClass *v1beta1.AKSNodeClass) *armcompute.VirtualMachineIdentity {
+func buildVMIdentity(nodeIdentities []string, nodeClass types.VMNodeClass) *armcompute.VirtualMachineIdentity {
 	allIdentities := nodeIdentities
-	if len(nodeClass.Spec.ManagedIdentities) > 0 {
+	if len(nodeClass.GetManagedIdentities()) > 0 {
 		// Merge nodeclass-level identities with global identities, deduplicating
 		seen := make(map[string]bool, len(allIdentities))
 		for _, id := range allIdentities {
 			seen[id] = true
 		}
-		for _, id := range nodeClass.Spec.ManagedIdentities {
+		for _, id := range nodeClass.GetManagedIdentities() {
 			if !seen[id] {
 				allIdentities = append(allIdentities, id)
 				seen[id] = true
@@ -386,12 +393,12 @@ func configureBillingProfile(vmProps *armcompute.VirtualMachineProperties, capac
 }
 
 // configureSecurityProfile sets security-related properties.
-func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass types.VMNodeClass) {
+	if nodeClass.GetEncryptionAtHost() {
 		if vmProps.SecurityProfile == nil {
 			vmProps.SecurityProfile = &armcompute.SecurityProfile{}
 		}
-		vmProps.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+		vmProps.SecurityProfile.EncryptionAtHost = lo.ToPtr(true)
 	}
 }
 

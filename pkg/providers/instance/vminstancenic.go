@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
@@ -129,7 +130,7 @@ func (p *DefaultVMProvider) buildAndCreateNIC(
 	ctx context.Context,
 	resourceName string,
 	instanceType *corecloudprovider.InstanceType,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass types.VMNodeClass,
 	subnetID string,
 	tags map[string]*string,
 ) (string, error) {
@@ -167,7 +168,7 @@ func (p *DefaultVMProvider) buildAndCreateNIC(
 			NICName:                resourceName,
 			NetworkPlugin:          networkPlugin,
 			NetworkPluginMode:      networkPluginMode,
-			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
+			MaxPods:                getMaxPods(nodeClass, networkPlugin, networkPluginMode),
 			SubnetID:               subnetID,
 			Tags:                   tags,
 			BackendPools:           backendPools,
@@ -180,4 +181,14 @@ func (p *DefaultVMProvider) buildAndCreateNIC(
 	}
 
 	return nicReference, nil
+}
+
+// getMaxPods wraps utils.GetMaxPods with VMNodeClass support.
+// For AKSNodeClass, delegates to utils.GetMaxPods (which reads MaxPods from spec).
+// For other NodeClass types, returns the default (110).
+func getMaxPods(nodeClass types.VMNodeClass, networkPlugin, networkPluginMode string) int32 {
+	if aksNC, ok := nodeClass.(*v1beta1.AKSNodeClass); ok {
+		return utils.GetMaxPods(aksNC, networkPlugin, networkPluginMode)
+	}
+	return 110 // Kubernetes default
 }

@@ -87,39 +87,6 @@ func GetAzureNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim 
 	return nodeClass, nil
 }
 
-// AKSNodeClassFromAzureNodeClass creates a compatible AKSNodeClass from an AzureNodeClass.
-// This adapter allows the VM provider (which expects AKSNodeClass) to work with AzureNodeClass
-// by mapping the shared fields. Fields that only exist on AKSNodeClass (e.g. ImageFamily, Kubelet,
-// MaxPods) are left at their zero values, and the VM provider's AzureVM-mode logic handles them.
-func AKSNodeClassFromAzureNodeClass(azureNC *v1alpha1.AzureNodeClass) *v1beta1.AKSNodeClass {
-	aksNC := &v1beta1.AKSNodeClass{}
-	aksNC.Name = azureNC.Name
-	aksNC.Namespace = azureNC.Namespace
-	aksNC.Labels = azureNC.Labels
-	aksNC.Annotations = azureNC.Annotations
-
-	// Map shared spec fields
-	aksNC.Spec.VNETSubnetID = azureNC.Spec.VNETSubnetID
-	aksNC.Spec.OSDiskSizeGB = azureNC.Spec.OSDiskSizeGB
-	aksNC.Spec.Tags = azureNC.Spec.Tags
-
-	// Map security settings
-	if azureNC.Spec.Security != nil {
-		aksNC.Spec.Security = &v1beta1.Security{
-			EncryptionAtHost: azureNC.Spec.Security.EncryptionAtHost,
-		}
-	}
-
-	// ImageID is stored in AKSNodeClass.Spec.ImageID (which is json:"-" on AKSNodeClass, but the Go field exists)
-	aksNC.Spec.ImageID = azureNC.Spec.ImageID
-
-	// AzureVM-specific fields: carried via json:"-" fields on AKSNodeClass for adapter use
-	aksNC.Spec.UserData = azureNC.Spec.UserData
-	aksNC.Spec.ManagedIdentities = azureNC.Spec.ManagedIdentities
-
-	return aksNC
-}
-
 // TODO: Could go onto vmInstanceProvider?
 // GetVM gets the Azure VM associated with the NodeClaim
 func GetVM(ctx context.Context, vmInstanceProvider instance.VMProvider, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
