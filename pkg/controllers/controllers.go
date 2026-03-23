@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -66,13 +67,20 @@ func NewControllers(
 	controllers := []controller.Controller{
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
+		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
 		instancetypecontroller.NewController(instanceTypesProvider),
 	}
 
-	// In azurevm mode, register AzureNodeClass-specific controllers instead of AKSNodeClass ones
-	if options.FromContext(ctx).IsAzureVMMode() {
+	// Register CRD-specific controllers based on provision mode.
+	// In AzureVM mode, only AzureNodeClass controllers are needed.
+	// In AKS modes, only AKSNodeClass controllers are needed.
+	// This avoids noisy logs from controllers watching CRDs that don't exist.
+	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAzureVM {
 		controllers = append(controllers,
+			nodeclasshash.NewAzureNodeClassController(kubeClient),
+			nodeclassstatus.NewAzureNodeClassController(kubeClient),
+			nodeclasstermination.NewAzureNodeClassController(kubeClient, recorder),
 			status.NewController[*v1alpha1.AzureNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 		)
 	} else {

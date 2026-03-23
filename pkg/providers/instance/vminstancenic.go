@@ -48,10 +48,12 @@ type createNICOptions struct {
 
 func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
-		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
-			ID: &poolID,
-		})
+	if opts.BackendPools != nil {
+		for _, poolID := range opts.BackendPools.IPv4PoolIDs {
+			ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
+				ID: &poolID,
+			})
+		}
 	}
 
 	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
@@ -121,6 +123,8 @@ func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *cr
 }
 
 // buildAndCreateNIC consolidates NIC creation: fetches backend pools, resolves NSG if needed, builds and creates the NIC.
+// In AzureVM mode, skips AKS-specific NIC configuration (LB backend pools, NSG lookup).
+// The NIC only needs a subnet and accelerated networking.
 func (p *DefaultVMProvider) buildAndCreateNIC(
 	ctx context.Context,
 	resourceName string,
@@ -129,27 +133,33 @@ func (p *DefaultVMProvider) buildAndCreateNIC(
 	subnetID string,
 	tags map[string]*string,
 ) (string, error) {
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
-	if err != nil {
-		return "", fmt.Errorf("getting backend pools: %w", err)
+	var backendPools *loadbalancer.BackendAddressPools
+	var nsgID string
+
+	// In AzureVM mode, skip AKS-specific NIC configuration (LB backend pools, NSG lookup)
+	if p.provisionMode != consts.ProvisionModeAzureVM {
+		var err error
+		backendPools, err = p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
+		if err != nil {
+			return "", fmt.Errorf("getting backend pools: %w", err)
+		}
+
+		nodeResourceGroup := options.FromContext(ctx).NodeResourceGroup
+		isAKSManagedVNET, err := utils.IsAKSManagedVNET(nodeResourceGroup, subnetID)
+		if err != nil {
+			return "", fmt.Errorf("checking if vnet is managed: %w", err)
+		}
+		if !isAKSManagedVNET {
+			nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+			if err != nil {
+				return "", fmt.Errorf("getting managed network security group: %w", err)
+			}
+			nsgID = lo.FromPtr(nsg.ID)
+		}
 	}
 
-	nodeResourceGroup := options.FromContext(ctx).NodeResourceGroup
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(nodeResourceGroup, subnetID)
-	if err != nil {
-		return "", fmt.Errorf("checking if vnet is managed: %w", err)
-	}
-	var nsgID string
-	if !isAKSManagedVNET {
-		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
-		if err != nil {
-			return "", fmt.Errorf("getting managed network security group: %w", err)
-		}
-		nsgID = lo.FromPtr(nsg.ID)
-	}
 
 	nicReference, err := p.createNetworkInterface(
 		ctx,
