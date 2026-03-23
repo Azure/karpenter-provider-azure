@@ -176,6 +176,7 @@ func validateVMNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool)
 	// VM-specific validation (should NOT have AKS machine annotation)
 	Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 }
+
 var _ = Describe("CloudProvider", func() {
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.

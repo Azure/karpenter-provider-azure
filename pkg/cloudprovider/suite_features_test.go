@@ -934,10 +934,15 @@ var _ = Describe("CloudProvider - Features", func() {
 					test.Options(test.OptionsFields{
 						UseSIG: lo.ToPtr(true),
 					}))
+
+				// Repopulate instance types based on above ctx
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			AfterEach(func() {
 				ctx = options.ToContext(ctx, originalOptions)
+				// Clean up instance types
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
 			Context("Placement", func() {
