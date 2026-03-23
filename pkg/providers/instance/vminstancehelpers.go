@@ -31,64 +31,102 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	labelpkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
-// resolvedBootstrapData carries the output of resolveBootstrapAndImageData.
-type resolvedBootstrapData struct {
-	ScriptlessCustomData    string
-	CustomScriptsCustomData string
-	CustomScriptsCSE        string
-	ImageID                 string
-	SubnetID                string
-	Tags                    map[string]*string
-	IsWindows               bool
-	StorageProfileDiskType  string
-	IsEphemeral             bool
-	EphemeralPlacement      armcompute.DiffDiskPlacement
-	StorageProfileSizeGB    int32
+// resolvedBootstrap carries the rendered bootstrap output needed for VM creation.
+// Unlike the old resolvedBootstrapData, this struct only carries the rendered strings
+// that the VM template and extensions need — not image, subnet, tags, or storage info.
+type resolvedBootstrap struct {
+	CustomData string // base64-encoded cloud-init custom data
+	CSE        string // CSE command (only for BootstrappingClient mode)
+	IsWindows  bool
 }
 
-// resolveBootstrapAndImageData replaces the launchtemplate.Provider.GetTemplate chain.
-// It builds StaticParameters locally, calls imagefamily.Resolve(), renders bootstrap data, and returns the result.
-func (p *DefaultVMProvider) resolveBootstrapAndImageData(
+// resolveImageID resolves the VM image to use for the given nodeClass and instanceType.
+// Parallel to aksmachineinstancehelpers.go's imageResolver.ResolveNodeImageFromNodeClass call.
+func (p *DefaultVMProvider) resolveImageID(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (string, error) {
+	imageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	if err != nil {
+		return "", fmt.Errorf("resolving image: %w", err)
+	}
+	return imageID, nil
+}
+
+// resolveSubnetID returns the subnet to use for the VM's NIC.
+func resolveSubnetID(nodeClass *v1beta1.AKSNodeClass, opts *options.Options) string {
+	return lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
+}
+
+// resolveBootstrap resolves bootstrap data (custom data + CSE) for the VM.
+// StaticParameters and the imagefamily.Resolve() chain are internal to this function
+// and do not leak to the caller.
+func (p *DefaultVMProvider) resolveBootstrap(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
-) (*resolvedBootstrapData, error) {
-	// Build additional labels (same logic as old getLaunchTemplate)
-	claimLabels := labelpkg.GetFilteredSingleValuedRequirementLabels(
-		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
-		func(k string, req *scheduling.Requirement) bool {
-			return labelpkg.CanKubeletSetLabel(k)
-		},
-	)
-	additionalLabels := lo.Assign(
-		claimLabels,
-		labelpkg.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
-		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
-	)
-
-	// Build StaticParameters (previously in launchtemplate.Provider.getStaticParameters)
-	opts := options.FromContext(ctx)
-	var arch = karpv1.ArchitectureAmd64
-	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
-		arch = karpv1.ArchitectureArm64
-	}
-
-	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
-	baseLabels, err := labelpkg.Get(ctx, nodeClass, arch)
+) (*resolvedBootstrap, error) {
+	staticParams, err := p.buildStaticParameters(ctx, nodeClass, nodeClaim, instanceType, capacityType)
 	if err != nil {
 		return nil, err
 	}
-	labels := lo.Assign(baseLabels, lo.Assign(nodeClaim.Labels, additionalLabels))
 
-	staticParams := &parameters.StaticParameters{
+	templateParams, err := p.imageResolver.Resolve(ctx, nodeClass, nodeClaim, instanceType, staticParams)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &resolvedBootstrap{
+		IsWindows: templateParams.IsWindows,
+	}
+
+	switch p.provisionMode {
+	case consts.ProvisionModeBootstrappingClient:
+		customData, cse, err := templateParams.CustomScriptsNodeBootstrapping.GetCustomDataAndCSE(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result.CustomData = customData
+		result.CSE = cse
+	case consts.ProvisionModeAKSScriptless:
+		userData, err := templateParams.ScriptlessCustomData.Script()
+		if err != nil {
+			return nil, err
+		}
+		result.CustomData = userData
+	}
+
+	return result, nil
+}
+
+// buildStaticParameters constructs the StaticParameters needed by imagefamily.Resolve().
+// This is an internal detail of the bootstrap resolution — the caller never sees StaticParameters.
+func (p *DefaultVMProvider) buildStaticParameters(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceType *corecloudprovider.InstanceType,
+	capacityType string,
+) (*parameters.StaticParameters, error) {
+	opts := options.FromContext(ctx)
+	arch := resolveArch(instanceType)
+	subnetID := resolveSubnetID(nodeClass, opts)
+	labels, err := resolveLabels(ctx, nodeClass, nodeClaim, instanceType, capacityType, arch)
+	if err != nil {
+		return nil, err
+	}
+
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	return &parameters.StaticParameters{
 		ClusterName:                    opts.ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
 		Labels:                         labels,
@@ -110,50 +148,46 @@ func (p *DefaultVMProvider) resolveBootstrapAndImageData(
 		NetworkPolicy:                  opts.NetworkPolicy,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
-	}
+		KubernetesVersion:              kubernetesVersion,
+	}, nil
+}
 
-	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+// resolveLabels computes the merged labels for the node.
+func resolveLabels(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceType *corecloudprovider.InstanceType,
+	capacityType string,
+	arch string,
+) (map[string]string, error) {
+	claimLabels := labelpkg.GetFilteredSingleValuedRequirementLabels(
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+		func(k string, req *scheduling.Requirement) bool {
+			return labelpkg.CanKubeletSetLabel(k)
+		},
+	)
+	additionalLabels := lo.Assign(
+		claimLabels,
+		labelpkg.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
+		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
+	)
+
+	baseLabels, err := labelpkg.Get(ctx, nodeClass, arch)
 	if err != nil {
 		return nil, err
 	}
-	staticParams.KubernetesVersion = kubernetesVersion
+	return lo.Assign(baseLabels, lo.Assign(nodeClaim.Labels, additionalLabels)), nil
+}
 
-	// Resolve image and bootstrap via imagefamily
-	templateParams, err := p.imageResolver.Resolve(ctx, nodeClass, nodeClaim, instanceType, staticParams)
-	if err != nil {
-		return nil, err
+// resolveArch determines architecture from instance type requirements.
+func resolveArch(instanceType *corecloudprovider.InstanceType) string {
+	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(
+		scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
+	)); err == nil {
+		return karpv1.ArchitectureArm64
 	}
-
-	// Render bootstrap data (previously in launchtemplate.Provider.createLaunchTemplate)
-	result := &resolvedBootstrapData{
-		ImageID:                templateParams.ImageID,
-		SubnetID:               templateParams.SubnetID,
-		IsWindows:              templateParams.IsWindows,
-		StorageProfileDiskType: templateParams.StorageProfileDiskType,
-		IsEphemeral:            templateParams.StorageProfileIsEphemeral,
-		EphemeralPlacement:     templateParams.StorageProfilePlacement,
-		StorageProfileSizeGB:   templateParams.StorageProfileSizeGB,
-	}
-
-	switch p.provisionMode {
-	case consts.ProvisionModeBootstrappingClient:
-		customData, cse, err := templateParams.CustomScriptsNodeBootstrapping.GetCustomDataAndCSE(ctx)
-		if err != nil {
-			return nil, err
-		}
-		result.CustomScriptsCustomData = customData
-		result.CustomScriptsCSE = cse
-	case consts.ProvisionModeAKSScriptless:
-		userData, err := templateParams.ScriptlessCustomData.Script()
-		if err != nil {
-			return nil, err
-		}
-		result.ScriptlessCustomData = userData
-	}
-
-	result.Tags = launchtemplate.Tags(opts, nodeClass, nodeClaim)
-
-	return result, nil
+	return karpv1.ArchitectureAmd64
 }
 
 func getAgentbakerNetworkPlugin(ctx context.Context) string {
@@ -164,52 +198,17 @@ func getAgentbakerNetworkPlugin(ctx context.Context) string {
 	return consts.NetworkPluginAzure
 }
 
-// buildVMTemplate builds an armcompute.VirtualMachine from the resolved bootstrap data.
-func (p *DefaultVMProvider) buildVMTemplate(
-	ctx context.Context,
-	instanceType *corecloudprovider.InstanceType,
-	capacityType, zone string,
-	nodeClass *v1beta1.AKSNodeClass,
-	nodeClaim *karpv1.NodeClaim,
-	nicReference string,
-) (*armcompute.VirtualMachine, *resolvedBootstrapData, error) {
-	bootstrap, err := p.resolveBootstrapAndImageData(ctx, nodeClass, nodeClaim, instanceType, capacityType)
-	if err != nil {
-		return nil, nil, fmt.Errorf("resolving bootstrap and image data: %w", err)
-	}
-
-	if bootstrap.IsWindows {
-		return &armcompute.VirtualMachine{}, bootstrap, nil // TODO(Windows)
-	}
-
-	opts := options.FromContext(ctx)
-	vmName := GenerateResourceName(nodeClaim.Name)
-
-	vm := &armcompute.VirtualMachine{
-		Name:     lo.ToPtr(vmName),
-		Location: lo.ToPtr(p.location),
-		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
-		Properties: &armcompute.VirtualMachineProperties{
-			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
-			},
-			StorageProfile: configureStorageProfile(bootstrap, nodeClass, p.diskEncryptionSetID, opts.UseSIG, vmName),
-			NetworkProfile: configureNetworkProfile(nicReference),
-			OSProfile:      configureOSProfile(opts, vmName, bootstrap, p.provisionMode),
-			Priority:       lo.ToPtr(KarpCapacityTypeToVMPriority[capacityType]),
-		},
-		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
-		Tags:  bootstrap.Tags,
-	}
-
-	configureBillingProfile(vm.Properties, capacityType)
-	configureSecurityProfile(vm.Properties, nodeClass)
-
-	return vm, bootstrap, nil
-}
-
 // configureStorageProfile builds the StorageProfile for the VM.
-func configureStorageProfile(bootstrap *resolvedBootstrapData, nodeClass *v1beta1.AKSNodeClass, diskEncryptionSetID string, useSIG bool, vmName string) *armcompute.StorageProfile {
+// Parallel to aksmachineinstancehelpers.go's configureOSDiskType.
+func (p *DefaultVMProvider) configureStorageProfile(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	instanceType *corecloudprovider.InstanceType,
+	imageID string,
+	vmName string,
+) (*armcompute.StorageProfile, error) {
+	opts := options.FromContext(ctx)
+
 	osDisk := &armcompute.OSDisk{
 		Name:         lo.ToPtr(vmName),
 		DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
@@ -217,41 +216,46 @@ func configureStorageProfile(bootstrap *resolvedBootstrapData, nodeClass *v1beta
 		DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 	}
 
-	// Ephemeral disk settings
-	if bootstrap.IsEphemeral {
+	// Ephemeral disk
+	sku, err := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	if err != nil {
+		return nil, fmt.Errorf("getting instance type %q for storage profile: %w", instanceType.Name, err)
+	}
+	if instancetype.UseEphemeralDisk(sku, nodeClass) {
+		_, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
 		osDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
 			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
-			Placement: lo.ToPtr(bootstrap.EphemeralPlacement),
+			Placement: placement,
 		}
 		osDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}
 
 	// Disk encryption
-	if diskEncryptionSetID != "" {
+	if p.diskEncryptionSetID != "" {
 		if osDisk.ManagedDisk == nil {
 			osDisk.ManagedDisk = &armcompute.ManagedDiskParameters{}
 		}
 		osDisk.ManagedDisk.DiskEncryptionSet = &armcompute.DiskEncryptionSetParameters{
-			ID: lo.ToPtr(diskEncryptionSetID),
+			ID: lo.ToPtr(p.diskEncryptionSetID),
 		}
 	}
 
 	// Image reference
 	var imageRef *armcompute.ImageReference
-	if useSIG {
+	if opts.UseSIG {
 		imageRef = &armcompute.ImageReference{
-			ID: lo.ToPtr(bootstrap.ImageID),
+			ID: lo.ToPtr(imageID),
 		}
 	} else {
 		imageRef = &armcompute.ImageReference{
-			CommunityGalleryImageID: lo.ToPtr(bootstrap.ImageID),
+			CommunityGalleryImageID: lo.ToPtr(imageID),
 		}
 	}
 
 	return &armcompute.StorageProfile{
 		OSDisk:         osDisk,
 		ImageReference: imageRef,
-	}
+	}, nil
 }
 
 // configureNetworkProfile builds the NetworkProfile for the VM.
@@ -270,10 +274,11 @@ func configureNetworkProfile(nicReference string) *armcompute.NetworkProfile {
 }
 
 // configureOSProfile builds the OSProfile for the VM.
-func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolvedBootstrapData, provisionMode string) *armcompute.OSProfile {
-	osProfile := &armcompute.OSProfile{
+func configureOSProfile(opts *options.Options, vmName string, customData string) *armcompute.OSProfile {
+	return &armcompute.OSProfile{
 		AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
 		ComputerName:  &vmName,
+		CustomData:    lo.ToPtr(customData),
 		LinuxConfiguration: &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: lo.ToPtr(true),
 			SSH: &armcompute.SSHConfiguration{
@@ -286,14 +291,6 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 			},
 		},
 	}
-
-	if provisionMode == consts.ProvisionModeBootstrappingClient {
-		osProfile.CustomData = lo.ToPtr(bootstrap.CustomScriptsCustomData)
-	} else {
-		osProfile.CustomData = lo.ToPtr(bootstrap.ScriptlessCustomData)
-	}
-
-	return osProfile
 }
 
 // configureBillingProfile sets a default MaxPrice of -1 for Spot.
