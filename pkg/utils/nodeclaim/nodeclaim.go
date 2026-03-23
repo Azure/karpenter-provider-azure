@@ -18,6 +18,7 @@ package nodeclaim
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"regexp"
 
@@ -29,6 +30,7 @@ import (
 
 	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -98,4 +100,65 @@ func GetVMName(providerID string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("parsing vm name %s", providerID)
+}
+
+// GetAzureNodeClass resolves the AzureNodeClass from the NodeClaim's NodeClassRef.
+// If the NodeClass for the nodeClaim has DeletionTimestamp set, an error is returned.
+func GetAzureNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *karpv1.NodeClaim) (*v1alpha1.AzureNodeClass, error) {
+	if nodeClaim.Spec.NodeClassRef == nil {
+		return nil, fmt.Errorf("nodeClaim %s does not have a nodeClassRef", nodeClaim.Name)
+	}
+
+	nodeClass := &v1alpha1.AzureNodeClass{}
+	if err := kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
+		return nil, fmt.Errorf("getting AzureNodeClass %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
+	}
+
+	if !nodeClass.DeletionTimestamp.IsZero() {
+		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "azurenodeclasses"}, nodeClass.Name)
+	}
+
+	return nodeClass, nil
+}
+
+// AKSNodeClassFromAzureNodeClass adapts an AzureNodeClass into an AKSNodeClass so that
+// the existing VM provisioning pipeline can be reused. Fields unique to AzureNodeClass are
+// carried on the AKSNodeClassSpec's json:"-" adapter fields.
+func AKSNodeClassFromAzureNodeClass(azureNC *v1alpha1.AzureNodeClass) *v1beta1.AKSNodeClass {
+	aksNC := &v1beta1.AKSNodeClass{}
+	aksNC.Name = azureNC.Name
+	aksNC.Namespace = azureNC.Namespace
+	aksNC.UID = azureNC.UID
+	aksNC.Generation = azureNC.Generation
+
+	// Map shared fields
+	aksNC.Spec.VNETSubnetID = azureNC.Spec.VNETSubnetID
+	aksNC.Spec.OSDiskSizeGB = azureNC.Spec.OSDiskSizeGB
+	aksNC.Spec.Tags = azureNC.Spec.Tags
+
+	// ImageID: AKSNodeClass already has this as json:"-"
+	if azureNC.Spec.ImageID != "" {
+		aksNC.Spec.ImageID = &azureNC.Spec.ImageID
+	}
+
+	// Security
+	if azureNC.Spec.Security != nil {
+		aksNC.Spec.Security = &v1beta1.Security{
+			EncryptionAtHost: azureNC.Spec.Security.EncryptionAtHost,
+		}
+	}
+
+	// AzureVM-specific fields via adapter fields
+	if azureNC.Spec.UserData != nil {
+		encoded := base64.StdEncoding.EncodeToString([]byte(*azureNC.Spec.UserData))
+		aksNC.Spec.UserData = &encoded
+	}
+	aksNC.Spec.ManagedIdentities = azureNC.Spec.ManagedIdentities
+	aksNC.Spec.DataDiskSizeGB = azureNC.Spec.DataDiskSizeGB
+	aksNC.Spec.SubscriptionID = azureNC.Spec.SubscriptionID
+	aksNC.Spec.ResourceGroup = azureNC.Spec.ResourceGroup
+	aksNC.Spec.Location = azureNC.Spec.Location
+	aksNC.Spec.InstanceTypes = azureNC.Spec.InstanceTypes
+
+	return aksNC
 }

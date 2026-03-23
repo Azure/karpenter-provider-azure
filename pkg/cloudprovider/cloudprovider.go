@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
@@ -129,6 +130,11 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	// In azurevm mode, route through AzureNodeClass adapter path
+	if options.FromContext(ctx).IsAzureVMMode() {
+		return c.createAzureVMInstance(ctx, nodeClaim)
+	}
+
 	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -249,6 +255,41 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	}
 
 	return newNodeClaim, nil
+}
+
+// createAzureVMInstance handles VM creation in azurevm mode.
+// It resolves the AzureNodeClass, adapts it to AKSNodeClass, and reuses the VM creation pipeline.
+func (c *CloudProvider) createAzureVMInstance(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	azureNC, err := nodeclaimutils.GetAzureNodeClass(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+		}
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving AzureNodeClass, %w", err))
+	}
+
+	// Adapt to AKSNodeClass for the shared VM provisioning pipeline
+	nodeClass := nodeclaimutils.AKSNodeClassFromAzureNodeClass(azureNC)
+
+	// Skip validateNodeClass — AzureNodeClass has no AKS-specific status conditions
+
+	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
+	if err != nil {
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
+	}
+	if len(instanceTypes) == 0 {
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
+	}
+	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
+			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
+			if err != nil {
+				return nil, fmt.Errorf("creating instance, %w", err)
+			}
+		}
+	}
+
+	return c.createVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 }
 
 // handleInstancePromise handles the instance promise, primarily deciding on sync/async provisioning.
@@ -524,7 +565,7 @@ func (c *CloudProvider) Name() string {
 }
 
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
-	return []status.Object{&v1beta1.AKSNodeClass{}}
+	return []status.Object{&v1beta1.AKSNodeClass{}, &v1alpha1.AzureNodeClass{}}
 }
 
 // TODO: review repair policies
@@ -551,6 +592,18 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 
 // May return apimachinery.NotFoundError if NodePool is not found.
 func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1beta1.AKSNodeClass, error) {
+	// In azurevm mode, resolve AzureNodeClass and adapt to AKSNodeClass
+	if options.FromContext(ctx).IsAzureVMMode() {
+		azureNC := &v1alpha1.AzureNodeClass{}
+		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, azureNC); err != nil {
+			return nil, err
+		}
+		if !azureNC.DeletionTimestamp.IsZero() {
+			return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "azurenodeclasses"}, azureNC.Name)
+		}
+		return nodeclaimutils.AKSNodeClassFromAzureNodeClass(azureNC), nil
+	}
+
 	nodeClass := &v1beta1.AKSNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		return nil, err

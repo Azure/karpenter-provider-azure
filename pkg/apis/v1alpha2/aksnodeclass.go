@@ -108,6 +108,16 @@ type AKSNodeClassSpec struct {
 	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 	// +optional
 	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
+
+	// Adapter fields for AzureVM mode — populated by AKSNodeClassFromAzureNodeClass().
+	// These are NOT part of the CRD schema (json:"-").
+	UserData          *string  `json:"-"`
+	ManagedIdentities []string `json:"-"`
+	DataDiskSizeGB    *int32   `json:"-"`
+	SubscriptionID    *string  `json:"-"`
+	ResourceGroup     *string  `json:"-"`
+	Location          *string  `json:"-"`
+	InstanceTypes     []string `json:"-"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs

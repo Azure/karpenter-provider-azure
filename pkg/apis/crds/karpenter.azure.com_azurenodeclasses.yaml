@@ -1,0 +1,137 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: azurenodeclasses.karpenter.azure.com
+spec:
+  group: karpenter.azure.com
+  names:
+    categories:
+    - karpenter
+    kind: AzureNodeClass
+    listKind: AzureNodeClassList
+    plural: azurenodeclasses
+    shortNames:
+    - azurenc
+    - azurencs
+    singular: azurenodeclass
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageID
+      name: ImageID
+      priority: 1
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AzureNodeClass is the Schema for the AzureNodeClass API
+        properties:
+          apiVersion:
+            description: APIVersion defines the versioned schema of this representation of an object.
+            type: string
+          kind:
+            description: Kind is a string value representing the REST resource this object represents.
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec is the specification for the AzureNodeClass.
+            properties:
+              dataDiskSizeGB:
+                description: dataDiskSizeGB is the size of an additional data disk in GB.
+                format: int32
+                maximum: 4096
+                minimum: 10
+                type: integer
+              imageID:
+                description: imageID is the ARM resource ID of the image to use for VMs.
+                type: string
+              instanceTypes:
+                description: instanceTypes is an optional list of specific VM SKU names.
+                items:
+                  type: string
+                type: array
+              location:
+                description: location is the Azure region to create VMs in.
+                type: string
+              managedIdentities:
+                description: managedIdentities is a list of user-assigned managed identity ARM resource IDs.
+                items:
+                  type: string
+                type: array
+              osDiskSizeGB:
+                description: osDiskSizeGB is the size of the OS disk in GB.
+                format: int32
+                maximum: 4096
+                minimum: 30
+                type: integer
+              resourceGroup:
+                description: resourceGroup is the Azure resource group to create VMs in.
+                type: string
+              security:
+                description: security is a collection of security related fields.
+                properties:
+                  encryptionAtHost:
+                    description: encryptionAtHost specifies whether host-level encryption is enabled.
+                    type: boolean
+                type: object
+              subscriptionID:
+                description: subscriptionID is the Azure subscription to create VMs in.
+                pattern: (?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                type: string
+              tags:
+                additionalProperties:
+                  type: string
+                description: tags to be applied on Azure resources like instances.
+                type: object
+              userData:
+                description: userData is the plain-text user data to pass to the VM via CustomData.
+                type: string
+              vnetSubnetID:
+                description: vnetSubnetID is the subnet used by NICs provisioned with this node class.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
+                type: string
+            type: object
+          status:
+            description: status contains the resolved state of the AzureNodeClass.
+            properties:
+              conditions:
+                description: conditions contains signals for health and readiness
+                items:
+                  description: Condition aliases the upstream type and adds additional helper methods
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      type: integer
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
@@ -38,6 +39,7 @@ import (
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -62,18 +64,25 @@ func NewControllers(
 	parsedDiskEncryptionSetID *arm.ResourceID,
 ) []controller.Controller {
 	controllers := []controller.Controller{
-		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-		nodeclasstermination.NewController(kubeClient, recorder),
-
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
-
-		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
-		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
-
 		instancetypecontroller.NewController(instanceTypesProvider),
 	}
+
+	// In azurevm mode, register AzureNodeClass-specific controllers instead of AKSNodeClass ones
+	if options.FromContext(ctx).IsAzureVMMode() {
+		controllers = append(controllers,
+			status.NewController[*v1alpha1.AzureNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
+		)
+	} else {
+		controllers = append(controllers,
+			nodeclasshash.NewController(kubeClient),
+			nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+			nodeclasstermination.NewController(kubeClient, recorder),
+			status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
+		)
+	}
+
 	return controllers
 }
