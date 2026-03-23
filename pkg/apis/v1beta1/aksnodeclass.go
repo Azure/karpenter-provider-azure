@@ -84,6 +84,18 @@ type AKSNodeClassSpec struct {
 	// These are merged with the global --node-identities at VM creation time.
 	// Not exposed in the AKSNodeClass API.
 	ManagedIdentities []string `json:"-"`
+	// SubscriptionID overrides the controller-level Azure subscription for this NodeClass.
+	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
+	// Not exposed in the AKSNodeClass API.
+	SubscriptionID *string `json:"-"`
+	// ResourceGroup overrides the controller-level resource group for this NodeClass.
+	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
+	// Not exposed in the AKSNodeClass API.
+	ResourceGroup *string `json:"-"`
+	// Location overrides the controller-level Azure region for this NodeClass.
+	// Only used in AzureVM provision mode via the AzureNodeClass adapter.
+	// Not exposed in the AKSNodeClass API.
+	Location *string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
