@@ -11,7 +11,8 @@ jobs:
     permissions:
       contents: read
       statuses: write
-    runs-on: ubuntu-latest
+    runs-on:
+      labels: [self-hosted, 1ES.Pool=karpenter-ci-1es-pool]
     strategy:
       fail-fast: false # https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idstrategyfail-fast
       matrix:
@@ -19,31 +20,17 @@ jobs:
     env:
       K8S_VERSION: ${{ matrix.k8sVersion }}
     steps:
+    - name: Debug runner environment
+      run: |
+        echo "RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT"
+        echo "STEP_SECURITY_HARDEN_RUNNER=${STEP_SECURITY_HARDEN_RUNNER:-not set}"
+        ls -la /usr/local/bin/harden-runner* 2>/dev/null || echo "No pre-installed harden-runner"
+
     - name: Harden Runner
       uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         disable-telemetry: true
-        egress-policy: block
-        allowed-endpoints: > # dl.k8s.io is for 1.25 CI only
-          *.dl.k8s.io:443
-          api.github.com:443
-          dl.k8s.io:443
-          coveralls.io:443
-          github.com:443
-          objects.githubusercontent.com:443
-          release-assets.githubusercontent.com:443
-          proxy.golang.org:443
-          golang.org:443
-          raw.githubusercontent.com:443
-          storage.googleapis.com:443
-          sum.golang.org:443
-          go.dev:443
-          dl.google.com:443
-          aquasecurity.github.io:443
-          mirror.gcr.io:443
-          azure.archive.ubuntu.com:80
-          packages.microsoft.com:443
-          esm.ubuntu.com:443
+        egress-policy: audit
 
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
     - uses: ./.github/actions/install-deps
