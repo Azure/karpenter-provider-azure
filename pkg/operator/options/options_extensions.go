@@ -31,11 +31,3 @@ func (o *Options) IsCiliumNodeSubnet() bool {
 func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
-
-// IsAzureVMMode returns true if the provision mode is AzureVM (non-AKS generic Azure VM provisioning).
-// Prefer checking NodeClaim's NodeClassRef.Kind over this where possible, to support
-// mixed-mode clusters. This helper is only for code paths that don't have a NodeClaim
-// (e.g., controller registration, validation).
-func (o *Options) IsAzureVMMode() bool {
-	return o.ProvisionMode == consts.ProvisionModeAzureVM
-}

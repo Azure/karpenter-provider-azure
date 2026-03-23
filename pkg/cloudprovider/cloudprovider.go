@@ -599,8 +599,8 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1beta1.AKSNodeClass, error) {
 	ref := nodePool.Spec.Template.Spec.NodeClassRef
 
-	// AzureNodeClass: resolve and adapt to AKSNodeClass
 	if ref.Group == v1alpha1.Group && ref.Kind == "AzureNodeClass" {
+		// AzureNodeClass path
 		azureNodeClass := &v1alpha1.AzureNodeClass{}
 		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: ref.Name}, azureNodeClass); err != nil {
 			return nil, err
@@ -609,20 +609,17 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 			return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: v1alpha1.Group, Resource: "azurenodeclasses"}, azureNodeClass.Name)
 		}
 		return nodeclaimutils.AKSNodeClassFromAzureNodeClass(azureNodeClass), nil
+	} else {
+		// AKSNodeClass path
+		nodeClass := &v1beta1.AKSNodeClass{}
+		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: ref.Name}, nodeClass); err != nil {
+			return nil, err
+		}
+		if !nodeClass.DeletionTimestamp.IsZero() {
+			return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "aksnodeclasses"}, nodeClass.Name)
+		}
+		return nodeClass, nil
 	}
-
-	// Default: AKSNodeClass (existing behavior)
-	nodeClass := &v1beta1.AKSNodeClass{}
-	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: ref.Name}, nodeClass); err != nil {
-		return nil, err
-	}
-	// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound
-	if !nodeClass.DeletionTimestamp.IsZero() {
-		// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound,
-		// but we return a different error message to be clearer to users
-		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "aksnodeclasses"}, nodeClass.Name)
-	}
-	return nodeClass, nil
 }
 func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
