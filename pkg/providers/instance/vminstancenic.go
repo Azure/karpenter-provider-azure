@@ -48,10 +48,12 @@ type createNICOptions struct {
 
 func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
-		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
-			ID: &poolID,
-		})
+	if opts.BackendPools != nil {
+		for _, poolID := range opts.BackendPools.IPv4PoolIDs {
+			ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
+				ID: &poolID,
+			})
+		}
 	}
 
 	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
