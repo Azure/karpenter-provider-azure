@@ -31,3 +31,9 @@ func (o *Options) IsCiliumNodeSubnet() bool {
 func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
+
+// IsAzureVMMode returns true when the controller is running in azurevm provision mode,
+// which targets non-AKS Kubernetes clusters and uses AzureNodeClass instead of AKSNodeClass.
+func (o *Options) IsAzureVMMode() bool {
+	return o.ProvisionMode == consts.ProvisionModeAzureVM
+}

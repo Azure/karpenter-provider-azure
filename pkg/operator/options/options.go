@@ -168,8 +168,10 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		return fmt.Errorf("validating options, %w", err)
 	}
 
-	// ClusterID is generated from cluster endpoint
-	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
+	// ClusterID is generated from cluster endpoint (only for AKS modes)
+	if o.ClusterEndpoint != "" {
+		o.ClusterID = getAKSClusterID(o.GetAPIServerName())
+	}
 
 	return nil
 }

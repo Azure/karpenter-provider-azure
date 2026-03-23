@@ -118,7 +118,10 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless &&
+		o.ProvisionMode != consts.ProvisionModeBootstrappingClient &&
+		o.ProvisionMode != consts.ProvisionModeAKSMachineAPI &&
+		o.ProvisionMode != consts.ProvisionModeAzureVM {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
@@ -138,6 +141,18 @@ func (o *Options) validateProvisionMode() error {
 }
 
 func (o *Options) validateRequiredFields() error {
+	// In azurevm mode, only vnet-subnet-id and node-resource-group are required.
+	// AKS-specific fields (cluster-name, cluster-endpoint, bootstrap token, ssh key) are optional.
+	if o.IsAzureVMMode() {
+		if o.SubnetID == "" {
+			return fmt.Errorf("missing field, vnet-subnet-id")
+		}
+		if o.NodeResourceGroup == "" {
+			return fmt.Errorf("missing field, node-resource-group")
+		}
+		return nil
+	}
+
 	if o.ClusterEndpoint == "" {
 		return fmt.Errorf("missing field, cluster-endpoint")
 	}
@@ -179,6 +194,10 @@ func (o *Options) validateUseSIG() error {
 }
 
 func (o *Options) validateAdminUsername() error {
+	// In azurevm mode, admin username is optional
+	if o.LinuxAdminUsername == "" {
+		return nil
+	}
 	if len(o.LinuxAdminUsername) > 32 {
 		return fmt.Errorf("linux-admin-username cannot be longer than 32 characters")
 	}
