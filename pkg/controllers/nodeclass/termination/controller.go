@@ -49,7 +49,7 @@ type Controller struct {
 	recorder   events.Recorder
 }
 
-func NewController(kubeClient client.Client, recorder events.Recorder) *Controller {
+func NewAKSNodeClassController(kubeClient client.Client, recorder events.Recorder) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 		recorder:   recorder,

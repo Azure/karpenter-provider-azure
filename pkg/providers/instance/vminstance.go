@@ -77,7 +77,7 @@ func (p *VirtualMachinePromise) GetInstanceName() string {
 }
 
 type VMProvider interface {
-	BeginCreate(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
+	BeginCreateAKS(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
@@ -168,7 +168,7 @@ func NewDefaultVMProvider(
 // Note that the returned instance may not be finished provisioning yet.
 // Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due to invalid user input, and similar, will have the error returned here.
 // Errors that occur on the "async side" of the VM create (after the request is accepted) will be returned from VirtualMachinePromise.Wait().
-func (p *DefaultVMProvider) BeginCreate(
+func (p *DefaultVMProvider) BeginCreateAKS(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,

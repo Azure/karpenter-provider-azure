@@ -55,7 +55,7 @@ type Controller struct {
 
 // TODO: Consider splitting this (and other similar constructors)
 // into some kind of builder struct to make the calling code easier to read.
-func NewController(
+func NewAKSNodeClassController(
 	kubeClient client.Client,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,

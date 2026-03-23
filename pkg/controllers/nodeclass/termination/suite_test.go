@@ -62,7 +62,7 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
 	azureEnv = test.NewEnvironment(ctx, env)
 
-	terminationController = termination.NewController(env.Client, events.NewRecorder(&record.FakeRecorder{}))
+	terminationController = termination.NewAKSNodeClassController(env.Client, events.NewRecorder(&record.FakeRecorder{}))
 })
 
 var _ = AfterSuite(func() {

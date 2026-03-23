@@ -62,9 +62,9 @@ func NewControllers(
 	parsedDiskEncryptionSetID *arm.ResourceID,
 ) []controller.Controller {
 	controllers := []controller.Controller{
-		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-		nodeclasstermination.NewController(kubeClient, recorder),
+		nodeclasshash.NewAKSNodeClassController(kubeClient),
+		nodeclassstatus.NewAKSNodeClassController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+		nodeclasstermination.NewAKSNodeClassController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),

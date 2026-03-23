@@ -438,6 +438,15 @@ type AKSNodeClassList struct {
 	Items           []AKSNodeClass `json:"items"`
 }
 
+// VMNodeClass interface implementation.
+// Fields not applicable to AKS return nil/zero — AKS manages bootstrap and identity at the controller level.
+func (in *AKSNodeClass) GetVNETSubnetID() *string      { return in.Spec.VNETSubnetID }
+func (in *AKSNodeClass) GetOSDiskSizeGB() *int32        { return in.Spec.OSDiskSizeGB }
+func (in *AKSNodeClass) GetImageID() *string            { return in.Spec.ImageID }
+func (in *AKSNodeClass) GetUserData() *string           { return nil }
+func (in *AKSNodeClass) GetTags() map[string]string     { return in.Spec.Tags }
+func (in *AKSNodeClass) GetManagedIdentities() []string { return nil }
+
 // GetEncryptionAtHost returns whether encryption at host is enabled for the node class.
 // Returns false if Security or EncryptionAtHost is nil.
 func (in *AKSNodeClass) GetEncryptionAtHost() bool {

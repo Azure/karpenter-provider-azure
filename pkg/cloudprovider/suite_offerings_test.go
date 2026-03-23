@@ -341,7 +341,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 			})
 
 			It("should return error when instance type resolution fails", func() {
-				localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+				localStatusController := status.NewAKSNodeClassController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, localStatusController, nodeClass)
