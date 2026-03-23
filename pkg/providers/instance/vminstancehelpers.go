@@ -315,38 +315,12 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 		ComputerName: &vmName,
 	}
 
-	if provisionMode == consts.ProvisionModeAzureVM {
-		// In AzureVM mode, SSH key and admin username are optional.
-		// If provided, configure them; otherwise omit SSH configuration entirely.
-		if opts.LinuxAdminUsername != "" {
-			osProfile.AdminUsername = lo.ToPtr(opts.LinuxAdminUsername)
-		}
-		if opts.SSHPublicKey != "" && opts.LinuxAdminUsername != "" {
-			osProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
-				DisablePasswordAuthentication: lo.ToPtr(true),
-				SSH: &armcompute.SSHConfiguration{
-					PublicKeys: []*armcompute.SSHPublicKey{
-						{
-							KeyData: lo.ToPtr(opts.SSHPublicKey),
-							Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
-						},
-					},
-				},
-			}
-		} else {
-			osProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
-				DisablePasswordAuthentication: lo.ToPtr(true),
-			}
-		}
-		// In AzureVM mode, base64-encode the raw userData from AzureNodeClass and
-		// set as osProfile.CustomData. The Azure API expects base64-encoded data.
-		if nodeClass.Spec.UserData != nil && *nodeClass.Spec.UserData != "" {
-			encoded := base64.StdEncoding.EncodeToString([]byte(*nodeClass.Spec.UserData))
-			osProfile.CustomData = &encoded
-		}
-	} else {
-		// AKS modes: SSH key and admin username are required
+	// SSH configuration — same for all modes when credentials are available.
+	// In azurevm mode these are optional (relaxed validation); in AKS modes they're required.
+	if opts.LinuxAdminUsername != "" {
 		osProfile.AdminUsername = lo.ToPtr(opts.LinuxAdminUsername)
+	}
+	if opts.SSHPublicKey != "" && opts.LinuxAdminUsername != "" {
 		osProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: lo.ToPtr(true),
 			SSH: &armcompute.SSHConfiguration{
@@ -358,11 +332,24 @@ func configureOSProfile(opts *options.Options, vmName string, bootstrap *resolve
 				},
 			},
 		}
-		if provisionMode == consts.ProvisionModeBootstrappingClient {
-			osProfile.CustomData = lo.ToPtr(bootstrap.CustomScriptsCustomData)
-		} else {
-			osProfile.CustomData = lo.ToPtr(bootstrap.ScriptlessCustomData)
+	} else {
+		osProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
+			DisablePasswordAuthentication: lo.ToPtr(true),
 		}
+	}
+
+	// CustomData — differs by mode:
+	switch provisionMode {
+	case consts.ProvisionModeAzureVM:
+		// AzureVM mode: base64-encode raw userData from AzureNodeClass
+		if nodeClass.Spec.UserData != nil && *nodeClass.Spec.UserData != "" {
+			encoded := base64.StdEncoding.EncodeToString([]byte(*nodeClass.Spec.UserData))
+			osProfile.CustomData = &encoded
+		}
+	case consts.ProvisionModeBootstrappingClient:
+		osProfile.CustomData = lo.ToPtr(bootstrap.CustomScriptsCustomData)
+	default:
+		osProfile.CustomData = lo.ToPtr(bootstrap.ScriptlessCustomData)
 	}
 
 	return osProfile

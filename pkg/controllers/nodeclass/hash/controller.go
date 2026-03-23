@@ -39,7 +39,7 @@ type Controller struct {
 	kubeClient client.Client
 }
 
-func NewController(kubeClient client.Client) *Controller {
+func NewAKSNodeClassController(kubeClient client.Client) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 	}

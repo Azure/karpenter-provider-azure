@@ -448,6 +448,15 @@ type AKSNodeClassList struct {
 	Items           []AKSNodeClass `json:"items"`
 }
 
+// VMNodeClass interface implementation — makes AKSNodeClass satisfy the same
+// interface as AzureNodeClass for the VM provider.
+func (in *AKSNodeClass) GetVNETSubnetID() *string      { return in.Spec.VNETSubnetID }
+func (in *AKSNodeClass) GetOSDiskSizeGB() *int32        { return in.Spec.OSDiskSizeGB }
+func (in *AKSNodeClass) GetImageID() *string            { return in.Spec.ImageID }
+func (in *AKSNodeClass) GetUserData() *string           { return in.Spec.UserData }
+func (in *AKSNodeClass) GetTags() map[string]string     { return in.Spec.Tags }
+func (in *AKSNodeClass) GetManagedIdentities() []string { return in.Spec.ManagedIdentities }
+
 // GetEncryptionAtHost returns whether encryption at host is enabled for the node class.
 // Returns false if Security or EncryptionAtHost is nil.
 func (in *AKSNodeClass) GetEncryptionAtHost() bool {

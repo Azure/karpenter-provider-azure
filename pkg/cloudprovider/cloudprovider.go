@@ -130,11 +130,17 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
-	// In AzureVM mode, resolve AzureNodeClass instead of AKSNodeClass and adapt it
-	if options.FromContext(ctx).IsAzureVMMode() {
+	// Resolve NodeClass based on the NodeClaim's NodeClassRef kind.
+	// This supports mixed-mode clusters where both AKSNodeClass and AzureNodeClass
+	// NodePools coexist, rather than relying on a global provision mode flag.
+	if nodeClaim.Spec.NodeClassRef != nil && nodeClaim.Spec.NodeClassRef.Kind == "AzureNodeClass" {
 		return c.createAzureVMInstance(ctx, nodeClaim)
 	}
+	return c.createAKSInstance(ctx, nodeClaim)
+}
 
+// createAKSInstance resolves AKSNodeClass and routes through the AKS provisioning path.
+func (c *CloudProvider) createAKSInstance(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
 	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {

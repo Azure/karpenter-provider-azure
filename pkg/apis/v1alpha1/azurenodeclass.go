@@ -141,6 +141,15 @@ type AzureNodeClass struct {
 	Status AzureNodeClassStatus `json:"status,omitempty"`
 }
 
+// VMNodeClass interface implementation — makes AzureNodeClass a first-class
+// NodeClass type for the VM provider without requiring adapter conversion.
+func (in *AzureNodeClass) GetVNETSubnetID() *string      { return in.Spec.VNETSubnetID }
+func (in *AzureNodeClass) GetOSDiskSizeGB() *int32        { return in.Spec.OSDiskSizeGB }
+func (in *AzureNodeClass) GetImageID() *string            { return in.Spec.ImageID }
+func (in *AzureNodeClass) GetUserData() *string           { return in.Spec.UserData }
+func (in *AzureNodeClass) GetTags() map[string]string     { return in.Spec.Tags }
+func (in *AzureNodeClass) GetManagedIdentities() []string { return in.Spec.ManagedIdentities }
+
 // AzureNodeClassHashVersion tracks the hash version for AzureNodeClass.
 // Bump this when:
 // 1. A field changes its default value for an existing field that is already hashed

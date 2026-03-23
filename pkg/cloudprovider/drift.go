@@ -57,8 +57,10 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	}
 
 	var checks []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error)
-	if options.FromContext(ctx).IsAzureVMMode() {
-		// AzureVM mode: only hash-based drift (no AKS-specific k8s version, image, kubelet identity checks)
+	// Determine drift checks based on NodeClaim's NodeClassRef, not global mode flag.
+	// This supports mixed-mode clusters.
+	if nodeClaim.Spec.NodeClassRef != nil && nodeClaim.Spec.NodeClassRef.Kind == "AzureNodeClass" {
+		// AzureNodeClass: only hash-based drift (no AKS-specific k8s version, image, kubelet identity checks)
 		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
 			c.areStaticFieldsDrifted,
 		}

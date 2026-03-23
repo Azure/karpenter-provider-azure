@@ -85,9 +85,9 @@ func NewControllers(
 		)
 	} else {
 		controllers = append(controllers,
-			nodeclasshash.NewController(kubeClient),
-			nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-			nodeclasstermination.NewController(kubeClient, recorder),
+			nodeclasshash.NewAKSNodeClassController(kubeClient),
+			nodeclassstatus.NewAKSNodeClassController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+			nodeclasstermination.NewAKSNodeClassController(kubeClient, recorder),
 			status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 		)
 	}
