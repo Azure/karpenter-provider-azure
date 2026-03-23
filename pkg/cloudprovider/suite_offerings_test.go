@@ -34,6 +34,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
@@ -63,6 +64,11 @@ var _ = Describe("CloudProvider - Offerings", func() {
 
 				Expect(getCreateCallCount()).To(BeNumerically(">=", 1))
 				result := popCreationResult()
+				// Verify the failed creation was for a Spot instance (AKS Machine mode exposes priority)
+				if isAKSMachineMode() {
+					Expect(result.priority).ToNot(BeNil())
+					Expect(*result.priority).To(Equal(armcontainerservice.ScaleSetPrioritySpot))
+				}
 				testSKU := fake.MakeSKU(result.vmSize)
 				Expect(result.zoneErr).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, testSKU, result.zone, karpv1.CapacityTypeSpot)
