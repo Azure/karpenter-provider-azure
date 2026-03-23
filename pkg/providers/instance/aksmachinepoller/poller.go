@@ -324,10 +324,11 @@ func isTransientError(err error) bool {
 			http.StatusInternalServerError, // 500
 			http.StatusBadGateway,          // 502
 			http.StatusServiceUnavailable,  // 503
-			http.StatusGatewayTimeout:      // 504
+			http.StatusGatewayTimeout,      // 504
+			http.StatusNotFound:            // 404 - treat as transient in case of eventual consistency during deletion
 			return true
 		default:
-			// Non-retryable status codes (e.g., 401 Unauthorized, 403 Forbidden, 404 Not Found)
+			// Non-retryable status codes (e.g., 401 Unauthorized, 403 Forbidden)
 			return false
 		}
 	}

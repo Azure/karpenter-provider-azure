@@ -252,6 +252,7 @@ func (c *MachineListCache) add(ctx context.Context, machine string) {
 		machine: &resp.Machine,
 		err:     getErr,
 	}
+	log.FromContext(ctx).Info("cache poller: updated cache for AKS machine", "aksMachineName", machine, "error", getErr)
 	item.lastUpdatedTime.Store(time.Now().UnixNano())
 	c.machines.Store(machine, item)
 }
