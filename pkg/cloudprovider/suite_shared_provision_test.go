@@ -69,6 +69,7 @@ type creationResult struct {
 	diskSizeGB  *int32
 	imageRef    string
 	osDiskType  string // AKS Machine: OSDiskType value ("Managed"/"Ephemeral"); VM: empty (use isEphemeral/diffDiskOption instead)
+	priority    *armcontainerservice.ScaleSetPriority // AKS Machine only: the priority (Spot/Regular) of the creation request
 	// VM-specific fields (populated only for AKSScriptless/BootstrappingClient mode)
 	customData              string // decoded base64 custom data from OSProfile
 	diffDiskOption          string // DiffDiskSettings.Option value (e.g. "Local")
@@ -323,6 +324,7 @@ func popAKSMachineCreationResult() creationResult {
 		diskSizeGB:  diskSizeGB,
 		osDiskType:  osDiskType,
 		imageRef:    lo.FromPtr(m.Properties.NodeImageVersion),
+		priority:    m.Properties.Priority,
 	}
 }
 
