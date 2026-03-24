@@ -93,6 +93,7 @@ type Operator struct {
 	AKSMachineProvider        *instance.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
 	AZClient                  *azclient.AZClient
+	AZClientManager           *azclient.AZClientManager
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -253,6 +254,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		AKSMachineProvider:           aksMachineInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		AZClient:                     azClient,
+		AZClientManager:             azClientManager,
 	}
 }
 

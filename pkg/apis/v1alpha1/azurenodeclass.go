@@ -59,6 +59,13 @@ type AzureNodeClassSpec struct {
 	// location overrides the controller-level Azure region for VM creation.
 	// +optional
 	Location *string `json:"location,omitempty"`
+	// managedIdentities specifies user-assigned managed identity ARM resource IDs
+	// to attach to provisioned VMs. These are merged with the global --node-identities
+	// flag. Use this to assign per-NodeClass identities (e.g., for cross-subscription
+	// access or workload-specific permissions).
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	ManagedIdentities []string `json:"managedIdentities,omitempty"`
 	// imageID is the full resource ID of the image to use for VMs. Accepts ARM
 	// resource IDs (/subscriptions/.../...), community gallery image versions
 	// (/CommunityGalleries/.../Images/.../Versions/...), and shared gallery
@@ -212,4 +219,9 @@ func (in *AzureNodeClass) GetResourceGroup() *string {
 // GetLocation returns the location override from the spec, or nil for the default.
 func (in *AzureNodeClass) GetLocation() *string {
 	return in.Spec.Location
+}
+
+// GetManagedIdentities returns the per-NodeClass managed identity ARM resource IDs.
+func (in *AzureNodeClass) GetManagedIdentities() []string {
+	return in.Spec.ManagedIdentities
 }

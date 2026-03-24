@@ -22,6 +22,7 @@ import (
 
 const (
 	ConditionTypeValidationSucceeded = "ValidationSucceeded"
+	ConditionTypeSubnetsReady        = "SubnetsReady"
 )
 
 // AzureNodeClassStatus contains the resolved state of the AzureNodeClass.
@@ -39,6 +40,7 @@ type AzureNodeClassStatus struct {
 func (in *AzureNodeClass) StatusConditions() status.ConditionSet {
 	return status.NewReadyConditions(
 		ConditionTypeValidationSucceeded,
+		ConditionTypeSubnetsReady,
 	).For(in)
 }
 

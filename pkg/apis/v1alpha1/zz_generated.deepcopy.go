@@ -102,6 +102,11 @@ func (in *AzureNodeClassSpec) DeepCopyInto(out *AzureNodeClassSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.ManagedIdentities != nil {
+		in, out := &in.ManagedIdentities, &out.ManagedIdentities
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.ImageID != nil {
 		in, out := &in.ImageID, &out.ImageID
 		*out = new(string)

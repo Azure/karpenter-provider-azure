@@ -63,6 +63,7 @@ func NewControllers(
 	subnetsClient azclient.SubnetsAPI,
 	diskEncryptionSetsClient azclient.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
+	azClientManager *azclient.AZClientManager,
 ) []controller.Controller {
 	controllers := []controller.Controller{
 		// --- NodeClass-agnostic controllers ---
@@ -87,7 +88,7 @@ func NewControllers(
 		controllers = append(controllers,
 			// --- AzureNodeClass controllers ---
 			nodeclasshash.NewAzureNodeClassController(kubeClient),
-			nodeclassstatus.NewAzureNodeClassController(kubeClient),
+			nodeclassstatus.NewAzureNodeClassController(kubeClient, subnetsClient, azClientManager),
 			nodeclasstermination.NewAzureNodeClassController(kubeClient, recorder),
 			status.NewController[*v1alpha1.AzureNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 		)

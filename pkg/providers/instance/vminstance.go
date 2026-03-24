@@ -130,6 +130,9 @@ type DefaultVMProvider struct {
 	vmListQuery, nicListQuery string
 	deletingVMs               sets.Set[string] // tracks in-flight delete operations by VM name
 	deletingVMsMu             sync.RWMutex
+
+	knownSubRGs   map[string]string // maps subscriptionID -> resourceGroup for non-default subs
+	knownSubRGsMu sync.RWMutex
 }
 
 func NewDefaultVMProvider(
@@ -178,7 +181,30 @@ func NewDefaultVMProvider(
 
 		errorHandling: offerings.NewResponseErrorHandler(offeringsCache),
 		deletingVMs:   sets.New[string](),
+		knownSubRGs:   make(map[string]string),
 	}
+}
+
+// trackSubRG registers a non-default subscription+resourceGroup pair so that
+// List/Get/Delete can find VMs created in non-default subscriptions.
+func (p *DefaultVMProvider) trackSubRG(subscriptionID, resourceGroup string) {
+	if subscriptionID == p.subscriptionID && resourceGroup == p.resourceGroup {
+		return // default pair, already tracked
+	}
+	p.knownSubRGsMu.Lock()
+	defer p.knownSubRGsMu.Unlock()
+	p.knownSubRGs[subscriptionID] = resourceGroup
+}
+
+// getKnownSubRGs returns a snapshot of non-default subscription+resourceGroup pairs.
+func (p *DefaultVMProvider) getKnownSubRGs() map[string]string {
+	p.knownSubRGsMu.RLock()
+	defer p.knownSubRGsMu.RUnlock()
+	result := make(map[string]string, len(p.knownSubRGs))
+	for k, v := range p.knownSubRGs {
+		result[k] = v
+	}
+	return result
 }
 
 func (p *DefaultVMProvider) beginCreateCommon(
@@ -341,10 +367,25 @@ func (p *DefaultVMProvider) Get(ctx context.Context, vmName string) (*armcompute
 	var err error
 
 	if vm, err = p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, vmName, nil); err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
-			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
+		if !sdkerrors.IsNotFoundErr(err) {
+			return nil, fmt.Errorf("failed to get VM instance, %w", err)
 		}
-		return nil, fmt.Errorf("failed to get VM instance, %w", err)
+		// VM not found in default subscription — try non-default subscription+RG pairs
+		for subID, rg := range p.getKnownSubRGs() {
+			subClients, clientErr := p.azClientManager.GetClients(subID)
+			if clientErr != nil {
+				log.FromContext(ctx).Error(clientErr, "failed to get Azure clients for non-default subscription", "subscriptionID", subID)
+				continue
+			}
+			subVM, subErr := subClients.VirtualMachinesClient.Get(ctx, rg, vmName, nil)
+			if subErr == nil {
+				return &subVM.VirtualMachine, nil
+			}
+			if !sdkerrors.IsNotFoundErr(subErr) {
+				log.FromContext(ctx).Error(subErr, "error getting VM in non-default subscription", "subscriptionID", subID, "resourceGroup", rg)
+			}
+		}
+		return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 	}
 
 	return &vm.VirtualMachine, nil
@@ -365,6 +406,26 @@ func (p *DefaultVMProvider) List(ctx context.Context) ([]*armcompute.VirtualMach
 		}
 		vmList = append(vmList, vm)
 	}
+
+	// Also query non-default subscription+RG pairs for VMs created via multi-sub NodeClasses
+	for subID, rg := range p.getKnownSubRGs() {
+		subQuery := GetVMListQueryBuilder(rg).String()
+		subReq := NewQueryRequest(lo.ToPtr(subID), subQuery)
+		subData, err := GetResourceData(ctx, client, *subReq)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to query VMs in non-default subscription", "subscriptionID", subID, "resourceGroup", rg)
+			continue // best-effort: don't fail the whole list for a single sub
+		}
+		for i := range subData {
+			vm, err := createVMFromQueryResponseData(subData[i])
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to parse VM from non-default subscription query", "subscriptionID", subID)
+				continue
+			}
+			vmList = append(vmList, vm)
+		}
+	}
+
 	return vmList, nil
 }
 
@@ -377,29 +438,61 @@ func (p *DefaultVMProvider) Delete(ctx context.Context, resourceName string) err
 		return nil
 	}
 
-	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
-	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted.
-	// This get exists to deal with the case where the operator restarted during the course of a deletion.
-	// With it, we may do an extra unneeded get before delete, but without it we may erroneously issue
-	// 2 deletes if the instance was being deleted and the operator restarted.
-	// Since get quota is generally higher, we prefer to check w/ get rather than issue 2 deletes.
-	vm, err := p.Get(ctx, resourceName)
-	if err != nil {
-		return err
+	// Try to find the VM in the default subscription first
+	vm, err := p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, resourceName, nil)
+	if err == nil {
+		if utils.IsVMDeleting(vm.VirtualMachine) {
+			return nil
+		}
+		log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
+		return p.cleanupAzureResources(ctx, resourceName, false)
 	}
-	// Check if the instance is already shutting down to reduce the number of API calls.
-	// Leftover network interfaces (if any) will be cleaned by by GC controller.
-	if utils.IsVMDeleting(*vm) {
-		return nil
+	if !sdkerrors.IsNotFoundErr(err) {
+		return fmt.Errorf("failed to get VM instance, %w", err)
 	}
 
-	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
-	return p.cleanupAzureResources(ctx, resourceName, false)
+	// VM not found in default sub — search non-default subscription+RG pairs
+	for subID, rg := range p.getKnownSubRGs() {
+		subClients, clientErr := p.azClientManager.GetClients(subID)
+		if clientErr != nil {
+			log.FromContext(ctx).Error(clientErr, "failed to get Azure clients for non-default subscription during delete", "subscriptionID", subID)
+			continue
+		}
+		subVM, subErr := subClients.VirtualMachinesClient.Get(ctx, rg, resourceName, nil)
+		if subErr != nil {
+			if sdkerrors.IsNotFoundErr(subErr) {
+				continue
+			}
+			log.FromContext(ctx).Error(subErr, "error getting VM in non-default subscription during delete", "subscriptionID", subID, "resourceGroup", rg)
+			continue
+		}
+		if utils.IsVMDeleting(subVM.VirtualMachine) {
+			return nil
+		}
+		log.FromContext(ctx).V(1).Info("deleting virtual machine in non-default subscription", "vmName", resourceName, "subscriptionID", subID, "resourceGroup", rg)
+		return cleanupAzureVMResources(ctx, subClients, rg, resourceName)
+	}
+
+	// Not found in any subscription
+	return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("VM %q not found in any known subscription", resourceName))
 }
 
 func (p *DefaultVMProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
 	nicResponse, err := p.azClient.NetworkInterfacesClient().Get(ctx, rg, nicName, nil)
 	if err != nil {
+		if sdkerrors.IsNotFoundErr(err) {
+			// NIC not found in default sub — try non-default subscription+RG pairs
+			for subID, subRG := range p.getKnownSubRGs() {
+				subClients, clientErr := p.azClientManager.GetClients(subID)
+				if clientErr != nil {
+					continue
+				}
+				subResp, subErr := subClients.NetworkInterfacesClient.Get(ctx, subRG, nicName, nil)
+				if subErr == nil {
+					return &subResp.Interface, nil
+				}
+			}
+		}
 		return nil, err
 	}
 	return &nicResponse.Interface, nil
@@ -421,11 +514,46 @@ func (p *DefaultVMProvider) ListNics(ctx context.Context) ([]*armnetwork.Interfa
 		}
 		nicList = append(nicList, nic)
 	}
+
+	// Also query non-default subscription+RG pairs for NICs
+	for subID, rg := range p.getKnownSubRGs() {
+		subQuery := GetNICListQueryBuilder(rg).String()
+		subReq := NewQueryRequest(lo.ToPtr(subID), subQuery)
+		subData, err := GetResourceData(ctx, client, *subReq)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to query NICs in non-default subscription", "subscriptionID", subID, "resourceGroup", rg)
+			continue
+		}
+		for i := range subData {
+			nic, err := createNICFromQueryResponseData(subData[i])
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to parse NIC from non-default subscription query", "subscriptionID", subID)
+				continue
+			}
+			nicList = append(nicList, nic)
+		}
+	}
+
 	return nicList, nil
 }
 
 func (p *DefaultVMProvider) DeleteNic(ctx context.Context, nicName string) error {
-	return deleteNicIfExists(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, nicName)
+	err := deleteNicIfExists(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, nicName)
+	if err == nil {
+		return nil
+	}
+	// If deletion failed (e.g., not found), try non-default subscription+RG pairs
+	for subID, rg := range p.getKnownSubRGs() {
+		subClients, clientErr := p.azClientManager.GetClients(subID)
+		if clientErr != nil {
+			continue
+		}
+		subErr := deleteNicIfExists(ctx, subClients.NetworkInterfacesClient, rg, nicName)
+		if subErr == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // E.g., aks-default-2jf98
@@ -579,6 +707,9 @@ func (p *DefaultVMProvider) beginLaunchInstanceAzure(
 		return nil, err
 	}
 
+	// Track non-default subscription+RG pairs so List/Get/Delete can find these VMs
+	p.trackSubRG(effectiveSubID, effectiveRG)
+
 	// Unique
 	var customData *string
 	if userData := nodeClass.GetUserData(); userData != nil && *userData != "" {
@@ -592,11 +723,12 @@ func (p *DefaultVMProvider) beginLaunchInstanceAzure(
 		return nil, err
 	}
 
-	// Shared
+	// Shared — Identity: merge global --node-identities with per-NodeClass managed identities
+	mergedIdentities := mergeIdentities(opts.NodeIdentities, nodeClass.GetManagedIdentities())
 	vm := &armcompute.VirtualMachine{
 		Name:     lo.ToPtr(resourceName),
 		Location: lo.ToPtr(effectiveLocation),
-		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
+		Identity: ConvertToVirtualMachineIdentity(mergedIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),

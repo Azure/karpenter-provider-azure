@@ -32,6 +32,7 @@ type SubscriptionClients struct {
 	VirtualMachinesClient          VirtualMachinesAPI
 	VirtualMachineExtensionsClient VirtualMachineExtensionsAPI
 	NetworkInterfacesClient        NetworkInterfacesAPI
+	SubnetsClient                  SubnetsAPI
 }
 
 // AZClientManager lazily creates and caches per-subscription Azure SDK clients.
@@ -60,6 +61,7 @@ func NewAZClientManager(
 			VirtualMachinesClient:          defaultAZClient.VirtualMachinesClient(),
 			VirtualMachineExtensionsClient: defaultAZClient.VirtualMachineExtensionsClient(),
 			NetworkInterfacesClient:        defaultAZClient.NetworkInterfacesClient(),
+			SubnetsClient:                  defaultAZClient.SubnetsClient(),
 		},
 		cred:    cred,
 		armOpts: armOpts,
@@ -122,9 +124,15 @@ func (m *AZClientManager) newSubscriptionClients(subscriptionID string) (*Subscr
 		return nil, fmt.Errorf("creating NetworkInterfacesClient: %w", err)
 	}
 
+	subnetsClient, err := armnetwork.NewSubnetsClient(subscriptionID, m.cred, m.armOpts)
+	if err != nil {
+		return nil, fmt.Errorf("creating SubnetsClient: %w", err)
+	}
+
 	return &SubscriptionClients{
 		VirtualMachinesClient:          vmClient,
 		VirtualMachineExtensionsClient: extClient,
 		NetworkInterfacesClient:        nicClient,
+		SubnetsClient:                  subnetsClient,
 	}, nil
 }
