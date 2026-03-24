@@ -513,7 +513,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}, nil
 }
 
-
 // mustDeleteNic parameter is used to determine whether NIC deletion failure is considered an error.
 // We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
 // NIC garbage collector is expected to handle such cases.
