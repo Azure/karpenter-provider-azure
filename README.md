@@ -106,7 +106,7 @@ az group create --name ${RG} --location ${LOCATION}
 Create the workload MSI that backs the karpenter pod auth:
 
 ```bash
-KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}")
+KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}" --output json)
 ```
 
 Create the AKS cluster compatible with Karpenter, with workload identity enabled:
@@ -117,7 +117,8 @@ AKS_JSON=$(az aks create \
   --node-count 3 --generate-ssh-keys \
   --network-plugin azure --network-plugin-mode overlay --network-dataplane cilium \
   --enable-managed-identity \
-  --enable-oidc-issuer --enable-workload-identity)
+  --enable-oidc-issuer --enable-workload-identity \
+  --output json)
 az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overwrite-existing
 ```
 
@@ -135,7 +136,7 @@ Create role assignments to let Karpenter manage VMs and Network resources:
 ```bash
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(jq -r '.principalId' <<< "$KMSI_JSON")
 RG_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
-RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" -otsv)
+RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" --output tsv)
 for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator"; do
   az role assignment create --assignee "${KARPENTER_USER_ASSIGNED_CLIENT_ID}" --scope "${RG_MC_RES}" --role "$role"
 done

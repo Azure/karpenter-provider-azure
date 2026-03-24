@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -160,6 +161,7 @@ type DefaultVMProvider struct {
 	location                     string
 	azClient                     *azclient.AZClient
 	instanceTypeProvider         instancetype.Provider
+	allocationStrategyProvider   allocationstrategy.Provider
 	launchTemplateProvider       *launchtemplate.Provider
 	loadBalancerProvider         *loadbalancer.Provider
 	networkSecurityGroupProvider *networksecuritygroup.Provider
@@ -178,6 +180,7 @@ type DefaultVMProvider struct {
 func NewDefaultVMProvider(
 	azClient *azclient.AZClient,
 	instanceTypeProvider instancetype.Provider,
+	allocationStrategyProvider allocationstrategy.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
 	networkSecurityGroupProvider *networksecuritygroup.Provider,
@@ -192,6 +195,7 @@ func NewDefaultVMProvider(
 	return &DefaultVMProvider{
 		azClient:                     azClient,
 		instanceTypeProvider:         instanceTypeProvider,
+		allocationStrategyProvider:   allocationStrategyProvider,
 		launchTemplateProvider:       launchTemplateProvider,
 		loadBalancerProvider:         loadBalancerProvider,
 		networkSecurityGroupProvider: networkSecurityGroupProvider,
@@ -221,7 +225,6 @@ func (p *DefaultVMProvider) BeginCreate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
-	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		// There may be orphan NICs (created before promise started)
@@ -738,7 +741,12 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
-	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
+	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		allocationstrategy.NewInstanceOfferings(instanceTypes),
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+	)
+
+	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}

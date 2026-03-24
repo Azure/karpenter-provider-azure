@@ -60,6 +60,17 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              artifactStreaming:
+                description: |-
+                  artifactStreaming configures artifact streaming for provisioned nodes.
+                  Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+                properties:
+                  enabled:
+                    description: |-
+                      enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
+                      If not specified, defaults to true.
+                    type: boolean
+                type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -619,6 +630,17 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              artifactStreaming:
+                description: |-
+                  artifactStreaming configures artifact streaming for provisioned nodes.
+                  Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+                properties:
+                  enabled:
+                    description: |-
+                      enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
+                      If not specified, defaults to true.
+                    type: boolean
+                type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
