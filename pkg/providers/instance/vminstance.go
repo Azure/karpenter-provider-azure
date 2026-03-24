@@ -41,8 +41,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/customscripts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -96,6 +98,7 @@ type DefaultVMProvider struct {
 	imageResolver                imagefamily.Resolver
 	loadBalancerProvider         *loadbalancer.Provider
 	networkSecurityGroupProvider *networksecuritygroup.Provider
+	nodeBootstrappingProvider    customscripts.NodeBootstrappingAPI
 	resourceGroup                string
 	subscriptionID               string
 	provisionMode                string
@@ -103,7 +106,6 @@ type DefaultVMProvider struct {
 	errorHandling                *offerings.ResponseErrorHandler
 	env                          *auth.Environment
 
-	// Fields previously on launchtemplate.Provider, now inlined
 	caBundle             *string
 	clusterEndpoint      string
 	tenantID             string
@@ -121,6 +123,7 @@ func NewDefaultVMProvider(
 	imageResolver imagefamily.Resolver,
 	loadBalancerProvider *loadbalancer.Provider,
 	networkSecurityGroupProvider *networksecuritygroup.Provider,
+	nodeBootstrappingProvider customscripts.NodeBootstrappingAPI,
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
@@ -140,6 +143,7 @@ func NewDefaultVMProvider(
 		imageResolver:                imageResolver,
 		loadBalancerProvider:         loadBalancerProvider,
 		networkSecurityGroupProvider: networkSecurityGroupProvider,
+		nodeBootstrappingProvider:    nodeBootstrappingProvider,
 		location:                     location,
 		resourceGroup:                resourceGroup,
 		subscriptionID:               subscriptionID,
@@ -404,8 +408,8 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, vmName str
 }
 
 // beginLaunchInstance starts the launch of a VM instance.
-// The returned VirtualMachinePromise must be called to gather any errors
-// that are retrieved during async provisioning, as well as to complete the provisioning process.
+// Each concern (image, subnet, tags, NIC, bootstrap, storage, VM assembly) is resolved
+// by its own focused helper — parallel to aksmachineinstance.go's beginCreateMachine flow.
 //
 //nolint:gocyclo
 func (p *DefaultVMProvider) beginLaunchInstance(
@@ -424,26 +428,64 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
 
-	// resourceName for the NIC, VM, and Disk
+	opts := options.FromContext(ctx)
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
-	// Resolve bootstrap data and build the VM template
-	vm, bootstrap, err := p.buildVMTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim, "" /* nicReference filled after NIC creation */)
-	if err != nil {
-		return nil, fmt.Errorf("building VM template: %w", err)
-	}
-
-	// Create NIC using subnet and tags from bootstrap data
-	nicReference, err := p.buildAndCreateNIC(ctx, resourceName, instanceType, nodeClass, bootstrap.SubnetID, bootstrap.Tags)
+	// Resolve image
+	imageID, err := p.resolveImageID(nodeClass, instanceType)
 	if err != nil {
 		return nil, err
 	}
 
-	// Patch the NIC reference into the VM template
-	vm.Properties.NetworkProfile = configureNetworkProfile(nicReference)
+	// Resolve subnet, tags (independent of bootstrap — no intermediate struct needed)
+	subnetID := resolveSubnetID(nodeClass, opts)
+	tags := Tags(opts, nodeClass, nodeClaim)
+
+	// Create NIC
+	nicReference, err := p.buildAndCreateNIC(ctx, resourceName, instanceType, nodeClass, subnetID, tags)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve bootstrap data — each parameter flows directly, no intermediate StaticParameters
+	bootstrap, err := p.resolveBootstrap(ctx, nodeClass, nodeClaim, instanceType, capacityType, imageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if bootstrap.IsWindows {
+		// TODO(Windows)
+		return nil, fmt.Errorf("windows VM provisioning is not yet supported")
+	}
+
+	// Storage profile
+	storageProfile, err := p.configureStorageProfile(ctx, nodeClass, instanceType, imageID, resourceName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Assemble VM — each field set directly, no intermediate blob
+	vm := &armcompute.VirtualMachine{
+		Name:     lo.ToPtr(resourceName),
+		Location: lo.ToPtr(p.location),
+		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
+		Properties: &armcompute.VirtualMachineProperties{
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+			},
+			StorageProfile: storageProfile,
+			NetworkProfile: configureNetworkProfile(nicReference),
+			OSProfile:      configureOSProfile(opts, resourceName, bootstrap.CustomData),
+			Priority:       lo.ToPtr(KarpCapacityTypeToVMPriority[capacityType]),
+		},
+		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
+		Tags:  tags,
+	}
+	configureBillingProfile(vm.Properties, capacityType)
+	configureSecurityProfile(vm.Properties, nodeClass)
 
 	// Create or retrieve existing VM
-	result, err := p.createVirtualMachine(ctx, resourceName, vm, bootstrap.ImageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
+	result, err := p.createVirtualMachine(ctx, resourceName, vm, imageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {
@@ -457,9 +499,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}
 
 	// Patch the VM object to fill out a few fields that are needed later.
-	// This is a bit of a hack that saves us doing a GET now.
-	// The reason to avoid a GET is that it can fail, and if it does the future above will be lost,
-	// which we don't want.
 	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
 	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
 
@@ -467,14 +506,13 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		providerRef: p,
 		WaitFunc: func() error {
 			if result.Poller == nil {
-				// Poller is nil means the VM existed already and we're done.
 				return nil
 			}
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
 				VMCreateFailureMetric.With(map[string]string{
-					metrics.ImageLabel:        bootstrap.ImageID,
+					metrics.ImageLabel:        imageID,
 					metrics.SizeLabel:         instanceType.Name,
 					metrics.ZoneLabel:         zone,
 					metrics.CapacityTypeLabel: capacityType,
@@ -495,13 +533,13 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 			}
 
 			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-				err = p.createCSExtensionFromSpec(ctx, resourceName, bootstrap.CustomScriptsCSE, bootstrap.IsWindows, bootstrap.Tags)
+				err = p.createCSExtensionFromSpec(ctx, resourceName, bootstrap.CSE, bootstrap.IsWindows, tags)
 				if err != nil {
 					return err
 				}
 			}
 			if isAKSIdentifyingExtensionEnabled(p.env) {
-				err = p.createAKSIdentifyingExtensionFromSpec(ctx, resourceName, bootstrap.Tags)
+				err = p.createAKSIdentifyingExtensionFromSpec(ctx, resourceName, tags)
 				if err != nil {
 					return err
 				}

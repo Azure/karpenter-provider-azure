@@ -19,7 +19,6 @@ package instance
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -38,12 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-)
-
-var (
-	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
 // Notes on terminology:
@@ -567,7 +561,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	if err := validateRetrievedAKSMachineBasicProperties(existingAKSMachine); err != nil {
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
 	}
-	if existingAKSMachine.Properties.Tags == nil || existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil {
+	if existingAKSMachine.Properties.Tags == nil || existingAKSMachine.Properties.Tags[KarpenterAKSMachineNodeClaimTagKey] == nil {
 		// This is not included in validateRetrievedAKSMachineBasicProperties as inplaceupdate can repair it.
 		// Although, we don't want to reuse a machine until that happens.
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, fmt.Errorf("irretrievable karpenter.azure.com_aksmachine_nodeclaim tag"))
@@ -584,7 +578,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	existingAKSMachineVMResourceID := lo.FromPtr(existingAKSMachine.Properties.ResourceID)
 	existingAKSMachineID := lo.FromPtr(existingAKSMachine.ID)
 	existingAKSMachineNodeImageVersion := lo.FromPtr(existingAKSMachine.Properties.NodeImageVersion)
-	existingAKSMachineNodeClaimName := lo.FromPtr(existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey])
+	existingAKSMachineNodeClaimName := lo.FromPtr(existingAKSMachine.Properties.Tags[KarpenterAKSMachineNodeClaimTagKey])
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)

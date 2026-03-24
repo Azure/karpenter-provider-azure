@@ -189,7 +189,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		operator.GetClient(),
 		imageProvider,
 		instanceTypeProvider,
-		azClient.NodeBootstrappingClient,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
@@ -208,6 +207,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		imageResolver,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
+		azClient.NodeBootstrappingClient,
 		unavailableOfferingsCache,
 		azConfig.Location,
 		options.FromContext(ctx).NodeResourceGroup,

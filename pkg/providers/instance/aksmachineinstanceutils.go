@@ -43,7 +43,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -100,7 +99,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	if tag, ok := aksMachineTemplate.Properties.Tags[NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
-	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]; ok {
+	if tag, ok := aksMachineTemplate.Properties.Tags[KarpenterAKSMachineNodeClaimTagKey]; ok {
 		// Missing tag (by design, only possible if user intervenes) will eventually be repaired by in-place update controller.
 		// By the time of writing, this is being used for logging purposes within provider only.
 		// That is unlikely to change for core. But be mindful of provider is to rely on this in that situation. Still, rare.
@@ -160,7 +159,7 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 // May return apimachinery.NotFoundError if NodePool is not found.
 func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine, kubeClient client.Client) (*karpv1.NodePool, error) {
 	// ASSUMPTION: NodePool name is stored in the all AKS machine tags.
-	nodePoolName, ok := aksMachine.Properties.Tags[launchtemplate.NodePoolTagKey]
+	nodePoolName, ok := aksMachine.Properties.Tags[NodePoolTagKey]
 	if ok && *nodePoolName != "" {
 		nodePool := &karpv1.NodePool{}
 		if err := kubeClient.Get(ctx, types.NamespacedName{Name: *nodePoolName}, nodePool); err != nil {

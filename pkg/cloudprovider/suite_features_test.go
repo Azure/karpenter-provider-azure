@@ -46,8 +46,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/scriptless"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -1368,7 +1368,7 @@ var _ = Describe("CloudProvider - Features", func() {
 				k8sVersion, err := azureEnv.KubernetesVersionProvider.KubeServerVersion(ctx)
 				Expect(err).To(BeNil())
 				minorVersion = semver.MustParse(k8sVersion).Minor
-				credentialProviderURL = bootstrap.CredentialProviderURL(k8sVersion, "amd64")
+				credentialProviderURL = scriptless.CredentialProviderURL(k8sVersion, "amd64")
 			})
 
 			It("should include or exclude --keep-terminated-pod-volumes based on kubelet version", func() {
