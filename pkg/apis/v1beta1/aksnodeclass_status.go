@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/awslabs/operatorpkg/status"
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -29,20 +28,6 @@ const (
 	ConditionTypeSubnetsReady           = "SubnetsReady"
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
 )
-
-// NodeImage contains resolved image selector values utilized for node launch
-type NodeImage struct {
-	// id is the ID of the image. Examples:
-	// - CIG: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
-	// - SIG: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
-	// +required
-	//nolint:kubeapilinter // requiredfields: validation is intentionally not enforced for this field
-	ID string `json:"id"`
-	// requirements of the image to be utilized on an instance type
-	// +required
-	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
-	Requirements []corev1.NodeSelectorRequirement `json:"requirements"`
-}
 
 // AKSNodeClassStatus contains the resolved state of the AKSNodeClass
 type AKSNodeClassStatus struct {
@@ -59,6 +44,10 @@ type AKSNodeClassStatus struct {
 	// +optional
 	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility
 	Conditions []status.Condition `json:"conditions,omitempty"`
+}
+
+func (in *AKSNodeClass) GetAnnotations() map[string]string {
+	return in.Annotations
 }
 
 func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
