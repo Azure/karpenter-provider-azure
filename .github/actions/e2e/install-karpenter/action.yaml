@@ -59,7 +59,8 @@ runs:
       GOTMPDIR: /mnt/go-tmp
       GOCACHE: /mnt/go-cache
     run: |
-      mkdir -p "$GOTMPDIR" "$GOCACHE"
+      sudo mkdir -p "$GOTMPDIR" "$GOCACHE"
+      sudo chown "$(id -u):$(id -g)" "$GOTMPDIR" "$GOCACHE"
       make ci-install
   - name: taint nodes as karpenter-system
     shell: bash
