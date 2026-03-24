@@ -32,7 +32,7 @@ func CreateVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAP
 	if err != nil {
 		return nil, err
 	}
-	res, err := poller.PollUntilDone(ctx, nil)
+	res, err := poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func UpdateVirtualMachine(ctx context.Context, client azclient.VirtualMachinesAP
 	if err != nil {
 		return err
 	}
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		return err
 	}
@@ -64,11 +64,7 @@ func createVirtualMachineExtension(
 		return nil, err
 	}
 
-	// Poll more frequently than the default of 30s
-	opts := &runtime.PollUntilDoneOptions{
-		Frequency: 3 * time.Second,
-	}
-	res, err := poller.PollUntilDone(ctx, opts)
+	res, err := poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +79,7 @@ func createNic(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, ni
 	}
 	res, err := poller.PollUntilDone(ctx, nil)
 
+	res, err := poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +91,7 @@ func deleteNic(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, ni
 	if err != nil {
 		return err
 	}
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil
