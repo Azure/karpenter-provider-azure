@@ -21,6 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Compile-time assertion: AKSNodeClass must implement NodeClass.
+var _ NodeClass = (*AKSNodeClass)(nil)
+
 // NodeClass is the interface for Azure VM-level properties shared across all
 // NodeClass types (AKSNodeClass, AzureNodeClass, and potential future types).
 // It captures what the shared VM creation helpers need regardless of which

@@ -382,22 +382,28 @@ func configureNetworkProfile(nicReference string) *armcompute.NetworkProfile {
 
 // configureOSProfile builds the OSProfile for the VM.
 func configureOSProfile(opts *options.Options, vmName string, customData string) *armcompute.OSProfile {
-	return &armcompute.OSProfile{
+	osProfile := &armcompute.OSProfile{
 		AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
 		ComputerName:  &vmName,
 		CustomData:    lo.ToPtr(customData),
 		LinuxConfiguration: &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: lo.ToPtr(true),
-			SSH: &armcompute.SSHConfiguration{
-				PublicKeys: []*armcompute.SSHPublicKey{
-					{
-						KeyData: lo.ToPtr(opts.SSHPublicKey),
-						Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
-					},
-				},
-			},
 		},
 	}
+	// Only configure SSH when an SSH public key is provided. In azurevm mode the key is
+	// optional (users manage their own image's SSH configuration), while AKS modes always
+	// require it. Setting an empty key would cause the Azure API to reject the request.
+	if opts.SSHPublicKey != "" {
+		osProfile.LinuxConfiguration.SSH = &armcompute.SSHConfiguration{
+			PublicKeys: []*armcompute.SSHPublicKey{
+				{
+					KeyData: lo.ToPtr(opts.SSHPublicKey),
+					Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
+				},
+			},
+		}
+	}
+	return osProfile
 }
 
 // configureBillingProfile sets a default MaxPrice of -1 for Spot.

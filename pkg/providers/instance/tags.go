@@ -22,6 +22,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/samber/lo"
 )
@@ -44,9 +45,14 @@ func Tags(
 	nodeClass v1beta1.NodeClass,
 	nodeClaim *karpv1.NodeClaim,
 ) map[string]*string {
-	defaultTags := map[string]string{
-		KarpenterManagedTagKey: options.ClusterName,
-		BillingTagKey:          BillingTagValueLinux,
+	defaultTags := map[string]string{}
+
+	// AKS-specific tags: cluster name and billing. These are only meaningful when
+	// running in an AKS cluster — in azurevm mode, ClusterName is empty and the
+	// AKS billing tag doesn't apply.
+	if options.ProvisionMode != consts.ProvisionModeAzureVM {
+		defaultTags[KarpenterManagedTagKey] = options.ClusterName
+		defaultTags[BillingTagKey] = BillingTagValueLinux
 	}
 	// Note: Be careful depending on nodeClaim.Labels here, as we assign some additional labels during the creation
 	// of the static parameters for the launch template. Those labels haven't actually been applied to the nodeClaim yet,

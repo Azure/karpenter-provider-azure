@@ -78,6 +78,17 @@ func (p *VirtualMachinePromise) GetInstanceName() string {
 	return lo.FromPtr(p.VM.Name)
 }
 
+// VMProvider manages Azure Virtual Machine lifecycle operations.
+//
+// There are two separate BeginCreate methods rather than one polymorphic method because the
+// AKS and AzureVM creation paths diverge in 7 areas that are fundamentally different logic,
+// not just different types: image resolution (AKS image families vs user-provided imageID),
+// bootstrap (AKS CSE/cloud-init vs raw userData), NIC setup (AKS LB backend pools + NSG vs
+// bare NIC), VM extensions (CSE + AKS billing vs none), identity (AKS-managed vs user-managed),
+// storage profile (ephemeral disk logic + AKS CIG/SIG vs simple OS disk), and error handling.
+// Forcing them through a shared entry point would require either an adapter pattern
+// (converting AzureNodeClass → AKSNodeClass, which creates lie-objects) or deep conditional
+// branching within a single function.
 type VMProvider interface {
 	BeginCreate(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	BeginCreateAzureVM(context.Context, *v1alpha1.AzureNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)

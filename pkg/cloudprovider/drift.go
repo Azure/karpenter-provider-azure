@@ -313,15 +313,26 @@ func (c *CloudProvider) isAzureNodeClassDrifted(ctx context.Context, nodeClaim *
 		return "", client.IgnoreNotFound(fmt.Errorf("resolving azure node class, %w", err))
 	}
 
-	// Hash-based drift: compare the current AzureNodeClass hash against what was stored
-	// on the NodeClaim at creation time
-	expectedHash := azureNodeClass.Hash()
-	actualHash, ok := nodeClaim.Annotations[v1alpha1.AnnotationAzureNodeClassHash]
-	if ok && expectedHash != actualHash {
+	nodeClassHash, foundNodeClassHash := azureNodeClass.Annotations[v1alpha1.AnnotationAzureNodeClassHash]
+	nodeClassHashVersion, foundNodeClassHashVersion := azureNodeClass.Annotations[v1alpha1.AnnotationAzureNodeClassHashVersion]
+	nodeClaimHash, foundNodeClaimHash := nodeClaim.Annotations[v1alpha1.AnnotationAzureNodeClassHash]
+	nodeClaimHashVersion, foundNodeClaimHashVersion := nodeClaim.Annotations[v1alpha1.AnnotationAzureNodeClassHashVersion]
+
+	if !foundNodeClassHash || !foundNodeClaimHash || !foundNodeClassHashVersion || !foundNodeClaimHashVersion {
+		return "", nil
+	}
+	// Only compare hashes when both sides use the same hash version. If a hash algorithm
+	// change bumps the version, the hash controller will migrate NodeClaim annotations first.
+	// Until migration completes, skip drift detection to avoid false positives.
+	if nodeClassHashVersion != nodeClaimHashVersion {
+		return "", nil
+	}
+
+	if nodeClassHash != nodeClaimHash {
 		logger.V(1).Info("drift triggered as AzureNodeClass hash changed",
 			"driftType", AzureNodeClassDrifted,
-			"expectedHash", expectedHash,
-			"actualHash", actualHash)
+			"expectedHash", nodeClassHash,
+			"actualHash", nodeClaimHash)
 		return AzureNodeClassDrifted, nil
 	}
 	return "", nil

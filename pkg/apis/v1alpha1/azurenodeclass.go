@@ -20,10 +20,14 @@ import (
 	"fmt"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// Compile-time assertion: AzureNodeClass must implement NodeClass.
+var _ v1beta1.NodeClass = (*AzureNodeClass)(nil)
 
 var (
 	AnnotationAzureNodeClassHash        = apis.Group + "/azurenodeclass-hash"

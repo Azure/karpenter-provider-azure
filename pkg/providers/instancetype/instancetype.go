@@ -301,8 +301,18 @@ func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGi
 	return memory
 }
 
+// ephemeralStorage returns the ephemeral-storage capacity for an instance type based on the
+// OS disk size from the NodeClass. When OSDiskSizeGB is nil (which happens when a zero-value
+// AKSNodeClass is used for non-AKS NodeClass types like AzureNodeClass), we default to 128 GiB.
+// This matches the CRD-level default on both AKSNodeClass and AzureNodeClass. Without this
+// default, nil OSDiskSizeGB would produce 0 GiB capacity, causing the scheduler to reject all
+// pods that request ephemeral-storage.
 func ephemeralStorage(nodeClass *v1beta1.AKSNodeClass) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
+	osDiskSizeGB := lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)
+	if osDiskSizeGB == 0 {
+		osDiskSizeGB = 128 // Default OS disk size — matches CRD defaults for both AKSNodeClass and AzureNodeClass
+	}
+	return resource.NewScaledQuantity(int64(osDiskSizeGB), resource.Giga)
 }
 
 func pods(ctx context.Context, nc *v1beta1.AKSNodeClass) *resource.Quantity {
