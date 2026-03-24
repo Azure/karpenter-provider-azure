@@ -56,7 +56,10 @@ runs:
       AZURE_LOCATION: ${{ inputs.location }}
       PROVISION_MODE: ${{ inputs.provision_mode }}
       AZURE_ACR_NAME: ${{ inputs.acr_name }}
+      GOTMPDIR: /mnt/go-tmp
+      GOCACHE: /mnt/go-cache
     run: |
+      mkdir -p "$GOTMPDIR" "$GOCACHE"
       make ci-install
   - name: taint nodes as karpenter-system
     shell: bash
