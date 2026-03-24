@@ -24,8 +24,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -37,11 +40,12 @@ import (
 )
 
 const (
-	NodeClassDrift       cloudprovider.DriftReason = "NodeClassDrift"
-	K8sVersionDrift      cloudprovider.DriftReason = "K8sVersionDrift"
-	ImageDrift           cloudprovider.DriftReason = "ImageDrift"
-	KubeletIdentityDrift cloudprovider.DriftReason = "KubeletIdentityDrift"
-	ClusterConfigDrift   cloudprovider.DriftReason = "ClusterConfigDrift" // This is a catch-all for cluster-level config changes (e.g., from PUT ManagedCluster), where Karpenter does not directly "own" them.
+	NodeClassDrift            cloudprovider.DriftReason = "NodeClassDrift"
+	AzureNodeClassDrifted     cloudprovider.DriftReason = "AzureNodeClassDrifted"
+	K8sVersionDrift           cloudprovider.DriftReason = "K8sVersionDrift"
+	ImageDrift                cloudprovider.DriftReason = "ImageDrift"
+	KubeletIdentityDrift      cloudprovider.DriftReason = "KubeletIdentityDrift"
+	ClusterConfigDrift        cloudprovider.DriftReason = "ClusterConfigDrift" // This is a catch-all for cluster-level config changes (e.g., from PUT ManagedCluster), where Karpenter does not directly "own" them.
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
 	NoDrift cloudprovider.DriftReason = ""
@@ -294,5 +298,31 @@ func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.
 		}
 	}
 
+	return "", nil
+}
+
+// isAzureNodeClassDrifted performs hash-based drift detection for AzureNodeClass.
+// Compares the current AzureNodeClass hash against the hash stored on the NodeClaim
+// when it was created. This is simpler than the AKS drift path — no image version,
+// K8s version, or kubelet identity drift checks, since the user manages those directly.
+func (c *CloudProvider) isAzureNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool) (cloudprovider.DriftReason, error) {
+	logger := log.FromContext(ctx)
+
+	azureNodeClass := &v1alpha1.AzureNodeClass{}
+	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, azureNodeClass); err != nil {
+		return "", client.IgnoreNotFound(fmt.Errorf("resolving azure node class, %w", err))
+	}
+
+	// Hash-based drift: compare the current AzureNodeClass hash against what was stored
+	// on the NodeClaim at creation time
+	expectedHash := azureNodeClass.Hash()
+	actualHash, ok := nodeClaim.Annotations[v1alpha1.AnnotationAzureNodeClassHash]
+	if ok && expectedHash != actualHash {
+		logger.V(1).Info("drift triggered as AzureNodeClass hash changed",
+			"driftType", AzureNodeClassDrifted,
+			"expectedHash", expectedHash,
+			"actualHash", actualHash)
+		return AzureNodeClassDrifted, nil
+	}
 	return "", nil
 }

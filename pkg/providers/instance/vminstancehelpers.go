@@ -57,8 +57,9 @@ func (p *DefaultVMProvider) resolveImageID(nodeClass *v1beta1.AKSNodeClass, inst
 }
 
 // resolveSubnetID returns the subnet to use for the VM's NIC.
-func resolveSubnetID(nodeClass *v1beta1.AKSNodeClass, opts *options.Options) string {
-	return lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
+// Accepts the NodeClass interface so it works for both AKSNodeClass and AzureNodeClass.
+func resolveSubnetID(nodeClass v1beta1.NodeClass, opts *options.Options) string {
+	return lo.Ternary(nodeClass.GetVNETSubnetID() != nil, lo.FromPtr(nodeClass.GetVNETSubnetID()), opts.SubnetID)
 }
 
 // resolveBootstrap builds bootstrap data (custom data + CSE) for the VM.
@@ -410,12 +411,13 @@ func configureBillingProfile(vmProps *armcompute.VirtualMachineProperties, capac
 }
 
 // configureSecurityProfile sets security-related properties.
-func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+// Accepts the NodeClass interface so it works for both AKSNodeClass and AzureNodeClass.
+func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass v1beta1.NodeClass) {
+	if nodeClass.GetEncryptionAtHost() {
 		if vmProps.SecurityProfile == nil {
 			vmProps.SecurityProfile = &armcompute.SecurityProfile{}
 		}
-		vmProps.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+		vmProps.SecurityProfile.EncryptionAtHost = lo.ToPtr(true)
 	}
 }
 

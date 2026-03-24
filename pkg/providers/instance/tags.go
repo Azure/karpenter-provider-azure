@@ -37,10 +37,11 @@ var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
-// Tags returns the tags to be applied to a resource (VM, Disk, NIC, etc)
+// Tags returns the tags to be applied to a resource (VM, Disk, NIC, etc).
+// Accepts the NodeClass interface so it works for both AKSNodeClass and AzureNodeClass.
 func Tags(
 	options *options.Options,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass v1beta1.NodeClass,
 	nodeClaim *karpv1.NodeClaim,
 ) map[string]*string {
 	defaultTags := map[string]string{
@@ -57,7 +58,7 @@ func Tags(
 
 	// MapEntries first so that karpenter.azure.com_cluster and karpenter.azure.com/cluster collide
 	additionalTags := lo.MapEntries(options.AdditionalTags, mapTags)
-	nodeClassTags := lo.MapEntries(nodeClass.Spec.Tags, mapTags)
+	nodeClassTags := lo.MapEntries(nodeClass.GetTags(), mapTags)
 	defaultTagsMapped := lo.MapEntries(defaultTags, mapTags)
 
 	return lo.Assign(additionalTags, nodeClassTags, defaultTagsMapped)
