@@ -110,4 +110,3 @@ func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []typ
 		},
 	}
 }
-

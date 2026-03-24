@@ -61,4 +61,3 @@ type CommunityGalleryImageVersionsAPI interface {
 type NodeImageVersionsAPI interface {
 	List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error)
 }
-

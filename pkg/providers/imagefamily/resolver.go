@@ -122,4 +122,3 @@ func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string) ImageFa
 	}
 	return &Ubuntu2204{}
 }
-

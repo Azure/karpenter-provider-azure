@@ -31,8 +31,8 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/customscripts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"

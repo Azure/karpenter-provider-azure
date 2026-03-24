@@ -85,4 +85,3 @@ func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []typ
 		},
 	}
 }
-

@@ -73,4 +73,3 @@ func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []typ
 	}
 	return []types.DefaultImageOutput{}
 }
-

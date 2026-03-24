@@ -105,7 +105,7 @@ func TestBuildNodeClaimFromAKSMachine(t *testing.T) {
 				},
 				NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 				Tags: map[string]*string{
-					NodePoolTagKey:                                    lo.ToPtr("test-nodepool"),
+					NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
 					KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 				},
 			},

@@ -128,4 +128,3 @@ func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []ty
 
 	return images
 }
-
