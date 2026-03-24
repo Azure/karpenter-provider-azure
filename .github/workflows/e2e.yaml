@@ -99,12 +99,6 @@ jobs:
     env:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
-      - name: Debug runner environment
-        run: |
-          echo "RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT"
-          echo "STEP_SECURITY_HARDEN_RUNNER=${STEP_SECURITY_HARDEN_RUNNER:-not set}"
-          ls -la /usr/local/bin/harden-runner* 2>/dev/null || echo "No pre-installed harden-runner"
-
       - name: Harden Runner
         uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
@@ -135,6 +129,10 @@ jobs:
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
           install skaffold /usr/local/bin/
+      - name: generate SSH key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}
@@ -182,8 +180,6 @@ jobs:
           k8s_version: ${{ inputs.k8s_version }}
           provision_mode: ${{ inputs.provision_mode }}
           identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
-      - name: Check disk space
-        run: df -h
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
