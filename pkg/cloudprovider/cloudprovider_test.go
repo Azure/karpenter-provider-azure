@@ -25,6 +25,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
 func TestGenerateNodeClaimName(t *testing.T) {
@@ -54,13 +56,13 @@ func TestGenerateNodeClaimName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			result := GetNodeClaimNameFromVMName(tt.vmName)
+			result := instance.GetNodeClaimNameFromVMName(tt.vmName)
 			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }
 
-func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
+func TestBuildNodeClaimFromVM_NilProperties(t *testing.T) {
 	tests := []struct {
 		name                string
 		vm                  *armcompute.VirtualMachine
@@ -102,9 +104,8 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 			g := NewWithT(t)
 			ctx := context.Background()
 
-			cp := &CloudProvider{}
 			before := time.Now()
-			nodeClaim, err := cp.vmInstanceToNodeClaim(ctx, tt.vm, nil)
+			nodeClaim, err := instance.BuildNodeClaimFromVM(ctx, tt.vm, nil)
 			after := time.Now()
 
 			g.Expect(err).ToNot(HaveOccurred())
