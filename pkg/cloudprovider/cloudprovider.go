@@ -204,7 +204,7 @@ func (c *CloudProvider) createAKSInstance(ctx context.Context, nodeClaim *karpv1
 		return nil, err
 	}
 
-	instanceTypes, err := c.resolveAKSInstanceTypes(ctx, nodeClaim, nodeClass)
+	instanceTypes, err := c.resolveAKSInstanceTypes(ctx, nodeClaim, nodeClass, nil)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
 	}
@@ -537,7 +537,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 			// as the cause.
 			return nil, fmt.Errorf("resolving node class, %w", err)
 		}
-		instanceTypes, err := c.instanceTypeProvider.ListAKS(ctx, nodeClass)
+		instanceTypes, err := c.instanceTypeProvider.ListAKS(ctx, nodeClass, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -690,8 +690,8 @@ func (c *CloudProvider) resolveAzureNodeClassFromNodePool(ctx context.Context, n
 	return nodeClass, nil
 }
 
-func (c *CloudProvider) resolveAKSInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
-	instanceTypes, err := c.instanceTypeProvider.ListAKS(ctx, nodeClass)
+func (c *CloudProvider) resolveAKSInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass, instanceTypesFilter []string) ([]*cloudprovider.InstanceType, error) {
+	instanceTypes, err := c.instanceTypeProvider.ListAKS(ctx, nodeClass, instanceTypesFilter)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance types, %w", err)
 	}

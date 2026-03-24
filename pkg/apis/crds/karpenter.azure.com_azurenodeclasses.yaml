@@ -60,6 +60,16 @@ spec:
                   type: object
                   additionalProperties:
                     type: string
+                instanceTypes:
+                  description: >-
+                    instanceTypes overrides the instance types discovered by the pricing/SKU provider.
+                    When set, only these instance types are considered for this NodeClass.
+                    Use this for pinned capacity (e.g. GPU SKUs) that may not appear in standard
+                    pricing APIs or may be filtered by default compatibility checks.
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
                 security:
                   description: security contains security-related configuration for provisioned VMs.
                   type: object
