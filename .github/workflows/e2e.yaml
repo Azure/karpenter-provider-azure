@@ -183,11 +183,7 @@ jobs:
           provision_mode: ${{ inputs.provision_mode }}
           identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
       - name: Check disk space
-        run: |
-          echo "=== Disk usage ==="
-          df -h
-          echo "=== Largest directories under / ==="
-          du -h --max-depth=2 / 2>/dev/null | sort -rh | head -20
+        run: df -h
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
