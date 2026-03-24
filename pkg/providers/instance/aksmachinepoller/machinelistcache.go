@@ -49,7 +49,7 @@ const (
 	ProvisioningStateFailed    = "Failed"
 )
 
-const numWorkers = 50
+const numWorkers = 30
 
 var (
 	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
@@ -118,20 +118,20 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 		aksMachinesPoolName:  aksMachinesPoolName,
 		maxRetries:           500, // generous retries for now
 		retryDelay:           1 * time.Second,
-		maxRetryDelay:        30 * time.Second,
+		maxRetryDelay:        10 * time.Second,
 
 		// Initialize background worker
 		workerCtx:      workerCtx,
 		workerCancel:   workerCancel,
 		workerChan:     make(chan string),
-		updateInterval: 5 * time.Minute, // Periodic refresh every 5 minutes
+		updateInterval: 5 * time.Minute, // Periodic refresh every 2 minutes
 	}
 
 	// Start background worker
 	cache.wg.Add(1)
 	go cache.refreshWorker()
 
-	for range numWorkers {
+	for i := 0; i < numWorkers; i++ {
 		cache.wg.Add(1)
 		go cache.worker()
 	}
