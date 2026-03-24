@@ -1,0 +1,97 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: azurenodeclasses.karpenter.azure.com
+spec:
+  group: karpenter.azure.com
+  names:
+    kind: AzureNodeClass
+    listKind: AzureNodeClassList
+    plural: azurenodeclasses
+    shortNames:
+      - aznc
+      - azncs
+    singular: azurenodeclass
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          description: AzureNodeClass is the Schema for the AzureNodeClass API
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureNodeClassSpec is the top level specification for the Azure Karpenter Provider.
+              type: object
+              required:
+                - imageID
+              properties:
+                imageID:
+                  description: imageID is the full ARM resource ID of the image to use for VMs.
+                  type: string
+                  pattern: '(?i)^\/subscriptions\/[^\/]+\/.*'
+                userData:
+                  description: userData is the raw cloud-init or bootstrap script passed as CustomData to the VM.
+                  type: string
+                  maxLength: 65536
+                vnetSubnetID:
+                  description: vnetSubnetID is the subnet used by NICs provisioned with this NodeClass.
+                  type: string
+                  pattern: '(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$'
+                osDiskSizeGB:
+                  description: osDiskSizeGB is the size of the OS disk in GB.
+                  type: integer
+                  format: int32
+                  default: 128
+                  minimum: 30
+                  maximum: 4096
+                tags:
+                  description: tags to be applied on Azure resources like instances.
+                  type: object
+                  additionalProperties:
+                    type: string
+                security:
+                  description: security contains security-related configuration for provisioned VMs.
+                  type: object
+                  properties:
+                    encryptionAtHost:
+                      description: encryptionAtHost specifies whether host-level encryption is enabled.
+                      type: boolean
+            status:
+              description: AzureNodeClassStatus contains the resolved state of the AzureNodeClass.
+              type: object
+              properties:
+                conditions:
+                  description: conditions contains signals for health and readiness
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                      reason:
+                        type: string
+                      status:
+                        type: string
+                      type:
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - status
+                      - type

@@ -464,6 +464,33 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 		*in.Spec.ArtifactStreaming.Enabled
 }
 
+// GetVNETSubnetID returns the VNETSubnetID from the spec.
+func (in *AKSNodeClass) GetVNETSubnetID() *string { return in.Spec.VNETSubnetID }
+
+// GetOSDiskSizeGB returns the OSDiskSizeGB from the spec.
+func (in *AKSNodeClass) GetOSDiskSizeGB() *int32 { return in.Spec.OSDiskSizeGB }
+
+// GetImageID returns the ImageID from the spec.
+func (in *AKSNodeClass) GetImageID() *string { return in.Spec.ImageID }
+
+// GetUserData returns nil — AKS manages node bootstrap, so the user doesn't provide userData.
+func (in *AKSNodeClass) GetUserData() *string { return nil }
+
+// GetTags returns the Tags from the spec.
+func (in *AKSNodeClass) GetTags() map[string]string { return in.Spec.Tags }
+
+// GetManagedIdentities returns nil — AKS manages node identity via kubelet identity.
+func (in *AKSNodeClass) GetManagedIdentities() []string { return nil }
+
+// HashAnnotationKey returns the annotation key for the AKSNodeClass hash.
+func (in *AKSNodeClass) HashAnnotationKey() string { return AnnotationAKSNodeClassHash }
+
+// HashVersionAnnotationKey returns the annotation key for the AKSNodeClass hash version.
+func (in *AKSNodeClass) HashVersionAnnotationKey() string { return AnnotationAKSNodeClassHashVersion }
+
+// HashVersion returns the current hash version for the AKSNodeClass.
+func (in *AKSNodeClass) HashVersion() string { return AKSNodeClassHashVersion }
+
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // Returns true for Required mode, false for Disabled mode, and for Preferred mode,
 // returns true only if the Kubernetes version is >= 1.35.
