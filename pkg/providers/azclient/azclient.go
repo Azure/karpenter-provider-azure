@@ -31,7 +31,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/customscripts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
@@ -97,7 +97,7 @@ type AZClient struct {
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
-	NodeBootstrappingClient customscriptsbootstrap.NodeBootstrappingAPI
+	NodeBootstrappingClient customscripts.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
 	SKUClient                   skewer.ResourceClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
@@ -156,7 +156,7 @@ func NewAZClientFromAPI(
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
 	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
-	nodeBootstrappingClient customscriptsbootstrap.NodeBootstrappingAPI,
+	nodeBootstrappingClient customscripts.NodeBootstrappingAPI,
 	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
 ) *AZClient {
@@ -252,13 +252,13 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
 
 	// These clients are used for Azure instance management.
-	var nodeBootstrappingClient customscriptsbootstrap.NodeBootstrappingAPI
+	var nodeBootstrappingClient customscripts.NodeBootstrappingAPI
 	var aksMachinesClient AKSMachinesAPI
 	var agentPoolsClient AKSAgentPoolsAPI
 
 	// Only create the bootstrapping client if we need to use it.
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
-		nodeBootstrappingClient, err = customscriptsbootstrap.NewNodeBootstrappingClient(
+		nodeBootstrappingClient, err = customscripts.NewNodeBootstrappingClient(
 			ctx,
 			env.Cloud,
 			cfg.SubscriptionID,

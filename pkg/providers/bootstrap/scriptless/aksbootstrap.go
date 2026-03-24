@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package bootstrap
+package scriptless
 
 import (
 	"bytes"
@@ -26,13 +26,14 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type AKS struct {
-	Options
+	bootstrap.Options
 
 	Arch                           string
 	TenantID                       string
@@ -48,7 +49,7 @@ type AKS struct {
 	KubernetesVersion              string
 }
 
-var _ Bootstrapper = (*AKS)(nil) // assert AKS implements Bootstrapper
+var _ bootstrap.Bootstrapper = (*AKS)(nil) // assert AKS implements Bootstrapper
 
 func (a AKS) Script() (string, error) {
 	bootstrapScript, err := a.aksBootstrapScript()
@@ -374,7 +375,7 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 }
 
 //nolint:gocyclo
-func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
+func kubeletConfigToMap(kubeletConfig *bootstrap.KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
 	if kubeletConfig == nil {
@@ -426,7 +427,7 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	return args
 }
 
-// joinParameterArgsToMap joins a map of keys and values by their separator. The separator will sit between the
+// JoinParameterArgsToMap joins a map of keys and values by their separator. The separator will sit between the
 // arguments in a comma-separated list i.e. arg1<sep>val1,arg2<sep>val2
 func JoinParameterArgsToMap[K comparable, V any](result map[string]string, name string, m map[K]V, separator string) {
 	var args []string

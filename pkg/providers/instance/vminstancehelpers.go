@@ -33,7 +33,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/customscripts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/scriptless"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	labelpkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -117,9 +118,9 @@ func (p *DefaultVMProvider) resolveBootstrap(
 	return result, nil
 }
 
-// buildScriptlessBootstrapper constructs a bootstrap.AKS directly from provider fields and parameters.
+// buildScriptlessBootstrapper constructs a scriptless.AKS directly from provider fields and parameters.
 // This replaces the ImageFamily.ScriptlessCustomData() indirection — all 5 image families
-// built identical bootstrap.AKS structs, so no polymorphism was needed.
+// built identical scriptless.AKS structs, so no polymorphism was needed.
 func (p *DefaultVMProvider) buildScriptlessBootstrapper(
 	opts *options.Options,
 	instanceType *corecloudprovider.InstanceType,
@@ -127,9 +128,9 @@ func (p *DefaultVMProvider) buildScriptlessBootstrapper(
 	generalTaints, startupTaints []v1.Taint,
 	labels map[string]string,
 	subnetID, arch, kubernetesVersion string,
-) bootstrap.AKS {
+) scriptless.AKS {
 	allTaints := lo.Flatten([][]v1.Taint{generalTaints, startupTaints})
-	return bootstrap.AKS{
+	return scriptless.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      opts.ClusterName,
 			ClusterEndpoint:  p.clusterEndpoint,
@@ -170,7 +171,7 @@ func (p *DefaultVMProvider) buildCustomScriptsBootstrapper(
 	generalTaints, startupTaints []v1.Taint,
 	labels map[string]string,
 	subnetID, arch, kubernetesVersion string,
-) (customscriptsbootstrap.Bootstrapper, error) {
+) (customscripts.Bootstrapper, error) {
 	opts := options.FromContext(ctx)
 
 	// Resolve imageDistro — needed by the RP's node bootstrapping API
@@ -194,7 +195,7 @@ func (p *DefaultVMProvider) buildCustomScriptsBootstrapper(
 	// Derive OSSKU from image family name — the only per-family difference
 	ossku := imageFamilyToOSSKU(nodeClass.Spec.ImageFamily, kubernetesVersion)
 
-	return customscriptsbootstrap.ProvisionClientBootstrap{
+	return customscripts.ProvisionClientBootstrap{
 		ClusterName:                    opts.ClusterName,
 		KubeletConfig:                  kubeletConfig,
 		Taints:                         generalTaints,
@@ -224,21 +225,21 @@ func (p *DefaultVMProvider) buildCustomScriptsBootstrapper(
 func imageFamilyToOSSKU(familyName *string, kubernetesVersion string) string {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.Ubuntu2204ImageFamily:
-		return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204
+		return customscripts.ImageFamilyOSSKUUbuntu2204
 	case v1beta1.Ubuntu2404ImageFamily:
-		return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404
+		return customscripts.ImageFamilyOSSKUUbuntu2404
 	case v1beta1.AzureLinuxImageFamily:
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			return customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3
+			return customscripts.ImageFamilyOSSKUAzureLinux3
 		}
-		return customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2
+		return customscripts.ImageFamilyOSSKUAzureLinux2
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
 		if lo.FromPtr(familyName) == "" || imagefamily.UseUbuntu2404(kubernetesVersion) {
-			return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404
+			return customscripts.ImageFamilyOSSKUUbuntu2404
 		}
-		return customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204
+		return customscripts.ImageFamilyOSSKUUbuntu2204
 	}
 }
 
