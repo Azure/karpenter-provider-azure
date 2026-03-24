@@ -49,7 +49,7 @@ const (
 	ProvisioningStateFailed    = "Failed"
 )
 
-const numWorkers = 100
+const numWorkers = 50
 
 var (
 	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
