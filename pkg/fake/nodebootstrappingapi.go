@@ -21,7 +21,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/customscripts"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 )
 
@@ -30,18 +30,18 @@ type NodeBootstrappingGetInput struct {
 }
 
 type NodeBootstrappingBehavior struct {
-	NodeBootstrappingGetBehavior MockedFunction[NodeBootstrappingGetInput, customscriptsbootstrap.NodeBootstrapping]
+	NodeBootstrappingGetBehavior MockedFunction[NodeBootstrappingGetInput, customscripts.NodeBootstrapping]
 }
 
-// NodeBootstrappingAPI implements a fake version of customscriptsbootstrap.NodeBootstrappingAPI
+// NodeBootstrappingAPI implements a fake version of customscripts.NodeBootstrappingAPI
 // for testing purposes.
 type NodeBootstrappingAPI struct {
 	NodeBootstrappingBehavior
 	SimulateDown bool
 }
 
-// Ensure NodeBootstrappingAPI implements the customscriptsbootstrap.NodeBootstrappingAPI interface
-var _ customscriptsbootstrap.NodeBootstrappingAPI = &NodeBootstrappingAPI{}
+// Ensure NodeBootstrappingAPI implements the customscripts.NodeBootstrappingAPI interface
+var _ customscripts.NodeBootstrappingAPI = &NodeBootstrappingAPI{}
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (n *NodeBootstrappingAPI) Reset() {
@@ -49,23 +49,23 @@ func (n *NodeBootstrappingAPI) Reset() {
 }
 
 // Get implements the NodeBootstrappingAPI interface for testing
-func (n *NodeBootstrappingAPI) Get(ctx context.Context, params *models.ProvisionValues) (customscriptsbootstrap.NodeBootstrapping, error) {
+func (n *NodeBootstrappingAPI) Get(ctx context.Context, params *models.ProvisionValues) (customscripts.NodeBootstrapping, error) {
 	input := &NodeBootstrappingGetInput{
 		Params: params,
 	}
-	return n.NodeBootstrappingGetBehavior.Invoke(input, func(input *NodeBootstrappingGetInput) (customscriptsbootstrap.NodeBootstrapping, error) {
+	return n.NodeBootstrappingGetBehavior.Invoke(input, func(input *NodeBootstrappingGetInput) (customscripts.NodeBootstrapping, error) {
 		if n.SimulateDown {
-			return customscriptsbootstrap.NodeBootstrapping{}, fmt.Errorf("InternalServerError; NodeBootstrappingAPI is down")
+			return customscripts.NodeBootstrapping{}, fmt.Errorf("InternalServerError; NodeBootstrappingAPI is down")
 		}
 		if err := validateProvisionProfile(input.Params.ProvisionProfile); err != nil {
-			return customscriptsbootstrap.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
+			return customscripts.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
 		}
 
 		if err := validateProvisionHelperValues(input.Params.ProvisionHelperValues); err != nil {
-			return customscriptsbootstrap.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
+			return customscripts.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
 		}
 
-		return customscriptsbootstrap.NodeBootstrapping{
+		return customscripts.NodeBootstrapping{
 			CSEDehydratable:               fmt.Sprintf("CORRECT_CSE_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *input.Params),
 			CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CORRECT_CUSTOM_DATA_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *input.Params))),
 		}, nil

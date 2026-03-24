@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package bootstrap
+package scriptless
 
 import (
 	"fmt"
@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -132,7 +133,7 @@ func TestGetCredentialProviderURL(t *testing.T) {
 }
 
 func TestKubeletConfigMap(t *testing.T) {
-	kubeletConfiguration := KubeletConfiguration{
+	kubeletConfiguration := bootstrap.KubeletConfiguration{
 		KubeletConfiguration: v1beta1.KubeletConfiguration{
 			CPUManagerPolicy:            lo.ToPtr("static"),
 			CPUCFSQuota:                 lo.ToPtr(true),

@@ -32,7 +32,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/customscriptsbootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/bootstrap/customscripts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -185,7 +185,7 @@ func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriorit
 }
 
 func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, error) {
-	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go
+	// Counterpart for ProvisionModeBootstrappingClient is in bootstrap/customscripts/provisionclientbootstrap.go
 
 	if nodeClass.Spec.ImageFamily == nil {
 		return nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
@@ -232,7 +232,7 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 }
 
 func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string) (map[string]*string, *armcontainerservice.AgentPoolMode) {
-	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and instance/vminstance.go
+	// Counterpart for ProvisionModeBootstrappingClient is in bootstrap/customscripts/provisionclientbootstrap.go and instance/vminstance.go
 
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
@@ -284,7 +284,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 
 //nolint:gocyclo // borderline complexity violation, code is not hard to read
 func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.KubeletConfig {
-	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
+	// Counterpart for ProvisionModeBootstrappingClient is in bootstrap/customscripts/provisionclientbootstrap.go and imagefamily/resolver.go
 
 	if nodeClass == nil || nodeClass.Spec.Kubelet == nil {
 		return nil
@@ -335,14 +335,14 @@ func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
-	return customscriptsbootstrap.ConvertContainerLogMaxSizeToMB(containerLogMaxSize)
+	return customscripts.ConvertContainerLogMaxSizeToMB(containerLogMaxSize)
 }
 
 func convertPodMaxPids(podPidsLimit int64) *int32 {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
-	return customscriptsbootstrap.ConvertPodMaxPids(lo.ToPtr(podPidsLimit))
+	return customscripts.ConvertPodMaxPids(lo.ToPtr(podPidsLimit))
 }
 
 // parseVMImageID parses a VM image ID and extracts the required components for custom OS image headers.

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package customscriptsbootstrap
+package customscripts
 
 import (
 	"context"
@@ -66,7 +66,7 @@ type ProvisionClientBootstrap struct {
 	ArtifactStreaming              *v1beta1.ArtifactStreaming
 }
 
-var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
+var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements Bootstrapper
 
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
 	provisionValues, err := p.ConstructProvisionValues(ctx)
