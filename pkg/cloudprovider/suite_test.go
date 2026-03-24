@@ -51,7 +51,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/Azure/skewer"
 )
 
 var ctx context.Context
@@ -75,7 +74,7 @@ var nodeClass *v1beta1.AKSNodeClass
 var nodeClaim *karpv1.NodeClaim
 
 var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
-var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
+var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
 func TestCloudProvider(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -235,8 +234,8 @@ var _ = Describe("CloudProvider", func() {
 
 			// Simulate a capacity error by marking all offerings for this instance type as unavailable
 			for _, zone := range azureEnv.Zones() {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeOnDemand)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeSpot)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU(vmSize), zone, karpv1.CapacityTypeOnDemand)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU(vmSize), zone, karpv1.CapacityTypeSpot)
 			}
 
 			// List should still return the nodeclaim with the correct instance type

@@ -58,4 +58,4 @@ date
 
 # review
 kubectl logs deployment/karpenter -n kube-system --since-time="${ENDUPKUBECTL}" >> "${logk}"
-az resource list -o table --tag=karpenter.sh_nodepool=sm-general-purpose
+az resource list --output table --tag=karpenter.sh_nodepool=sm-general-purpose
