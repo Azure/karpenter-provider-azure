@@ -29,6 +29,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	azclient "github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
@@ -148,6 +149,44 @@ func (p *DefaultVMProvider) buildAndCreateAzureNIC(
 	}
 
 	return nicReference, nil
+}
+
+// createAzureNICWithClients creates a basic NIC for standalone Azure VMs using explicit client,
+// resource group, and location to support multi-subscription scenarios.
+// No AKS load balancer backend pools or managed NSG.
+func (p *DefaultVMProvider) createAzureNICWithClients(
+	ctx context.Context,
+	nicClient azclient.NetworkInterfacesAPI,
+	resourceGroup string,
+	location string,
+	resourceName string,
+	instanceType *corecloudprovider.InstanceType,
+	nodeClass *v1alpha1.AzureNodeClass,
+	subnetID string,
+	tags map[string]*string,
+) (string, error) {
+	nicOpts := &createNICOptions{
+		NICName:           resourceName,
+		NetworkPlugin:     consts.NetworkPluginNone,
+		NetworkPluginMode: consts.NetworkPluginModeNone,
+		MaxPods:           utils.GetMaxPods(nodeClass, consts.NetworkPluginNone, consts.NetworkPluginModeNone),
+		SubnetID:          subnetID,
+		Tags:              tags,
+		BackendPools:      &loadbalancer.BackendAddressPools{},
+		InstanceType:      instanceType,
+		// NetworkSecurityGroupID: "", // No NSG: not AKS managed VNet
+	}
+	nic := p.newNetworkInterfaceForVM(nicOpts)
+	// Override the NIC location with the effective location (which may differ from p.location)
+	nic.Location = lo.ToPtr(location)
+
+	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", resourceName, "resourceGroup", resourceGroup)
+	res, err := createNic(ctx, nicClient, resourceGroup, resourceName, nic)
+	if err != nil {
+		return "", err
+	}
+	log.FromContext(ctx).V(1).Info("successfully created network interface", "nicName", resourceName, "nicID", *res.ID)
+	return *res.ID, nil
 }
 
 // buildAndCreateAKSNIC consolidates NIC creation: fetches backend pools, resolves NSG if needed, builds and creates the NIC.

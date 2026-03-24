@@ -200,8 +200,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).NodeResourceGroup,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()
+	azClientManager := azclient.NewAZClientManager(
+		azConfig.SubscriptionID,
+		azClient,
+		cred,
+		armopts.DefaultARMOpts(env.Cloud, options.FromContext(ctx).EnableAzureSDKLogging),
+	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
+		azClientManager,
 		instanceTypeProvider,
 		allocationStrategyProvider,
 		imageResolver,

@@ -48,6 +48,17 @@ const AzureNodeClassHashVersion = "v1"
 // AzureNodeClassSpec is the top level specification for the Azure Karpenter Provider.
 // This contains configuration for launching standalone Azure VMs (non-AKS).
 type AzureNodeClassSpec struct {
+	// subscriptionID overrides the controller-level Azure subscription for VM creation.
+	// When set, VMs are created in this subscription instead of the default.
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	// +optional
+	SubscriptionID *string `json:"subscriptionID,omitempty"`
+	// resourceGroup overrides the controller-level resource group for VM creation.
+	// +optional
+	ResourceGroup *string `json:"resourceGroup,omitempty"`
+	// location overrides the controller-level Azure region for VM creation.
+	// +optional
+	Location *string `json:"location,omitempty"`
 	// imageID is the full resource ID of the image to use for VMs. Accepts ARM
 	// resource IDs (/subscriptions/.../...), community gallery image versions
 	// (/CommunityGalleries/.../Images/.../Versions/...), and shared gallery
@@ -186,4 +197,19 @@ func (in *AzureNodeClass) GetImageFamily() *string {
 
 func (in *AzureNodeClass) GetKind() string {
 	return "AzureNodeClass"
+}
+
+// GetSubscriptionID returns the subscription ID override from the spec, or nil for the default.
+func (in *AzureNodeClass) GetSubscriptionID() *string {
+	return in.Spec.SubscriptionID
+}
+
+// GetResourceGroup returns the resource group override from the spec, or nil for the default.
+func (in *AzureNodeClass) GetResourceGroup() *string {
+	return in.Spec.ResourceGroup
+}
+
+// GetLocation returns the location override from the spec, or nil for the default.
+func (in *AzureNodeClass) GetLocation() *string {
+	return in.Spec.Location
 }

@@ -108,6 +108,7 @@ var _ VMProvider = (*DefaultVMProvider)(nil)
 type DefaultVMProvider struct {
 	location                     string
 	azClient                     *azclient.AZClient
+	azClientManager              *azclient.AZClientManager
 	instanceTypeProvider         instancetype.Provider
 	allocationStrategyProvider   allocationstrategy.Provider
 	imageResolver                imagefamily.Resolver
@@ -133,6 +134,7 @@ type DefaultVMProvider struct {
 
 func NewDefaultVMProvider(
 	azClient *azclient.AZClient,
+	azClientManager *azclient.AZClientManager,
 	instanceTypeProvider instancetype.Provider,
 	allocationStrategyProvider allocationstrategy.Provider,
 	imageResolver imagefamily.Resolver,
@@ -153,6 +155,7 @@ func NewDefaultVMProvider(
 ) *DefaultVMProvider {
 	return &DefaultVMProvider{
 		azClient:                     azClient,
+		azClientManager:              azClientManager,
 		instanceTypeProvider:         instanceTypeProvider,
 		allocationStrategyProvider:   allocationStrategyProvider,
 		imageResolver:                imageResolver,
@@ -470,10 +473,59 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, vmName str
 	return &createResult{Poller: poller, VM: vm}, nil
 }
 
+// createVirtualMachineWithClients creates a new VM or returns an existing one, using
+// explicit client and resource group to support multi-subscription scenarios.
+func (p *DefaultVMProvider) createVirtualMachineWithClients(
+	ctx context.Context,
+	vmClient azclient.VirtualMachinesAPI,
+	resourceGroup string,
+	vmName string,
+	vm *armcompute.VirtualMachine,
+	imageID string,
+	instanceType *corecloudprovider.InstanceType,
+	zone, capacityType, nodePoolName string,
+) (*createResult, error) {
+	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
+	resp, err := vmClient.Get(ctx, resourceGroup, vmName, nil)
+	if err == nil {
+		return &createResult{VM: &resp.VirtualMachine}, nil
+	}
+	if !sdkerrors.IsNotFoundErr(err) {
+		return nil, fmt.Errorf("getting VM %q: %w", vmName, err)
+	}
+	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", vmName, "resourceGroup", resourceGroup, logging.InstanceType, instanceType.Name)
+	VMCreateStartMetric.With(map[string]string{
+		metrics.ImageLabel:        imageID,
+		metrics.SizeLabel:         instanceType.Name,
+		metrics.ZoneLabel:         zone,
+		metrics.CapacityTypeLabel: capacityType,
+		metrics.NodePoolLabel:     nodePoolName,
+	}).Inc()
+
+	poller, err := vmClient.BeginCreateOrUpdate(ctx, resourceGroup, vmName, *vm, nil)
+	if err != nil {
+		VMCreateFailureMetric.With(map[string]string{
+			metrics.ImageLabel:        imageID,
+			metrics.SizeLabel:         instanceType.Name,
+			metrics.ZoneLabel:         zone,
+			metrics.CapacityTypeLabel: capacityType,
+			metrics.NodePoolLabel:     nodePoolName,
+			metrics.PhaseLabel:        phaseSyncFailure,
+			metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
+		}).Inc()
+		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
+	}
+	return &createResult{Poller: poller, VM: vm}, nil
+}
+
 // beginLaunchInstanceAzure starts the launch of a standalone Azure VM (non-AKS).
 // This is a simplified version of beginLaunchInstanceAKS that skips AKS-specific
 // concerns: no AKS bootstrap, no CSE, no AKS billing extension, no AKS LB
 // backend pools, no managed NSG lookup.
+//
+// Multi-subscription support: if the AzureNodeClass specifies subscriptionID,
+// resourceGroup, or location overrides, those take effect for NIC and VM creation.
+// The identity backing the controller must have RBAC across all target subscriptions.
 //
 //nolint:gocyclo
 func (p *DefaultVMProvider) beginLaunchInstanceAzure(
@@ -503,14 +555,26 @@ func (p *DefaultVMProvider) beginLaunchInstanceAzure(
 		return nil, fmt.Errorf("AzureNodeClass %q requires imageID to be set", nodeClass.Name)
 	}
 
+	// Resolve effective subscription, resource group, and location from NodeClass overrides,
+	// falling back to controller-level defaults.
+	effectiveSubID := lo.FromPtrOr(nodeClass.GetSubscriptionID(), p.subscriptionID)
+	effectiveRG := lo.FromPtrOr(nodeClass.GetResourceGroup(), p.resourceGroup)
+	effectiveLocation := lo.FromPtrOr(nodeClass.GetLocation(), p.location)
+
+	// Get per-subscription SDK clients (lazily created and cached)
+	subClients, err := p.azClientManager.GetClients(effectiveSubID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving Azure clients for subscription %s: %w", effectiveSubID, err)
+	}
+
 	// Shared
 	subnetID := resolveSubnetID(nodeClass, opts)
 
 	// Unique
 	tags := TagsAzure(opts, nodeClass, nodeClaim)
 
-	// Unique
-	nicReference, err := p.buildAndCreateAzureNIC(ctx, resourceName, instanceType, nodeClass, subnetID, tags)
+	// Unique — NIC creation using per-subscription client and effective RG/location
+	nicReference, err := p.createAzureNICWithClients(ctx, subClients.NetworkInterfacesClient, effectiveRG, effectiveLocation, resourceName, instanceType, nodeClass, subnetID, tags)
 	if err != nil {
 		return nil, err
 	}
@@ -531,7 +595,7 @@ func (p *DefaultVMProvider) beginLaunchInstanceAzure(
 	// Shared
 	vm := &armcompute.VirtualMachine{
 		Name:     lo.ToPtr(resourceName),
-		Location: lo.ToPtr(p.location),
+		Location: lo.ToPtr(effectiveLocation),
 		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
@@ -548,8 +612,8 @@ func (p *DefaultVMProvider) beginLaunchInstanceAzure(
 	configureBillingProfile(vm.Properties, capacityType)
 	configureSecurityProfile(vm.Properties, nodeClass)
 
-	// Shared
-	result, err := p.createVirtualMachine(ctx, resourceName, vm, imageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
+	// Create or retrieve existing VM using per-subscription client and effective RG
+	result, err := p.createVirtualMachineWithClients(ctx, subClients.VirtualMachinesClient, effectiveRG, resourceName, vm, imageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nil, instanceType.Name)
 		if skuErr != nil {
@@ -563,7 +627,7 @@ func (p *DefaultVMProvider) beginLaunchInstanceAzure(
 	}
 
 	// Shared
-	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", effectiveSubID, effectiveRG, resourceName))
 	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
 
 	return &VirtualMachinePromise{
@@ -778,6 +842,39 @@ func (p *DefaultVMProvider) cleanupAzureResources(ctx context.Context, resourceN
 		}
 		return vmErr
 	}
+}
+
+// cleanupAzureVMResources is a standalone cleanup function for the AzureNodeClass path
+// that uses explicit per-subscription clients and resource group. This ensures cleanup
+// targets the correct subscription/RG when multi-subscription overrides are active.
+func cleanupAzureVMResources(ctx context.Context, clients *azclient.SubscriptionClients, resourceGroup, resourceName string) error {
+	// Try to delete the VM first (cascading delete removes NIC + disk)
+	_, getErr := clients.VirtualMachinesClient.Get(ctx, resourceGroup, resourceName, nil)
+	var vmErr error
+	if getErr == nil {
+		poller, err := clients.VirtualMachinesClient.BeginDelete(
+			ctx,
+			resourceGroup,
+			resourceName,
+			&armcompute.VirtualMachinesClientBeginDeleteOptions{ForceDeletion: lo.ToPtr(true)},
+		)
+		if err != nil {
+			vmErr = err
+		} else {
+			_, vmErr = poller.PollUntilDone(ctx, nil)
+			if vmErr != nil && sdkerrors.IsNotFoundErr(vmErr) {
+				vmErr = nil
+			}
+		}
+	} else if !sdkerrors.IsNotFoundErr(getErr) {
+		vmErr = getErr
+	}
+	if vmErr != nil {
+		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
+	}
+
+	nicErr := deleteNicIfExists(ctx, clients.NetworkInterfacesClient, resourceGroup, resourceName)
+	return errors.Join(vmErr, nicErr)
 }
 
 // deleteVirtualMachineIfExists checks if a virtual machine exists, and if it does, we delete it with a cascading delete
