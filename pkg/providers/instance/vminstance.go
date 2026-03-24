@@ -265,7 +265,7 @@ func (p *DefaultVMProvider) beginLaunchAzureVM(
 
 	// Resolve subnet and tags — shared helpers accepting VMNodeClass
 	subnetID := resolveSubnetID(nodeClass, opts)
-	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
+	tags := Tags(opts, nodeClass, nodeClaim)
 
 	// Create NIC — skip AKS load balancer and NSG (not applicable to non-AKS VMs)
 	nicReference, err := p.createNetworkInterface(ctx, &createNICOptions{
