@@ -208,7 +208,12 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	return aksMachinePromise, nil
 }
 
-func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine, etag *string) error {
+func (p *DefaultAKSMachineProvider) Update(
+	ctx context.Context,
+	aksMachineName string,
+	aksMachine armcontainerservice.Machine,
+	etag *string,
+) error {
 	if !shouldAKSMachinesBeVisible(ctx) {
 		return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
 	}

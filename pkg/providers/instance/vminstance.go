@@ -999,8 +999,10 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil
 		}
+
 		return err
 	}
+
 	return nil
 }
 
