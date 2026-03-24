@@ -43,7 +43,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
@@ -100,7 +99,6 @@ type Environment struct {
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
 	ImageProvider                imagefamily.NodeImageProvider
 	ImageResolver                imagefamily.Resolver
-	LaunchTemplateProvider       *launchtemplate.Provider
 	LoadBalancerProvider         *loadbalancer.Provider
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
 	AllocationStrategyProvider   allocationstrategy.Provider
@@ -170,20 +168,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		pricingProvider,
 		unavailableOfferingsCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
-	launchTemplateProvider := launchtemplate.NewProvider(
-		ctx,
-		imageFamilyResolver,
-		imageFamilyProvider,
-		lo.ToPtr("ca-bundle"),
-		testOptions.ClusterEndpoint,
-		"test-tenant",
-		subscription,
-		"test-cluster-resource-group",
-		"test-kubelet-identity-client-id",
-		testOptions.NodeResourceGroup,
-		region,
-		testOptions.ProvisionMode,
-	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,
 		loadBalancerCache,
@@ -217,7 +201,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		azClient,
 		instanceTypesProvider,
 		allocationStrategyProvider,
-		launchTemplateProvider,
+		imageFamilyResolver,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
 		unavailableOfferingsCache,
@@ -227,6 +211,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.ProvisionMode,
 		testOptions.DiskEncryptionSetID,
 		azureEnv,
+		lo.ToPtr("ca-bundle"),
+		testOptions.ClusterEndpoint,
+		"test-tenant",
+		"test-cluster-resource-group",
 	)
 
 	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI && testOptions.AKSMachinesPoolName != "" {
@@ -295,7 +283,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageFamilyProvider,
 		ImageResolver:                imageFamilyResolver,
-		LaunchTemplateProvider:       launchTemplateProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
 		AllocationStrategyProvider:   allocationStrategyProvider,

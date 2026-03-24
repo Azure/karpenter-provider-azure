@@ -30,7 +30,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -39,7 +38,8 @@ type createNICOptions struct {
 	NICName                string
 	BackendPools           *loadbalancer.BackendAddressPools
 	InstanceType           *corecloudprovider.InstanceType
-	LaunchTemplate         *launchtemplate.Template
+	SubnetID               string
+	Tags                   map[string]*string
 	NetworkPlugin          string
 	NetworkPluginMode      string
 	MaxPods                int32
@@ -71,14 +71,15 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 
 	nic := armnetwork.Interface{
 		Location: lo.ToPtr(p.location),
+		Tags:     opts.Tags,
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
 					Name: &opts.NICName,
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(true),
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-
+						Primary:                         lo.ToPtr(true),
+						PrivateIPAllocationMethod:       lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+						Subnet:                          &armnetwork.Subnet{ID: lo.ToPtr(opts.SubnetID)},
 						LoadBalancerBackendAddressPools: ipv4BackendPools,
 					},
 				},
@@ -99,6 +100,7 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Primary:                   lo.ToPtr(false),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+						Subnet:                    &armnetwork.Subnet{ID: lo.ToPtr(opts.SubnetID)},
 					},
 				},
 			)
@@ -107,17 +109,8 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 	return nic
 }
 
-func (p *DefaultVMProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
-	// set tags
-	nic.Tags = template.Tags
-	for _, ipConfig := range nic.Properties.IPConfigurations {
-		ipConfig.Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
-	}
-}
-
 func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
 	nic := p.newNetworkInterfaceForVM(opts)
-	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", opts.NICName)
 	res, err := createNic(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, opts.NICName, nic)
 	if err != nil {
@@ -133,7 +126,8 @@ func (p *DefaultVMProvider) buildAndCreateNIC(
 	resourceName string,
 	instanceType *corecloudprovider.InstanceType,
 	nodeClass *v1beta1.AKSNodeClass,
-	launchTemplate *launchtemplate.Template,
+	subnetID string,
+	tags map[string]*string,
 ) (string, error) {
 	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 	if err != nil {
@@ -144,7 +138,7 @@ func (p *DefaultVMProvider) buildAndCreateNIC(
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(nodeResourceGroup, launchTemplate.SubnetID)
+	isAKSManagedVNET, err := utils.IsAKSManagedVNET(nodeResourceGroup, subnetID)
 	if err != nil {
 		return "", fmt.Errorf("checking if vnet is managed: %w", err)
 	}
@@ -164,7 +158,8 @@ func (p *DefaultVMProvider) buildAndCreateNIC(
 			NetworkPlugin:          networkPlugin,
 			NetworkPluginMode:      networkPluginMode,
 			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:         launchTemplate,
+			SubnetID:               subnetID,
+			Tags:                   tags,
 			BackendPools:           backendPools,
 			InstanceType:           instanceType,
 			NetworkSecurityGroupID: nsgID,
