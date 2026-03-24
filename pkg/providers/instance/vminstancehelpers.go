@@ -186,7 +186,7 @@ func (p *DefaultVMProvider) buildCustomScriptsBootstrapper(
 	}
 
 	// Resolve storage profile (ephemeral vs managed) — needed by bootstrapping API
-	sku, err := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	sku, err := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance type %q for storage profile: %w", instanceType.Name, err)
 	}
@@ -326,7 +326,7 @@ func (p *DefaultVMProvider) configureStorageProfile(
 	}
 
 	// Ephemeral disk
-	sku, err := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	sku, err := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance type %q for storage profile: %w", instanceType.Name, err)
 	}

@@ -60,7 +60,7 @@ type Provider interface {
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
 
 	// Return Azure Skewer Representation of the instance type
-	Get(context.Context, *v1beta1.AKSNodeClass, string) (*skewer.SKU, error)
+	Get(context.Context, string) (*skewer.SKU, error)
 
 	// UpdateInstanceTypes fetches instance types from Azure and updates the cache
 	UpdateInstanceTypes(ctx context.Context) error
@@ -119,6 +119,12 @@ func (p *DefaultProvider) List(
 
 	if len(p.instanceTypesInfo) == 0 {
 		return nil, fmt.Errorf("no instance types found")
+	}
+
+	// When nodeClass is nil (non-AKS NodeClass types), use zero defaults.
+	// All AKS-specific filters pass with zero values (no filtering applied).
+	if nodeClass == nil {
+		nodeClass = &v1beta1.AKSNodeClass{}
 	}
 
 	kc := nodeClass.Spec.Kubelet
@@ -190,7 +196,7 @@ func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 	return p.pricingProvider.LivenessProbe(req)
 }
 
-func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
+func (p *DefaultProvider) Get(ctx context.Context, instanceType string) (*skewer.SKU, error) {
 	p.muInstanceTypesInfo.RLock()
 	defer p.muInstanceTypesInfo.RUnlock()
 

@@ -167,7 +167,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if aksNodeClass != nil {
 		instanceTypes, err = c.resolveInstanceTypes(ctx, nodeClaim, aksNodeClass)
 	} else {
-		instanceTypes, err = c.resolveInstanceTypesGeneric(ctx, nodeClaim)
+		instanceTypes, err = c.resolveInstanceTypes(ctx, nodeClaim, nil)
 	}
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
@@ -457,7 +457,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 			return nil, fmt.Errorf("resolving node class, %w", err)
 		}
 		// Use zero-value AKSNodeClass for instance type provider (returns all types)
-		return c.instanceTypeProvider.List(ctx, &v1beta1.AKSNodeClass{})
+		return c.instanceTypeProvider.List(ctx, nil)
 	}
 
 	// AKSNodeClass
@@ -603,11 +603,6 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 	// }), nil
 }
 
-// resolveInstanceTypesGeneric resolves instance types without AKS-specific filtering.
-// TODO: Merge with resolveInstanceTypes once the instance type provider accepts VMNodeClass.
-func (c *CloudProvider) resolveInstanceTypesGeneric(ctx context.Context, nodeClaim *karpv1.NodeClaim) ([]*cloudprovider.InstanceType, error) {
-	return c.resolveInstanceTypes(ctx, nodeClaim, &v1beta1.AKSNodeClass{})
-}
 
 func (c *CloudProvider) resolveInstanceTypeFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*cloudprovider.InstanceType, error) {
 	nodePool, err := c.resolveNodePoolFromVMInstance(ctx, vm)
