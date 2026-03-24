@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
@@ -65,6 +66,12 @@ func NewControllers(
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		nodeclasstermination.NewController(kubeClient, recorder),
+
+		// AzureNodeClass controllers
+		nodeclasshash.NewAzureNodeClassController(kubeClient),
+		nodeclassstatus.NewAzureNodeClassController(kubeClient),
+		nodeclasstermination.NewAzureNodeClassController(kubeClient, recorder),
+		status.NewController[*v1alpha1.AzureNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
