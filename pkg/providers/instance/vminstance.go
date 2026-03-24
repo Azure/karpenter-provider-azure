@@ -547,6 +547,7 @@ func (p *DefaultVMProvider) beginLaunchInstanceAzure(
 	}
 	configureBillingProfile(vm.Properties, capacityType)
 	configureSecurityProfile(vm.Properties, nodeClass)
+	configureDataDisk(vm.Properties, resourceName, nodeClass.GetDataDiskSizeGB())
 
 	// Shared
 	result, err := p.createVirtualMachine(ctx, resourceName, vm, imageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])

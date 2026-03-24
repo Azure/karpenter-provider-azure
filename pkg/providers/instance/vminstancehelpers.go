@@ -451,6 +451,24 @@ func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, node
 	}
 }
 
+// configureDataDisk attaches an additional Premium_LRS managed data disk if dataDiskSizeGB is set.
+// The disk is attached at LUN 0, named {vmName}-data-0, and auto-deleted when the VM is terminated.
+func configureDataDisk(vmProps *armcompute.VirtualMachineProperties, vmName string, dataDiskSizeGB *int32) {
+	if dataDiskSizeGB == nil || *dataDiskSizeGB <= 0 {
+		return
+	}
+	vmProps.StorageProfile.DataDisks = append(vmProps.StorageProfile.DataDisks, &armcompute.DataDisk{
+		Lun:          lo.ToPtr(int32(0)),
+		Name:         lo.ToPtr(vmName + "-data-0"),
+		DiskSizeGB:   dataDiskSizeGB,
+		CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesEmpty),
+		DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
+		ManagedDisk: &armcompute.ManagedDiskParameters{
+			StorageAccountType: lo.ToPtr(armcompute.StorageAccountTypesPremiumLRS),
+		},
+	})
+}
+
 // buildAKSBillingExtensionSpec returns the AKS billing extension spec.
 func buildAKSBillingExtensionSpec(location string, tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (

@@ -90,6 +90,13 @@ type AzureNodeClassSpec struct {
 	// tags to be applied on Azure resources like instances.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
+	// dataDiskSizeGB attaches an additional Premium_LRS managed data disk for container
+	// storage (e.g., containerd data root). The disk is attached at LUN 0 and
+	// auto-deleted when the VM is terminated.
+	// +kubebuilder:validation:Minimum=10
+	// +kubebuilder:validation:Maximum=4096
+	// +optional
+	DataDiskSizeGB *int32 `json:"dataDiskSizeGB,omitempty"`
 	// security contains security-related configuration for provisioned VMs.
 	// +optional
 	Security *AzureNodeClassSecurity `json:"security,omitempty"`
@@ -186,4 +193,9 @@ func (in *AzureNodeClass) GetImageFamily() *string {
 
 func (in *AzureNodeClass) GetKind() string {
 	return "AzureNodeClass"
+}
+
+// GetDataDiskSizeGB returns the data disk size from the spec.
+func (in *AzureNodeClass) GetDataDiskSizeGB() *int32 {
+	return in.Spec.DataDiskSizeGB
 }
