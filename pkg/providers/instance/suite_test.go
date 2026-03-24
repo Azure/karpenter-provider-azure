@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +30,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
@@ -341,8 +344,8 @@ var _ = Describe("VMInstanceProvider", func() {
 		func(azEnv *test.Environment, cp *cloudprovider.CloudProvider) {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 			for _, zone := range azEnv.Zones() {
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
 			}
 			instanceTypes, err := cp.GetInstanceTypes(ctx, nodePool)
 			Expect(err).ToNot(HaveOccurred())
@@ -871,6 +874,416 @@ var _ = Describe("VMInstanceProvider", func() {
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 
 			Expect(vm.Properties.SecurityProfile).To(BeNil())
+		})
+	})
+
+	Context("large-scale provisioning with quota exhaustion", func() {
+		It("should fall back to a different SKU family when quota is exhausted mid-provisioning", func() {
+			// Restrict NodePool to the Ds_v3 and D_v5 SKU series (standardDSv3Family and standardDv5Family).
+			// The standardDSv3Family has D2s_v3 (2 vCPU), D4s_v3 (4 vCPU), D64s_v3 (64 vCPU).
+			// With a 50-core quota: D64s_v3 exceeds quota immediately, D4s_v3 VMs succeed
+			// until the quota fills (~12 VMs = 48 cores), then D2s_v3 squeezes in one
+			// more, and eventually all Ds_v3 sizes are blocked. 50 pods × 1.5 vCPU = 75
+			// vCPU of work cannot fit in a 50-core quota, so the remainder falls back to D_v5.
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      v1beta1.LabelSKUSeries,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Ds_v3", "D_v5"},
+					},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand},
+					},
+				},
+			)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Create 50 pods, each requesting 1500m CPU
+			const totalPods = 50
+			const coreQuota = 50 // standardDSv3Family core quota limit
+			pods := make([]*v1.Pod, totalPods)
+			for i := range pods {
+				pods[i] = coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU: resource.MustParse("1500m"),
+						},
+					},
+				})
+			}
+
+			// Simulate quota exhaustion: track total cores consumed by VMs in the
+			// standardDSv3Family. When the next VM would push total cores beyond the
+			// quota, return a subscription quota error. As progressively smaller SKUs
+			// fail, the error handler lowers the blocked-CPU threshold for the family
+			// until all Ds_v3 sizes are unavailable. Remaining pods fall back to D_v5.
+			var usedCores atomic.Int32
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.SetCustomTransformer(
+				func(input *fake.VirtualMachineCreateOrUpdateInput) error {
+					vmSize := string(*input.VM.Properties.HardwareProfile.VMSize)
+					sku := fake.MakeSKU(vmSize)
+					if sku.GetFamilyName() == "standardDSv3Family" {
+						vcpus := int32(lo.Must(sku.VCPU()))
+						current := usedCores.Load()
+						if current+vcpus > int32(coreQuota) {
+							return &azcore.ResponseError{
+								ErrorCode: "OperationNotAllowed",
+								RawResponse: &http.Response{
+									Body: fake.CreateSDKErrorBody("OperationNotAllowed",
+										fmt.Sprintf("Operation could not be completed as it results in exceeding approved standardDSv3Family Cores quota. "+
+											"Additional details - Deployment Model: Resource Manager, Location: southcentralus, "+
+											"Current Limit: %d, Current Usage: %d, Additional Required: %d, (Minimum) New Limit Required: %d.",
+											coreQuota, current, vcpus, current+vcpus)),
+								},
+							}
+						}
+						usedCores.Add(vcpus)
+					}
+					return nil
+				},
+			)
+
+			// Persist pods once
+			for _, pod := range pods {
+				ExpectApplied(ctx, env.Client, pod)
+			}
+
+			// First scheduling pass -- 2x D64's predicted but fail to allocate
+			results, err := coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results.NewNodeClaims).To(HaveLen(2)) // 100 pods should fit in 2 64 core nodes, which is what Karpenter prefers
+			nodeClaims := ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			// First actual NodeClaim attempt via CloudProvider fails (capacity issues)
+			_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaims[0])
+			Expect(err).To(MatchError(ContainSubstring("subscription level on-demand vCPU quota for Standard_D64s_v3 has been reached")))
+			// Try again -- this time, we hit insufficient capacity error for both since D64 doesn't fit anymore
+			for _, nodeClaim := range nodeClaims {
+				_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaim)
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.InsufficientCapacityError{}))
+
+				// Delete these claims (simulates what core does)
+				ExpectDeleted(ctx, env.Client, nodeClaim)
+			}
+
+			// Second scheduling pass, 4-core nodes predicted now
+			results, err = coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results.NewNodeClaims).To(HaveLen(25))
+			nodeClaims = ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			// First 12 should succeed, as that's all under the quota of 50
+			for i, nc := range nodeClaims[:12] {
+				scheduledClaim := results.NewNodeClaims[i]
+				_, node := ExpectNodeClaimDeployedAndStateUpdated(ctx, env.Client, cluster, cloudProvider, nc)
+				Expect(node).ToNot(BeNil())
+
+				// Have to bind pods to these nodes as well
+				BindPodsToNode(ctx, env.Client, cluster, scheduledClaim, node)
+			}
+			// 13th should fail, we're past the quota now
+			_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaims[12])
+			Expect(err).To(MatchError(ContainSubstring("subscription level on-demand vCPU quota for Standard_D4s_v3 has been reached")))
+			// try again for the rest of them, this time we get out of capacity error because there are no more 4-core VMs we can use
+			for _, nodeClaim := range nodeClaims[12:] {
+				_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaim)
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.InsufficientCapacityError{}))
+
+				// Delete these claims (simulates what core does)
+				ExpectDeleted(ctx, env.Client, nodeClaim)
+			}
+
+			// Last scheduling pass
+			results, err = coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			// 24 pods have been scheduled so far on 12 nodes, remaining nodes are 1 pod per node so we expect 26 node claims
+			Expect(results.NewNodeClaims).To(HaveLen(26))
+			nodeClaims = ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			// First of the 2-core nodeclaims should fit into Ds_v3 family
+			_, node := ExpectNodeClaimDeployedAndStateUpdated(ctx, env.Client, cluster, cloudProvider, nodeClaims[0])
+			Expect(node).ToNot(BeNil())
+			BindPodsToNode(ctx, env.Client, cluster, results.NewNodeClaims[0], node)
+			// Next claim hits capacity issues -- we're at our 50 quota now
+			_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaims[1])
+			Expect(err).To(MatchError(ContainSubstring("subscription level on-demand vCPU quota for Standard_D2s_v3 has been reached")))
+
+			// Now all remaining claims seamlessly fall back to D_v5 family without another scheduling pass needed
+			for i, nc := range nodeClaims[1:] {
+				scheduledClaim := results.NewNodeClaims[i+1]
+				_, node := ExpectNodeClaimDeployedAndStateUpdated(ctx, env.Client, cluster, cloudProvider, nc)
+				Expect(node).ToNot(BeNil())
+
+				// Have to bind pods to these nodes as well
+				BindPodsToNode(ctx, env.Client, cluster, scheduledClaim, node)
+			}
+
+			// Expect all pods to be scheduled
+			for _, pod := range pods {
+				pod = ExpectExists(ctx, env.Client, pod)
+				Expect(pod.Spec.NodeName).ToNot(BeEmpty(), "pod %s should be scheduled", pod.Name)
+			}
+
+			// Expect all nodeclaims to be successfully provisioned (have a providerID)
+			nodeClaimList := &karpv1.NodeClaimList{}
+			Expect(env.Client.List(ctx, nodeClaimList)).To(Succeed())
+			for _, nc := range nodeClaimList.Items {
+				Expect(nc.Status.ProviderID).ToNot(BeEmpty(),
+					"nodeclaim %s should have a providerID (launched successfully)", nc.Name)
+			}
+
+			// Verify that even the smallest Ds_v3 SKU is blocked (threshold ≤ 2 vCPU)
+			for _, zone := range azureEnv.Zones() {
+				ExpectUnavailable(azureEnv, fake.MakeSKU("Standard_D2s_v3"), zone, karpv1.CapacityTypeOnDemand)
+			}
+
+			// Verify that we have 12 D4s_v3, 1 D2s_v3, and 13 D2_v5 nodes, as expected
+			nodes := &v1.NodeList{}
+			Expect(env.Client.List(ctx, nodes)).To(Succeed())
+			sizes := lo.Map(nodes.Items, func(node v1.Node, _ int) string {
+				size, ok := node.Labels[v1.LabelInstanceTypeStable]
+				Expect(ok).To(BeTrue(), "node %s should have instance type label", node.Name)
+				return size
+			})
+			Expect(lo.CountValues(sizes)).To(Equal(map[string]int{
+				"Standard_D4s_v3": 12,
+				"Standard_D2s_v3": 1,
+				"Standard_D2_v5":  25,
+			}))
+		})
+
+		It("should fall back to a lower-weight NodePool when the primary NodePool's only SKU family is exhausted", func() {
+			// NodePool A (weight 100): Ds_v3 series (standardDSv3Family) — preferred but limited quota
+			nodePoolA := coretest.NodePool(karpv1.NodePool{
+				Spec: karpv1.NodePoolSpec{
+					Weight: lo.ToPtr(int32(100)),
+					Template: karpv1.NodeClaimTemplate{
+						Spec: karpv1.NodeClaimTemplateSpec{
+							NodeClassRef: &karpv1.NodeClassReference{
+								Group: object.GVK(nodeClass).Group,
+								Kind:  object.GVK(nodeClass).Kind,
+								Name:  nodeClass.Name,
+							},
+						},
+					},
+				},
+			})
+			coretest.ReplaceRequirements(nodePoolA,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      v1beta1.LabelSKUSeries,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Ds_v3"},
+					},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand},
+					},
+				},
+			)
+
+			// NodePool B (weight 10): D_v5 series (standardDv5Family) — different family, lower priority
+			nodePoolB := coretest.NodePool(karpv1.NodePool{
+				Spec: karpv1.NodePoolSpec{
+					Weight: lo.ToPtr(int32(10)),
+					Template: karpv1.NodeClaimTemplate{
+						Spec: karpv1.NodeClaimTemplateSpec{
+							NodeClassRef: &karpv1.NodeClassReference{
+								Group: object.GVK(nodeClass).Group,
+								Kind:  object.GVK(nodeClass).Kind,
+								Name:  nodeClass.Name,
+							},
+						},
+					},
+				},
+			})
+			coretest.ReplaceRequirements(nodePoolB,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      v1beta1.LabelSKUSeries,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"D_v5"},
+					},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand},
+					},
+				},
+			)
+
+			ExpectApplied(ctx, env.Client, nodePoolA, nodePoolB, nodeClass)
+
+			const totalPods = 50
+			const coreQuota = 50 // standardDSv3Family core quota limit
+			pods := make([]*v1.Pod, totalPods)
+			for i := range pods {
+				pods[i] = coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU: resource.MustParse("1500m"),
+						},
+					},
+				})
+			}
+
+			// Simulate quota exhaustion by tracking total cores consumed by the
+			// standardDSv3Family. As progressively smaller SKUs fail, the blocked-CPU
+			// threshold drops until all Ds_v3 sizes are unavailable. Since Ds_v3 is
+			// the ONLY series for NodePool A, all remaining NodeClaims hit ICE and
+			// the scheduler falls back to NodePool B.
+			var usedCores atomic.Int32
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.SetCustomTransformer(
+				func(input *fake.VirtualMachineCreateOrUpdateInput) error {
+					vmSize := string(*input.VM.Properties.HardwareProfile.VMSize)
+					sku := fake.MakeSKU(vmSize)
+					if sku.GetFamilyName() == "standardDSv3Family" {
+						vcpus := int32(lo.Must(sku.VCPU()))
+						current := usedCores.Load()
+						if current+vcpus > int32(coreQuota) {
+							return &azcore.ResponseError{
+								ErrorCode: "OperationNotAllowed",
+								RawResponse: &http.Response{
+									Body: fake.CreateSDKErrorBody("OperationNotAllowed",
+										fmt.Sprintf("Operation could not be completed as it results in exceeding approved standardDSv3Family Cores quota. "+
+											"Additional details - Deployment Model: Resource Manager, Location: southcentralus, "+
+											"Current Limit: %d, Current Usage: %d, Additional Required: %d, (Minimum) New Limit Required: %d.",
+											coreQuota, current, vcpus, current+vcpus)),
+								},
+							}
+						}
+						usedCores.Add(vcpus)
+					}
+					return nil
+				},
+			)
+
+			// Persist pods once
+			for _, pod := range pods {
+				ExpectApplied(ctx, env.Client, pod)
+			}
+
+			// First scheduling pass -- NodePool A (weight 100) preferred, 2x D64's predicted but fail to allocate
+			results, err := coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results.NewNodeClaims).To(HaveLen(2)) // 50 pods should fit in 2 64-core nodes, which is what Karpenter prefers
+			nodeClaims := ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			// First actual NodeClaim attempt via CloudProvider fails (capacity issues)
+			_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaims[0])
+			Expect(err).To(MatchError(ContainSubstring("subscription level on-demand vCPU quota for Standard_D64s_v3 has been reached")))
+			// Try again -- this time, we hit insufficient capacity error for both since D64 doesn't fit anymore
+			for _, nodeClaim := range nodeClaims {
+				_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaim)
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.InsufficientCapacityError{}))
+
+				// Delete these claims (simulates what core does)
+				ExpectDeleted(ctx, env.Client, nodeClaim)
+			}
+
+			// Second scheduling pass -- NodePool A with D4s_v3 nodes now
+			results, err = coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results.NewNodeClaims).To(HaveLen(25))
+			nodeClaims = ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			// First 12 should succeed, as that's all under the quota of 50
+			for i, nc := range nodeClaims[:12] {
+				scheduledClaim := results.NewNodeClaims[i]
+				_, node := ExpectNodeClaimDeployedAndStateUpdated(ctx, env.Client, cluster, cloudProvider, nc)
+				Expect(node).ToNot(BeNil())
+
+				// Have to bind pods to these nodes as well
+				BindPodsToNode(ctx, env.Client, cluster, scheduledClaim, node)
+			}
+			// 13th should fail, we're past the quota now
+			_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaims[12])
+			Expect(err).To(MatchError(ContainSubstring("subscription level on-demand vCPU quota for Standard_D4s_v3 has been reached")))
+			// try again for the rest of them, this time we get out of capacity error because there are no more 4-core VMs we can use
+			for _, nodeClaim := range nodeClaims[12:] {
+				_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaim)
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.InsufficientCapacityError{}))
+
+				// Delete these claims (simulates what core does)
+				ExpectDeleted(ctx, env.Client, nodeClaim)
+			}
+
+			// Third scheduling pass -- NodePool A with D2s_v3 now
+			results, err = coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			// 24 pods have been scheduled so far on 12 nodes, remaining nodes are 1 pod per node so we expect
+			// 26 node claims
+			Expect(results.NewNodeClaims).To(HaveLen(26))
+			nodeClaims = ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			// First of the 2-core nodeclaims should fit into Ds_v3 family
+			_, node := ExpectNodeClaimDeployedAndStateUpdated(ctx, env.Client, cluster, cloudProvider, nodeClaims[0])
+			Expect(node).ToNot(BeNil())
+			BindPodsToNode(ctx, env.Client, cluster, results.NewNodeClaims[0], node)
+			// Next claim hits capacity issues -- we're at our 50 quota now
+			_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaims[1])
+			Expect(err).To(MatchError(ContainSubstring("subscription level on-demand vCPU quota for Standard_D2s_v3 has been reached")))
+
+			// Unlike the single-NodePool test, NodePool A only has Ds_v3 -- no in-pool fallback to D_v5.
+			// All remaining claims from NodePool A get ICE.
+			for _, nodeClaim := range nodeClaims[1:] {
+				_, err = ExpectNodeClaimDeployedNoNode(ctx, env.Client, cloudProvider, nodeClaim)
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.InsufficientCapacityError{}))
+
+				// Delete these claims (simulates what core does)
+				ExpectDeleted(ctx, env.Client, nodeClaim)
+			}
+
+			// Fourth scheduling pass -- NodePool A is fully exhausted, scheduler falls back to NodePool B (D_v5)
+			results, err = coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			// 25 pods remaining (50 - 24 from pass 2 - 1 from pass 3)
+			Expect(results.NewNodeClaims).ToNot(BeEmpty())
+			nodeClaims = ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			for i, nc := range nodeClaims {
+				scheduledClaim := results.NewNodeClaims[i]
+				_, node := ExpectNodeClaimDeployedAndStateUpdated(ctx, env.Client, cluster, cloudProvider, nc)
+				Expect(node).ToNot(BeNil())
+
+				BindPodsToNode(ctx, env.Client, cluster, scheduledClaim, node)
+			}
+
+			// Expect all pods to be scheduled
+			for _, pod := range pods {
+				pod = ExpectExists(ctx, env.Client, pod)
+				Expect(pod.Spec.NodeName).ToNot(BeEmpty(), "pod %s should be scheduled", pod.Name)
+			}
+
+			// Expect all nodeclaims to be successfully provisioned (have a providerID)
+			nodeClaimList := &karpv1.NodeClaimList{}
+			Expect(env.Client.List(ctx, nodeClaimList)).To(Succeed())
+			for _, nc := range nodeClaimList.Items {
+				Expect(nc.Status.ProviderID).ToNot(BeEmpty(),
+					"nodeclaim %s should have a providerID (launched successfully)", nc.Name)
+			}
+
+			// Verify that even the smallest Ds_v3 SKU is blocked
+			for _, zone := range azureEnv.Zones() {
+				ExpectUnavailable(azureEnv, fake.MakeSKU("Standard_D2s_v3"), zone, karpv1.CapacityTypeOnDemand)
+			}
+
+			// Verify that we have 12 D4s_v3, 1 D2s_v3, and 25 D2_v5 nodes, as expected
+			nodes := &v1.NodeList{}
+			Expect(env.Client.List(ctx, nodes)).To(Succeed())
+			sizes := lo.Map(nodes.Items, func(node v1.Node, _ int) string {
+				size, ok := node.Labels[v1.LabelInstanceTypeStable]
+				Expect(ok).To(BeTrue(), "node %s should have instance type label", node.Name)
+				return size
+			})
+			Expect(lo.CountValues(sizes)).To(Equal(map[string]int{
+				"Standard_D4s_v3": 12,
+				"Standard_D2s_v3": 1,
+				"Standard_D2_v5":  25,
+			}))
 		})
 	})
 })

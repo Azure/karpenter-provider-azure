@@ -444,12 +444,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
 	}
 
+	// Decide on offerings
 	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
 		allocationstrategy.NewInstanceOfferings(instanceTypes),
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
-
-	// Decide on offerings
 	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
