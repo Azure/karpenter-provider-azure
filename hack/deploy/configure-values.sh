@@ -39,6 +39,10 @@ TOKEN_ID=$(kubectl get -n kube-system secret "$TOKEN_SECRET_NAME" -o jsonpath='{
 TOKEN_SECRET=$(kubectl get -n kube-system secret "$TOKEN_SECRET_NAME" -o jsonpath='{.data.token-secret}' | base64 -d)
 BOOTSTRAP_TOKEN=$TOKEN_ID.$TOKEN_SECRET
 
+# Ensure SSH key pair exists (e.g. may not be present on fresh/ephemeral machines)
+if [ ! -f ~/.ssh/id_rsa.pub ]; then
+    ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
+fi
 SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
 
 
