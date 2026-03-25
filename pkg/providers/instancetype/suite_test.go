@@ -2318,6 +2318,15 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectedOnNode bool
 			}
 
+			// requireFunc returns a SetupFunc that adds a label requirement to the NodePool
+			requireFunc := func(key, value string) func() {
+				return func() {
+					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+						karpv1.NodeSelectorRequirementWithMinValues{Key: key, Operator: v1.NodeSelectorOpIn, Values: []string{value}},
+					)
+				}
+			}
+
 			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
 			entries := []WellKnownLabelEntry{
 				// Well known
@@ -2378,6 +2387,33 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
 				// Cluster Label
 				{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				// Previously reserved labels (kubernetes.io/k8s.io domains) that were restricted by Karpenter core before 1.9.x.
+				// These are now allowed on NodeClaims and synced to the Node by Karpenter, but kubelet cannot set them.
+				{
+					Name:                    "kubernetes.io (previously reserved)",
+					Label:                   "kubernetes.io/custom-label",
+					SetupFunc:               requireFunc("kubernetes.io/custom-label", "custom-value"),
+					ValueFunc:               func() string { return "custom-value" },
+					ExpectedInKubeletLabels: false,
+					ExpectedOnNode:          true,
+				},
+				{
+					Name:                    "k8s.io (previously reserved)",
+					Label:                   "k8s.io/custom-label",
+					SetupFunc:               requireFunc("k8s.io/custom-label", "custom-value"),
+					ValueFunc:               func() string { return "custom-value" },
+					ExpectedInKubeletLabels: false,
+					ExpectedOnNode:          true,
+				},
+				// kubelet.kubernetes.io is in the kubelet-allowed namespace, so kubelet CAN set these
+				{
+					Name:                    "kubelet.kubernetes.io (kubelet-allowed)",
+					Label:                   "kubelet.kubernetes.io/custom-label",
+					SetupFunc:               requireFunc("kubelet.kubernetes.io/custom-label", "custom-value"),
+					ValueFunc:               func() string { return "custom-value" },
+					ExpectedInKubeletLabels: true,
+					ExpectedOnNode:          true,
+				},
 			}
 
 			It("should support individual instance type labels (when all pods scheduled at once)", func() {
