@@ -104,12 +104,30 @@ jobs:
         with:
           disable-telemetry: true
           egress-policy: block
+          # - wildcards to allow for variation in targeted clusters
+          # - clients3.google.com:80 and firebaselogging-pa.googleapis.com:443 - confirmed Skaffold,
+          #   likely telemetry, likely can be avoided/blocked with/after "skaffold config set --global collect-metrics false"
           allowed-endpoints: >
-            *.dl.k8s.io:443
+            *.azmk8s.io:443
+            *.azurecr.io:443
+            *.data.mcr.microsoft.com:443
+            *.vault.azure.net:443
+            aka.ms:443
             api.github.com:443
-            dl.k8s.io:443
-            coveralls.io:443
+            app.aladdin.microsoft.com:443
+            auth.docker.io:443
+            azcliextensionsync.blob.core.windows.net:443
+            clients3.google.com:80
+            dc.services.visualstudio.com:443
+            distroless.dev:443
+            firebaselogging-pa.googleapis.com:443
+            gist.githubusercontent.com:443
             github.com:443
+            graph.microsoft.com:443
+            index.docker.io:443
+            login.microsoftonline.com:443
+            management.azure.com:443
+            mcr.microsoft.com:443
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             proxy.golang.org:443
@@ -124,19 +142,6 @@ jobs:
             azure.archive.ubuntu.com:80
             packages.microsoft.com:443
             esm.ubuntu.com:443
-            login.microsoftonline.com:443
-            management.azure.com:443
-            *.azurecr.io:443
-            *.blob.core.windows.net:443
-            *.azmk8s.io:443
-            *.hcp.*.azmk8s.io:443
-            *.tun.*.azmk8s.io:443
-            *.table.core.windows.net:443
-            *.vault.azure.net:443
-            aka.ms:443
-            azurecliprod.blob.core.windows.net:443
-            mcr.microsoft.com:443
-            *.data.mcr.microsoft.com:443
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
