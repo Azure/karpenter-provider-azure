@@ -108,13 +108,7 @@ func (p *Provider) GetTemplate(
 	instanceType *cloudprovider.InstanceType,
 	additionalLabels map[string]string,
 ) (*Template, error) {
-	// Filter nodeClaim.Labels to only include kubelet-compatible labels.
-	// In karpenter v1.9+, nodeClaim.Labels may contain custom labels resolved from requirements
-	// (e.g. node-restriction.kubernetes.io/*) that should not be passed to kubelet.
-	filteredClaimLabels := lo.PickBy(nodeClaim.Labels, func(k string, _ string) bool {
-		return karplabels.CanKubeletSetLabel(k)
-	})
-	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(filteredClaimLabels, additionalLabels))
+	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(nodeClaim.Labels, additionalLabels))
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +152,11 @@ func (p *Provider) getStaticParameters(
 		return nil, err
 	}
 	labels = lo.Assign(baseLabels, labels)
+
+	// Remove labels kubelet can't set (e.g. kubernetes.io/*, k8s.io/* outside allowed namespaces)
+	labels = lo.OmitBy(labels, func(key string, _ string) bool {
+		return !karplabels.CanKubeletSetLabel(key)
+	})
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
