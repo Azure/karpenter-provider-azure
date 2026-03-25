@@ -90,8 +90,11 @@ func main() {
 			// TODO: still need to refactor ImageProvider side of things.
 			op.KubernetesVersionProvider,
 			op.ImageProvider,
+			op.InstanceTypesProvider,
 			op.InClusterKubernetesInterface,
 			op.AZClient.SubnetsClient(),
+			op.AZClient.DiskEncryptionSetsClient(),
+			options.FromContext(ctx).ParsedDiskEncryptionSetID,
 		)...).
 		Start(ctx)
 }

@@ -24,7 +24,7 @@ jobs:
       labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit
 
@@ -33,25 +33,6 @@ jobs:
         fetch-depth: 0
 
     - uses: ./.github/actions/install-deps
-
-    - name: Debug toolchain (ko not found issue)
-      run: |
-        echo "=== Environment ==="
-        echo "HOME: $HOME"
-        echo "GOPATH: $(go env GOPATH)"
-        echo "PATH: $PATH"
-        echo ""
-        echo "=== Contents of $HOME/go/bin ==="
-        ls -la "$HOME/go/bin" || echo "$HOME/go/bin does not exist"
-        echo ""
-        echo "=== Contents of \$(go env GOPATH)/bin ==="
-        ls -la "$(go env GOPATH)/bin" || echo "\$(go env GOPATH)/bin does not exist"
-        echo ""
-        echo "=== Which ko ==="
-        which ko || echo "ko not found in PATH"
-        echo ""
-        echo "=== Go version ==="
-        go version
 
     - name: Build and publish image
       env:

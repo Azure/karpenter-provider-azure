@@ -111,8 +111,8 @@ func (p *Provider) GetTemplate(
 	// Filter nodeClaim.Labels to only include kubelet-compatible labels.
 	// In karpenter v1.9+, nodeClaim.Labels may contain custom labels resolved from requirements
 	// (e.g. node-restriction.kubernetes.io/*) that should not be passed to kubelet.
-	filteredClaimLabels := lo.OmitBy(nodeClaim.Labels, func(k string, _ string) bool {
-		return !karplabels.IsKubeletLabel(k)
+	filteredClaimLabels := lo.PickBy(nodeClaim.Labels, func(k string, _ string) bool {
+		return karplabels.CanKubeletSetLabel(k)
 	})
 	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(filteredClaimLabels, additionalLabels))
 	if err != nil {
@@ -153,7 +153,7 @@ func (p *Provider) getStaticParameters(
 	}
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-	baseLabels, err := karplabels.Get(ctx, nodeClass)
+	baseLabels, err := karplabels.Get(ctx, nodeClass, arch)
 	if err != nil {
 		return nil, err
 	}

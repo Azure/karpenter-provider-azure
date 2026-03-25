@@ -34,6 +34,15 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+// ArtifactStreaming configures artifact streaming for provisioned nodes.
+// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+type ArtifactStreaming struct {
+	// enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
+	// If not specified, defaults to true.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -95,6 +104,10 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// artifactStreaming configures artifact streaming for provisioned nodes.
+	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+	// +optional
+	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -290,8 +303,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={none,static}
 	// +default="none"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+	CPUManagerPolicy *string `json:"cpuManagerPolicy,omitempty"`
 	// cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
 	// +default=true
@@ -336,8 +348,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={restricted,best-effort,none,single-numa-node}
 	// +default="none"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
+	TopologyManagerPolicy *string `json:"topologyManagerPolicy,omitempty"`
 	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
 	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
@@ -353,8 +364,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
 	// +default="50Mi"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
+	ContainerLogMaxSize *string `json:"containerLogMaxSize,omitempty"`
 	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
 	// Default: 5
 	// +kubebuilder:validation:Minimum:=2

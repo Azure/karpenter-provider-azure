@@ -124,6 +124,19 @@ func getEmptyMWConfigMap() *corev1.ConfigMap {
 	}
 }
 
+// getEmptyValuesMWConfigMap returns a ConfigMap with all maintenance window keys present
+// but with empty string values, which may be observed under some circumstances
+func getEmptyValuesMWConfigMap() *corev1.ConfigMap {
+	configMap := getEmptyMWConfigMap()
+	configMap.Data["aksManagedAutoUpgradeSchedule-start"] = ""
+	configMap.Data["aksManagedAutoUpgradeSchedule-end"] = ""
+	configMap.Data["aksManagedNodeOSUpgradeSchedule-start"] = ""
+	configMap.Data["aksManagedNodeOSUpgradeSchedule-end"] = ""
+	configMap.Data["default-start"] = ""
+	configMap.Data["default-end"] = ""
+	return configMap
+}
+
 var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 
@@ -162,7 +175,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	Context("NodeImageReconciler direct tests", func() {
 		BeforeEach(func() {
 			// Setup NodeClass
-			nodeClass.Status.KubernetesVersion = testK8sVersion
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
@@ -233,6 +246,15 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			It("Should update NodeImages when ConfigMap is empty (maintenance window undefined)", func() {
 				ExpectApplied(ctx, env.Client, getEmptyMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+			})
+
+			It("Should update NodeImages when ConfigMap has keys with empty string values (fail open)", func() {
+				ExpectApplied(ctx, env.Client, getEmptyValuesMWConfigMap())
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())

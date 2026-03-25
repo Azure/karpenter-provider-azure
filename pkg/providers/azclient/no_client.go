@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instance
+package azclient
 
 import (
 	"context"
@@ -29,6 +29,9 @@ var agentPoolNotFoundRespError = &azcore.ResponseError{
 	ErrorCode:  "NotFound",
 	StatusCode: http.StatusNotFound,
 }
+
+// Compile-time assertion
+var _ AKSMachinesAPI = (*noAKSMachinesClient)(nil)
 
 // This "fake" client simulates the behavior of when there are no AKS machines present.
 // There will be no outgoing calls.

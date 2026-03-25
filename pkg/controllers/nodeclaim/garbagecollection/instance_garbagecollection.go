@@ -41,16 +41,14 @@ import (
 )
 
 type Instance struct {
-	kubeClient      client.Client
-	cloudProvider   corecloudprovider.CloudProvider
-	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
+	kubeClient    client.Client
+	cloudProvider corecloudprovider.CloudProvider
 }
 
 func NewInstance(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *Instance {
 	return &Instance{
-		kubeClient:      kubeClient,
-		cloudProvider:   cloudProvider,
-		successfulCount: 0,
+		kubeClient:    kubeClient,
+		cloudProvider: cloudProvider,
 	}
 }
 
@@ -76,7 +74,7 @@ func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	if err := c.kubeClient.List(ctx, nodeList); err != nil {
 		return reconciler.Result{}, err
 	}
-	clusterProviderIDs := sets.New[string](lo.FilterMap(clusterNodeClaims.Items, func(n karpv1.NodeClaim, _ int) (string, bool) {
+	clusterProviderIDs := sets.New(lo.FilterMap(clusterNodeClaims.Items, func(n karpv1.NodeClaim, _ int) (string, bool) {
 		return n.Status.ProviderID, n.Status.ProviderID != ""
 	})...)
 	errs := make([]error, len(cloudNodeClaims))
@@ -95,8 +93,7 @@ func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	if err = multierr.Combine(errs...); err != nil {
 		return reconciler.Result{}, err
 	}
-	c.successfulCount++
-	return reconciler.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
+	return reconciler.Result{RequeueAfter: time.Minute * 2}, nil
 }
 
 func (c *Instance) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
