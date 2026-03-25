@@ -148,6 +148,7 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 	if in.LinuxOSConfig != nil {
 		in, out := &in.LinuxOSConfig, &out.LinuxOSConfig
 		*out = new(LinuxOSConfiguration)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
