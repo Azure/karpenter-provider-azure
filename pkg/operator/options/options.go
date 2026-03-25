@@ -33,6 +33,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -97,6 +98,9 @@ type Options struct {
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 
 	AKSMachinesPoolName string `json:"aksMachinesPoolName,omitempty"` // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision mode.
+
+	// computed options; do not set.
+	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {

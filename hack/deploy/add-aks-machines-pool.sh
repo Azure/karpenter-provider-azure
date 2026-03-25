@@ -36,9 +36,20 @@ echo "URL: $URL"
 echo "Request Body:"
 echo "$REQUEST_BODY"
 
-if az rest --method PUT --url "$URL" --body "$REQUEST_BODY"; then
-    echo "✅ Successfully added nodepool '$NODEPOOL_NAME' with machines mode"
-else
-    echo "❌ Failed to add nodepool"
-    exit 1
-fi
+# Retry logic: cluster may have an in-progress operation, wait up to 1 minute
+MAX_RETRIES=6
+RETRY_DELAY=10
+for i in $(seq 1 $MAX_RETRIES); do
+    if az rest --method PUT --url "$URL" --body "$REQUEST_BODY" 2>&1; then
+        echo "✅ Successfully added nodepool '$NODEPOOL_NAME' with machines mode"
+        exit 0
+    else
+        if [ "$i" -lt "$MAX_RETRIES" ]; then
+            echo "⏳ Attempt $i/$MAX_RETRIES failed, retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+        else
+            echo "❌ Failed to add nodepool after $MAX_RETRIES attempts"
+            exit 1
+        fi
+    fi
+done

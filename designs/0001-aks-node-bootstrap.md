@@ -39,6 +39,8 @@ A newer, emerging, approach - possible with the latest AKS VM images - is to pop
 
 This new bootstrapping approach is used by Karpenter. In this context Karpenter is helping to drive and validate the evolution of the bootstrapping contract. Until there is a better name, this document refers to this approach as "Node Bootstrapping Variables".
 
+A third mode — **AKS Machine API** — provisions nodes through the AKS Machine API rather than creating standalone VMs directly. In this mode, node creation and lifecycle management are delegated to the AKS control plane via the Machines resource. See [0007-aks-instance-provisioning-with-aks-machine-api](0007-aks-instance-provisioning-with-aks-machine-api.md) for architecture and interface design, and [0008-aks-instance-provisioning-with-aks-machine-api-ex](0008-aks-instance-provisioning-with-aks-machine-api-ex.md) for implementation details.
+
 ### Node Bootstrapping Variables
 
 When Karpenter creates a VM, Custom Data (often referred to as User Data) is populated with the result of rendering the template in [bootstrap/cse_cmd.sh.gtpl](/pkg/providers/imagefamily/bootstrap/cse_cmd.sh.gtpl). The template is rendered using `NodeBootstrapVariables` structure, defined in [bootstrap/aksbootstrap.go](/pkg/providers/imagefamily/bootstrap/aksbootstrap.go). The structures, variables and helper functions in that file are the primary reference for what ultimately ends up in Custom Data. `(AKS).Script` function - implementing the [Bootstrapper interface](/pkg/providers/imagefamily/bootstrap/bootstrap.go) - is the entry point, and the only inputs flowing in are the `AKS` structure fields.
