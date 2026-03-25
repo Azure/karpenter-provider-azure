@@ -9,8 +9,8 @@ set -x # log commands as they run
 
 ROOT=$(dirname "${BASH_SOURCE[0]}")
 
-RESOURCE_GROUP="karpenter-1es-pool"
-REGION="westus3"
+RESOURCE_GROUP="karpenter-infra"
+REGION="westus2"
 TIMESTAMP="$(date -Iseconds | tr -d :+-)"
 
 # This group should already exist but create it just in case
