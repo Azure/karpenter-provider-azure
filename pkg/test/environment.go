@@ -52,6 +52,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 )
 
 func init() {
@@ -86,6 +87,7 @@ type Environment struct {
 	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
+	UsageAPI                    *fake.UsageAPI
 	DynamicInterface            dynamic.Interface
 
 	// Fake data stores for the APIs
@@ -111,6 +113,7 @@ type Environment struct {
 	LoadBalancerProvider         *loadbalancer.Provider
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
 	AllocationStrategyProvider   allocationstrategy.Provider
+	QuotaProvider                *quota.DefaultProvider
 
 	InstanceTypeStore *nodeoverlay.InstanceTypeStore
 
@@ -153,6 +156,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
+	usageAPI := &fake.UsageAPI{}
 
 	aksDataStorage := fake.NewAKSDataStorage()
 	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(aksDataStorage)
@@ -231,6 +235,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		nodeBootstrappingAPI,
 		skusAPI,
 		subscriptionAPI,
+		usageAPI,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()
 	vmInstanceProvider := instance.NewDefaultVMProvider(
@@ -290,6 +295,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
+	quotaProvider := quota.NewProvider(usageAPI, region)
 
 	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
 	// We can update it in individual tests as needed.
@@ -317,6 +323,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NodeBootstrappingAPI:        nodeBootstrappingAPI,
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
+		UsageAPI:                    usageAPI,
 		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
@@ -339,6 +346,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
 		AllocationStrategyProvider:   allocationStrategyProvider,
+		QuotaProvider:                quotaProvider,
 
 		InstanceTypeStore: store,
 
@@ -368,6 +376,8 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.PricingProvider.Reset()
 	env.AKSMachinesAPI.Reset()
 	env.AKSAgentPoolsAPI.Reset()
+	env.UsageAPI.Reset()
+	env.QuotaProvider.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()
