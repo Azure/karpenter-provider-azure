@@ -28,7 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/samber/lo"
 )
 
@@ -214,7 +214,7 @@ func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
 }
 
 // assert that the fake implements the interface
-var _ azclient.AKSMachinesAPI = &AKSMachinesAPI{}
+var _ azapi.AKSMachinesAPI = &AKSMachinesAPI{}
 
 type AKSMachinesAPI struct {
 	AKSMachinesBehavior

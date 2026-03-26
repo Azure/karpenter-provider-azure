@@ -38,7 +38,7 @@ import (
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	instancetypeprovider "github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -57,8 +57,8 @@ func NewControllers(
 	nodeImageProvider imagefamily.NodeImageProvider,
 	instanceTypesProvider instancetypeprovider.Provider,
 	inClusterKubernetesInterface kubernetes.Interface,
-	subnetsClient azclient.SubnetsAPI,
-	diskEncryptionSetsClient azclient.DiskEncryptionSetsAPI,
+	subnetsClient azapi.SubnetsAPI,
+	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
 ) []controller.Controller {
 	controllers := []controller.Controller{
