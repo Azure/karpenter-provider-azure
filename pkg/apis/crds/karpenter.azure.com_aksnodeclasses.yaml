@@ -74,12 +74,16 @@ spec:
                     default: Preferred
                     description: |-
                       driverInstallation controls whether GPU drivers are installed on
-                      nodes with GPU-capable VM sizes. When set to Preferred (or not specified),
-                      GPU drivers are installed automatically. When set to None, GPU
-                      driver installation is skipped — use this when managing GPU drivers
-                      via a GPU Operator or other external mechanism.
+                      nodes with GPU-capable VM sizes.
+                      When set to Always, GPU drivers are always installed and only GPU SKUs
+                      with driver installation support are considered for scheduling.
+                      When set to Preferred (or not specified), GPU drivers are installed on
+                      SKUs that support it, but SKUs without driver support are also allowed.
+                      When set to None, GPU driver installation is skipped — use this when
+                      managing GPU drivers via a GPU Operator or other external mechanism.
                       This field is ignored for non-GPU VM sizes.
                     enum:
+                    - Always
                     - Preferred
                     - None
                     type: string
@@ -650,12 +654,16 @@ spec:
                     default: Preferred
                     description: |-
                       driverInstallation controls whether GPU drivers are installed on
-                      nodes with GPU-capable VM sizes. When set to Preferred (or not specified),
-                      GPU drivers are installed automatically. When set to None, GPU
-                      driver installation is skipped — use this when managing GPU drivers
-                      via a GPU Operator or other external mechanism.
+                      nodes with GPU-capable VM sizes.
+                      When set to Always, GPU drivers are always installed and only GPU SKUs
+                      with driver installation support are considered for scheduling.
+                      When set to Preferred (or not specified), GPU drivers are installed on
+                      SKUs that support it, but SKUs without driver support are also allowed.
+                      When set to None, GPU driver installation is skipped — use this when
+                      managing GPU drivers via a GPU Operator or other external mechanism.
                       This field is ignored for non-GPU VM sizes.
                     enum:
+                    - Always
                     - Preferred
                     - None
                     type: string
