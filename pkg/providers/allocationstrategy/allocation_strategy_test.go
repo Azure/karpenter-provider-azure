@@ -17,6 +17,7 @@ limitations under the License.
 package allocationstrategy_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
@@ -36,23 +37,23 @@ func TestFilterInstanceOfferings_RemovesUnavailable(t *testing.T) {
 
 	instanceTypes := []*corecloudprovider.InstanceType{
 		{
-			Name: "has-available",
+			Name: "Standard_D2s_v3",
 			Offerings: corecloudprovider.Offerings{
 				newOffering(0.1, true, karpv1.CapacityTypeOnDemand),
 				newOffering(0.2, false, karpv1.CapacityTypeOnDemand),
 			},
 		},
 		{
-			Name: "all-unavailable",
+			Name: "Standard_F16s_v2",
 			Offerings: corecloudprovider.Offerings{
 				newOffering(0.05, false, karpv1.CapacityTypeOnDemand),
 			},
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
 	g.Expect(filtered).To(HaveLen(1))
-	g.Expect(filtered[0].InstanceType.Name).To(Equal("has-available"))
+	g.Expect(filtered[0].InstanceType.Name).To(Equal("Standard_D2s_v3"))
 	g.Expect(filtered[0].Offerings).To(HaveLen(1))
 	g.Expect(filtered[0].Offerings[0].Price).To(Equal(0.1))
 }
@@ -153,7 +154,7 @@ func TestFilterInstanceOfferings_ZerothItemHasExpectedPriority(t *testing.T) {
 			g := NewWithT(t)
 			provider := allocationstrategy.NewProvider()
 
-			filtered := provider.FilterInstanceOfferings(allocationstrategy.NewInstanceOfferings(c.instanceTypes), c.requirements)
+			filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(c.instanceTypes), c.requirements)
 
 			if c.expectedPriority == "" {
 				g.Expect(filtered).To(BeEmpty())
@@ -178,7 +179,7 @@ func TestFilterInstanceOfferings_Requirements_FiltersByZone(t *testing.T) {
 
 	instanceTypes := []*corecloudprovider.InstanceType{
 		{
-			Name: "multi-zone",
+			Name: "Standard_D2s_v3",
 			Offerings: corecloudprovider.Offerings{
 				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1"),
 				newOfferingWithZone(0.2, karpv1.CapacityTypeOnDemand, "westus-2"),
@@ -186,45 +187,60 @@ func TestFilterInstanceOfferings_Requirements_FiltersByZone(t *testing.T) {
 			},
 		},
 		{
-			Name: "wrong-zone-only",
+			Name: "Standard_F16s_v2",
 			Offerings: corecloudprovider.Offerings{
 				newOfferingWithZone(0.05, karpv1.CapacityTypeOnDemand, "westus-2"),
 			},
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
 	g.Expect(filtered).To(HaveLen(1))
-	g.Expect(filtered[0].InstanceType.Name).To(Equal("multi-zone"))
+	g.Expect(filtered[0].InstanceType.Name).To(Equal("Standard_D2s_v3"))
 	g.Expect(filtered[0].Offerings).To(HaveLen(1))
 	g.Expect(filtered[0].Offerings[0].Price).To(Equal(0.1))
 }
 
-func TestFilterInstanceOfferings_SortsByPriceWithAlphabeticTiebreak(t *testing.T) {
+func TestFilterInstanceOfferings_OrdersByPrice(t *testing.T) {
 	g := NewWithT(t)
 	provider := allocationstrategy.NewProvider()
 	requirements := scheduling.NewRequirements(
-		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, "In", karpv1.CapacityTypeOnDemand),
 	)
 
 	instanceTypes := []*corecloudprovider.InstanceType{
 		{
-			Name:      "Expensive",
-			Offerings: corecloudprovider.Offerings{newOffering(0.5, true, karpv1.CapacityTypeOnDemand)},
+			Name: "Standard_F16s_v2",
+			Offerings: corecloudprovider.Offerings{
+				newOffering(0.5, true, karpv1.CapacityTypeOnDemand),
+			},
 		},
 		{
-			Name:      "Cheap",
-			Offerings: corecloudprovider.Offerings{newOffering(0.1, true, karpv1.CapacityTypeOnDemand)},
+			Name: "Standard_D2s_v3",
+			Offerings: corecloudprovider.Offerings{
+				newOffering(0.05, true, karpv1.CapacityTypeSpot),
+			},
 		},
 		{
-			Name:      "AlphaTie",
-			Offerings: corecloudprovider.Offerings{newOffering(0.1, true, karpv1.CapacityTypeOnDemand)},
+			Name: "Standard_D4s_v3",
+			Offerings: corecloudprovider.Offerings{
+				newOffering(0.1, true, karpv1.CapacityTypeOnDemand),
+			},
+		},
+		{
+			Name: "Standard_D64s_v3",
+			Offerings: corecloudprovider.Offerings{
+				newOffering(0.1, true, karpv1.CapacityTypeOnDemand), // Same price so should order alphabetically
+			},
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
 	g.Expect(filtered).To(HaveLen(3))
-	g.Expect([]string{filtered[0].InstanceType.Name, filtered[1].InstanceType.Name, filtered[2].InstanceType.Name}).To(Equal([]string{"AlphaTie", "Cheap", "Expensive"}))
+	g.Expect([]string{filtered[0].InstanceType.Name, filtered[1].InstanceType.Name, filtered[2].InstanceType.Name}).To(Equal([]string{"Standard_D4s_v3", "Standard_D64s_v3", "Standard_F16s_v2"}))
+	g.Expect(filtered[0].Offerings).To(HaveLen(1))
+	g.Expect(filtered[1].Offerings).To(HaveLen(1))
+	g.Expect(filtered[2].Offerings).To(HaveLen(1))
 }
 
 func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testing.T) {
@@ -249,7 +265,7 @@ func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testi
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
 	g.Expect(filtered).To(HaveLen(1))
 	g.Expect(filtered[0].Offerings).To(HaveLen(6))
 
@@ -279,6 +295,7 @@ func newOffering(price float64, available bool, capacityType string) *corecloudp
 		Price: price,
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, capacityType),
+			scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 		),
 		Available: available,
 	}

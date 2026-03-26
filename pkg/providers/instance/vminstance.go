@@ -742,6 +742,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
 	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		ctx,
 		allocationstrategy.NewInstanceOfferings(instanceTypes),
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
