@@ -16,7 +16,11 @@ limitations under the License.
 
 package stages
 
-import corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+import (
+	"context"
+
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+)
 
 // InstanceOffering is a struct that contains an instance type and its associated offerings. We use this to store the offerings for each instance type in the cache, so that we can filter them later when we need to.
 // DO NOT read or modify the offerings on the InstanceType directly, as that data is cached and modifications will persist into the cache.
@@ -29,5 +33,5 @@ type InstanceOffering struct {
 }
 
 type Stage interface {
-	Process(instanceOfferings []InstanceOffering) []InstanceOffering
+	Process(ctx context.Context, instanceOfferings []InstanceOffering) []InstanceOffering
 }
