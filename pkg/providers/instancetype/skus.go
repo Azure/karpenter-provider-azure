@@ -70,7 +70,10 @@ var (
 	)
 	// karpenterRestrictedVMSKUs are VMS SKUs that are known to
 	// be problematic with karpenter-provider-azure.
-	karpenterRestrictedVMSKUs = sets.New[string]()
+	karpenterRestrictedVMSKUs = sets.New[string](
+		"Standard_E64i_v3",
+		"Standard_E64is_v3",
+	)
 )
 
 // allAzureVMSkus is a generated list from https://github.com/Azure/skewer

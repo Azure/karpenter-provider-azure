@@ -446,6 +446,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 
 	// Decide on offerings
 	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		ctx,
 		allocationstrategy.NewInstanceOfferings(instanceTypes),
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)

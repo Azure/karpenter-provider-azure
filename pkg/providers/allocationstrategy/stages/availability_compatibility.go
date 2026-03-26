@@ -17,8 +17,11 @@ limitations under the License.
 package stages
 
 import (
-	"github.com/samber/lo"
+	"context"
+
 	"sigs.k8s.io/karpenter/pkg/scheduling"
+
+	"github.com/samber/lo"
 )
 
 type availabilityCompatibilityFilterStage struct {
@@ -26,10 +29,12 @@ type availabilityCompatibilityFilterStage struct {
 }
 
 func NewAvailabilityCompatibilityFilterStage(requirements scheduling.Requirements) Stage {
-	return &availabilityCompatibilityFilterStage{requirements: requirements}
+	return &availabilityCompatibilityFilterStage{
+		requirements: requirements,
+	}
 }
 
-func (s *availabilityCompatibilityFilterStage) Process(instanceOfferings []InstanceOffering) []InstanceOffering {
+func (s *availabilityCompatibilityFilterStage) Process(_ context.Context, instanceOfferings []InstanceOffering) []InstanceOffering {
 	return lo.FilterMap(instanceOfferings, func(instanceOffering InstanceOffering, _ int) (InstanceOffering, bool) {
 		instanceOffering.Offerings = instanceOffering.Offerings.Available().Compatible(s.requirements)
 		return instanceOffering, len(instanceOffering.Offerings) > 0
