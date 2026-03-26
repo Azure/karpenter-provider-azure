@@ -42,14 +42,6 @@ import (
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
-
-
-
-
-
-
-
-
 type AZClient struct {
 	azureResourceGraphClient       azapi.AzureResourceGraphAPI
 	virtualMachinesClient          azapi.VirtualMachinesAPI
