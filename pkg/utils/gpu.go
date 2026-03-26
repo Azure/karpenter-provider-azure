@@ -184,6 +184,14 @@ func GetGPUManufacturer(vmSize string) string {
 	return allGPUSKUs[vmSize]
 }
 
+// HasDriverInstallationSupport returns true if the system knows how to install
+// GPU drivers for this VM SKU. Currently all NVIDIA SKUs have driver installation
+// support, while AMD SKUs do not. This is the single abstraction point for this
+// decision — when AMD driver support is added, only this function needs to change.
+func HasDriverInstallationSupport(vmSize string) bool {
+	return IsNvidiaEnabledSKU(vmSize)
+}
+
 // IsGPUSKUSupportedOnOS checks if a GPU SKU supports a given OS identifier (e.g., "ubuntu", "azurelinux", "azurelinux3")
 func IsGPUSKUSupportedOnOS(vmSize string, osName string) bool {
 	vmSize = normalizeVMSize(vmSize)

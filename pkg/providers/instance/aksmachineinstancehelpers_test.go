@@ -869,4 +869,52 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			})
 		})
 	})
+
+	Context("configureGPUProfile", func() {
+		It("should return GPUDriverInstall for NVIDIA SKU with default (Preferred) mode", func() {
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should return GPUDriverInstall for NVIDIA SKU with Always mode", func() {
+			alwaysMode := v1beta1.DriverInstallationAlways
+			nodeClass.Spec.GPU = &v1beta1.GPU{DriverInstallation: &alwaysMode}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should return GPUDriverInstall for NVIDIA SKU with Preferred mode", func() {
+			preferredMode := v1beta1.DriverInstallationPreferred
+			nodeClass.Spec.GPU = &v1beta1.GPU{DriverInstallation: &preferredMode}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should return GPUDriverNone for NVIDIA SKU with None mode", func() {
+			noneMode := v1beta1.DriverInstallationNone
+			nodeClass.Spec.GPU = &v1beta1.GPU{DriverInstallation: &noneMode}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+		})
+
+		It("should return nil for non-GPU SKU", func() {
+			instanceType.Name = "Standard_D2_v2"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).To(BeNil())
+		})
+
+		It("should return nil for AMD GPU SKU (no NVIDIA driver support)", func() {
+			instanceType.Name = "Standard_NV4ads_V710_v5"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).To(BeNil())
+		})
+	})
 })

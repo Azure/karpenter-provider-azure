@@ -119,7 +119,7 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%s",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -128,6 +128,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
+		string(nodeClass.GetDriverInstallationMode()),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -166,6 +167,9 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		if !p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) {
+			continue
+		}
+		if !p.isInstanceTypeSupportedByGPUDriverMode(sku, nodeClass) {
 			continue
 		}
 
@@ -310,6 +314,21 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 	}
 
 	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// Only "Always" mode filters out GPU SKUs without driver installation support.
+	// "Preferred" and "None" modes allow all GPU SKUs.
+	if nodeClass.GetDriverInstallationMode() != v1beta1.DriverInstallationAlways {
+		return true
+	}
+	name := sku.GetName()
+	// Non-GPU SKUs are always allowed
+	if !utils.IsGPUSKU(name) {
+		return true
+	}
+	// In "Always" mode, only allow GPU SKUs with driver installation support
+	return utils.HasDriverInstallationSupport(name)
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters

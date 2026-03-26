@@ -676,6 +676,18 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("GPU", func() {
+		It("should accept gpu.driverInstallation set to Always", func() {
+			driverMode := v1alpha2.DriverInstallationAlways
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{
+						DriverInstallation: &driverMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
 		It("should accept gpu.driverInstallation set to Preferred", func() {
 			driverMode := v1alpha2.DriverInstallationPreferred
 			nodeClass := &v1alpha2.AKSNodeClass{

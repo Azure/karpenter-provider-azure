@@ -215,3 +215,30 @@ func TestIsGPUSKUSupportedOnOS(t *testing.T) {
 		})
 	}
 }
+
+func TestHasDriverInstallationSupport(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		output bool
+	}{
+		{"NVIDIA SKU - has support", "standard_nc6s_v3", true},
+		{"NVIDIA SKU with Promo - has support", "standard_nc6s_v2_promo", true},
+		{"NVIDIA T4 - has support", "standard_nc4as_t4_v3", true},
+		{"NVIDIA A10 converged - has support", "standard_nv6ads_a10_v5", true},
+		{"AMD SKU V710 - no support", "standard_nv4ads_v710_v5", false},
+		{"AMD SKU MI300X - no support", "standard_nd96isr_mi300x_v5", false},
+		{"Non-GPU SKU - no support", "standard_d2_v2", false},
+		{"Empty SKU - no support", "", false},
+		{"Unknown SKU - no support", "non_existent_sku", false},
+		{"Case insensitive - has support", "Standard_NC6s_V3", true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := HasDriverInstallationSupport(test.input)
+			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
+		})
+	}
+}

@@ -165,7 +165,7 @@ func (p *Provider) getStaticParameters(
 		GPUDriverVersion:               utils.GetGPUDriverVersion(instanceType.Name),
 		GPUDriverType:                  utils.GetGPUDriverType(instanceType.Name),
 		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
-		GPUDriverInstallationEnabled:   nodeClass.IsGPUDriverInstallationEnabled(),
+		GPUDriverInstallationEnabled:   nodeClass.IsGPUDriverInstallationEnabledForSKU(utils.HasDriverInstallationSupport(instanceType.Name)),
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
 		KubeletIdentityClientID:        p.kubeletIdentityClientID,
