@@ -67,6 +67,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
@@ -94,6 +95,7 @@ type Operator struct {
 	VMInstanceProvider        *instance.DefaultVMProvider
 	AKSMachineProvider        *instance.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
+	QuotaProvider             *quota.DefaultProvider
 	AZClient                  *azclient.AZClient
 }
 
@@ -245,6 +247,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 	)
 
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azConfig.Location)
+
 	return ctx, &Operator{
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
@@ -258,6 +262,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		VMInstanceProvider:           vmInstanceProvider,
 		AKSMachineProvider:           aksMachineInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
+		QuotaProvider:                quotaProvider,
 		AZClient:                     azClient,
 	}
 }

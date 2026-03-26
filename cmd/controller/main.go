@@ -91,6 +91,7 @@ func main() {
 			op.KubernetesVersionProvider,
 			op.ImageProvider,
 			op.InstanceTypesProvider,
+			op.QuotaProvider,
 			op.InClusterKubernetesInterface,
 			op.AZClient.SubnetsClient(),
 			op.AZClient.DiskEncryptionSetsClient(),

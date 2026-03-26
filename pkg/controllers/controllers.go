@@ -38,11 +38,13 @@ import (
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	quotacontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	instancetypeprovider "github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 )
 
 func NewControllers(
@@ -56,6 +58,7 @@ func NewControllers(
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	instanceTypesProvider instancetypeprovider.Provider,
+	quotaProvider quota.Provider,
 	inClusterKubernetesInterface kubernetes.Interface,
 	subnetsClient azclient.SubnetsAPI,
 	diskEncryptionSetsClient azclient.DiskEncryptionSetsAPI,
@@ -74,6 +77,7 @@ func NewControllers(
 		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 
 		instancetypecontroller.NewController(instanceTypesProvider),
+		quotacontroller.NewController(quotaProvider),
 	}
 	return controllers
 }
