@@ -25,7 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
@@ -43,7 +43,7 @@ type AzureResourceGraphBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ azclient.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
+var _ azapi.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
 	vmListQuery  string
