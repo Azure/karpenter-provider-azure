@@ -56,7 +56,7 @@ on:
           - westus3
           - southcentralus
           - eastus
-          - westus2  # This is staging in our sub
+          - westus2
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"
