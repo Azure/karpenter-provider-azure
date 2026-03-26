@@ -29,7 +29,7 @@ func TestNewInstanceOfferings_CopiesExpectedCollections(t *testing.T) {
 	g := NewWithT(t)
 	instanceTypes := []*corecloudprovider.InstanceType{
 		{
-			Name: "test-instance-type",
+			Name: "Standard_D2s_v3",
 			Offerings: corecloudprovider.Offerings{
 				newOffering(0.1, true, karpv1.CapacityTypeOnDemand),
 				newOffering(0.2, true, karpv1.CapacityTypeSpot),

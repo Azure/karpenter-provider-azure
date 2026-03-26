@@ -685,5 +685,39 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeFalse())
 			})
 		})
+
+		// Labels in the kubernetes.io/k8s.io domains were previously restricted by Karpenter core (<1.9.x)
+		// and are now allowed on NodeClaims. However, kubelet cannot set most of them, so they should be
+		// filtered out of AKS Machine NodeLabels (same as the VM path). Karpenter syncs them to the Node
+		// directly, so they still appear on the Node object.
+		DescribeTable("should handle previously reserved labels on AKS Machine create",
+			func(label string, expectedInNodeLabels bool) {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+					karpv1.NodeSelectorRequirementWithMinValues{Key: label, Operator: v1.NodeSelectorOpIn, Values: []string{"custom-value"}},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{label: "custom-value"}})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+
+				// Label should always be on the Node (synced by Karpenter)
+				Expect(node.Labels).To(HaveKeyWithValue(label, "custom-value"))
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+				Expect(aksMachine.Properties.Kubernetes).ToNot(BeNil())
+
+				if expectedInNodeLabels {
+					Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(HaveKeyWithValue(label, lo.ToPtr("custom-value")))
+				} else {
+					Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKey(label))
+				}
+			},
+			Entry("kubernetes.io (previously reserved)", "kubernetes.io/custom-label", false),
+			Entry("k8s.io (previously reserved)", "k8s.io/custom-label", false),
+			Entry("kubelet.kubernetes.io (kubelet-allowed)", "kubelet.kubernetes.io/custom-label", true),
+		)
 	})
 })

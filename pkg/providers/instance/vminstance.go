@@ -742,6 +742,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
 	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		ctx,
 		allocationstrategy.NewInstanceOfferings(instanceTypes),
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
@@ -914,13 +915,9 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
 	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
 
-	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
-	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
-	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+	// These may contain restricted labels from the pod that we need to filter out; that's done in getStaticParameters.
+	claimLabels := labels.GetAllSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
-		func(k string, req *scheduling.Requirement) bool {
-			return labels.CanKubeletSetLabel(k)
-		},
 	)
 	additionalLabels := lo.Assign(
 		claimLabels,

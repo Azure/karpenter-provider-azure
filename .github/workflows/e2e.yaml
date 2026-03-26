@@ -179,6 +179,9 @@ jobs:
           ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
+      - name: cleanup leftover resources, if any (e.g. from a previous run that failed to clean up)
+        # Could reuse the existing cleanup action, but would require a bit of refactoring (e.g. it uses non-blocking delete)
+        run: az group delete --name "$RG_NAME" --yes 2>/dev/null || true
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
