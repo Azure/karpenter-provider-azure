@@ -22,7 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
-// createDefaultPollerOptions returns a PollUntilDoneOptions with a default polling frequency of 3 seconds.
+// defaultPollerOptions returns a PollUntilDoneOptions with a default polling frequency of 3 seconds.
 // We want to poll faster than the default of 30 seconds in order to provision VMs more quickly.
 // 3s seems a good compromise between responsiveness and avoiding excessive API calls.
 func defaultPollerOptions() *runtime.PollUntilDoneOptions {
