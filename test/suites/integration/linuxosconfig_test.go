@@ -202,10 +202,11 @@ var _ = Describe("LinuxOSConfig", func() {
 		logs := eventuallyGetPodLogs(verifyPod)
 		By(fmt.Sprintf("Transparent huge page verification output:\n%s", logs))
 
-		// The kernel shows the active setting in brackets: always [madvise] never
-		Expect(logs).To(ContainSubstring("[madvise]"))
-		// We set "defer+madvise", so expect [defer+madvise]
-		Expect(logs).To(ContainSubstring("[defer+madvise]"))
+		// The kernel shows the active setting in brackets, e.g.: always [madvise] never
+		// We use tagged output (transparent_hugepage_enabled=...) to distinguish the two files,
+		// and match on the tag + bracketed value to avoid fragility if kernel adds new options.
+		Expect(logs).To(MatchRegexp(`transparent_hugepage_enabled=.*\[madvise\]`))
+		Expect(logs).To(MatchRegexp(`transparent_hugepage_defrag=.*\[defer\+madvise\]`))
 	})
 
 	It("should provision a node with swap file size configured", func() {
@@ -267,7 +268,7 @@ func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod 
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
-			fmt.Sprintf("sysctl %s && sleep 30", sysctlArgs),
+			fmt.Sprintf("sysctl %s", sysctlArgs),
 		},
 		NodeSelector: map[string]string{
 			corev1.LabelHostname: nodeName,
@@ -285,6 +286,7 @@ func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod 
 // createTransparentHugePageVerificationPod creates a privileged pod on the target node that
 // reads the transparent huge page settings from /sys/kernel/mm/transparent_hugepage/.
 // These settings are kernel-global (not namespaced), so a privileged container can read them directly.
+// Output is tagged (transparent_hugepage_enabled=..., transparent_hugepage_defrag=...) so assertions can distinguish the two values.
 func createTransparentHugePageVerificationPod(nodeName string) *corev1.Pod {
 	pod := coretest.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
@@ -294,9 +296,8 @@ func createTransparentHugePageVerificationPod(nodeName string) *corev1.Pod {
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
-			"cat /sys/kernel/mm/transparent_hugepage/enabled && " +
-				"cat /sys/kernel/mm/transparent_hugepage/defrag && " +
-				"sleep 30",
+			"echo transparent_hugepage_enabled=$(cat /sys/kernel/mm/transparent_hugepage/enabled) && " +
+				"echo transparent_hugepage_defrag=$(cat /sys/kernel/mm/transparent_hugepage/defrag)",
 		},
 		NodeSelector: map[string]string{
 			corev1.LabelHostname: nodeName,
@@ -321,7 +322,7 @@ func createSwapVerificationPod(nodeName string) *corev1.Pod {
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
-			"grep SwapTotal /proc/meminfo && sleep 30",
+			"grep SwapTotal /proc/meminfo",
 		},
 		NodeSelector: map[string]string{
 			corev1.LabelHostname: nodeName,
