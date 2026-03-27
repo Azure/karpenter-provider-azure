@@ -728,7 +728,7 @@ var _ = Describe("CloudProvider", func() {
 					FailSwapOn: lo.ToPtr(false),
 				}
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-					SwapFileSize:             lo.ToPtr("1500Mi"),
+					SwapFileSize:               lo.ToPtr("1500Mi"),
 					TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragMadvise),
 					TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
 					Sysctls: &v1beta1.SysctlConfiguration{
