@@ -156,7 +156,7 @@ az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySe
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet --output none \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks"; \
@@ -171,7 +171,7 @@ az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys --output none --network-plugin azure \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys --network-plugin azure \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
@@ -187,7 +187,7 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys --output none \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
@@ -205,7 +205,7 @@ az-mkaks-cilium-userassigned: az-mkacr az-create-workload-msi ## Create test AKS
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		KARPENTER_USER_ASSIGNED_IDENTITY_ID=$$(az identity show --resource-group $(AZURE_RESOURCE_GROUP) --name $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) --query 'id' --output tsv); \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--assign-identity $$KARPENTER_USER_ASSIGNED_IDENTITY_ID --node-count 3 --generate-ssh-keys --output none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--assign-identity $$KARPENTER_USER_ASSIGNED_IDENTITY_ID --node-count 3 --generate-ssh-keys --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
@@ -221,7 +221,7 @@ az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mod
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys --output none \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-plugin azure --network-plugin-mode overlay \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
@@ -238,7 +238,7 @@ az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larg
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 2 --generate-ssh-keys --output none \
+			--enable-managed-identity --node-count 2 --generate-ssh-keys \
 			--network-plugin azure --network-plugin-mode overlay \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			--node-vm-size $(if $(AZURE_VM_SIZE),$(AZURE_VM_SIZE),Standard_D16s_v6) --pod-cidr "10.128.0.0/11" \
@@ -261,7 +261,7 @@ az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster 
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys --output none \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \

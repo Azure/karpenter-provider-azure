@@ -90,7 +90,7 @@ type AKSMachineGetter interface {
 // timeouts and context cancellation provide equivalent protection.
 type Options struct {
 	// PollInterval is the interval between GET requests to check operation state.
-	// Equivalent to SDK's PollUntilDoneOptions.Frequency (default 30s).
+	// Equivalent to SDK's PollUntilDoneOptions.Frequency (default 5s).
 	PollInterval time.Duration
 	// RetryDelay is the initial delay before retrying after a transient GET error or
 	// unexpected state (nil/unrecognized provisioning state). Doubles on each consecutive

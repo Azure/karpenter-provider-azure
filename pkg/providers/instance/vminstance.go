@@ -302,11 +302,7 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 		}
 
 		for extName, poller := range pollers {
-			// Poll more frequently than the default of 30s
-			opts := &runtime.PollUntilDoneOptions{
-				Frequency: 3 * time.Second,
-			}
-			_, err := poller.PollUntilDone(ctx, opts)
+			_, err := poller.PollUntilDone(ctx, defaultPollerOptions())
 			if err != nil {
 				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
 			}
@@ -850,7 +846,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				return nil
 			}
 
-			_, err = result.Poller.PollUntilDone(ctx, nil)
+			_, err = result.Poller.PollUntilDone(ctx, defaultPollerOptions())
 			if err != nil {
 				VMCreateFailureMetric.With(map[string]string{
 					metrics.ImageLabel:        launchTemplate.ImageID,
@@ -995,14 +991,15 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 		return err
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
-
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil
 		}
+
 		return err
 	}
+
 	return nil
 }
 

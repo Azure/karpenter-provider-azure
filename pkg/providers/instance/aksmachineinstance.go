@@ -208,7 +208,12 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	return aksMachinePromise, nil
 }
 
-func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine, etag *string) error {
+func (p *DefaultAKSMachineProvider) Update(
+	ctx context.Context,
+	aksMachineName string,
+	aksMachine armcontainerservice.Machine,
+	etag *string,
+) error {
 	if !shouldAKSMachinesBeVisible(ctx) {
 		return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
 	}
@@ -232,7 +237,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 		}
 		return fmt.Errorf("failed to begin update AKS machine %q: %w", aksMachineName, err)
 	}
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		return fmt.Errorf("failed to update AKS machine %q during LRO: %w", aksMachineName, err)
 	}
@@ -400,7 +405,7 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 		return fmt.Errorf("failed to begin delete AKS machine %q: %w", aksMachineName, err)
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 
 	if err != nil {
 		return fmt.Errorf("failed to delete AKS machine %q during LRO: %w", aksMachineName, err)
@@ -501,7 +506,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO, AKS API panicked: %w", aksMachineName, err)
 				}
 			}()
-			_, err := poller.PollUntilDone(ctx, nil) // This may panic if it is deleted mid-way.
+			_, err := poller.PollUntilDone(ctx, defaultPollerOptions()) // This may panic if it is deleted mid-way.
 			if err != nil {
 				// Could be quota error; will be handled with custom logic below
 
