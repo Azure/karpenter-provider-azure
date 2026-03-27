@@ -249,11 +249,9 @@ var _ = Describe("CloudProvider", func() {
 			// Specify no instance types and expect to receive a capacity error
 			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"doesnotexist"}, // will not match any instance types
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"doesnotexist"}, // will not match any instance types
 				},
 			}
 
@@ -340,11 +338,9 @@ var _ = Describe("CloudProvider", func() {
 			// Specify no instance types and expect to receive a capacity error
 			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"doesnotexist"}, // will not match any instance types
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"doesnotexist"}, // will not match any instance types
 				},
 			}
 

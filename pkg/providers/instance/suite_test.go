@@ -887,18 +887,14 @@ var _ = Describe("VMInstanceProvider", func() {
 			// vCPU of work cannot fit in a 50-core quota, so the remainder falls back to D_v5.
 			coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUSeries,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Ds_v3", "D_v5"},
-					},
+					Key:      v1beta1.LabelSKUSeries,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Ds_v3", "D_v5"},
 				},
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      karpv1.CapacityTypeLabelKey,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand},
-					},
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
 				},
 			)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1072,18 +1068,14 @@ var _ = Describe("VMInstanceProvider", func() {
 			})
 			coretest.ReplaceRequirements(nodePoolA,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUSeries,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Ds_v3"},
-					},
+					Key:      v1beta1.LabelSKUSeries,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Ds_v3"},
 				},
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      karpv1.CapacityTypeLabelKey,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand},
-					},
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
 				},
 			)
 
@@ -1104,18 +1096,14 @@ var _ = Describe("VMInstanceProvider", func() {
 			})
 			coretest.ReplaceRequirements(nodePoolB,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUSeries,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"D_v5"},
-					},
+					Key:      v1beta1.LabelSKUSeries,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"D_v5"},
 				},
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      karpv1.CapacityTypeLabelKey,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand},
-					},
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
 				},
 			)
 
