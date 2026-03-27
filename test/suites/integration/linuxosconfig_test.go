@@ -114,8 +114,8 @@ var _ = Describe("LinuxOSConfig", func() {
 
 	It("should provision a node with transparent huge page settings applied", func() {
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-			TransparentHugePageEnabled: lo.ToPtr("madvise"),
-			TransparentHugePageDefrag:  lo.ToPtr("defer+madvise"),
+			TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
+			TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragDeferMadvise),
 		}
 
 		pod := coretest.UnschedulablePod()
@@ -123,15 +123,15 @@ var _ = Describe("LinuxOSConfig", func() {
 		env.EventuallyExpectHealthy(pod)
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 
-		By(fmt.Sprintf("Node %s provisioned, verifying THP settings", node.Name))
+		By(fmt.Sprintf("Node %s provisioned, verifying transparent huge page settings", node.Name))
 
-		// Create a privileged pod on the node to read THP settings
+		// Create a privileged pod on the node to read transparent huge page settings
 		verifyPod := createTHPVerificationPod(node.Name)
 		env.ExpectCreated(verifyPod)
 		defer env.ExpectDeleted(verifyPod)
 
 		logs := eventuallyGetPodLogs(verifyPod)
-		By(fmt.Sprintf("THP verification output:\n%s", logs))
+		By(fmt.Sprintf("Transparent huge page verification output:\n%s", logs))
 
 		// THP enabled file shows the active setting in brackets: always [madvise] never
 		Expect(logs).To(ContainSubstring("[madvise]"))
@@ -141,6 +141,9 @@ var _ = Describe("LinuxOSConfig", func() {
 	})
 
 	It("should provision a node with swap file size configured", func() {
+		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+			FailSwapOn: lo.ToPtr(false),
+		}
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 			SwapFileSizeMB: lo.ToPtr[int32](1500),
 		}
@@ -171,12 +174,15 @@ var _ = Describe("LinuxOSConfig", func() {
 	})
 
 	It("should provision a node with full LinuxOSConfig (sysctls + THP + swap)", func() {
+		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+			FailSwapOn: lo.ToPtr(false),
+		}
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 			SwapFileSizeMB:             lo.ToPtr[int32](512),
-			TransparentHugePageEnabled: lo.ToPtr("always"),
-			TransparentHugePageDefrag:  lo.ToPtr("always"),
+			TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
+			TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragAlways),
 			Sysctls: &v1beta1.SysctlConfiguration{
-				VMMaxMapCount:    lo.ToPtr[int32](524288),
+				VMMaxMapCount:    lo.ToPtr[int32](262144),
 				NetCoreSomaxconn: lo.ToPtr[int32](4096),
 			},
 		}
@@ -197,7 +203,7 @@ var _ = Describe("LinuxOSConfig", func() {
 		By(fmt.Sprintf("Full LinuxOSConfig verification output:\n%s", logs))
 
 		// Verify sysctls
-		Expect(logs).To(ContainSubstring("vm.max_map_count = 524288"))
+		Expect(logs).To(ContainSubstring("vm.max_map_count = 262144"))
 		Expect(logs).To(ContainSubstring("net.core.somaxconn = 4096"))
 
 		// Verify THP - "always" is the active setting
