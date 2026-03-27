@@ -477,6 +477,7 @@ var _ = Describe("CloudProvider", func() {
 					CPUCFSQuota:                 lo.ToPtr(true),
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
+					FailSwapOn:                  lo.ToPtr(false),
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
@@ -531,6 +532,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.CPUCfsQuota).To(Equal(true))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcHighThreshold).To(Equal(int32(85)))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcLowThreshold).To(Equal(int32(80)))
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.KubeletConfig.FailSwapOn)).To(BeFalse())
 
 				// Verify image family configuration
 				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))
@@ -722,6 +724,9 @@ var _ = Describe("CloudProvider", func() {
 
 		Context("Create - LinuxOSConfig", func() {
 			It("should create AKS machine with full LinuxOSConfig when specified in AKSNodeClass", func() {
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+					FailSwapOn: lo.ToPtr(false),
+				}
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 					SwapFileSizeMB:             lo.ToPtr(int32(1500)),
 					TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragMadvise),
@@ -777,6 +782,10 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(linuxOSConfig.SwapFileSizeMB)).To(Equal(int32(1500)))
 				Expect(lo.FromPtr(linuxOSConfig.TransparentHugePageDefrag)).To(Equal("madvise"))
 				Expect(lo.FromPtr(linuxOSConfig.TransparentHugePageEnabled)).To(Equal("always"))
+
+				// Verify failSwapOn was wired through to kubelet config
+				Expect(aksMachine.Properties.Kubernetes.KubeletConfig).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.KubeletConfig.FailSwapOn)).To(BeFalse())
 
 				// Verify sysctl fields
 				Expect(linuxOSConfig.Sysctls).ToNot(BeNil())
@@ -873,6 +882,9 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			It("should create AKS machine with only SwapFileSizeMB when only swap is specified", func() {
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+					FailSwapOn: lo.ToPtr(false),
+				}
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 					SwapFileSizeMB: lo.ToPtr(int32(2048)),
 				}

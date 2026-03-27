@@ -59,6 +59,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
+// +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSizeMB is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSizeMB) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -395,6 +396,10 @@ type KubeletConfiguration struct {
 	// Default: -1
 	// +optional
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
+	// failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
+	// Must be set to false to allow linuxOSConfig.swapFileSizeMB to take effect.
+	// +optional
+	FailSwapOn *bool `json:"failSwapOn,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}

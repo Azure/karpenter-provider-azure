@@ -333,6 +333,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 		kubeletConfig.PodMaxPids = convertPodMaxPids(*nodeClass.Spec.Kubelet.PodPidsLimit)
 	}
 
+	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
+
 	return kubeletConfig
 }
 

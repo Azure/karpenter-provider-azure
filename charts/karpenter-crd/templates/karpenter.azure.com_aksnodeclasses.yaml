@@ -139,6 +139,11 @@ spec:
                     - none
                     - static
                     type: string
+                  failSwapOn:
+                    description: |-
+                      failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
+                      Must be set to false to allow linuxOSConfig.swapFileSizeMB to take effect.
+                    type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
                       imageGCHighThresholdPercent is the percent of disk usage after which image
@@ -759,6 +764,11 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
                 : true'
+            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSizeMB
+                is specified
+              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSizeMB)
+                || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
+                == false)'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
@@ -998,6 +1008,11 @@ spec:
                     - none
                     - static
                     type: string
+                  failSwapOn:
+                    description: |-
+                      failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
+                      Must be set to false to allow linuxOSConfig.swapFileSizeMB to take effect.
+                    type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
                       imageGCHighThresholdPercent is the percent of disk usage after which image
@@ -1618,6 +1633,11 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
                 : true'
+            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSizeMB
+                is specified
+              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSizeMB)
+                || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
+                == false)'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
