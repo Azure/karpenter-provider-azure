@@ -441,8 +441,9 @@ spec:
                       rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
                         ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
                   transparentHugePageDefrag:
-                    description: transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag
-                      behavior.
+                    description: |-
+                      transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/defrag.
                     enum:
                     - always
                     - defer
@@ -451,8 +452,9 @@ spec:
                     - never
                     type: string
                   transparentHugePageEnabled:
-                    description: transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled
-                      behavior.
+                    description: |-
+                      transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/enabled.
                     enum:
                     - always
                     - madvise
@@ -1278,8 +1280,9 @@ spec:
                       rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
                         ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
                   transparentHugePageDefrag:
-                    description: transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag
-                      behavior.
+                    description: |-
+                      transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/defrag.
                     enum:
                     - always
                     - defer
@@ -1288,8 +1291,9 @@ spec:
                     - never
                     type: string
                   transparentHugePageEnabled:
-                    description: transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled
-                      behavior.
+                    description: |-
+                      transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/enabled.
                     enum:
                     - always
                     - madvise

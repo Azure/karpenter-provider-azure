@@ -359,8 +359,12 @@ func configureLinuxOSConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 
 	linuxOSConfig := &armcontainerservice.LinuxOSConfig{}
 	linuxOSConfig.SwapFileSizeMB = nodeClass.Spec.LinuxOSConfig.SwapFileSizeMB
-	linuxOSConfig.TransparentHugePageDefrag = nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag
-	linuxOSConfig.TransparentHugePageEnabled = nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled
+	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag != nil {
+		linuxOSConfig.TransparentHugePageDefrag = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag))
+	}
+	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled != nil {
+		linuxOSConfig.TransparentHugePageEnabled = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled))
+	}
 	linuxOSConfig.Sysctls = configureSysctlConfig(nodeClass.Spec.LinuxOSConfig.Sysctls)
 
 	return linuxOSConfig

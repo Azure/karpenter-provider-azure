@@ -724,8 +724,8 @@ var _ = Describe("CloudProvider", func() {
 			It("should create AKS machine with full LinuxOSConfig when specified in AKSNodeClass", func() {
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 					SwapFileSizeMB:             lo.ToPtr(int32(1500)),
-					TransparentHugePageDefrag:  lo.ToPtr("madvise"),
-					TransparentHugePageEnabled: lo.ToPtr("always"),
+					TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragMadvise),
+					TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
 					Sysctls: &v1beta1.SysctlConfiguration{
 						FsAioMaxNr:                     lo.ToPtr(int32(65536)),
 						FsFileMax:                      lo.ToPtr(int32(12000)),
@@ -829,8 +829,8 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should create AKS machine with only THP settings when only THP is specified", func() {
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-					TransparentHugePageEnabled: lo.ToPtr("never"),
-					TransparentHugePageDefrag:  lo.ToPtr("defer"),
+					TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledNever),
+					TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragDefer),
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)

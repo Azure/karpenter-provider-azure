@@ -384,6 +384,34 @@ type KubeletConfiguration struct {
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 }
 
+// +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}
+type TransparentHugePageDefrag string
+
+const (
+	// TransparentHugePageDefragAlways sets defrag to always.
+	TransparentHugePageDefragAlways TransparentHugePageDefrag = "always"
+	// TransparentHugePageDefragDefer sets defrag to defer.
+	TransparentHugePageDefragDefer TransparentHugePageDefrag = "defer"
+	// TransparentHugePageDefragDeferMadvise sets defrag to defer+madvise.
+	TransparentHugePageDefragDeferMadvise TransparentHugePageDefrag = "defer+madvise"
+	// TransparentHugePageDefragMadvise sets defrag to madvise.
+	TransparentHugePageDefragMadvise TransparentHugePageDefrag = "madvise"
+	// TransparentHugePageDefragNever sets defrag to never.
+	TransparentHugePageDefragNever TransparentHugePageDefrag = "never"
+)
+
+// +kubebuilder:validation:Enum:={always,madvise,never}
+type TransparentHugePageEnabled string
+
+const (
+	// TransparentHugePageEnabledAlways enables transparent huge pages always.
+	TransparentHugePageEnabledAlways TransparentHugePageEnabled = "always"
+	// TransparentHugePageEnabledMadvise enables transparent huge pages for madvise regions.
+	TransparentHugePageEnabledMadvise TransparentHugePageEnabled = "madvise"
+	// TransparentHugePageEnabledNever disables transparent huge pages.
+	TransparentHugePageEnabledNever TransparentHugePageEnabled = "never"
+)
+
 // LinuxOSConfiguration defines the Custom Linux OS Configuration for nodes.
 // These settings are applied at node provisioning time and map to AKS Custom Linux OS Configuration.
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
@@ -396,13 +424,13 @@ type LinuxOSConfiguration struct {
 	// +optional
 	Sysctls *SysctlConfiguration `json:"sysctls,omitempty"`
 	// transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
-	// +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}
+	// Maps to /sys/kernel/mm/transparent_hugepage/defrag.
 	// +optional
-	TransparentHugePageDefrag *string `json:"transparentHugePageDefrag,omitempty"`
+	TransparentHugePageDefrag *TransparentHugePageDefrag `json:"transparentHugePageDefrag,omitempty"`
 	// transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled behavior.
-	// +kubebuilder:validation:Enum:={always,madvise,never}
+	// Maps to /sys/kernel/mm/transparent_hugepage/enabled.
 	// +optional
-	TransparentHugePageEnabled *string `json:"transparentHugePageEnabled,omitempty"`
+	TransparentHugePageEnabled *TransparentHugePageEnabled `json:"transparentHugePageEnabled,omitempty"`
 }
 
 // SysctlConfiguration defines sysctl settings for Linux agent nodes.

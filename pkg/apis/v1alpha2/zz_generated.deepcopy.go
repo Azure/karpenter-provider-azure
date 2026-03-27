@@ -292,12 +292,12 @@ func (in *LinuxOSConfiguration) DeepCopyInto(out *LinuxOSConfiguration) {
 	}
 	if in.TransparentHugePageDefrag != nil {
 		in, out := &in.TransparentHugePageDefrag, &out.TransparentHugePageDefrag
-		*out = new(string)
+		*out = new(TransparentHugePageDefrag)
 		**out = **in
 	}
 	if in.TransparentHugePageEnabled != nil {
 		in, out := &in.TransparentHugePageEnabled, &out.TransparentHugePageEnabled
-		*out = new(string)
+		*out = new(TransparentHugePageEnabled)
 		**out = **in
 	}
 }
