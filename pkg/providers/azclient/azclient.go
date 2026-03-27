@@ -18,6 +18,7 @@ package azclient
 
 import (
 	"context"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -30,15 +31,17 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/skewer"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
@@ -46,6 +49,7 @@ type AZClient struct {
 	azureResourceGraphClient       azapi.AzureResourceGraphAPI
 	virtualMachinesClient          azapi.VirtualMachinesAPI
 	aksMachinesClient              azapi.AKSMachinesAPI
+	aksMachinesBatchClient         azapi.AKSMachinesBatchAPI
 	agentPoolsClient               azapi.AKSAgentPoolsAPI
 	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI
 	networkInterfacesClient        azapi.NetworkInterfacesAPI
@@ -74,10 +78,8 @@ func (c *AZClient) AKSMachinesClient() azapi.AKSMachinesAPI {
 	return c.aksMachinesClient
 }
 
-// SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
-// with a batching layer when BatchCreationEnabled is true.
-func (c *AZClient) SetAKSMachinesClient(client azapi.AKSMachinesAPI) {
-	c.aksMachinesClient = client
+func (c *AZClient) AKSMachinesBatchClient() azapi.AKSMachinesBatchAPI {
+	return c.aksMachinesBatchClient
 }
 
 func (c *AZClient) AgentPoolsClient() azapi.AKSAgentPoolsAPI {
@@ -104,6 +106,7 @@ func NewAZClientFromAPI(
 	virtualMachinesClient azapi.VirtualMachinesAPI,
 	azureResourceGraphClient azapi.AzureResourceGraphAPI,
 	aksMachinesClient azapi.AKSMachinesAPI,
+	aksMachinesBatchClient azapi.AKSMachinesBatchAPI,
 	agentPoolsClient azapi.AKSAgentPoolsAPI,
 	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI,
 	interfacesClient azapi.NetworkInterfacesAPI,
@@ -121,6 +124,7 @@ func NewAZClientFromAPI(
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
 		aksMachinesClient:              aksMachinesClient,
+		aksMachinesBatchClient:         aksMachinesBatchClient,
 		agentPoolsClient:               agentPoolsClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
@@ -211,6 +215,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	var aksMachinesClient azapi.AKSMachinesAPI
+	var aksMachinesBatchClient azapi.AKSMachinesBatchAPI
 	var agentPoolsClient azapi.AKSAgentPoolsAPI
 
 	// Only create the bootstrapping client if we need to use it.
@@ -259,10 +264,27 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		}
 	}
 
+	if o.BatchCreationEnabled && o.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		log.FromContext(ctx).Info("enabling batch creation for AKS Machine API",
+			"idleTimeoutMS", o.BatchIdleTimeoutMS,
+			"maxTimeoutMS", o.BatchMaxTimeoutMS,
+			"maxBatchSize", o.MaxBatchSize)
+		aksMachinesBatchClient = aksmachinesheaderbatch.NewClient(
+			ctx,
+			aksMachinesClient,
+			batcher.Options{
+				IdleTimeout:  time.Duration(o.BatchIdleTimeoutMS) * time.Millisecond,
+				MaxTimeout:   time.Duration(o.BatchMaxTimeoutMS) * time.Millisecond,
+				MaxBatchSize: o.MaxBatchSize,
+			},
+		)
+	}
+
 	return NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
 		aksMachinesClient,
+		aksMachinesBatchClient,
 		agentPoolsClient,
 		extensionsClient,
 		interfacesClient,
