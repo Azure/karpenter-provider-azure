@@ -164,13 +164,17 @@ func convertLinuxOSConfigToModel(linuxOSConfig *v1beta1.LinuxOSConfiguration) *m
 		return nil
 	}
 
-	return &models.CustomLinuxOSConfig{
-		SwapFileSizeMB:             linuxOSConfig.SwapFileSizeMB,
-		Sysctls:                    convertSysctlConfigToModel(linuxOSConfig.Sysctls),
-		TransparentHugePageDefrag:  linuxOSConfig.TransparentHugePageDefrag,
-		TransparentHugePageEnabled: linuxOSConfig.TransparentHugePageEnabled,
-		// Ulimits is not supported in our API types; leave nil
+	result := &models.CustomLinuxOSConfig{
+		SwapFileSizeMB: linuxOSConfig.SwapFileSizeMB,
+		Sysctls:        convertSysctlConfigToModel(linuxOSConfig.Sysctls),
 	}
+	if linuxOSConfig.TransparentHugePageDefrag != nil {
+		result.TransparentHugePageDefrag = lo.ToPtr(string(*linuxOSConfig.TransparentHugePageDefrag))
+	}
+	if linuxOSConfig.TransparentHugePageEnabled != nil {
+		result.TransparentHugePageEnabled = lo.ToPtr(string(*linuxOSConfig.TransparentHugePageEnabled))
+	}
+	return result
 }
 
 // convertSysctlConfigToModel converts v1beta1.SysctlConfiguration to models.SysctlConfig
