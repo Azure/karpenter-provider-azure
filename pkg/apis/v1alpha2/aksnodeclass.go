@@ -318,7 +318,6 @@ type KubeletConfiguration struct {
 	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
 	// cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
 	// The value must be between 1 ms and 1 second, inclusive.
-	// Default: "100ms"
 	// +optional
 	// +default="100ms"
 	// TODO: validation
@@ -359,21 +358,18 @@ type KubeletConfiguration struct {
 	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
 	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
-	// Default: []
 	// TODO: validation
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
 	// containerLogMaxSize is a quantity defining the maximum size of the container log
 	// file before it is rotated. For example: "5Mi" or "256Ki".
-	// Default: "10Mi"
 	// AKS CustomKubeletConfig has containerLogMaxSizeMB (with units), defaults to 50
 	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
 	// +default="50Mi"
 	// +optional
 	ContainerLogMaxSize *string `json:"containerLogMaxSize,omitempty"`
 	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
-	// Default: 5
 	// +kubebuilder:validation:Minimum:=2
 	// +default=5
 	// +optional
