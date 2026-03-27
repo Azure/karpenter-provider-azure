@@ -25,7 +25,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -143,6 +147,7 @@ type DefaultAKSMachineProvider struct {
 	deletingMachinesMu              sync.RWMutex
 	machineListCache                *aksmachinepoller.MachineListCache
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
+	kubeClient                      client.Client
 }
 
 func NewAKSMachineProvider(
@@ -157,6 +162,18 @@ func NewAKSMachineProvider(
 	aksMachinesPoolName string,
 	aksMachinesPoolLocation string,
 ) *DefaultAKSMachineProvider {
+	// Initialize in-cluster Kubernetes client
+	var kubeClient client.Client
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to get in-cluster config for kubeClient")
+	} else {
+		kubeClient, err = client.New(config, client.Options{})
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to create kubernetes client")
+		}
+	}
+
 	provider := &DefaultAKSMachineProvider{
 		azClient:                        azClient,
 		instanceTypeProvider:            instanceTypeProvider,
@@ -170,6 +187,7 @@ func NewAKSMachineProvider(
 		deletingMachines:                sets.New[string](),
 		machineListCache:                aksmachinepoller.NewMachineListCache(ctx, time.Minute, azClient.AKSMachinesClient(), 5*time.Second, clusterResourceGroup, clusterName, aksMachinesPoolName),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
+		kubeClient:                      kubeClient,
 	}
 
 	return provider
@@ -570,6 +588,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 					log.FromContext(ctx).V(1).Info("successfully created AKS machine",
 						"aksMachineName", aksMachineName,
 						"aksMachineID", gotAKSMachine.ID)
+
+					if perr := p.patchProviderID(ctx, aksMachineName, nodeClaim.Status.ProviderID); perr != nil {
+						log.FromContext(ctx).Error(perr, "failed to patch providerID for node", "node", aksMachineName)
+					}
+
 					return
 				} else {
 					log.FromContext(ctx).Info("List poller is disabled, falling back to GET poller for AKS machine",
@@ -729,4 +752,34 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,
 	), nil
+}
+
+func (p *DefaultAKSMachineProvider) patchProviderID(ctx context.Context, node, providerID string) error {
+	// Get cluster k8s client and patch the providerID to the node if it is empty.
+	if p.kubeClient == nil {
+		log.FromContext(ctx).Error(nil, "kubeClient is nil, cannot patch providerID", "node", node)
+		return fmt.Errorf("kubeClient is not initialized")
+	}
+
+	// Get the node
+	n := &corev1.Node{}
+	if err := p.kubeClient.Get(ctx, types.NamespacedName{Name: node}, n); err != nil {
+		return fmt.Errorf("failed to get node %q: %w", node, err)
+	}
+
+	// Check if providerID is already set
+	if n.Spec.ProviderID != "" {
+		log.FromContext(ctx).V(2).Info("node already has providerID, skipping patch", "node", node, "providerID", n.Spec.ProviderID)
+		return nil
+	}
+
+	// Patch the providerID
+	stored := n.DeepCopy()
+	n.Spec.ProviderID = providerID
+	if err := p.kubeClient.Patch(ctx, n, client.MergeFrom(stored)); err != nil {
+		return fmt.Errorf("failed to patch providerID for node %q: %w", node, err)
+	}
+
+	log.FromContext(ctx).Info("successfully patched providerID for node", "node", node, "providerID", providerID)
+	return nil
 }
