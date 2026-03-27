@@ -327,7 +327,56 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 				metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
 			})
 		}
+
+		if perr := c.patchProviderID(ctx, nodeClaim.Status.ProviderID); perr != nil {
+			// Only log if context is still active to avoid logging after test completes
+			if ctx.Err() == nil {
+				log.FromContext(ctx).Error(perr, "failed to patch providerID")
+			}
+		}
+
 	}()
+	return nil
+}
+
+func (c *CloudProvider) patchProviderID(ctx context.Context, providerID string) error {
+
+	// Get the node name from the providerID.
+	// providerID format: azure:///subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/virtualMachines/{vmName}
+	// The VM name is typically the last segment after the final "/"
+	parts := strings.Split(providerID, "/")
+	if len(parts) == 0 {
+		return fmt.Errorf("invalid providerID format: %q", providerID)
+	}
+	node := parts[len(parts)-1]
+	log.FromContext(ctx).Info("patching providerID to node", "node", node, "providerID", providerID)
+
+	// Get cluster k8s client and patch the providerID to the node if it is empty.
+	if c.kubeClient == nil {
+		log.FromContext(ctx).Error(nil, "kubeClient is nil, cannot patch providerID", "node", node)
+		return fmt.Errorf("kubeClient is not initialized")
+	}
+
+	// Get the node
+	n := &corev1.Node{}
+	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: node}, n); err != nil {
+		return fmt.Errorf("failed to get node %q: %w", node, err)
+	}
+
+	// Check if providerID is already set
+	if n.Spec.ProviderID != "" {
+		log.FromContext(ctx).V(1).Info("node already has providerID, skipping patch", "node", node, "providerID", n.Spec.ProviderID)
+		return nil
+	}
+
+	// Patch the providerID
+	stored := n.DeepCopy()
+	n.Spec.ProviderID = providerID
+	if err := c.kubeClient.Patch(ctx, n, client.MergeFrom(stored)); err != nil {
+		return fmt.Errorf("failed to patch providerID for node %q: %w", node, err)
+	}
+
+	log.FromContext(ctx).Info("successfully patched providerID for node", "node", node, "providerID", providerID)
 	return nil
 }
 
