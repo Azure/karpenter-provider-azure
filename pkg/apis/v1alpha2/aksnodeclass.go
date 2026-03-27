@@ -446,8 +446,6 @@ type SysctlConfiguration struct {
 	FsAioMaxNr *int32 `json:"fsAioMaxNr,omitempty"`
 	// fsFileMax specifies the maximum number of file handles the kernel will allocate.
 	// Maps to fs.file-max.
-	// Note: The AKS documented maximum is 9223372036854775807 (int64 max), but the ARM API type is int32.
-	// The practical maximum here is constrained by the int32 type.
 	// +kubebuilder:validation:Minimum=8192
 	// +kubebuilder:validation:Maximum=12000500
 	// +optional
