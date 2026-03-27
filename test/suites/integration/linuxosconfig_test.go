@@ -245,7 +245,7 @@ var _ = Describe("LinuxOSConfig", func() {
 			FailSwapOn: lo.ToPtr(false),
 		}
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-			SwapFileSize:             lo.ToPtr("512Mi"),
+			SwapFileSize:               lo.ToPtr("512Mi"),
 			TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
 			TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragAlways),
 			Sysctls: &v1beta1.SysctlConfiguration{
