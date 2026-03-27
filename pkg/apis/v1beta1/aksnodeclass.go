@@ -88,12 +88,15 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
 	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
+	// +kubebuilder:validation:MaxProperties=50
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
 	// kubelet defines args to be used when configuring kubelet on provisioned nodes.
 	// They are a subset of the upstream types, recognizing not all options may be supported.
 	// Wherever possible, the types and names should reflect the upstream kubelet types.
 	// +kubebuilder:validation:XValidation:message="imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent",rule="has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent) ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  : true"
+	// +kubebuilder:validation:XValidation:message="cpuCFSQuotaPeriod must be between 1ms and 1s",rule="has(self.cpuCFSQuotaPeriod) ? duration(self.cpuCFSQuotaPeriod) >= duration('1ms') && duration(self.cpuCFSQuotaPeriod) <= duration('1s') : true"
+	// +kubebuilder:validation:XValidation:message="allowedUnsafeSysctls items must match kernel.shm*, kernel.msg*, kernel.sem, fs.mqueue.*, or net.*",rule="!has(self.allowedUnsafeSysctls) || self.allowedUnsafeSysctls.all(s, s.matches('^kernel\\\\.shm.+$') || s.matches('^kernel\\\\.msg.+$') || s.matches('^kernel\\\\.sem$') || s.matches('^fs\\\\.mqueue\\\\..+$') || s.matches('^net\\\\..+$'))"
 	// +optional
 	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
 	// maxPods is an override for the maximum number of pods that can run on a worker node instance.
@@ -327,7 +330,7 @@ type KubeletConfiguration struct {
 	// Default: "100ms"
 	// +optional
 	// +default="100ms"
-	// TODO: validation
+	// +kubebuilder:validation:Format=duration
 	//nolint:kubeapilinter // nodurations: using Duration for compatibility with upstream kubelet types
 	CPUCFSQuotaPeriod metav1.Duration `json:"cpuCFSQuotaPeriod,omitempty"`
 	// imageGCHighThresholdPercent is the percent of disk usage after which image
@@ -362,11 +365,12 @@ type KubeletConfiguration struct {
 	// +default="none"
 	// +optional
 	TopologyManagerPolicy *string `json:"topologyManagerPolicy,omitempty"`
-	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+	// allowedUnsafeSysctls is a list of unsafe sysctls or sysctl patterns (ending in `*`)
+	// that are allowed to be set on pods running on nodes provisioned with this configuration.
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
-	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
+	// and `net.*`. For example: ["kernel.msgmax", "net.ipv4.route.min_pmtu"]
 	// Default: []
-	// TODO: validation
+	// +kubebuilder:validation:MaxItems=16
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
