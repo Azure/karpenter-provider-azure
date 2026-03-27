@@ -214,7 +214,7 @@ var _ = Describe("LinuxOSConfig", func() {
 			FailSwapOn: lo.ToPtr(false),
 		}
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-			SwapFileSizeMB: lo.ToPtr[int32](1500),
+			SwapFileSize: lo.ToPtr("1500Mi"),
 		}
 
 		pod := coretest.UnschedulablePod()
@@ -245,7 +245,7 @@ var _ = Describe("LinuxOSConfig", func() {
 			FailSwapOn: lo.ToPtr(false),
 		}
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-			SwapFileSizeMB:             lo.ToPtr[int32](512),
+			SwapFileSize:             lo.ToPtr("512Mi"),
 			TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
 			TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragAlways),
 			Sysctls: &v1beta1.SysctlConfiguration{
