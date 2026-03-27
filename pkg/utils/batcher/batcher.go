@@ -35,17 +35,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Batch is a group of requests with the same key.
+// A batch is a group of requests with the same key.
 type Batch[RequestPayload, ResponsePayload any] struct {
 	Key      string
 	Requests []*BatchedRequest[RequestPayload, ResponsePayload]
 }
 
-// BatchedRequest is a single request (w/ payload) being batched with others.
+// A batchedRequest is a single request (w/ payload) being batched with others.
 type BatchedRequest[RequestPayload, ResponsePayload any] struct {
 	// Caller's request context (before going into the batcher)
 	// Warning: the batcher does not currently honor per-request context cancellation.
-	// Once a request is enqueued, it stays in the batch even if the caller's context is canceled.
+	// Once a request is enqueued, it stays in the batch even if the caller's context is cancelled.
 	// Suggestion: support per-request cancellation guarantee, only if needed.
 	ctx context.Context
 
@@ -55,7 +55,7 @@ type BatchedRequest[RequestPayload, ResponsePayload any] struct {
 	Payload RequestPayload // The original request payload (e.g., an AKS machine body for creation)
 }
 
-// Response is used by ExecuteBatch to send a response to each original request.
+// ExecuteBatch shall use this to send a response to each original request.
 type Response[ResponsePayload any] struct {
 	Payload ResponsePayload // The response payload to send back to the caller (e.g., a poller for async operations, or struct{} if unused)
 	Err     error
@@ -89,8 +89,8 @@ type Batcher[RequestPayload, ResponsePayload any] struct {
 	pendingBatches map[string]*Batch[RequestPayload, ResponsePayload] // Store pending batches to be executed
 	trigger        chan struct{}                                      // Alert the background loop when new requests arrive; buffered at 1 so rapid enqueues coalesce into a single wakeup.
 
-	determineBatchKey DetermineBatchKey[RequestPayload]
-	executeBatch      ExecuteBatch[RequestPayload, ResponsePayload]
+	DetermineBatchKey DetermineBatchKey[RequestPayload]
+	ExecuteBatch      ExecuteBatch[RequestPayload, ResponsePayload]
 
 	opts Options
 }
@@ -98,16 +98,16 @@ type Batcher[RequestPayload, ResponsePayload any] struct {
 // New creates a Batcher with configured behavior. Call Start() to begin processing loop.
 func New[RequestPayload, ResponsePayload any](
 	ctx context.Context,
-	determineBatchKeyFunc DetermineBatchKey[RequestPayload],
-	executeBatchFunc ExecuteBatch[RequestPayload, ResponsePayload],
+	DetermineBatchKeyFunc DetermineBatchKey[RequestPayload],
+	ExecuteBatchFunc ExecuteBatch[RequestPayload, ResponsePayload],
 	opts Options,
 ) *Batcher[RequestPayload, ResponsePayload] {
 	return &Batcher[RequestPayload, ResponsePayload]{
 		ctx:               ctx,
 		pendingBatches:    make(map[string]*Batch[RequestPayload, ResponsePayload]),
 		trigger:           make(chan struct{}, 1),
-		determineBatchKey: determineBatchKeyFunc,
-		executeBatch:      executeBatchFunc,
+		DetermineBatchKey: DetermineBatchKeyFunc,
+		ExecuteBatch:      ExecuteBatchFunc,
 		opts:              opts,
 	}
 }
@@ -117,14 +117,10 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Start() {
 	go b.run()
 }
 
-// Enqueue adds a request to the appropriate batch and returns a response channel.
-// The caller should select on the channel and ctx.Done().
-func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayload) chan *Response[ResponsePayload] {
-	req := &BatchedRequest[RequestPayload, ResponsePayload]{
-		Payload:      payload,
-		ResponseChan: make(chan *Response[ResponsePayload], 1),
-		Key:          b.determineBatchKey(&payload),
-	}
+// Enqueue adds a request to the appropriate batch and returns the request's
+// response channel. The caller should select on the channel and ctx.Done().
+func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(req *BatchedRequest[RequestPayload, ResponsePayload]) chan *Response[ResponsePayload] {
+	req.Key = b.DetermineBatchKey(&req.Payload)
 
 	b.mu.Lock()
 
@@ -149,7 +145,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayloa
 	}
 
 	// Return the channel the caller should wait on.
-	// The channel will receive the batch response once the batch fires and executeBatch is done.
+	// The channel will receive the batch response once the batch fires and ExecuteBatch is done.
 	return req.ResponseChan
 }
 
@@ -165,9 +161,6 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 		case <-b.trigger:
 			// Woken up, as there's a new request and enqueuement. Then:
 			b.waitForIdle()
-			if b.ctx.Err() != nil {
-				return // batcher context cancelled, drain
-			}
 			// Note: the timing window is shared across all batch keys. A late-arriving
 			// request for key B resets the idle timer even if key A's batch was already
 			// "ready." MaxTimeout bounds the total wait.
@@ -197,15 +190,24 @@ func (b *Batcher[RequestPayload, ResponsePayload]) waitForIdle() {
 		case <-b.trigger:
 			// More request arrived and its enqueuement occurred.
 
-			if b.anyBatchFull() {
+			// Check if any batch is full.
+			b.mu.Lock()
+			anyFull := false
+			for _, batch := range b.pendingBatches {
+				if len(batch.Requests) >= b.opts.MaxBatchSize {
+					anyFull = true
+					break
+				}
+			}
+			b.mu.Unlock()
+
+			// If so, return, as we cannot accept anymore beyond this (enqueued) one.
+			if anyFull {
 				return
 			}
 
 			// Reset idle timer
 			if !idleTimer.Stop() {
-				// Timer is over, but we don't care and still need to reset the timer.
-				// Need draining to prevent the leaky fire, even after reset.
-				// See Stop() doc for more details.
 				<-idleTimer.C
 			}
 			idleTimer.Reset(b.opts.IdleTimeout)
@@ -216,18 +218,6 @@ func (b *Batcher[RequestPayload, ResponsePayload]) waitForIdle() {
 			return
 		}
 	}
-}
-
-// anyBatchFull returns true if any pending batch has reached MaxBatchSize.
-func (b *Batcher[RequestPayload, ResponsePayload]) anyBatchFull() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	for _, batch := range b.pendingBatches {
-		if len(batch.Requests) >= b.opts.MaxBatchSize {
-			return true
-		}
-	}
-	return false
 }
 
 // executeBatches atomically swaps out the batch map and dispatches all batches.
@@ -251,7 +241,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches() {
 				}
 			}()
 
-			b.executeBatch(batch)
+			b.ExecuteBatch(batch)
 		}(batch)
 	}
 }

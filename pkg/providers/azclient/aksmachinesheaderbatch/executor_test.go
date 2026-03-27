@@ -25,14 +25,14 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
-// recordingClient — thread-safe MachinesCreateAPI stub that records API calls
+// recordingClient — thread-safe AKSMachinesAPI stub that records API calls
 // ---------------------------------------------------------------------------
 
 type recordingClient struct {
@@ -65,6 +65,20 @@ func (r *recordingClient) BeginCreateOrUpdate(
 	return nil, r.err
 }
 
+func (r *recordingClient) Get(
+	context.Context, string, string, string, string,
+	*armcontainerservice.MachinesClientGetOptions,
+) (armcontainerservice.MachinesClientGetResponse, error) {
+	panic("unexpected Get call in executor test")
+}
+
+func (r *recordingClient) NewListPager(
+	string, string, string,
+	*armcontainerservice.MachinesClientListOptions,
+) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
+	panic("unexpected NewListPager call in executor test")
+}
+
 func (r *recordingClient) snapshot() []recordedCall {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -77,7 +91,6 @@ func (r *recordingClient) snapshot() []recordedCall {
 // test helpers
 // ---------------------------------------------------------------------------
 
-//nolint:unparam // vmSize is always the same today but kept as param for future test flexibility
 func tpl(vmSize string, zones []string, tags map[string]string) armcontainerservice.Machine {
 	m := armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
@@ -103,7 +116,7 @@ func makeReq(name string, template armcontainerservice.Machine) *batcher.Batched
 			resourceName:      "cluster",
 			agentPoolName:     "pool",
 			machineName:       name,
-			machineBody:       template,
+			machineBody:          template,
 		},
 		ResponseChan: make(chan *batcher.Response[struct{}], 1),
 	}

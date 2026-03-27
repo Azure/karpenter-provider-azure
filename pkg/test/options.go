@@ -50,6 +50,7 @@ type OptionsFields struct {
 	ClusterDNSServiceIP            *string
 	ManageExistingAKSMachines      *bool
 	AKSMachinesPoolName            *string
+	BatchCreationEnabled           *bool
 	BatchIdleTimeoutMS             *int
 	BatchMaxTimeoutMS              *int
 	MaxBatchSize                   *int
@@ -95,6 +96,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
 		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),
+		BatchCreationEnabled:           lo.FromPtrOr(options.BatchCreationEnabled, false),
 		BatchIdleTimeoutMS:             lo.FromPtrOr(options.BatchIdleTimeoutMS, 1000),
 		BatchMaxTimeoutMS:              lo.FromPtrOr(options.BatchMaxTimeoutMS, 5000),
 		MaxBatchSize:                   lo.FromPtrOr(options.MaxBatchSize, 50),

@@ -21,7 +21,8 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -40,10 +41,10 @@ type aksMachineCreatePayload struct {
 // It transforms a pending batch into a single API call, then distributes
 // per-machine results back to each request's channel.
 type executor struct {
-	realClient AKSMachinesCreateAPI
+	realClient azapi.AKSMachinesAPI
 }
 
-func newExecutor(realClient AKSMachinesCreateAPI) *executor {
+func newExecutor(realClient azapi.AKSMachinesAPI) *executor {
 	return &executor{realClient: realClient}
 }
 
@@ -53,8 +54,6 @@ func newExecutor(realClient AKSMachinesCreateAPI) *executor {
 // Uses context.Background() intentionally: a batch serves multiple callers with
 // different deadlines, and canceling an in-flight PUT mid-request risks creating
 // phantom Azure resources that Karpenter doesn't track.
-//
-//nolint:govet // nilness: frontendErrors is intentionally always nil until per-machine error parsing TODO is implemented
 func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, struct{}]) {
 	ctx := context.Background()
 	batchID := uuid.New().String()
@@ -103,7 +102,7 @@ func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, st
 	// If there's an API-level error, try to parse per-machine errors from it
 	// TODO: Implement actual parsing of Azure's structured error response.
 	// frontendErrors := e.parseFrontendErrors(err)
-	var frontendErrors map[string]error // Placeholder, as if all machines failed.
+	var frontendErrors map[string]error = nil // Placeholder, as if all machines failed.
 
 	// If there's an API-level error but no per-machine breakdown, all machines failed
 	if err != nil && frontendErrors == nil {
