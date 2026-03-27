@@ -166,6 +166,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
 			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
 			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			FailSwapOn:           p.KubeletConfig.FailSwapOn,
 		}
 
 		if p.KubeletConfig.ContainerLogMaxSize != nil {
