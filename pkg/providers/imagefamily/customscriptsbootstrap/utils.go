@@ -165,8 +165,10 @@ func convertLinuxOSConfigToModel(linuxOSConfig *v1beta1.LinuxOSConfiguration) *m
 	}
 
 	result := &models.CustomLinuxOSConfig{
-		SwapFileSizeMB: linuxOSConfig.SwapFileSizeMB,
-		Sysctls:        convertSysctlConfigToModel(linuxOSConfig.Sysctls),
+		Sysctls: convertSysctlConfigToModel(linuxOSConfig.Sysctls),
+	}
+	if linuxOSConfig.SwapFileSize != nil && *linuxOSConfig.SwapFileSize != "" {
+		result.SwapFileSizeMB = ConvertContainerLogMaxSizeToMB(*linuxOSConfig.SwapFileSize)
 	}
 	if linuxOSConfig.TransparentHugePageDefrag != nil {
 		result.TransparentHugePageDefrag = lo.ToPtr(string(*linuxOSConfig.TransparentHugePageDefrag))

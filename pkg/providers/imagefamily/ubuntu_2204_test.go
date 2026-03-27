@@ -68,7 +68,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
 	artifactStreaming := &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}
 	linuxOSConfig := &v1beta1.LinuxOSConfiguration{
-		SwapFileSizeMB:             lo.ToPtr(int32(1500)),
+		SwapFileSize:               lo.ToPtr("1500Mi"),
 		TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
 	}
 
