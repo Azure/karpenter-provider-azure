@@ -67,7 +67,10 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
 	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
 	artifactStreaming := &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}
-	var linuxOSConfig *v1beta1.LinuxOSConfiguration // to test with nil
+	linuxOSConfig := &v1beta1.LinuxOSConfiguration{
+		SwapFileSizeMB: lo.ToPtr(int32(1500)),
+		TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
+	}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -110,7 +113,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204), "ImageFamily field must be set to prevent unsupported image family errors")
 	g.Expect(provisionBootstrapper.FIPSMode).To(Equal(fipsMode), "FIPSMode field must match the input parameter")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(Equal(localDNS), "LocalDNSProfile field must match the input parameter")
-	g.Expect(provisionBootstrapper.LinuxOSConfig).To(BeNil(), "LinuxOSConfig should be nil when not specified")
+	g.Expect(provisionBootstrapper.LinuxOSConfig).To(Equal(linuxOSConfig), "LinuxOSConfig field must match the input parameter")
 }
 
 func TestUbuntu2204_Name(t *testing.T) {
