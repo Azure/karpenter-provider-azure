@@ -39,8 +39,12 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -195,10 +199,22 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
+
+	// Set up batching if enabled
+	var aksMachinesBatchAPI azapi.AKSMachinesBatchAPI
+	if testOptions.BatchCreationEnabled && testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		aksMachinesBatchAPI = aksmachinesheaderbatch.NewClient(ctx, aksMachinesAPI, batcher.Options{
+			IdleTimeout:  time.Duration(testOptions.BatchIdleTimeoutMS) * time.Millisecond,
+			MaxTimeout:   time.Duration(testOptions.BatchMaxTimeoutMS) * time.Millisecond,
+			MaxBatchSize: testOptions.MaxBatchSize,
+		})
+	}
+
 	azClient := azclient.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		aksMachinesAPI,
+		aksMachinesBatchAPI,
 		aksAgentPoolsAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
@@ -254,6 +270,11 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.AKSMachinesPoolName,
 		region,
 	)
+
+	// Use instant poller for batch mode tests to minimize async polling time.
+	if aksMachinesBatchAPI != nil {
+		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
+	}
 
 	store := nodeoverlay.NewInstanceTypeStore()
 
