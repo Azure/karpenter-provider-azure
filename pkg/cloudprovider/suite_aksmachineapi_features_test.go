@@ -846,7 +846,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(linuxOSConfig.Sysctls.FsAioMaxNr).To(BeNil())
 			})
 
-			It("should create AKS machine with only THP settings when only THP is specified", func() {
+			It("should create AKS machine with only TransparentHugePage settings when only TransparentHugePage is specified", func() {
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 					TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledNever),
 					TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragDefer),
