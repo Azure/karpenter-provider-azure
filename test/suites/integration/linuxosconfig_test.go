@@ -46,21 +46,34 @@ var _ = Describe("LinuxOSConfig", func() {
 	It("should provision a node with sysctl tuning applied", func() {
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 			Sysctls: &v1beta1.SysctlConfiguration{
-				NetCoreSomaxconn:             lo.ToPtr[int32](8192),
-				NetIPv4TCPMaxSynBacklog:      lo.ToPtr[int32](16384),
-				VMMaxMapCount:                lo.ToPtr[int32](262144),
-				NetCoreNetdevMaxBacklog:      lo.ToPtr[int32](2000),
-				NetIPv4TCPKeepaliveTime:      lo.ToPtr[int32](120),
-				NetIPv4TCPKeepaliveIntvl:     lo.ToPtr[int32](30),
-				NetIPv4TCPKeepaliveProbes:    lo.ToPtr[int32](8),
-				NetCoreRmemDefault:           lo.ToPtr[int32](212992),
-				NetCoreWmemDefault:           lo.ToPtr[int32](212992),
-				NetIPv4TCPFinTimeout:         lo.ToPtr[int32](30),
-				KernelThreadsMax:             lo.ToPtr[int32](100000),
-				NetIPv4IPLocalPortRange:      lo.ToPtr("1024 65535"),
-				NetIPv4NeighDefaultGcThresh1: lo.ToPtr[int32](512),
-				NetIPv4NeighDefaultGcThresh2: lo.ToPtr[int32](2048),
-				NetIPv4NeighDefaultGcThresh3: lo.ToPtr[int32](4096),
+				FsAioMaxNr:                     lo.ToPtr[int32](65536),
+				FsFileMax:                      lo.ToPtr[int32](12000),
+				FsInotifyMaxUserWatches:        lo.ToPtr[int32](781250),
+				FsNrOpen:                       lo.ToPtr[int32](1048576),
+				KernelThreadsMax:               lo.ToPtr[int32](100000),
+				NetCoreNetdevMaxBacklog:        lo.ToPtr[int32](2000),
+				NetCoreOptmemMax:               lo.ToPtr[int32](40960),
+				NetCoreRmemDefault:             lo.ToPtr[int32](212992),
+				NetCoreRmemMax:                 lo.ToPtr[int32](134217728),
+				NetCoreSomaxconn:               lo.ToPtr[int32](8192),
+				NetCoreWmemDefault:             lo.ToPtr[int32](212992),
+				NetCoreWmemMax:                 lo.ToPtr[int32](134217728),
+				NetIPv4IPLocalPortRange:        lo.ToPtr("1024 65535"),
+				NetIPv4NeighDefaultGcThresh1:   lo.ToPtr[int32](512),
+				NetIPv4NeighDefaultGcThresh2:   lo.ToPtr[int32](2048),
+				NetIPv4NeighDefaultGcThresh3:   lo.ToPtr[int32](4096),
+				NetIPv4TCPFinTimeout:           lo.ToPtr[int32](30),
+				NetIPv4TCPKeepaliveTime:        lo.ToPtr[int32](120),
+				NetIPv4TCPKeepaliveIntvl:       lo.ToPtr[int32](30),
+				NetIPv4TCPKeepaliveProbes:      lo.ToPtr[int32](8),
+				NetIPv4TCPMaxSynBacklog:        lo.ToPtr[int32](16384),
+				NetIPv4TCPMaxTwBuckets:         lo.ToPtr[int32](32000),
+				NetIPv4TCPTwReuse:              lo.ToPtr(true),
+				NetNetfilterNfConntrackMax:     lo.ToPtr[int32](262144),
+				NetNetfilterNfConntrackBuckets: lo.ToPtr[int32](65536),
+				VMMaxMapCount:                  lo.ToPtr[int32](262144),
+				VMSwappiness:                   lo.ToPtr[int32](10),
+				VMVfsCachePressure:             lo.ToPtr[int32](50),
 			},
 		}
 
@@ -73,21 +86,34 @@ var _ = Describe("LinuxOSConfig", func() {
 
 		// Create a privileged pod on the node to read sysctl values
 		verifyPod := createSysctlVerificationPod(node.Name, []string{
-			"net.core.somaxconn",
-			"net.ipv4.tcp_max_syn_backlog",
-			"vm.max_map_count",
-			"net.core.netdev_max_backlog",
-			"net.ipv4.tcp_keepalive_time",
-			"net.ipv4.tcp_keepalive_intvl",
-			"net.ipv4.tcp_keepalive_probes",
-			"net.core.rmem_default",
-			"net.core.wmem_default",
-			"net.ipv4.tcp_fin_timeout",
+			"fs.aio-max-nr",
+			"fs.file-max",
+			"fs.inotify.max_user_watches",
+			"fs.nr_open",
 			"kernel.threads-max",
+			"net.core.netdev_max_backlog",
+			"net.core.optmem_max",
+			"net.core.rmem_default",
+			"net.core.rmem_max",
+			"net.core.somaxconn",
+			"net.core.wmem_default",
+			"net.core.wmem_max",
 			"net.ipv4.ip_local_port_range",
 			"net.ipv4.neigh.default.gc_thresh1",
 			"net.ipv4.neigh.default.gc_thresh2",
 			"net.ipv4.neigh.default.gc_thresh3",
+			"net.ipv4.tcp_fin_timeout",
+			"net.ipv4.tcp_keepalive_time",
+			"net.ipv4.tcp_keepalive_intvl",
+			"net.ipv4.tcp_keepalive_probes",
+			"net.ipv4.tcp_max_syn_backlog",
+			"net.ipv4.tcp_max_tw_buckets",
+			"net.ipv4.tcp_tw_reuse",
+			"net.netfilter.nf_conntrack_max",
+			"net.netfilter.nf_conntrack_buckets",
+			"vm.max_map_count",
+			"vm.swappiness",
+			"vm.vfs_cache_pressure",
 		})
 		env.ExpectCreated(verifyPod)
 		defer env.ExpectDeleted(verifyPod)
@@ -95,21 +121,34 @@ var _ = Describe("LinuxOSConfig", func() {
 		logs := eventuallyGetPodLogs(verifyPod)
 		By(fmt.Sprintf("Sysctl verification output:\n%s", logs))
 
-		Expect(logs).To(ContainSubstring("net.core.somaxconn = 8192"))
-		Expect(logs).To(ContainSubstring("net.ipv4.tcp_max_syn_backlog = 16384"))
-		Expect(logs).To(ContainSubstring("vm.max_map_count = 262144"))
-		Expect(logs).To(ContainSubstring("net.core.netdev_max_backlog = 2000"))
-		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_time = 120"))
-		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_intvl = 30"))
-		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_probes = 8"))
-		Expect(logs).To(ContainSubstring("net.core.rmem_default = 212992"))
-		Expect(logs).To(ContainSubstring("net.core.wmem_default = 212992"))
-		Expect(logs).To(ContainSubstring("net.ipv4.tcp_fin_timeout = 30"))
+		Expect(logs).To(ContainSubstring("fs.aio-max-nr = 65536"))
+		Expect(logs).To(ContainSubstring("fs.file-max = 12000"))
+		Expect(logs).To(ContainSubstring("fs.inotify.max_user_watches = 781250"))
+		Expect(logs).To(ContainSubstring("fs.nr_open = 1048576"))
 		Expect(logs).To(ContainSubstring("kernel.threads-max = 100000"))
+		Expect(logs).To(ContainSubstring("net.core.netdev_max_backlog = 2000"))
+		Expect(logs).To(ContainSubstring("net.core.optmem_max = 40960"))
+		Expect(logs).To(ContainSubstring("net.core.rmem_default = 212992"))
+		Expect(logs).To(ContainSubstring("net.core.rmem_max = 134217728"))
+		Expect(logs).To(ContainSubstring("net.core.somaxconn = 8192"))
+		Expect(logs).To(ContainSubstring("net.core.wmem_default = 212992"))
+		Expect(logs).To(ContainSubstring("net.core.wmem_max = 134217728"))
 		Expect(logs).To(ContainSubstring("net.ipv4.ip_local_port_range = 1024\t65535"))
 		Expect(logs).To(ContainSubstring("net.ipv4.neigh.default.gc_thresh1 = 512"))
 		Expect(logs).To(ContainSubstring("net.ipv4.neigh.default.gc_thresh2 = 2048"))
 		Expect(logs).To(ContainSubstring("net.ipv4.neigh.default.gc_thresh3 = 4096"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_fin_timeout = 30"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_time = 120"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_intvl = 30"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_probes = 8"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_max_syn_backlog = 16384"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_max_tw_buckets = 32000"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_tw_reuse = 1"))
+		Expect(logs).To(ContainSubstring("net.netfilter.nf_conntrack_max = 262144"))
+		Expect(logs).To(ContainSubstring("net.netfilter.nf_conntrack_buckets = 65536"))
+		Expect(logs).To(ContainSubstring("vm.max_map_count = 262144"))
+		Expect(logs).To(ContainSubstring("vm.swappiness = 10"))
+		Expect(logs).To(ContainSubstring("vm.vfs_cache_pressure = 50"))
 	})
 
 	It("should provision a node with transparent huge page settings applied", func() {
