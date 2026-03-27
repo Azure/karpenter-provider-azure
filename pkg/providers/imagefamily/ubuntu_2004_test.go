@@ -66,7 +66,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeFIPS)
 	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
-	var linuxOSConfig *v1beta1.LinuxOSConfiguration // to test with nil
+	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
