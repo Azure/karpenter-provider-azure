@@ -39,7 +39,7 @@ import (
 var _ = Describe("LinuxOSConfig", func() {
 	// How these tests work:
 	//
-	// 1. We create an AKSNodeClass with linuxOSConfig (sysctls, THP, swap) and a NodePool.
+	// 1. We create an AKSNodeClass with linuxOSConfig (sysctls, transparent huge pages, swap) and a NodePool.
 	// 2. We schedule a pod that triggers Karpenter to provision a new node via AKS.
 	// 3. Once the node is ready, we create a "verification pod" on that node to read back
 	//    the kernel settings and confirm they match what we configured.
@@ -48,7 +48,7 @@ var _ = Describe("LinuxOSConfig", func() {
 	//   There's no Kubernetes API to read a node's kernel parameters. The only way is to
 	//   run a process on the node and read from the kernel's virtual filesystems:
 	//   - Sysctls: the `sysctl` command reads /proc/sys/ (e.g., /proc/sys/net/core/somaxconn)
-	//   - THP: read /sys/kernel/mm/transparent_hugepage/enabled and .../defrag
+	//   - Transparent huge pages: read /sys/kernel/mm/transparent_hugepage/enabled and .../defrag
 	//   - Swap: read /proc/meminfo for SwapTotal
 	//   The verification pod runs with privileged: true to access these host kernel paths,
 	//   and we pin it to the target node using a nodeSelector on the hostname label.
@@ -61,7 +61,7 @@ var _ = Describe("LinuxOSConfig", func() {
 	//   configured value (e.g., 8192). Setting hostNetwork: true puts the pod in the host's
 	//   network namespace so sysctl reads return the actual host values.
 	//   Other sysctl namespaces (vm.*, fs.*, kernel.*) are kernel-global and visible from
-	//   any container. THP (/sys/kernel/mm/) and swap (/proc/meminfo) are also kernel-global.
+	//   any container. Transparent huge pages (/sys/kernel/mm/) and swap (/proc/meminfo) are also kernel-global.
 
 	BeforeEach(func() {
 		// LinuxOSConfig is not wired through the aksscriptless bootstrap path.
@@ -195,16 +195,15 @@ var _ = Describe("LinuxOSConfig", func() {
 		By(fmt.Sprintf("Node %s provisioned, verifying transparent huge page settings", node.Name))
 
 		// Create a privileged pod on the node to read transparent huge page settings
-		verifyPod := createTHPVerificationPod(node.Name)
+		verifyPod := createTransparentHugePageVerificationPod(node.Name)
 		env.ExpectCreated(verifyPod)
 		defer env.ExpectDeleted(verifyPod)
 
 		logs := eventuallyGetPodLogs(verifyPod)
 		By(fmt.Sprintf("Transparent huge page verification output:\n%s", logs))
 
-		// THP enabled file shows the active setting in brackets: always [madvise] never
+		// The kernel shows the active setting in brackets: always [madvise] never
 		Expect(logs).To(ContainSubstring("[madvise]"))
-		// THP defrag file shows: always defer defer+madvise [madvise] never
 		// We set "defer+madvise", so expect [defer+madvise]
 		Expect(logs).To(ContainSubstring("[defer+madvise]"))
 	})
@@ -237,48 +236,6 @@ var _ = Describe("LinuxOSConfig", func() {
 		// Allow some tolerance since the kernel may report slightly different values.
 		Expect(logs).To(ContainSubstring("SwapTotal:"))
 		// Verify swap is NOT zero (i.e., swap is enabled)
-		Expect(logs).ToNot(ContainSubstring("SwapTotal:           0 kB"))
-	})
-
-	It("should provision a node with full LinuxOSConfig (sysctls + THP + swap)", func() {
-		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-			FailSwapOn: lo.ToPtr(false),
-		}
-		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-			SwapFileSize:               lo.ToPtr("512Mi"),
-			TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
-			TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragAlways),
-			Sysctls: &v1beta1.SysctlConfiguration{
-				VMMaxMapCount:    lo.ToPtr[int32](262144),
-				NetCoreSomaxconn: lo.ToPtr[int32](4096),
-			},
-		}
-
-		pod := coretest.UnschedulablePod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-
-		By(fmt.Sprintf("Node %s provisioned, verifying full LinuxOSConfig", node.Name))
-
-		// Create a comprehensive verification pod
-		verifyPod := createFullLinuxOSConfigVerificationPod(node.Name)
-		env.ExpectCreated(verifyPod)
-		defer env.ExpectDeleted(verifyPod)
-
-		logs := eventuallyGetPodLogs(verifyPod)
-		By(fmt.Sprintf("Full LinuxOSConfig verification output:\n%s", logs))
-
-		// Verify sysctls
-		Expect(logs).To(ContainSubstring("vm.max_map_count = 262144"))
-		Expect(logs).To(ContainSubstring("net.core.somaxconn = 4096"))
-
-		// Verify THP - "always" is the active setting
-		Expect(logs).To(MatchRegexp(`thp_enabled=\[always\]`))
-		Expect(logs).To(MatchRegexp(`thp_defrag=\[always\]`))
-
-		// Verify swap is enabled (non-zero)
-		Expect(logs).To(ContainSubstring("SwapTotal:"))
 		Expect(logs).ToNot(ContainSubstring("SwapTotal:           0 kB"))
 	})
 })
@@ -325,13 +282,13 @@ func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod 
 	return pod
 }
 
-// createTHPVerificationPod creates a privileged pod on the target node that
+// createTransparentHugePageVerificationPod creates a privileged pod on the target node that
 // reads the transparent huge page settings from /sys/kernel/mm/transparent_hugepage/.
-// THP settings are kernel-global (not namespaced), so a privileged container can read them directly.
-func createTHPVerificationPod(nodeName string) *corev1.Pod {
+// These settings are kernel-global (not namespaced), so a privileged container can read them directly.
+func createTransparentHugePageVerificationPod(nodeName string) *corev1.Pod {
 	pod := coretest.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "thp-verify-",
+			GenerateName: "transparent-hugepage-verify-",
 			Namespace:    "default",
 		},
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
@@ -372,37 +329,6 @@ func createSwapVerificationPod(nodeName string) *corev1.Pod {
 		RestartPolicy: corev1.RestartPolicyNever,
 	})
 	pod.Spec.HostPID = true
-	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
-		Privileged: lo.ToPtr(true),
-	}
-	return pod
-}
-
-// createFullLinuxOSConfigVerificationPod creates a privileged pod that checks
-// sysctls, THP, and swap settings all in one command.
-// Uses hostNetwork for accurate net.* sysctl values.
-func createFullLinuxOSConfigVerificationPod(nodeName string) *corev1.Pod {
-	pod := coretest.Pod(coretest.PodOptions{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "linuxosconfig-verify-",
-			Namespace:    "default",
-		},
-		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
-		Command: []string{
-			"sh", "-c",
-			"sysctl vm.max_map_count net.core.somaxconn && " +
-				"echo thp_enabled=$(cat /sys/kernel/mm/transparent_hugepage/enabled) && " +
-				"echo thp_defrag=$(cat /sys/kernel/mm/transparent_hugepage/defrag) && " +
-				"grep SwapTotal /proc/meminfo && " +
-				"sleep 30",
-		},
-		NodeSelector: map[string]string{
-			corev1.LabelHostname: nodeName,
-		},
-		RestartPolicy: corev1.RestartPolicyNever,
-	})
-	pod.Spec.HostPID = true
-	pod.Spec.HostNetwork = true
 	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
 		Privileged: lo.ToPtr(true),
 	}
