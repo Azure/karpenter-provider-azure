@@ -142,7 +142,7 @@ spec:
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
-                      Must be set to false to allow linuxOSConfig.swapFileSizeMB to take effect.
+                      Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
                     type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
@@ -204,12 +204,13 @@ spec:
                   For more information, see:
                   https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
                 properties:
-                  swapFileSizeMB:
-                    description: swapFileSizeMB specifies the size in MB of a swap
-                      file that will be created on each node.
-                    format: int32
-                    minimum: 1
-                    type: integer
+                  swapFileSize:
+                    description: |-
+                      swapFileSize specifies the size of a swap file that will be created on each node.
+                      For example: "1500Mi" or "2Gi".
+                      The value will be rounded to the nearest megabyte due to system limitations.
+                    pattern: ^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$
+                    type: string
                   sysctls:
                     description: sysctls specifies sysctl settings for Linux agent
                       nodes.
@@ -764,9 +765,9 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
                 : true'
-            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSizeMB
+            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
-              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSizeMB)
+              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
           status:
@@ -1011,7 +1012,7 @@ spec:
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
-                      Must be set to false to allow linuxOSConfig.swapFileSizeMB to take effect.
+                      Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
                     type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
@@ -1073,12 +1074,13 @@ spec:
                   For more information, see:
                   https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
                 properties:
-                  swapFileSizeMB:
-                    description: swapFileSizeMB specifies the size in MB of a swap
-                      file that will be created on each node.
-                    format: int32
-                    minimum: 1
-                    type: integer
+                  swapFileSize:
+                    description: |-
+                      swapFileSize specifies the size of a swap file that will be created on each node.
+                      For example: "1500Mi" or "2Gi".
+                      The value will be rounded to the nearest megabyte due to system limitations.
+                    pattern: ^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$
+                    type: string
                   sysctls:
                     description: sysctls specifies sysctl settings for Linux agent
                       nodes.
@@ -1633,9 +1635,9 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
                 : true'
-            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSizeMB
+            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
-              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSizeMB)
+              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
           status:

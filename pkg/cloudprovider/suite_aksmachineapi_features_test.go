@@ -728,7 +728,7 @@ var _ = Describe("CloudProvider", func() {
 					FailSwapOn: lo.ToPtr(false),
 				}
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-					SwapFileSizeMB:             lo.ToPtr(int32(1500)),
+					SwapFileSize:             lo.ToPtr("1500Mi"),
 					TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragMadvise),
 					TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
 					Sysctls: &v1beta1.SysctlConfiguration{
@@ -881,12 +881,12 @@ var _ = Describe("CloudProvider", func() {
 				Expect(linuxOSConfig.Sysctls).To(BeNil())
 			})
 
-			It("should create AKS machine with only SwapFileSizeMB when only swap is specified", func() {
+			It("should create AKS machine with only SwapFileSize when only swap is specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 					FailSwapOn: lo.ToPtr(false),
 				}
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-					SwapFileSizeMB: lo.ToPtr(int32(2048)),
+					SwapFileSize: lo.ToPtr("2Gi"),
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)

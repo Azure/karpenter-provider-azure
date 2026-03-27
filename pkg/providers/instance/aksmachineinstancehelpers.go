@@ -347,6 +347,11 @@ func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	return customscriptsbootstrap.ConvertContainerLogMaxSizeToMB(containerLogMaxSize)
 }
 
+func convertSwapFileSizeToMB(swapFileSize string) *int32 {
+	// TODO: rename the utils below.
+	return customscriptsbootstrap.ConvertContainerLogMaxSizeToMB(swapFileSize)
+}
+
 func convertPodMaxPids(podPidsLimit int64) *int32 {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
@@ -360,7 +365,9 @@ func configureLinuxOSConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	}
 
 	linuxOSConfig := &armcontainerservice.LinuxOSConfig{}
-	linuxOSConfig.SwapFileSizeMB = nodeClass.Spec.LinuxOSConfig.SwapFileSizeMB
+	if nodeClass.Spec.LinuxOSConfig.SwapFileSize != nil && *nodeClass.Spec.LinuxOSConfig.SwapFileSize != "" {
+		linuxOSConfig.SwapFileSizeMB = convertSwapFileSizeToMB(*nodeClass.Spec.LinuxOSConfig.SwapFileSize)
+	}
 	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag != nil {
 		linuxOSConfig.TransparentHugePageDefrag = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag))
 	}

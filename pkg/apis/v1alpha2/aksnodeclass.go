@@ -46,7 +46,7 @@ type ArtifactStreaming struct {
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
-// +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSizeMB is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSizeMB) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
+// +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -384,7 +384,7 @@ type KubeletConfiguration struct {
 	// +optional
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 	// failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
-	// Must be set to false to allow linuxOSConfig.swapFileSizeMB to take effect.
+	// Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
 	// +optional
 	FailSwapOn *bool `json:"failSwapOn,omitempty"`
 }
@@ -421,10 +421,12 @@ const (
 // These settings are applied at node provisioning time and map to AKS Custom Linux OS Configuration.
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 type LinuxOSConfiguration struct {
-	// swapFileSizeMB specifies the size in MB of a swap file that will be created on each node.
-	// +kubebuilder:validation:Minimum=1
+	// swapFileSize specifies the size of a swap file that will be created on each node.
+	// For example: "1500Mi" or "2Gi".
+	// The value will be rounded to the nearest megabyte due to system limitations.
+	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
 	// +optional
-	SwapFileSizeMB *int32 `json:"swapFileSizeMB,omitempty"`
+	SwapFileSize *string `json:"swapFileSize,omitempty"`
 	// sysctls specifies sysctl settings for Linux agent nodes.
 	// +optional
 	Sysctls *SysctlConfiguration `json:"sysctls,omitempty"`

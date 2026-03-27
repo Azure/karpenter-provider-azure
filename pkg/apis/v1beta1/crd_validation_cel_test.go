@@ -1111,19 +1111,19 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
-	Context("failSwapOn cross-validation with swapFileSizeMB", func() {
-		It("should reject swapFileSizeMB when failSwapOn is not set", func() {
+	Context("failSwapOn cross-validation with swapFileSize", func() {
+		It("should reject swapFileSize when failSwapOn is not set", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
-						SwapFileSizeMB: lo.ToPtr(int32(1500)),
+						SwapFileSize: lo.ToPtr("1500Mi"),
 					},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 		})
-		It("should reject swapFileSizeMB when failSwapOn is true", func() {
+		It("should reject swapFileSize when failSwapOn is true", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
@@ -1131,13 +1131,13 @@ var _ = Describe("CEL/Validation", func() {
 						FailSwapOn: lo.ToPtr(true),
 					},
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
-						SwapFileSizeMB: lo.ToPtr(int32(1500)),
+						SwapFileSize: lo.ToPtr("1500Mi"),
 					},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 		})
-		It("should accept swapFileSizeMB when failSwapOn is false", func() {
+		It("should accept swapFileSize when failSwapOn is false", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
@@ -1145,13 +1145,13 @@ var _ = Describe("CEL/Validation", func() {
 						FailSwapOn: lo.ToPtr(false),
 					},
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
-						SwapFileSizeMB: lo.ToPtr(int32(1500)),
+						SwapFileSize: lo.ToPtr("1500Mi"),
 					},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
-		It("should accept linuxOSConfig without swapFileSizeMB regardless of failSwapOn", func() {
+		It("should accept linuxOSConfig without swapFileSize regardless of failSwapOn", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
