@@ -238,13 +238,9 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
 	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
-	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
-	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
-	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+	// These may contain restricted labels from the pod that we need to filter out; that's done by the OmitBy below.
+	claimLabels := labels.GetAllSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
-		func(k string, req *scheduling.Requirement) bool {
-			return labels.CanKubeletSetLabel(k)
-		},
 	)
 	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
 	var modePtr *armcontainerservice.AgentPoolMode
@@ -255,10 +251,12 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	}
 
 	// TODO: also do the same for taints (which don't have sanitization logic like this yet)
-	// Remove all labels with kubernetes.azure.com prefix, as well as those managed by kubelet.
-	// Also remove legacy AKS managed labels
+	// Remove labels that shouldn't be sent to the API:
+	// - AKS-managed labels (kubernetes.azure.com/*) and legacy AKS labels
+	// - Kubelet-managed labels (set automatically by kubelet, e.g. hostname, zone)
+	// - Labels kubelet can't set (e.g. kubernetes.io/*, k8s.io/* outside allowed namespaces)
 	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {
-		return v1beta1.IsAKSLabel(key) || labels.IsLabelKubeletManaged(key)
+		return v1beta1.IsAKSLabel(key) || labels.IsLabelKubeletManaged(key) || !labels.CanKubeletSetLabel(key)
 	})
 
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))

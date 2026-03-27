@@ -302,11 +302,7 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 		}
 
 		for extName, poller := range pollers {
-			// Poll more frequently than the default of 30s
-			opts := &runtime.PollUntilDoneOptions{
-				Frequency: 3 * time.Second,
-			}
-			_, err := poller.PollUntilDone(ctx, opts)
+			_, err := poller.PollUntilDone(ctx, defaultPollerOptions())
 			if err != nil {
 				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
 			}
@@ -850,7 +846,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				return nil
 			}
 
-			_, err = result.Poller.PollUntilDone(ctx, nil)
+			_, err = result.Poller.PollUntilDone(ctx, defaultPollerOptions())
 			if err != nil {
 				VMCreateFailureMetric.With(map[string]string{
 					metrics.ImageLabel:        launchTemplate.ImageID,
@@ -915,13 +911,9 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
 	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
 
-	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
-	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
-	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+	// These may contain restricted labels from the pod that we need to filter out; that's done in getStaticParameters.
+	claimLabels := labels.GetAllSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
-		func(k string, req *scheduling.Requirement) bool {
-			return labels.CanKubeletSetLabel(k)
-		},
 	)
 	additionalLabels := lo.Assign(
 		claimLabels,
@@ -999,14 +991,15 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 		return err
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
-
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil
 		}
+
 		return err
 	}
+
 	return nil
 }
 
