@@ -19,8 +19,6 @@ package status
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -32,8 +30,7 @@ import (
 )
 
 const (
-	DiskEncryptionSetRBACMissing   = "DiskEncryptionSetRBACMissing"
-	NetIPv4IPLocalPortRangeInvalid = "NetIPv4IPLocalPortRangeInvalid"
+	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -86,16 +83,6 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		}
 	}
 
-	// Validate LinuxOSConfig spec fields that can't be expressed as CRD markers or CEL
-	if msg := validateNetIPv4IPLocalPortRange(nodeClass); msg != "" {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			NetIPv4IPLocalPortRangeInvalid,
-			msg,
-		)
-		return reconcile.Result{}, nil
-	}
-
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
@@ -124,45 +111,4 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 
 	log.FromContext(ctx).V(1).Info("Disk Encryption Set RBAC validation passed", "desID", r.parsedDiskEncryptionSetID)
 	return nil
-}
-
-// validateNetIPv4IPLocalPortRange checks that the port range string has valid numeric bounds.
-// CRD pattern validation ensures the format is "first last", but numeric range checks require parsing.
-// AKS API enforces: first ∈ [1024, 60999], last ∈ [32768, 65535], first ≤ last.
-func validateNetIPv4IPLocalPortRange(nodeClass *v1beta1.AKSNodeClass) string {
-	portRange := getNetIPv4IPLocalPortRange(nodeClass)
-	if portRange == "" {
-		return ""
-	}
-	parts := strings.Split(portRange, " ")
-	if len(parts) != 2 {
-		return fmt.Sprintf("netIPv4IPLocalPortRange must be in format 'first last', got: %q", portRange)
-	}
-	first, err1 := strconv.Atoi(parts[0])
-	last, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return fmt.Sprintf("netIPv4IPLocalPortRange contains non-numeric values: %q", portRange)
-	}
-	return validatePortBounds(first, last)
-}
-
-func getNetIPv4IPLocalPortRange(nodeClass *v1beta1.AKSNodeClass) string {
-	if nodeClass.Spec.LinuxOSConfig == nil || nodeClass.Spec.LinuxOSConfig.Sysctls == nil ||
-		nodeClass.Spec.LinuxOSConfig.Sysctls.NetIPv4IPLocalPortRange == nil {
-		return ""
-	}
-	return *nodeClass.Spec.LinuxOSConfig.Sysctls.NetIPv4IPLocalPortRange
-}
-
-func validatePortBounds(first, last int) string {
-	if first < 1024 || first > 60999 {
-		return fmt.Sprintf("netIPv4IPLocalPortRange first port must be in [1024, 60999], got %d", first)
-	}
-	if last < 32768 || last > 65535 {
-		return fmt.Sprintf("netIPv4IPLocalPortRange last port must be in [32768, 65535], got %d", last)
-	}
-	if first > last {
-		return fmt.Sprintf("netIPv4IPLocalPortRange first port (%d) must be <= last port (%d)", first, last)
-	}
-	return ""
 }

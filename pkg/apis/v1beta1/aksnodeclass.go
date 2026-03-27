@@ -450,6 +450,9 @@ type LinuxOSConfiguration struct {
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 // +kubebuilder:validation:XValidation:message="netCoreRmemDefault must be <= netCoreRmemMax",rule="has(self.netCoreRmemDefault) && has(self.netCoreRmemMax) ? self.netCoreRmemDefault <= self.netCoreRmemMax : true"
 // +kubebuilder:validation:XValidation:message="netCoreWmemDefault must be <= netCoreWmemMax",rule="has(self.netCoreWmemDefault) && has(self.netCoreWmemMax) ? self.netCoreWmemDefault <= self.netCoreWmemMax : true"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange first port must be in [1024, 60999]",rule="!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(' ')[0]) >= 1024 && int(self.netIPv4IPLocalPortRange.split(' ')[0]) <= 60999)"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange last port must be in [32768, 65535]",rule="!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(' ')[1]) >= 32768 && int(self.netIPv4IPLocalPortRange.split(' ')[1]) <= 65535)"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange first port must be <= last port",rule="!has(self.netIPv4IPLocalPortRange) || int(self.netIPv4IPLocalPortRange.split(' ')[0]) <= int(self.netIPv4IPLocalPortRange.split(' ')[1])"
 type SysctlConfiguration struct {
 	// fsAioMaxNr specifies the maximum number of AIO (Asynchronous I/O) requests.
 	// Maps to fs.aio-max-nr.

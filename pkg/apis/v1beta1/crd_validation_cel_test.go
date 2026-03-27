@@ -932,4 +932,110 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
+	Context("LinuxOSConfig netIPv4IPLocalPortRange CEL validation", func() {
+		It("should accept valid port range", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("32768 60999"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept minimum valid port range", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 32768"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject first port below 1024", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("500 65535"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject last port above 65535", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 70000"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject first port above 60999", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("61000 65535"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject last port below 32768", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 30000"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject first port > last port", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("60000 32768"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept when port range is not set", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreSomaxconn: lo.ToPtr(int32(8192)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
 })

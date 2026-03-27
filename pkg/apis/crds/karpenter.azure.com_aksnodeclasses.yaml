@@ -221,8 +221,6 @@ spec:
                         description: |-
                           fsFileMax specifies the maximum number of file handles the kernel will allocate.
                           Maps to fs.file-max.
-                          Note: The AKS documented maximum is 9223372036854775807 (int64 max), but the ARM API type is int32.
-                          The practical maximum here is constrained by the int32 type.
                         format: int32
                         maximum: 12000500
                         minimum: 8192
@@ -440,6 +438,20 @@ spec:
                     - message: netCoreWmemDefault must be <= netCoreWmemMax
                       rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
                         ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
+                    - message: netIPv4IPLocalPortRange first port must be in [1024,
+                        60999]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) >= 1024 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= 60999)'
+                    - message: netIPv4IPLocalPortRange last port must be in [32768,
+                        65535]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) >= 32768 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) <= 65535)'
+                    - message: netIPv4IPLocalPortRange first port must be <= last
+                        port
+                      rule: '!has(self.netIPv4IPLocalPortRange) || int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= int(self.netIPv4IPLocalPortRange.split('' '')[1])'
                   transparentHugePageDefrag:
                     description: |-
                       transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
@@ -1060,8 +1072,6 @@ spec:
                         description: |-
                           fsFileMax specifies the maximum number of file handles the kernel will allocate.
                           Maps to fs.file-max.
-                          Note: The AKS documented maximum is 9223372036854775807 (int64 max), but the ARM API type is int32.
-                          The practical maximum here is constrained by the int32 type.
                         format: int32
                         maximum: 12000500
                         minimum: 8192
@@ -1279,6 +1289,20 @@ spec:
                     - message: netCoreWmemDefault must be <= netCoreWmemMax
                       rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
                         ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
+                    - message: netIPv4IPLocalPortRange first port must be in [1024,
+                        60999]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) >= 1024 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= 60999)'
+                    - message: netIPv4IPLocalPortRange last port must be in [32768,
+                        65535]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) >= 32768 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) <= 65535)'
+                    - message: netIPv4IPLocalPortRange first port must be <= last
+                        port
+                      rule: '!has(self.netIPv4IPLocalPortRange) || int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= int(self.netIPv4IPLocalPortRange.split('' '')[1])'
                   transparentHugePageDefrag:
                     description: |-
                       transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
