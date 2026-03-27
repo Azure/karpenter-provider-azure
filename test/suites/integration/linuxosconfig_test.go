@@ -64,8 +64,12 @@ var _ = Describe("LinuxOSConfig", func() {
 	//   any container. THP (/sys/kernel/mm/) and swap (/proc/meminfo) are also kernel-global.
 
 	BeforeEach(func() {
-		if env.ProvisionMode == consts.ProvisionModeAKSScriptless {
-			Skip("LinuxOSConfig is not supported in aksscriptless mode")
+		// LinuxOSConfig is not wired through the aksscriptless bootstrap path.
+		// Only skip for self-hosted aksscriptless (InClusterController=true, ProvisionMode=aksscriptless).
+		// NAP E2E doesn't set PROVISION_MODE (defaults to aksscriptless) but runs via CCP
+		// (InClusterController=false), which uses bootstrappingclient — LinuxOSConfig works there.
+		if env.ProvisionMode == consts.ProvisionModeAKSScriptless && env.InClusterController {
+			Skip("LinuxOSConfig is not wired through the aksscriptless bootstrap path")
 		}
 	})
 
