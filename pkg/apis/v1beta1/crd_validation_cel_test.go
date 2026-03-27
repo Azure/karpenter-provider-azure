@@ -1038,4 +1038,77 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
+	Context("LinuxOSConfig gcThresh cross-field validation", func() {
+		It("should reject gcThresh1 > gcThresh2", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject gcThresh2 > gcThresh3", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(90000)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept gcThresh1 <= gcThresh2 <= gcThresh3", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(128)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gcThresh1 set without gcThresh2", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept equal gcThresh values", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
 })

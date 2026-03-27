@@ -438,6 +438,14 @@ spec:
                     - message: netCoreWmemDefault must be <= netCoreWmemMax
                       rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
                         ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
+                    - message: netIPv4NeighDefaultGcThresh1 must be <= netIPv4NeighDefaultGcThresh2
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh1) && has(self.netIPv4NeighDefaultGcThresh2)
+                        ? self.netIPv4NeighDefaultGcThresh1 <= self.netIPv4NeighDefaultGcThresh2
+                        : true'
+                    - message: netIPv4NeighDefaultGcThresh2 must be <= netIPv4NeighDefaultGcThresh3
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh2) && has(self.netIPv4NeighDefaultGcThresh3)
+                        ? self.netIPv4NeighDefaultGcThresh2 <= self.netIPv4NeighDefaultGcThresh3
+                        : true'
                     - message: netIPv4IPLocalPortRange first port must be in [1024,
                         60999]
                       rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
@@ -1289,6 +1297,14 @@ spec:
                     - message: netCoreWmemDefault must be <= netCoreWmemMax
                       rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
                         ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
+                    - message: netIPv4NeighDefaultGcThresh1 must be <= netIPv4NeighDefaultGcThresh2
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh1) && has(self.netIPv4NeighDefaultGcThresh2)
+                        ? self.netIPv4NeighDefaultGcThresh1 <= self.netIPv4NeighDefaultGcThresh2
+                        : true'
+                    - message: netIPv4NeighDefaultGcThresh2 must be <= netIPv4NeighDefaultGcThresh3
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh2) && has(self.netIPv4NeighDefaultGcThresh3)
+                        ? self.netIPv4NeighDefaultGcThresh2 <= self.netIPv4NeighDefaultGcThresh3
+                        : true'
                     - message: netIPv4IPLocalPortRange first port must be in [1024,
                         60999]
                       rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
