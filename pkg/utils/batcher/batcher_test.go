@@ -23,7 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // testItem is a simple item type for testing.
@@ -32,20 +33,27 @@ type testItem struct {
 	Name  string // per-item identifier
 }
 
-func testKeyFunc(item *testItem) (string, error) {
-	return item.Group, nil
+func testKeyFunc(item *testItem) string {
+	return item.Group
+}
+
+func makeTestReq(ctx context.Context, group, name string) *BatchedRequest[testItem, struct{}] {
+	return &BatchedRequest[testItem, struct{}]{
+		ctx:          ctx,
+		Payload:      testItem{Group: group, Name: name},
+		ResponseChan: make(chan *Response[struct{}], 1),
+	}
 }
 
 func TestBatcherEnqueue(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var mu sync.Mutex
 	var executed []*Batch[testItem, struct{}]
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		executed = append(executed, batch)
 		mu.Unlock()
@@ -58,22 +66,22 @@ func TestBatcherEnqueue(t *testing.T) {
 		MaxBatchSize: 50,
 	})
 
-	ch, _ := b.Enqueue(testItem{Group: "group-a", Name: "item-1"})
-	g.Expect(ch).ToNot(gomega.BeNil())
+	req := makeTestReq(ctx, "group-a", "item-1")
+	ch := b.Enqueue(req)
+	assert.NotNil(t, ch)
 
 	// Verify the request is in the internal map
 	b.mu.Lock()
-	g.Expect(b.pendingBatches).To(gomega.HaveLen(1), "should have one pending batch")
+	assert.Len(t, b.pendingBatches, 1, "should have one pending batch")
 	b.mu.Unlock()
 }
 
 func TestBatcherGroupsSameKey(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}
@@ -83,24 +91,23 @@ func TestBatcherGroupsSameKey(t *testing.T) {
 		MaxBatchSize: 50,
 	})
 
-	_, _ = b.Enqueue(testItem{Group: "group-a", Name: "item-1"})
-	_, _ = b.Enqueue(testItem{Group: "group-a", Name: "item-2"})
+	b.Enqueue(makeTestReq(ctx, "group-a", "item-1"))
+	b.Enqueue(makeTestReq(ctx, "group-a", "item-2"))
 
 	b.mu.Lock()
-	g.Expect(b.pendingBatches).To(gomega.HaveLen(1), "same key → one batch")
+	assert.Len(t, b.pendingBatches, 1, "same key → one batch")
 	for _, batch := range b.pendingBatches {
-		g.Expect(batch.Requests).To(gomega.HaveLen(2), "batch should contain both requests")
+		assert.Len(t, batch.Requests, 2, "batch should contain both requests")
 	}
 	b.mu.Unlock()
 }
 
 func TestBatcherSeparatesDifferentKeys(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}
@@ -110,21 +117,20 @@ func TestBatcherSeparatesDifferentKeys(t *testing.T) {
 		MaxBatchSize: 50,
 	})
 
-	_, _ = b.Enqueue(testItem{Group: "group-a", Name: "item-1"})
-	_, _ = b.Enqueue(testItem{Group: "group-b", Name: "item-2"})
+	b.Enqueue(makeTestReq(ctx, "group-a", "item-1"))
+	b.Enqueue(makeTestReq(ctx, "group-b", "item-2"))
 
 	b.mu.Lock()
-	g.Expect(b.pendingBatches).To(gomega.HaveLen(2), "different keys → two batches")
+	assert.Len(t, b.pendingBatches, 2, "different keys → two batches")
 	b.mu.Unlock()
 }
 
 func TestBatcherDrainsPendingOnShutdown(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create batcher but DON'T start — requests sit in pending map
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}
@@ -134,21 +140,23 @@ func TestBatcherDrainsPendingOnShutdown(t *testing.T) {
 		MaxBatchSize: 50,
 	})
 
-	ch1, _ := b.Enqueue(testItem{Group: "group-a", Name: "item-1"})
-	ch2, _ := b.Enqueue(testItem{Group: "group-a", Name: "item-2"})
+	req1 := makeTestReq(ctx, "group-a", "item-1")
+	req2 := makeTestReq(ctx, "group-a", "item-2")
+	b.Enqueue(req1)
+	b.Enqueue(req2)
 
 	b.mu.Lock()
-	g.Expect(b.pendingBatches).To(gomega.HaveLen(1))
+	assert.Len(t, b.pendingBatches, 1)
 	b.mu.Unlock()
 
 	cancel()
 	b.drain()
 
-	for i, ch := range []chan *Response[struct{}]{ch1, ch2} {
+	for i, req := range []*BatchedRequest[testItem, struct{}]{req1, req2} {
 		select {
-		case resp := <-ch:
-			g.Expect(resp.Err).To(gomega.HaveOccurred(), "request %d should receive shutdown error", i)
-			g.Expect(resp.Err.Error()).To(gomega.ContainSubstring("shutting down"))
+		case resp := <-req.ResponseChan:
+			require.Error(t, resp.Err, "request %d should receive shutdown error", i)
+			assert.Contains(t, resp.Err.Error(), "shutting down")
 		case <-time.After(5 * time.Second):
 			t.Fatalf("request %d timed out", i)
 		}
@@ -157,14 +165,13 @@ func TestBatcherDrainsPendingOnShutdown(t *testing.T) {
 
 func TestBatcherConcurrentRequests(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var callCount int32
 	var mu sync.Mutex
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		callCount++ // mutex-protected, not atomic — only accessed under mu
 		mu.Unlock()
@@ -184,11 +191,9 @@ func TestBatcherConcurrentRequests(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
+			req := makeTestReq(ctx, "same-group", fmt.Sprintf("item-%d", i))
 			select {
-			case <-func() chan *Response[struct{}] {
-				c, _ := b.Enqueue(testItem{Group: "same-group", Name: fmt.Sprintf("item-%d", i)})
-				return c
-			}():
+			case <-b.Enqueue(req):
 			case <-ctx.Done():
 			}
 		}(i)
@@ -198,20 +203,19 @@ func TestBatcherConcurrentRequests(t *testing.T) {
 	mu.Lock()
 	calls := callCount
 	mu.Unlock()
-	g.Expect(calls).To(gomega.BeNumerically(">=", int32(1)))
-	g.Expect(calls).To(gomega.BeNumerically("<", int32(n)), "fewer executor calls than requests → batching worked")
+	assert.GreaterOrEqual(t, calls, int32(1))
+	assert.Less(t, calls, int32(n), "fewer executor calls than requests → batching worked")
 }
 
 func TestBatcherMixedKeysConcurrent(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var mu sync.Mutex
 	batchKeys := make(map[string]int) // key → batch count
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		batchKeys[batch.Key]++
 		mu.Unlock()
@@ -233,19 +237,17 @@ func TestBatcherMixedKeysConcurrent(t *testing.T) {
 	}{
 		{"group-a", 5}, {"group-b", 3}, {"group-c", 2},
 	}
-	for _, grp := range groups {
-		for i := 0; i < grp.count; i++ {
+	for _, g := range groups {
+		for i := 0; i < g.count; i++ {
 			wg.Add(1)
 			go func(group string, i int) {
 				defer wg.Done()
+				req := makeTestReq(ctx, group, fmt.Sprintf("item-%d", i))
 				select {
-				case <-func() chan *Response[struct{}] {
-					c, _ := b.Enqueue(testItem{Group: group, Name: fmt.Sprintf("item-%d", i)})
-					return c
-				}():
+				case <-b.Enqueue(req):
 				case <-ctx.Done():
 				}
-			}(grp.group, i)
+			}(g.group, i)
 		}
 	}
 	wg.Wait()
@@ -253,21 +255,20 @@ func TestBatcherMixedKeysConcurrent(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	// Each group should have been executed at least once
-	g.Expect(batchKeys).To(gomega.HaveKey("group-a"))
-	g.Expect(batchKeys).To(gomega.HaveKey("group-b"))
-	g.Expect(batchKeys).To(gomega.HaveKey("group-c"))
+	assert.Contains(t, batchKeys, "group-a")
+	assert.Contains(t, batchKeys, "group-b")
+	assert.Contains(t, batchKeys, "group-c")
 }
 
 func TestBatcherFiresWhenMaxBatchSizeReached(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var mu sync.Mutex
 	var batchSizes []int
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		batchSizes = append(batchSizes, len(batch.Requests))
 		mu.Unlock()
@@ -287,11 +288,9 @@ func TestBatcherFiresWhenMaxBatchSizeReached(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		go func(i int) {
 			defer wg.Done()
+			req := makeTestReq(ctx, "same-group", fmt.Sprintf("item-%d", i))
 			select {
-			case <-func() chan *Response[struct{}] {
-				c, _ := b.Enqueue(testItem{Group: "same-group", Name: fmt.Sprintf("item-%d", i)})
-				return c
-			}():
+			case <-b.Enqueue(req):
 			case <-ctx.Done():
 			}
 		}(i)
@@ -309,7 +308,7 @@ func TestBatcherFiresWhenMaxBatchSizeReached(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	g.Expect(batchSizes).ToNot(gomega.BeEmpty(), "at least one batch should have fired")
+	require.NotEmpty(t, batchSizes, "at least one batch should have fired")
 }
 
 func TestBatcherFiresAtMaxTimeout(t *testing.T) {
@@ -319,7 +318,7 @@ func TestBatcherFiresAtMaxTimeout(t *testing.T) {
 
 	executed := make(chan struct{}, 1)
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}
@@ -332,7 +331,8 @@ func TestBatcherFiresAtMaxTimeout(t *testing.T) {
 	b.Start()
 
 	// Enqueue one request, then keep sending more to reset idle timer
-	_, _ = b.Enqueue(testItem{Group: "group", Name: "item-0"})
+	req := makeTestReq(ctx, "group", "item-0")
+	b.Enqueue(req)
 
 	// Send requests every 50ms to keep resetting idle timer
 	go func() {
@@ -342,7 +342,8 @@ func TestBatcherFiresAtMaxTimeout(t *testing.T) {
 			case <-ctx.Done():
 				return
 			default:
-				_, _ = b.Enqueue(testItem{Group: "group", Name: fmt.Sprintf("item-%d", i)})
+				r := makeTestReq(ctx, "group", fmt.Sprintf("item-%d", i))
+				b.Enqueue(r)
 			}
 		}
 	}()

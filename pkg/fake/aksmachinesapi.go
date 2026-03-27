@@ -17,11 +17,9 @@ limitations under the License.
 package fake
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -79,13 +77,6 @@ type AKSMachinesBehavior struct {
 	AKSMachineGetBehavior              MockedFunction[AKSMachineGetInput, armcontainerservice.MachinesClientGetResponse]
 	AKSMachineNewListPagerBehavior     MockedFunction[AKSMachineListInput, *runtime.Pager[armcontainerservice.MachinesClientListResponse]]
 	AfterPollProvisioningErrorOverride *armcontainerservice.ErrorDetail
-
-	// BatchMachineErrorFunc, if set, is called during batch creation to determine per-machine
-	// errors. It receives a machine name and returns an error code and message; if the error code
-	// is non-empty, the machine is treated as failed. Machines with empty error code succeed.
-	// When any per-machine errors are returned, the fake produces a batch error response
-	// (BatchMachineClientError or BatchMachineInternalServerError) matching the real Azure API format.
-	BatchMachineErrorFunc func(machineName string) (errorCode string, errorMessage string)
 }
 
 var AKSMachineAPIErrorFromAKSMachineNotFound = &azcore.ResponseError{
@@ -102,30 +93,6 @@ var AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted = &azcore.R
 }
 var AKSMachineAPIErrorAny = &azcore.ResponseError{
 	ErrorCode: "SomeRandomError",
-}
-
-func AKSMachineAPIErrorVMSizeNotSupported(vmSize, subscription, location string) *azcore.ResponseError {
-	message := fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription %s in location '%s'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%s'.", vmSize, subscription, location, location)
-	return newResponseError("VMSizeNotSupported", http.StatusBadRequest, message)
-}
-
-func AKSMachineAPIErrorVMSizeNotSupportedBadRequest(vmSize, subscription, location string) *azcore.ResponseError {
-	message := fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription %s in location '%s'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%s'.", vmSize, subscription, location, location)
-	return newResponseError("BadRequest", http.StatusBadRequest, message)
-}
-
-// statusCode is always BadRequest today but kept as a parameter for generality
-func newResponseError(errorCode string, statusCode int, message string) *azcore.ResponseError {
-	errorBody := fmt.Sprintf(`{"code": "%s", "message": "%s"}`, errorCode, message)
-	return &azcore.ResponseError{
-		ErrorCode:  errorCode,
-		StatusCode: statusCode,
-		RawResponse: &http.Response{
-			StatusCode: statusCode,
-			Status:     fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
-			Body:       io.NopCloser(strings.NewReader(errorBody)),
-		},
-	}
 }
 
 func AKSMachineAPIProvisioningErrorSkuNotAvailable(sku string, location string) *armcontainerservice.ErrorDetail {
@@ -273,7 +240,6 @@ func (c *AKSMachinesAPI) Reset() {
 		return true
 	})
 	c.AfterPollProvisioningErrorOverride = nil
-	c.BatchMachineErrorFunc = nil
 }
 
 func (c *AKSMachinesAPI) BeginCreateOrUpdate(
@@ -338,52 +304,62 @@ func (c *AKSMachinesAPI) createSingleMachine(input *AKSMachineCreateOrUpdateInpu
 // createBatchMachines handles batch creation: creates one machine per entry
 // using the shared template body + per-machine zones/tags from the batch entries.
 // This simulates what the real Azure API does when reading the BatchPutMachine header.
-//
-// If BatchMachineErrorFunc is set, it is called for each machine to determine per-machine
-// errors. Failed machines are NOT created; successful machines are stored normally.
-// The error response matches the real Azure batch API format:
-//   - If any client error (4xx-style code) is present: returns 400 BatchMachineClientError
-//   - If only internal errors (5xx-style): returns 500 BatchMachineInternalServerError
-//   - If all succeed: returns success as before
 func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInput, template armcontainerservice.Machine, entries []aksmachinesheaderbatch.MachineEntry) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
-	// Collect per-machine errors if the error function is set
-	var perMachineErrors []fakeBatchMachineError
-	failedMachines := make(map[string]bool)
-
-	if c.BatchMachineErrorFunc != nil {
-		for _, entry := range entries {
-			code, msg := c.BatchMachineErrorFunc(entry.MachineName)
-			if code != "" {
-				perMachineErrors = append(perMachineErrors, fakeBatchMachineError{
-					code:    code,
-					message: msg,
-					target:  entry.MachineName,
-				})
-				failedMachines[entry.MachineName] = true
-			}
-		}
-	}
-
 	var primaryMachine armcontainerservice.Machine
 
 	for i, entry := range entries {
-		if failedMachines[entry.MachineName] {
-			continue
+		// Build a per-machine copy from the shared template
+		machine := template
+		machine.Name = lo.ToPtr(entry.MachineName)
+		id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, entry.MachineName)
+		machine.ID = &id
+
+		// Apply per-machine zones from the batch entry
+		if len(entry.Zones) > 0 {
+			zones := make([]*string, len(entry.Zones))
+			for j := range entry.Zones {
+				zones[j] = lo.ToPtr(entry.Zones[j])
+			}
+			machine.Zones = zones
 		}
 
-		machine, err := c.createOneBatchMachine(input, template, entry)
-		if err != nil {
-			return nil, err
+		// Apply per-machine tags from the batch entry
+		if len(entry.Tags) > 0 {
+			if machine.Properties == nil {
+				machine.Properties = &armcontainerservice.MachineProperties{}
+			} else {
+				// Shallow-copy Properties so we don't mutate the shared template
+				props := *machine.Properties
+				machine.Properties = &props
+			}
+			tags := make(map[string]*string, len(entry.Tags))
+			for k, v := range entry.Tags {
+				tags[k] = lo.ToPtr(v)
+			}
+			machine.Properties.Tags = tags
 		}
 
-		if i == 0 || primaryMachine.ID == nil {
-			primaryMachine = machine
+		// Check if AKS machine already exists — if so, check for immutable property conflicts
+		// (mirrors the conflict detection in createSingleMachine → updateExistingAKSMachine)
+		if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
+			existing := existingRaw.(armcontainerservice.Machine)
+			if c.doImmutablePropertiesChanged(&existing, &machine) {
+				return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
+			}
 		}
-	}
 
-	// If there are per-machine errors, build and return a batch error response
-	if len(perMachineErrors) > 0 {
-		return nil, buildFakeBatchError(perMachineErrors)
+		// Store the machine
+		c.setDefaultMachineValues(&machine, input.ResourceGroupName, input.AgentPoolName)
+		machine.Properties.ProvisioningState = lo.ToPtr("Creating")
+		c.aksDataStorage.AKSMachines.Store(id, machine)
+
+		// Simulate async completion
+		updatedMachine, _ := c.simulateCreateStatusAtAsync(machine)
+		c.aksDataStorage.AKSMachines.Store(id, updatedMachine)
+
+		if i == 0 {
+			primaryMachine = updatedMachine
+		}
 	}
 
 	// Enrich input.AKSMachine with the primary entry's zones/tags so that
@@ -394,129 +370,6 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
 		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: primaryMachine}, nil
 	})
-}
-
-// createOneBatchMachine builds and stores a single machine from a batch entry.
-func (c *AKSMachinesAPI) createOneBatchMachine(input *AKSMachineCreateOrUpdateInput, template armcontainerservice.Machine, entry aksmachinesheaderbatch.MachineEntry) (armcontainerservice.Machine, error) {
-	machine := template
-	// Shallow-copy Properties to avoid mutating the shared template across loop iterations.
-	if machine.Properties != nil {
-		props := *machine.Properties
-		machine.Properties = &props
-	}
-	machine.Name = lo.ToPtr(entry.MachineName)
-	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, entry.MachineName)
-	machine.ID = &id
-
-	// Apply per-machine zones from the batch entry
-	if len(entry.Zones) > 0 {
-		zones := make([]*string, len(entry.Zones))
-		for j := range entry.Zones {
-			zones[j] = lo.ToPtr(entry.Zones[j])
-		}
-		machine.Zones = zones
-	}
-
-	// Apply per-machine tags from the batch entry
-	if len(entry.Tags) > 0 {
-		if machine.Properties == nil {
-			machine.Properties = &armcontainerservice.MachineProperties{}
-		}
-		tags := make(map[string]*string, len(entry.Tags))
-		for k, v := range entry.Tags {
-			tags[k] = lo.ToPtr(v)
-		}
-		machine.Properties.Tags = tags
-	}
-
-	// Check if AKS machine already exists — if so, check for immutable property conflicts
-	if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
-		existing := existingRaw.(armcontainerservice.Machine)
-		if c.doImmutablePropertiesChanged(&existing, &machine) {
-			return armcontainerservice.Machine{}, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
-		}
-	}
-
-	c.setDefaultMachineValues(&machine, input.ResourceGroupName, input.AgentPoolName)
-	machine.Properties.ProvisioningState = lo.ToPtr("Creating")
-	c.aksDataStorage.AKSMachines.Store(id, machine)
-
-	updatedMachine, _ := c.simulateCreateStatusAtAsync(machine)
-	c.aksDataStorage.AKSMachines.Store(id, updatedMachine)
-
-	return updatedMachine, nil
-}
-
-// fakeBatchMachineError represents a per-machine error for building fake batch error responses.
-type fakeBatchMachineError struct {
-	code    string
-	message string
-	target  string
-}
-
-// batchErrorDetailJSON is the JSON shape for a per-machine error detail in batch API responses.
-type batchErrorDetailJSON struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Target  string `json:"target"`
-}
-
-// buildFakeBatchError constructs an *azcore.ResponseError matching the real Azure batch error format.
-// Mimics the JoinBatchPutMachineErrors logic tested in the wiki:
-//   - If any error code looks like a client error → 400 BatchMachineClientError with details[] at top level
-//   - If only internal errors → 500 BatchMachineInternalServerError with details[] JSON-encoded in message
-func buildFakeBatchError(errors []fakeBatchMachineError) *azcore.ResponseError {
-	details := make([]batchErrorDetailJSON, len(errors))
-	hasClientError := false
-	for i, e := range errors {
-		details[i] = batchErrorDetailJSON{Code: e.code, Message: e.message, Target: e.target}
-		// Client errors are non-Internal* codes (e.g., InvalidParameter, SkuNotAvailable, etc.)
-		if !strings.HasPrefix(e.code, "Internal") {
-			hasClientError = true
-		}
-	}
-
-	var bodyJSON []byte
-	var statusCode int
-	var errorCode string
-
-	if hasClientError {
-		statusCode = http.StatusBadRequest
-		errorCode = "BatchMachineClientError"
-		body := struct {
-			Code    string                 `json:"code"`
-			Message string                 `json:"message"`
-			Details []batchErrorDetailJSON `json:"details"`
-		}{
-			Code:    errorCode,
-			Message: "batch client error",
-			Details: details,
-		}
-		bodyJSON, _ = json.Marshal(body)
-	} else {
-		statusCode = http.StatusInternalServerError
-		errorCode = "BatchMachineInternalServerError"
-		innerJSON, _ := json.Marshal(struct {
-			Details []batchErrorDetailJSON `json:"details"`
-		}{Details: details})
-		body := struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}{
-			Code:    errorCode,
-			Message: string(innerJSON),
-		}
-		bodyJSON, _ = json.Marshal(body)
-	}
-
-	return &azcore.ResponseError{
-		ErrorCode:  errorCode,
-		StatusCode: statusCode,
-		RawResponse: &http.Response{
-			StatusCode: statusCode,
-			Body:       io.NopCloser(bytes.NewReader(bodyJSON)),
-		},
-	}
 }
 
 func (c *AKSMachinesAPI) updateExistingAKSMachine(input *AKSMachineCreateOrUpdateInput, existing armcontainerservice.Machine, aksMachine armcontainerservice.Machine) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {

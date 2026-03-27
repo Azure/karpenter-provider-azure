@@ -18,13 +18,13 @@ package aksmachinesheaderbatch
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
+	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -34,32 +34,40 @@ type aksMachineCreatePayload struct {
 	resourceName      string
 	agentPoolName     string
 	machineName       string
-	machineBody       *armcontainerservice.Machine
+	machineBody       armcontainerservice.Machine
 }
 
 // executor sends batches to Azure using the BatchPutMachine HTTP header.
 // It transforms a pending batch into a single API call, then distributes
 // per-machine results back to each request's channel.
 type executor struct {
-	realClient AKSMachinesCreateAPI
+	realClient azapi.AKSMachinesAPI
 }
 
-func newExecutor(realClient AKSMachinesCreateAPI) *executor {
+func newExecutor(realClient azapi.AKSMachinesAPI) *executor {
 	return &executor{realClient: realClient}
 }
 
 // executeBatch is the batcher.ExecuteBatch — it sends a batch to Azure as one
 // API call, then distributes results back to each request's channel.
-func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]) {
-	log.FromContext(ctx).Info("executing an AKS machines header batch",
-		"ID", batch.ID,
+//
+// Uses context.Background() intentionally: a batch serves multiple callers with
+// different deadlines, and canceling an in-flight PUT mid-request risks creating
+// phantom Azure resources that Karpenter doesn't track.
+func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, struct{}]) {
+	ctx := context.Background()
+	batchID := uuid.New().String()
+
+	log.FromContext(ctx).Info("executing batch",
+		"batchID", batchID,
 		"size", len(batch.Requests),
 		"key", batch.Key)
 
 	// Attach batch header for the real Azure API.
 	header, entries, err := buildBatchHeader(batch)
 	if err != nil {
-		distributeOperationalError(batch, fmt.Errorf("failed to build header for batch API: %w", err))
+		log.FromContext(ctx).Error(err, "failed to build batch header")
+		distributeError(batch, err)
 		return
 	}
 	ctxWithHeader := policy.WithHTTPHeader(ctx, http.Header{
@@ -72,17 +80,16 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 	// Use resource params from the first request (all requests in a batch
 	// share the same resource path due to the key function).
 	first := batch.Requests[0].Payload
-
-	// Build the template body to be used as a base for the batch.
-	if first.machineBody.Properties == nil {
-		distributeOperationalError(batch, fmt.Errorf("AKS machine properties is nil"))
-		return
+	template := first.machineBody
+	template.Zones = nil
+	if template.Properties != nil {
+		props := *template.Properties
+		clearPerMachineFields(&props)
+		template.Properties = &props
 	}
-	template := buildSharedAKSMachineTemplate(*first.machineBody.Properties)
 
-	successCount, failCount := 0, 0
 	// Note: We discard the SDK poller - callers should use the GET-based poller instead
-	_, apiError := e.realClient.BeginCreateOrUpdate(
+	_, err = e.realClient.BeginCreateOrUpdate(
 		ctxWithHeader,
 		first.resourceGroupName,
 		first.resourceName,
@@ -91,65 +98,70 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 		template,
 		nil,
 	)
-	if apiError != nil {
-		log.FromContext(ctx).V(2).Info(fmt.Sprintf("AKS machines header batch API call returned error: %s", apiError.Error()),
-			"ID", batch.ID)
 
-		// Extract per-machine errors from the parsed API error.
-		perMachineErrors := make(map[string]*offerings.HandlableError)
-		for _, req := range batch.Requests {
-			// Default to no error for each machine.
-			// Also, this is to catch the case where API error is erroneously referencing a non-existent machine.
-			perMachineErrors[req.Payload.machineName] = nil
-		}
-		err = extractPerMachineErrors(apiError, perMachineErrors)
-		if err != nil {
-			distributeOperationalError(batch, fmt.Errorf("failed to extract per-machine errors: %w", err))
-			return
-		}
+	// If there's an API-level error, try to parse per-machine errors from it
+	// TODO: Implement actual parsing of Azure's structured error response.
+	// frontendErrors := e.parseFrontendErrors(err)
+	var frontendErrors map[string]error = nil // Placeholder, as if all machines failed.
 
-		successCount, failCount = distributePerMachine(batch, perMachineErrors)
-	} else {
-		// All machines in the batch are successfully created (in sync phase)
-		successCount = distributeSuccess(batch)
+	// If there's an API-level error but no per-machine breakdown, all machines failed
+	if err != nil && frontendErrors == nil {
+		log.FromContext(ctx).Error(err, "batch API call failed, distributing error to all machines",
+			"batchID", batchID,
+			"size", len(batch.Requests))
+		distributeError(batch, err)
+		return
 	}
 
-	log.FromContext(ctx).Info("AKS machines header batch execution completed",
-		"ID", batch.ID,
-		"succeeded", successCount,
-		"failed", failCount)
-}
-
-// distributePerMachine sends individual API errors back to each request based on the map of machineName → HandlableError.
-// Machines with nil HandlableError are treated as successes. Returns the count of successes and failures.
-func distributePerMachine(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError], perMachineErrors map[string]*offerings.HandlableError) (int, int) {
 	successCount, failCount := 0, 0
+
 	for _, req := range batch.Requests {
-		apiErr := perMachineErrors[req.Payload.machineName]
-		req.ResponseChan <- &batcher.Response[*offerings.HandlableError]{Payload: apiErr}
-		if apiErr != nil {
+		if machineErr, hasFailed := frontendErrors[req.Payload.machineName]; hasFailed {
+			req.ResponseChan <- &batcher.Response[struct{}]{Err: machineErr}
 			failCount++
 		} else {
+			req.ResponseChan <- &batcher.Response[struct{}]{Err: nil}
 			successCount++
 		}
 	}
 
-	return successCount, failCount
+	log.FromContext(ctx).Info("batch completed",
+		"batchID", batchID,
+		"succeeded", successCount,
+		"failed", failCount)
 }
 
-// distributeSuccess sends a nil-nil response to all requests.
-// Returns the count of requests notified.
-func distributeSuccess(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]) int {
+// distributeError sends the same error to all requests (used for early failures).
+func distributeError(batch *batcher.Batch[aksMachineCreatePayload, struct{}], err error) {
 	for _, req := range batch.Requests {
-		req.ResponseChan <- &batcher.Response[*offerings.HandlableError]{}
+		req.ResponseChan <- &batcher.Response[struct{}]{Err: err}
 	}
-	return len(batch.Requests)
 }
 
-// distributeOperationalError sends the same operational error (via Err) to all requests.
-// Use this only for errors that are not API responses (e.g., header build failure, parse failure).
-func distributeOperationalError(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError], err error) {
-	for _, req := range batch.Requests {
-		req.ResponseChan <- &batcher.Response[*offerings.HandlableError]{Err: err}
+// Helpers to convert Azure SDK pointer types to concrete values.
+
+func extractZones(zones []*string) []string {
+	if len(zones) == 0 {
+		return []string{}
 	}
+	result := make([]string, 0, len(zones))
+	for _, z := range zones {
+		if z != nil {
+			result = append(result, *z)
+		}
+	}
+	return result
+}
+
+func extractTags(tags map[string]*string) map[string]string {
+	if tags == nil {
+		return make(map[string]string)
+	}
+	result := make(map[string]string, len(tags))
+	for k, v := range tags {
+		if v != nil {
+			result[k] = *v
+		}
+	}
+	return result
 }

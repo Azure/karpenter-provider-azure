@@ -17,27 +17,22 @@ limitations under the License.
 package aksmachinesheaderbatch
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
-	"github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
-// recordingClient — thread-safe MachinesCreateAPI stub that records API calls
+// recordingClient — thread-safe AKSMachinesAPI stub that records API calls
 // ---------------------------------------------------------------------------
 
 type recordingClient struct {
@@ -70,6 +65,20 @@ func (r *recordingClient) BeginCreateOrUpdate(
 	return nil, r.err
 }
 
+func (r *recordingClient) Get(
+	context.Context, string, string, string, string,
+	*armcontainerservice.MachinesClientGetOptions,
+) (armcontainerservice.MachinesClientGetResponse, error) {
+	panic("unexpected Get call in executor test")
+}
+
+func (r *recordingClient) NewListPager(
+	string, string, string,
+	*armcontainerservice.MachinesClientListOptions,
+) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
+	panic("unexpected NewListPager call in executor test")
+}
+
 func (r *recordingClient) snapshot() []recordedCall {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -82,9 +91,8 @@ func (r *recordingClient) snapshot() []recordedCall {
 // test helpers
 // ---------------------------------------------------------------------------
 
-//nolint:unparam // vmSize is always the same today but kept as param for future test flexibility
-func tpl(vmSize string, zones []string, tags map[string]string) *armcontainerservice.Machine {
-	m := &armcontainerservice.Machine{
+func tpl(vmSize string, zones []string, tags map[string]string) armcontainerservice.Machine {
+	m := armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
 			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
 		},
@@ -101,32 +109,32 @@ func tpl(vmSize string, zones []string, tags map[string]string) *armcontainerser
 	return m
 }
 
-func makeReq(name string, template *armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError] {
-	return &batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{
+func makeReq(name string, template armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, struct{}] {
+	return &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg",
 			resourceName:      "cluster",
 			agentPoolName:     "pool",
 			machineName:       name,
-			machineBody:       template,
+			machineBody:          template,
 		},
-		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
+		ResponseChan: make(chan *batcher.Response[struct{}], 1),
 	}
 }
 
-func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]) *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError] {
+func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]) *batcher.Batch[aksMachineCreatePayload, struct{}] {
 	if len(requests) == 0 {
-		return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{}
+		return &batcher.Batch[aksMachineCreatePayload, struct{}]{}
 	}
-	return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{
-		Key:      func() string { k, _ := determineBatchKey(&requests[0].Payload); return k }(),
+	return &batcher.Batch[aksMachineCreatePayload, struct{}]{
+		Key:      determineBatchKey(&requests[0].Payload),
 		Requests: requests,
 	}
 }
 
-func awaitAll(t *testing.T, requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]) []*batcher.Response[*offerings.HandlableError] {
+func awaitAll(t *testing.T, requests ...*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]) []*batcher.Response[struct{}] {
 	t.Helper()
-	out := make([]*batcher.Response[*offerings.HandlableError], len(requests))
+	out := make([]*batcher.Response[struct{}], len(requests))
 	for i, r := range requests {
 		select {
 		case resp := <-r.ResponseChan:
@@ -144,7 +152,6 @@ func awaitAll(t *testing.T, requests ...*batcher.BatchedRequest[aksMachineCreate
 
 func TestExecutorSingleAPICallForBatch(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
@@ -152,70 +159,66 @@ func TestExecutorSingleAPICallForBatch(t *testing.T) {
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, map[string]string{"env": "test"}))
 	r3 := makeReq("m-3", tpl("Standard_D2s_v3", []string{"1", "2"}, map[string]string{"env": "staging"}))
 
-	exec.executeBatch(context.Background(), makeBatch(r1, r2, r3))
+	exec.executeBatch(makeBatch(r1, r2, r3))
 
-	g.Expect(mock.count.Load()).To(gomega.Equal(int32(1)), "3 machines should produce exactly 1 API call")
+	assert.Equal(t, int32(1), mock.count.Load(), "3 machines should produce exactly 1 API call")
 	for i, resp := range awaitAll(t, r1, r2, r3) {
-		g.Expect(resp.Err).ToNot(gomega.HaveOccurred(), "request %d", i)
+		assert.NoError(t, resp.Err, "request %d", i)
 	}
 }
 
 func TestExecutorClearsPerMachineFieldsFromBody(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"k": "v"}))
-	exec.executeBatch(context.Background(), makeBatch(r1))
+	exec.executeBatch(makeBatch(r1))
 
 	calls := mock.snapshot()
-	g.Expect(calls).To(gomega.HaveLen(1))
-	g.Expect(calls[0].parameters.Zones).To(gomega.BeNil(), "zones must be nil in body (sent via header)")
-	g.Expect(calls[0].parameters.Properties.Tags).To(gomega.BeNil(), "tags must be nil in body (sent via header)")
-	g.Expect(*calls[0].parameters.Properties.Hardware.VMSize).To(gomega.Equal("Standard_D2s_v3"),
+	require.Len(t, calls, 1)
+	assert.Nil(t, calls[0].parameters.Zones, "zones must be nil in body (sent via header)")
+	assert.Nil(t, calls[0].parameters.Properties.Tags, "tags must be nil in body (sent via header)")
+	assert.Equal(t, "Standard_D2s_v3", *calls[0].parameters.Properties.Hardware.VMSize,
 		"shared template fields must remain")
 }
 
 func TestExecutorAttachesPerMachineEntriesToContext(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"a": "1"}))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2", "3"}, map[string]string{"b": "2"}))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
+	exec.executeBatch(makeBatch(r1, r2))
 
 	calls := mock.snapshot()
-	g.Expect(calls).To(gomega.HaveLen(1))
+	require.Len(t, calls, 1)
 
 	entries := FakeBatchEntriesFromContext(calls[0].ctx)
-	g.Expect(entries).To(gomega.HaveLen(2), "context should carry per-machine entries")
+	require.Len(t, entries, 2, "context should carry per-machine entries")
 
-	g.Expect(entries[0].MachineName).To(gomega.Equal("m-1"))
-	g.Expect(entries[0].Zones).To(gomega.Equal([]string{"1"}))
-	g.Expect(entries[0].Tags).To(gomega.Equal(map[string]string{"a": "1"}))
+	assert.Equal(t, "m-1", entries[0].MachineName)
+	assert.Equal(t, []string{"1"}, entries[0].Zones)
+	assert.Equal(t, map[string]string{"a": "1"}, entries[0].Tags)
 
-	g.Expect(entries[1].MachineName).To(gomega.Equal("m-2"))
-	g.Expect(entries[1].Zones).To(gomega.Equal([]string{"2", "3"}))
-	g.Expect(entries[1].Tags).To(gomega.Equal(map[string]string{"b": "2"}))
+	assert.Equal(t, "m-2", entries[1].MachineName)
+	assert.Equal(t, []string{"2", "3"}, entries[1].Zones)
+	assert.Equal(t, map[string]string{"b": "2"}, entries[1].Tags)
 }
 
 func TestExecutorDistributesErrorToAllCallers(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	mock := &recordingClient{err: fmt.Errorf("azure boom")}
 	exec := newExecutor(mock)
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
+	exec.executeBatch(makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
-		// Plain error (not *azcore.ResponseError) → extractPerMachineErrors fails → operational error
-		g.Expect(resp.Err).To(gomega.HaveOccurred(), "should be an operational error (parse failure)")
-		g.Expect(resp.Payload).To(gomega.BeNil())
+		require.Error(t, resp.Err)
+		assert.Contains(t, resp.Err.Error(), "azure boom")
 	}
 }
 
@@ -227,7 +230,6 @@ func TestExecutorDistributesErrorToAllCallers(t *testing.T) {
 // result in fewer API calls than requests, proving batching works.
 func TestConcurrentRequestsBatchThroughClient(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	mock := &recordingClient{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -246,27 +248,26 @@ func TestConcurrentRequestsBatchThroughClient(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
-			_, _ = client.BeginCreateWithBatch(ctx, "rg", "cluster", "pool", fmt.Sprintf("machine-%d", i), tmpl)
+			_ = client.BeginCreateWithBatch(ctx, "rg", "cluster", "pool", fmt.Sprintf("machine-%d", i), tmpl)
 		}(i)
 	}
 	wg.Wait()
 
 	calls := mock.count.Load()
-	g.Expect(calls).To(gomega.BeNumerically(">=", int32(1)), "at least 1 API call")
-	g.Expect(calls).To(gomega.BeNumerically("<", int32(n)), "fewer API calls than requests → batching worked")
+	assert.GreaterOrEqual(t, calls, int32(1), "at least 1 API call")
+	assert.Less(t, calls, int32(n), "fewer API calls than requests → batching worked")
 }
 
 // Requests to different resource paths (cluster/pool) must land in separate
 // batches even if the machine template is identical.
 func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 	t.Parallel()
-	g := gomega.NewWithT(t)
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
 	tmpl := tpl("Standard_D2s_v3", []string{"1"}, nil)
 
-	r1 := &batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{
+	r1 := &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg-1",
 			resourceName:      "cluster-1",
@@ -274,9 +275,9 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 			machineName:       "m-1",
 			machineBody:       tmpl,
 		},
-		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
+		ResponseChan: make(chan *batcher.Response[struct{}], 1),
 	}
-	r2 := &batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{
+	r2 := &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg-2",
 			resourceName:      "cluster-2",
@@ -284,258 +285,20 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 			machineName:       "m-2",
 			machineBody:       tmpl,
 		},
-		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
+		ResponseChan: make(chan *batcher.Response[struct{}], 1),
 	}
 
-	key1, _ := determineBatchKey(&r1.Payload)
-	key2, _ := determineBatchKey(&r2.Payload)
-	g.Expect(key2).ToNot(gomega.Equal(key1), "different resource paths should produce different batch keys")
+	key1 := determineBatchKey(&r1.Payload)
+	key2 := determineBatchKey(&r2.Payload)
+	assert.NotEqual(t, key1, key2, "different resource paths should produce different batch keys")
 
 	// Execute each as separate batch (as the batcher would)
-	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{r1}})
-	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{r2}})
+	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, struct{}]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{r1}})
+	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, struct{}]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{r2}})
 
-	g.Expect(mock.count.Load()).To(gomega.Equal(int32(2)), "different resource paths → 2 API calls")
+	assert.Equal(t, int32(2), mock.count.Load(), "different resource paths → 2 API calls")
 
 	calls := mock.snapshot()
-	g.Expect(calls[0].machineName).To(gomega.Equal("m-1"))
-	g.Expect(calls[1].machineName).To(gomega.Equal("m-2"))
-}
-
-// =====================================================================
-// Batch error helpers for tests
-// =====================================================================
-
-type testErrorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Target  string `json:"target"`
-}
-
-// makeBatchClientError creates an *azcore.ResponseError simulating a 400 BatchMachineClientError
-// with per-machine error details at the top level.
-func makeBatchClientError(details []testErrorDetail) *azcore.ResponseError {
-	body := struct {
-		Code    string            `json:"code"`
-		Message string            `json:"message"`
-		Details []testErrorDetail `json:"details"`
-	}{
-		Code:    "BatchMachineClientError",
-		Message: "batch client error",
-		Details: details,
-	}
-	bodyJSON, _ := json.Marshal(body)
-	return &azcore.ResponseError{
-		ErrorCode:  "BatchMachineClientError",
-		StatusCode: http.StatusBadRequest,
-		RawResponse: &http.Response{
-			StatusCode: http.StatusBadRequest,
-			Body:       io.NopCloser(bytes.NewReader(bodyJSON)),
-		},
-	}
-}
-
-// makeBatchInternalServerError creates an *azcore.ResponseError simulating a 500 BatchMachineInternalServerError
-// with per-machine error details JSON-encoded in the message field.
-func makeBatchInternalServerError(details []testErrorDetail) *azcore.ResponseError {
-	innerJSON, _ := json.Marshal(struct {
-		Details []testErrorDetail `json:"details"`
-	}{Details: details})
-	body := struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}{
-		Code:    "BatchMachineInternalServerError",
-		Message: string(innerJSON),
-	}
-	bodyJSON, _ := json.Marshal(body)
-	return &azcore.ResponseError{
-		ErrorCode:  "BatchMachineInternalServerError",
-		StatusCode: http.StatusInternalServerError,
-		RawResponse: &http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(bytes.NewReader(bodyJSON)),
-		},
-	}
-}
-
-// =====================================================================
-// Per-machine batch error tests
-// =====================================================================
-
-func TestExecutorBatchClientError_PartialFailure(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	mock := &recordingClient{err: makeBatchClientError([]testErrorDetail{
-		{Code: "InvalidParameter", Message: "simulated client error for machine m-2", Target: "m-2"},
-	})}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	r3 := makeReq("m-3", tpl("Standard_D2s_v3", []string{"3"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2, r3))
-
-	resps := awaitAll(t, r1, r2, r3)
-	// m-1: success (no operational error, no API error)
-	g.Expect(resps[0].Err).ToNot(gomega.HaveOccurred(), "m-1 should have no operational error")
-	g.Expect(resps[0].Payload).To(gomega.BeNil(), "m-1 should have no API error")
-	// m-2: per-machine API error (no operational error, APIError payload)
-	g.Expect(resps[1].Err).ToNot(gomega.HaveOccurred(), "m-2 should have no operational error")
-	g.Expect(resps[1].Payload).ToNot(gomega.BeNil(), "m-2 should have an API error")
-	g.Expect(resps[1].Payload.Code).To(gomega.Equal("InvalidParameter"))
-	// m-3: success
-	g.Expect(resps[2].Err).ToNot(gomega.HaveOccurred(), "m-3 should have no operational error")
-	g.Expect(resps[2].Payload).To(gomega.BeNil(), "m-3 should have no API error")
-}
-
-func TestExecutorBatchClientError_AllFail(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	mock := &recordingClient{err: makeBatchClientError([]testErrorDetail{
-		{Code: "InvalidParameter", Message: "client error for m-1", Target: "m-1"},
-		{Code: "InternalOperationError", Message: "internal error for m-2", Target: "m-2"},
-	})}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
-
-	resps := awaitAll(t, r1, r2)
-	g.Expect(resps[0].Err).ToNot(gomega.HaveOccurred())
-	g.Expect(resps[0].Payload).ToNot(gomega.BeNil())
-	g.Expect(resps[0].Payload.Code).To(gomega.Equal("InvalidParameter"))
-	g.Expect(resps[1].Err).ToNot(gomega.HaveOccurred())
-	g.Expect(resps[1].Payload).ToNot(gomega.BeNil())
-	g.Expect(resps[1].Payload.Code).To(gomega.Equal("InternalOperationError"))
-}
-
-func TestExecutorBatchInternalServerError_PartialFailure(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	mock := &recordingClient{err: makeBatchInternalServerError([]testErrorDetail{
-		{Code: "InternalOperationError", Message: "internal error for m-1", Target: "m-1"},
-	})}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
-
-	resps := awaitAll(t, r1, r2)
-	g.Expect(resps[0].Err).ToNot(gomega.HaveOccurred())
-	g.Expect(resps[0].Payload).ToNot(gomega.BeNil(), "m-1 should have an API error detail")
-	g.Expect(resps[0].Payload.Code).To(gomega.Equal("InternalOperationError"))
-	g.Expect(resps[1].Err).ToNot(gomega.HaveOccurred(), "m-2 should have no operational error")
-	g.Expect(resps[1].Payload).To(gomega.BeNil(), "m-2 should succeed")
-}
-
-func TestExecutorBatchInternalServerError_AllFail(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	mock := &recordingClient{err: makeBatchInternalServerError([]testErrorDetail{
-		{Code: "InternalOperationError", Message: "error for m-1", Target: "m-1"},
-		{Code: "InternalOperationError", Message: "error for m-2", Target: "m-2"},
-	})}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
-
-	resps := awaitAll(t, r1, r2)
-	g.Expect(resps[0].Err).ToNot(gomega.HaveOccurred())
-	g.Expect(resps[0].Payload).ToNot(gomega.BeNil())
-	g.Expect(resps[1].Err).ToNot(gomega.HaveOccurred())
-	g.Expect(resps[1].Payload).ToNot(gomega.BeNil())
-}
-
-func TestExecutorNonBatchError_FallsBackToDistributeAll(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	// Non-batch error (plain error) → extractPerMachineErrors fails → operational error
-	mock := &recordingClient{err: fmt.Errorf("plain error")}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
-
-	for _, resp := range awaitAll(t, r1, r2) {
-		g.Expect(resp.Err).To(gomega.HaveOccurred())
-		g.Expect(resp.Payload).To(gomega.BeNil())
-	}
-}
-
-func TestExecutorUnknownBatchErrorCode_DistributesAsSingleAPIError(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	// ResponseError with unrecognized error code → non-batch error → single HandlableError to all
-	mock := &recordingClient{err: func() error {
-		body, _ := json.Marshal(map[string]any{"code": "SomeUnknownError", "message": "something broke"})
-		return &azcore.ResponseError{
-			ErrorCode:  "SomeUnknownError",
-			StatusCode: http.StatusBadRequest,
-			RawResponse: &http.Response{
-				StatusCode: http.StatusBadRequest,
-				Body:       io.NopCloser(bytes.NewReader(body)),
-			},
-		}
-	}()}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
-
-	for _, resp := range awaitAll(t, r1, r2) {
-		g.Expect(resp.Err).ToNot(gomega.HaveOccurred())
-		g.Expect(resp.Payload).ToNot(gomega.BeNil())
-		g.Expect(resp.Payload.Code).To(gomega.Equal("SomeUnknownError"))
-	}
-}
-
-func TestExecutorBatchErrorMalformedBody_DistributesAsOperationalError(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	// BatchMachineClientError but with malformed body → extractPerMachineErrors fails → operational error
-	mock := &recordingClient{err: &azcore.ResponseError{
-		ErrorCode:  "BatchMachineClientError",
-		StatusCode: http.StatusBadRequest,
-		RawResponse: &http.Response{
-			StatusCode: http.StatusBadRequest,
-			Body:       io.NopCloser(bytes.NewReader([]byte("not json"))),
-		},
-	}}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
-
-	for _, resp := range awaitAll(t, r1, r2) {
-		g.Expect(resp.Err).To(gomega.HaveOccurred())
-		g.Expect(resp.Payload).To(gomega.BeNil())
-	}
-}
-
-func TestExecutorBatchErrorNoRawResponse_DistributesAsOperationalError(t *testing.T) {
-	t.Parallel()
-	g := gomega.NewWithT(t)
-	// BatchMachineClientError but without RawResponse → extractPerMachineErrors fails → operational error
-	mock := &recordingClient{err: &azcore.ResponseError{
-		ErrorCode:  "BatchMachineClientError",
-		StatusCode: http.StatusBadRequest,
-	}}
-	exec := newExecutor(mock)
-
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(context.Background(), makeBatch(r1, r2))
-
-	for _, resp := range awaitAll(t, r1, r2) {
-		g.Expect(resp.Err).To(gomega.HaveOccurred())
-		g.Expect(resp.Payload).To(gomega.BeNil())
-	}
+	assert.Equal(t, "m-1", calls[0].machineName)
+	assert.Equal(t, "m-2", calls[1].machineName)
 }

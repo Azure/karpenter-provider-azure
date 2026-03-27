@@ -94,13 +94,14 @@ type Options struct {
 	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 	DiskEncryptionSetID        string            `json:"diskEncryptionSetId,omitempty"`
 
-	// If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE is already an AKS Machine API mode, as it will behave as if this option is set to true.
+	// If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 
-	AKSMachinesPoolName string `json:"aksMachinesPoolName,omitempty"` // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
-	BatchIdleTimeoutMS  int    `json:"batchIdleTimeoutMS,omitempty"`  // Idle timeout in milliseconds for batch accumulation (default 1000ms). Only used on provision mode aksmachineapiheaderbatch.
-	BatchMaxTimeoutMS   int    `json:"batchMaxTimeoutMS,omitempty"`   // Maximum timeout in milliseconds for batch accumulation (default 5000ms). Only used on provision mode aksmachineapiheaderbatch.
-	MaxBatchSize        int    `json:"maxBatchSize,omitempty"`        // Maximum number of machines per batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
+	AKSMachinesPoolName  string `json:"aksMachinesPoolName,omitempty"`  // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision mode.
+	BatchCreationEnabled bool   `json:"batchCreationEnabled,omitempty"` // If set to true, enables batch creation for AKS Machine API to optimize scaling performance. Only used on AKS machine API provision mode.
+	BatchIdleTimeoutMS   int    `json:"batchIdleTimeoutMS,omitempty"`   // Idle timeout in milliseconds for batch accumulation (default 1000ms). Only used when batch creation is enabled.
+	BatchMaxTimeoutMS    int    `json:"batchMaxTimeoutMS,omitempty"`    // Maximum timeout in milliseconds for batch accumulation (default 5000ms). Only used when batch creation is enabled.
+	MaxBatchSize         int    `json:"maxBatchSize,omitempty"`         // Maximum number of machines per batch (default 50, AKS API limit). Only used when batch creation is enabled.
 
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
@@ -129,11 +130,12 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
-	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect when already on an AKS Machine API mode.")
-	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with AKS machine API provision modes. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE is an AKS machine API mode.")
-	fs.IntVar(&o.BatchIdleTimeoutMS, "batch-idle-timeout-ms", env.WithDefaultInt("BATCH_IDLE_TIMEOUT_MS", 1000), "Idle timeout in milliseconds for batch accumulation. Only used on provision mode aksmachineapiheaderbatch.")
-	fs.IntVar(&o.BatchMaxTimeoutMS, "batch-max-timeout-ms", env.WithDefaultInt("BATCH_MAX_TIMEOUT_MS", 5000), "Maximum timeout in milliseconds for batch accumulation. Only used on provision mode aksmachineapiheaderbatch.")
-	fs.IntVar(&o.MaxBatchSize, "max-batch-size", env.WithDefaultInt("MAX_BATCH_SIZE", consts.AKSMachineAPIHeaderBatchMaxSize), fmt.Sprintf("Maximum number of machines per batch (AKS API limit is %d). Only used on provision mode aksmachineapiheaderbatch.", consts.AKSMachineAPIHeaderBatchMaxSize))
+	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.")
+	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with PROVISION_MODE=aksmachineapi. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE=aksmachineapi.")
+	fs.BoolVar(&o.BatchCreationEnabled, "batch-creation-enabled", env.WithDefaultBool("BATCH_CREATION_ENABLED", false), "If set to true, enables batch creation for AKS Machine API to optimize scaling performance. Only used on AKS machine API provision mode.")
+	fs.IntVar(&o.BatchIdleTimeoutMS, "batch-idle-timeout-ms", env.WithDefaultInt("BATCH_IDLE_TIMEOUT_MS", 1000), "Idle timeout in milliseconds for batch accumulation. Only used when batch creation is enabled.")
+	fs.IntVar(&o.BatchMaxTimeoutMS, "batch-max-timeout-ms", env.WithDefaultInt("BATCH_MAX_TIMEOUT_MS", 5000), "Maximum timeout in milliseconds for batch accumulation. Only used when batch creation is enabled.")
+	fs.IntVar(&o.MaxBatchSize, "max-batch-size", env.WithDefaultInt("MAX_BATCH_SIZE", 50), "Maximum number of machines per batch (AKS API limit is 50). Only used when batch creation is enabled.")
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
@@ -142,11 +144,6 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
 	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
 	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", true), "If set to false then Azure SDK middleware logging is disabled for debugging, and won't be logging all HTTP requests/responses to Azure APIs.")
-}
-
-// IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
-func (o *Options) IsAKSMachineAPIMode() bool {
-	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
 func (o *Options) GetAPIServerName() string {

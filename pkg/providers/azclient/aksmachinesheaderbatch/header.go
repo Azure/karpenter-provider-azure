@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 )
 
@@ -28,7 +27,12 @@ import (
 
 // batchPutMachineHeader is the JSON structure sent via HTTP header to Azure.
 type batchPutMachineHeader struct {
+	VMSkus        vmSkus         `json:"vmSkus"`
 	BatchMachines []MachineEntry `json:"batchMachines"`
+}
+
+type vmSkus struct {
+	Value []interface{} `json:"value"`
 }
 
 type MachineEntry struct {
@@ -38,7 +42,7 @@ type MachineEntry struct {
 }
 
 // buildBatchHeader creates the JSON for the BatchPutMachine HTTP header
-func buildBatchHeader(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]) (string, []MachineEntry, error) {
+func buildBatchHeader(batch *batcher.Batch[aksMachineCreatePayload, struct{}]) (string, []MachineEntry, error) {
 	entries := make([]MachineEntry, 0, len(batch.Requests))
 	for _, req := range batch.Requests {
 		var tags map[string]string
@@ -55,6 +59,7 @@ func buildBatchHeader(batch *batcher.Batch[aksMachineCreatePayload, *offerings.H
 	}
 
 	header := batchPutMachineHeader{
+		VMSkus:        vmSkus{Value: []interface{}{}},
 		BatchMachines: entries,
 	}
 
@@ -63,32 +68,4 @@ func buildBatchHeader(batch *batcher.Batch[aksMachineCreatePayload, *offerings.H
 		return "", nil, fmt.Errorf("failed to marshal batch header: %w", err)
 	}
 	return string(jsonBytes), entries, nil
-}
-
-// Helpers to convert Azure SDK pointer types to concrete values.
-
-func extractZones(zones []*string) []string {
-	if len(zones) == 0 {
-		return []string{}
-	}
-	result := make([]string, 0, len(zones))
-	for _, z := range zones {
-		if z != nil {
-			result = append(result, *z)
-		}
-	}
-	return result
-}
-
-func extractTags(tags map[string]*string) map[string]string {
-	if tags == nil {
-		return make(map[string]string)
-	}
-	result := make(map[string]string, len(tags))
-	for k, v := range tags {
-		if v != nil {
-			result[k] = *v
-		}
-	}
-	return result
 }
