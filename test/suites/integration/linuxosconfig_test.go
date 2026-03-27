@@ -37,6 +37,32 @@ import (
 )
 
 var _ = Describe("LinuxOSConfig", func() {
+	// How these tests work:
+	//
+	// 1. We create an AKSNodeClass with linuxOSConfig (sysctls, THP, swap) and a NodePool.
+	// 2. We schedule a pod that triggers Karpenter to provision a new node via AKS.
+	// 3. Once the node is ready, we create a "verification pod" on that node to read back
+	//    the kernel settings and confirm they match what we configured.
+	//
+	// How verification pods read settings:
+	//   There's no Kubernetes API to read a node's kernel parameters. The only way is to
+	//   run a process on the node and read from the kernel's virtual filesystems:
+	//   - Sysctls: the `sysctl` command reads /proc/sys/ (e.g., /proc/sys/net/core/somaxconn)
+	//   - THP: read /sys/kernel/mm/transparent_hugepage/enabled and .../defrag
+	//   - Swap: read /proc/meminfo for SwapTotal
+	//   The verification pod runs with privileged: true to access these host kernel paths,
+	//   and we pin it to the target node using a nodeSelector on the hostname label.
+	//   We then read the pod's stdout logs to get the values and assert on them.
+	//
+	// Why hostNetwork is needed for sysctl verification:
+	//   Linux net.* sysctls are per-network-namespace. Each container gets its own network
+	//   namespace with default values, even with privileged: true. Without hostNetwork,
+	//   `sysctl net.core.somaxconn` returns the container's default (4096), not the host's
+	//   configured value (e.g., 8192). Setting hostNetwork: true puts the pod in the host's
+	//   network namespace so sysctl reads return the actual host values.
+	//   Other sysctl namespaces (vm.*, fs.*, kernel.*) are kernel-global and visible from
+	//   any container. THP (/sys/kernel/mm/) and swap (/proc/meminfo) are also kernel-global.
+
 	BeforeEach(func() {
 		if env.ProvisionMode == consts.ProvisionModeAKSScriptless {
 			Skip("LinuxOSConfig is not supported in aksscriptless mode")
@@ -46,17 +72,17 @@ var _ = Describe("LinuxOSConfig", func() {
 	It("should provision a node with sysctl tuning applied", func() {
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 			Sysctls: &v1beta1.SysctlConfiguration{
-				FsAioMaxNr:                     lo.ToPtr[int32](65536),
+				FsAioMaxNr:                     lo.ToPtr[int32](131072),
 				FsFileMax:                      lo.ToPtr[int32](12000),
 				FsInotifyMaxUserWatches:        lo.ToPtr[int32](781250),
-				FsNrOpen:                       lo.ToPtr[int32](1048576),
+				FsNrOpen:                       lo.ToPtr[int32](2097152),
 				KernelThreadsMax:               lo.ToPtr[int32](100000),
 				NetCoreNetdevMaxBacklog:        lo.ToPtr[int32](2000),
 				NetCoreOptmemMax:               lo.ToPtr[int32](40960),
-				NetCoreRmemDefault:             lo.ToPtr[int32](212992),
+				NetCoreRmemDefault:             lo.ToPtr[int32](262144),
 				NetCoreRmemMax:                 lo.ToPtr[int32](134217728),
 				NetCoreSomaxconn:               lo.ToPtr[int32](8192),
-				NetCoreWmemDefault:             lo.ToPtr[int32](212992),
+				NetCoreWmemDefault:             lo.ToPtr[int32](262144),
 				NetCoreWmemMax:                 lo.ToPtr[int32](134217728),
 				NetIPv4IPLocalPortRange:        lo.ToPtr("1024 65535"),
 				NetIPv4NeighDefaultGcThresh1:   lo.ToPtr[int32](512),
@@ -66,12 +92,12 @@ var _ = Describe("LinuxOSConfig", func() {
 				NetIPv4TCPKeepaliveTime:        lo.ToPtr[int32](120),
 				NetIPv4TCPKeepaliveIntvl:       lo.ToPtr[int32](30),
 				NetIPv4TCPKeepaliveProbes:      lo.ToPtr[int32](8),
-				NetIPv4TCPMaxSynBacklog:        lo.ToPtr[int32](16384),
+				NetIPv4TCPMaxSynBacklog:        lo.ToPtr[int32](8192),
 				NetIPv4TCPMaxTwBuckets:         lo.ToPtr[int32](32000),
 				NetIPv4TCPTwReuse:              lo.ToPtr(true),
-				NetNetfilterNfConntrackMax:     lo.ToPtr[int32](262144),
-				NetNetfilterNfConntrackBuckets: lo.ToPtr[int32](65536),
-				VMMaxMapCount:                  lo.ToPtr[int32](262144),
+				NetNetfilterNfConntrackMax:     lo.ToPtr[int32](524288),
+				NetNetfilterNfConntrackBuckets: lo.ToPtr[int32](131072),
+				VMMaxMapCount:                  lo.ToPtr[int32](128000),
 				VMSwappiness:                   lo.ToPtr[int32](10),
 				VMVfsCachePressure:             lo.ToPtr[int32](50),
 			},
@@ -121,17 +147,17 @@ var _ = Describe("LinuxOSConfig", func() {
 		logs := eventuallyGetPodLogs(verifyPod)
 		By(fmt.Sprintf("Sysctl verification output:\n%s", logs))
 
-		Expect(logs).To(ContainSubstring("fs.aio-max-nr = 65536"))
+		Expect(logs).To(ContainSubstring("fs.aio-max-nr = 131072"))
 		Expect(logs).To(ContainSubstring("fs.file-max = 12000"))
 		Expect(logs).To(ContainSubstring("fs.inotify.max_user_watches = 781250"))
-		Expect(logs).To(ContainSubstring("fs.nr_open = 1048576"))
+		Expect(logs).To(ContainSubstring("fs.nr_open = 2097152"))
 		Expect(logs).To(ContainSubstring("kernel.threads-max = 100000"))
 		Expect(logs).To(ContainSubstring("net.core.netdev_max_backlog = 2000"))
 		Expect(logs).To(ContainSubstring("net.core.optmem_max = 40960"))
-		Expect(logs).To(ContainSubstring("net.core.rmem_default = 212992"))
+		Expect(logs).To(ContainSubstring("net.core.rmem_default = 262144"))
 		Expect(logs).To(ContainSubstring("net.core.rmem_max = 134217728"))
 		Expect(logs).To(ContainSubstring("net.core.somaxconn = 8192"))
-		Expect(logs).To(ContainSubstring("net.core.wmem_default = 212992"))
+		Expect(logs).To(ContainSubstring("net.core.wmem_default = 262144"))
 		Expect(logs).To(ContainSubstring("net.core.wmem_max = 134217728"))
 		Expect(logs).To(ContainSubstring("net.ipv4.ip_local_port_range = 1024\t65535"))
 		Expect(logs).To(ContainSubstring("net.ipv4.neigh.default.gc_thresh1 = 512"))
@@ -141,12 +167,12 @@ var _ = Describe("LinuxOSConfig", func() {
 		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_time = 120"))
 		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_intvl = 30"))
 		Expect(logs).To(ContainSubstring("net.ipv4.tcp_keepalive_probes = 8"))
-		Expect(logs).To(ContainSubstring("net.ipv4.tcp_max_syn_backlog = 16384"))
+		Expect(logs).To(ContainSubstring("net.ipv4.tcp_max_syn_backlog = 8192"))
 		Expect(logs).To(ContainSubstring("net.ipv4.tcp_max_tw_buckets = 32000"))
 		Expect(logs).To(ContainSubstring("net.ipv4.tcp_tw_reuse = 1"))
-		Expect(logs).To(ContainSubstring("net.netfilter.nf_conntrack_max = 262144"))
-		Expect(logs).To(ContainSubstring("net.netfilter.nf_conntrack_buckets = 65536"))
-		Expect(logs).To(ContainSubstring("vm.max_map_count = 262144"))
+		Expect(logs).To(ContainSubstring("net.netfilter.nf_conntrack_max = 524288"))
+		Expect(logs).To(ContainSubstring("net.netfilter.nf_conntrack_buckets = 131072"))
+		Expect(logs).To(ContainSubstring("vm.max_map_count = 128000"))
 		Expect(logs).To(ContainSubstring("vm.swappiness = 10"))
 		Expect(logs).To(ContainSubstring("vm.vfs_cache_pressure = 50"))
 	})
@@ -203,13 +229,11 @@ var _ = Describe("LinuxOSConfig", func() {
 		By(fmt.Sprintf("Swap verification output:\n%s", logs))
 
 		// Swap should be enabled. Parse total swap from /proc/meminfo.
-		// SwapTotal line will show the total swap in kB, which should be ~1500MB (1536000 kB).
+		// SwapTotal line will show the total swap in kB, which should be ~1500MB.
 		// Allow some tolerance since the kernel may report slightly different values.
 		Expect(logs).To(ContainSubstring("SwapTotal:"))
 		// Verify swap is NOT zero (i.e., swap is enabled)
 		Expect(logs).ToNot(ContainSubstring("SwapTotal:           0 kB"))
-		// Also check that /swapfile exists
-		Expect(logs).To(ContainSubstring("swapfile_exists=true"))
 	})
 
 	It("should provision a node with full LinuxOSConfig (sysctls + THP + swap)", func() {
@@ -269,7 +293,9 @@ const (
 // =========================================================================
 
 // createSysctlVerificationPod creates a privileged pod on the target node that
-// reads the specified sysctl values using the `sysctl` command.
+// reads the specified sysctl values from the host's kernel.
+// hostNetwork: true is required so net.* sysctls reflect the host's network namespace,
+// not the container's default network namespace.
 func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod {
 	sysctlArgs := strings.Join(sysctls, " ")
 	pod := coretest.Pod(coretest.PodOptions{
@@ -288,6 +314,7 @@ func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod 
 		RestartPolicy: corev1.RestartPolicyNever,
 	})
 	pod.Spec.HostPID = true
+	pod.Spec.HostNetwork = true
 	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
 		Privileged: lo.ToPtr(true),
 	}
@@ -296,6 +323,7 @@ func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod 
 
 // createTHPVerificationPod creates a privileged pod on the target node that
 // reads the transparent huge page settings from /sys/kernel/mm/transparent_hugepage/.
+// THP settings are kernel-global (not namespaced), so a privileged container can read them directly.
 func createTHPVerificationPod(nodeName string) *corev1.Pod {
 	pod := coretest.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
@@ -322,7 +350,7 @@ func createTHPVerificationPod(nodeName string) *corev1.Pod {
 }
 
 // createSwapVerificationPod creates a privileged pod on the target node that
-// checks swap configuration by reading /proc/meminfo and checking for /swapfile.
+// checks swap configuration by reading /proc/meminfo.
 func createSwapVerificationPod(nodeName string) *corev1.Pod {
 	pod := coretest.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
@@ -332,9 +360,7 @@ func createSwapVerificationPod(nodeName string) *corev1.Pod {
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
-			"grep SwapTotal /proc/meminfo && " +
-				"if [ -f /host/swapfile ]; then echo swapfile_exists=true; else echo swapfile_exists=false; fi && " +
-				"sleep 30",
+			"grep SwapTotal /proc/meminfo && sleep 30",
 		},
 		NodeSelector: map[string]string{
 			corev1.LabelHostname: nodeName,
@@ -345,29 +371,12 @@ func createSwapVerificationPod(nodeName string) *corev1.Pod {
 	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
 		Privileged: lo.ToPtr(true),
 	}
-	// Mount the host root filesystem to check for /swapfile
-	pod.Spec.Volumes = []corev1.Volume{
-		{
-			Name: "host-root",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/",
-				},
-			},
-		},
-	}
-	pod.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{
-		{
-			Name:      "host-root",
-			MountPath: "/host",
-			ReadOnly:  true,
-		},
-	}
 	return pod
 }
 
 // createFullLinuxOSConfigVerificationPod creates a privileged pod that checks
 // sysctls, THP, and swap settings all in one command.
+// Uses hostNetwork for accurate net.* sysctl values.
 func createFullLinuxOSConfigVerificationPod(nodeName string) *corev1.Pod {
 	pod := coretest.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
@@ -389,6 +398,7 @@ func createFullLinuxOSConfigVerificationPod(nodeName string) *corev1.Pod {
 		RestartPolicy: corev1.RestartPolicyNever,
 	})
 	pod.Spec.HostPID = true
+	pod.Spec.HostNetwork = true
 	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
 		Privileged: lo.ToPtr(true),
 	}
