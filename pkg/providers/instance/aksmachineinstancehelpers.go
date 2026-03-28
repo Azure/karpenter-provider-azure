@@ -120,7 +120,15 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
 				OSDiskType:   osDiskType,
 				EnableFIPS:   enableFIPS,
-				// LinuxProfile:   nil,
+				LinuxProfile: func() *armcontainerservice.MachineOSProfileLinuxProfile {
+					linuxOSConfig := configureLinuxOSConfig(nodeClass)
+					if linuxOSConfig == nil {
+						return nil
+					}
+					return &armcontainerservice.MachineOSProfileLinuxProfile{
+						LinuxOSConfig: linuxOSConfig,
+					}
+				}(),
 				// WindowsProfile: nil,
 			},
 
@@ -325,6 +333,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 		kubeletConfig.PodMaxPids = convertPodMaxPids(*nodeClass.Spec.Kubelet.PodPidsLimit)
 	}
 
+	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
+
 	return kubeletConfig
 }
 
@@ -337,11 +347,74 @@ func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	return customscriptsbootstrap.ConvertContainerLogMaxSizeToMB(containerLogMaxSize)
 }
 
+func convertSwapFileSizeToMB(swapFileSize string) *int32 {
+	// TODO: rename the utils below.
+	return customscriptsbootstrap.ConvertContainerLogMaxSizeToMB(swapFileSize)
+}
+
 func convertPodMaxPids(podPidsLimit int64) *int32 {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
 	return customscriptsbootstrap.ConvertPodMaxPids(lo.ToPtr(podPidsLimit))
+}
+
+func configureLinuxOSConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LinuxOSConfig {
+	if nodeClass == nil || nodeClass.Spec.LinuxOSConfig == nil {
+		return nil
+	}
+
+	linuxOSConfig := &armcontainerservice.LinuxOSConfig{}
+	if nodeClass.Spec.LinuxOSConfig.SwapFileSize != nil && *nodeClass.Spec.LinuxOSConfig.SwapFileSize != "" {
+		linuxOSConfig.SwapFileSizeMB = convertSwapFileSizeToMB(*nodeClass.Spec.LinuxOSConfig.SwapFileSize)
+	}
+	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag != nil {
+		linuxOSConfig.TransparentHugePageDefrag = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag))
+	}
+	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled != nil {
+		linuxOSConfig.TransparentHugePageEnabled = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled))
+	}
+	linuxOSConfig.Sysctls = configureSysctlConfig(nodeClass.Spec.LinuxOSConfig.Sysctls)
+
+	return linuxOSConfig
+}
+
+func configureSysctlConfig(sysctls *v1beta1.SysctlConfiguration) *armcontainerservice.SysctlConfig {
+	if sysctls == nil {
+		return nil
+	}
+
+	sysctlConfig := &armcontainerservice.SysctlConfig{}
+	sysctlConfig.FsAioMaxNr = sysctls.FsAioMaxNr
+	sysctlConfig.FsFileMax = sysctls.FsFileMax
+	sysctlConfig.FsInotifyMaxUserWatches = sysctls.FsInotifyMaxUserWatches
+	sysctlConfig.FsNrOpen = sysctls.FsNrOpen
+	sysctlConfig.KernelThreadsMax = sysctls.KernelThreadsMax
+	sysctlConfig.NetCoreNetdevMaxBacklog = sysctls.NetCoreNetdevMaxBacklog
+	sysctlConfig.NetCoreOptmemMax = sysctls.NetCoreOptmemMax
+	sysctlConfig.NetCoreRmemDefault = sysctls.NetCoreRmemDefault
+	sysctlConfig.NetCoreRmemMax = sysctls.NetCoreRmemMax
+	sysctlConfig.NetCoreSomaxconn = sysctls.NetCoreSomaxconn
+	sysctlConfig.NetCoreWmemDefault = sysctls.NetCoreWmemDefault
+	sysctlConfig.NetCoreWmemMax = sysctls.NetCoreWmemMax
+	sysctlConfig.NetIPv4IPLocalPortRange = sysctls.NetIPv4IPLocalPortRange
+	sysctlConfig.NetIPv4NeighDefaultGcThresh1 = sysctls.NetIPv4NeighDefaultGcThresh1
+	sysctlConfig.NetIPv4NeighDefaultGcThresh2 = sysctls.NetIPv4NeighDefaultGcThresh2
+	sysctlConfig.NetIPv4NeighDefaultGcThresh3 = sysctls.NetIPv4NeighDefaultGcThresh3
+	sysctlConfig.NetIPv4TCPFinTimeout = sysctls.NetIPv4TCPFinTimeout
+	sysctlConfig.NetIPv4TCPKeepaliveProbes = sysctls.NetIPv4TCPKeepaliveProbes
+	sysctlConfig.NetIPv4TCPKeepaliveTime = sysctls.NetIPv4TCPKeepaliveTime
+	sysctlConfig.NetIPv4TCPMaxSynBacklog = sysctls.NetIPv4TCPMaxSynBacklog
+	sysctlConfig.NetIPv4TCPMaxTwBuckets = sysctls.NetIPv4TCPMaxTwBuckets
+	sysctlConfig.NetIPv4TCPTwReuse = sysctls.NetIPv4TCPTwReuse
+	sysctlConfig.NetIPv4TcpkeepaliveIntvl = sysctls.NetIPv4TCPKeepaliveIntvl
+	sysctlConfig.NetNetfilterNfConntrackBuckets = sysctls.NetNetfilterNfConntrackBuckets
+	sysctlConfig.NetNetfilterNfConntrackMax = sysctls.NetNetfilterNfConntrackMax
+	sysctlConfig.VMMaxMapCount = sysctls.VMMaxMapCount
+	sysctlConfig.VMSwappiness = sysctls.VMSwappiness
+	sysctlConfig.VMVfsCachePressure = sysctls.VMVfsCachePressure
+
+	return sysctlConfig
 }
 
 // parseVMImageID parses a VM image ID and extracts the required components for custom OS image headers.

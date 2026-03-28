@@ -46,6 +46,7 @@ type ArtifactStreaming struct {
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
+// +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -108,6 +109,12 @@ type AKSNodeClassSpec struct {
 	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 	// +optional
 	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
+	// linuxOSConfig specifies OS settings for Linux agent nodes.
+	// These map to the AKS Custom Linux OS Configuration feature.
+	// For more information, see:
+	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+	// +optional
+	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -376,6 +383,240 @@ type KubeletConfiguration struct {
 	// Default: -1
 	// +optional
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
+	// failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
+	// Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
+	// +optional
+	FailSwapOn *bool `json:"failSwapOn,omitempty"`
+}
+
+// +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}
+type TransparentHugePageDefrag string
+
+const (
+	// TransparentHugePageDefragAlways sets defrag to always.
+	TransparentHugePageDefragAlways TransparentHugePageDefrag = "always"
+	// TransparentHugePageDefragDefer sets defrag to defer.
+	TransparentHugePageDefragDefer TransparentHugePageDefrag = "defer"
+	// TransparentHugePageDefragDeferMadvise sets defrag to defer+madvise.
+	TransparentHugePageDefragDeferMadvise TransparentHugePageDefrag = "defer+madvise"
+	// TransparentHugePageDefragMadvise sets defrag to madvise.
+	TransparentHugePageDefragMadvise TransparentHugePageDefrag = "madvise"
+	// TransparentHugePageDefragNever sets defrag to never.
+	TransparentHugePageDefragNever TransparentHugePageDefrag = "never"
+)
+
+// +kubebuilder:validation:Enum:={always,madvise,never}
+type TransparentHugePageEnabled string
+
+const (
+	// TransparentHugePageEnabledAlways enables transparent huge pages always.
+	TransparentHugePageEnabledAlways TransparentHugePageEnabled = "always"
+	// TransparentHugePageEnabledMadvise enables transparent huge pages for madvise regions.
+	TransparentHugePageEnabledMadvise TransparentHugePageEnabled = "madvise"
+	// TransparentHugePageEnabledNever disables transparent huge pages.
+	TransparentHugePageEnabledNever TransparentHugePageEnabled = "never"
+)
+
+// LinuxOSConfiguration defines the Custom Linux OS Configuration for nodes.
+// These settings are applied at node provisioning time and map to AKS Custom Linux OS Configuration.
+// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+type LinuxOSConfiguration struct {
+	// swapFileSize specifies the size of a swap file that will be created on each node.
+	// For example: "1500Mi" or "2Gi".
+	// The value will be rounded to the nearest megabyte due to system limitations.
+	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
+	// +optional
+	SwapFileSize *string `json:"swapFileSize,omitempty"`
+	// sysctls specifies sysctl settings for Linux agent nodes.
+	// +optional
+	Sysctls *SysctlConfiguration `json:"sysctls,omitempty"`
+	// transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
+	// Maps to /sys/kernel/mm/transparent_hugepage/defrag.
+	// +optional
+	TransparentHugePageDefrag *TransparentHugePageDefrag `json:"transparentHugePageDefrag,omitempty"`
+	// transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled behavior.
+	// Maps to /sys/kernel/mm/transparent_hugepage/enabled.
+	// +optional
+	TransparentHugePageEnabled *TransparentHugePageEnabled `json:"transparentHugePageEnabled,omitempty"`
+}
+
+// SysctlConfiguration defines sysctl settings for Linux agent nodes.
+// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+// +kubebuilder:validation:XValidation:message="netCoreRmemDefault must be <= netCoreRmemMax",rule="has(self.netCoreRmemDefault) && has(self.netCoreRmemMax) ? self.netCoreRmemDefault <= self.netCoreRmemMax : true"
+// +kubebuilder:validation:XValidation:message="netCoreWmemDefault must be <= netCoreWmemMax",rule="has(self.netCoreWmemDefault) && has(self.netCoreWmemMax) ? self.netCoreWmemDefault <= self.netCoreWmemMax : true"
+// +kubebuilder:validation:XValidation:message="netIPv4NeighDefaultGcThresh1 must be <= netIPv4NeighDefaultGcThresh2",rule="has(self.netIPv4NeighDefaultGcThresh1) && has(self.netIPv4NeighDefaultGcThresh2) ? self.netIPv4NeighDefaultGcThresh1 <= self.netIPv4NeighDefaultGcThresh2 : true"
+// +kubebuilder:validation:XValidation:message="netIPv4NeighDefaultGcThresh2 must be <= netIPv4NeighDefaultGcThresh3",rule="has(self.netIPv4NeighDefaultGcThresh2) && has(self.netIPv4NeighDefaultGcThresh3) ? self.netIPv4NeighDefaultGcThresh2 <= self.netIPv4NeighDefaultGcThresh3 : true"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange first port must be in [1024, 60999]",rule="!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(' ')[0]) >= 1024 && int(self.netIPv4IPLocalPortRange.split(' ')[0]) <= 60999)"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange last port must be in [32768, 65535]",rule="!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(' ')[1]) >= 32768 && int(self.netIPv4IPLocalPortRange.split(' ')[1]) <= 65535)"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange first port must be <= last port",rule="!has(self.netIPv4IPLocalPortRange) || int(self.netIPv4IPLocalPortRange.split(' ')[0]) <= int(self.netIPv4IPLocalPortRange.split(' ')[1])"
+type SysctlConfiguration struct {
+	// fsAioMaxNr specifies the maximum number of AIO (Asynchronous I/O) requests.
+	// Maps to fs.aio-max-nr.
+	// +kubebuilder:validation:Minimum=65536
+	// +kubebuilder:validation:Maximum=6553500
+	// +optional
+	FsAioMaxNr *int32 `json:"fsAioMaxNr,omitempty"`
+	// fsFileMax specifies the maximum number of file handles the kernel will allocate.
+	// Maps to fs.file-max.
+	// +kubebuilder:validation:Minimum=8192
+	// +kubebuilder:validation:Maximum=12000500
+	// +optional
+	FsFileMax *int32 `json:"fsFileMax,omitempty"`
+	// fsInotifyMaxUserWatches specifies the maximum number of inotify watches per user.
+	// Maps to fs.inotify.max_user_watches.
+	// +kubebuilder:validation:Minimum=781250
+	// +kubebuilder:validation:Maximum=2097152
+	// +optional
+	FsInotifyMaxUserWatches *int32 `json:"fsInotifyMaxUserWatches,omitempty"`
+	// fsNrOpen specifies the maximum number of file handles that can be allocated.
+	// Maps to fs.nr_open.
+	// +kubebuilder:validation:Minimum=8192
+	// +kubebuilder:validation:Maximum=20000500
+	// +optional
+	FsNrOpen *int32 `json:"fsNrOpen,omitempty"`
+	// kernelThreadsMax specifies the maximum number of threads that can be created.
+	// Maps to kernel.threads-max.
+	// +kubebuilder:validation:Minimum=20
+	// +kubebuilder:validation:Maximum=513785
+	// +optional
+	KernelThreadsMax *int32 `json:"kernelThreadsMax,omitempty"`
+	// netCoreNetdevMaxBacklog specifies the maximum number of packets queued on the INPUT side.
+	// Maps to net.core.netdev_max_backlog.
+	// +kubebuilder:validation:Minimum=1000
+	// +kubebuilder:validation:Maximum=3240000
+	// +optional
+	NetCoreNetdevMaxBacklog *int32 `json:"netCoreNetdevMaxBacklog,omitempty"`
+	// netCoreOptmemMax specifies the maximum ancillary buffer size (option memory buffer) allowed per socket.
+	// Maps to net.core.optmem_max.
+	// +kubebuilder:validation:Minimum=20480
+	// +kubebuilder:validation:Maximum=4194304
+	// +optional
+	NetCoreOptmemMax *int32 `json:"netCoreOptmemMax,omitempty"`
+	// netCoreRmemDefault specifies the default receive socket buffer size in bytes.
+	// Maps to net.core.rmem_default.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreRmemDefault *int32 `json:"netCoreRmemDefault,omitempty"`
+	// netCoreRmemMax specifies the maximum receive socket buffer size in bytes.
+	// Maps to net.core.rmem_max.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreRmemMax *int32 `json:"netCoreRmemMax,omitempty"`
+	// netCoreSomaxconn specifies the maximum number of connection requests that can be queued for any given listening socket.
+	// Maps to net.core.somaxconn.
+	// +kubebuilder:validation:Minimum=4096
+	// +kubebuilder:validation:Maximum=3240000
+	// +optional
+	NetCoreSomaxconn *int32 `json:"netCoreSomaxconn,omitempty"`
+	// netCoreWmemDefault specifies the default send socket buffer size in bytes.
+	// Maps to net.core.wmem_default.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreWmemDefault *int32 `json:"netCoreWmemDefault,omitempty"`
+	// netCoreWmemMax specifies the maximum send socket buffer size in bytes.
+	// Maps to net.core.wmem_max.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreWmemMax *int32 `json:"netCoreWmemMax,omitempty"`
+	// netIPv4IPLocalPortRange specifies the local port range that is used by TCP and UDP traffic.
+	// Must be in the format "first last", where first is in the range 1024-60999 and last is in the range 32768-65535.
+	// Maps to net.ipv4.ip_local_port_range.
+	// +kubebuilder:validation:Pattern=`^\d+ \d+$`
+	// +optional
+	NetIPv4IPLocalPortRange *string `json:"netIPv4IPLocalPortRange,omitempty"`
+	// netIPv4NeighDefaultGcThresh1 specifies the minimum number of entries that may be in the ARP cache.
+	// Maps to net.ipv4.neigh.default.gc_thresh1.
+	// +kubebuilder:validation:Minimum=128
+	// +kubebuilder:validation:Maximum=80000
+	// +optional
+	NetIPv4NeighDefaultGcThresh1 *int32 `json:"netIPv4NeighDefaultGcThresh1,omitempty"`
+	// netIPv4NeighDefaultGcThresh2 specifies the soft maximum number of entries that may be in the ARP cache.
+	// Maps to net.ipv4.neigh.default.gc_thresh2.
+	// +kubebuilder:validation:Minimum=512
+	// +kubebuilder:validation:Maximum=90000
+	// +optional
+	NetIPv4NeighDefaultGcThresh2 *int32 `json:"netIPv4NeighDefaultGcThresh2,omitempty"`
+	// netIPv4NeighDefaultGcThresh3 specifies the hard maximum number of entries in the ARP cache.
+	// Maps to net.ipv4.neigh.default.gc_thresh3.
+	// +kubebuilder:validation:Minimum=1024
+	// +kubebuilder:validation:Maximum=100000
+	// +optional
+	NetIPv4NeighDefaultGcThresh3 *int32 `json:"netIPv4NeighDefaultGcThresh3,omitempty"`
+	// netIPv4TCPFinTimeout specifies the length of time an orphaned connection will remain in the FIN_WAIT_2 state before being aborted.
+	// Maps to net.ipv4.tcp_fin_timeout.
+	// +kubebuilder:validation:Minimum=5
+	// +kubebuilder:validation:Maximum=120
+	// +optional
+	NetIPv4TCPFinTimeout *int32 `json:"netIPv4TCPFinTimeout,omitempty"`
+	// netIPv4TCPKeepaliveProbes specifies the number of keepalive probes TCP sends out until it decides a connection is broken.
+	// Maps to net.ipv4.tcp_keepalive_probes.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=15
+	// +optional
+	NetIPv4TCPKeepaliveProbes *int32 `json:"netIPv4TCPKeepaliveProbes,omitempty"`
+	// netIPv4TCPKeepaliveTime specifies the rate at which TCP sends keepalive probes. Measured in seconds.
+	// Maps to net.ipv4.tcp_keepalive_time.
+	// +kubebuilder:validation:Minimum=30
+	// +kubebuilder:validation:Maximum=432000
+	// +optional
+	NetIPv4TCPKeepaliveTime *int32 `json:"netIPv4TCPKeepaliveTime,omitempty"`
+	// netIPv4TCPMaxSynBacklog specifies the maximum number of queued connection requests that have still not received
+	// an acknowledgment from the connecting client. If this number is exceeded, the kernel will begin dropping requests.
+	// Maps to net.ipv4.tcp_max_syn_backlog.
+	// +kubebuilder:validation:Minimum=128
+	// +kubebuilder:validation:Maximum=3240000
+	// +optional
+	NetIPv4TCPMaxSynBacklog *int32 `json:"netIPv4TCPMaxSynBacklog,omitempty"`
+	// netIPv4TCPMaxTwBuckets specifies the maximum number of sockets in TIME_WAIT state.
+	// Maps to net.ipv4.tcp_max_tw_buckets.
+	// +kubebuilder:validation:Minimum=8000
+	// +kubebuilder:validation:Maximum=1440000
+	// +optional
+	NetIPv4TCPMaxTwBuckets *int32 `json:"netIPv4TCPMaxTwBuckets,omitempty"`
+	// netIPv4TCPTwReuse enables/disables reuse of TIME_WAIT sockets for new connections.
+	// Maps to net.ipv4.tcp_tw_reuse.
+	// +optional
+	NetIPv4TCPTwReuse *bool `json:"netIPv4TCPTwReuse,omitempty"`
+	// netIPv4TCPKeepaliveIntvl specifies the frequency of the probes sent out. Measured in seconds.
+	// Maps to net.ipv4.tcp_keepalive_intvl.
+	// +kubebuilder:validation:Minimum=10
+	// +kubebuilder:validation:Maximum=90
+	// +optional
+	NetIPv4TCPKeepaliveIntvl *int32 `json:"netIPv4TCPKeepaliveIntvl,omitempty"`
+	// netNetfilterNfConntrackBuckets specifies the size of the hash table used by nf_conntrack module.
+	// Maps to net.netfilter.nf_conntrack_buckets.
+	// +kubebuilder:validation:Minimum=65536
+	// +kubebuilder:validation:Maximum=524288
+	// +optional
+	NetNetfilterNfConntrackBuckets *int32 `json:"netNetfilterNfConntrackBuckets,omitempty"`
+	// netNetfilterNfConntrackMax specifies the maximum number of connections tracked by the nf_conntrack module.
+	// Maps to net.netfilter.nf_conntrack_max.
+	// +kubebuilder:validation:Minimum=131072
+	// +kubebuilder:validation:Maximum=2097152
+	// +optional
+	NetNetfilterNfConntrackMax *int32 `json:"netNetfilterNfConntrackMax,omitempty"`
+	// vmMaxMapCount specifies the maximum number of memory map areas a process may have.
+	// Maps to vm.max_map_count.
+	// +kubebuilder:validation:Minimum=65530
+	// +kubebuilder:validation:Maximum=262144
+	// +optional
+	VMMaxMapCount *int32 `json:"vmMaxMapCount,omitempty"`
+	// vmSwappiness specifies the kernel's tendency to swap memory pages. Higher values increase aggressiveness, lower values decrease it.
+	// Maps to vm.swappiness.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	VMSwappiness *int32 `json:"vmSwappiness,omitempty"`
+	// vmVfsCachePressure specifies the tendency of the kernel to reclaim the memory which is used for caching of directory and inode objects.
+	// Maps to vm.vfs_cache_pressure.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	VMVfsCachePressure *int32 `json:"vmVfsCachePressure,omitempty"`
 }
 
 // AKSNodeClass is the Schema for the AKSNodeClass API
