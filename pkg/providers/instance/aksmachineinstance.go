@@ -486,6 +486,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 		// TODO: find a way to access that instead of making another GET call like this.
 		gotAKSMachine, err := p.getCreatedMachineAndHandleEarlyProvisioningError(ctx, aksMachineName, nodeClass, instanceType, zone, capacityType)
+		if err != nil {
+			return nil, err
+		}
 
 		// Return LRO
 		return NewAKSMachinePromise(
@@ -539,6 +542,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 		// TODO: find a way to access that instead of making another GET call like this.
 		gotAKSMachine, err := p.getCreatedMachineAndHandleEarlyProvisioningError(ctx, aksMachineName, nodeClass, instanceType, zone, capacityType)
+		if err != nil {
+			return nil, err
+		}
 
 		// Return LRO
 		return NewAKSMachinePromise(
