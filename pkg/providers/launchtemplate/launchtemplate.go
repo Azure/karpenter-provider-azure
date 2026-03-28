@@ -153,6 +153,11 @@ func (p *Provider) getStaticParameters(
 	}
 	labels = lo.Assign(baseLabels, labels)
 
+	// Remove labels kubelet can't set (e.g. kubernetes.io/*, k8s.io/* outside allowed namespaces)
+	labels = lo.OmitBy(labels, func(key string, _ string) bool {
+		return !karplabels.CanKubeletSetLabel(key)
+	})
+
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
 	return &parameters.StaticParameters{

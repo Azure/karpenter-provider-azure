@@ -586,6 +586,7 @@ func TestConstructProvisionValues(t *testing.T) {
 						ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 						PodPidsLimit:                lo.ToPtr(int64(1024)),
 						AllowedUnsafeSysctls:        []string{"kernel.msg*", "net.ipv4.route.min_pmtu"},
+						FailSwapOn:                  lo.ToPtr(false),
 					},
 				},
 				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -634,6 +635,10 @@ func TestConstructProvisionValues(t *testing.T) {
 				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(HaveLen(2))
 				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(ContainElement("kernel.msg*"))
 				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(ContainElement("net.ipv4.route.min_pmtu"))
+
+				// FailSwapOn
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.FailSwapOn).ToNot(BeNil())
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.FailSwapOn).To(BeFalse())
 			},
 		},
 	}

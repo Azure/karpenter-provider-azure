@@ -154,7 +154,7 @@ ERROR CODE: PropertyChangeNotAllowed
 				return nil, &azcore.ResponseError{
 					ErrorCode: errCode,
 					RawResponse: &http.Response{
-						Body: createSDKErrorBody(errCode, msg),
+						Body: CreateSDKErrorBody(errCode, msg),
 					},
 				}
 			}
@@ -259,7 +259,7 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 	})
 }
 
-func createSDKErrorBody(code, message string) io.ReadCloser {
+func CreateSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }
 
@@ -272,7 +272,7 @@ func getAuthTokenError(err error) *azcore.ResponseError {
 	return &azcore.ResponseError{
 		ErrorCode: "AuthenticationFailed",
 		RawResponse: &http.Response{
-			Body: createSDKErrorBody("AuthenticationFailed", err.Error()),
+			Body: CreateSDKErrorBody("AuthenticationFailed", err.Error()),
 		},
 	}
 }

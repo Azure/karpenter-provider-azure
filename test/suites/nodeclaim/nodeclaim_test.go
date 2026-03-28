@@ -35,16 +35,12 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUFamily,
+					{Key: v1beta1.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"D"},
-					}},
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      karpv1.CapacityTypeLabelKey,
+						Values:   []string{"D"}},
+					{Key: karpv1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand},
-					}},
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
 				},
 				NodeClassRef: &karpv1.NodeClassReference{
 					Group: object.GVK(nodeClass).Group,
@@ -134,16 +130,12 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUFamily,
+					{Key: v1beta1.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"D"},
-					}},
-					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      karpv1.CapacityTypeLabelKey,
+						Values:   []string{"D"}},
+					{Key: karpv1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand},
-					}},
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
 				},
 				NodeClassRef: &karpv1.NodeClassReference{
 					Group: object.GVK(nodeClass).Group,

@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -102,6 +103,7 @@ type Environment struct {
 	LaunchTemplateProvider       *launchtemplate.Provider
 	LoadBalancerProvider         *loadbalancer.Provider
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
+	AllocationStrategyProvider   allocationstrategy.Provider
 
 	InstanceTypeStore *nodeoverlay.InstanceTypeStore
 
@@ -210,9 +212,11 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 	)
+	allocationStrategyProvider := allocationstrategy.NewProvider()
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
+		allocationStrategyProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
@@ -241,6 +245,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypesProvider,
+		allocationStrategyProvider,
 		imageFamilyResolver,
 		unavailableOfferingsCache,
 		subscription,
@@ -293,6 +298,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LaunchTemplateProvider:       launchTemplateProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
+		AllocationStrategyProvider:   allocationStrategyProvider,
 
 		InstanceTypeStore: store,
 

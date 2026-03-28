@@ -167,6 +167,7 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 	fipsMode *v1beta1.FIPSMode,
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
+	linuxOSConfig *v1beta1.LinuxOSConfiguration,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -189,5 +190,6 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 		FIPSMode:                       fipsMode,
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
+		LinuxOSConfig:                  linuxOSConfig,
 	}
 }

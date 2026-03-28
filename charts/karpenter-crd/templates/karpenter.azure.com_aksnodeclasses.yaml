@@ -139,6 +139,11 @@ spec:
                     - none
                     - static
                     type: string
+                  failSwapOn:
+                    description: |-
+                      failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
+                      Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
+                    type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
                       imageGCHighThresholdPercent is the percent of disk usage after which image
@@ -192,6 +197,296 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+              linuxOSConfig:
+                description: |-
+                  linuxOSConfig specifies OS settings for Linux agent nodes.
+                  These map to the AKS Custom Linux OS Configuration feature.
+                  For more information, see:
+                  https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+                properties:
+                  swapFileSize:
+                    description: |-
+                      swapFileSize specifies the size of a swap file that will be created on each node.
+                      For example: "1500Mi" or "2Gi".
+                      The value will be rounded to the nearest megabyte due to system limitations.
+                    pattern: ^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$
+                    type: string
+                  sysctls:
+                    description: sysctls specifies sysctl settings for Linux agent
+                      nodes.
+                    properties:
+                      fsAioMaxNr:
+                        description: |-
+                          fsAioMaxNr specifies the maximum number of AIO (Asynchronous I/O) requests.
+                          Maps to fs.aio-max-nr.
+                        format: int32
+                        maximum: 6553500
+                        minimum: 65536
+                        type: integer
+                      fsFileMax:
+                        description: |-
+                          fsFileMax specifies the maximum number of file handles the kernel will allocate.
+                          Maps to fs.file-max.
+                        format: int32
+                        maximum: 12000500
+                        minimum: 8192
+                        type: integer
+                      fsInotifyMaxUserWatches:
+                        description: |-
+                          fsInotifyMaxUserWatches specifies the maximum number of inotify watches per user.
+                          Maps to fs.inotify.max_user_watches.
+                        format: int32
+                        maximum: 2097152
+                        minimum: 781250
+                        type: integer
+                      fsNrOpen:
+                        description: |-
+                          fsNrOpen specifies the maximum number of file handles that can be allocated.
+                          Maps to fs.nr_open.
+                        format: int32
+                        maximum: 20000500
+                        minimum: 8192
+                        type: integer
+                      kernelThreadsMax:
+                        description: |-
+                          kernelThreadsMax specifies the maximum number of threads that can be created.
+                          Maps to kernel.threads-max.
+                        format: int32
+                        maximum: 513785
+                        minimum: 20
+                        type: integer
+                      netCoreNetdevMaxBacklog:
+                        description: |-
+                          netCoreNetdevMaxBacklog specifies the maximum number of packets queued on the INPUT side.
+                          Maps to net.core.netdev_max_backlog.
+                        format: int32
+                        maximum: 3240000
+                        minimum: 1000
+                        type: integer
+                      netCoreOptmemMax:
+                        description: |-
+                          netCoreOptmemMax specifies the maximum ancillary buffer size (option memory buffer) allowed per socket.
+                          Maps to net.core.optmem_max.
+                        format: int32
+                        maximum: 4194304
+                        minimum: 20480
+                        type: integer
+                      netCoreRmemDefault:
+                        description: |-
+                          netCoreRmemDefault specifies the default receive socket buffer size in bytes.
+                          Maps to net.core.rmem_default.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netCoreRmemMax:
+                        description: |-
+                          netCoreRmemMax specifies the maximum receive socket buffer size in bytes.
+                          Maps to net.core.rmem_max.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netCoreSomaxconn:
+                        description: |-
+                          netCoreSomaxconn specifies the maximum number of connection requests that can be queued for any given listening socket.
+                          Maps to net.core.somaxconn.
+                        format: int32
+                        maximum: 3240000
+                        minimum: 4096
+                        type: integer
+                      netCoreWmemDefault:
+                        description: |-
+                          netCoreWmemDefault specifies the default send socket buffer size in bytes.
+                          Maps to net.core.wmem_default.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netCoreWmemMax:
+                        description: |-
+                          netCoreWmemMax specifies the maximum send socket buffer size in bytes.
+                          Maps to net.core.wmem_max.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netIPv4IPLocalPortRange:
+                        description: |-
+                          netIPv4IPLocalPortRange specifies the local port range that is used by TCP and UDP traffic.
+                          Must be in the format "first last", where first is in the range 1024-60999 and last is in the range 32768-65535.
+                          Maps to net.ipv4.ip_local_port_range.
+                        pattern: ^\d+ \d+$
+                        type: string
+                      netIPv4NeighDefaultGcThresh1:
+                        description: |-
+                          netIPv4NeighDefaultGcThresh1 specifies the minimum number of entries that may be in the ARP cache.
+                          Maps to net.ipv4.neigh.default.gc_thresh1.
+                        format: int32
+                        maximum: 80000
+                        minimum: 128
+                        type: integer
+                      netIPv4NeighDefaultGcThresh2:
+                        description: |-
+                          netIPv4NeighDefaultGcThresh2 specifies the soft maximum number of entries that may be in the ARP cache.
+                          Maps to net.ipv4.neigh.default.gc_thresh2.
+                        format: int32
+                        maximum: 90000
+                        minimum: 512
+                        type: integer
+                      netIPv4NeighDefaultGcThresh3:
+                        description: |-
+                          netIPv4NeighDefaultGcThresh3 specifies the hard maximum number of entries in the ARP cache.
+                          Maps to net.ipv4.neigh.default.gc_thresh3.
+                        format: int32
+                        maximum: 100000
+                        minimum: 1024
+                        type: integer
+                      netIPv4TCPFinTimeout:
+                        description: |-
+                          netIPv4TCPFinTimeout specifies the length of time an orphaned connection will remain in the FIN_WAIT_2 state before being aborted.
+                          Maps to net.ipv4.tcp_fin_timeout.
+                        format: int32
+                        maximum: 120
+                        minimum: 5
+                        type: integer
+                      netIPv4TCPKeepaliveIntvl:
+                        description: |-
+                          netIPv4TCPKeepaliveIntvl specifies the frequency of the probes sent out. Measured in seconds.
+                          Maps to net.ipv4.tcp_keepalive_intvl.
+                        format: int32
+                        maximum: 90
+                        minimum: 10
+                        type: integer
+                      netIPv4TCPKeepaliveProbes:
+                        description: |-
+                          netIPv4TCPKeepaliveProbes specifies the number of keepalive probes TCP sends out until it decides a connection is broken.
+                          Maps to net.ipv4.tcp_keepalive_probes.
+                        format: int32
+                        maximum: 15
+                        minimum: 1
+                        type: integer
+                      netIPv4TCPKeepaliveTime:
+                        description: |-
+                          netIPv4TCPKeepaliveTime specifies the rate at which TCP sends keepalive probes. Measured in seconds.
+                          Maps to net.ipv4.tcp_keepalive_time.
+                        format: int32
+                        maximum: 432000
+                        minimum: 30
+                        type: integer
+                      netIPv4TCPMaxSynBacklog:
+                        description: |-
+                          netIPv4TCPMaxSynBacklog specifies the maximum number of queued connection requests that have still not received
+                          an acknowledgment from the connecting client. If this number is exceeded, the kernel will begin dropping requests.
+                          Maps to net.ipv4.tcp_max_syn_backlog.
+                        format: int32
+                        maximum: 3240000
+                        minimum: 128
+                        type: integer
+                      netIPv4TCPMaxTwBuckets:
+                        description: |-
+                          netIPv4TCPMaxTwBuckets specifies the maximum number of sockets in TIME_WAIT state.
+                          Maps to net.ipv4.tcp_max_tw_buckets.
+                        format: int32
+                        maximum: 1440000
+                        minimum: 8000
+                        type: integer
+                      netIPv4TCPTwReuse:
+                        description: |-
+                          netIPv4TCPTwReuse enables/disables reuse of TIME_WAIT sockets for new connections.
+                          Maps to net.ipv4.tcp_tw_reuse.
+                        type: boolean
+                      netNetfilterNfConntrackBuckets:
+                        description: |-
+                          netNetfilterNfConntrackBuckets specifies the size of the hash table used by nf_conntrack module.
+                          Maps to net.netfilter.nf_conntrack_buckets.
+                        format: int32
+                        maximum: 524288
+                        minimum: 65536
+                        type: integer
+                      netNetfilterNfConntrackMax:
+                        description: |-
+                          netNetfilterNfConntrackMax specifies the maximum number of connections tracked by the nf_conntrack module.
+                          Maps to net.netfilter.nf_conntrack_max.
+                        format: int32
+                        maximum: 2097152
+                        minimum: 131072
+                        type: integer
+                      vmMaxMapCount:
+                        description: |-
+                          vmMaxMapCount specifies the maximum number of memory map areas a process may have.
+                          Maps to vm.max_map_count.
+                        format: int32
+                        maximum: 262144
+                        minimum: 65530
+                        type: integer
+                      vmSwappiness:
+                        description: |-
+                          vmSwappiness specifies the kernel's tendency to swap memory pages. Higher values increase aggressiveness, lower values decrease it.
+                          Maps to vm.swappiness.
+                        format: int32
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                      vmVfsCachePressure:
+                        description: |-
+                          vmVfsCachePressure specifies the tendency of the kernel to reclaim the memory which is used for caching of directory and inode objects.
+                          Maps to vm.vfs_cache_pressure.
+                        format: int32
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                    type: object
+                    x-kubernetes-validations:
+                    - message: netCoreRmemDefault must be <= netCoreRmemMax
+                      rule: 'has(self.netCoreRmemDefault) && has(self.netCoreRmemMax)
+                        ? self.netCoreRmemDefault <= self.netCoreRmemMax : true'
+                    - message: netCoreWmemDefault must be <= netCoreWmemMax
+                      rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
+                        ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
+                    - message: netIPv4NeighDefaultGcThresh1 must be <= netIPv4NeighDefaultGcThresh2
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh1) && has(self.netIPv4NeighDefaultGcThresh2)
+                        ? self.netIPv4NeighDefaultGcThresh1 <= self.netIPv4NeighDefaultGcThresh2
+                        : true'
+                    - message: netIPv4NeighDefaultGcThresh2 must be <= netIPv4NeighDefaultGcThresh3
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh2) && has(self.netIPv4NeighDefaultGcThresh3)
+                        ? self.netIPv4NeighDefaultGcThresh2 <= self.netIPv4NeighDefaultGcThresh3
+                        : true'
+                    - message: netIPv4IPLocalPortRange first port must be in [1024,
+                        60999]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) >= 1024 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= 60999)'
+                    - message: netIPv4IPLocalPortRange last port must be in [32768,
+                        65535]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) >= 32768 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) <= 65535)'
+                    - message: netIPv4IPLocalPortRange first port must be <= last
+                        port
+                      rule: '!has(self.netIPv4IPLocalPortRange) || int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= int(self.netIPv4IPLocalPortRange.split('' '')[1])'
+                  transparentHugePageDefrag:
+                    description: |-
+                      transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/defrag.
+                    enum:
+                    - always
+                    - defer
+                    - defer+madvise
+                    - madvise
+                    - never
+                    type: string
+                  transparentHugePageEnabled:
+                    description: |-
+                      transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/enabled.
+                    enum:
+                    - always
+                    - madvise
+                    - never
+                    type: string
+                type: object
               localDNS:
                 description: |-
                   localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
@@ -470,6 +765,11 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
                 : true'
+            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
+                is specified
+              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
+                || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
+                == false)'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
@@ -709,6 +1009,11 @@ spec:
                     - none
                     - static
                     type: string
+                  failSwapOn:
+                    description: |-
+                      failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
+                      Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
+                    type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
                       imageGCHighThresholdPercent is the percent of disk usage after which image
@@ -762,6 +1067,296 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+              linuxOSConfig:
+                description: |-
+                  linuxOSConfig specifies OS settings for Linux agent nodes.
+                  These map to the AKS Custom Linux OS Configuration feature.
+                  For more information, see:
+                  https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+                properties:
+                  swapFileSize:
+                    description: |-
+                      swapFileSize specifies the size of a swap file that will be created on each node.
+                      For example: "1500Mi" or "2Gi".
+                      The value will be rounded to the nearest megabyte due to system limitations.
+                    pattern: ^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$
+                    type: string
+                  sysctls:
+                    description: sysctls specifies sysctl settings for Linux agent
+                      nodes.
+                    properties:
+                      fsAioMaxNr:
+                        description: |-
+                          fsAioMaxNr specifies the maximum number of AIO (Asynchronous I/O) requests.
+                          Maps to fs.aio-max-nr.
+                        format: int32
+                        maximum: 6553500
+                        minimum: 65536
+                        type: integer
+                      fsFileMax:
+                        description: |-
+                          fsFileMax specifies the maximum number of file handles the kernel will allocate.
+                          Maps to fs.file-max.
+                        format: int32
+                        maximum: 12000500
+                        minimum: 8192
+                        type: integer
+                      fsInotifyMaxUserWatches:
+                        description: |-
+                          fsInotifyMaxUserWatches specifies the maximum number of inotify watches per user.
+                          Maps to fs.inotify.max_user_watches.
+                        format: int32
+                        maximum: 2097152
+                        minimum: 781250
+                        type: integer
+                      fsNrOpen:
+                        description: |-
+                          fsNrOpen specifies the maximum number of file handles that can be allocated.
+                          Maps to fs.nr_open.
+                        format: int32
+                        maximum: 20000500
+                        minimum: 8192
+                        type: integer
+                      kernelThreadsMax:
+                        description: |-
+                          kernelThreadsMax specifies the maximum number of threads that can be created.
+                          Maps to kernel.threads-max.
+                        format: int32
+                        maximum: 513785
+                        minimum: 20
+                        type: integer
+                      netCoreNetdevMaxBacklog:
+                        description: |-
+                          netCoreNetdevMaxBacklog specifies the maximum number of packets queued on the INPUT side.
+                          Maps to net.core.netdev_max_backlog.
+                        format: int32
+                        maximum: 3240000
+                        minimum: 1000
+                        type: integer
+                      netCoreOptmemMax:
+                        description: |-
+                          netCoreOptmemMax specifies the maximum ancillary buffer size (option memory buffer) allowed per socket.
+                          Maps to net.core.optmem_max.
+                        format: int32
+                        maximum: 4194304
+                        minimum: 20480
+                        type: integer
+                      netCoreRmemDefault:
+                        description: |-
+                          netCoreRmemDefault specifies the default receive socket buffer size in bytes.
+                          Maps to net.core.rmem_default.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netCoreRmemMax:
+                        description: |-
+                          netCoreRmemMax specifies the maximum receive socket buffer size in bytes.
+                          Maps to net.core.rmem_max.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netCoreSomaxconn:
+                        description: |-
+                          netCoreSomaxconn specifies the maximum number of connection requests that can be queued for any given listening socket.
+                          Maps to net.core.somaxconn.
+                        format: int32
+                        maximum: 3240000
+                        minimum: 4096
+                        type: integer
+                      netCoreWmemDefault:
+                        description: |-
+                          netCoreWmemDefault specifies the default send socket buffer size in bytes.
+                          Maps to net.core.wmem_default.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netCoreWmemMax:
+                        description: |-
+                          netCoreWmemMax specifies the maximum send socket buffer size in bytes.
+                          Maps to net.core.wmem_max.
+                        format: int32
+                        maximum: 134217728
+                        minimum: 212992
+                        type: integer
+                      netIPv4IPLocalPortRange:
+                        description: |-
+                          netIPv4IPLocalPortRange specifies the local port range that is used by TCP and UDP traffic.
+                          Must be in the format "first last", where first is in the range 1024-60999 and last is in the range 32768-65535.
+                          Maps to net.ipv4.ip_local_port_range.
+                        pattern: ^\d+ \d+$
+                        type: string
+                      netIPv4NeighDefaultGcThresh1:
+                        description: |-
+                          netIPv4NeighDefaultGcThresh1 specifies the minimum number of entries that may be in the ARP cache.
+                          Maps to net.ipv4.neigh.default.gc_thresh1.
+                        format: int32
+                        maximum: 80000
+                        minimum: 128
+                        type: integer
+                      netIPv4NeighDefaultGcThresh2:
+                        description: |-
+                          netIPv4NeighDefaultGcThresh2 specifies the soft maximum number of entries that may be in the ARP cache.
+                          Maps to net.ipv4.neigh.default.gc_thresh2.
+                        format: int32
+                        maximum: 90000
+                        minimum: 512
+                        type: integer
+                      netIPv4NeighDefaultGcThresh3:
+                        description: |-
+                          netIPv4NeighDefaultGcThresh3 specifies the hard maximum number of entries in the ARP cache.
+                          Maps to net.ipv4.neigh.default.gc_thresh3.
+                        format: int32
+                        maximum: 100000
+                        minimum: 1024
+                        type: integer
+                      netIPv4TCPFinTimeout:
+                        description: |-
+                          netIPv4TCPFinTimeout specifies the length of time an orphaned connection will remain in the FIN_WAIT_2 state before being aborted.
+                          Maps to net.ipv4.tcp_fin_timeout.
+                        format: int32
+                        maximum: 120
+                        minimum: 5
+                        type: integer
+                      netIPv4TCPKeepaliveIntvl:
+                        description: |-
+                          netIPv4TCPKeepaliveIntvl specifies the frequency of the probes sent out. Measured in seconds.
+                          Maps to net.ipv4.tcp_keepalive_intvl.
+                        format: int32
+                        maximum: 90
+                        minimum: 10
+                        type: integer
+                      netIPv4TCPKeepaliveProbes:
+                        description: |-
+                          netIPv4TCPKeepaliveProbes specifies the number of keepalive probes TCP sends out until it decides a connection is broken.
+                          Maps to net.ipv4.tcp_keepalive_probes.
+                        format: int32
+                        maximum: 15
+                        minimum: 1
+                        type: integer
+                      netIPv4TCPKeepaliveTime:
+                        description: |-
+                          netIPv4TCPKeepaliveTime specifies the rate at which TCP sends keepalive probes. Measured in seconds.
+                          Maps to net.ipv4.tcp_keepalive_time.
+                        format: int32
+                        maximum: 432000
+                        minimum: 30
+                        type: integer
+                      netIPv4TCPMaxSynBacklog:
+                        description: |-
+                          netIPv4TCPMaxSynBacklog specifies the maximum number of queued connection requests that have still not received
+                          an acknowledgment from the connecting client. If this number is exceeded, the kernel will begin dropping requests.
+                          Maps to net.ipv4.tcp_max_syn_backlog.
+                        format: int32
+                        maximum: 3240000
+                        minimum: 128
+                        type: integer
+                      netIPv4TCPMaxTwBuckets:
+                        description: |-
+                          netIPv4TCPMaxTwBuckets specifies the maximum number of sockets in TIME_WAIT state.
+                          Maps to net.ipv4.tcp_max_tw_buckets.
+                        format: int32
+                        maximum: 1440000
+                        minimum: 8000
+                        type: integer
+                      netIPv4TCPTwReuse:
+                        description: |-
+                          netIPv4TCPTwReuse enables/disables reuse of TIME_WAIT sockets for new connections.
+                          Maps to net.ipv4.tcp_tw_reuse.
+                        type: boolean
+                      netNetfilterNfConntrackBuckets:
+                        description: |-
+                          netNetfilterNfConntrackBuckets specifies the size of the hash table used by nf_conntrack module.
+                          Maps to net.netfilter.nf_conntrack_buckets.
+                        format: int32
+                        maximum: 524288
+                        minimum: 65536
+                        type: integer
+                      netNetfilterNfConntrackMax:
+                        description: |-
+                          netNetfilterNfConntrackMax specifies the maximum number of connections tracked by the nf_conntrack module.
+                          Maps to net.netfilter.nf_conntrack_max.
+                        format: int32
+                        maximum: 2097152
+                        minimum: 131072
+                        type: integer
+                      vmMaxMapCount:
+                        description: |-
+                          vmMaxMapCount specifies the maximum number of memory map areas a process may have.
+                          Maps to vm.max_map_count.
+                        format: int32
+                        maximum: 262144
+                        minimum: 65530
+                        type: integer
+                      vmSwappiness:
+                        description: |-
+                          vmSwappiness specifies the kernel's tendency to swap memory pages. Higher values increase aggressiveness, lower values decrease it.
+                          Maps to vm.swappiness.
+                        format: int32
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                      vmVfsCachePressure:
+                        description: |-
+                          vmVfsCachePressure specifies the tendency of the kernel to reclaim the memory which is used for caching of directory and inode objects.
+                          Maps to vm.vfs_cache_pressure.
+                        format: int32
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                    type: object
+                    x-kubernetes-validations:
+                    - message: netCoreRmemDefault must be <= netCoreRmemMax
+                      rule: 'has(self.netCoreRmemDefault) && has(self.netCoreRmemMax)
+                        ? self.netCoreRmemDefault <= self.netCoreRmemMax : true'
+                    - message: netCoreWmemDefault must be <= netCoreWmemMax
+                      rule: 'has(self.netCoreWmemDefault) && has(self.netCoreWmemMax)
+                        ? self.netCoreWmemDefault <= self.netCoreWmemMax : true'
+                    - message: netIPv4NeighDefaultGcThresh1 must be <= netIPv4NeighDefaultGcThresh2
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh1) && has(self.netIPv4NeighDefaultGcThresh2)
+                        ? self.netIPv4NeighDefaultGcThresh1 <= self.netIPv4NeighDefaultGcThresh2
+                        : true'
+                    - message: netIPv4NeighDefaultGcThresh2 must be <= netIPv4NeighDefaultGcThresh3
+                      rule: 'has(self.netIPv4NeighDefaultGcThresh2) && has(self.netIPv4NeighDefaultGcThresh3)
+                        ? self.netIPv4NeighDefaultGcThresh2 <= self.netIPv4NeighDefaultGcThresh3
+                        : true'
+                    - message: netIPv4IPLocalPortRange first port must be in [1024,
+                        60999]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) >= 1024 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= 60999)'
+                    - message: netIPv4IPLocalPortRange last port must be in [32768,
+                        65535]
+                      rule: '!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) >= 32768 && int(self.netIPv4IPLocalPortRange.split(''
+                        '')[1]) <= 65535)'
+                    - message: netIPv4IPLocalPortRange first port must be <= last
+                        port
+                      rule: '!has(self.netIPv4IPLocalPortRange) || int(self.netIPv4IPLocalPortRange.split(''
+                        '')[0]) <= int(self.netIPv4IPLocalPortRange.split('' '')[1])'
+                  transparentHugePageDefrag:
+                    description: |-
+                      transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/defrag.
+                    enum:
+                    - always
+                    - defer
+                    - defer+madvise
+                    - madvise
+                    - never
+                    type: string
+                  transparentHugePageEnabled:
+                    description: |-
+                      transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled behavior.
+                      Maps to /sys/kernel/mm/transparent_hugepage/enabled.
+                    enum:
+                    - always
+                    - madvise
+                    - never
+                    type: string
+                type: object
               localDNS:
                 description: |-
                   localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
@@ -1040,6 +1635,11 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
                 : true'
+            - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
+                is specified
+              rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
+                || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
+                == false)'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:

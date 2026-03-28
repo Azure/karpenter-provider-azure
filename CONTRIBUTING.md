@@ -30,6 +30,7 @@ Once done, you can delete all infra with `make az-rmrg` (it deletes the resource
 ### Developer notes
 - If you see platform architecture error during `skaffold debug`, adjust (or comment out) `--platform` argument.
 - If you are not able to set/hit breakpoints, it could be an issue with source paths mapping; see comments in debug launch configuration (`launch.json`)
+- When writing `az` CLI commands in scripts or documentation, always specify an explicit `--output` format (`--output json`, `--output tsv`, `--output table`, `--output none`) on any command whose output is consumed programmatically. Users may have changed their default output format via `az configure`, which breaks scripts that assume JSON output. Use `--output tsv` with `--query` for single-value extraction; use `--output json` when piping to `jq`.
 
 ### FAQs
 Q: I was able to trigger Karpenter to execute scaling up nodes as expected, using my own customized deployment of pods. However, scaling down was not handled automatically when I removed the deployment. The two new nodes created by Karpenter were left around. What is going on?

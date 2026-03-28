@@ -90,11 +90,9 @@ var _ = Describe("Utilization", func() {
 func ExpectProvisionPodPerNode(nodeClass *v1beta1.AKSNodeClass, nodePool *karpv1.NodePool) {
 	GinkgoHelper()
 	test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-		NodeSelectorRequirement: v1.NodeSelectorRequirement{
-			Key:      v1beta1.LabelSKUCPU,
-			Operator: v1.NodeSelectorOpLt,
-			Values:   []string{"3"},
-		}})
+		Key:      v1beta1.LabelSKUCPU,
+		Operator: v1.NodeSelectorOpLt,
+		Values:   []string{"3"}})
 
 	deployment := test.Deployment(test.DeploymentOptions{
 		Replicas: 10,

@@ -87,6 +87,7 @@ type ImageFamily interface {
 		fipsMode *v1beta1.FIPSMode,
 		localDNS *v1beta1.LocalDNS,
 		artifactStreaming *v1beta1.ArtifactStreaming,
+		linuxOSConfig *v1beta1.LinuxOSConfiguration,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -172,6 +173,7 @@ func (r *defaultResolver) Resolve(
 			nodeClass.Spec.FIPSMode,
 			nodeClass.Spec.LocalDNS,
 			nodeClass.Spec.ArtifactStreaming,
+			nodeClass.Spec.LinuxOSConfig,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
@@ -188,7 +190,7 @@ func (r *defaultResolver) Resolve(
 }
 
 func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, err error) {
-	sku, err := r.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	sku, err := r.instanceTypeProvider.Get(ctx, instanceType.Name)
 	if err != nil {
 		return "", nil, err
 	}

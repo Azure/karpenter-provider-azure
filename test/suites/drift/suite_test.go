@@ -94,11 +94,9 @@ var _ = Describe("Drift", func() {
 		It("should respect budgets for empty drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"8"},
 				},
 			)
 			// We're expecting to create 3 nodes, so normally one would expect to see 2 nodes deleting at one time.
@@ -156,11 +154,9 @@ var _ = Describe("Drift", func() {
 		It("should respect budgets for non-empty delete drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"8"},
 				},
 			)
 			// We're expecting to create 3 nodes, so we'll expect to see at most 2 nodes deleting at one time.
@@ -438,8 +434,8 @@ var _ = Describe("Drift", func() {
 			Spec: karpv1.NodeClaimTemplateSpec{
 				// since this will overwrite the default requirements, add SKU family selector back into requirements
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}}},
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}}},
+					{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}},
+					{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}},
 				},
 			},
 		}),
