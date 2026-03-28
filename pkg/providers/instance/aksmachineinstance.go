@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -69,6 +70,7 @@ type AKSMachinePromise struct {
 	AKSMachineID               string
 	AKSMachineNodeImageVersion string
 	VMResourceID               string
+	CreationTimestamp           time.Time
 }
 
 func NewAKSMachinePromise(
@@ -82,6 +84,7 @@ func NewAKSMachinePromise(
 	aksMachineID string,
 	aksMachineNodeImageVersion string,
 	vmResourceID string,
+	creationTimestamp time.Time,
 ) *AKSMachinePromise {
 	return &AKSMachinePromise{
 		providerRef:                providerRef,
@@ -94,6 +97,7 @@ func NewAKSMachinePromise(
 		AKSMachineID:               aksMachineID,
 		AKSMachineNodeImageVersion: aksMachineNodeImageVersion,
 		VMResourceID:               vmResourceID,
+		CreationTimestamp:           creationTimestamp,
 	}
 }
 
@@ -531,6 +535,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			lo.FromPtr(gotAKSMachine.ID),
 			lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 			lo.FromPtr(gotAKSMachine.Properties.ResourceID),
+			lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
 		), nil
 	} else {
 		poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
@@ -585,6 +590,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			lo.FromPtr(gotAKSMachine.ID),
 			lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 			lo.FromPtr(gotAKSMachine.Properties.ResourceID),
+			lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
 		), nil
 	}
 }
@@ -643,6 +649,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	existingAKSMachineID := lo.FromPtr(existingAKSMachine.ID)
 	existingAKSMachineNodeImageVersion := lo.FromPtr(existingAKSMachine.Properties.NodeImageVersion)
 	existingAKSMachineNodeClaimName := lo.FromPtr(existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey])
+	existingAKSMachineCreationTimestamp := lo.FromPtr(existingAKSMachine.Properties.Status.CreationTimestamp)
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
@@ -685,6 +692,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineID,
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,
+		existingAKSMachineCreationTimestamp,
 	), nil
 }
 
