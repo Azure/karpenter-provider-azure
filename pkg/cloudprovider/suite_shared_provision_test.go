@@ -673,10 +673,8 @@ func makeNodeClaimForInstanceType(instanceType string) *karpv1.NodeClaim {
 				Name:  nodeClass.Name,
 			},
 			Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-				{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
-					Values: []string{instanceType},
-				}},
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
+					Values: []string{instanceType}},
 			},
 		},
 	})
