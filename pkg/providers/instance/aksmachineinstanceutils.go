@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -82,6 +83,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	vmResourceID string,
 	isDeleting bool,
 	aksMachineNodeImageVersion string,
+	creationTimestamp time.Time, // Server-side creation timestamp (from GET after create, not from the template)
 ) (*karpv1.NodeClaim, error) {
 	nodeClaim := &karpv1.NodeClaim{}
 	labels := map[string]string{}
@@ -114,10 +116,8 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	// Note: this assignment to NodeClaim is not effective to the actual object in the cluster, which still represents NodeClaim's (not instance's) creation time.
 	// This "borrowed struct field" is used by provider for instance garbage collection. AWS does the same.
 	// Note that it is incorrect to use actual NodeClaim's creation time, as retries can occur on the same NodeClaim, hurting grace period with each.
-	//
-	// Use MachineStatus.CreationTimestamp (server-side) if available, otherwise fallback to epoch (zero value).
-	if aksMachineTemplate.Properties.Status != nil && aksMachineTemplate.Properties.Status.CreationTimestamp != nil {
-		nodeClaim.CreationTimestamp = AKSMachineTimestampToMeta(*aksMachineTemplate.Properties.Status.CreationTimestamp)
+	if !creationTimestamp.IsZero() {
+		nodeClaim.CreationTimestamp = AKSMachineTimestampToMeta(creationTimestamp)
 	}
 
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
@@ -154,6 +154,7 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 		lo.FromPtr(aksMachine.Properties.ResourceID),
 		isAKSMachineDeleting(aksMachine),
 		lo.FromPtr(aksMachine.Properties.NodeImageVersion), // Empty: not fatal, no need to check
+		getCreationTimestamp(aksMachine),
 	)
 }
 

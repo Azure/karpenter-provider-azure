@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -68,6 +69,7 @@ type AKSMachinePromise struct {
 	AKSMachineID               string
 	AKSMachineNodeImageVersion string
 	VMResourceID               string
+	CreationTimestamp          time.Time // Server-side creation timestamp from GET after create
 }
 
 func NewAKSMachinePromise(
@@ -81,6 +83,7 @@ func NewAKSMachinePromise(
 	aksMachineID string,
 	aksMachineNodeImageVersion string,
 	vmResourceID string,
+	creationTimestamp time.Time,
 ) *AKSMachinePromise {
 	return &AKSMachinePromise{
 		providerRef:                providerRef,
@@ -93,6 +96,7 @@ func NewAKSMachinePromise(
 		AKSMachineID:               aksMachineID,
 		AKSMachineNodeImageVersion: aksMachineNodeImageVersion,
 		VMResourceID:               vmResourceID,
+		CreationTimestamp:           creationTimestamp,
 	}
 }
 
@@ -533,6 +537,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		lo.FromPtr(gotAKSMachine.ID),
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
+		getCreationTimestamp(gotAKSMachine),
 	), nil
 }
 
@@ -632,5 +637,15 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineID,
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,
+		getCreationTimestamp(existingAKSMachine),
 	), nil
+}
+
+// getCreationTimestamp extracts the server-side creation timestamp from an AKS Machine.
+// Returns zero time if Status or CreationTimestamp is nil.
+func getCreationTimestamp(machine *armcontainerservice.Machine) time.Time {
+	if machine.Properties != nil && machine.Properties.Status != nil && machine.Properties.Status.CreationTimestamp != nil {
+		return *machine.Properties.Status.CreationTimestamp
+	}
+	return time.Time{}
 }

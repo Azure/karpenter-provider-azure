@@ -258,6 +258,12 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 		Options:           options,
 	}
 	aksMachine := input.AKSMachine
+	// Deep-copy Properties to avoid mutating the caller's template through shared pointers.
+	// The real Azure SDK serializes to JSON over HTTP — no pointer sharing with the caller.
+	if aksMachine.Properties != nil {
+		props := *aksMachine.Properties
+		aksMachine.Properties = &props
+	}
 	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
 	aksMachine.ID = &id
 	aksMachine.Name = &input.AKSMachineName
