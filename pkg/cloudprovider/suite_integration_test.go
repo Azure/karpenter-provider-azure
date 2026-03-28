@@ -1267,11 +1267,9 @@ var _ = Describe("CloudProvider", func() {
 		It("should return an ICE error when there are no instance types to launch", func() {
 			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"doesnotexist"},
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"doesnotexist"},
 				},
 			}
 

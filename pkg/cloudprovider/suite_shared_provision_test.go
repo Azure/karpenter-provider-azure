@@ -182,6 +182,43 @@ func wellKnownLabelEntries() []WellKnownLabelEntry {
 		{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
 		// Cluster Label
 		{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+		// Previously reserved labels (karpenter v1.9+ allows kubernetes.io/k8s.io on NodeClaims)
+		{
+			Name:  "kubernetes.io (previously reserved)",
+			Label: "kubernetes.io/custom-label",
+			SetupFunc: func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+					karpv1.NodeSelectorRequirementWithMinValues{Key: "kubernetes.io/custom-label", Operator: v1.NodeSelectorOpIn, Values: []string{"custom-value"}},
+				)
+			},
+			ValueFunc:               func() string { return "custom-value" },
+			ExpectedInKubeletLabels: false,
+			ExpectedOnNode:          true,
+		},
+		{
+			Name:  "k8s.io (previously reserved)",
+			Label: "k8s.io/custom-label",
+			SetupFunc: func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+					karpv1.NodeSelectorRequirementWithMinValues{Key: "k8s.io/custom-label", Operator: v1.NodeSelectorOpIn, Values: []string{"custom-value"}},
+				)
+			},
+			ValueFunc:               func() string { return "custom-value" },
+			ExpectedInKubeletLabels: false,
+			ExpectedOnNode:          true,
+		},
+		{
+			Name:  "kubelet.kubernetes.io (kubelet-allowed)",
+			Label: "kubelet.kubernetes.io/custom-label",
+			SetupFunc: func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+					karpv1.NodeSelectorRequirementWithMinValues{Key: "kubelet.kubernetes.io/custom-label", Operator: v1.NodeSelectorOpIn, Values: []string{"custom-value"}},
+				)
+			},
+			ValueFunc:               func() string { return "custom-value" },
+			ExpectedInKubeletLabels: true,
+			ExpectedOnNode:          true,
+		},
 	}
 }
 
