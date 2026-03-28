@@ -69,7 +69,7 @@ type AKSMachinePromise struct {
 	AKSMachineID               string
 	AKSMachineNodeImageVersion string
 	VMResourceID               string
-	CreationTimestamp          time.Time // Server-side creation timestamp from GET after create
+	CreationTimestamp          time.Time
 }
 
 func NewAKSMachinePromise(
@@ -96,7 +96,7 @@ func NewAKSMachinePromise(
 		AKSMachineID:               aksMachineID,
 		AKSMachineNodeImageVersion: aksMachineNodeImageVersion,
 		VMResourceID:               vmResourceID,
-		CreationTimestamp:           creationTimestamp,
+		CreationTimestamp:          creationTimestamp,
 	}
 }
 
@@ -537,7 +537,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		lo.FromPtr(gotAKSMachine.ID),
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
-		getCreationTimestamp(gotAKSMachine),
+		lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
 	), nil
 }
 
@@ -595,6 +595,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	existingAKSMachineID := lo.FromPtr(existingAKSMachine.ID)
 	existingAKSMachineNodeImageVersion := lo.FromPtr(existingAKSMachine.Properties.NodeImageVersion)
 	existingAKSMachineNodeClaimName := lo.FromPtr(existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey])
+	existingAKSMachineCreationTimestamp := lo.FromPtr(existingAKSMachine.Properties.Status.CreationTimestamp)
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
@@ -637,15 +638,6 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineID,
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,
-		getCreationTimestamp(existingAKSMachine),
+		existingAKSMachineCreationTimestamp,
 	), nil
-}
-
-// getCreationTimestamp extracts the server-side creation timestamp from an AKS Machine.
-// Returns zero time if Status or CreationTimestamp is nil.
-func getCreationTimestamp(machine *armcontainerservice.Machine) time.Time {
-	if machine.Properties != nil && machine.Properties.Status != nil && machine.Properties.Status.CreationTimestamp != nil {
-		return *machine.Properties.Status.CreationTimestamp
-	}
-	return time.Time{}
 }

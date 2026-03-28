@@ -83,7 +83,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	vmResourceID string,
 	isDeleting bool,
 	aksMachineNodeImageVersion string,
-	creationTimestamp time.Time, // Server-side creation timestamp (from GET after create, not from the template)
+	creationTimestamp time.Time,
 ) (*karpv1.NodeClaim, error) {
 	nodeClaim := &karpv1.NodeClaim{}
 	labels := map[string]string{}
@@ -116,9 +116,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	// Note: this assignment to NodeClaim is not effective to the actual object in the cluster, which still represents NodeClaim's (not instance's) creation time.
 	// This "borrowed struct field" is used by provider for instance garbage collection. AWS does the same.
 	// Note that it is incorrect to use actual NodeClaim's creation time, as retries can occur on the same NodeClaim, hurting grace period with each.
-	if !creationTimestamp.IsZero() {
-		nodeClaim.CreationTimestamp = AKSMachineTimestampToMeta(creationTimestamp)
-	}
+	nodeClaim.CreationTimestamp = AKSMachineTimestampToMeta(creationTimestamp)
 
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if isDeleting {
@@ -154,7 +152,7 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 		lo.FromPtr(aksMachine.Properties.ResourceID),
 		isAKSMachineDeleting(aksMachine),
 		lo.FromPtr(aksMachine.Properties.NodeImageVersion), // Empty: not fatal, no need to check
-		getCreationTimestamp(aksMachine),
+		lo.FromPtr(aksMachine.Properties.Status.CreationTimestamp),
 	)
 }
 
@@ -292,6 +290,9 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 	if aksMachine.Properties == nil {
 		return fmt.Errorf("irretrievable properties")
 	}
+	if aksMachine.Properties.Status == nil {
+		return fmt.Errorf("irretrievable status")
+	}
 	if aksMachine.Properties.Hardware == nil || aksMachine.Properties.Hardware.VMSize == nil {
 		return fmt.Errorf("irretrievable VM size")
 	}
@@ -309,6 +310,9 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 	}
 	if aksMachine.Properties.NodeImageVersion == nil {
 		return fmt.Errorf("irretrievable node image version")
+	}
+	if aksMachine.Properties.Status.CreationTimestamp == nil {
+		return fmt.Errorf("irretrievable creation timestamp")
 	}
 	return nil
 }
