@@ -102,7 +102,7 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		KubeBinaryURL:                     "",                     // cd
 		CustomKubeBinaryURL:               "",                     // -
 		KubeproxyURL:                      "",                     // -
-		VMType:                            "vmss",                 // xd
+		VMType:                            "standard",             // xd
 		Subnet:                            "aks-subnet",           // xd
 		VirtualNetworkResourceGroup:       "",                     // xd
 		PrimaryAvailabilitySet:            "",                     // -
