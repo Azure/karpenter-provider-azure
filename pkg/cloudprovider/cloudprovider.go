@@ -235,7 +235,8 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 		aksMachinePromise.AKSMachineID,
 		aksMachinePromise.VMResourceID,
 		false,
-		aksMachinePromise.AKSMachineNodeImageVersion)
+		aksMachinePromise.AKSMachineNodeImageVersion,
+		aksMachinePromise.CreationTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
