@@ -280,19 +280,15 @@ const (
 	LocalDNSServeStaleDisable LocalDNSServeStale = "Disable"
 )
 
-// +kubebuilder:validation:Enum:={Always,Preferred,None}
+// +kubebuilder:validation:Enum:={Install,None}
 type DriverInstallationMode string
 
 const (
-	// Always install GPU drivers. Only schedule to GPU SKUs where driver
-	// installation is supported. If no supported SKU is available, scheduling
-	// will fail rather than placing the workload on a GPU without drivers.
-	// This is the default behavior for backward compatibility.
-	DriverInstallationAlways DriverInstallationMode = "Always"
-	// Install GPU drivers where supported, but allow scheduling to GPU SKUs
-	// without driver installation support. The user may receive a VM with
-	// GPU hardware but no working driver.
-	DriverInstallationPreferred DriverInstallationMode = "Preferred"
+	// Install GPU drivers. Only schedule to GPU SKUs where driver
+	// installation is supported (NVIDIA). If no supported SKU is available,
+	// scheduling will fail rather than placing the workload on a GPU without
+	// drivers. This is the default behavior.
+	DriverInstallationInstall DriverInstallationMode = "Install"
 	// Do not install GPU drivers. All GPU SKUs are available for scheduling.
 	// Use this when running a GPU Operator or managing drivers outside of AKS.
 	DriverInstallationNone DriverInstallationMode = "None"
@@ -302,15 +298,14 @@ const (
 type GPU struct {
 	// driverInstallation controls whether GPU drivers are installed on
 	// nodes with GPU-capable VM sizes.
-	// When set to Always (or not specified), GPU drivers are always installed
+	// When set to Install (or not specified), GPU drivers are always installed
 	// and only GPU SKUs with driver installation support are considered for
 	// scheduling.
-	// When set to Preferred, GPU drivers are installed on SKUs that support
-	// it, but SKUs without driver support are also allowed.
 	// When set to None, GPU driver installation is skipped — use this when
 	// managing GPU drivers via a GPU Operator or other external mechanism.
+	// All GPU SKUs are available for scheduling in this mode.
 	// This field is ignored for non-GPU VM sizes.
-	// +default="Always"
+	// +default="Install"
 	// +optional
 	DriverInstallation *DriverInstallationMode `json:"driverInstallation,omitempty"`
 }
@@ -492,36 +487,19 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 }
 
 // GetDriverInstallationMode returns the effective driver installation mode.
-// Defaults to Always if gpu or gpu.driverInstallation is nil, ensuring
+// Defaults to Install if gpu or gpu.driverInstallation is nil, ensuring
 // backward compatibility (existing users always got drivers installed).
 func (in *AKSNodeClass) GetDriverInstallationMode() DriverInstallationMode {
 	if in.Spec.GPU == nil || in.Spec.GPU.DriverInstallation == nil {
-		return DriverInstallationAlways
+		return DriverInstallationInstall
 	}
 	return *in.Spec.GPU.DriverInstallation
 }
 
 // IsGPUDriverInstallationEnabled returns whether GPU driver installation
 // is enabled. Returns true when gpu is nil, gpu.driverInstallation is nil,
-// or driverInstallation is "Preferred" or "Always". Returns false only when
-// explicitly set to "None".
+// or driverInstallation is "Install". Returns false only when explicitly
+// set to "None".
 func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
 	return in.GetDriverInstallationMode() != DriverInstallationNone
-}
-
-// IsGPUDriverInstallationEnabledForSKU returns whether GPU drivers should be
-// installed for a specific VM SKU, given whether that SKU has driver
-// installation support.
-//   - Always:    true (SKUs without support are already filtered out at scheduling time)
-//   - Preferred: true only if the SKU has driver installation support
-//   - None:      false
-func (in *AKSNodeClass) IsGPUDriverInstallationEnabledForSKU(skuHasDriverSupport bool) bool {
-	switch in.GetDriverInstallationMode() {
-	case DriverInstallationNone:
-		return false
-	case DriverInstallationAlways:
-		return true
-	default: // Preferred
-		return skuHasDriverSupport
-	}
 }

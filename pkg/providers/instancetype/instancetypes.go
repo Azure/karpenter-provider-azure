@@ -317,9 +317,9 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	// Only "Always" mode filters out GPU SKUs without driver installation support.
-	// "Preferred" and "None" modes allow all GPU SKUs.
-	if nodeClass.GetDriverInstallationMode() != v1beta1.DriverInstallationAlways {
+	// Only "Install" mode filters out GPU SKUs without driver installation support.
+	// "None" mode allows all GPU SKUs.
+	if nodeClass.GetDriverInstallationMode() != v1beta1.DriverInstallationInstall {
 		return true
 	}
 	name := sku.GetName()
@@ -327,7 +327,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU
 	if !utils.IsGPUSKU(name) {
 		return true
 	}
-	// In "Always" mode, only allow GPU SKUs with driver installation support
+	// In "Install" mode, only allow GPU SKUs with driver installation support
 	return utils.HasDriverInstallationSupport(name)
 }
 

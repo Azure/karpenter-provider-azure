@@ -871,25 +871,16 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 	})
 
 	Context("configureGPUProfile", func() {
-		It("should return GPUDriverInstall for NVIDIA SKU with default (Preferred) mode", func() {
+		It("should return GPUDriverInstall for NVIDIA SKU with default (Install) mode", func() {
 			instanceType.Name = "Standard_NC6s_v3"
 			profile := configureGPUProfile(instanceType, nodeClass)
 			Expect(profile).ToNot(BeNil())
 			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
 		})
 
-		It("should return GPUDriverInstall for NVIDIA SKU with Always mode", func() {
-			alwaysMode := v1beta1.DriverInstallationAlways
-			nodeClass.Spec.GPU = &v1beta1.GPU{DriverInstallation: &alwaysMode}
-			instanceType.Name = "Standard_NC6s_v3"
-			profile := configureGPUProfile(instanceType, nodeClass)
-			Expect(profile).ToNot(BeNil())
-			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
-		})
-
-		It("should return GPUDriverInstall for NVIDIA SKU with Preferred mode", func() {
-			preferredMode := v1beta1.DriverInstallationPreferred
-			nodeClass.Spec.GPU = &v1beta1.GPU{DriverInstallation: &preferredMode}
+		It("should return GPUDriverInstall for NVIDIA SKU with Install mode", func() {
+			installMode := v1beta1.DriverInstallationInstall
+			nodeClass.Spec.GPU = &v1beta1.GPU{DriverInstallation: &installMode}
 			instanceType.Name = "Standard_NC6s_v3"
 			profile := configureGPUProfile(instanceType, nodeClass)
 			Expect(profile).ToNot(BeNil())
