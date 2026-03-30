@@ -174,13 +174,21 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 		modify func(p *armcontainerservice.MachineProperties)
 	}{
 		{"different VM size", func(p *armcontainerservice.MachineProperties) { p.Hardware.VMSize = lo.ToPtr("Standard_D8s_v3") }},
-		{"spot priority", func(p *armcontainerservice.MachineProperties) { p.Priority = lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot) }},
-		{"different OS SKU", func(p *armcontainerservice.MachineProperties) { p.OperatingSystem.OSSKU = lo.ToPtr(armcontainerservice.OSSKUAzureLinux) }},
+		{"spot priority", func(p *armcontainerservice.MachineProperties) {
+			p.Priority = lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot)
+		}},
+		{"different OS SKU", func(p *armcontainerservice.MachineProperties) {
+			p.OperatingSystem.OSSKU = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
+		}},
 		{"different K8s version", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.OrchestratorVersion = lo.ToPtr("1.32.0") }},
 		{"different subnet", func(p *armcontainerservice.MachineProperties) { p.Network.VnetSubnetID = lo.ToPtr("/other/subnet") }},
-		{"system mode", func(p *armcontainerservice.MachineProperties) { p.Mode = lo.ToPtr(armcontainerservice.AgentPoolModeSystem) }},
+		{"system mode", func(p *armcontainerservice.MachineProperties) {
+			p.Mode = lo.ToPtr(armcontainerservice.AgentPoolModeSystem)
+		}},
 		{"FIPS enabled", func(p *armcontainerservice.MachineProperties) { p.OperatingSystem.EnableFIPS = lo.ToPtr(true) }},
-		{"different node image", func(p *armcontainerservice.MachineProperties) { p.NodeImageVersion = lo.ToPtr("AKSUbuntu-2404gen2containerd-2025.03.01") }},
+		{"different node image", func(p *armcontainerservice.MachineProperties) {
+			p.NodeImageVersion = lo.ToPtr("AKSUbuntu-2404gen2containerd-2025.03.01")
+		}},
 	}
 
 	for _, tt := range tests {
