@@ -556,6 +556,29 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				}
 			})
 		})
+
+		// Previously reserved labels (kubernetes.io/k8s.io domains) were restricted by Karpenter core before 1.9.x.
+		// Now allowed on NodeClaims, they should be filtered out of NodeLabels (sent to kubelet via the AKS RP)
+		// unless they are in a kubelet-allowed namespace (e.g. kubelet.kubernetes.io).
+		DescribeTable("should filter previously reserved labels from nodeClaim.Labels",
+			func(label string, expectedInNodeLabels bool) {
+				nodeClaim.Labels = map[string]string{
+					label: "custom-value",
+				}
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand)
+
+				if expectedInNodeLabels {
+					Expect(labels).To(HaveKey(label))
+					Expect(*labels[label]).To(Equal("custom-value"))
+				} else {
+					Expect(labels).ToNot(HaveKey(label))
+				}
+			},
+			Entry("kubernetes.io (previously reserved)", "kubernetes.io/custom-label", false),
+			Entry("k8s.io (previously reserved)", "k8s.io/custom-label", false),
+			Entry("kubelet.kubernetes.io (kubelet-allowed)", "kubelet.kubernetes.io/custom-label", true),
+		)
 	})
 
 	Context("configureKubeletConfig", func() {

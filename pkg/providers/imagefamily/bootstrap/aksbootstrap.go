@@ -108,7 +108,7 @@ type NodeBootstrapVariables struct {
 	SubscriptionID                          string   // a   can be derived from environment/imds
 	ResourceGroup                           string   // a   can be derived from environment/imds
 	Location                                string   // a   can be derived from environment/imds
-	VMType                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "vmss" for now]
+	VMType                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM
 	Subnet                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "aks-subnet for now]
 	NetworkSecurityGroup                    string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-nsg" for now]
 	VirtualNetwork                          string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-vnet-<clusterid>" for now]
@@ -329,7 +329,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
 	}
 	if minorVersion >= 34 {
-		delete(kubeletFlagsBase, "--cloud-config") // removed in 1.34
+		delete(kubeletFlagsBase, "--cloud-config")
+	}
+	if minorVersion >= 35 {
+		delete(kubeletFlagsBase, "--pod-infra-container-image")
 	}
 
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)

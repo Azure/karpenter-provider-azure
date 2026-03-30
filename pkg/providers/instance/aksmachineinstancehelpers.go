@@ -120,7 +120,15 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
 				OSDiskType:   osDiskType,
 				EnableFIPS:   enableFIPS,
-				// LinuxProfile:   nil,
+				LinuxProfile: func() *armcontainerservice.MachineOSProfileLinuxProfile {
+					linuxOSConfig := configureLinuxOSConfig(nodeClass)
+					if linuxOSConfig == nil {
+						return nil
+					}
+					return &armcontainerservice.MachineOSProfileLinuxProfile{
+						LinuxOSConfig: linuxOSConfig,
+					}
+				}(),
 				// WindowsProfile: nil,
 			},
 
@@ -166,7 +174,7 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 
 func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
 	// Karpenter defaults to Managed, but decides whether to use Ephemeral
-	sku, err := instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	sku, err := instanceTypeProvider.Get(ctx, instanceType.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -241,13 +249,9 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
 	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
-	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
-	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
-	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+	// These may contain restricted labels from the pod that we need to filter out; that's done by the OmitBy below.
+	claimLabels := labels.GetAllSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
-		func(k string, req *scheduling.Requirement) bool {
-			return labels.CanKubeletSetLabel(k)
-		},
 	)
 	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
 	var modePtr *armcontainerservice.AgentPoolMode
@@ -258,10 +262,12 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	}
 
 	// TODO: also do the same for taints (which don't have sanitization logic like this yet)
-	// Remove all labels with kubernetes.azure.com prefix, as well as those managed by kubelet.
-	// Also remove legacy AKS managed labels
+	// Remove labels that shouldn't be sent to the API:
+	// - AKS-managed labels (kubernetes.azure.com/*) and legacy AKS labels
+	// - Kubelet-managed labels (set automatically by kubelet, e.g. hostname, zone)
+	// - Labels kubelet can't set (e.g. kubernetes.io/*, k8s.io/* outside allowed namespaces)
 	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {
-		return v1beta1.IsAKSLabel(key) || labels.IsLabelKubeletManaged(key)
+		return v1beta1.IsAKSLabel(key) || labels.IsLabelKubeletManaged(key) || !labels.CanKubeletSetLabel(key)
 	})
 
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))
@@ -330,6 +336,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 		kubeletConfig.PodMaxPids = convertPodMaxPids(*nodeClass.Spec.Kubelet.PodPidsLimit)
 	}
 
+	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
+
 	return kubeletConfig
 }
 
@@ -342,11 +350,74 @@ func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	return customscriptsbootstrap.ConvertContainerLogMaxSizeToMB(containerLogMaxSize)
 }
 
+func convertSwapFileSizeToMB(swapFileSize string) *int32 {
+	// TODO: rename the utils below.
+	return customscriptsbootstrap.ConvertContainerLogMaxSizeToMB(swapFileSize)
+}
+
 func convertPodMaxPids(podPidsLimit int64) *int32 {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
 	return customscriptsbootstrap.ConvertPodMaxPids(lo.ToPtr(podPidsLimit))
+}
+
+func configureLinuxOSConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LinuxOSConfig {
+	if nodeClass == nil || nodeClass.Spec.LinuxOSConfig == nil {
+		return nil
+	}
+
+	linuxOSConfig := &armcontainerservice.LinuxOSConfig{}
+	if nodeClass.Spec.LinuxOSConfig.SwapFileSize != nil && *nodeClass.Spec.LinuxOSConfig.SwapFileSize != "" {
+		linuxOSConfig.SwapFileSizeMB = convertSwapFileSizeToMB(*nodeClass.Spec.LinuxOSConfig.SwapFileSize)
+	}
+	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag != nil {
+		linuxOSConfig.TransparentHugePageDefrag = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag))
+	}
+	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled != nil {
+		linuxOSConfig.TransparentHugePageEnabled = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled))
+	}
+	linuxOSConfig.Sysctls = configureSysctlConfig(nodeClass.Spec.LinuxOSConfig.Sysctls)
+
+	return linuxOSConfig
+}
+
+func configureSysctlConfig(sysctls *v1beta1.SysctlConfiguration) *armcontainerservice.SysctlConfig {
+	if sysctls == nil {
+		return nil
+	}
+
+	sysctlConfig := &armcontainerservice.SysctlConfig{}
+	sysctlConfig.FsAioMaxNr = sysctls.FsAioMaxNr
+	sysctlConfig.FsFileMax = sysctls.FsFileMax
+	sysctlConfig.FsInotifyMaxUserWatches = sysctls.FsInotifyMaxUserWatches
+	sysctlConfig.FsNrOpen = sysctls.FsNrOpen
+	sysctlConfig.KernelThreadsMax = sysctls.KernelThreadsMax
+	sysctlConfig.NetCoreNetdevMaxBacklog = sysctls.NetCoreNetdevMaxBacklog
+	sysctlConfig.NetCoreOptmemMax = sysctls.NetCoreOptmemMax
+	sysctlConfig.NetCoreRmemDefault = sysctls.NetCoreRmemDefault
+	sysctlConfig.NetCoreRmemMax = sysctls.NetCoreRmemMax
+	sysctlConfig.NetCoreSomaxconn = sysctls.NetCoreSomaxconn
+	sysctlConfig.NetCoreWmemDefault = sysctls.NetCoreWmemDefault
+	sysctlConfig.NetCoreWmemMax = sysctls.NetCoreWmemMax
+	sysctlConfig.NetIPv4IPLocalPortRange = sysctls.NetIPv4IPLocalPortRange
+	sysctlConfig.NetIPv4NeighDefaultGcThresh1 = sysctls.NetIPv4NeighDefaultGcThresh1
+	sysctlConfig.NetIPv4NeighDefaultGcThresh2 = sysctls.NetIPv4NeighDefaultGcThresh2
+	sysctlConfig.NetIPv4NeighDefaultGcThresh3 = sysctls.NetIPv4NeighDefaultGcThresh3
+	sysctlConfig.NetIPv4TCPFinTimeout = sysctls.NetIPv4TCPFinTimeout
+	sysctlConfig.NetIPv4TCPKeepaliveProbes = sysctls.NetIPv4TCPKeepaliveProbes
+	sysctlConfig.NetIPv4TCPKeepaliveTime = sysctls.NetIPv4TCPKeepaliveTime
+	sysctlConfig.NetIPv4TCPMaxSynBacklog = sysctls.NetIPv4TCPMaxSynBacklog
+	sysctlConfig.NetIPv4TCPMaxTwBuckets = sysctls.NetIPv4TCPMaxTwBuckets
+	sysctlConfig.NetIPv4TCPTwReuse = sysctls.NetIPv4TCPTwReuse
+	sysctlConfig.NetIPv4TcpkeepaliveIntvl = sysctls.NetIPv4TCPKeepaliveIntvl
+	sysctlConfig.NetNetfilterNfConntrackBuckets = sysctls.NetNetfilterNfConntrackBuckets
+	sysctlConfig.NetNetfilterNfConntrackMax = sysctls.NetNetfilterNfConntrackMax
+	sysctlConfig.VMMaxMapCount = sysctls.VMMaxMapCount
+	sysctlConfig.VMSwappiness = sysctls.VMSwappiness
+	sysctlConfig.VMVfsCachePressure = sysctls.VMVfsCachePressure
+
+	return sysctlConfig
 }
 
 // parseVMImageID parses a VM image ID and extracts the required components for custom OS image headers.

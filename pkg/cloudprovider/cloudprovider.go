@@ -156,6 +156,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, err
 	}
 
+	// Note: This filters out any instance types which we're out of capacity for
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
@@ -234,7 +235,8 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 		aksMachinePromise.AKSMachineID,
 		aksMachinePromise.VMResourceID,
 		false,
-		aksMachinePromise.AKSMachineNodeImageVersion)
+		aksMachinePromise.AKSMachineNodeImageVersion,
+		aksMachinePromise.CreationTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
@@ -543,6 +545,11 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 			ConditionType:      corev1.NodeReady,
 			ConditionStatus:    corev1.ConditionUnknown,
 			TolerationDuration: 10 * time.Minute,
+		},
+		{
+			ConditionType:      "kubernetes.azure.com/NodeHealthy",
+			ConditionStatus:    corev1.ConditionFalse,
+			TolerationDuration: 0,
 		},
 	}
 }

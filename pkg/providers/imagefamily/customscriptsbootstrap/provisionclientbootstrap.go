@@ -65,6 +65,8 @@ type ProvisionClientBootstrap struct {
 	GPUDriverInstallationEnabled   bool
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
+	ArtifactStreaming              *v1beta1.ArtifactStreaming
+	LinuxOSConfig                  *v1beta1.LinuxOSConfiguration
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -104,12 +106,10 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
-	// enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-	//		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
-	// Temporarily disable artifact streaming altogether, until node provisioning performance is fixed
-	// (or until we make artifact streaming configurable)
-	enableArtifactStreaming := false
+	// Artifact streaming is configurable through the AKSNodeClass spec
+	// ARM64 does not support artifact streaming and is always disabled
+	// If not specified, defaults to enabled for AMD64
+	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
@@ -138,7 +138,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
-		EnableFIPS: lo.ToPtr(enableFIPS),
+		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
+		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
@@ -166,6 +167,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
 			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
 			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			FailSwapOn:           p.KubeletConfig.FailSwapOn,
 		}
 
 		if p.KubeletConfig.ContainerLogMaxSize != nil {

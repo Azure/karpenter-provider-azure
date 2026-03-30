@@ -19,6 +19,7 @@ package utilization_test
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
@@ -68,6 +69,11 @@ var _ = Describe("FIPS", Label("runner"), func() {
 		})
 
 		It("should provision FIPS-enabled Ubuntu nodes", func() {
+			deadline := lo.Must(time.Parse(time.RFC3339, "2027-01-15T00:00:00Z"))
+			if time.Now().Before(deadline) {
+				Skip("Ubuntu + FIPS doesn't work on 1.34 + Cilium. Should re-enable when we have Ubuntu2204 support for 1.35")
+			}
+
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
 
