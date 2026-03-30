@@ -9,7 +9,7 @@ permissions:
 jobs:
   deflake:
     runs-on:
-      labels: [self-hosted, 1ES.Pool=karpenter-ci-1es-pool]
+      labels: [self-hosted, 1ES.Pool=karpenter-ci-1es-pool, "JobId=deflake-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"]
     permissions:
       contents: read
       statuses: write

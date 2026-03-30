@@ -22,28 +22,31 @@ var ubuntu2204GalleryVersionResourceId = '/subscriptions/723b64f0-884d-4994-b6de
 var poolSettings = {
   maxPoolSize: 25 // 25 × 4 = 100 cores (DDSv5 family)
   resourcePredictions: [
-    {}              // Sunday: no agents
     {
-      '17:00': 12   // 9 AM Monday PST
+      '21:00': 12  // 9 AM Monday NZT
     }
     {
-      '01:00': 0   // 5 PM Monday PST
-      '17:00': 12   // 9 AM Tuesday PST
+      '05:00': 0   // 5 PM Monday NZT
+      '16:00': 12  // 9 AM Monday PST
     }
     {
-      '01:00': 0   // 5 PM Tuesday PST
-      '17:00': 12   // 9 AM Wednesday PST
+      '05:00': 0   // 5 PM Tuesday NZT
+      '16:00': 12  // 9 AM Tuesday PST
     }
     {
-      '01:00': 0   // 5 PM Wednesday PST
-      '17:00': 12   // 9 AM Thursday PST
+      '05:00': 0   // 5 PM Wednesday NZT
+      '16:00': 12  // 9 AM Wednesday PST
     }
     {
-      '01:00': 0   // 5 PM Thursday PST
-      '17:00': 12   // 9 AM Friday PST
+      '05:00': 0   // 5 PM Thursday NZT
+      '16:00': 12  // 9 AM Thursday PST
     }
     {
-      '01:00': 0   // 5 PM Friday PST
+      '05:00': 0   // 5 PM Friday NZT
+      '16:00': 12  // 9 AM Friday PST
+    }
+    {
+      '00:00': 0   // 5 PM Friday PST
     }
   ]
 }
