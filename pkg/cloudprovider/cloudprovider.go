@@ -231,7 +231,7 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	}
 
 	// Handle the promise
-	if err := c.handleInstancePromise(ctx, aksMachinePromise, nodeClaim); err != nil {
+	if err := c.handleInstancePromiseMachine(ctx, aksMachinePromise, nodeClaim, aksMachinePromise.VMResourceID); err != nil {
 		return nil, err
 	}
 
@@ -328,13 +328,62 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 			})
 		}
 
-		if perr := c.patchProviderID(ctx, nodeClaim.Status.ProviderID); perr != nil {
-			// Only log if context is still active to avoid logging after test completes
+	}()
+	return nil
+}
+
+// handleInstancePromiseMachine handles the instance promise for AKS Machine instances.
+// Same as handleInstancePromise but also patches the providerID on the Node after the promise completes.
+func (c *CloudProvider) handleInstancePromiseMachine(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, providerID string) error {
+	if isNodeClaimStandalone(nodeClaim) {
+		err := instancePromise.Wait()
+		if err != nil {
+			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
+			return cloudprovider.NewCreateError(fmt.Errorf("creating standalone instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+		}
+	}
+	c.instancePromiseWg.Add(1)
+	go func() {
+		defer c.instancePromiseWg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("%v", r)
+				if ctx.Err() == nil {
+					log.FromContext(ctx).Error(err, "panic during waiting on instance promise")
+				}
+			}
+		}()
+
+		err := instancePromise.Wait()
+
+		c.waitUntilLaunched(ctx, nodeClaim)
+
+		if err != nil {
+			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
+
+			if deleteErr := c.kubeClient.Delete(ctx, nodeClaim); deleteErr != nil {
+				deleteErr = client.IgnoreNotFound(deleteErr)
+				if deleteErr != nil {
+					if ctx.Err() == nil {
+						log.FromContext(ctx).Error(
+							deleteErr,
+							"failed to delete nodeclaim, will wait for liveness TTL",
+							"NodeClaim", nodeClaim.Name)
+					}
+				}
+			}
+			metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
+				metrics.ReasonLabel:       "async_provisioning",
+				metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+				metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
+			})
+		}
+
+		if perr := c.patchProviderID(ctx, providerID); perr != nil {
 			if ctx.Err() == nil {
 				log.FromContext(ctx).Error(perr, "failed to patch providerID")
 			}
 		}
-
 	}()
 	return nil
 }
