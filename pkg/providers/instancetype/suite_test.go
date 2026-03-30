@@ -2139,6 +2139,77 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		Context("Filtering by GPU Driver Mode", func() {
+			var instanceTypes corecloudprovider.InstanceTypes
+			var err error
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			Context("when driverInstallation is Install (default)", func() {
+				BeforeEach(func() {
+					// Default nodeClass has no GPU config → defaults to Install mode
+					nodeClassDefault := test.AKSNodeClass()
+					ExpectApplied(ctx, env.Client, nodeClassDefault)
+					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassDefault)
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				It("should include NVIDIA GPU SKUs", func() {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
+				})
+				It("should not include AMD GPU SKUs", func() {
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_ND96isr_MI300X_v5"))))
+				})
+				It("should include non-GPU SKUs", func() {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				})
+			})
+
+			Context("when driverInstallation is explicitly set to Install", func() {
+				BeforeEach(func() {
+					installMode := v1beta1.DriverInstallationInstall
+					nodeClassInstall := test.AKSNodeClass()
+					nodeClassInstall.Spec.GPU = &v1beta1.GPU{DriverInstallation: &installMode}
+					ExpectApplied(ctx, env.Client, nodeClassInstall)
+					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassInstall)
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				It("should include NVIDIA GPU SKUs", func() {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
+				})
+				It("should not include AMD GPU SKUs", func() {
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_ND96isr_MI300X_v5"))))
+				})
+				It("should include non-GPU SKUs", func() {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				})
+			})
+
+			Context("when driverInstallation is None", func() {
+				BeforeEach(func() {
+					noneMode := v1beta1.DriverInstallationNone
+					nodeClassNone := test.AKSNodeClass()
+					nodeClassNone.Spec.GPU = &v1beta1.GPU{DriverInstallation: &noneMode}
+					ExpectApplied(ctx, env.Client, nodeClassNone)
+					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassNone)
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				It("should include NVIDIA GPU SKUs", func() {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
+				})
+				It("should include AMD GPU SKUs", func() {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_ND96isr_MI300X_v5"))))
+				})
+				It("should include non-GPU SKUs", func() {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				})
+			})
+		})
+
 		Context("Filtering by Encryption at Host", func() {
 			var instanceTypes corecloudprovider.InstanceTypes
 			var err error
