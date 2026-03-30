@@ -167,6 +167,7 @@ func (c *MachineListCache) List(ctx context.Context) ([]*armcontainerservice.Mac
 			}
 		case <-ctx.Done():
 			return nil, fmt.Errorf("context canceled while waiting for fresh cache: %w", ctx.Err())
+		default:
 		}
 
 		if c.isFresh() {
