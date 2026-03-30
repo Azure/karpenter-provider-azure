@@ -62,7 +62,7 @@ func (c *Client) BeginCreateWithBatch(
 			resourceName:      resourceName,
 			agentPoolName:     agentPoolName,
 			machineName:       machineName,
-			machineBody:          template,
+			machineBody:       template,
 		},
 		ResponseChan: make(chan *batcher.Response[struct{}], 1),
 	}

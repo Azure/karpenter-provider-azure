@@ -54,6 +54,8 @@ func newExecutor(realClient azapi.AKSMachinesAPI) *executor {
 // Uses context.Background() intentionally: a batch serves multiple callers with
 // different deadlines, and canceling an in-flight PUT mid-request risks creating
 // phantom Azure resources that Karpenter doesn't track.
+//
+//nolint:govet // nilness: frontendErrors is intentionally always nil until per-machine error parsing TODO is implemented
 func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, struct{}]) {
 	ctx := context.Background()
 	batchID := uuid.New().String()
@@ -102,7 +104,7 @@ func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, st
 	// If there's an API-level error, try to parse per-machine errors from it
 	// TODO: Implement actual parsing of Azure's structured error response.
 	// frontendErrors := e.parseFrontendErrors(err)
-	var frontendErrors map[string]error = nil // Placeholder, as if all machines failed.
+	var frontendErrors map[string]error // Placeholder, as if all machines failed.
 
 	// If there's an API-level error but no per-machine breakdown, all machines failed
 	if err != nil && frontendErrors == nil {

@@ -91,6 +91,7 @@ func (r *recordingClient) snapshot() []recordedCall {
 // test helpers
 // ---------------------------------------------------------------------------
 
+//nolint:unparam // vmSize is always the same today but kept as param for future test flexibility
 func tpl(vmSize string, zones []string, tags map[string]string) armcontainerservice.Machine {
 	m := armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
@@ -116,7 +117,7 @@ func makeReq(name string, template armcontainerservice.Machine) *batcher.Batched
 			resourceName:      "cluster",
 			agentPoolName:     "pool",
 			machineName:       name,
-			machineBody:          template,
+			machineBody:       template,
 		},
 		ResponseChan: make(chan *batcher.Response[struct{}], 1),
 	}
