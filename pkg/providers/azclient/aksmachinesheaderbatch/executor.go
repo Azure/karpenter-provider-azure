@@ -102,10 +102,10 @@ func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, st
 	// If there's an API-level error, try to parse per-machine errors from it
 	// TODO: Implement actual parsing of Azure's structured error response.
 	// frontendErrors := e.parseFrontendErrors(err)
-	var frontendErrors map[string]error = nil // Placeholder, as if all machines failed.
+	var frontendErrors map[string]error //nolint:govet // Placeholder for future per-machine error parsing; always nil until TODO is implemented.
 
 	// If there's an API-level error but no per-machine breakdown, all machines failed
-	if err != nil && frontendErrors == nil {
+	if err != nil && frontendErrors == nil { //nolint:staticcheck // intentional: frontendErrors will be non-nil once per-machine parsing is implemented
 		log.FromContext(ctx).Error(err, "batch API call failed, distributing error to all machines",
 			"batchID", batchID,
 			"size", len(batch.Requests))
