@@ -1,0 +1,46 @@
+# Combines Node Affinity + Topology Spread (pattern shown in Kubernetes docs).
+# Use case: only run in certain node pools (e.g., "workload=general"), and still spread across zones.
+#
+# Tradeoffs:
+# - Hard node affinity can cause Pending if the chosen pool is small.
+# - Soft node affinity is safer if you prefer but can fallback.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-nodeaffinity-plus-topologyspread
+spec:
+  replicas: 9
+  selector:
+    matchLabels:
+      app: sample-nodeaffinity-plus-topologyspread
+  template:
+    metadata:
+      labels:
+        app: sample-nodeaffinity-plus-topologyspread
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              # This assumes you label your nodes with something like:
+              #   example.com/workload-class=general
+              - key: example.com/workload-class
+                operator: In
+                values: ["general"]
+
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway # Best-effort spread within the chosen pool
+        labelSelector:
+          matchLabels:
+            app: sample-nodeaffinity-plus-topologyspread
+
+      containers:
+      - name: app
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
