@@ -300,14 +300,18 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
 	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
-	if a.GPUNode {
+	if a.GPUNode && a.GPUDriverInstallationEnabled {
 		nbv.GPUNode = true
-		if a.GPUDriverInstallationEnabled {
-			nbv.ConfigGPUDriverIfNeeded = true
-			nbv.GPUDriverVersion = a.GPUDriverVersion
-			nbv.GPUDriverType = a.GPUDriverType
-			nbv.GPUImageSHA = a.GPUImageSHA
-		}
+		nbv.ConfigGPUDriverIfNeeded = true
+		nbv.GPUDriverVersion = a.GPUDriverVersion
+		nbv.GPUDriverType = a.GPUDriverType
+		nbv.GPUImageSHA = a.GPUImageSHA
+	} else {
+		// For non-GPU nodes or GPU nodes with driverInstallation: None,
+		// ensure ConfigGPUDriverIfNeeded is false so that containerd.toml
+		// uses runc as the default runtime instead of nvidia-container-runtime
+		// (which won't be installed without GPU driver setup).
+		nbv.ConfigGPUDriverIfNeeded = false
 	}
 
 	// merge and stringify labels
