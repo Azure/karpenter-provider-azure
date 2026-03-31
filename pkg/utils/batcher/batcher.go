@@ -45,7 +45,7 @@ type Batch[RequestPayload, ResponsePayload any] struct {
 type BatchedRequest[RequestPayload, ResponsePayload any] struct {
 	// Caller's request context (before going into the batcher)
 	// Warning: the batcher does not currently honor per-request context cancellation.
-	// Once a request is enqueued, it stays in the batch even if the caller's context is cancelled.
+	// Once a request is enqueued, it stays in the batch even if the caller's context is canceled.
 	// Suggestion: support per-request cancellation guarantee, only if needed.
 	ctx context.Context
 
