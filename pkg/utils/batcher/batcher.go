@@ -35,13 +35,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// A batch is a group of requests with the same key.
+// Batch is a group of requests with the same key.
 type Batch[RequestPayload, ResponsePayload any] struct {
 	Key      string
 	Requests []*BatchedRequest[RequestPayload, ResponsePayload]
 }
 
-// A batchedRequest is a single request (w/ payload) being batched with others.
+// BatchedRequest is a single request (w/ payload) being batched with others.
 type BatchedRequest[RequestPayload, ResponsePayload any] struct {
 	// Caller's request context (before going into the batcher)
 	// Warning: the batcher does not currently honor per-request context cancellation.
@@ -55,7 +55,7 @@ type BatchedRequest[RequestPayload, ResponsePayload any] struct {
 	Payload RequestPayload // The original request payload (e.g., an AKS machine body for creation)
 }
 
-// ExecuteBatch shall use this to send a response to each original request.
+// Response is used by ExecuteBatch to send a response to each original request.
 type Response[ResponsePayload any] struct {
 	Payload ResponsePayload // The response payload to send back to the caller (e.g., a poller for async operations, or struct{} if unused)
 	Err     error
