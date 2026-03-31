@@ -281,6 +281,18 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D12"),
 	},
 	{
+		Name: ptr.To("Standard_D128ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D128alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D128als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D128as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_D128ds_v6"),
 	},
 	{
@@ -318,6 +330,18 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_D15_v2"),
+	},
+	{
+		Name: ptr.To("Standard_D160ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D160alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D160als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D160as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_D16ads_v5"),
@@ -414,6 +438,18 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_D16_v5"),
+	},
+	{
+		Name: ptr.To("Standard_D16ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D16alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D16als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D16as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_D192ds_v6"),
@@ -530,6 +566,18 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D2_v5"),
 	},
 	{
+		Name: ptr.To("Standard_D2ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D2alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D2als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D2as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_D3"),
 	},
 	{
@@ -627,6 +675,18 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_D32_v5"),
+	},
+	{
+		Name: ptr.To("Standard_D32ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D32alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D32als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D32as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_D3_v2"),
@@ -734,6 +794,18 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D48_v5"),
 	},
 	{
+		Name: ptr.To("Standard_D48ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D48alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D48als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D48as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_D4ads_v5"),
 	},
 	{
@@ -834,6 +906,18 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_D4_v5"),
+	},
+	{
+		Name: ptr.To("Standard_D4ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D4alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D4als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D4as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_D5_v2"),
@@ -938,6 +1022,18 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D64_v5"),
 	},
 	{
+		Name: ptr.To("Standard_D64ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D64alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D64als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D64as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_D8ads_v5"),
 	},
 	{
@@ -1034,6 +1130,18 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D8_v5"),
 	},
 	{
+		Name: ptr.To("Standard_D8ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D8alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D8als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D8as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_D96ads_v5"),
 	},
 	{
@@ -1098,6 +1206,18 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_D96_v5"),
+	},
+	{
+		Name: ptr.To("Standard_D96ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D96alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D96als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_D96as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_DC16ads_cc_v5"),
@@ -1421,13 +1541,37 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E112ibs_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E128-32ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E128-32as_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E128-64ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E128-64as_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E128ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E128as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E16-4ads_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E16-4ads_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E16-4as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E16-4as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E16-4as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E16-4ds_v4"),
@@ -1454,10 +1598,16 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E16-8ads_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E16-8ads_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E16-8as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E16-8as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E16-8as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E16-8ds_v4"),
@@ -1479,6 +1629,12 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_E16-8s_v6"),
+	},
+	{
+		Name: ptr.To("Standard_E160ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E160as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E16ads_v5"),
@@ -1551,6 +1707,12 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_E16_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E16ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E16as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E20ads_v5"),
@@ -1685,13 +1847,25 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E2_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E2ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E2as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E32-16ads_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E32-16ads_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E32-16as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E32-16as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E32-16as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E32-16ds_v4"),
@@ -1718,10 +1892,16 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E32-8ads_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E32-8ads_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E32-8as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E32-8as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E32-8as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E32-8ds_v4"),
@@ -1817,13 +1997,25 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E32_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E32ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E32as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E4-2ads_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E4-2ads_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E4-2as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E4-2as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E4-2as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E4-2ds_v4"),
@@ -1913,6 +2105,12 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E48_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E48ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E48as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E4ads_v5"),
 	},
 	{
@@ -1985,13 +2183,25 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E4_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E4ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E4as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E64-16ads_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E64-16ads_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E64-16as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E64-16as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E64-16as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E64-16ds_v4"),
@@ -2018,10 +2228,16 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E64-32ads_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E64-32ads_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E64-32as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E64-32as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E64-32as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E64-32ds_v4"),
@@ -2117,13 +2333,25 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E64_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E64ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E64as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E8-2ads_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E8-2ads_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E8-2as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E8-2as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E8-2as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E8-2ds_v4"),
@@ -2150,10 +2378,16 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E8-4ads_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E8-4ads_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E8-4as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E8-4as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E8-4as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E8-4ds_v4"),
@@ -2255,16 +2489,28 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E8_v5"),
 	},
 	{
+		Name: ptr.To("Standard_E8ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E8as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E96-24ads_v5"),
 	},
 	{
 		Name: ptr.To("Standard_E96-24ads_v6"),
 	},
 	{
+		Name: ptr.To("Standard_E96-24ads_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E96-24as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E96-24as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E96-24as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E96-24ds_v5"),
@@ -2285,10 +2531,16 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_E96-48ads_v6"),
 	},
 	{
+		Name: ptr.To("Standard_E96-48ads_v7"),
+	},
+	{
 		Name: ptr.To("Standard_E96-48as_v4"),
 	},
 	{
 		Name: ptr.To("Standard_E96-48as_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E96-48as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_E96-48ds_v5"),
@@ -2352,6 +2604,12 @@ var allAzureVMSkus = []skewer.SKU{
 	},
 	{
 		Name: ptr.To("Standard_E96_v5"),
+	},
+	{
+		Name: ptr.To("Standard_E96ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_E96as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_EC128eds_v5"),
@@ -2522,13 +2780,43 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F16"),
 	},
 	{
+		Name: ptr.To("Standard_F16-4amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F16-4ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F16-8amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F16-8ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F16ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F16alds_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F16als_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F16als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F16amds_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F16ams_v6"),
 	},
 	{
+		Name: ptr.To("Standard_F16ams_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F16as_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F16as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F16s"),
@@ -2537,19 +2825,61 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F16s_v2"),
 	},
 	{
+		Name: ptr.To("Standard_F1ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F1alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F1als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F1amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F1ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F1as_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F1s"),
 	},
 	{
 		Name: ptr.To("Standard_F2"),
 	},
 	{
+		Name: ptr.To("Standard_F2-1amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F2-1ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F2ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F2alds_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F2als_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F2als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F2amds_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F2ams_v6"),
 	},
 	{
+		Name: ptr.To("Standard_F2ams_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F2as_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F2as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F2s"),
@@ -2558,13 +2888,43 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F2s_v2"),
 	},
 	{
+		Name: ptr.To("Standard_F32-16amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F32-16ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F32-8amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F32-8ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F32ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F32alds_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F32als_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F32als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F32amds_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F32ams_v6"),
 	},
 	{
+		Name: ptr.To("Standard_F32ams_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F32as_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F32as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F32s_v2"),
@@ -2573,25 +2933,73 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F4"),
 	},
 	{
+		Name: ptr.To("Standard_F4-1amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F4-1ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F4-2amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F4-2ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F48ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F48alds_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F48als_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F48als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F48amds_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F48ams_v6"),
 	},
 	{
+		Name: ptr.To("Standard_F48ams_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F48as_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F48as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F48s_v2"),
 	},
 	{
+		Name: ptr.To("Standard_F4ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F4alds_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F4als_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F4als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F4amds_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F4ams_v6"),
 	},
 	{
+		Name: ptr.To("Standard_F4ams_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F4as_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F4as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F4s"),
@@ -2600,13 +3008,43 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F4s_v2"),
 	},
 	{
+		Name: ptr.To("Standard_F64-16amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F64-16ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F64-32amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F64-32ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F64ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F64alds_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F64als_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F64als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F64amds_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F64ams_v6"),
 	},
 	{
+		Name: ptr.To("Standard_F64ams_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F64as_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F64as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F64s_v2"),
@@ -2618,13 +3056,61 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F8"),
 	},
 	{
+		Name: ptr.To("Standard_F8-2amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F8-2ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F8-4amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F8-4ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F80ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F80alds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F80als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F80amds_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F80ams_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F80as_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F8ads_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F8alds_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F8als_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F8als_v7"),
+	},
+	{
+		Name: ptr.To("Standard_F8amds_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F8ams_v6"),
 	},
 	{
+		Name: ptr.To("Standard_F8ams_v7"),
+	},
+	{
 		Name: ptr.To("Standard_F8as_v6"),
+	},
+	{
+		Name: ptr.To("Standard_F8as_v7"),
 	},
 	{
 		Name: ptr.To("Standard_F8s"),
