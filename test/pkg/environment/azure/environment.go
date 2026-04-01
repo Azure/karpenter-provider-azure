@@ -207,7 +207,7 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 }
 
 func (env *Environment) IsMachineMode() bool {
-	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI
+	return consts.IsAKSMachineAPIMode(env.ProvisionMode)
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {

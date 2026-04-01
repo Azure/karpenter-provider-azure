@@ -78,6 +78,7 @@ on:
         options:
           - aksscriptless
           - aksmachineapi
+          - aksmachineapiheaderbatch
 
 permissions:
   contents: read

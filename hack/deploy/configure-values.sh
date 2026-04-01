@@ -19,8 +19,8 @@ PROVISION_MODE=${6:-}
 AKS_MACHINES_POOL_NAME=${7:-testmpool}
 
 # Validate PROVISION_MODE
-if [[ -n "$PROVISION_MODE" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "bootstrappingclient" && "$PROVISION_MODE" != "aksscriptless" ]]; then
-    echo "Error: Invalid provision-mode '$PROVISION_MODE'. Must be one of: aksmachineapi, bootstrappingclient, aksscriptless, or empty"
+if [[ -n "$PROVISION_MODE" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" && "$PROVISION_MODE" != "bootstrappingclient" && "$PROVISION_MODE" != "aksscriptless" ]]; then
+    echo "Error: Invalid provision-mode '$PROVISION_MODE'. Must be one of: aksmachineapi, aksmachineapiheaderbatch, bootstrappingclient, aksscriptless, or empty"
     exit 1
 fi
 
@@ -79,8 +79,8 @@ KUBELET_IDENTITY_CLIENT_ID=$(jq -r ".identityProfile.kubeletidentity.clientId //
 
 AZURE_SIG_SUBSCRIPTION_ID=""
 USE_SIG="false"
-# For Machine API mode
-if [[ "${PROVISION_MODE:-}" == "aksmachineapi" ]]; then
+# For Machine API modes
+if [[ "${PROVISION_MODE:-}" == "aksmachineapi" || "${PROVISION_MODE:-}" == "aksmachineapiheaderbatch" ]]; then
     USE_SIG="true"
     AZURE_SIG_SUBSCRIPTION_ID=109a5e88-712a-48ae-9078-9ca8b3c81345
 fi

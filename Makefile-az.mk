@@ -37,8 +37,8 @@ AKS_MACHINES_POOL_NAME ?= testmpool
 export KO_GO_PATH ?= hack/go-crossbuild.sh
 
 AZ_ALL_PERMS := az-perm az-perm-acr
-ifeq ($(PROVISION_MODE),aksmachineapi)
-  $(info PROVISION_MODE is aksmachineapi)
+ifneq ($(filter aksmachineapi aksmachineapiheaderbatch,$(PROVISION_MODE)),)
+  $(info PROVISION_MODE is $(PROVISION_MODE) (AKS Machine API mode))
   AZ_ALL_PERMS += az-perm-aksmachine az-add-aksmachinespool
 endif
 
@@ -292,7 +292,7 @@ az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR
 az-add-aksmachinespool:
 	hack/deploy/add-aks-machines-pool.sh $(AZURE_SUBSCRIPTION_ID) $(AZURE_RESOURCE_GROUP) $(AZURE_CLUSTER_NAME) $(AKS_MACHINES_POOL_NAME)
 
-az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart. Use PROVISION_MODE=aksmachineapi for AKS machine API mode.
+az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart. Use PROVISION_MODE=aksmachineapi or aksmachineapiheaderbatch for AKS machine API modes.
 	LOG_LEVEL=debug hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING) $(PROVISION_MODE) $(AKS_MACHINES_POOL_NAME)
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)

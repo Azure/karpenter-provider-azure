@@ -175,7 +175,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	// Choose provider based on provision mode
-	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+	if consts.IsAKSMachineAPIMode(options.FromContext(ctx).ProvisionMode) {
 		return c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	}
 

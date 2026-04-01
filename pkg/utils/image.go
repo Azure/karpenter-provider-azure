@@ -30,7 +30,7 @@ var (
 func GetAKSMachineNodeImageVersionFromImageID(imageID string) (string, error) {
 	if strings.HasPrefix(imageID, "/CommunityGalleries") {
 		// Requires AKS machine API support
-		return "", fmt.Errorf("CIG images are not supported yet for AKS machines, consider not using PROVISION_MODE=aksmachineapi: %s", imageID)
+		return "", fmt.Errorf("CIG images are not supported yet for AKS machines, consider not using an AKS Machine API provision mode: %s", imageID)
 	} else {
 		return GetAKSMachineNodeImageVersionFromSIGImageID(imageID)
 	}
