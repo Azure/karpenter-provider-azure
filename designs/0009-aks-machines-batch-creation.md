@@ -2,7 +2,7 @@
 
 **Author:** @comtalyst
 
-**Last updated:** Apr 16, 2026
+**Last updated:** Mar 30, 2026
 
 **Status:** Completed
 
@@ -80,10 +80,11 @@ Whether to batch or not to batch is currently determined through that global opt
 
 * Without batch, Karpenter creates an individual AKS machine API instance through `pkg/providers/azclient/azapi.AKSMachinesAPI.BeginCreateOrUpdate` interface from `pkg/providers/instance/aksmachineinstance`.
   * Azure SDK implements this interface directly
-* With batch, we introduce a new interface `AKSMachinesHeaderBatchAPI.BeginCreateWithBatch` and "AKS machines header batch client" in `pkg/providers/azclient/aksmachinesheaderbatch`
+* With batch, a new interface `AKSMachinesBatchAPI.BeginCreateWithBatch` is introduced.
+  * We implement "AKS machines header batch client" in `pkg/providers/azclient/aksmachinesheaderbatch`
 
 The general expectations for both are similar: **the call returns upon ensuring that the creation of the specified machine template has started, server-side.**
-However, `AKSMachinesHeaderBatchAPI.BeginCreateWithBatch` does not support update. If some machines in the header already exist (which can be interpreted as an update), they will fail.
+However, `AKSMachinesBatchAPI.BeginCreateWithBatch` does not support update. If some machines in the header already exist (which can be interpreted as an update), they will fail.
 
 In addition, due to the poller limitations noted earlier, the batching path uses the GET-based poller (`pkg/providers/instance/aksmachinepoller`) to poll each machine individually. A separate interface has been created to make these differences in expectations clear.
 
@@ -93,7 +94,7 @@ The divergence is handled with a simple if statement like below.
 
 ```go
 if batchCreationEnabled {
-    // Batch path: AKSMachinesHeaderBatchAPI.BeginCreateWithBatch → GET poller
+    // Batch path: AKSMachinesBatchAPI.BeginCreateWithBatch → GET poller
 } else {
     // Non-batch path: AKSMachinesAPI.BeginCreateOrUpdate → SDK poller
 }
@@ -155,7 +156,7 @@ Per-machine fields (currently only `Tags`) and read-only fields (`ETag`, `Provis
 `aksmachinesheaderbatch/executor.go` — called by the batcher when a batch fires. It:
 
 1. Builds per-machine `MachineEntry` data (name, zones, tags) from each request, then constructs the `BatchPutMachine` HTTP header (JSON with per-machine entries).
-2. Calls `AKSMachinesCreateAPI.BeginCreateOrUpdate` (a narrow consumer-side view of the SDK's `MachinesClient`, defined in `aksmachinesheaderbatch`) with the header and template.
+2. Calls `AKSMachinesAPI.BeginCreateOrUpdate` with the header and template.
 3. If the call returns an error, the executor distributes that error to each request's response channel.
 4. Otherwise, the returned SDK poller is discarded and a nil error is returned to the response channel.
 5. The caller (`client.BeginCreateBatch`) receives the response/error, then returns it to the instance provider.
@@ -204,7 +205,7 @@ For example, when Karpenter needs to create 5 machines with the same config:
 1. The provisioner creates 5 NodeClaims. Core Karpenter calls `CloudProvider.Create()` for each, in parallel.
 2. Each `Create()` reaches `beginCreateMachine()`, which calls `batchClient.BeginCreateWithBatch()`. This enqueues the request into the batcher and **blocks** on a response channel.
 3. The batcher groups all 5 requests under the same key (same config = same hash). After the idle timeout passes with no new requests, the batcher fires.
-4. The executor builds a single `BatchPutMachine` HTTP header with per-machine entries (names, zones, tags), clears per-machine fields from the template body, and calls `AKSMachinesCreateAPI.BeginCreateOrUpdate` once.
+4. The executor builds a single `BatchPutMachine` HTTP header with per-machine entries (names, zones, tags), clears per-machine fields from the template body, and calls `AKSMachinesAPI.BeginCreateOrUpdate` once.
 5. AKS Machine API begins creating all 5 machines and returns. The executor sends a success response to each of the 5 blocked callers via their response channels.
    * If the API returns an error, the executor distributes it to all 5 callers. Each caller follows the error handling path.
 6. Each caller unblocks, does a GET to retrieve the machine's details, then starts polling via the GET-based poller for provisioning completion. At this point, 5 individual GET pollers are running — each ticking every 5 seconds. This is where batching shifts load from PUTs to GETs: 1 PUT was sent, but 5 × (provisioning duration / 5s) GETs follow.
@@ -212,7 +213,7 @@ For example, when Karpenter needs to create 5 machines with the same config:
 
 ### Future migrations
 
-Once a different form (e.g., more formal w/o headers, or fleet-style) of batch API is finally available, the generic batcher (`pkg/utils/batcher`) can be shared, while the new code path introduces its own client package and interface analogous to `aksmachinesheaderbatch`/`AKSMachinesHeaderBatchAPI`, if not introduce a new interface only in `azclient` package, with the implementation done by Azure SDK (more likely).
+Once a different form (e.g., more formal w/o headers, or fleet-style) of batch API is finally available, the generic batcher can be shared, while the new code path introduces a new implementation of the `AKSMachinesBatchAPI` interface, instead of `aksmachinesheaderbatch`. The interface can also be extended or have its use in the instance provider changed, in case assumptions change in the new API.
 
 Beyond provisioning, changes in instance management as a result of API changes (if applicable) should be discussed case-by-case.
 
