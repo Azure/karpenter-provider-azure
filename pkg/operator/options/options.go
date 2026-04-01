@@ -97,10 +97,10 @@ type Options struct {
 	// If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE is already an AKS Machine API mode, as it will behave as if this option is set to true.
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 
-	AKSMachinesPoolName  string `json:"aksMachinesPoolName,omitempty"`  // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
-	BatchIdleTimeoutMS   int    `json:"batchIdleTimeoutMS,omitempty"`   // Idle timeout in milliseconds for batch accumulation (default 1000ms). Only used on provision mode aksmachineapiheaderbatch.
-	BatchMaxTimeoutMS    int    `json:"batchMaxTimeoutMS,omitempty"`    // Maximum timeout in milliseconds for batch accumulation (default 5000ms). Only used on provision mode aksmachineapiheaderbatch.
-	MaxBatchSize         int    `json:"maxBatchSize,omitempty"`         // Maximum number of machines per batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
+	AKSMachinesPoolName string `json:"aksMachinesPoolName,omitempty"` // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
+	BatchIdleTimeoutMS  int    `json:"batchIdleTimeoutMS,omitempty"`  // Idle timeout in milliseconds for batch accumulation (default 1000ms). Only used on provision mode aksmachineapiheaderbatch.
+	BatchMaxTimeoutMS   int    `json:"batchMaxTimeoutMS,omitempty"`   // Maximum timeout in milliseconds for batch accumulation (default 5000ms). Only used on provision mode aksmachineapiheaderbatch.
+	MaxBatchSize        int    `json:"maxBatchSize,omitempty"`        // Maximum number of machines per batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
 
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
