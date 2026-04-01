@@ -18,8 +18,7 @@ rule=$'self in
         "karpenter.azure.com/sku-storage-ephemeralos-maxsize",
         "karpenter.azure.com/sku-gpu-name",
         "karpenter.azure.com/sku-gpu-manufacturer",
-        "karpenter.azure.com/sku-gpu-count",
-        "karpenter.azure.com/sku-hyperv-generation"
+        "karpenter.azure.com/sku-gpu-count"
     ]
     || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
 '
