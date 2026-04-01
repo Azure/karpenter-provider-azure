@@ -37,10 +37,10 @@ const (
 	DefaultNodeSubnetMaxPods    = 30
 	DefaultKubernetesMaxPods    = 110
 
-	ProvisionModeAKSScriptless            = "aksscriptless"
-	ProvisionModeBootstrappingClient      = "bootstrappingclient"
-	ProvisionModeAKSMachineAPI            = "aksmachineapi"
-	ProvisionModeAKSMachineAPIHeaderBatch = "aksmachineapiheaderbatch"
+	ProvisionModeAKSScriptless             = "aksscriptless"
+	ProvisionModeBootstrappingClient       = "bootstrappingclient"
+	ProvisionModeAKSMachineAPI             = "aksmachineapi"
+	ProvisionModeAKSMachineAPIHeaderBatch  = "aksmachineapiheaderbatch"
 
 	// Provisioning states for AKS Machine objects.
 	// The SDK's Machine.Properties.ProvisioningState is typed as *string (no typed constants).
@@ -51,3 +51,9 @@ const (
 	ProvisioningStateFailed    = "Failed"
 	ProvisioningStateDeleting  = "Deleting"
 )
+
+// IsAKSMachineAPIMode returns true if the provision mode creates instances via the AKS Machine API
+// (as opposed to direct ARM VM creation). This includes both unbatched and batched variants.
+func IsAKSMachineAPIMode(provisionMode string) bool {
+	return provisionMode == ProvisionModeAKSMachineAPI || provisionMode == ProvisionModeAKSMachineAPIHeaderBatch
+}
