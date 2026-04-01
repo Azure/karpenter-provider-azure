@@ -70,3 +70,11 @@ func NewSpotProductPrice(instanceType string, price float64) client.Item {
 		RetailPrice: price,
 	}
 }
+
+func NewProductPriceWithSavingsPlan(instanceType string, onDemandPrice float64, savingsPlan []client.SavingsPlanPrice) client.Item {
+	return client.Item{
+		ArmSkuName:  instanceType,
+		RetailPrice: onDemandPrice,
+		SavingsPlan: savingsPlan,
+	}
+}

@@ -49,18 +49,21 @@ type Provider struct {
 	region  string
 	cm      *pretty.ChangeMonitor
 
-	mu                 sync.RWMutex
-	onDemandUpdateTime time.Time
-	onDemandPrices     map[string]float64
-	spotUpdateTime     time.Time
-	spotPrices         map[string]float64
-	done               chan struct{}
+	mu                       sync.RWMutex
+	onDemandUpdateTime       time.Time
+	onDemandPrices           map[string]float64
+	spotUpdateTime           time.Time
+	spotPrices               map[string]float64
+	savingsPlanUpdateTime    time.Time
+	savingsPlanPrices        map[string]float64
+	done                     chan struct{}
 }
 
 type Err struct {
 	error
-	lastOnDemandUpdateTime time.Time
-	lastSpotUpdateTime     time.Time
+	lastOnDemandUpdateTime    time.Time
+	lastSpotUpdateTime        time.Time
+	lastSavingsPlanUpdateTime time.Time
 }
 
 // NewPricingAPI returns a pricing API
@@ -83,15 +86,17 @@ func NewProvider(
 	}
 
 	p := &Provider{
-		region:             region,
-		onDemandUpdateTime: initialPriceUpdate,
-		onDemandPrices:     staticPricing,
-		spotUpdateTime:     initialPriceUpdate,
+		region:                region,
+		onDemandUpdateTime:    initialPriceUpdate,
+		onDemandPrices:        staticPricing,
+		spotUpdateTime:        initialPriceUpdate,
 		// default our spot pricing to the same as the on-demand pricing until a price update
-		spotPrices: staticPricing,
-		pricing:    pricing,
-		cm:         pretty.NewChangeMonitor(),
-		done:       make(chan struct{}),
+		spotPrices:            staticPricing,
+		savingsPlanUpdateTime: initialPriceUpdate,
+		savingsPlanPrices:     map[string]float64{},
+		pricing:               pricing,
+		cm:                    pretty.NewChangeMonitor(),
+		done:                  make(chan struct{}),
 	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing").WithValues("region", region))
 
@@ -136,7 +141,7 @@ func NewProvider(
 func (p *Provider) InstanceTypes() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return lo.Union(lo.Keys(p.onDemandPrices), lo.Keys(p.spotPrices))
+	return lo.Union(lo.Keys(p.onDemandPrices), lo.Keys(p.spotPrices), lo.Keys(p.savingsPlanPrices))
 }
 
 // OnDemandLastUpdated returns the time that the on-demand pricing was last updated
@@ -151,6 +156,13 @@ func (p *Provider) SpotLastUpdated() time.Time {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.spotUpdateTime
+}
+
+// SavingsPlanLastUpdated returns the time that the savings plan pricing was last updated
+func (p *Provider) SavingsPlanLastUpdated() time.Time {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.savingsPlanUpdateTime
 }
 
 // OnDemandPrice returns the last known on-demand price for a given instance type, returning false if there is no
@@ -185,13 +197,25 @@ func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
 	return price, true
 }
 
+// SavingsPlanPrice returns the best (lowest) known savings plan price for a given instance type,
+// returning false if there is no known savings plan pricing for that instance type.
+func (p *Provider) SavingsPlanPrice(instanceType string) (float64, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	price, ok := p.savingsPlanPrices[instanceType]
+	if !ok {
+		return 0.0, false
+	}
+	return price, true
+}
+
 func (p *Provider) updatePricing(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
 
-	prices := map[client.Item]bool{}
-	err := p.fetchPricing(ctx, processPage(prices))
+	prices := []client.Item{}
+	err := p.fetchPricing(ctx, processPage(&prices))
 	if err != nil {
 		if ctx.Err() != nil {
 			return
@@ -199,11 +223,12 @@ func (p *Provider) updatePricing(ctx context.Context) {
 		log.FromContext(ctx).Error(err, "failed to fetch updated pricing, using existing pricing data",
 			"lastOnDemandUpdateTime", err.lastOnDemandUpdateTime.Format(time.RFC3339),
 			"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
+			"lastSavingsPlanUpdateTime", err.lastSavingsPlanUpdateTime.Format(time.RFC3339),
 		)
 		return
 	}
 
-	onDemandPrices, spotPrices := categorizePrices(prices)
+	onDemandPrices, spotPrices, savingsPlanPrices := categorizePrices(prices)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -222,6 +247,16 @@ func (p *Provider) updatePricing(ctx context.Context) {
 		if err := p.UpdateSpotPricing(ctx, spotPrices); err != nil {
 			log.FromContext(ctx).Error(err, "failed to update spot pricing, using existing pricing data",
 				"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
+			)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := p.UpdateSavingsPlanPricing(ctx, savingsPlanPrices); err != nil {
+			log.FromContext(ctx).Error(err, "failed to update savings plan pricing, using existing pricing data",
+				"lastSavingsPlanUpdateTime", err.lastSavingsPlanUpdateTime.Format(time.RFC3339),
 			)
 		}
 	}()
@@ -277,12 +312,12 @@ func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *cl
 		}}
 	err := p.pricing.GetProductsPricePages(ctx, filters, pageHandler)
 	if err != nil {
-		return &Err{error: err, lastOnDemandUpdateTime: p.onDemandUpdateTime, lastSpotUpdateTime: p.spotUpdateTime}
+		return &Err{error: err, lastOnDemandUpdateTime: p.onDemandUpdateTime, lastSpotUpdateTime: p.spotUpdateTime, lastSavingsPlanUpdateTime: p.savingsPlanUpdateTime}
 	}
 	return nil
 }
 
-func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePage) {
+func processPage(prices *[]client.Item) func(page *client.ProductsPricePage) {
 	return func(page *client.ProductsPricePage) {
 		for _, pItem := range page.Items {
 			if strings.HasSuffix(pItem.ProductName, " Windows") {
@@ -292,7 +327,7 @@ func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePag
 				// https://learn.microsoft.com/en-us/azure/batch/batch-spot-vms#differences-between-spot-and-low-priority-vms
 				continue
 			}
-			prices[pItem] = true
+			*prices = append(*prices, pItem)
 		}
 	}
 }
@@ -314,16 +349,50 @@ func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]
 	return nil
 }
 
-func categorizePrices(prices map[client.Item]bool) (map[string]float64, map[string]float64) {
-	var onDemandPrices, spotPrices = map[string]float64{}, map[string]float64{}
-	for price := range prices {
+func (p *Provider) UpdateSavingsPlanPricing(ctx context.Context, savingsPlanPrices map[string]float64) *Err {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(savingsPlanPrices) == 0 {
+		// Savings plan data may legitimately be absent (e.g., some SKUs don't have SP pricing).
+		// This is not an error — just skip the update and retain any existing data.
+		return nil
+	}
+
+	p.savingsPlanPrices = lo.Assign(savingsPlanPrices)
+	p.savingsPlanUpdateTime = time.Now()
+	if p.cm.HasChanged("savings-plan-prices", p.savingsPlanPrices) {
+		log.FromContext(ctx).Info("updated savings plan pricing",
+			"instanceTypeCount", len(p.savingsPlanPrices),
+		)
+	}
+	return nil
+}
+
+func categorizePrices(prices []client.Item) (map[string]float64, map[string]float64, map[string]float64) {
+	var onDemandPrices, spotPrices, savingsPlanPrices = map[string]float64{}, map[string]float64{}, map[string]float64{}
+	for _, price := range prices {
 		if strings.HasSuffix(price.SkuName, " Spot") {
 			spotPrices[price.ArmSkuName] = price.RetailPrice
 		} else {
 			onDemandPrices[price.ArmSkuName] = price.RetailPrice
+			// Savings plan prices are attached to on-demand (non-spot) items.
+			// Store the best (lowest) price across all terms for each SKU.
+			if len(price.SavingsPlan) > 0 {
+				bestPrice := price.SavingsPlan[0].RetailPrice
+				for _, sp := range price.SavingsPlan[1:] {
+					if sp.RetailPrice < bestPrice {
+						bestPrice = sp.RetailPrice
+					}
+				}
+				// Only store if this is the first entry or lower than what we have
+				// (handles case where multiple items map to the same ArmSkuName)
+				if existing, ok := savingsPlanPrices[price.ArmSkuName]; !ok || bestPrice < existing {
+					savingsPlanPrices[price.ArmSkuName] = bestPrice
+				}
+			}
 		}
 	}
-	return onDemandPrices, spotPrices
+	return onDemandPrices, spotPrices, savingsPlanPrices
 }
 
 func (p *Provider) LivenessProbe(_ *http.Request) error {
@@ -346,6 +415,8 @@ func (p *Provider) Reset() {
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = initialPriceUpdate
+	p.savingsPlanPrices = map[string]float64{}
+	p.savingsPlanUpdateTime = initialPriceUpdate
 }
 
 // WaitUntilDone should be called after canceling the context passed to NewProvider to wait until all goroutines have exited
