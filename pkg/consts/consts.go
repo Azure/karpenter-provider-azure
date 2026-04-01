@@ -51,3 +51,9 @@ const (
 	ProvisioningStateFailed    = "Failed"
 	ProvisioningStateDeleting  = "Deleting"
 )
+
+// IsAKSMachineAPIMode returns true if the provision mode creates instances via the AKS Machine API
+// (as opposed to direct ARM VM creation). This includes both unbatched and batched variants.
+func IsAKSMachineAPIMode(provisionMode string) bool {
+	return provisionMode == ProvisionModeAKSMachineAPI || provisionMode == ProvisionModeAKSMachineAPIHeaderBatch
+}
