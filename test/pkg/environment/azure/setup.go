@@ -46,7 +46,7 @@ func (env *Environment) BeforeEach() {
 func (env *Environment) Cleanup() {
 	env.Environment.Cleanup()
 	env.CleanupObjects(CleanableObjects...)
-	if env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+	if consts.IsAKSMachineAPIMode(env.ProvisionMode) {
 		// > Note: under current usage no machines should exist here,
 		// > as scaledown should ensure the machines are deleted
 		env.ExpectNoMachines()

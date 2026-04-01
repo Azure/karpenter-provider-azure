@@ -211,7 +211,7 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 // NOTE: This check is imperfect, because we don't currently set the mode (machine or otherwise) when running the tests with
 // an an out-of-cluster controller, because we don't actually know what mode is configured for the out of cluster controller.
 func (env *Environment) IsMachineMode() bool {
-	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI
+	return consts.IsAKSMachineAPIMode(env.ProvisionMode)
 }
 
 func (env *Environment) IsMachineModeOrNPS() bool {

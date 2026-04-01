@@ -15,6 +15,7 @@ on:
         options:
           - aksscriptless
           - aksmachineapi
+          - aksmachineapiheaderbatch
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"

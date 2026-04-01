@@ -162,7 +162,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
-	if o.UseSIG && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI { // Not doing this if PROVISION_MODE is aksmachineapi as Create will never use VM client, but want to allow other VM client operations
+	if o.UseSIG && !consts.IsAKSMachineAPIMode(o.ProvisionMode) { // Not doing this if PROVISION_MODE is an AKS machine API mode as Create will never use VM client, but want to allow other VM client operations
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
@@ -236,7 +236,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
-	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
+	if consts.IsAKSMachineAPIMode(o.ProvisionMode) || o.ManageExistingAKSMachines {
 		// copy the options to avoid modifying the original
 		var machinesClientOptions = *opts
 		machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{})
@@ -264,8 +264,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		}
 	}
 
-	if o.BatchCreationEnabled && o.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
-		log.FromContext(ctx).Info("enabling batch creation for AKS Machine API",
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+		log.FromContext(ctx).Info("enabling batch creation for AKS Machine API (header batch)",
 			"idleTimeoutMS", o.BatchIdleTimeoutMS,
 			"maxTimeoutMS", o.BatchMaxTimeoutMS,
 			"maxBatchSize", o.MaxBatchSize)

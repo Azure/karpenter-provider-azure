@@ -142,6 +142,7 @@ type DefaultAKSMachineProvider struct {
 	clusterName                     string
 	aksMachinesPoolName             string // Only support one AKS machine pool at a time, for now.
 	aksMachinesPoolLocation         string
+	batchCreationEnabled            bool
 	provisioningErrorHandling       *offerings.ErrorDetailHandler
 	beginCreateErrorHandling        *offerings.HandlableErrorHandler
 	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
@@ -160,6 +161,7 @@ func NewAKSMachineProvider(
 	clusterName string,
 	aksMachinesPoolName string,
 	aksMachinesPoolLocation string,
+	batchCreationEnabled bool,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
 		azClient:                        azClient,
@@ -171,6 +173,7 @@ func NewAKSMachineProvider(
 		clusterName:                     clusterName,
 		aksMachinesPoolName:             aksMachinesPoolName,
 		aksMachinesPoolLocation:         aksMachinesPoolLocation,
+		batchCreationEnabled:            batchCreationEnabled,
 		provisioningErrorHandling:       offerings.NewErrorDetailHandler(offeringsCache),
 		beginCreateErrorHandling:        offerings.NewMachineBeginCreateErrorHandler(offeringsCache),
 		deletingMachines:                sets.New[string](),
@@ -483,8 +486,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	// Branch between batch and non-batch creation paths.
-	if batchClient := p.azClient.AKSMachinesBatchClient(); batchClient != nil {
-		handlableError, err := batchClient.BeginCreateWithBatch(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachineTemplate)
+	if p.batchCreationEnabled {
+		handlableError, err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachineTemplate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
 		}
