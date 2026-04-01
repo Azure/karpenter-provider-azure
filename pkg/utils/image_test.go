@@ -33,7 +33,7 @@ func TestGetAKSMachineNodeImageVersionFromImageID(t *testing.T) {
 		{
 			name:           "CIG image should return error",
 			imageID:        "/CommunityGalleries/myGallery/images/myImage/versions/1.0.0",
-			expectedError:  "CIG images are not supported yet for AKS machines, consider not using PROVISION_MODE=aksmachineapi: /CommunityGalleries/myGallery/images/myImage/versions/1.0.0",
+			expectedError:  "CIG images are not supported yet for AKS machines, consider not using an AKS Machine API provision mode: /CommunityGalleries/myGallery/images/myImage/versions/1.0.0",
 			expectedResult: "",
 		},
 		{

@@ -200,9 +200,9 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	subnetsAPI := &fake.SubnetsAPI{}
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
 
-	// Set up batching if enabled
+	// Set up batching if provision mode is header batch
 	var aksMachinesBatchAPI azapi.AKSMachinesBatchAPI
-	if testOptions.BatchCreationEnabled && testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
 		aksMachinesBatchAPI = aksmachinesheaderbatch.NewClient(ctx, aksMachinesAPI, batcher.Options{
 			IdleTimeout:  time.Duration(testOptions.BatchIdleTimeoutMS) * time.Millisecond,
 			MaxTimeout:   time.Duration(testOptions.BatchMaxTimeoutMS) * time.Millisecond,
@@ -245,7 +245,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		azureEnv,
 	)
 
-	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI && testOptions.AKSMachinesPoolName != "" {
+	if consts.IsAKSMachineAPIMode(testOptions.ProvisionMode) && testOptions.AKSMachinesPoolName != "" {
 		// For this configuration, we assume the AKS machines pool already exists
 		aksDataStorage.AgentPools.Store(
 			fake.MkAgentPoolID(testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName),
@@ -258,6 +258,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		)
 	}
 
+	batchCreationEnabled := testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypesProvider,
@@ -269,10 +271,11 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		clusterName,
 		testOptions.AKSMachinesPoolName,
 		region,
+		batchCreationEnabled,
 	)
 
 	// Use instant poller for batch mode tests to minimize async polling time.
-	if aksMachinesBatchAPI != nil {
+	if batchCreationEnabled {
 		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
 
