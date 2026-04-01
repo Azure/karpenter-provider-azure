@@ -243,6 +243,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ClusterName,
 		options.FromContext(ctx).AKSMachinesPoolName,
 		azConfig.Location,
+		options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch,
 	)
 
 	return ctx, &Operator{

@@ -318,7 +318,7 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 }
 
 func shouldAKSMachinesBeVisible(ctx context.Context) bool {
-	return options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI || options.FromContext(ctx).ManageExistingAKSMachines
+	return consts.IsAKSMachineAPIMode(options.FromContext(ctx).ProvisionMode) || options.FromContext(ctx).ManageExistingAKSMachines
 }
 
 // BuildJSONFromAKSMachine returns a JSON string representation of an AKS Machine for logging/debugging purposes.

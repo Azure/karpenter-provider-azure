@@ -118,7 +118,7 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !consts.IsAKSMachineAPIMode(o.ProvisionMode) {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
@@ -126,12 +126,12 @@ func (o *Options) validateProvisionMode() error {
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
 		}
-	case consts.ProvisionModeAKSMachineAPI:
+	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
 		if o.AKSMachinesPoolName == "" {
-			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is aksmachineapi")
+			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
 		}
 		if !o.UseSIG {
-			return fmt.Errorf("use-sig is required to be true when provision-mode is aksmachineapi")
+			return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
 		}
 	}
 	return nil
@@ -161,8 +161,8 @@ func (o *Options) validateRequiredFields() error {
 
 func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
-		if o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
-			// For ProvisionModeAKSMachineAPI, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
+		if !consts.IsAKSMachineAPIMode(o.ProvisionMode) {
+			// For AKS Machine API modes, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
 			if o.SIGAccessTokenServerURL == "" {
 				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
 			}
