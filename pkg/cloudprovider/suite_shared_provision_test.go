@@ -248,7 +248,7 @@ func isVMMode() bool {
 
 // isAKSMachineMode returns true when the current provision mode uses AKS Machine API.
 func isAKSMachineMode() bool {
-	return options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI
+	return consts.IsAKSMachineAPIMode(options.FromContext(ctx).ProvisionMode)
 }
 
 // setProvisioningError injects a provisioning error by error type constant,
@@ -497,10 +497,9 @@ func setupProvisionModeAKSMachineAPITestEnvironment() {
 // with batch creation enabled (grouper → coordinator → GET poller).
 func setupAKSMachineAPIModeWithBatch() {
 	testOptions = test.Options(test.OptionsFields{
-		ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+		ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 		UseSIG:        lo.ToPtr(true),
 	})
-	testOptions.BatchCreationEnabled = true
 	testOptions.BatchIdleTimeoutMS = 100
 	testOptions.BatchMaxTimeoutMS = 1000
 	testOptions.MaxBatchSize = 50

@@ -638,11 +638,10 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPI + Batch, ManageExistingAKSMachines = false", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(false),
 			})
-			testOptions.BatchCreationEnabled = true
 			testOptions.BatchIdleTimeoutMS = 100
 			testOptions.BatchMaxTimeoutMS = 1000
 			testOptions.MaxBatchSize = 50
@@ -679,11 +678,10 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPI + Batch, ManageExistingAKSMachines = true", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(true),
 			})
-			testOptions.BatchCreationEnabled = true
 			testOptions.BatchIdleTimeoutMS = 100
 			testOptions.BatchMaxTimeoutMS = 1000
 			testOptions.MaxBatchSize = 50
