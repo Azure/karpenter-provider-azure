@@ -44,6 +44,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
@@ -174,7 +175,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	// Choose provider based on provision mode
-	if options.FromContext(ctx).IsAKSMachineAPIMode() {
+	if consts.IsAKSMachineAPIMode(options.FromContext(ctx).ProvisionMode) {
 		return c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	}
 
@@ -643,7 +644,6 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityTypeFromVM(vm)
 	labels[v1beta1.AKSLabelScaleSetPriority] = instance.GetScaleSetPriorityLabelFromVM(vm)
-	labels[v1beta1.AKSLabelPriority] = instance.GetPriorityLabelFromVM(vm)
 
 	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
