@@ -265,10 +265,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
-		log.FromContext(ctx).Info("enabling batch creation for AKS Machine API (header batch)",
-			"idleTimeoutMS", o.BatchIdleTimeoutMS,
-			"maxTimeoutMS", o.BatchMaxTimeoutMS,
-			"maxBatchSize", o.MaxBatchSize)
 		aksMachinesBatchClient = aksmachinesheaderbatch.NewClient(
 			ctx,
 			aksMachinesClient,
