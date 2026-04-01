@@ -41,6 +41,7 @@ import (
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
@@ -428,7 +429,7 @@ func (p *DefaultProvider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
 // confidential VMs (DC, EC) are not yet supported by this Karpenter provider
 func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	size := sku.GetSize()
-	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
+	return skuutil.IsConfidential(size)
 }
 
 func (p *DefaultProvider) Reset() {
