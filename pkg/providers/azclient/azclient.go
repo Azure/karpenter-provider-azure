@@ -18,10 +18,12 @@ package azclient
 
 import (
 	"context"
+	"net/http"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -88,6 +90,7 @@ type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
 	aksMachinesClient              AKSMachinesAPI
+	aksMachineClientSelect         AKSMachinesAPI
 	agentPoolsClient               AKSAgentPoolsAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
@@ -122,6 +125,10 @@ func (c *AZClient) SetAKSMachinesClient(client AKSMachinesAPI) {
 	c.aksMachinesClient = client
 }
 
+func (c *AZClient) SetAKSMachinesClientSelect(client AKSMachinesAPI) {
+	c.aksMachineClientSelect = client
+}
+
 func (c *AZClient) AgentPoolsClient() AKSAgentPoolsAPI {
 	return c.agentPoolsClient
 }
@@ -146,6 +153,7 @@ func NewAZClientFromAPI(
 	virtualMachinesClient VirtualMachinesAPI,
 	azureResourceGraphClient AzureResourceGraphAPI,
 	aksMachinesClient AKSMachinesAPI,
+	aksMachineClientSelect AKSMachinesAPI,
 	agentPoolsClient AKSAgentPoolsAPI,
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
@@ -163,6 +171,7 @@ func NewAZClientFromAPI(
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
 		aksMachinesClient:              aksMachinesClient,
+		aksMachineClientSelect:         aksMachineClientSelect,
 		agentPoolsClient:               agentPoolsClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
@@ -176,6 +185,18 @@ func NewAZClientFromAPI(
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 		SubscriptionsClient:            subscriptionsClient,
 	}
+}
+
+// Custom policy that appends $select to the request URL
+type selectQueryPolicy struct {
+	selectFields string
+}
+
+func (p *selectQueryPolicy) Do(req *policy.Request) (*http.Response, error) {
+	q := req.Raw().URL.Query()
+	q.Set("$select", p.selectFields)
+	req.Raw().URL.RawQuery = q.Encode()
+	return req.Next()
 }
 
 //nolint:gocyclo
@@ -253,6 +274,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	var aksMachinesClient AKSMachinesAPI
+	var aksMachineClientSelect AKSMachinesAPI
 	var agentPoolsClient AKSAgentPoolsAPI
 
 	// Only create the bootstrapping client if we need to use it.
@@ -274,8 +296,17 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
 	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
+		// opts.PerCallPolicies = append(opts.PerCallPolicies, &selectQueryPolicy{selectFields: "name,properties.provisioningState"})
+		selectOpts := *opts
+		selectOpts.PerCallPolicies = append(selectOpts.PerCallPolicies, &selectQueryPolicy{selectFields: "name,properties.provisioningState"})
+
 		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
+			return nil, err
+		}
+		aksMachineClientSelect, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, &selectOpts)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to create AKS machines client with select query policy")
 			return nil, err
 		}
 		agentPoolsClient, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
@@ -302,6 +333,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		virtualMachinesClient,
 		azureResourceGraphClient,
 		aksMachinesClient,
+		aksMachineClientSelect,
 		agentPoolsClient,
 		extensionsClient,
 		interfacesClient,

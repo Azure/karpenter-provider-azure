@@ -224,6 +224,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		aksMachinesClientForAZClient,
+		nil,
 		aksAgentPoolsAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
