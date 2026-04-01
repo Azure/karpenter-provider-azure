@@ -37,10 +37,10 @@ const (
 	DefaultNodeSubnetMaxPods    = 30
 	DefaultKubernetesMaxPods    = 110
 
-	ProvisionModeAKSScriptless             = "aksscriptless"
-	ProvisionModeBootstrappingClient       = "bootstrappingclient"
-	ProvisionModeAKSMachineAPI             = "aksmachineapi"
-	ProvisionModeAKSMachineAPIHeaderBatch  = "aksmachineapiheaderbatch"
+	ProvisionModeAKSScriptless            = "aksscriptless"
+	ProvisionModeBootstrappingClient      = "bootstrappingclient"
+	ProvisionModeAKSMachineAPI            = "aksmachineapi"
+	ProvisionModeAKSMachineAPIHeaderBatch = "aksmachineapiheaderbatch"
 
 	// Provisioning states for AKS Machine objects.
 	// The SDK's Machine.Properties.ProvisioningState is typed as *string (no typed constants).
