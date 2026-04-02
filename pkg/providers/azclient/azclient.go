@@ -119,6 +119,10 @@ func (c *AZClient) AKSMachinesClient() AKSMachinesAPI {
 	return c.aksMachinesClient
 }
 
+func (c *AZClient) AKSMachinesClientSelect() AKSMachinesAPI {
+	return c.aksMachineClientSelect
+}
+
 // SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
 // with a batching layer when BatchCreationEnabled is true.
 func (c *AZClient) SetAKSMachinesClient(client AKSMachinesAPI) {

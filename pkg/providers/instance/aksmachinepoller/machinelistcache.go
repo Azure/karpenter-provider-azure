@@ -100,7 +100,6 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 	workerCtx, workerCancel := context.WithCancel(ctx)
 
 	cache := &MachineListCache{
-		// machines is a sync.Map, zero value is ready to use
 		ttl:                  ttl,
 		interval:             interval,
 		client:               client,
