@@ -43,6 +43,12 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// IsEnabled returns whether artifact streaming is enabled.
+// Nil-safe: returns false when the receiver or Enabled is nil.
+func (a *ArtifactStreaming) IsEnabled() bool {
+	return a != nil && a.Enabled != nil && *a.Enabled
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -682,10 +688,7 @@ func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
 	if arch == karpv1.ArchitectureArm64 {
 		return false
 	}
-	if in.Spec.ArtifactStreaming != nil && in.Spec.ArtifactStreaming.Enabled != nil {
-		return *in.Spec.ArtifactStreaming.Enabled
-	}
-	return false
+	return in.Spec.ArtifactStreaming.IsEnabled()
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
