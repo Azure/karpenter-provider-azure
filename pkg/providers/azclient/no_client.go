@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
 var agentPoolNotFoundRespError = &azcore.ResponseError{
@@ -31,14 +32,14 @@ var agentPoolNotFoundRespError = &azcore.ResponseError{
 }
 
 // Compile-time assertion
-var _ AKSMachinesAPI = (*noAKSMachinesClient)(nil)
+var _ azapi.AKSMachinesAPI = (*noAKSMachinesClient)(nil)
 
 // This "fake" client simulates the behavior of when there are no AKS machines present.
 // There will be no outgoing calls.
 // An example use case is when we want to cut the comms. with AKS machine API when we don't want to manage existing machines.
 type noAKSMachinesClient struct{}
 
-func NewNoAKSMachinesClient() AKSMachinesAPI {
+func NewNoAKSMachinesClient() azapi.AKSMachinesAPI {
 	return &noAKSMachinesClient{}
 }
 
@@ -65,7 +66,7 @@ func (d *noAKSMachinesClient) NewListPager(resourceGroupName string, resourceNam
 type noAKSAgentPoolsClient struct{}
 
 // NewNoAKSAgentPoolsClient creates a new dry AKS agent pools client, attempting to create real client internally
-func NewNoAKSAgentPoolsClient() AKSAgentPoolsAPI {
+func NewNoAKSAgentPoolsClient() azapi.AKSAgentPoolsAPI {
 	return &noAKSAgentPoolsClient{}
 }
 

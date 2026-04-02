@@ -26,7 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
 type AgentPoolDeleteMachinesInput struct {
@@ -78,7 +78,7 @@ func AKSAgentPoolsAPIErrorFromAKSMachineNotFound(agentPoolName string, validMach
 }
 
 // assert that the fake implements the interface
-var _ azclient.AKSAgentPoolsAPI = &AKSAgentPoolsAPI{}
+var _ azapi.AKSAgentPoolsAPI = &AKSAgentPoolsAPI{}
 
 type AKSAgentPoolsAPI struct {
 	AgentPoolsBehavior

@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -39,60 +38,19 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/skewer"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
-type AKSMachinesAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine, options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error)
-	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
-	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
-}
-
-type AKSAgentPoolsAPI interface {
-	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.AgentPoolsClientGetOptions) (armcontainerservice.AgentPoolsClientGetResponse, error)
-	BeginDeleteMachines(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachines armcontainerservice.AgentPoolDeleteMachinesParameter, options *armcontainerservice.AgentPoolsClientBeginDeleteMachinesOptions) (*runtime.Poller[armcontainerservice.AgentPoolsClientDeleteMachinesResponse], error)
-}
-
-type VirtualMachinesAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error)
-	Get(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientGetOptions) (armcompute.VirtualMachinesClientGetResponse, error)
-	BeginUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachineUpdate, options *armcompute.VirtualMachinesClientBeginUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientUpdateResponse], error)
-	BeginDelete(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientBeginDeleteOptions) (*runtime.Poller[armcompute.VirtualMachinesClientDeleteResponse], error)
-}
-
-type AzureResourceGraphAPI interface {
-	Resources(ctx context.Context, query armresourcegraph.QueryRequest, options *armresourcegraph.ClientResourcesOptions) (armresourcegraph.ClientResourcesResponse, error)
-}
-
-type VirtualMachineExtensionsAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, vmExtensionName string, extensionParameters armcompute.VirtualMachineExtension, options *armcompute.VirtualMachineExtensionsClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse], error)
-	BeginUpdate(ctx context.Context, resourceGroupName string, vmName string, vmExtensionName string, extensionParameters armcompute.VirtualMachineExtensionUpdate, options *armcompute.VirtualMachineExtensionsClientBeginUpdateOptions) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientUpdateResponse], error)
-}
-
-type NetworkInterfacesAPI interface {
-	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, networkInterfaceName string, parameters armnetwork.Interface, options *armnetwork.InterfacesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armnetwork.InterfacesClientCreateOrUpdateResponse], error)
-	BeginDelete(ctx context.Context, resourceGroupName string, networkInterfaceName string, options *armnetwork.InterfacesClientBeginDeleteOptions) (*runtime.Poller[armnetwork.InterfacesClientDeleteResponse], error)
-	Get(ctx context.Context, resourceGroupName string, networkInterfaceName string, options *armnetwork.InterfacesClientGetOptions) (armnetwork.InterfacesClientGetResponse, error)
-	UpdateTags(ctx context.Context, resourceGroupName string, networkInterfaceName string, tags armnetwork.TagsObject, options *armnetwork.InterfacesClientUpdateTagsOptions) (armnetwork.InterfacesClientUpdateTagsResponse, error)
-}
-
-type SubnetsAPI interface {
-	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
-}
-
-type DiskEncryptionSetsAPI interface {
-	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
-}
-
 type AZClient struct {
-	azureResourceGraphClient       AzureResourceGraphAPI
-	virtualMachinesClient          VirtualMachinesAPI
-	aksMachinesClient              AKSMachinesAPI
-	agentPoolsClient               AKSAgentPoolsAPI
-	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
-	networkInterfacesClient        NetworkInterfacesAPI
-	subnetsClient                  SubnetsAPI
-	diskEncryptionSetsClient       DiskEncryptionSetsAPI
+	azureResourceGraphClient       azapi.AzureResourceGraphAPI
+	virtualMachinesClient          azapi.VirtualMachinesAPI
+	aksMachinesClient              azapi.AKSMachinesAPI
+	agentPoolsClient               azapi.AKSAgentPoolsAPI
+	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI
+	networkInterfacesClient        azapi.NetworkInterfacesAPI
+	subnetsClient                  azapi.SubnetsAPI
+	diskEncryptionSetsClient       azapi.DiskEncryptionSetsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -104,53 +62,53 @@ type AZClient struct {
 	SubscriptionsClient         zone.SubscriptionsAPI
 }
 
-func (c *AZClient) SubnetsClient() SubnetsAPI {
+func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
 	return c.subnetsClient
 }
 
-func (c *AZClient) DiskEncryptionSetsClient() DiskEncryptionSetsAPI {
+func (c *AZClient) DiskEncryptionSetsClient() azapi.DiskEncryptionSetsAPI {
 	return c.diskEncryptionSetsClient
 }
 
-func (c *AZClient) AKSMachinesClient() AKSMachinesAPI {
+func (c *AZClient) AKSMachinesClient() azapi.AKSMachinesAPI {
 	return c.aksMachinesClient
 }
 
 // SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
 // with a batching layer when BatchCreationEnabled is true.
-func (c *AZClient) SetAKSMachinesClient(client AKSMachinesAPI) {
+func (c *AZClient) SetAKSMachinesClient(client azapi.AKSMachinesAPI) {
 	c.aksMachinesClient = client
 }
 
-func (c *AZClient) AgentPoolsClient() AKSAgentPoolsAPI {
+func (c *AZClient) AgentPoolsClient() azapi.AKSAgentPoolsAPI {
 	return c.agentPoolsClient
 }
 
-func (c *AZClient) VirtualMachinesClient() VirtualMachinesAPI {
+func (c *AZClient) VirtualMachinesClient() azapi.VirtualMachinesAPI {
 	return c.virtualMachinesClient
 }
 
-func (c *AZClient) VirtualMachineExtensionsClient() VirtualMachineExtensionsAPI {
+func (c *AZClient) VirtualMachineExtensionsClient() azapi.VirtualMachineExtensionsAPI {
 	return c.virtualMachinesExtensionClient
 }
 
-func (c *AZClient) NetworkInterfacesClient() NetworkInterfacesAPI {
+func (c *AZClient) NetworkInterfacesClient() azapi.NetworkInterfacesAPI {
 	return c.networkInterfacesClient
 }
 
-func (c *AZClient) AzureResourceGraphClient() AzureResourceGraphAPI {
+func (c *AZClient) AzureResourceGraphClient() azapi.AzureResourceGraphAPI {
 	return c.azureResourceGraphClient
 }
 
 func NewAZClientFromAPI(
-	virtualMachinesClient VirtualMachinesAPI,
-	azureResourceGraphClient AzureResourceGraphAPI,
-	aksMachinesClient AKSMachinesAPI,
-	agentPoolsClient AKSAgentPoolsAPI,
-	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
-	interfacesClient NetworkInterfacesAPI,
-	subnetsClient SubnetsAPI,
-	diskEncryptionSetsClient DiskEncryptionSetsAPI,
+	virtualMachinesClient azapi.VirtualMachinesAPI,
+	azureResourceGraphClient azapi.AzureResourceGraphAPI,
+	aksMachinesClient azapi.AKSMachinesAPI,
+	agentPoolsClient azapi.AKSAgentPoolsAPI,
+	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI,
+	interfacesClient azapi.NetworkInterfacesAPI,
+	subnetsClient azapi.SubnetsAPI,
+	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
@@ -252,8 +210,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
-	var aksMachinesClient AKSMachinesAPI
-	var agentPoolsClient AKSAgentPoolsAPI
+	var aksMachinesClient azapi.AKSMachinesAPI
+	var agentPoolsClient azapi.AKSAgentPoolsAPI
 
 	// Only create the bootstrapping client if we need to use it.
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
