@@ -477,13 +477,11 @@ func TestLabelsGet(t *testing.T) {
 		},
 		// Artifact streaming label cases
 		{
-			name:              "AMD64 with nil artifact streaming (default) should have label set to true",
+			name:              "AMD64 with nil artifact streaming (default) should NOT have label",
 			imageFamily:       v1beta1.UbuntuImageFamily,
 			kubernetesVersion: "1.35.0",
 			arch:              "amd64",
-			expectedLabels: map[string]string{
-				labels.AKSArtifactStreamingEnabledLabelKey: "true",
-			},
+			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
 		},
 		{
 			name:              "ARM64 with nil artifact streaming (default) should NOT have label",

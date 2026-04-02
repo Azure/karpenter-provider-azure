@@ -63,7 +63,7 @@ var _ = Describe("ArtifactStreaming", func() {
 		verifyArtifactStreamingOnNode(node, true)
 	})
 
-	It("should set artifact streaming label and enable infrastructure when not specified (defaults to enabled)", func() {
+	It("should not set artifact streaming label or enable infrastructure when not specified (defaults to disabled)", func() {
 		// nodeClass.Spec.ArtifactStreaming is nil by default
 
 		pod := coretest.Pod()
@@ -71,8 +71,8 @@ var _ = Describe("ArtifactStreaming", func() {
 		env.EventuallyExpectHealthy(pod)
 
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		Expect(node.Labels).To(HaveKeyWithValue(artifactStreamingEnabledLabelKey, "true"))
-		verifyArtifactStreamingOnNode(node, true)
+		Expect(node.Labels).ToNot(HaveKey(artifactStreamingEnabledLabelKey))
+		verifyArtifactStreamingOnNode(node, false)
 	})
 
 	It("should not set artifact streaming label or enable infrastructure when explicitly disabled", func() {

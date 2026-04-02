@@ -107,8 +107,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	// Artifact streaming is configurable through the AKSNodeClass spec
 	// ARM64 does not support artifact streaming and is always disabled
-	// If not specified, defaults to enabled for Ubuntu, disabled for AzureLinux
-	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch, osSKUToImageFamily(p.OSSKU))
+	// If not specified, defaults to disabled (matching AKS AgentPool API behavior)
+	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
@@ -210,14 +210,4 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
 	}, nil
-}
-
-// osSKUToImageFamily maps OSSKU to the corresponding image family constant
-func osSKUToImageFamily(ossku string) string {
-	switch ossku {
-	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
-		return v1beta1.AzureLinuxImageFamily
-	default:
-		return v1beta1.UbuntuImageFamily
-	}
 }
