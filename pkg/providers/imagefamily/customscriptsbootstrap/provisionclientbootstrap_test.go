@@ -337,8 +337,8 @@ func TestConstructProvisionValues(t *testing.T) {
 				// Check system mode
 				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeSystem))
 
-				// Check artifact streaming defaults to enabled (nil ArtifactStreaming)
-				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeTrue())
+				// Check artifact streaming defaults to disabled for AzureLinux (nil ArtifactStreaming)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
 				g.Expect(*profile.EnableFIPS).To(BeFalse())
@@ -378,8 +378,8 @@ func TestConstructProvisionValues(t *testing.T) {
 				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-gen2"))
 				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
 
-				// Check artifact streaming defaults to enabled (nil ArtifactStreaming)
-				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeTrue())
+				// Check artifact streaming defaults to disabled for AzureLinux (nil ArtifactStreaming)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
 				g.Expect(*profile.EnableFIPS).To(BeFalse())
@@ -729,20 +729,20 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			expectedArtifactStreamingEnabled: true,
 		},
 		{
-			name:                             "AMD64 AzureLinux2 - Artifact streaming enabled (default)",
+			name:                             "AMD64 AzureLinux2 - Artifact streaming disabled (default)",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-azurelinux-v2-gen2",
-			expectedArtifactStreamingEnabled: true,
+			expectedArtifactStreamingEnabled: false,
 		},
 		{
-			name:                             "AMD64 AzureLinux3 - Artifact streaming enabled (default)",
+			name:                             "AMD64 AzureLinux3 - Artifact streaming disabled (default)",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
 			kubernetesVersion:                "1.32.0",
 			imageDistro:                      "aks-azurelinux-v3-gen2",
-			expectedArtifactStreamingEnabled: true,
+			expectedArtifactStreamingEnabled: false,
 		},
 		{
 			name:                             "ARM64 Ubuntu2204 - Artifact streaming disabled",
