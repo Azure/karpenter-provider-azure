@@ -636,7 +636,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	}
 
 	if zone, err := utils.MakeAKSLabelZoneFromVM(vm); err != nil {
-		log.FromContext(ctx).Info("failed to get zone for VM, zone label will be empty", "vmName", *vm.Name, "error", err)
+		log.FromContext(ctx).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
 	}

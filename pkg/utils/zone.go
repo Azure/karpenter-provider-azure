@@ -23,39 +23,53 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 )
 
+// RegionalZone is the zone label value AKS assigns to regional (non-zonal) VMs.
+// This matches the topology.kubernetes.io/zone label on regional AKS nodes,
+// Technically this value represents fault domain, but for standalone VMs this is always "0";
+// see https://github.com/kubernetes-sigs/cloud-provider-azure/blob/84bacac916c52e3dbae8ec01f1d8ab5a20267b7d/pkg/provider/azure_standard.go#L579-L601
+const RegionalZone = "0"
+
 // MakeAKSLabelZoneFromARMZone returns the zone value in format of <region>-<zone-id>.
 func MakeAKSLabelZoneFromARMZone(location string, zoneID string) string {
-	if zoneID == "" {
-		return ""
-	}
 	return fmt.Sprintf("%s-%s", strings.ToLower(location), zoneID)
 }
 
+// MakeAKSLabelZoneFromARMZones returns the AKS zone label value from an ARM zones array.
+// Returns RegionalZone ("0") if the zones array is empty or nil (regional VM).
+// Returns an error if there are multiple zones.
+func MakeAKSLabelZoneFromARMZones(location string, zones []*string) (string, error) {
+	if len(zones) == 0 || zones[0] == nil {
+		return RegionalZone, nil
+	}
+	if len(zones) == 1 {
+		if location == "" {
+			return "", fmt.Errorf("location is required for zonal resource")
+		}
+		return MakeAKSLabelZoneFromARMZone(location, *zones[0]), nil
+	}
+	return "", fmt.Errorf("resource has multiple zones")
+}
+
 // MakeARMZonesFromAKSLabelZone returns the zone ID from <region>-<zone-id>.
+// Regional VMs (zone="0") return an empty slice so the VM
+// is created without a zone assignment.
 func MakeARMZonesFromAKSLabelZone(zone string) []*string {
-	if zone == "" {
+	if zone == RegionalZone {
 		return []*string{}
 	}
 	zoneNum := zone[len(zone)-1:]
 	return []*string{&zoneNum}
 }
 
-// MakeAKSLabelZoneFromVM returns the zone for the given virtual machine, or an empty string if there is no zone specified
+// MakeAKSLabelZoneFromVM returns the zone for the given virtual machine, or RegionalZone ("0") if there is no zone specified.
+// This matches the topology.kubernetes.io/zone label that AKS places on regional (non-zonal) nodes.
 func MakeAKSLabelZoneFromVM(vm *armcompute.VirtualMachine) (string, error) {
 	if vm == nil {
 		return "", fmt.Errorf("cannot pass in a nil virtual machine")
 	}
-	if vm.Zones == nil {
-		return "", nil
+	location := ""
+	if vm.Location != nil {
+		location = *vm.Location
 	}
-	if len(vm.Zones) == 1 {
-		if vm.Location == nil {
-			return "", fmt.Errorf("virtual machine is missing location")
-		}
-		return MakeAKSLabelZoneFromARMZone(*vm.Location, *(vm.Zones)[0]), nil
-	}
-	if len(vm.Zones) > 1 {
-		return "", fmt.Errorf("virtual machine has multiple zones")
-	}
-	return "", nil
+	return MakeAKSLabelZoneFromARMZones(location, vm.Zones)
 }

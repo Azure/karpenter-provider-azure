@@ -210,14 +210,16 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
-	// If an offering is non-zonal, the availability zones will be empty.
+	// If an offering is regional (non-zonal), the availability zones will be empty.
 	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
 	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
 			return utils.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
 	}
-	return sets.New("") // empty string means non-zonal offering
+	// Regional (non-zonal) SKUs use zone "0" to match the label AKS places on regional nodes
+	// (topology.kubernetes.io/zone=0).
+	return sets.New(utils.RegionalZone)
 }
 
 // TODO: review; switch to controller-driven updates

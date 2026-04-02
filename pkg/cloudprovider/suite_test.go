@@ -153,8 +153,9 @@ func validateNodeClaimCommon(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodeP
 	Expect(nodeClaim.Labels).To(HaveKey(v1beta1.LabelSKUMemory))
 
 	// Zone validation (conditional)
-	if nodeClaim.Labels[v1.LabelTopologyZone] != "" {
-		Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(MatchRegexp(`^[a-z0-9-]+-[0-9]+$`))
+	zone := nodeClaim.Labels[v1.LabelTopologyZone]
+	if zone != "" && zone != utils.RegionalZone {
+		Expect(zone).To(MatchRegexp(`^[a-z0-9-]+-[0-9]+$`))
 	}
 
 	// Capacity and Allocatable resources

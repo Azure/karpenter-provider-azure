@@ -47,6 +47,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 func init() {
@@ -338,7 +339,7 @@ func (env *Environment) Reset() {
 
 func (env *Environment) Zones() []string {
 	if env.nonZonal {
-		return []string{""}
+		return []string{utils.RegionalZone}
 	} else {
 		return []string{fake.Region + "-1", fake.Region + "-2", fake.Region + "-3"}
 	}

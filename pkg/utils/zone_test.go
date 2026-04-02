@@ -50,26 +50,26 @@ func TestMakeAKSLabelZoneFromVM(t *testing.T) {
 			input: &armcompute.VirtualMachine{
 				Zones: []*string{lo.ToPtr("1")},
 			},
-			expectedError: "virtual machine is missing location",
+			expectedError: "location is required for zonal resource",
 		},
 		{
 			testName: "multiple zones",
 			input: &armcompute.VirtualMachine{
 				Zones: []*string{lo.ToPtr("1"), lo.ToPtr("2")},
 			},
-			expectedError: "virtual machine has multiple zones",
+			expectedError: "resource has multiple zones",
 		},
 		{
 			testName: "empty Zones",
 			input: &armcompute.VirtualMachine{
 				Zones: []*string{},
 			},
-			expectedZone: "",
+			expectedZone: utils.RegionalZone,
 		},
 		{
 			testName:     "nil Zones",
 			input:        &armcompute.VirtualMachine{},
-			expectedZone: "",
+			expectedZone: utils.RegionalZone,
 		},
 	}
 
