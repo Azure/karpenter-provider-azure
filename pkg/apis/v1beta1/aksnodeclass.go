@@ -43,19 +43,6 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
-// IsEnabled returns whether artifact streaming should be enabled for the given architecture.
-// ARM64 does not support artifact streaming and always returns false.
-// For AMD64, returns the explicit value if set; otherwise defaults to false (matching AKS AgentPool API behavior).
-func (a *ArtifactStreaming) IsEnabled(arch string) bool {
-	if arch == karpv1.ArchitectureArm64 {
-		return false
-	}
-	if a != nil && a.Enabled != nil {
-		return *a.Enabled
-	}
-	return false
-}
-
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -688,20 +675,17 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 	return false
 }
 
-// IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class
-// based on the architecture. ARM64 nodes do not support artifact streaming and will always return false.
-// For AMD64, defaults to false unless explicitly set to true in the spec.
+// IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.
+// ARM64 does not support artifact streaming and always returns false.
+// Returns true only when explicitly set to true in the spec; defaults to false otherwise.
 func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
-	return in.Spec.ArtifactStreaming.IsEnabled(arch)
-}
-
-// IsArtifactStreamingExplicitlyEnabled returns true only when the user has explicitly
-// set artifact streaming to enabled (true) in the NodeClass spec. Returns false when
-// artifact streaming is not set (nil/default) or explicitly disabled.
-func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
-	return in.Spec.ArtifactStreaming != nil &&
-		in.Spec.ArtifactStreaming.Enabled != nil &&
-		*in.Spec.ArtifactStreaming.Enabled
+	if arch == karpv1.ArchitectureArm64 {
+		return false
+	}
+	if in.Spec.ArtifactStreaming != nil && in.Spec.ArtifactStreaming.Enabled != nil {
+		return *in.Spec.ArtifactStreaming.Enabled
+	}
+	return false
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.

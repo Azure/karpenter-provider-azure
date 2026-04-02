@@ -134,7 +134,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
-		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
+		nodeClass.IsArtifactStreamingEnabled(karpv1.ArchitectureAmd64), // cache key: true only when explicitly enabled (ARM64 never supports it)
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -325,16 +325,11 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 }
 
 // isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
-// is explicitly enabled, since ARM64 does not support artifact streaming.
-// When artifact streaming is not set (nil/default) or explicitly disabled, all architectures are allowed.
+// is enabled, since ARM64 does not support artifact streaming.
+// When artifact streaming is not enabled, all architectures are allowed.
 func (p *DefaultProvider) isInstanceTypeSupportedByArtifactStreaming(architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
-	// Only filter when the user explicitly requested artifact streaming enabled
-	if !nodeClass.IsArtifactStreamingExplicitlyEnabled() {
-		return true
-	}
-	// Artifact streaming is explicitly enabled; exclude ARM64 since it doesn't support it
 	kubeArch := getArchitecture(architecture)
-	return kubeArch != karpv1.ArchitectureArm64
+	return !nodeClass.IsArtifactStreamingEnabled(kubeArch) || kubeArch != karpv1.ArchitectureArm64
 }
 
 // UpdateInstanceTypes fetches all instance types from Azure (using skewer) and updates the cache.
