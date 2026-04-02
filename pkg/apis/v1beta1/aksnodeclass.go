@@ -43,15 +43,19 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
-// IsEnabled returns whether artifact streaming should be enabled for the given architecture.
+// IsEnabled returns whether artifact streaming should be enabled for the given architecture and image family.
 // ARM64 does not support artifact streaming and always returns false.
-// For AMD64, returns the explicit value if set, otherwise defaults to true.
-func (a *ArtifactStreaming) IsEnabled(arch string) bool {
+// For AMD64, returns the explicit value if set; otherwise defaults to true for Ubuntu and false for AzureLinux.
+func (a *ArtifactStreaming) IsEnabled(arch string, imageFamily string) bool {
 	if arch == karpv1.ArchitectureArm64 {
 		return false
 	}
 	if a != nil && a.Enabled != nil {
 		return *a.Enabled
+	}
+	// Default: disabled for AzureLinux, enabled for everything else
+	if imageFamily == AzureLinuxImageFamily {
+		return false
 	}
 	return true
 }
@@ -689,11 +693,11 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 }
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class
-// based on the architecture. ARM64 nodes do not support artifact streaming and will always return false,
-// even if the user explicitly enables it in the spec.
-// For AMD64, if not explicitly specified (nil), defaults to true.
+// based on the architecture and image family. ARM64 nodes do not support artifact streaming and will
+// always return false. For AMD64, defaults to true for Ubuntu and false for AzureLinux, unless
+// explicitly set in the spec.
 func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
-	return in.Spec.ArtifactStreaming.IsEnabled(arch)
+	return in.Spec.ArtifactStreaming.IsEnabled(arch, lo.FromPtr(in.Spec.ImageFamily))
 }
 
 // IsArtifactStreamingExplicitlyEnabled returns true only when the user has explicitly
