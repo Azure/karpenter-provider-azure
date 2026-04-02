@@ -20,11 +20,23 @@ import (
 	"context"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	armcontainerservicev8 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
+
+// adaptErrorDetailFunc wraps an azure-sdk-for-go-extensions function typed against v8 ErrorDetail
+// to work with v9 ErrorDetail. The structs are field-identical across versions.
+func adaptErrorDetailFunc(fn func(armcontainerservicev8.ErrorDetail) bool) func(armcontainerservice.ErrorDetail) bool {
+	return func(ed armcontainerservice.ErrorDetail) bool {
+		return fn(armcontainerservicev8.ErrorDetail{
+			Code:    ed.Code,
+			Message: ed.Message,
+		})
+	}
+}
 
 type errorDetailHandlerEntry struct {
 	match  func(errorDetail armcontainerservice.ErrorDetail) bool
@@ -47,35 +59,35 @@ func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *Er
 		UnavailableOfferings: unavailableOfferings,
 		HandlerEntries: []errorDetailHandlerEntry{
 			{
-				match:  sdkerrors.LowPriorityQuotaHasBeenReachedInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.LowPriorityQuotaHasBeenReachedInErrorDetail),
 				handle: handleLowPriorityQuotaError,
 			},
 			{
-				match:  sdkerrors.SKUFamilyQuotaHasBeenReachedInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.SKUFamilyQuotaHasBeenReachedInErrorDetail),
 				handle: handleSKUFamilyQuotaError,
 			},
 			{
-				match:  sdkerrors.IsSKUNotAvailableInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.IsSKUNotAvailableInErrorDetail),
 				handle: handleSKUNotAvailableError,
 			},
 			{
-				match:  sdkerrors.ZonalAllocationFailureOccurredInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.ZonalAllocationFailureOccurredInErrorDetail),
 				handle: handleZonalAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.AllocationFailureOccurredInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.AllocationFailureOccurredInErrorDetail),
 				handle: handleAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurredInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.OverconstrainedZonalAllocationFailureOccurredInErrorDetail),
 				handle: handleOverconstrainedZonalAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.OverconstrainedAllocationFailureOccurredInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.OverconstrainedAllocationFailureOccurredInErrorDetail),
 				handle: handleOverconstrainedAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.RegionalQuotaHasBeenReachedInErrorDetail,
+				match:  adaptErrorDetailFunc(sdkerrors.RegionalQuotaHasBeenReachedInErrorDetail),
 				handle: handleRegionalQuotaError,
 			},
 		},
