@@ -204,6 +204,21 @@ func (p *DefaultProvider) Get(ctx context.Context, instanceType string) (*skewer
 	return nil, fmt.Errorf("instance type %s not found", instanceType)
 }
 
+// hasRawZonesInRegion returns true if the SKU has zones defined in locationInfo for the given region,
+// regardless of subscription restrictions. This distinguishes zone-restricted SKUs (zones exist but
+// blocked by NotAvailableForSubscription) from truly non-zonal SKUs (no zones defined at all).
+func hasRawZonesInRegion(sku *skewer.SKU, region string) bool {
+	if sku.LocationInfo == nil {
+		return false
+	}
+	for _, li := range *sku.LocationInfo {
+		if li.Location != nil && strings.EqualFold(*li.Location, region) {
+			return li.Zones != nil && len(*li.Zones) > 0
+		}
+	}
+	return false
+}
+
 // instanceTypeZones generates the set of all supported zones for a given SKU
 // The strings have to match Zone labels that will be placed on Node
 func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
@@ -217,7 +232,15 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 			return utils.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
 	}
-	return sets.New("") // empty string means non-zonal offering
+	// If the SKU has zones defined in this region but they're all restricted for this subscription
+	// (NotAvailableForSubscription), return an empty set so no offerings are created.
+	// The sets.New("") fallback was intended for truly non-zonal regions (e.g. westcentralus),
+	// not for zone-restricted SKUs in zonal regions — those cannot be provisioned and should
+	// not appear as available offerings.
+	if hasRawZonesInRegion(sku, p.region) {
+		return sets.New[string]()
+	}
+	return sets.New("") // truly non-zonal region: no zones defined at all
 }
 
 // TODO: review; switch to controller-driven updates
