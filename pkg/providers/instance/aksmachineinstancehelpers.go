@@ -142,7 +142,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
 				// WorkloadRuntime:          nil,
-				// ArtifactStreamingProfile: nil,
+				ArtifactStreamingProfile: configureArtifactStreamingProfile(nodeClass, instanceType),
 			},
 
 			Mode: modePtr,
@@ -219,6 +219,16 @@ func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[stri
 		result[o.Zone] = override
 	}
 	return result
+}
+
+func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.AgentPoolArtifactStreamingProfile {
+	arch := instanceType.Requirements.Get(v1.LabelArchStable).Any()
+	if nodeClass.IsArtifactStreamingEnabled(arch) {
+		return &armcontainerservice.AgentPoolArtifactStreamingProfile{
+			Enabled: lo.ToPtr(true),
+		}
+	}
+	return nil
 }
 
 func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
