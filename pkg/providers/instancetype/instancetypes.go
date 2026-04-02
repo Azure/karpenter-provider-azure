@@ -327,6 +327,14 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 // isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
 // is enabled, since ARM64 does not support artifact streaming.
 // When artifact streaming is not enabled, all architectures are allowed.
+//
+// NOTE: This filter is a workaround for the lack of cross-resource validation between AKSNodeClass
+// and NodePool. AKSNodeClass doesn't know the architecture at admission time (arch comes from
+// NodePool requirements), so there's no CEL rule or webhook to reject artifactStreaming.enabled=true
+// on ARM64. Without this filter, ARM64 nodes would be silently provisioned without artifact streaming
+// despite the user enabling it. This filter makes it fail at scheduling time instead (no compatible
+// instance types). A proper fix would be a validating webhook that cross-checks AKSNodeClass against
+// referencing NodePools.
 func (p *DefaultProvider) isInstanceTypeSupportedByArtifactStreaming(architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
 	// Check if artifact streaming is explicitly enabled (arch-independent check)
 	if nodeClass.Spec.ArtifactStreaming == nil || nodeClass.Spec.ArtifactStreaming.Enabled == nil || !*nodeClass.Spec.ArtifactStreaming.Enabled {
