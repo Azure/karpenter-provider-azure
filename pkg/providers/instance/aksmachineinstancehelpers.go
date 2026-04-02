@@ -153,7 +153,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			},
 			Priority: priority,
 
-			Tags: tags,
+			Tags:            tags,
+			LocalDNSProfile: configureLocalDNSProfile(nodeClass),
 		},
 	}, nil
 }
@@ -167,6 +168,56 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType) *armconta
 		}
 	}
 	return nil
+}
+
+func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LocalDNSProfile {
+	if nodeClass.Spec.LocalDNS == nil {
+		return nil
+	}
+	profile := &armcontainerservice.LocalDNSProfile{}
+	if nodeClass.Spec.LocalDNS.Mode != "" {
+		profile.Mode = lo.ToPtr(armcontainerservice.LocalDNSMode(nodeClass.Spec.LocalDNS.Mode))
+	}
+	if len(nodeClass.Spec.LocalDNS.VnetDNSOverrides) > 0 {
+		profile.VnetDNSOverrides = convertLocalDNSOverrides(nodeClass.Spec.LocalDNS.VnetDNSOverrides)
+	}
+	if len(nodeClass.Spec.LocalDNS.KubeDNSOverrides) > 0 {
+		profile.KubeDNSOverrides = convertLocalDNSOverrides(nodeClass.Spec.LocalDNS.KubeDNSOverrides)
+	}
+	return profile
+}
+
+func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[string]*armcontainerservice.LocalDNSOverride {
+	result := make(map[string]*armcontainerservice.LocalDNSOverride, len(overrides))
+	for _, o := range overrides {
+		override := &armcontainerservice.LocalDNSOverride{}
+		if o.QueryLogging != "" {
+			override.QueryLogging = lo.ToPtr(armcontainerservice.LocalDNSQueryLogging(o.QueryLogging))
+		}
+		if o.Protocol != "" {
+			override.Protocol = lo.ToPtr(armcontainerservice.LocalDNSProtocol(o.Protocol))
+		}
+		if o.ForwardDestination != "" {
+			override.ForwardDestination = lo.ToPtr(armcontainerservice.LocalDNSForwardDestination(o.ForwardDestination))
+		}
+		if o.ForwardPolicy != "" {
+			override.ForwardPolicy = lo.ToPtr(armcontainerservice.LocalDNSForwardPolicy(o.ForwardPolicy))
+		}
+		if o.MaxConcurrent != nil {
+			override.MaxConcurrent = o.MaxConcurrent
+		}
+		if o.CacheDuration.Duration != nil {
+			override.CacheDurationInSeconds = lo.ToPtr(int32(o.CacheDuration.Seconds()))
+		}
+		if o.ServeStaleDuration.Duration != nil {
+			override.ServeStaleDurationInSeconds = lo.ToPtr(int32(o.ServeStaleDuration.Seconds()))
+		}
+		if o.ServeStale != "" {
+			override.ServeStale = lo.ToPtr(armcontainerservice.LocalDNSServeStale(o.ServeStale))
+		}
+		result[o.Zone] = override
+	}
+	return result
 }
 
 func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
