@@ -326,10 +326,13 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 
 // isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
 // is explicitly enabled, since ARM64 does not support artifact streaming.
+// When artifact streaming is not set (nil/default) or explicitly disabled, all architectures are allowed.
 func (p *DefaultProvider) isInstanceTypeSupportedByArtifactStreaming(architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
+	// Only filter when the user explicitly requested artifact streaming enabled
 	if !nodeClass.IsArtifactStreamingExplicitlyEnabled() {
 		return true
 	}
+	// Artifact streaming is explicitly enabled; exclude ARM64 since it doesn't support it
 	kubeArch := getArchitecture(architecture)
 	return kubeArch != karpv1.ArchitectureArm64
 }
