@@ -38,7 +38,7 @@ var (
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreaming struct {
 	// enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
-	// If not specified, defaults to true.
+	// If not specified, defaults to false.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 }
