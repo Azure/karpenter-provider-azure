@@ -106,8 +106,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
 	// Artifact streaming: disabled by default, enabled only when user explicitly sets it.
-	// ARM64 does not support artifact streaming.
-	enableArtifactStreaming := p.Arch != karpv1.ArchitectureArm64 && p.ArtifactStreaming.IsEnabled()
+	// ARM64 does not support artifact streaming (handled by IsEnabled).
+	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS

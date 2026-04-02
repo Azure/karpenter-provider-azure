@@ -134,7 +134,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
-		nodeClass.Spec.ArtifactStreaming.IsEnabled(),
+		nodeClass.Spec.ArtifactStreaming != nil && nodeClass.Spec.ArtifactStreaming.Enabled != nil && *nodeClass.Spec.ArtifactStreaming.Enabled,
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -336,7 +336,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 // instance types). A proper fix would be a validating webhook that cross-checks AKSNodeClass against
 // referencing NodePools.
 func (p *DefaultProvider) isInstanceTypeSupportedByArtifactStreaming(architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
-	if !nodeClass.Spec.ArtifactStreaming.IsEnabled() {
+	if nodeClass.Spec.ArtifactStreaming == nil || nodeClass.Spec.ArtifactStreaming.Enabled == nil || !*nodeClass.Spec.ArtifactStreaming.Enabled {
 		return true
 	}
 	// Artifact streaming is enabled; exclude ARM64 since it doesn't support it

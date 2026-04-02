@@ -43,9 +43,13 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
-// IsEnabled returns whether artifact streaming is enabled.
-// Nil-safe: returns false when the receiver or Enabled is nil.
-func (a *ArtifactStreaming) IsEnabled() bool {
+// IsEnabled returns whether artifact streaming should be enabled for the given architecture.
+// ARM64 does not support artifact streaming and always returns false.
+// Returns false when the receiver or Enabled is nil (default = disabled).
+func (a *ArtifactStreaming) IsEnabled(arch string) bool {
+	if arch == karpv1.ArchitectureArm64 {
+		return false
+	}
 	return a != nil && a.Enabled != nil && *a.Enabled
 }
 
@@ -682,13 +686,9 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 }
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.
-// ARM64 does not support artifact streaming and always returns false.
-// Returns true only when explicitly set to true in the spec; defaults to false otherwise.
+// Delegates to ArtifactStreaming.IsEnabled which handles ARM64 and nil checks.
 func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
-	if arch == karpv1.ArchitectureArm64 {
-		return false
-	}
-	return in.Spec.ArtifactStreaming.IsEnabled()
+	return in.Spec.ArtifactStreaming.IsEnabled(arch)
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
