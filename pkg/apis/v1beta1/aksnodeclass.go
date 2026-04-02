@@ -43,9 +43,6 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
-// IsEnabled returns whether artifact streaming should be enabled for the given architecture.
-// ARM64 does not support artifact streaming and always returns false.
-// Returns false when the receiver or Enabled is nil (default = disabled).
 func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 	if arch == karpv1.ArchitectureArm64 {
 		return false
@@ -687,8 +684,27 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.
 // Delegates to ArtifactStreaming.IsEnabled which handles ARM64 and nil checks.
+//
+// NOTE: ARM64 does not support artifact streaming, but there is no admission-time validation to
+// reject artifactStreaming.enabled=true for ARM64 workloads. AKSNodeClass is cluster-scoped and
+// does not know the target architecture — that comes from NodePool requirements, a separate resource.
+// CEL validation on AKSNodeClass cannot cross-reference NodePool fields (CEL only has access to self).
+// A validating webhook could enforce this cross-resource constraint but does not exist today.
+// As a result, enabling artifact streaming on an AKSNodeClass used by ARM64 NodePools will silently
+// not take effect (IsEnabled returns false for ARM64). The instance type filter in the instance type
+// provider compensates by excluding ARM64 SKUs when artifact streaming is enabled.
 func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
 	return in.Spec.ArtifactStreaming.IsEnabled(arch)
+}
+
+// IsArtifactStreamingExplicitlyEnabled returns true only when the user has explicitly
+// set artifact streaming to enabled (true) in the NodeClass spec. Returns false when
+// artifact streaming is not set (nil/default) or explicitly disabled.
+// Unlike IsArtifactStreamingEnabled, this is architecture-independent.
+func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
+	return in.Spec.ArtifactStreaming != nil &&
+		in.Spec.ArtifactStreaming.Enabled != nil &&
+		*in.Spec.ArtifactStreaming.Enabled
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
