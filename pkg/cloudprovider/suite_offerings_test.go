@@ -485,7 +485,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
 						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
 					}
-					instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
+					instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass, nil)
 					Expect(err).ToNot(HaveOccurred())
 					seeUnavailable := false
 					for _, instanceType := range instanceTypes {
@@ -503,7 +503,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 						azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
 						azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
 					}
-					instanceTypes, err := azureEnvNonZonal.InstanceTypesProvider.ListAKS(ctx, nodeClass)
+					instanceTypes, err := azureEnvNonZonal.InstanceTypesProvider.ListAKS(ctx, nodeClass, nil)
 					Expect(err).ToNot(HaveOccurred())
 					seeUnavailable := false
 					for _, instanceType := range instanceTypes {

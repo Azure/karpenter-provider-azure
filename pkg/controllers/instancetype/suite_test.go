@@ -83,7 +83,7 @@ var _ = Describe("InstanceType Controller", func() {
 		ExpectSingletonReconciled(ctx, controller)
 
 		nodeClass := test.AKSNodeClass()
-		instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
+		instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass, nil)
 		Expect(err).To(BeNil())
 		Expect(instanceTypes).NotTo(BeEmpty())
 	})
@@ -101,7 +101,7 @@ var _ = Describe("InstanceType Controller", func() {
 		ExpectSingletonReconciled(ctx, controller)
 
 		nodeClass := test.AKSNodeClass()
-		instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
+		instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass, nil)
 		Expect(err).To(BeNil())
 		Expect(instanceTypes).NotTo(BeEmpty())
 		Expect(instanceTypes).ToNot(ContainElement(HaveField("Name", Equal("Standard_D64s_v6"))))
@@ -135,7 +135,7 @@ var _ = Describe("InstanceType Controller", func() {
 
 		// Second reconcile should succeed and have new cached data
 		ExpectSingletonReconciled(ctx, controller)
-		instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
+		instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass, nil)
 		Expect(err).To(BeNil())
 		Expect(instanceTypes).NotTo(BeEmpty())
 		Expect(instanceTypes).To(ContainElement(HaveField("Name", Equal("Standard_D64s_v6"))))

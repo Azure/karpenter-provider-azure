@@ -59,7 +59,7 @@ const (
 
 type Provider interface {
 	LivenessProbe(*http.Request) error
-	ListAKS(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+	ListAKS(context.Context, *v1beta1.AKSNodeClass, []string) ([]*cloudprovider.InstanceType, error)
 	ListAzure(context.Context, *v1alpha1.AzureNodeClass) ([]*cloudprovider.InstanceType, error)
 
 	// Return Azure Skewer Representation of the instance type
@@ -91,6 +91,11 @@ type DefaultProvider struct {
 	instanceTypesSeqNum uint64
 	muInstanceTypesInfo sync.RWMutex
 	instanceTypesInfo   map[string]*skewer.SKU
+
+	// rawSKUCache is the unfiltered SKU cache from the last UpdateInstanceTypes call.
+	// Used for fallback lookups when an instanceTypes override requests SKUs that were
+	// filtered out by the standard isSupported checks.
+	rawSKUCache *skewer.Cache
 }
 
 func NewDefaultProvider(
@@ -113,7 +118,7 @@ func NewDefaultProvider(
 }
 
 // ListAzure returns instance types for AzureNodeClass (non-AKS) NodePools.
-// Unlike List(), this method does not apply AKS-specific filtering (LocalDNS, ArtifactStreaming)
+// Unlike ListAKS(), this method does not apply AKS-specific filtering (LocalDNS, ArtifactStreaming)
 // and derives its parameters directly from the AzureNodeClass spec rather than AKSNodeClass.
 func (p *DefaultProvider) ListAzure(
 	ctx context.Context,
@@ -126,14 +131,21 @@ func (p *DefaultProvider) ListAzure(
 		return nil, fmt.Errorf("no instance types found")
 	}
 
-	// Compute fully initialized instance types hash key
-	key := fmt.Sprintf("aznc-%d-%d-%s-%d-%d-%t",
+	// Extract AzureNodeClass-derived values
+	imageFamily := lo.FromPtr(nodeClass.GetImageFamily())
+	encryptionAtHost := nodeClass.GetEncryptionAtHost()
+	instanceTypesFilter := nodeClass.GetInstanceTypes()
+
+	// Compute cache key — no kubelet config, no LocalDNS, no ArtifactStreaming for AzureNodeClass
+	filterHash, _ := hashstructure.Hash(instanceTypesFilter, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	key := fmt.Sprintf("aznc-%d-%d-%s-%d-%d-%t-%016x",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		lo.FromPtr(nodeClass.Spec.ImageFamily),
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, consts.NetworkPluginNone, consts.NetworkPluginModeNone),
-		nodeClass.GetEncryptionAtHost(),
+		encryptionAtHost,
+		filterHash,
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -141,10 +153,18 @@ func (p *DefaultProvider) ListAzure(
 		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
 	}
 
+	// Build the set of requested instance types for filtering (empty means no filter)
+	filterSet := sets.New[string](instanceTypesFilter...)
+
 	// Get Viable offerings
 	// Azure has zones availability directly from SKU info
 	var result []*cloudprovider.InstanceType
+	seen := sets.New[string]()
 	for _, sku := range p.instanceTypesInfo {
+		// If a filter is set, skip SKUs not in the filter
+		if filterSet.Len() > 0 && !filterSet.Has(sku.GetName()) {
+			continue
+		}
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
@@ -160,19 +180,67 @@ func (p *DefaultProvider) ListAzure(
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
 		// !!! Important !!!
-		instanceType := NewInstanceTypeAzure(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		instanceType := NewInstanceTypeAzure(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, false), nodeClass, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
 
-		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), imageFamily) {
 			continue
 		}
-		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
+		if encryptionAtHost && !p.supportsEncryptionAtHost(sku) {
 			continue
 		}
+		// No LocalDNS filtering — AKS-specific concept
+		// No ArtifactStreaming filtering — AKS-specific concept
 
 		result = append(result, instanceType)
+		seen.Insert(sku.GetName())
+	}
+
+	// When an instanceTypesFilter is set, augment the result with any requested types that
+	// were not found in the pre-filtered instanceTypesInfo. These may have been excluded by
+	// isSupported during UpdateInstanceTypes (e.g., GPU SKUs with no compatible AKS image,
+	// confidential VMs, etc.). We look them up in the raw SKU cache and construct instance
+	// types with relaxed checks and forced zero-price offerings.
+	if filterSet.Len() > 0 && p.rawSKUCache != nil {
+		missing := filterSet.Difference(seen)
+		if missing.Len() > 0 {
+			log.FromContext(ctx).V(1).Info("augmenting instance types from raw SKU cache", "missing", missing.UnsortedList())
+			allSKUs := p.rawSKUCache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
+			for i := range allSKUs {
+				skuName := allSKUs[i].GetName()
+				if !missing.Has(skuName) {
+					continue
+				}
+
+				sku := &allSKUs[i]
+				// Use relaxed isSupported: skip image compatibility for non-AKS mode
+				vmsize, err := sku.GetVMSize()
+				if err != nil {
+					// Construct a minimal fallback VMSizeType from the SKU name
+					vmsize = &skewer.VMSizeType{
+						Family: "Unknown",
+						Series: skuName,
+					}
+				}
+				if !p.isSupported(sku, vmsize, options.FromContext(ctx).UseSIG, true) {
+					log.FromContext(ctx).V(1).Info("requested instance type not supported", "vmSize", skuName)
+					continue
+				}
+				architecture, err := sku.GetCPUArchitectureType()
+				if err != nil {
+					log.FromContext(ctx).Error(err, "parsing SKU architecture for augmented type", "vmSize", skuName)
+					continue
+				}
+				instanceTypeZones := p.instanceTypeZones(sku)
+				instanceType := NewInstanceTypeAzure(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, true), nodeClass, architecture)
+				// For forced offerings, always include even if offerings are empty
+				// (createOfferings with forceOfferings=true guarantees at least one offering)
+				result = append(result, instanceType)
+				seen.Insert(skuName)
+			}
+		}
 	}
 
 	p.instanceTypesCache.SetDefault(key, result)
@@ -183,6 +251,7 @@ func (p *DefaultProvider) ListAzure(
 func (p *DefaultProvider) ListAKS(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
+	instanceTypesFilter []string,
 ) ([]*cloudprovider.InstanceType, error) {
 	p.muInstanceTypesInfo.RLock()
 	defer p.muInstanceTypesInfo.RUnlock()
@@ -193,9 +262,14 @@ func (p *DefaultProvider) ListAKS(
 
 	kc := nodeClass.Spec.Kubelet
 
+	// Extract NodeClass-derived values for instance type computation
+	opts := options.FromContext(ctx)
+	isNonAKSMode := opts.ProvisionMode == consts.ProvisionModeNonAKS
+
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%t",
+	filterHash, _ := hashstructure.Hash(instanceTypesFilter, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%t-%016x",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -205,6 +279,7 @@ func (p *DefaultProvider) ListAKS(
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
 		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
+		filterHash,
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -212,10 +287,18 @@ func (p *DefaultProvider) ListAKS(
 		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
 	}
 
+	// Build the set of requested instance types for filtering (empty means no filter)
+	filterSet := sets.New[string](instanceTypesFilter...)
+
 	// Get Viable offerings
 	// Azure has zones availability directly from SKU info
 	var result []*cloudprovider.InstanceType
+	seen := sets.New[string]()
 	for _, sku := range p.instanceTypesInfo {
+		// If a filter is set, skip SKUs not in the filter
+		if filterSet.Len() > 0 && !filterSet.Has(sku.GetName()) {
+			continue
+		}
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
@@ -231,7 +314,7 @@ func (p *DefaultProvider) ListAKS(
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
 		// !!! Important !!!
-		instanceType := NewInstanceTypeAKS(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		instanceType := NewInstanceTypeAKS(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones, false), nodeClass, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -250,6 +333,52 @@ func (p *DefaultProvider) ListAKS(
 		}
 
 		result = append(result, instanceType)
+		seen.Insert(sku.GetName())
+	}
+
+	// When an instanceTypesFilter is set, augment the result with any requested types that
+	// were not found in the pre-filtered instanceTypesInfo. These may have been excluded by
+	// isSupported during UpdateInstanceTypes (e.g., GPU SKUs with no compatible AKS image,
+	// confidential VMs, etc.). We look them up in the raw SKU cache and construct instance
+	// types with relaxed checks and forced zero-price offerings.
+	if filterSet.Len() > 0 && p.rawSKUCache != nil {
+		missing := filterSet.Difference(seen)
+		if missing.Len() > 0 {
+			log.FromContext(ctx).V(1).Info("augmenting instance types from raw SKU cache", "missing", missing.UnsortedList())
+			allSKUs := p.rawSKUCache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
+			for i := range allSKUs {
+				skuName := allSKUs[i].GetName()
+				if !missing.Has(skuName) {
+					continue
+				}
+
+				sku := &allSKUs[i]
+				// Use relaxed isSupported: skip image compatibility for non-AKS mode
+				vmsize, err := sku.GetVMSize()
+				if err != nil {
+					// Construct a minimal fallback VMSizeType from the SKU name
+					vmsize = &skewer.VMSizeType{
+						Family: "Unknown",
+						Series: skuName,
+					}
+				}
+				if !p.isSupported(sku, vmsize, options.FromContext(ctx).UseSIG, isNonAKSMode) {
+					log.FromContext(ctx).V(1).Info("requested instance type not supported", "vmSize", skuName)
+					continue
+				}
+				architecture, err := sku.GetCPUArchitectureType()
+				if err != nil {
+					log.FromContext(ctx).Error(err, "parsing SKU architecture for augmented type", "vmSize", skuName)
+					continue
+				}
+				instanceTypeZones := p.instanceTypeZones(sku)
+				instanceType := NewInstanceTypeAKS(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones, true), nodeClass, architecture)
+				// For forced offerings, always include even if offerings are empty
+				// (createOfferings with forceOfferings=true guarantees at least one offering)
+				result = append(result, instanceType)
+				seen.Insert(skuName)
+			}
+		}
 	}
 
 	p.instanceTypesCache.SetDefault(key, result)
@@ -300,11 +429,25 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string], forceOfferings bool) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range zones {
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
+
+		// When forceOfferings is true and pricing data is missing, use price=0 as a fallback.
+		// This allows instance types that are not in the pricing API to still be scheduled.
+		if forceOfferings {
+			if !onDemandOk {
+				onDemandPrice = 0
+				onDemandOk = true
+			}
+			if !spotOk {
+				spotPrice = 0
+				spotOk = true
+			}
+		}
+
 		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
 		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
@@ -424,6 +567,10 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 		return fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
+	// Store the raw SKU cache for fallback lookups when instanceTypes override is set.
+	// This allows List() to find SKUs that were filtered out by isSupported.
+	p.rawSKUCache = cache
+
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
@@ -433,7 +580,7 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 			continue
 		}
 		useSIG := options.FromContext(ctx).UseSIG
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG, false) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -452,15 +599,17 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	return nil
 }
 
-// isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool) bool {
+// isSupported indicates SKU is supported by AKS, based on SKU properties.
+// When isNonAKSMode is true, the image compatibility check is skipped because
+// non-AKS NodeClasses use custom images provided by the user, not AKS-managed images.
+func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool, isNonAKSMode bool) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
 		!p.isConfidential(sku) &&
-		isCompatibleImageAvailable(sku, useSIG)
+		(isNonAKSMode || isCompatibleImageAvailable(sku, useSIG))
 }
 
 // at least 2 cpus

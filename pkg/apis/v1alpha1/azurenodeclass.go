@@ -90,6 +90,13 @@ type AzureNodeClassSpec struct {
 	// tags to be applied on Azure resources like instances.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
+	// instanceTypes overrides the instance types discovered by the pricing/SKU provider.
+	// When set, only these instance types are considered for this NodeClass.
+	// Use this for pinned capacity (e.g. GPU SKUs) that may not appear in standard
+	// pricing APIs or may be filtered by default compatibility checks.
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	InstanceTypes []string `json:"instanceTypes,omitempty"`
 	// security contains security-related configuration for provisioned VMs.
 	// +optional
 	Security *AzureNodeClassSecurity `json:"security,omitempty"`
@@ -177,6 +184,11 @@ func (in *AzureNodeClass) GetTags() map[string]string {
 // GetMaxPods returns the maxPods from the spec.
 func (in *AzureNodeClass) GetMaxPods() *int32 {
 	return in.Spec.MaxPods
+}
+
+// GetInstanceTypes returns the InstanceTypes override from the spec.
+func (in *AzureNodeClass) GetInstanceTypes() []string {
+	return in.Spec.InstanceTypes
 }
 
 // GetImageFamily returns the imageFamily from the spec.

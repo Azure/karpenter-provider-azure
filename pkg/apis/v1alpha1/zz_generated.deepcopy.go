@@ -124,6 +124,11 @@ func (in *AzureNodeClassSpec) DeepCopyInto(out *AzureNodeClassSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.InstanceTypes != nil {
+		in, out := &in.InstanceTypes, &out.InstanceTypes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Security != nil {
 		in, out := &in.Security, &out.Security
 		*out = new(AzureNodeClassSecurity)
