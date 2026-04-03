@@ -115,8 +115,19 @@ vulncheck: ## Verify code vulnerabilities
 licenses: download ## Verifies dependency licenses
 	! go-licenses csv ./... | grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0'
 
-codegen: ## Auto generate files based on Azure API responses
-	./hack/codegen.sh
+codegen: codegen-pricing codegen-locations codegen-skugen codegen-allazureskus ## Auto generate files based on Azure API responses
+
+codegen-pricing: ## Generate pricing data
+	./hack/codegen.sh pricing
+
+codegen-locations: ## Generate locations data
+	./hack/codegen.sh locations
+
+codegen-skugen: ## Generate SKU test fakes
+	./hack/codegen.sh skugen
+
+codegen-allazureskus: ## Generate all Azure VM SKU names
+	./hack/codegen.sh allazureskus
 
 snapshot: az-login ## Builds and publishes snapshot release
 	./hack/release/snapshot.sh
@@ -133,7 +144,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
+.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen codegen-pricing codegen-locations codegen-skugen codegen-allazureskus snapshot release toolchain tidy download
 
 define newline
 

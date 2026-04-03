@@ -22,6 +22,7 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.30
 	github.com/Azure/skewer v0.0.21
 	github.com/Pallinder/go-randomdata v1.2.0
+	github.com/alecthomas/kong v1.14.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/awslabs/operatorpkg v0.0.0-20251222193911-34e9a1898737
 	github.com/blang/semver/v4 v4.0.0
@@ -48,6 +49,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v2 v2.4.3
 	golang.org/x/sync v0.19.0
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.35.0
 	k8s.io/apiextensions-apiserver v0.35.0
 	k8s.io/apimachinery v0.35.0
@@ -160,7 +162,6 @@ require (
 	gopkg.in/dnaeon/go-vcr.v3 v3.2.0 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/cloud-provider v0.35.0 // indirect
 	k8s.io/component-helpers v0.35.0 // indirect
 	k8s.io/csi-translation-lib v0.35.0 // indirect

@@ -1,3 +1,6 @@
+[files]
+extend-exclude = ["pkg/providers/instancetype/known_skus.yaml"]
+
 [default.extend-words]
 aks = "aks"
 ERRO = "ERRO"
