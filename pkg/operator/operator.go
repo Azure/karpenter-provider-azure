@@ -93,6 +93,7 @@ type Operator struct {
 	AKSMachineProvider        *instance.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
 	AZClient                  *azclient.AZClient
+	AZClientManager           *azclient.AZClientManager
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -200,8 +201,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).NodeResourceGroup,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()
+	azClientManager := azclient.NewAZClientManager(
+		azConfig.SubscriptionID,
+		azClient,
+		cred,
+		armopts.DefaultARMOpts(env.Cloud, options.FromContext(ctx).EnableAzureSDKLogging),
+	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
+		azClientManager,
 		instanceTypeProvider,
 		allocationStrategyProvider,
 		imageResolver,
@@ -246,6 +254,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		AKSMachineProvider:           aksMachineInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		AZClient:                     azClient,
+		AZClientManager:             azClientManager,
 	}
 }
 

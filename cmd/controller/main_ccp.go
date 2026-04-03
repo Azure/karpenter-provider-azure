@@ -95,6 +95,7 @@ func main() {
 			op.AZClient.SubnetsClient(),
 			op.AZClient.DiskEncryptionSetsClient(),
 			options.FromContext(ctx).ParsedDiskEncryptionSetID,
+			op.AZClientManager,
 		)...).
 		Start(ctx)
 }

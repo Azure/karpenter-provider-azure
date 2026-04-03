@@ -197,8 +197,15 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		subscriptionAPI,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()
+	azClientManager := azclient.NewAZClientManager(
+		subscription,
+		azClient,
+		nil, // no real credential needed in tests — per-subscription client creation won't be exercised
+		nil, // no ARM options needed in tests
+	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
+		azClientManager,
 		instanceTypesProvider,
 		allocationStrategyProvider,
 		imageFamilyResolver,

@@ -535,3 +535,28 @@ func (p *DefaultVMProvider) createCSExtensionFromSpec(ctx context.Context, vmNam
 	)
 	return nil
 }
+
+// mergeIdentities combines global node identities with per-NodeClass managed identities,
+// deduplicating by case-insensitive ARM resource ID comparison.
+func mergeIdentities(global []string, perNodeClass []string) []string {
+	if len(perNodeClass) == 0 {
+		return global
+	}
+	seen := make(map[string]bool, len(global))
+	result := make([]string, 0, len(global)+len(perNodeClass))
+	for _, id := range global {
+		lower := strings.ToLower(id)
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, id)
+		}
+	}
+	for _, id := range perNodeClass {
+		lower := strings.ToLower(id)
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, id)
+		}
+	}
+	return result
+}
