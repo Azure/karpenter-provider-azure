@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -37,6 +36,7 @@ var (
 	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
+// AKSMachineNewListPager defines the interface for creating a new pager to list AKS machines.
 type AKSMachineNewListPager interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
 }
@@ -48,11 +48,10 @@ type cacheEntry struct {
 
 // MachineCache caches AKS machines to reduce API calls and improve performance.
 type MachineCache struct {
-	machines             sync.Map     // keyed by machine name (not full ARM ID), value is *armcontainerservice.Machine
-	lastUpdatedUnixNanos atomic.Int64 // nanoseconds since epoch; 0 means never updated
-	ttl                  time.Duration
-	interval             time.Duration
-	client               AKSMachineNewListPager
+	machines sync.Map // keyed by machine name (not full ARM ID), value is *cacheEntry
+	ttl      time.Duration
+	interval time.Duration
+	client   AKSMachineNewListPager
 
 	clusterResourceGroup string
 	clusterName          string
@@ -100,29 +99,27 @@ func NewMachineCache(ctx context.Context, ttl time.Duration, client AKSMachineNe
 	return cache
 }
 
-// isFresh returns true if the cache has been populated and hasn't expired.
-// Lock-free implementation using atomic operations for better concurrency.
-func (c *MachineCache) isFresh() bool {
-	lastUpdatedNanos := c.lastUpdatedUnixNanos.Load()
-	if lastUpdatedNanos == 0 {
-		return false
+// isExpired checks if a specific cache entry is expired (older than 10 minutes).
+func (c *MachineCache) isExpired(entry *cacheEntry) bool {
+	if entry == nil {
+		return true
 	}
-	lastUpdated := time.Unix(0, lastUpdatedNanos)
-	return time.Since(lastUpdated) < c.ttl
+	return time.Since(entry.lastUpdated) > 10*time.Minute
 }
 
 // Get retrieves a machine from the cache by name.
 func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, error) {
-	if !c.isFresh() {
-		return nil, fmt.Errorf("cache is stale for machine %q", machineName)
-	}
-
 	value, ok := c.machines.Load(machineName)
 	if !ok {
 		return nil, fmt.Errorf("machine %q not found in cache", machineName)
 	}
 
-	return value.(*armcontainerservice.Machine), nil
+	entry := value.(*cacheEntry)
+	if c.isExpired(entry) {
+		return entry.machine, fmt.Errorf("stale entry for machine %q. Last updated %v", machineName, entry.lastUpdated)
+	}
+
+	return entry.machine, nil
 }
 
 // List returns all machines in the cache.
@@ -131,7 +128,8 @@ func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine
 	// Create a slice with all machines
 	machines := make([]*armcontainerservice.Machine, 0)
 	c.machines.Range(func(key, value any) bool {
-		machines = append(machines, value.(*armcontainerservice.Machine))
+		entry := value.(*cacheEntry)
+		machines = append(machines, entry.machine)
 		return true // continue iteration
 	})
 
@@ -144,25 +142,8 @@ func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bo
 	if !ok {
 		return nil, false
 	}
-	return value.(*armcontainerservice.Machine), true
-}
-
-// invalidate removes a specific machine from the cache, forcing the next Get()
-// for that machine to fall through to the API. This is called after mutating
-// operations (Create, Update, Delete) to prevent serving stale data.
-func (c *MachineCache) invalidate(machineName string) {
-	c.machines.Delete(machineName)
-}
-
-// invalidateAll clears the entire cache, forcing all subsequent Get() calls
-// to fall through to the API until the next List() repopulates the cache.
-func (c *MachineCache) invalidateAll() {
-	// Delete all entries by ranging over the map
-	c.machines.Range(func(key, value any) bool {
-		c.machines.Delete(key)
-		return true // continue iteration
-	})
-	c.lastUpdatedUnixNanos.Store(0) // zero value → isFresh() returns false
+	entry := value.(*cacheEntry)
+	return entry.machine, true
 }
 
 // updateWorker runs in a background goroutine and handles both periodic and on-demand cache updates.
@@ -354,6 +335,7 @@ func (c *MachineCache) update(ctx context.Context) error {
 
 	fetchedMachineNames := make(map[string]struct{})
 	startPage := time.Now()
+	updateTime := time.Now()
 
 	for pager.More() {
 		pageNow := time.Now()
@@ -379,7 +361,11 @@ func (c *MachineCache) update(ctx context.Context) error {
 		for _, aksMachine := range page.Value {
 			if isValid(ctx, aksMachine) {
 				if aksMachine.Name != nil {
-					c.machines.Store(*aksMachine.Name, aksMachine)
+					entry := &cacheEntry{
+						machine:     aksMachine,
+						lastUpdated: updateTime,
+					}
+					c.machines.Store(*aksMachine.Name, entry)
 					fetchedMachineNames[*aksMachine.Name] = struct{}{}
 				}
 			}
@@ -402,7 +388,6 @@ func (c *MachineCache) update(ctx context.Context) error {
 		return true
 	})
 
-	c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 	return nil
 }
 
