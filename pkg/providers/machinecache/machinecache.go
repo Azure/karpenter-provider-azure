@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -30,6 +31,9 @@ const (
 	ProvisioningStateDeleting  = "Deleting"
 	ProvisioningStateSucceeded = "Succeeded"
 	ProvisioningStateFailed    = "Failed"
+
+	activePollingInterval     = 1 * time.Minute
+	backgroundPollingInterval = 5 * time.Minute
 )
 
 var (
@@ -50,7 +54,6 @@ type cacheEntry struct {
 type MachineCache struct {
 	machines sync.Map // keyed by machine name (not full ARM ID), value is *cacheEntry
 	ttl      time.Duration
-	interval time.Duration
 	client   AKSMachineNewListPager
 
 	clusterResourceGroup string
@@ -68,6 +71,7 @@ type MachineCache struct {
 	workerCancel   context.CancelFunc // Cancel function for shutdown
 	updateInterval time.Duration      // Periodic update frequency (default 5 minutes)
 	wg             sync.WaitGroup     // Tracks worker goroutine for shutdown
+	activePollers  atomic.Int32
 }
 
 func NewMachineCache(ctx context.Context, ttl time.Duration, client AKSMachineNewListPager, interval time.Duration, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
@@ -76,7 +80,6 @@ func NewMachineCache(ctx context.Context, ttl time.Duration, client AKSMachineNe
 	cache := &MachineCache{
 		// machines is a sync.Map, zero value is ready to use
 		ttl:                  ttl,
-		interval:             interval,
 		client:               client,
 		clusterResourceGroup: clusterResourceGroup,
 		clusterName:          clusterName,

@@ -41,6 +41,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -143,6 +144,7 @@ type DefaultAKSMachineProvider struct {
 	aksMachinesPoolName             string // Only support one AKS machine pool at a time, for now.
 	aksMachinesPoolLocation         string
 	batchCreationEnabled            bool
+	machinecache                    *machinecache.MachineCache
 	errorHandling                   *offerings.ErrorDetailHandler
 	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu              sync.RWMutex
@@ -350,14 +352,7 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
-	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
-	}
-	aksMachine := lo.ToPtr(resp.Machine)
-	p.rehydrateMachine(aksMachine)
-
-	return aksMachine, nil
+	return p.machinecache.Get(aksMachineName)
 }
 
 func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
