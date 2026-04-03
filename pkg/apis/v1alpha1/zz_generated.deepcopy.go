@@ -124,6 +124,11 @@ func (in *AzureNodeClassSpec) DeepCopyInto(out *AzureNodeClassSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.DataDiskSizeGB != nil {
+		in, out := &in.DataDiskSizeGB, &out.DataDiskSizeGB
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Security != nil {
 		in, out := &in.Security, &out.Security
 		*out = new(AzureNodeClassSecurity)
