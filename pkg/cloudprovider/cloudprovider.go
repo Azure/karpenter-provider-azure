@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
@@ -110,7 +111,7 @@ func (c *CloudProvider) WaitForInstancePromises() {
 	c.instancePromiseWg.Wait()
 }
 
-func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error {
+func (c *CloudProvider) validateNodeClassCommon(nodeClass v1beta1.NodeClass) error {
 	nodeClassReady := nodeClass.StatusConditions().Get(status.ConditionReady)
 	if nodeClassReady.IsFalse() {
 		return cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
@@ -118,6 +119,25 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 	if nodeClassReady.IsUnknown() {
 		return cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
 	}
+
+	return nil
+}
+
+func (c *CloudProvider) validateAzureNodeClass(nodeClass *v1alpha1.AzureNodeClass) error {
+	err := c.validateNodeClassCommon(nodeClass)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *CloudProvider) validateAKSNodeClass(nodeClass *v1beta1.AKSNodeClass) error {
+	err := c.validateNodeClassCommon(nodeClass)
+	if err != nil {
+		return err
+	}
+
 	if _, err := nodeClass.GetKubernetesVersion(); err != nil {
 		return err
 	}
@@ -128,6 +148,38 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	if nodeClaim.Spec.NodeClassRef != nil && nodeClaim.Spec.NodeClassRef.Kind == "AzureNodeClass" {
+		return c.createAzureInstance(ctx, nodeClaim)
+	} else {
+		return c.createAKSInstance(ctx, nodeClaim)
+	}
+}
+
+func (c *CloudProvider) createAzureInstance(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	nodeClass, err := nodeclaimutils.GetAzureNodeClass(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+		}
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class, %w", err))
+	}
+
+	if err := c.validateAzureNodeClass(nodeClass); err != nil {
+		return nil, err
+	}
+
+	instanceTypes, err := c.resolveAzureInstanceTypes(ctx, nodeClaim, nodeClass)
+	if err != nil {
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
+	}
+	if len(instanceTypes) == 0 {
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
+	}
+
+	return c.createAzureVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+}
+
+func (c *CloudProvider) createAKSInstance(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
 	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -148,24 +200,16 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 			return nil, err
 		}
 	*/
-	if err = c.validateNodeClass(nodeClass); err != nil {
+	if err = c.validateAKSNodeClass(nodeClass); err != nil {
 		return nil, err
 	}
 
-	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
+	instanceTypes, err := c.resolveAKSInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
-	}
-	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
-		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
-			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
-			if err != nil {
-				return nil, fmt.Errorf("creating instance, %w", err)
-			}
-		}
 	}
 
 	// Choose provider based on provision mode
@@ -173,11 +217,40 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	}
 
-	return c.createVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	return c.createAKSVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 }
 
-func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
-	vmPromise, err := c.vmInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+func (c *CloudProvider) createAzureVMInstance(ctx context.Context, nodeClass *v1alpha1.AzureNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	vmPromise, err := c.vmInstanceProvider.BeginCreateAzure(ctx, nodeClass, nodeClaim, instanceTypes)
+	if err != nil {
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+	}
+
+	if err := c.handleInstancePromise(ctx, vmPromise, nodeClaim); err != nil {
+		return nil, err
+	}
+
+	vm := vmPromise.VM
+	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
+		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
+	})
+	newNodeClaim, err := instance.BuildNodeClaimFromAzureVM(ctx, vm, instanceType)
+	if err != nil {
+		return nil, err
+	}
+
+	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels.
+	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
+
+	if err := setAdditionalAnnotationsForNewAzureNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
+		return nil, err
+	}
+
+	return newNodeClaim, nil
+}
+
+func (c *CloudProvider) createAKSVMInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	vmPromise, err := c.vmInstanceProvider.BeginCreateAKS(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
@@ -191,7 +264,7 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
-	newNodeClaim, err := instance.BuildNodeClaimFromVM(ctx, vm, instanceType)
+	newNodeClaim, err := instance.BuildNodeClaimFromAKSVM(ctx, vm, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +276,7 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 	// TODO: should we do like AWS and smuggle all of these labels through VM tags rather than just setting them here?
 	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
 
-	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
+	if err := setAdditionalAnnotationsForNewAKSNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
 		return nil, err
 	}
 	return newNodeClaim, nil
@@ -243,7 +316,7 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	// TODO: should we do like AWS and smuggle all of these labels through VM tags rather than just setting them here?
 	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
 
-	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
+	if err := setAdditionalAnnotationsForNewAKSNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
 		return nil, err
 	}
 
@@ -370,6 +443,8 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	var nodeClaims []*karpv1.NodeClaim
 
 	// List AKS machine-based nodes
+	// Suggestion: just void this path if Karpenter is not running on AKS?
+	// Though, currently, this is safe, as long as ManageExistingAKSMachines option is set to false.
 	aksMachineInstances, err := c.aksMachineInstanceProvider.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing AKS machine instances, %w", err)
@@ -391,11 +466,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	}
 
 	for _, vmInst := range vmInstances {
-		instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, vmInst)
-		if err != nil {
-			return nil, fmt.Errorf("resolving instance type for VM instance, %w", err)
-		}
-		nodeClaim, err := instance.BuildNodeClaimFromVM(ctx, vmInst, instanceType)
+		nodeClaim, err := c.resolveNodeClaimFromVMInstance(ctx, vmInst)
 		if err != nil {
 			return nil, fmt.Errorf("converting VM instance to node claim, %w", err)
 		}
@@ -414,6 +485,8 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 
 	if aksMachineName, err := instance.GetAKSMachineNameFromVMName(options.FromContext(ctx).AKSMachinesPoolName, vmName); err == nil {
 		// AKS machine-based node
+		// Suggestion: just void this path if Karpenter is not running on AKS?
+		// Though, currently, this is safe, given the way naming is decided. However, this might be harder to manage with more modes?
 		ctx := log.IntoContext(ctx, log.FromContext(ctx).WithValues("aksMachineName", aksMachineName))
 
 		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
@@ -426,11 +499,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		if err != nil {
 			return nil, fmt.Errorf("getting VM instance, %w", err)
 		}
-		instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, vm)
-		if err != nil {
-			return nil, fmt.Errorf("resolving instance type, %w", err)
-		}
-		return instance.BuildNodeClaimFromVM(ctx, vm, instanceType)
+		return c.resolveNodeClaimFromVMInstance(ctx, vm)
 	}
 }
 
@@ -441,21 +510,39 @@ func (c *CloudProvider) LivenessProbe(req *http.Request) error {
 // GetInstanceTypes returns all available InstanceTypes
 // May return apimachinery.NotFoundError if NodeClass is not found.
 func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.NodePool) ([]*cloudprovider.InstanceType, error) {
-	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+	if nodePool.Spec.Template.Spec.NodeClassRef != nil && nodePool.Spec.Template.Spec.NodeClassRef.Kind == "AzureNodeClass" {
+		nodeClass, err := c.resolveAzureNodeClassFromNodePool(ctx, nodePool)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+			}
+			// We must return an error here in the event of the node class not being found. Otherwise users just get
+			// no instance types and a failure to schedule with no indicator pointing to a bad configuration
+			// as the cause.
+			return nil, fmt.Errorf("resolving node class, %w", err)
 		}
-		// We must return an error here in the event of the node class not being found. Otherwise users just get
-		// no instance types and a failure to schedule with no indicator pointing to a bad configuration
-		// as the cause.
-		return nil, fmt.Errorf("resolving node class, %w", err)
+		instanceTypes, err := c.instanceTypeProvider.ListAzure(ctx, nodeClass)
+		if err != nil {
+			return nil, err
+		}
+		return instanceTypes, nil
+	} else {
+		nodeClass, err := c.resolveAKSNodeClassFromNodePool(ctx, nodePool)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+			}
+			// We must return an error here in the event of the node class not being found. Otherwise users just get
+			// no instance types and a failure to schedule with no indicator pointing to a bad configuration
+			// as the cause.
+			return nil, fmt.Errorf("resolving node class, %w", err)
+		}
+		instanceTypes, err := c.instanceTypeProvider.ListAKS(ctx, nodeClass)
+		if err != nil {
+			return nil, err
+		}
+		return instanceTypes, nil
 	}
-	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
-	if err != nil {
-		return nil, err
-	}
-	return instanceTypes, nil
 }
 
 // Delete deletes the underlying node
@@ -466,6 +553,8 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 
 	// AKS machine-based node
+	// Suggestion: just void this path if Karpenter is not running on AKS?
+	// Though, currently, this is safe, given the annotation uniqueness.
 	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		return c.aksMachineInstanceProvider.Delete(ctx, aksMachineName)
 	}
@@ -503,18 +592,35 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeCla
 	if nodePool.Spec.Template.Spec.NodeClassRef == nil {
 		return "", nil
 	}
-	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+
+	// AzureNodeClass uses its own drift detection path
+	if nodePool.Spec.Template.Spec.NodeClassRef.Kind == "AzureNodeClass" {
+		nodeClass, err := c.resolveAzureNodeClassFromNodePool(ctx, nodePool)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+			}
+			return "", client.IgnoreNotFound(fmt.Errorf("resolving node class, %w", err))
 		}
-		return "", client.IgnoreNotFound(fmt.Errorf("resolving node class, %w", err))
+		driftReason, err := c.isAzureNodeClassDrifted(ctx, nodeClaim, nodeClass)
+		if err != nil {
+			return "", err
+		}
+		return driftReason, nil
+	} else {
+		nodeClass, err := c.resolveAKSNodeClassFromNodePool(ctx, nodePool)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+			}
+			return "", client.IgnoreNotFound(fmt.Errorf("resolving node class, %w", err))
+		}
+		driftReason, err := c.isAKSNodeClassDrifted(ctx, nodeClaim, nodeClass)
+		if err != nil {
+			return "", err
+		}
+		return driftReason, nil
 	}
-	driftReason, err := c.isNodeClassDrifted(ctx, nodeClaim, nodeClass)
-	if err != nil {
-		return "", err
-	}
-	return driftReason, nil
 }
 
 // Name returns the CloudProvider implementation name.
@@ -523,7 +629,7 @@ func (c *CloudProvider) Name() string {
 }
 
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
-	return []status.Object{&v1beta1.AKSNodeClass{}}
+	return []status.Object{&v1beta1.AKSNodeClass{}, &v1alpha1.AzureNodeClass{}}
 }
 
 // TODO: review repair policies
@@ -549,8 +655,11 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 }
 
 // May return apimachinery.NotFoundError if NodePool is not found.
-func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1beta1.AKSNodeClass, error) {
+func (c *CloudProvider) resolveAKSNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1beta1.AKSNodeClass, error) {
 	nodeClass := &v1beta1.AKSNodeClass{}
+	if nodePool.Spec.Template.Spec.NodeClassRef.Kind != "AKSNodeClass" {
+		return nil, fmt.Errorf("unexpected NodeClass kind %s, expected AKSNodeClass", nodePool.Spec.Template.Spec.NodeClassRef.Kind)
+	}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		return nil, err
 	}
@@ -562,47 +671,68 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 	}
 	return nodeClass, nil
 }
-func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
-	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
+
+// May return apimachinery.NotFoundError if NodePool is not found.
+func (c *CloudProvider) resolveAzureNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1alpha1.AzureNodeClass, error) {
+	nodeClass := &v1alpha1.AzureNodeClass{}
+	if nodePool.Spec.Template.Spec.NodeClassRef.Kind != "AzureNodeClass" {
+		return nil, fmt.Errorf("unexpected NodeClass kind %s, expected AzureNodeClass", nodePool.Spec.Template.Spec.NodeClassRef.Kind)
+	}
+	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
+		return nil, err
+	}
+	// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound
+	if !nodeClass.DeletionTimestamp.IsZero() {
+		// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound,
+		// but we return a different error message to be clearer to users
+		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "azurenodeclasses"}, nodeClass.Name)
+	}
+	return nodeClass, nil
+}
+
+func (c *CloudProvider) resolveAKSInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
+	instanceTypes, err := c.instanceTypeProvider.ListAKS(ctx, nodeClass)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance types, %w", err)
 	}
 
+	return c.filterInstanceTypes(ctx, nodeClaim, instanceTypes)
+}
+
+func (c *CloudProvider) resolveAzureInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.AzureNodeClass) ([]*cloudprovider.InstanceType, error) {
+	instanceTypes, err := c.instanceTypeProvider.ListAzure(ctx, nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("getting instance types, %w", err)
+	}
+
+	return c.filterInstanceTypes(ctx, nodeClaim, instanceTypes)
+}
+
+func (c *CloudProvider) filterInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) ([]*cloudprovider.InstanceType, error) {
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
-	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
+	filteredInstanceTypes := lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
 		return reqs.Compatible(i.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil &&
 			len(i.Offerings.Compatible(reqs).Available()) > 0 &&
 			resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
-	}), nil
+	})
 
 	// Old logic
-	// return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
+	// filteredInstanceTypes := lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
 	//	return reqs.Get(v1.LabelInstanceTypeStable).Has(i.Name) &&
 	//		len(i.Offerings.Requirements(reqs).Available()) > 0
-	// }), nil
-}
+	// })
 
-func (c *CloudProvider) resolveInstanceTypeFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*cloudprovider.InstanceType, error) {
-	nodePool, err := c.resolveNodePoolFromVMInstance(ctx, vm)
-	if err != nil {
-		// If we can't resolve the provisioner, we fallback to not getting instance type info
-		return nil, client.IgnoreNotFound(fmt.Errorf("resolving node pool, %w", err))
-	}
-	instanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
-	if err != nil {
-		// If we can't resolve the nodepool, we fallback to not getting instance type info
-		return nil, client.IgnoreNotFound(fmt.Errorf("resolving node template, %w", err))
-	}
-	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
-	})
+	var err error
 	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
-		instanceType, err = c.instanceTypeStore.Apply(nodePool.Name, instanceType)
-		if err != nil {
-			return nil, fmt.Errorf("resolving instancetype, %w", err)
+		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
+			filteredInstanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, filteredInstanceTypes)
+			if err != nil {
+				return nil, fmt.Errorf("applying node overlay, %w", err)
+			}
 		}
 	}
-	return instanceType, nil
+
+	return filteredInstanceTypes, nil
 }
 
 func (c *CloudProvider) resolveNodePoolFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
@@ -633,7 +763,20 @@ func truncateMessage(msg string) string {
 	return msg[:truncateAt] + "..."
 }
 
-func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) error {
+func setAdditionalAnnotationsForNewAzureNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.AzureNodeClass) error {
+	inPlaceHash, err := inplaceupdate.HashFromAzureNodeClaim(options.FromContext(ctx), nodeClaim, nodeClass)
+	if err != nil {
+		return fmt.Errorf("failed to calculate AzureNodeClass in-place update hash, %w", err)
+	}
+	nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
+		v1alpha1.AnnotationAzureNodeClassHash:        nodeClass.Hash(),
+		v1alpha1.AnnotationAzureNodeClassHashVersion: v1alpha1.AzureNodeClassHashVersion,
+		v1alpha1.AnnotationInPlaceUpdateHash:         inPlaceHash,
+	})
+	return nil
+}
+
+func setAdditionalAnnotationsForNewAKSNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) error {
 	// Additional annotations
 	// ASSUMPTION: this is not needed in other places that the core also wants NodeClaim (e.g., Get, List).
 	// As of the time of writing, AWS is doing something similar.
@@ -648,6 +791,41 @@ func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *kar
 		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
 	})
 	return nil
+}
+
+func (c *CloudProvider) resolveNodeClaimFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*karpv1.NodeClaim, error) {
+	var instanceType *cloudprovider.InstanceType
+	nodePool, err := c.resolveNodePoolFromVMInstance(ctx, vm)
+	if err == nil {
+		gotInstanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
+		if err == nil {
+			instanceType, _ = lo.Find(gotInstanceTypes, func(i *cloudprovider.InstanceType) bool {
+				return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
+			})
+			if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+				instanceType, err = c.instanceTypeStore.Apply(nodePool.Name, instanceType)
+				if err != nil {
+					return nil, fmt.Errorf("resolving instancetype, %w", err)
+				}
+			}
+		} else if client.IgnoreNotFound(err) != nil {
+			// If we can't resolve the nodepool, we fallback to not getting instance type info
+			return nil, fmt.Errorf("resolving node pool instance types, %w", err)
+		}
+
+	} else if client.IgnoreNotFound(err) != nil {
+		// If we can't resolve the provisioner, we fallback to not getting instance type info
+		return nil, fmt.Errorf("resolving node pool, %w", err)
+	}
+
+	// TODO: figure out how to check if this is AzureNodeClass-based or AKSNodeClass-based.
+	// Currently, the diff is just priority label exist on AKS-based. Minimal enough to let it be on AzureNodeClass-based for PoC.
+	nodeClaim, err := instance.BuildNodeClaimFromAKSVM(ctx, vm, instanceType)
+	if err != nil {
+		return nil, fmt.Errorf("building node claim from VM instance, %w", err)
+	}
+
+	return nodeClaim, nil
 }
 
 func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine) (*karpv1.NodeClaim, error) {

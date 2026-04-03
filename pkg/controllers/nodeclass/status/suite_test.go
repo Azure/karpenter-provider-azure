@@ -44,7 +44,7 @@ var ctx context.Context
 var env *coretest.Environment
 var azureEnv *test.Environment
 var nodeClass *v1beta1.AKSNodeClass
-var controller *status.Controller
+var controller *status.AKSNodeClassController
 var testOptions *options.Options
 
 var (
@@ -65,7 +65,7 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, testOptions)
 	azureEnv = test.NewEnvironment(ctx, env)
 
-	controller = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+	controller = status.NewAKSNodeClassController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 })
 
 var _ = AfterSuite(func() {

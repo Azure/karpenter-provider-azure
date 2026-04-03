@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -59,7 +60,7 @@ func CalculateHash(data any) (string, error) {
 
 // HashFromNodeClaim calculates an inplace update hash from the specified options, nodeClaim, and nodeClass
 func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
-	tags := instance.Tags(options, nodeClass, nodeClaim)
+	tags := instance.TagsAKS(options, nodeClass, nodeClaim)
 	tagsForHash := lo.MapValues(tags, func(v *string, _ string) string {
 		return lo.FromPtr(v)
 	})
@@ -78,5 +79,26 @@ func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, no
 		}
 	}
 
+	return CalculateHash(hashStruct)
+}
+
+// azureNodeClassInPlaceUpdateFields defines the fields that participate in
+// in-place update hash computation for AzureNodeClass VMs.
+type azureNodeClassInPlaceUpdateFields struct {
+	Tags map[string]string `json:"tags,omitempty"`
+}
+
+// HashFromAzureNodeClaim calculates an in-place update hash for AzureNodeClass VMs.
+// For AzureNodeClass VMs, only tags are hashed.
+// Per-NodeClass identities will be added in the multi-sub PR.
+func HashFromAzureNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.AzureNodeClass) (string, error) {
+	tags := instance.TagsAzure(options, nodeClass, nodeClaim)
+	tagsForHash := lo.MapValues(tags, func(v *string, _ string) string {
+		return lo.FromPtr(v)
+	})
+
+	hashStruct := &azureNodeClassInPlaceUpdateFields{
+		Tags: tagsForHash,
+	}
 	return CalculateHash(hashStruct)
 }

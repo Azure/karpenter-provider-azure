@@ -45,7 +45,7 @@ import (
 var ctx context.Context
 var env *coretest.Environment
 var azureEnv *test.Environment
-var hashController *hash.Controller
+var hashController *hash.AKSNodeClassController
 
 func TestAPIs(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -59,7 +59,7 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
 	azureEnv = test.NewEnvironment(ctx, env)
 
-	hashController = hash.NewController(env.Client)
+	hashController = hash.NewAKSNodeClassController(env.Client)
 })
 
 var _ = AfterSuite(func() {

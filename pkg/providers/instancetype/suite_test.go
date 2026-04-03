@@ -203,7 +203,7 @@ var _ = Describe("InstanceType Provider", func() {
 					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
 				}
 				ExpectApplied(ctx, env.Client, nodeClass)
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(instanceTypes).ShouldNot(BeEmpty())
 
@@ -290,7 +290,7 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 				}
 				ExpectApplied(ctx, env.Client, nodeClassDisabled)
-				instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
+				instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClassDisabled)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Now get instance types with LocalDNS required
@@ -347,7 +347,7 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 				}
 				ExpectApplied(ctx, env.Client, nodeClassEnabled)
-				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
+				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClassEnabled)
 				Expect(err).ToNot(HaveOccurred())
 
 				// The lists should be different sizes
@@ -375,7 +375,7 @@ var _ = Describe("InstanceType Provider", func() {
 				nodeClass.Spec.ArtifactStreaming = artifactStreaming
 				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 				ExpectApplied(ctx, env.Client, nodeClass)
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(instanceTypes).ShouldNot(BeEmpty())
 
@@ -439,7 +439,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			BeforeEach(func() {
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -470,7 +470,7 @@ var _ = Describe("InstanceType Provider", func() {
 				nodeClassAZLinux := test.AKSNodeClass()
 				nodeClassAZLinux.Spec.ImageFamily = lo.ToPtr("AzureLinux")
 				ExpectApplied(ctx, env.Client, nodeClassAZLinux)
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassAZLinux)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClassAZLinux)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -496,7 +496,7 @@ var _ = Describe("InstanceType Provider", func() {
 					}
 					nodeClassWithEncryption.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
 					ExpectApplied(ctx, env.Client, nodeClassWithEncryption)
-					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithEncryption)
+					instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClassWithEncryption)
 					Expect(err).ToNot(HaveOccurred())
 				})
 
@@ -515,7 +515,7 @@ var _ = Describe("InstanceType Provider", func() {
 					nodeClassWithoutEncryption := test.AKSNodeClass()
 					// default is disabled when Security is nil or EncryptionAtHost is nil
 					ExpectApplied(ctx, env.Client, nodeClassWithoutEncryption)
-					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithoutEncryption)
+					instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClassWithoutEncryption)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Standard_D2_v2 does not support encryption at host, but should still be included when encryption is not required
@@ -536,13 +536,13 @@ var _ = Describe("InstanceType Provider", func() {
 				maxPods := int32(150)
 				nodeClass.Spec.MaxPods = lo.ToPtr(maxPods)
 
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
 				ExpectCapacityPodsToMatchMaxPods(instanceTypes, maxPods)
 
 				nodeClass.Spec.MaxPods = lo.ToPtr(int32(100))
 				// Expect that an updated nodeclass is reflected
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
 				ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(100))
 			})
@@ -556,7 +556,7 @@ var _ = Describe("InstanceType Provider", func() {
 				)
 				Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("azure"))
 				Expect(options.FromContext(ctx).NetworkPluginMode).To(Equal(""))
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
 				ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(30))
 			})
@@ -564,7 +564,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// The default options should be using azure cni + overlay networking
 				Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("azure"))
 				Expect(options.FromContext(ctx).NetworkPluginMode).To(Equal("overlay"))
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
 				ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(250))
 			})
@@ -577,7 +577,7 @@ var _ = Describe("InstanceType Provider", func() {
 				)
 				Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("none"))
 
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
 				ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(250))
 			})
@@ -590,7 +590,7 @@ var _ = Describe("InstanceType Provider", func() {
 				)
 				Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("kubenet"))
 
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
 				ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(110))
 			})
@@ -604,7 +604,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
 					VMMemoryOverheadPercent: lo.ToPtr[float64](0),
 				}))
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 			})
 

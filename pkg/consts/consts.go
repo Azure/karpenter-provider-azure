@@ -40,6 +40,7 @@ const (
 	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
 	ProvisionModeAKSMachineAPI       = "aksmachineapi"
+	ProvisionModeNonAKS              = "nonaks"
 
 	// Provisioning states for AKS Machine objects.
 	// The SDK's Machine.Properties.ProvisioningState is typed as *string (no typed constants).

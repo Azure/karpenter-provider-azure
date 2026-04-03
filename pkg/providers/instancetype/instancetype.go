@@ -26,7 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -117,7 +119,29 @@ func (t TaxBrackets) Calculate(amount float64) float64 {
 	return tax
 }
 
-func NewInstanceType(
+func NewInstanceTypeAzure(
+	ctx context.Context,
+	sku *skewer.SKU,
+	vmsize *skewer.VMSizeType,
+	region string,
+	offerings cloudprovider.Offerings,
+	nodeClass *v1alpha1.AzureNodeClass,
+	architecture string,
+) *cloudprovider.InstanceType {
+	return &cloudprovider.InstanceType{
+		Name:         sku.GetName(),
+		Requirements: computeRequirementsAzure(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, nodeClass),
+		Offerings:    offerings,
+		Capacity:     computeCapacity(ctx, sku, *nodeClass.GetOSDiskSizeGB(), utils.GetMaxPods(nodeClass, consts.NetworkPluginNone, consts.NetworkPluginModeNone)),
+		Overhead: &cloudprovider.InstanceTypeOverhead{
+			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
+			SystemReserved:    SystemReservedResources(),
+			EvictionThreshold: EvictionThreshold(),
+		},
+	}
+}
+
+func NewInstanceTypeAKS(
 	ctx context.Context,
 	sku *skewer.SKU,
 	vmsize *skewer.VMSizeType,
@@ -129,9 +153,9 @@ func NewInstanceType(
 ) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
-		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, nodeClass),
+		Requirements: computeRequirementsAKS(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, nodeClass),
 		Offerings:    offerings,
-		Capacity:     computeCapacity(ctx, sku, nodeClass),
+		Capacity:     computeCapacity(ctx, sku, *nodeClass.GetOSDiskSizeGB(), utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
 			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
 			SystemReserved:    SystemReservedResources(),
@@ -140,14 +164,13 @@ func NewInstanceType(
 	}
 }
 
-func computeRequirements(
-	opts *options.Options,
+func computeRequirementsCommon(
 	sku *skewer.SKU,
 	vmsize *skewer.VMSizeType,
 	architecture string,
 	offerings cloudprovider.Offerings,
 	region string,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass v1beta1.NodeClass,
 ) scheduling.Requirements {
 	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
@@ -168,16 +191,9 @@ func computeRequirements(
 		// Well Known to Azure
 		scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
 		scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
-		scheduling.NewRequirement(v1beta1.AKSLabelCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),      // AKS domain.
-		scheduling.NewRequirement(v1beta1.AKSLabelMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // AKS domain.
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUManufacturer, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUName, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1beta1.AKSLabelCluster, corev1.NodeSelectorOpIn, utils.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)),
-		scheduling.NewRequirement(v1beta1.AKSLabelMode, corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser),
-		scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
-		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))),
-		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist), // AKS only sets this label if FIPS is enabled, otherwise it's expected to be empty
 
 		// composites
 		scheduling.NewRequirement(v1beta1.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
@@ -192,7 +208,6 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsPremiumIO())),
 		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsAcceleratedNetworkingSupported())),
 		scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
-		// all additive feature initialized elsewhere
 	)
 
 	// composites
@@ -206,6 +221,47 @@ func computeRequirements(
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
 	setRequirementsVersion(requirements, vmsize)
+
+	return requirements
+}
+
+// computeRequirementsAzure builds requirements for AzureNodeClass — common requirements only,
+// no AKS-specific labels. AzureNodeClass VMs don't join AKS clusters and shouldn't carry
+// AKS cluster membership, mode, OSSKU, or FIPS labels.
+func computeRequirementsAzure(
+	opts *options.Options,
+	sku *skewer.SKU,
+	vmsize *skewer.VMSizeType,
+	architecture string,
+	offerings cloudprovider.Offerings,
+	region string,
+	nodeClass *v1alpha1.AzureNodeClass,
+) scheduling.Requirements {
+	return computeRequirementsCommon(sku, vmsize, architecture, offerings, region, nodeClass)
+}
+
+// computeRequirementsAKS adds AKS-specific labels (kubernetes.azure.com domain) on top of common requirements.
+func computeRequirementsAKS(
+	opts *options.Options,
+	sku *skewer.SKU,
+	vmsize *skewer.VMSizeType,
+	architecture string,
+	offerings cloudprovider.Offerings,
+	region string,
+	nodeClass *v1beta1.AKSNodeClass,
+) scheduling.Requirements {
+	requirements := computeRequirementsCommon(sku, vmsize, architecture, offerings, region, nodeClass)
+
+	// Well-known to AKS
+	requirements.Add(
+		scheduling.NewRequirement(v1beta1.AKSLabelCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
+		scheduling.NewRequirement(v1beta1.AKSLabelMemory, corev1.NodeSelectorOpIn, fmt.Sprint(memoryMiB(sku))),
+		scheduling.NewRequirement(v1beta1.AKSLabelCluster, corev1.NodeSelectorOpIn, utils.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)),
+		scheduling.NewRequirement(v1beta1.AKSLabelMode, corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser),
+		scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
+		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))),
+		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist),
+	)
 	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
 		requirements[v1beta1.AKSLabelFIPSEnabled].Insert("true")
 	}
@@ -254,12 +310,12 @@ func getArchitecture(architecture string) string {
 	return architecture // unrecognized
 }
 
-func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) corev1.ResourceList {
+func computeCapacity(ctx context.Context, sku *skewer.SKU, osDiskSizeGB int32, maxPods int32) corev1.ResourceList {
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
-		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
-		corev1.ResourcePods:                   *pods(ctx, nodeClass),
+		corev1.ResourceEphemeralStorage:       *ephemeralStorage(osDiskSizeGB),
+		corev1.ResourcePods:                   *pods(maxPods),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 	}
 }
@@ -301,13 +357,12 @@ func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGi
 	return memory
 }
 
-func ephemeralStorage(nodeClass *v1beta1.AKSNodeClass) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
+func ephemeralStorage(osDiskSizeGB int32) *resource.Quantity {
+	return resource.NewScaledQuantity(int64(osDiskSizeGB), resource.Giga)
 }
 
-func pods(ctx context.Context, nc *v1beta1.AKSNodeClass) *resource.Quantity {
-	networkPlugin, networkPluginMode := options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode
-	return resource.NewQuantity(int64(utils.GetMaxPods(nc, networkPlugin, networkPluginMode)), resource.DecimalSI)
+func pods(maxPods int32) *resource.Quantity {
+	return resource.NewQuantity(int64(maxPods), resource.DecimalSI)
 }
 
 func SystemReservedResources() corev1.ResourceList {

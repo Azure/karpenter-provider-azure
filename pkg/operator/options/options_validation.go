@@ -118,10 +118,27 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+	validModes := []string{
+		consts.ProvisionModeAKSScriptless,
+		consts.ProvisionModeBootstrappingClient,
+		consts.ProvisionModeAKSMachineAPI,
+		consts.ProvisionModeNonAKS,
+	}
+	isValid := false
+	for _, m := range validModes {
+		if o.ProvisionMode == m {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
+	case consts.ProvisionModeNonAKS:
+		if o.ManageExistingAKSMachines {
+			return fmt.Errorf("manage-existing-aksmachines cannot be true when provision-mode is nonaks")
+		}
 	case consts.ProvisionModeBootstrappingClient:
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
@@ -138,17 +155,22 @@ func (o *Options) validateProvisionMode() error {
 }
 
 func (o *Options) validateRequiredFields() error {
-	if o.ClusterEndpoint == "" {
-		return fmt.Errorf("missing field, cluster-endpoint")
-	}
-	if o.ClusterName == "" {
-		return fmt.Errorf("missing field, cluster-name")
-	}
-	if o.KubeletClientTLSBootstrapToken == "" {
-		return fmt.Errorf("missing field, kubelet-bootstrap-token")
-	}
-	if o.SSHPublicKey == "" {
-		return fmt.Errorf("missing field, ssh-public-key")
+	// azurevm mode only requires SubnetID and NodeResourceGroup — AKS-specific
+	// fields (ClusterEndpoint, ClusterName, bootstrap token, SSH key) are not needed
+	// because the user manages their own cluster and bootstrap process.
+	if o.ProvisionMode != consts.ProvisionModeNonAKS {
+		if o.ClusterEndpoint == "" {
+			return fmt.Errorf("missing field, cluster-endpoint")
+		}
+		if o.ClusterName == "" {
+			return fmt.Errorf("missing field, cluster-name")
+		}
+		if o.KubeletClientTLSBootstrapToken == "" {
+			return fmt.Errorf("missing field, kubelet-bootstrap-token")
+		}
+		if o.SSHPublicKey == "" {
+			return fmt.Errorf("missing field, ssh-public-key")
+		}
 	}
 	if o.SubnetID == "" {
 		return fmt.Errorf("missing field, vnet-subnet-id")

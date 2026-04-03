@@ -139,9 +139,7 @@ func GetScaleSetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
 	return ""
 }
 
-// BuildNodeClaimFromVM converts an Azure VirtualMachine to a Karpenter NodeClaim.
-// This parallels BuildNodeClaimFromAKSMachine in aksmachineinstanceutils.go.
-func BuildNodeClaimFromVM(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *corecloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+func BuildNodeClaimFromVMCommon(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *corecloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
 	nodeClaim := &karpv1.NodeClaim{}
 	labels := map[string]string{}
 	annotations := map[string]string{}
@@ -159,7 +157,6 @@ func BuildNodeClaimFromVM(ctx context.Context, vm *armcompute.VirtualMachine, in
 	}
 
 	labels[karpv1.CapacityTypeLabelKey] = GetCapacityTypeFromVM(vm)
-	labels[v1beta1.AKSLabelScaleSetPriority] = GetScaleSetPriorityLabelFromVM(vm)
 
 	if tag, ok := vm.Tags[NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
@@ -188,6 +185,27 @@ func BuildNodeClaimFromVM(ctx context.Context, vm *armcompute.VirtualMachine, in
 	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
 		nodeClaim.Status.ImageID = utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)
 	}
+	return nodeClaim, nil
+}
+
+func BuildNodeClaimFromAzureVM(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *corecloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	nodeClaim, err := BuildNodeClaimFromVMCommon(ctx, vm, instanceType)
+	if err != nil {
+		return nil, err
+	}
+
+	return nodeClaim, nil
+}
+
+// BuildNodeClaimFromAKSVM converts an Azure VirtualMachine to a Karpenter NodeClaim.
+// This parallels BuildNodeClaimFromAKSMachine in aksmachineinstanceutils.go.
+func BuildNodeClaimFromAKSVM(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *corecloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	nodeClaim, err := BuildNodeClaimFromVMCommon(ctx, vm, instanceType)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeClaim.Labels[v1beta1.AKSLabelScaleSetPriority] = GetScaleSetPriorityLabelFromVM(vm)
 	return nodeClaim, nil
 }
 

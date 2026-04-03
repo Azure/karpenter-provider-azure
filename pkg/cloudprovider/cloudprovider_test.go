@@ -62,7 +62,7 @@ func TestGenerateNodeClaimName(t *testing.T) {
 	}
 }
 
-func TestBuildNodeClaimFromVM_NilProperties(t *testing.T) {
+func TestBuildNodeClaimFromAKSVM_NilProperties(t *testing.T) {
 	tests := []struct {
 		name                string
 		vm                  *armcompute.VirtualMachine
@@ -105,7 +105,7 @@ func TestBuildNodeClaimFromVM_NilProperties(t *testing.T) {
 			ctx := context.Background()
 
 			before := time.Now()
-			nodeClaim, err := instance.BuildNodeClaimFromVM(ctx, tt.vm, nil)
+			nodeClaim, err := instance.BuildNodeClaimFromAKSVM(ctx, tt.vm, nil)
 			after := time.Now()
 
 			g.Expect(err).ToNot(HaveOccurred())

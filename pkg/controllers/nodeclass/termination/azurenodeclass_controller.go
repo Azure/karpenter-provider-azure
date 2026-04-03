@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/types"
@@ -44,20 +44,20 @@ import (
 	"sigs.k8s.io/karpenter/pkg/events"
 )
 
-type AKSNodeClassController struct {
+type AzureNodeClassController struct {
 	kubeClient client.Client
 	recorder   events.Recorder
 }
 
-func NewAKSNodeClassController(kubeClient client.Client, recorder events.Recorder) *AKSNodeClassController {
-	return &AKSNodeClassController{
+func NewAzureNodeClassController(kubeClient client.Client, recorder events.Recorder) *AzureNodeClassController {
+	return &AzureNodeClassController{
 		kubeClient: kubeClient,
 		recorder:   recorder,
 	}
 }
 
-func (c *AKSNodeClassController) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	ctx = injection.WithControllerName(ctx, "aksnodeclass.termination")
+func (c *AzureNodeClassController) Reconcile(ctx context.Context, nodeClass *v1alpha1.AzureNodeClass) (reconcile.Result, error) {
+	ctx = injection.WithControllerName(ctx, "azurenodeclass.termination")
 
 	if !nodeClass.GetDeletionTimestamp().IsZero() {
 		return c.finalize(ctx, nodeClass)
@@ -65,9 +65,9 @@ func (c *AKSNodeClassController) Reconcile(ctx context.Context, nodeClass *v1bet
 	return reconcile.Result{}, nil
 }
 
-func (c *AKSNodeClassController) finalize(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+func (c *AzureNodeClassController) finalize(ctx context.Context, nodeClass *v1alpha1.AzureNodeClass) (reconcile.Result, error) {
 	stored := nodeClass.DeepCopy()
-	if !controllerutil.ContainsFinalizer(nodeClass, v1beta1.TerminationFinalizer) {
+	if !controllerutil.ContainsFinalizer(nodeClass, v1alpha1.TerminationFinalizer) {
 		return reconcile.Result{}, nil
 	}
 	nodeClaimList := &karpv1.NodeClaimList{}
@@ -75,13 +75,13 @@ func (c *AKSNodeClassController) finalize(ctx context.Context, nodeClass *v1beta
 		return reconcile.Result{}, fmt.Errorf("listing nodeclaims that are using nodeclass, %w", err)
 	}
 	if len(nodeClaimList.Items) > 0 {
-		c.recorder.Publish(WaitingOnNodeClaimTerminationEvent(nodeClass, lo.Map(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) string { return nc.Name })))
+		c.recorder.Publish(WaitingOnNodeClaimTerminationEventForAzureNodeClass(nodeClass, lo.Map(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) string { return nc.Name })))
 		return reconcile.Result{RequeueAfter: time.Minute * 10}, nil // periodically fire the event
 	}
 
 	// any other processing before removing NodeClass goes here
 
-	controllerutil.RemoveFinalizer(nodeClass, v1beta1.TerminationFinalizer)
+	controllerutil.RemoveFinalizer(nodeClass, v1alpha1.TerminationFinalizer)
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
 		// We use client.MergeFromWithOptimisticLock because patching a list with a JSON merge patch
 		// can cause races due to the fact that it fully replaces the list on a change
@@ -97,15 +97,19 @@ func (c *AKSNodeClassController) finalize(ctx context.Context, nodeClass *v1beta
 	return reconcile.Result{}, nil
 }
 
-func (c *AKSNodeClassController) Register(_ context.Context, m manager.Manager) error {
+func (c *AzureNodeClassController) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named("aksnodeclass.termination").
-		For(&v1beta1.AKSNodeClass{}).
+		Named("azurenodeclass.termination").
+		For(&v1alpha1.AzureNodeClass{}).
 		Watches(
 			&karpv1.NodeClaim{},
 			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
 				nc := o.(*karpv1.NodeClaim)
 				if nc.Spec.NodeClassRef == nil {
+					return nil
+				}
+				// Only enqueue for NodeClaims that reference AzureNodeClass
+				if nc.Spec.NodeClassRef.Kind != "AzureNodeClass" {
 					return nil
 				}
 				return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: nc.Spec.NodeClassRef.Name}}}
@@ -118,9 +122,7 @@ func (c *AKSNodeClassController) Register(_ context.Context, m manager.Manager) 
 			}),
 		).
 		WithOptions(controller.Options{
-			RateLimiter: reasonable.RateLimiter(),
-			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
-			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
+			RateLimiter:             reasonable.RateLimiter(),
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))

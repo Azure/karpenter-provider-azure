@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/samber/lo"
@@ -57,8 +58,9 @@ func (p *DefaultVMProvider) resolveImageID(nodeClass *v1beta1.AKSNodeClass, inst
 }
 
 // resolveSubnetID returns the subnet to use for the VM's NIC.
-func resolveSubnetID(nodeClass *v1beta1.AKSNodeClass, opts *options.Options) string {
-	return lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
+// Accepts the NodeClass interface so it works for both AKSNodeClass and AzureNodeClass.
+func resolveSubnetID(nodeClass v1beta1.NodeClass, opts *options.Options) string {
+	return lo.Ternary(nodeClass.GetVNETSubnetID() != nil, lo.FromPtr(nodeClass.GetVNETSubnetID()), opts.SubnetID)
 }
 
 // resolveBootstrap builds bootstrap data (custom data + CSE) for the VM.
@@ -308,7 +310,7 @@ func getAgentbakerNetworkPlugin(opts *options.Options) string {
 // configureStorageProfile builds the StorageProfile for the VM.
 func (p *DefaultVMProvider) configureStorageProfile(
 	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass v1beta1.NodeClass,
 	instanceType *corecloudprovider.InstanceType,
 	imageID string,
 	vmName string,
@@ -317,7 +319,7 @@ func (p *DefaultVMProvider) configureStorageProfile(
 
 	osDisk := &armcompute.OSDisk{
 		Name:         lo.ToPtr(vmName),
-		DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
+		DiskSizeGB:   nodeClass.GetOSDiskSizeGB(),
 		CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 		DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 	}
@@ -381,22 +383,28 @@ func configureNetworkProfile(nicReference string) *armcompute.NetworkProfile {
 
 // configureOSProfile builds the OSProfile for the VM.
 func configureOSProfile(opts *options.Options, vmName string, customData string) *armcompute.OSProfile {
-	return &armcompute.OSProfile{
+	osProfile := &armcompute.OSProfile{
 		AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
 		ComputerName:  &vmName,
 		CustomData:    lo.ToPtr(customData),
 		LinuxConfiguration: &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: lo.ToPtr(true),
-			SSH: &armcompute.SSHConfiguration{
-				PublicKeys: []*armcompute.SSHPublicKey{
-					{
-						KeyData: lo.ToPtr(opts.SSHPublicKey),
-						Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
-					},
-				},
-			},
 		},
 	}
+	// Only configure SSH when an SSH public key is provided. In azurevm mode the key is
+	// optional (users manage their own image's SSH configuration), while AKS modes always
+	// require it. Setting an empty key would cause the Azure API to reject the request.
+	if opts.SSHPublicKey != "" {
+		osProfile.LinuxConfiguration.SSH = &armcompute.SSHConfiguration{
+			PublicKeys: []*armcompute.SSHPublicKey{
+				{
+					KeyData: lo.ToPtr(opts.SSHPublicKey),
+					Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
+				},
+			},
+		}
+	}
+	return osProfile
 }
 
 // configureBillingProfile sets a default MaxPrice of -1 for Spot.
@@ -409,13 +417,37 @@ func configureBillingProfile(vmProps *armcompute.VirtualMachineProperties, capac
 	}
 }
 
+// resolveImageReference determines the correct Azure ImageReference field based on
+// the image ID format. Azure requires different fields for different image sources:
+//   - /CommunityGalleries/... → CommunityGalleryImageID
+//   - /SharedGalleries/...    → SharedGalleryImageID
+//   - /subscriptions/...      → ID (ARM resource ID for SIG or managed images)
+func resolveImageReference(imageID string) *armcompute.ImageReference {
+	lowerID := strings.ToLower(imageID)
+	switch {
+	case strings.HasPrefix(lowerID, "/communitygalleries/"):
+		return &armcompute.ImageReference{
+			CommunityGalleryImageID: lo.ToPtr(imageID),
+		}
+	case strings.HasPrefix(lowerID, "/sharedgalleries/"):
+		return &armcompute.ImageReference{
+			SharedGalleryImageID: lo.ToPtr(imageID),
+		}
+	default:
+		return &armcompute.ImageReference{
+			ID: lo.ToPtr(imageID),
+		}
+	}
+}
+
 // configureSecurityProfile sets security-related properties.
-func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+// Accepts the NodeClass interface so it works for both AKSNodeClass and AzureNodeClass.
+func configureSecurityProfile(vmProps *armcompute.VirtualMachineProperties, nodeClass v1beta1.NodeClass) {
+	if nodeClass.GetEncryptionAtHost() {
 		if vmProps.SecurityProfile == nil {
 			vmProps.SecurityProfile = &armcompute.SecurityProfile{}
 		}
-		vmProps.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+		vmProps.SecurityProfile.EncryptionAtHost = lo.ToPtr(true)
 	}
 }
 
