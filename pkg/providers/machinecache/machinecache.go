@@ -32,8 +32,10 @@ const (
 	ProvisioningStateSucceeded = "Succeeded"
 	ProvisioningStateFailed    = "Failed"
 
-	activePollingInterval     = 1 * time.Minute
-	backgroundPollingInterval = 5 * time.Minute
+	// ActiveRefreshInterval is the interval at which the cache is refreshed when there are active pollers.
+	activeRefreshInterval = 1 * time.Minute
+	// BackgroundRefreshInterval is the interval at which the cache is refreshed in the background.
+	backgroundRefreshInterval = 5 * time.Minute
 )
 
 var (
@@ -46,15 +48,16 @@ type AKSMachineNewListPager interface {
 }
 
 type cacheEntry struct {
-	machine     *armcontainerservice.Machine
-	lastUpdated time.Time
+	machine           *armcontainerservice.Machine
+	lastUpdatedUnixNs atomic.Int64 // Unix nanoseconds timestamp for thread-safe access
 }
 
 // MachineCache caches AKS machines to reduce API calls and improve performance.
 type MachineCache struct {
-	machines sync.Map // keyed by machine name (not full ARM ID), value is *cacheEntry
-	ttl      time.Duration
-	client   AKSMachineNewListPager
+	machines     sync.Map // keyed by machine name (not full ARM ID), value is *cacheEntry
+	ttl          time.Duration
+	client       AKSMachineNewListPager
+	pollInterval time.Duration
 
 	clusterResourceGroup string
 	clusterName          string
@@ -66,21 +69,21 @@ type MachineCache struct {
 	maxRetryDelay time.Duration
 
 	// Background worker fields
-	updateRequests chan struct{}      // Buffered channel (size 1) for update requests
-	workerCtx      context.Context    // Worker lifecycle context
-	workerCancel   context.CancelFunc // Cancel function for shutdown
-	updateInterval time.Duration      // Periodic update frequency (default 5 minutes)
-	wg             sync.WaitGroup     // Tracks worker goroutine for shutdown
-	activePollers  atomic.Int32
+	workerCtx    context.Context    // Worker lifecycle context
+	workerCancel context.CancelFunc // Cancel function for shutdown
+	wg           sync.WaitGroup     // Tracks worker goroutine for shutdown
+
+	activePollers atomic.Int32
 }
 
-func NewMachineCache(ctx context.Context, ttl time.Duration, client AKSMachineNewListPager, interval time.Duration, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
+func NewMachineCache(ctx context.Context, client AKSMachineNewListPager, ttl, pollInterval time.Duration, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
 	workerCtx, workerCancel := context.WithCancel(ctx)
 
 	cache := &MachineCache{
 		// machines is a sync.Map, zero value is ready to use
 		ttl:                  ttl,
 		client:               client,
+		pollInterval:         pollInterval,
 		clusterResourceGroup: clusterResourceGroup,
 		clusterName:          clusterName,
 		aksMachinesPoolName:  aksMachinesPoolName,
@@ -89,10 +92,8 @@ func NewMachineCache(ctx context.Context, ttl time.Duration, client AKSMachineNe
 		maxRetryDelay:        30 * time.Second,
 
 		// Initialize background worker
-		updateRequests: make(chan struct{}, 1), // Buffer of 1 coalesces requests
-		workerCtx:      workerCtx,
-		workerCancel:   workerCancel,
-		updateInterval: 5 * time.Minute, // Periodic refresh every 5 minutes
+		workerCtx:    workerCtx,
+		workerCancel: workerCancel,
 	}
 
 	// Start background worker
@@ -107,7 +108,12 @@ func (c *MachineCache) isExpired(entry *cacheEntry) bool {
 	if entry == nil {
 		return true
 	}
-	return time.Since(entry.lastUpdated) > 10*time.Minute
+	lastUpdatedNanos := entry.lastUpdatedUnixNs.Load()
+	if lastUpdatedNanos == 0 {
+		return true
+	}
+	lastUpdated := time.Unix(0, lastUpdatedNanos)
+	return time.Since(lastUpdated) > 10*time.Minute
 }
 
 // Get retrieves a machine from the cache by name.
@@ -119,7 +125,9 @@ func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, er
 
 	entry := value.(*cacheEntry)
 	if c.isExpired(entry) {
-		return entry.machine, fmt.Errorf("stale entry for machine %q. Last updated %v", machineName, entry.lastUpdated)
+		lastUpdatedNanos := entry.lastUpdatedUnixNs.Load()
+		lastUpdated := time.Unix(0, lastUpdatedNanos)
+		return entry.machine, fmt.Errorf("stale entry for machine %q. Last updated %v", machineName, lastUpdated)
 	}
 
 	return entry.machine, nil
@@ -139,34 +147,25 @@ func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine
 	return machines, nil
 }
 
-// get retrieves a machine from the cache by name.
-func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bool) {
-	value, ok := c.machines.Load(machineName)
-	if !ok {
-		return nil, false
-	}
-	entry := value.(*cacheEntry)
-	return entry.machine, true
-}
-
-// updateWorker runs in a background goroutine and handles both periodic and on-demand cache updates.
-// It stops when workerCtx is canceled, ensuring clean shutdown via Shutdown().
 func (c *MachineCache) updateWorker() {
 	defer c.wg.Done()
-
-	ticker := time.NewTicker(c.updateInterval)
-	defer ticker.Stop()
 
 	for {
 		select {
 		case <-c.workerCtx.Done():
 			return
+		default:
+			// Perform cache update
+			if err := c.updateCache(c.workerCtx); err != nil {
+				log.FromContext(c.workerCtx).Error(err, "failed to update machine cache")
+			}
 
-		case <-ticker.C:
-			// Periodic refresh to keep cache fresh
-			if err := c.update(c.workerCtx); err != nil {
-				// Log error but continue - next tick will retry
-				log.FromContext(c.workerCtx).Error(err, "background cache update failed (periodic)")
+			if c.activePollers.Load() > 0 {
+				// If there are active pollers, update more frequently
+				time.Sleep(activeRefreshInterval)
+			} else {
+				// Otherwise, use the regular interval
+				time.Sleep(backgroundRefreshInterval)
 			}
 		}
 	}
@@ -182,8 +181,11 @@ func (c *MachineCache) Shutdown() {
 
 // PollUntilDone polls the cache for the specified AKS machine until it reaches a terminal state or the context is canceled.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
-	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name, "interval", c.interval.String())
-	ticker := time.NewTicker(c.interval)
+	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name, "interval", c.pollInterval.String())
+	c.activePollers.Add(1)
+	defer c.activePollers.Add(-1)
+
+	ticker := time.NewTicker(c.pollInterval)
 	defer ticker.Stop()
 
 	var retryAttemptsLeft int
@@ -207,8 +209,8 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 // pollOnce performs a single cache-based poll and returns (provisioningErr, pollerErr, done).
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
 	// Get machine from cache (may be stale, but worker is updating)
-	machine, ok := c.get(aksMachineName)
-	if !ok {
+	machine, err := c.Get(aksMachineName)
+	if err != nil {
 		shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
 		if backoffErr != nil {
 			return nil, backoffErr, true
@@ -322,7 +324,7 @@ func (c *MachineCache) resetRetryState(retryAttemptsLeft *int, currentRetryDelay
 	*currentRetryDelay = c.retryDelay
 }
 
-func (c *MachineCache) update(ctx context.Context) error {
+func (c *MachineCache) updateCache(ctx context.Context) error {
 	now := time.Now()
 	defer func() {
 		log.FromContext(ctx).Info("finished updating machine list cache",
@@ -362,17 +364,14 @@ func (c *MachineCache) update(ctx context.Context) error {
 		)
 
 		for _, aksMachine := range page.Value {
-			if isValid(ctx, aksMachine) {
-				if aksMachine.Name != nil {
-					entry := &cacheEntry{
-						machine:     aksMachine,
-						lastUpdated: updateTime,
-					}
-					c.machines.Store(*aksMachine.Name, entry)
-					fetchedMachineNames[*aksMachine.Name] = struct{}{}
+			if isValid(ctx, aksMachine) && aksMachine.Name != nil {
+				entry := &cacheEntry{
+					machine: aksMachine,
 				}
+				entry.lastUpdatedUnixNs.Store(updateTime.UnixNano())
+				c.machines.Store(*aksMachine.Name, entry)
+				fetchedMachineNames[*aksMachine.Name] = struct{}{}
 			}
-
 		}
 
 	}
