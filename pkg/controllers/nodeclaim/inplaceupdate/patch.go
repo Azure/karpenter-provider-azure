@@ -28,6 +28,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -166,7 +167,7 @@ func patchVMTags(
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,
 ) bool {
-	expectedTags := instance.Tags(
+	expectedTags := instance.TagsAKS(
 		params.opts,
 		params.nodeClass,
 		params.nodeClaim,
@@ -209,4 +210,19 @@ func patchAKSMachineTags(
 
 	patchingAKSMachine.Properties.Tags = expectedTags
 	return true
+}
+
+// CalculateAzureVMTagPatch computes the tag patch for an AzureNodeClass VM.
+// Returns the expected tags if they differ from the current VM tags, or nil if no change is needed.
+func CalculateAzureVMTagPatch(
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1alpha1.AzureNodeClass,
+	currentVM *armcompute.VirtualMachine,
+) map[string]*string {
+	expectedTags := instance.TagsAzure(options, nodeClass, nodeClaim)
+	if tagsEqual(expectedTags, currentVM.Tags) {
+		return nil
+	}
+	return expectedTags
 }

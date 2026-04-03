@@ -26,6 +26,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -47,7 +48,33 @@ const (
 	NoDrift cloudprovider.DriftReason = ""
 )
 
-func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isAzureNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.AzureNodeClass) (cloudprovider.DriftReason, error) {
+	// TODO: if we find more expensive checks, such as reading VMs or NICs from Azure, are being duplicated between checks, we should
+	//       produce a lazy at-most-once that allows a check to cache a value for later checks to read.
+
+	if nodeClaim == nil || nodeClaim.Status.ProviderID == "" {
+		// This is technically not possible (as of the time of writing). IsDrifted() won't be called by core until NodeClaim is launched.
+		return "", fmt.Errorf("nodeclaim %s is missing provider ID", nodeClaim.Name)
+	}
+
+	checks := []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.AzureNodeClass) (cloudprovider.DriftReason, error){
+		c.areAzureStaticFieldsDrifted,
+	}
+
+	for _, check := range checks {
+		driftReason, err := check(ctx, nodeClaim, nodeClass)
+		if err != nil {
+			return "", err
+		}
+		if driftReason != "" {
+			return driftReason, nil
+		}
+	}
+
+	return "", nil
+}
+
+func (c *CloudProvider) isAKSNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	// TODO: if we find more expensive checks, such as reading VMs or NICs from Azure, are being duplicated between checks, we should
 	//       produce a lazy at-most-once that allows a check to cache a value for later checks to read.
 
@@ -59,7 +86,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	var checks []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error)
 	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
-			c.areStaticFieldsDrifted,
+			c.areAKSStaticFieldsDrifted,
 			c.isK8sVersionDrifted,
 			c.isImageVersionDrifted,
 			c.isMachineDrifted,
@@ -67,7 +94,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	} else {
 		// For legacy nodes
 		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
-			c.areStaticFieldsDrifted,
+			c.areAKSStaticFieldsDrifted,
 			c.isK8sVersionDrifted,
 			c.isKubeletIdentityDrifted,
 			c.isImageVersionDrifted,
@@ -87,7 +114,34 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	return "", nil
 }
 
-func (c *CloudProvider) areStaticFieldsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) areAzureStaticFieldsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha1.AzureNodeClass) (cloudprovider.DriftReason, error) {
+	logger := log.FromContext(ctx)
+
+	nodeClassHash, foundNodeClassHash := nodeClass.Annotations[v1alpha1.AnnotationAzureNodeClassHash]
+	nodeClassHashVersion, foundNodeClassHashVersion := nodeClass.Annotations[v1alpha1.AnnotationAzureNodeClassHashVersion]
+	nodeClaimHash, foundNodeClaimHash := nodeClaim.Annotations[v1alpha1.AnnotationAzureNodeClassHash]
+	nodeClaimHashVersion, foundNodeClaimHashVersion := nodeClaim.Annotations[v1alpha1.AnnotationAzureNodeClassHashVersion]
+
+	if !foundNodeClassHash || !foundNodeClaimHash || !foundNodeClassHashVersion || !foundNodeClaimHashVersion {
+		return "", nil
+	}
+	// validate that the hash version for the AzureNodeClass is the same as the NodeClaim before evaluating for static drift
+	if nodeClassHashVersion != nodeClaimHashVersion {
+		return "", nil
+	}
+
+	if nodeClassHash != nodeClaimHash {
+		logger.V(1).Info("drift triggered as nodeClassHash != nodeClaimHash",
+			"driftType", NodeClassDrift,
+			"expectedHash", nodeClassHash,
+			"actualHash", nodeClaimHash)
+		return NodeClassDrift, nil
+	}
+
+	return "", nil
+}
+
+func (c *CloudProvider) areAKSStaticFieldsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
 
 	nodeClassHash, foundNodeClassHash := nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHash]

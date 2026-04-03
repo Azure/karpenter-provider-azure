@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -35,6 +36,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -76,12 +78,25 @@ func (p *VirtualMachinePromise) GetInstanceName() string {
 	return lo.FromPtr(p.VM.Name)
 }
 
+// VMProvider manages Azure Virtual Machine lifecycle operations.
+//
+// There are two separate BeginCreate methods rather than one polymorphic method because the
+// AKS and AzureVM creation paths diverge in 7 areas that are fundamentally different logic,
+// not just different types: image resolution (AKS image families vs user-provided imageID),
+// bootstrap (AKS CSE/cloud-init vs raw userData), NIC setup (AKS LB backend pools + NSG vs
+// bare NIC), VM extensions (CSE + AKS billing vs none), identity (AKS-managed vs user-managed),
+// storage profile (ephemeral disk logic + AKS CIG/SIG vs simple OS disk), and error handling.
+// Forcing them through a shared entry point would require either an adapter pattern
+// (converting AzureNodeClass → AKSNodeClass, which creates lie-objects) or deep conditional
+// branching within a single function.
 type VMProvider interface {
-	BeginCreate(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
+	BeginCreateAKS(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
+	BeginCreateAzure(context.Context, *v1alpha1.AzureNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
-	Update(context.Context, string, armcompute.VirtualMachineUpdate) error
+	UpdateAKS(context.Context, string, armcompute.VirtualMachineUpdate) error
+	UpdateAzure(context.Context, string, armcompute.VirtualMachineUpdate) error
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
 	DeleteNic(context.Context, string) error
 	ListNics(context.Context) ([]*armnetwork.Interface, error)
@@ -163,25 +178,20 @@ func NewDefaultVMProvider(
 	}
 }
 
-// BeginCreate creates an instance given the constraints.
-// instanceTypes should be sorted by priority for spot capacity type.
-// Note that the returned instance may not be finished provisioning yet.
-// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due to invalid user input, and similar, will have the error returned here.
-// Errors that occur on the "async side" of the VM create (after the request is accepted) will be returned from VirtualMachinePromise.Wait().
-func (p *DefaultVMProvider) BeginCreate(
+func (p *DefaultVMProvider) beginCreateCommon(
 	ctx context.Context,
-	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
+	vmPromise *VirtualMachinePromise,
+	beginLaunchInstanceErr error,
 ) (*VirtualMachinePromise, error) {
-	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
-	if err != nil {
+	if beginLaunchInstanceErr != nil {
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
 		}
-		return nil, err
+		return nil, beginLaunchInstanceErr
 	}
 	vm := vmPromise.VM
 	zone, err := utils.MakeAKSLabelZoneFromVM(vm)
@@ -199,10 +209,63 @@ func (p *DefaultVMProvider) BeginCreate(
 	return vmPromise, nil
 }
 
-// Update updates the VM with the given updates. If Tags are specified, the tags are also updated on the associated network interface and VM extensions.
+// BeginCreateAzure creates a standalone Azure VM instance for AzureNodeClass (non-AKS).
+func (p *DefaultVMProvider) BeginCreateAzure(
+	ctx context.Context,
+	nodeClass *v1alpha1.AzureNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*VirtualMachinePromise, error) {
+	vmPromise, err := p.beginLaunchInstanceAzure(ctx, nodeClass, nodeClaim, instanceTypes)
+	return p.beginCreateCommon(ctx, nodeClaim, instanceTypes, vmPromise, err)
+}
+
+// BeginCreateAKS creates an instance given the constraints.
+// instanceTypes should be sorted by priority for spot capacity type.
+// Note that the returned instance may not be finished provisioning yet.
+// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due to invalid user input, and similar, will have the error returned here.
+// Errors that occur on the "async side" of the VM create (after the request is accepted) will be returned from VirtualMachinePromise.Wait().
+func (p *DefaultVMProvider) BeginCreateAKS(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*VirtualMachinePromise, error) {
+	vmPromise, err := p.beginLaunchInstanceAKS(ctx, nodeClass, nodeClaim, instanceTypes)
+	return p.beginCreateCommon(ctx, nodeClaim, instanceTypes, vmPromise, err)
+}
+
+func (p *DefaultVMProvider) UpdateAzure(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
+	if update.Tags != nil {
+		// If there are tags for other resources, do those first. This is a hedge to avoid updating the VM first which may cause us to think subsequent updates aren't needed
+		// because the VM already has the updates
+
+		// Update NIC tags (NIC is named the same as the VM)
+		_, err := p.azClient.NetworkInterfacesClient().UpdateTags(
+			ctx,
+			p.resourceGroup,
+			vmName,
+			armnetwork.TagsObject{
+				Tags: update.Tags,
+			},
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("updating NIC tags for %q: %w", vmName, err)
+		}
+	}
+
+	err := UpdateVirtualMachine(ctx, p.azClient.VirtualMachinesClient(), p.resourceGroup, vmName, update)
+	if err != nil {
+		return fmt.Errorf("updating VM %q: %w", vmName, err)
+	}
+
+	return nil
+}
+
 // Note that this means that this method can fail if the extensions have not been created yet. It is expected that the caller handles this and retries the update
 // to propagate the tags to the extensions once they're created.
-func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
+func (p *DefaultVMProvider) UpdateAKS(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
 	if update.Tags != nil {
 		// If there are tags for other resources, do those first. This is a hedge to avoid updating the VM first which may cause us to think subsequent updates aren't needed
 		// because the VM already has the updates
@@ -407,12 +470,148 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, vmName str
 	return &createResult{Poller: poller, VM: vm}, nil
 }
 
-// beginLaunchInstance starts the launch of a VM instance.
+// beginLaunchInstanceAzure starts the launch of a standalone Azure VM (non-AKS).
+// This is a simplified version of beginLaunchInstanceAKS that skips AKS-specific
+// concerns: no AKS bootstrap, no CSE, no AKS billing extension, no AKS LB
+// backend pools, no managed NSG lookup.
+//
+//nolint:gocyclo
+func (p *DefaultVMProvider) beginLaunchInstanceAzure(
+	ctx context.Context,
+	nodeClass *v1alpha1.AzureNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*VirtualMachinePromise, error) {
+	// Shared
+	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		allocationstrategy.NewInstanceOfferings(instanceTypes),
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+	)
+
+	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
+	if instanceType == nil {
+		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
+	}
+
+	// Shared
+	opts := options.FromContext(ctx)
+	resourceName := GenerateResourceName(nodeClaim.Name)
+
+	// Unique
+	imageID := lo.FromPtr(nodeClass.GetImageID())
+	if imageID == "" {
+		return nil, fmt.Errorf("AzureNodeClass %q requires imageID to be set", nodeClass.Name)
+	}
+
+	// Shared
+	subnetID := resolveSubnetID(nodeClass, opts)
+
+	// Unique
+	tags := TagsAzure(opts, nodeClass, nodeClaim)
+
+	// Unique
+	nicReference, err := p.buildAndCreateAzureNIC(ctx, resourceName, instanceType, nodeClass, subnetID, tags)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unique
+	var customData *string
+	if userData := nodeClass.GetUserData(); userData != nil && *userData != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(*userData))
+		customData = &encoded
+	}
+
+	// Shared
+	storageProfile, err := p.configureStorageProfile(ctx, nodeClass, instanceType, imageID, resourceName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Shared
+	vm := &armcompute.VirtualMachine{
+		Name:     lo.ToPtr(resourceName),
+		Location: lo.ToPtr(p.location),
+		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
+		Properties: &armcompute.VirtualMachineProperties{
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+			},
+			StorageProfile: storageProfile,
+			NetworkProfile: configureNetworkProfile(nicReference),
+			OSProfile:      configureOSProfile(opts, resourceName, lo.FromPtr(customData)),
+			Priority:       lo.ToPtr(KarpCapacityTypeToVMPriority[capacityType]),
+		},
+		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
+		Tags:  tags,
+	}
+	configureBillingProfile(vm.Properties, capacityType)
+	configureSecurityProfile(vm.Properties, nodeClass)
+
+	// Shared
+	result, err := p.createVirtualMachine(ctx, resourceName, vm, imageID, instanceType, zone, capacityType, nodeClaim.Labels[karpv1.NodePoolLabelKey])
+	if err != nil {
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, nil, instanceType.Name)
+		if skuErr != nil {
+			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+		}
+		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+		if handledError != nil {
+			return nil, handledError
+		}
+		return nil, err
+	}
+
+	// Shared
+	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
+
+	return &VirtualMachinePromise{
+		providerRef: p,
+		// No CSE, no AKS billing extension — just wait for the VM create to complete
+		WaitFunc: func() error {
+			if result.Poller == nil {
+				return nil
+			}
+
+			// Shared
+			_, err = result.Poller.PollUntilDone(ctx, nil)
+			if err != nil {
+				VMCreateFailureMetric.With(map[string]string{
+					metrics.ImageLabel:        imageID,
+					metrics.SizeLabel:         instanceType.Name,
+					metrics.ZoneLabel:         zone,
+					metrics.CapacityTypeLabel: capacityType,
+					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+					metrics.PhaseLabel:        phaseAsyncFailure,
+					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
+				}).Inc()
+
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, nil, instanceType.Name)
+				if skuErr != nil {
+					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+				}
+				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+				if handledError != nil {
+					return handledError
+				}
+				return err
+			}
+
+			// Unique
+
+			return nil
+		},
+		VM: result.VM,
+	}, nil
+}
+
+// beginLaunchInstanceAKS starts the launch of a VM instance.
 // Each concern (image, subnet, tags, NIC, bootstrap, storage, VM assembly) is resolved
 // by its own focused helper — parallel to aksmachineinstance.go's beginCreateMachine flow.
 //
 //nolint:gocyclo
-func (p *DefaultVMProvider) beginLaunchInstance(
+func (p *DefaultVMProvider) beginLaunchInstanceAKS(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
@@ -439,10 +638,10 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 
 	// Resolve subnet, tags (independent of bootstrap — no intermediate struct needed)
 	subnetID := resolveSubnetID(nodeClass, opts)
-	tags := Tags(opts, nodeClass, nodeClaim)
+	tags := TagsAKS(opts, nodeClass, nodeClaim)
 
 	// Create NIC
-	nicReference, err := p.buildAndCreateNIC(ctx, resourceName, instanceType, nodeClass, subnetID, tags)
+	nicReference, err := p.buildAndCreateAKSNIC(ctx, resourceName, instanceType, nodeClass, subnetID, tags)
 	if err != nil {
 		return nil, err
 	}

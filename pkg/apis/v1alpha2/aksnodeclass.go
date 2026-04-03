@@ -20,12 +20,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/blang/semver/v4"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
+
+// Compile-time assertion: v1alpha2 AKSNodeClass must implement NodeClass.
+var _ v1beta1.NodeClass = (*AKSNodeClass)(nil)
 
 type FIPSMode string
 
@@ -434,6 +438,20 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 	return false
 }
 
+// GetVNETSubnetID returns the VNETSubnetID from the spec.
+func (in *AKSNodeClass) GetVNETSubnetID() *string { return in.Spec.VNETSubnetID }
+
+// GetOSDiskSizeGB returns the OSDiskSizeGB from the spec.
+func (in *AKSNodeClass) GetOSDiskSizeGB() *int32 { return in.Spec.OSDiskSizeGB }
+
+// GetMaxPods returns the MaxPods from the spec, or nil if not set.
+// Callers that need a resolved value with network-plugin-aware defaults
+// should use utils.GetMaxPods().
+func (in *AKSNodeClass) GetMaxPods() *int32 { return in.Spec.MaxPods }
+
+// GetTags returns the Tags from the spec.
+func (in *AKSNodeClass) GetTags() map[string]string { return in.Spec.Tags }
+
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // Returns true for Required mode, false for Disabled mode, and for Preferred mode,
 // returns true only if the Kubernetes version is >= 1.35.
@@ -464,4 +482,8 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	default:
 		return false
 	}
+}
+
+func (in *AKSNodeClass) GetKind() string {
+	return "AKSNodeClass"
 }

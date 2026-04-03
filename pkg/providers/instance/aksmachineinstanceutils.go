@@ -312,6 +312,10 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 }
 
 func shouldAKSMachinesBeVisible(ctx context.Context) bool {
+	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeNonAKS {
+		return false
+	}
+
 	return options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI || options.FromContext(ctx).ManageExistingAKSMachines
 }
 

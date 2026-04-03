@@ -157,11 +157,9 @@ func PrettySlice[T any](s []T, maxItems int) string {
 }
 
 // GetMaxPods resolves what we should set max pods to for a given nodeclass.
-// If not specified, defaults based on network-plugin. 30 for "azure", 110 for "kubenet",
-// or 250 for "none" and network plugin mode overlay.
-func GetMaxPods(nodeClass *v1beta1.AKSNodeClass, networkPlugin, networkPluginMode string) int32 {
-	if nodeClass.Spec.MaxPods != nil {
-		return lo.FromPtr(nodeClass.Spec.MaxPods)
+func GetMaxPods(nodeClass v1beta1.NodeClass, networkPlugin, networkPluginMode string) int32 {
+	if nodeClass.GetMaxPods() != nil {
+		return lo.FromPtr(nodeClass.GetMaxPods())
 	}
 	switch {
 	case networkPlugin == consts.NetworkPluginNone:

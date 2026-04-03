@@ -350,7 +350,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			instanceTypes = lo.Filter(instanceTypes, func(i *corecloudprovider.InstanceType, _ int) bool { return i.Name == "Standard_D2_v2" })
 
 			// Since all the offerings are unavailable, this should return back an ICE error
-			instance, err := azEnv.VMInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			instance, err := azEnv.VMInstanceProvider.BeginCreateAKS(ctx, nodeClass, nodeClaim, instanceTypes)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(instance).To(BeNil())
 		},
@@ -695,7 +695,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM identities
-			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.UpdateAKS(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Identity: &armcompute.VirtualMachineIdentity{
 					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
 						"/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.ManagedIdentity/userAssignedIdentities/aks-agentpool-00000000-identity": {},
@@ -755,7 +755,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM tags
-			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.UpdateAKS(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
 					"test-tag":                    lo.ToPtr("test-value"),
@@ -805,7 +805,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM tags
-			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.UpdateAKS(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
 					"test-tag":                    lo.ToPtr("test-value"),

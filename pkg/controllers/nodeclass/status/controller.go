@@ -44,7 +44,7 @@ type reconciler interface {
 	Reconcile(context.Context, *v1beta1.AKSNodeClass) (reconcile.Result, error)
 }
 
-type Controller struct {
+type AKSNodeClassController struct {
 	kubeClient client.Client
 
 	kubernetesVersion *KubernetesVersionReconciler
@@ -55,7 +55,7 @@ type Controller struct {
 
 // TODO: Consider splitting this (and other similar constructors)
 // into some kind of builder struct to make the calling code easier to read.
-func NewController(
+func NewAKSNodeClassController(
 	kubeClient client.Client,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
@@ -63,8 +63,8 @@ func NewController(
 	subnetClient azclient.SubnetsAPI,
 	diskEncryptionSetsClient azclient.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
-) *Controller {
-	return &Controller{
+) *AKSNodeClassController {
+	return &AKSNodeClassController{
 
 		kubeClient: kubeClient,
 
@@ -75,8 +75,8 @@ func NewController(
 	}
 }
 
-func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	ctx = injection.WithControllerName(ctx, "nodeclass.status")
+func (c *AKSNodeClassController) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	ctx = injection.WithControllerName(ctx, "aksnodeclass.status")
 
 	if !controllerutil.ContainsFinalizer(nodeClass, v1beta1.TerminationFinalizer) {
 		stored := nodeClass.DeepCopy()
@@ -114,9 +114,9 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	return result.Min(results...), nil
 }
 
-func (c *Controller) Register(_ context.Context, m manager.Manager) error {
+func (c *AKSNodeClassController) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named("nodeclass.status").
+		Named("aksnodeclass.status").
 		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter: reasonable.RateLimiter(),

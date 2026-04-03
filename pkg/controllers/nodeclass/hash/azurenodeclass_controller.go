@@ -32,32 +32,32 @@ import (
 	"github.com/awslabs/operatorpkg/reasonable"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 )
 
-type AKSNodeClassController struct {
+type AzureNodeClassController struct {
 	kubeClient client.Client
 }
 
-func NewAKSNodeClassController(kubeClient client.Client) *AKSNodeClassController {
-	return &AKSNodeClassController{
+func NewAzureNodeClassController(kubeClient client.Client) *AzureNodeClassController {
+	return &AzureNodeClassController{
 		kubeClient: kubeClient,
 	}
 }
 
-func (c *AKSNodeClassController) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	ctx = injection.WithControllerName(ctx, "aksnodeclass.hash")
+func (c *AzureNodeClassController) Reconcile(ctx context.Context, nodeClass *v1alpha1.AzureNodeClass) (reconcile.Result, error) {
+	ctx = injection.WithControllerName(ctx, "azurenodeclass.hash")
 
 	stored := nodeClass.DeepCopy()
 
-	if nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion] != v1beta1.AKSNodeClassHashVersion {
+	if nodeClass.Annotations[v1alpha1.AnnotationAzureNodeClassHashVersion] != v1alpha1.AzureNodeClassHashVersion {
 		if err := c.updateNodeClaimHash(ctx, nodeClass); err != nil {
 			return reconcile.Result{}, err
 		}
 	}
 	nodeClass.Annotations = lo.Assign(nodeClass.Annotations, map[string]string{
-		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
-		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+		v1alpha1.AnnotationAzureNodeClassHash:        nodeClass.Hash(),
+		v1alpha1.AnnotationAzureNodeClassHashVersion: v1alpha1.AzureNodeClassHashVersion,
 	})
 
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
@@ -69,24 +69,22 @@ func (c *AKSNodeClassController) Reconcile(ctx context.Context, nodeClass *v1bet
 	return reconcile.Result{}, nil
 }
 
-func (c *AKSNodeClassController) Register(_ context.Context, m manager.Manager) error {
+func (c *AzureNodeClassController) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named("aksnodeclass.hash").
-		For(&v1beta1.AKSNodeClass{}).
+		Named("azurenodeclass.hash").
+		For(&v1alpha1.AzureNodeClass{}).
 		WithOptions(controller.Options{
-			RateLimiter: reasonable.RateLimiter(),
-			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
-			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
+			RateLimiter:             reasonable.RateLimiter(),
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }
 
-// Updating `aksnodeclass-hash-version` annotation inside the karpenter controller means a breaking change has been made to the hash calculation.
-// `aksnodeclass-hash` annotation on the AKSNodeClass will be updated, due to the breaking change, making the `aksnodeclass-hash` on the NodeClaim different from
-// AKSNodeClass. Since, we cannot rely on the `aksnodeclass-hash` on the NodeClaims, due to the breaking change, we will need to re-calculate the hash and update the annotation.
+// Updating `azurenodeclass-hash-version` annotation inside the karpenter controller means a breaking change has been made to the hash calculation.
+// `azurenodeclass-hash` annotation on the AzureNodeClass will be updated, due to the breaking change, making the `azurenodeclass-hash` on the NodeClaim different from
+// AzureNodeClass. Since, we cannot rely on the `azurenodeclass-hash` on the NodeClaims, due to the breaking change, we will need to re-calculate the hash and update the annotation.
 // For more information on the Drift Hash Versioning: https://github.com/kubernetes-sigs/karpenter/blob/main/designs/drift-hash-versioning.md
-func (c *AKSNodeClassController) updateNodeClaimHash(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) error {
+func (c *AzureNodeClassController) updateNodeClaimHash(ctx context.Context, nodeClass *v1alpha1.AzureNodeClass) error {
 	ncList := &karpv1.NodeClaimList{}
 	if err := c.kubeClient.List(ctx, ncList, client.MatchingFields{"spec.nodeClassRef.name": nodeClass.Name}); err != nil {
 		return err
@@ -97,16 +95,16 @@ func (c *AKSNodeClassController) updateNodeClaimHash(ctx context.Context, nodeCl
 		nc := ncList.Items[i]
 		stored := nc.DeepCopy()
 
-		if nc.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion] != v1beta1.AKSNodeClassHashVersion {
+		if nc.Annotations[v1alpha1.AnnotationAzureNodeClassHashVersion] != v1alpha1.AzureNodeClassHashVersion {
 			nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
-				v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+				v1alpha1.AnnotationAzureNodeClassHashVersion: v1alpha1.AzureNodeClassHashVersion,
 			})
 
 			// Any NodeClaim that is already drifted will remain drifted if the karpenter.azure.com/nodepool-hash-version doesn't match
 			// Since the hashing mechanism has changed we will not be able to determine if the drifted status of the NodeClaim has changed
 			if nc.StatusConditions().Get(karpv1.ConditionTypeDrifted) == nil {
 				nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
-					v1beta1.AnnotationAKSNodeClassHash: nodeClass.Hash(),
+					v1alpha1.AnnotationAzureNodeClassHash: nodeClass.Hash(),
 				})
 			}
 

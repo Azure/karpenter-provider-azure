@@ -37,8 +37,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -57,10 +59,11 @@ const (
 
 type Provider interface {
 	LivenessProbe(*http.Request) error
-	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+	ListAKS(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+	ListAzure(context.Context, *v1alpha1.AzureNodeClass) ([]*cloudprovider.InstanceType, error)
 
 	// Return Azure Skewer Representation of the instance type
-	Get(context.Context, *v1beta1.AKSNodeClass, string) (*skewer.SKU, error)
+	Get(context.Context, v1beta1.NodeClass, string) (*skewer.SKU, error)
 
 	// UpdateInstanceTypes fetches instance types from Azure and updates the cache
 	UpdateInstanceTypes(ctx context.Context) error
@@ -109,8 +112,75 @@ func NewDefaultProvider(
 	}
 }
 
+// ListAzure returns instance types for AzureNodeClass (non-AKS) NodePools.
+// Unlike List(), this method does not apply AKS-specific filtering (LocalDNS, ArtifactStreaming)
+// and derives its parameters directly from the AzureNodeClass spec rather than AKSNodeClass.
+func (p *DefaultProvider) ListAzure(
+	ctx context.Context,
+	nodeClass *v1alpha1.AzureNodeClass,
+) ([]*cloudprovider.InstanceType, error) {
+	p.muInstanceTypesInfo.RLock()
+	defer p.muInstanceTypesInfo.RUnlock()
+
+	if len(p.instanceTypesInfo) == 0 {
+		return nil, fmt.Errorf("no instance types found")
+	}
+
+	// Compute fully initialized instance types hash key
+	key := fmt.Sprintf("aznc-%d-%d-%s-%d-%d-%t",
+		p.instanceTypesSeqNum,
+		p.unavailableOfferings.SeqNum,
+		lo.FromPtr(nodeClass.Spec.ImageFamily),
+		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
+		utils.GetMaxPods(nodeClass, consts.NetworkPluginNone, consts.NetworkPluginModeNone),
+		nodeClass.GetEncryptionAtHost(),
+	)
+	if item, ok := p.instanceTypesCache.Get(key); ok {
+		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
+		// so that modifications to the ordering of the data don't affect the original
+		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+	}
+
+	// Get Viable offerings
+	// Azure has zones availability directly from SKU info
+	var result []*cloudprovider.InstanceType
+	for _, sku := range p.instanceTypesInfo {
+		vmsize, err := sku.GetVMSize()
+		if err != nil {
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
+			continue
+		}
+		architecture, err := sku.GetCPUArchitectureType()
+		if err != nil {
+			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
+			continue
+		}
+		instanceTypeZones := p.instanceTypeZones(sku)
+		// !!! Important !!!
+		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
+		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
+		// !!! Important !!!
+		instanceType := NewInstanceTypeAzure(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		if len(instanceType.Offerings) == 0 {
+			continue
+		}
+
+		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+			continue
+		}
+		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
+			continue
+		}
+
+		result = append(result, instanceType)
+	}
+
+	p.instanceTypesCache.SetDefault(key, result)
+	return result, nil
+}
+
 // Get all instance type options
-func (p *DefaultProvider) List(
+func (p *DefaultProvider) ListAKS(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 ) ([]*cloudprovider.InstanceType, error) {
@@ -161,7 +231,7 @@ func (p *DefaultProvider) List(
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
 		// !!! Important !!!
-		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		instanceType := NewInstanceTypeAKS(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -190,7 +260,7 @@ func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 	return p.pricingProvider.LivenessProbe(req)
 }
 
-func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
+func (p *DefaultProvider) Get(ctx context.Context, nodeClass v1beta1.NodeClass, instanceType string) (*skewer.SKU, error) {
 	p.muInstanceTypesInfo.RLock()
 	defer p.muInstanceTypesInfo.RUnlock()
 
@@ -291,7 +361,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	}
 }
 
-func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, nodeClass v1beta1.NodeClass) bool {
 	// If EncryptionAtHost is not enabled in the nodeclass, all instance types are supported
 	if !nodeClass.GetEncryptionAtHost() {
 		return true
@@ -485,9 +555,9 @@ func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
 	return sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, nvme)
 }
 
-func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+func UseEphemeralDisk(sku *skewer.SKU, nodeClass v1beta1.NodeClass) bool {
 	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
-	return int64(*nodeClass.Spec.OSDiskSizeGB) <= sizeGB // use ephemeral disk if it is large enough
+	return int64(*nodeClass.GetOSDiskSizeGB()) <= sizeGB // use ephemeral disk if it is large enough
 }
 
 func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {

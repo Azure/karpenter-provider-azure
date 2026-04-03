@@ -978,3 +978,82 @@ func TestAdditionalTagsValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestAzureVMProvisionMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantErr   bool
+		errSubstr string
+	}{
+		{
+			name: "should accept azurevm provision mode with minimal fields",
+			args: []string{
+				"--provision-mode", "azurevm",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+			},
+			wantErr: false,
+		},
+		{
+			name: "should not require ClusterEndpoint in azurevm mode",
+			args: []string{
+				"--provision-mode", "azurevm",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				// No --cluster-endpoint
+			},
+			wantErr: false,
+		},
+		{
+			name: "should not require bootstrap token in azurevm mode",
+			args: []string{
+				"--provision-mode", "azurevm",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				// No --kubelet-bootstrap-token
+			},
+			wantErr: false,
+		},
+		{
+			name: "should still require SubnetID in azurevm mode",
+			args: []string{
+				"--provision-mode", "azurevm",
+				"--node-resource-group", "my-node-rg",
+				"--vnet-subnet-id", "",
+			},
+			wantErr:   true,
+			errSubstr: "missing field, vnet-subnet-id",
+		},
+		{
+			name: "should still require NodeResourceGroup in azurevm mode",
+			args: []string{
+				"--provision-mode", "azurevm",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				// No --node-resource-group
+			},
+			wantErr:   true,
+			errSubstr: "missing field, node-resource-group",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saveAndClearEnv(t)
+			fs, opts := newFlagSetAndOpts()
+			err := opts.Parse(fs, tt.args...)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errSubstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

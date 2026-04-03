@@ -69,7 +69,7 @@ var cluster *state.Cluster
 var clusterNonZonal *state.Cluster
 var fakeClock *clock.FakeClock
 var recorder events.Recorder
-var statusController *status.Controller
+var statusController *status.AKSNodeClassController
 
 var nodePool *karpv1.NodePool
 var nodeClass *v1beta1.AKSNodeClass

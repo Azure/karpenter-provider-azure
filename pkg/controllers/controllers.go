@@ -30,11 +30,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	nodeclasstermination "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/termination"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
@@ -62,18 +65,33 @@ func NewControllers(
 	parsedDiskEncryptionSetID *arm.ResourceID,
 ) []controller.Controller {
 	controllers := []controller.Controller{
-		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-		nodeclasstermination.NewController(kubeClient, recorder),
-
+		// --- NodeClass-agnostic controllers ---
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
-
-		// TODO: nodeclaim tagging
-		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
-		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
-
 		instancetypecontroller.NewController(instanceTypesProvider),
+		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
 	}
+
+	opts := options.FromContext(ctx)
+
+	// XPMT: TODO: revisit the sharing/splitting decision for some of these?
+	if opts.ProvisionMode != consts.ProvisionModeNonAKS {
+		controllers = append(controllers,
+			// --- AKSNodeClass controllers ---
+			nodeclasshash.NewAKSNodeClassController(kubeClient),
+			nodeclassstatus.NewAKSNodeClassController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+			nodeclasstermination.NewAKSNodeClassController(kubeClient, recorder),
+			status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
+		)
+	} else {
+		controllers = append(controllers,
+			// --- AzureNodeClass controllers ---
+			nodeclasshash.NewAzureNodeClassController(kubeClient),
+			nodeclassstatus.NewAzureNodeClassController(kubeClient),
+			nodeclasstermination.NewAzureNodeClassController(kubeClient, recorder),
+			status.NewController[*v1alpha1.AzureNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
+		)
+	}
+
 	return controllers
 }

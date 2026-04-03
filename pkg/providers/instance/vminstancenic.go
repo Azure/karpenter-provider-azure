@@ -27,6 +27,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -120,8 +121,37 @@ func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *cr
 	return *res.ID, nil
 }
 
-// buildAndCreateNIC consolidates NIC creation: fetches backend pools, resolves NSG if needed, builds and creates the NIC.
-func (p *DefaultVMProvider) buildAndCreateNIC(
+func (p *DefaultVMProvider) buildAndCreateAzureNIC(
+	ctx context.Context,
+	resourceName string,
+	instanceType *corecloudprovider.InstanceType,
+	nodeClass *v1alpha1.AzureNodeClass,
+	subnetID string,
+	tags map[string]*string,
+) (string, error) {
+	nicReference, err := p.createNetworkInterface(
+		ctx,
+		&createNICOptions{
+			NICName:           resourceName,
+			NetworkPlugin:     consts.NetworkPluginNone,
+			NetworkPluginMode: consts.NetworkPluginModeNone,
+			MaxPods:           utils.GetMaxPods(nodeClass, consts.NetworkPluginNone, consts.NetworkPluginModeNone),
+			SubnetID:          subnetID,
+			Tags:              tags,
+			BackendPools:      &loadbalancer.BackendAddressPools{},
+			InstanceType:      instanceType,
+			// NetworkSecurityGroupID: "", // No NSG: not AKS managed VNet
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return nicReference, nil
+}
+
+// buildAndCreateAKSNIC consolidates NIC creation: fetches backend pools, resolves NSG if needed, builds and creates the NIC.
+func (p *DefaultVMProvider) buildAndCreateAKSNIC(
 	ctx context.Context,
 	resourceName string,
 	instanceType *corecloudprovider.InstanceType,

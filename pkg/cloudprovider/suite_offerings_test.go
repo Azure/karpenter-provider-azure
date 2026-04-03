@@ -341,7 +341,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 			})
 
 			It("should return error when instance type resolution fails", func() {
-				localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+				localStatusController := status.NewAKSNodeClassController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, localStatusController, nodeClass)
@@ -485,7 +485,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
 						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
 					}
-					instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+					instanceTypes, err := azureEnv.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 					seeUnavailable := false
 					for _, instanceType := range instanceTypes {
@@ -503,7 +503,7 @@ var _ = Describe("CloudProvider - Offerings", func() {
 						azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
 						azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
 					}
-					instanceTypes, err := azureEnvNonZonal.InstanceTypesProvider.List(ctx, nodeClass)
+					instanceTypes, err := azureEnvNonZonal.InstanceTypesProvider.ListAKS(ctx, nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 					seeUnavailable := false
 					for _, instanceType := range instanceTypes {

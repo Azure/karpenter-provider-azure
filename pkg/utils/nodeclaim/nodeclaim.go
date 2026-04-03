@@ -29,6 +29,7 @@ import (
 
 	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -62,6 +63,39 @@ func GetAKSNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *k
 
 	if !nodeClass.DeletionTimestamp.IsZero() {
 		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "aksnodeclasses"}, nodeClass.Name)
+	}
+
+	return nodeClass, nil
+}
+
+// UsingAzureNodeClassPredicate creates a predicate to filter node claims using AzureNodeClass.
+func UsingAzureNodeClassPredicate() predicate.Funcs {
+	return predicate.NewPredicateFuncs(func(object client.Object) bool {
+		nodeClaim, ok := object.(*karpv1.NodeClaim)
+		if !ok {
+			return false
+		}
+		if nodeClaim.Spec.NodeClassRef == nil {
+			return false
+		}
+		return nodeClaim.Spec.NodeClassRef.Kind == "AzureNodeClass"
+	})
+}
+
+// GetAzureNodeClass resolves the AzureNodeClass from the NodeClaim's NodeClassRef.
+// If the NodeClass for the nodeClaim has DeletionTimestamp set, an error is returned.
+func GetAzureNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *karpv1.NodeClaim) (*v1alpha1.AzureNodeClass, error) {
+	if nodeClaim.Spec.NodeClassRef == nil {
+		return nil, fmt.Errorf("nodeClaim %s does not have a nodeClassRef", nodeClaim.Name)
+	}
+
+	nodeClass := &v1alpha1.AzureNodeClass{}
+	if err := kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
+		return nil, fmt.Errorf("getting AzureNodeClass %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
+	}
+
+	if !nodeClass.DeletionTimestamp.IsZero() {
+		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "azurenodeclasses"}, nodeClass.Name)
 	}
 
 	return nodeClass, nil

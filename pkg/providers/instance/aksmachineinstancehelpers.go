@@ -274,7 +274,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
-	tags := Tags(opts, nodeClass, nodeClaim)
+	tags := TagsAKS(opts, nodeClass, nodeClaim)
 
 	// Add AKS machine distinguishing tags
 	tags[KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)

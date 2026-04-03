@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha1"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
@@ -44,14 +45,18 @@ func (p tagsChangedPredicate) Update(e event.UpdateEvent) bool {
 		return true // This isn't expected, so propagate the event so we don't miss anything
 	}
 
-	typedOld, ok := e.ObjectOld.(*v1beta1.AKSNodeClass)
-	if !ok {
-		return true // If we don't know the type, we assume it has changed
+	// Handle AKSNodeClass
+	if typedOld, ok := e.ObjectOld.(*v1beta1.AKSNodeClass); ok {
+		if typedNew, ok := e.ObjectNew.(*v1beta1.AKSNodeClass); ok {
+			return !maps.Equal(typedOld.Spec.Tags, typedNew.Spec.Tags)
+		}
 	}
-	typedNew, ok := e.ObjectNew.(*v1beta1.AKSNodeClass)
-	if !ok {
-		return true // If we don't know the type, we assume it has changed
+	// Handle AzureNodeClass
+	if typedOld, ok := e.ObjectOld.(*v1alpha1.AzureNodeClass); ok {
+		if typedNew, ok := e.ObjectNew.(*v1alpha1.AzureNodeClass); ok {
+			return !maps.Equal(typedOld.Spec.Tags, typedNew.Spec.Tags)
+		}
 	}
 
-	return !maps.Equal(typedOld.Spec.Tags, typedNew.Spec.Tags)
+	return true // Unknown type, propagate
 }

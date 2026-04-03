@@ -37,10 +37,33 @@ var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
-// Tags returns the tags to be applied to a resource (VM, Disk, NIC, etc)
-func Tags(
+func TagsAzure(
 	options *options.Options,
-	nodeClass *v1beta1.AKSNodeClass,
+	nodeClass v1beta1.NodeClass,
+	nodeClaim *karpv1.NodeClaim,
+) map[string]*string {
+	defaultTags := map[string]string{}
+	// Note: Be careful depending on nodeClaim.Labels here, as we assign some additional labels during the creation
+	// of the static parameters for the launch template. Those labels haven't actually been applied to the nodeClaim yet,
+	// so if you try to use them here you will find they are missing.
+	// For now, we only depend on labels that are added to the nodeClaim itself.
+	if val, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
+		defaultTags[NodePoolTagKey] = val
+	}
+
+	// MapEntries first so that karpenter.azure.com_cluster and karpenter.azure.com/cluster collide
+	additionalTags := lo.MapEntries(options.AdditionalTags, mapTags)
+	nodeClassTags := lo.MapEntries(nodeClass.GetTags(), mapTags)
+	defaultTagsMapped := lo.MapEntries(defaultTags, mapTags)
+
+	return lo.Assign(additionalTags, nodeClassTags, defaultTagsMapped)
+}
+
+// Tags returns the tags to be applied to a resource (VM, Disk, NIC, etc).
+// Accepts the NodeClass interface so it works for both AKSNodeClass and AzureNodeClass.
+func TagsAKS(
+	options *options.Options,
+	nodeClass v1beta1.NodeClass,
 	nodeClaim *karpv1.NodeClaim,
 ) map[string]*string {
 	defaultTags := map[string]string{
@@ -57,7 +80,7 @@ func Tags(
 
 	// MapEntries first so that karpenter.azure.com_cluster and karpenter.azure.com/cluster collide
 	additionalTags := lo.MapEntries(options.AdditionalTags, mapTags)
-	nodeClassTags := lo.MapEntries(nodeClass.Spec.Tags, mapTags)
+	nodeClassTags := lo.MapEntries(nodeClass.GetTags(), mapTags)
 	defaultTagsMapped := lo.MapEntries(defaultTags, mapTags)
 
 	return lo.Assign(additionalTags, nodeClassTags, defaultTagsMapped)

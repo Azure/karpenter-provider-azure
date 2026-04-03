@@ -29,6 +29,9 @@ import (
 
 type FIPSMode string
 
+// Compile-time assertion: AKSNodeClass must implement NodeClass.
+var _ NodeClass = (*AKSNodeClass)(nil)
+
 var (
 	FIPSModeFIPS     = FIPSMode("FIPS")
 	FIPSModeDisabled = FIPSMode("Disabled")
@@ -464,6 +467,20 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 		*in.Spec.ArtifactStreaming.Enabled
 }
 
+// GetVNETSubnetID returns the VNETSubnetID from the spec.
+func (in *AKSNodeClass) GetVNETSubnetID() *string { return in.Spec.VNETSubnetID }
+
+// GetOSDiskSizeGB returns the OSDiskSizeGB from the spec.
+func (in *AKSNodeClass) GetOSDiskSizeGB() *int32 { return in.Spec.OSDiskSizeGB }
+
+// GetMaxPods returns the MaxPods from the spec, or nil if not set.
+// Callers that need a resolved value with network-plugin-aware defaults
+// should use utils.GetMaxPods().
+func (in *AKSNodeClass) GetMaxPods() *int32 { return in.Spec.MaxPods }
+
+// GetTags returns the Tags from the spec.
+func (in *AKSNodeClass) GetTags() map[string]string { return in.Spec.Tags }
+
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // Returns true for Required mode, false for Disabled mode, and for Preferred mode,
 // returns true only if the Kubernetes version is >= 1.35.
@@ -494,4 +511,8 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	default:
 		return false
 	}
+}
+
+func (in *AKSNodeClass) GetKind() string {
+	return "AKSNodeClass"
 }
