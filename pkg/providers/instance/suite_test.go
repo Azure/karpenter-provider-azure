@@ -60,7 +60,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
 )
 
 var ctx context.Context
@@ -185,8 +185,8 @@ func vmSizeFromVM(vm *armcompute.VirtualMachine) string {
 }
 
 func zoneFromVM(vm *armcompute.VirtualMachine) string {
-	zone, _ := utils.MakeAKSLabelZoneFromVM(vm)
-	return zone
+	z, _ := zone.MakeAKSLabelZoneFromVM(vm)
+	return z
 }
 
 // Attention: tests like below for AKSMachineInstanceProvider are added to cloudprovider module to reflect its end-to-end nature.

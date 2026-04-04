@@ -39,7 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -155,7 +155,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
 			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, utils.RegionalZone))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone.Regional))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
@@ -561,10 +561,10 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			}
 			location := "westus2"
 
-			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
+			z, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(utils.RegionalZone))
+			Expect(z).To(Equal(zone.Regional))
 		})
 
 		It("should return RegionalZone for AKS machine with nil zones", func() {
@@ -573,10 +573,10 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			}
 			location := "centralus"
 
-			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
+			z, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(utils.RegionalZone))
+			Expect(z).To(Equal(zone.Regional))
 		})
 
 		It("should return error for nil AKS machine", func() {
