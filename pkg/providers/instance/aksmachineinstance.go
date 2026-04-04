@@ -348,7 +348,21 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
-	return p.machinecache.Get(aksMachineName)
+	machine, err := p.machinecache.Get(aksMachineName)
+	if machine != nil {
+		p.rehydrateMachine(machine)
+	}
+	return machine, err
+}
+
+func (p *DefaultAKSMachineProvider) forceGet(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
+	}
+	aksMachine := lo.ToPtr(resp.Machine)
+	p.rehydrateMachine(aksMachine)
+	return aksMachine, nil
 }
 
 func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachineName string) error {
@@ -408,7 +422,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	existingAKSMachine, err := p.forceGet(ctx, aksMachineName)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
