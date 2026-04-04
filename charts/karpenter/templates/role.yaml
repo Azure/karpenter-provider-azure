@@ -68,10 +68,12 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 rules:
-  # Read bootstrap token secrets for auto-discovery of kubelet TLS bootstrap tokens
+  # Read bootstrap token secrets for auto-discovery of kubelet TLS bootstrap tokens.
+  # List is needed to discover secrets by type (bootstrap.kubernetes.io/token).
+  # resourceNames cannot be used with list, so we scope to kube-system namespace instead.
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

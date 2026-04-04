@@ -136,7 +136,7 @@ func createBootstrapTokenSecret(kubeClient *fake.Clientset, tokenID, tokenSecret
 			"token-secret": []byte(tokenSecret),
 		},
 	}
-	_, err := kubeClient.CoreV1().Secrets("kube-system").Create(context.Background(), secret, metav1.CreateOptions{})
+	_, err := kubeClient.CoreV1().Secrets("kube-system").Create(ctx, secret, metav1.CreateOptions{})
 	Expect(err).ToNot(HaveOccurred())
 }
 
