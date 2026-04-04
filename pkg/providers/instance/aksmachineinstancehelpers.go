@@ -37,7 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	zonepkg "github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
@@ -99,7 +99,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
 	return &armcontainerservice.Machine{
-		Zones: zonepkg.MakeARMZonesFromAKSLabelZone(zone),
+		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: lo.ToPtr(nodeImageVersion),
 			Network: &armcontainerservice.MachineNetworkProperties{

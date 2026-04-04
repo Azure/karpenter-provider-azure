@@ -45,7 +45,7 @@ import (
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var (
@@ -135,7 +135,7 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 	if err := validateRetrievedAKSMachineBasicProperties(aksMachine); err != nil {
 		return nil, fmt.Errorf("failed to validate AKS machine instance %q: %w", lo.FromPtr(aksMachine.Name), err)
 	}
-	zone, err := zone.MakeAKSLabelZoneFromARMZones(aksMachineLocation, aksMachine.Zones)
+	zone, err := zones.MakeAKSLabelZoneFromARMZones(aksMachineLocation, aksMachine.Zones)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get zone for AKS machine %q: %w", lo.FromPtr(aksMachine.Name), err)
 	}
@@ -250,12 +250,12 @@ func isAKSMachineDeleting(aksMachine *armcontainerservice.Machine) bool {
 }
 
 // GetAKSLabelZoneFromAKSMachine returns the zone for the given AKS machine, or RegionalZone ("0") if there is no zone specified.
-// This function is analogous to zone.MakeAKSLabelZoneFromVM but for AKS machines.
+// This function is analogous to zones.MakeAKSLabelZoneFromVM but for AKS machines.
 func GetAKSLabelZoneFromAKSMachine(aksMachine *armcontainerservice.Machine, location string) (string, error) {
 	if aksMachine == nil {
 		return "", fmt.Errorf("cannot pass in a nil AKS machine")
 	}
-	return zone.MakeAKSLabelZoneFromARMZones(location, aksMachine.Zones)
+	return zones.MakeAKSLabelZoneFromARMZones(location, aksMachine.Zones)
 }
 
 func IsAKSMachineOrMachinesPoolNotFound(err error) bool {

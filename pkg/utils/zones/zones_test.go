@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package zone_test
+package zones_test
 
 import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 )
@@ -64,18 +64,18 @@ func TestMakeAKSLabelZoneFromVM(t *testing.T) {
 			input: &armcompute.VirtualMachine{
 				Zones: []*string{},
 			},
-			expectedZone: zone.Regional,
+			expectedZone: zones.Regional,
 		},
 		{
 			testName:     "nil Zones",
 			input:        &armcompute.VirtualMachine{},
-			expectedZone: zone.Regional,
+			expectedZone: zones.Regional,
 		},
 	}
 
 	for _, c := range tc {
 		g := NewWithT(t)
-		z, err := zone.MakeAKSLabelZoneFromVM(c.input)
+		z, err := zones.MakeAKSLabelZoneFromVM(c.input)
 		g.Expect(z).To(Equal(c.expectedZone), c.testName)
 		if err == nil && c.expectedError != "" {
 			g.Expect(err).To(HaveOccurred(), c.testName)

@@ -40,7 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var (
@@ -593,7 +593,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
-	zone, err := zone.MakeAKSLabelZoneFromARMZones(p.aksMachinesPoolLocation, existingAKSMachine.Zones)
+	zone, err := zones.MakeAKSLabelZoneFromARMZones(p.aksMachinesPoolLocation, existingAKSMachine.Zones)
 	if err != nil {
 		return nil, fmt.Errorf("found existing AKS machine %s, but failed to determine zone: %w", aksMachineName, err)
 	}

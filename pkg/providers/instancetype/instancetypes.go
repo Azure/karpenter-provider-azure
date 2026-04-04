@@ -41,7 +41,7 @@ import (
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
@@ -214,13 +214,13 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// If an offering is regional (non-zonal), the availability zones will be empty.
 	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
 	if len(skuZones) > 0 {
-		return sets.New(lo.Map(skuZones, func(z string, _ int) string {
-			return zone.MakeAKSLabelZoneFromARMZone(p.region, z)
+		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
+			return zones.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
 	}
 	// Regional (non-zonal) SKUs use zone "0" to match the label AKS places on regional nodes
 	// (topology.kubernetes.io/zone=0).
-	return sets.New(zone.Regional)
+	return sets.New(zones.Regional)
 }
 
 // TODO: review; switch to controller-driven updates

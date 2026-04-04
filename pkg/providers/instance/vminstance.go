@@ -53,7 +53,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var (
@@ -236,7 +236,7 @@ func (p *DefaultVMProvider) BeginCreate(
 		return nil, err
 	}
 	vm := vmPromise.VM
-	zone, err := zone.MakeAKSLabelZoneFromVM(vm)
+	zone, err := zones.MakeAKSLabelZoneFromVM(vm)
 	if err != nil {
 		log.FromContext(ctx).V(1).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	}
@@ -602,7 +602,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
 		},
-		Zones: zone.MakeARMZonesFromAKSLabelZone(opts.Zone),
+		Zones: zones.MakeARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
