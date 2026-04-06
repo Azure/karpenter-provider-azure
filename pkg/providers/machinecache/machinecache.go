@@ -35,7 +35,7 @@ const (
 	// ActiveRefreshInterval is the interval at which the cache is refreshed when there are active pollers.
 	activeRefreshInterval = 1 * time.Minute
 	// BackgroundRefreshInterval is the interval at which the cache is refreshed in the background.
-	backgroundRefreshInterval = 5 * time.Minute
+	// backgroundRefreshInterval = 5 * time.Minute
 )
 
 var (
@@ -169,25 +169,20 @@ func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine
 func (c *MachineCache) updateWorker() {
 	defer c.wg.Done()
 
+	ticker := time.NewTicker(activeRefreshInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-c.workerCtx.Done():
 			return
-		default:
-			// Perform cache update
+		case <-ticker.C:
 			if err := c.updateCache(c.workerCtx); err != nil {
 				log.FromContext(c.workerCtx).Error(err, "failed to update machine cache")
 			}
-
-			if c.activePollers.Load() > 0 {
-				// If there are active pollers, update more frequently
-				time.Sleep(activeRefreshInterval)
-			} else {
-				// Otherwise, use the regular interval
-				time.Sleep(backgroundRefreshInterval)
-			}
 		}
 	}
+
 }
 
 // Shutdown stops the background update worker and waits for it to finish.
