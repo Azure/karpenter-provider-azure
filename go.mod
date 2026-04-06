@@ -20,7 +20,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0
 	github.com/Azure/go-autorest/autorest v0.11.30
-	github.com/Azure/skewer v0.0.21
+	github.com/Azure/skewer v0.0.22
 	github.com/Pallinder/go-randomdata v1.2.0
 	github.com/alecthomas/kong v1.14.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b

@@ -3,6 +3,8 @@ extend-exclude = ["pkg/providers/instancetype/known_skus.yaml"]
 
 [default.extend-words]
 aks = "aks"
+Ba = "Ba"
 ERRO = "ERRO"
 nd = "nd"
 ND = "ND"
+als = "als"
