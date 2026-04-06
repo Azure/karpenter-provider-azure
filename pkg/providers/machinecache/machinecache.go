@@ -45,6 +45,7 @@ var (
 // AKSMachineNewListPager defines the interface for creating a new pager to list AKS machines.
 type AKSMachineNewListPager interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
+	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
 }
 
 type cacheEntry struct {
@@ -133,6 +134,24 @@ func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, er
 	return entry.machine, nil
 }
 
+// ForceGet retrieves the specified AKS machine from the API and updates the cache.
+func (c *MachineCache) ForceGet(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, aksMachineName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
+	}
+	aksMachine := lo.ToPtr(resp.Machine)
+
+	entry := &cacheEntry{
+		machine:           aksMachine,
+		lastUpdatedUnixNs: atomic.Int64{},
+	}
+	entry.lastUpdatedUnixNs.Store(time.Now().UnixNano())
+	c.machines.Store(aksMachineName, entry)
+
+	return aksMachine, nil
+}
+
 // List returns all machines in the cache.
 // Returns an error if the cache is not fresh and requests an update.
 func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
@@ -191,6 +210,17 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 	var retryAttemptsLeft int
 	var currentRetryDelay time.Duration
 	c.resetRetryState(&retryAttemptsLeft, &currentRetryDelay)
+
+	if machine, err := c.ForceGet(ctx, name); err == nil {
+		entry := &cacheEntry{
+			machine:           machine,
+			lastUpdatedUnixNs: atomic.Int64{},
+		}
+		entry.lastUpdatedUnixNs.Store(time.Now().UnixNano())
+		c.machines.Store(name, entry)
+	} else {
+		log.FromContext(ctx).Error(err, "failed to force get AKS machine for cache poller", "aksMachineName", name)
+	}
 
 	for {
 		select {
