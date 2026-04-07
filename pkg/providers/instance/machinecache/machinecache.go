@@ -412,7 +412,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 	now := time.Now()
 	defer func() {
 		log.FromContext(ctx).Info("finished updating machine list cache",
-			"duration", time.Since(now).String(),
+			"duration", time.Since(now).Seconds(),
 			"aksMachinesPoolName", c.aksMachinesPoolName,
 		)
 	}()
