@@ -141,22 +141,23 @@ func (c *MachineListCache) Get(machineName string) (*armcontainerservice.Machine
 // List returns all machines in the cache.
 // Returns an error if the cache is not fresh and requests an update.
 func (c *MachineListCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	if !c.isFresh() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if !c.isFresh() {
-				c.RequestUpdate()
+		for {
+			select {
+			case <-ticker.C:
+				if !c.isFresh() {
+					c.RequestUpdate()
+				}
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context canceled while waiting for fresh cache: %w", ctx.Err())
 			}
-		case <-ctx.Done():
-			return nil, fmt.Errorf("context canceled while waiting for fresh cache: %w", ctx.Err())
-		default:
-		}
 
-		if c.isFresh() {
-			break
+			if c.isFresh() {
+				break
+			}
 		}
 	}
 
