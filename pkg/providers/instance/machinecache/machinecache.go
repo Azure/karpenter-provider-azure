@@ -180,24 +180,6 @@ func (c *MachineListCache) get(machineName string) (*armcontainerservice.Machine
 	return value.(*armcontainerservice.Machine), true
 }
 
-// invalidate removes a specific machine from the cache, forcing the next Get()
-// for that machine to fall through to the API. This is called after mutating
-// operations (Create, Update, Delete) to prevent serving stale data.
-func (c *MachineListCache) invalidate(machineName string) {
-	c.machines.Delete(machineName)
-}
-
-// invalidateAll clears the entire cache, forcing all subsequent Get() calls
-// to fall through to the API until the next List() repopulates the cache.
-func (c *MachineListCache) invalidateAll() {
-	// Delete all entries by ranging over the map
-	c.machines.Range(func(key, value any) bool {
-		c.machines.Delete(key)
-		return true // continue iteration
-	})
-	c.lastUpdatedUnixNanos.Store(0) // zero value → isFresh() returns false
-}
-
 // updateWorker runs in a background goroutine and handles both periodic and on-demand cache updates.
 // It stops when workerCtx is canceled, ensuring clean shutdown via Shutdown().
 func (c *MachineListCache) updateWorker() {
