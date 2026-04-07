@@ -137,6 +137,7 @@ var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
 	azClient                        *azclient.AZClient
+	machinecache                    *machinecache.MachineListCache
 	instanceTypeProvider            instancetype.Provider
 	allocationStrategyProvider      allocationstrategy.Provider
 	imageResolver                   imagefamily.Resolver
@@ -379,7 +380,7 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
 	}
-	aksMachine := lo.ToPtr(resp.Machine)
+	aksMachine = lo.ToPtr(resp.Machine)
 	p.rehydrateMachine(aksMachine)
 
 	return aksMachine, nil
