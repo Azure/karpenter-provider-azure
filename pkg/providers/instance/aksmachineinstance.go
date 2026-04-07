@@ -316,7 +316,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 	// With it, we may do an extra unneeded get before delete, but without it we may erroneously issue
 	// 2 deletes if the instance was being deleted and the operator restarted.
 	// Since get quota is generally higher, we prefer to check w/ get rather than issue 2 deletes.
-	aksMachine, err := p.Get(ctx, aksMachineName)
+	aksMachine, err := p.getMachine(ctx, aksMachineName, true)
 	if err != nil {
 		return err
 	}
