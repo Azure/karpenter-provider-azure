@@ -294,7 +294,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 		return []*armcontainerservice.Machine{}, nil
 	}
 
-	aksMachines, err := p.listMachines(ctx)
+	aksMachines, err := p.machinecache.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -367,40 +367,6 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 	p.rehydrateMachine(aksMachine)
 
 	return aksMachine, nil
-}
-
-func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
-	var machines []*armcontainerservice.Machine
-	pager := p.azClient.AKSMachinesClient().NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
-	if pager == nil {
-		return nil, fmt.Errorf("failed to list AKS machines: created pager is nil")
-	}
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			if IsAKSMachineOrMachinesPoolNotFound(err) {
-				// AKS machines pool not found. Handle gracefully.
-				// Suggestion: separate the util function to not cover more than needed?
-				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
-				break
-			}
-
-			return nil, fmt.Errorf("failed to list AKS machines: %w", err)
-		}
-
-		for _, aksMachine := range page.Value {
-			// Filter to only include machines created by Karpenter
-			// Check if the AKS machine has the Karpenter nodepool tag
-			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
-				if _, hasKarpenterTag := aksMachine.Properties.Tags[NodePoolTagKey]; hasKarpenterTag {
-					p.rehydrateMachine(aksMachine)
-					machines = append(machines, aksMachine)
-				}
-			}
-		}
-	}
-
-	return machines, nil
 }
 
 func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachineName string) error {
