@@ -23,7 +23,8 @@ const (
 	// GET Machine 429s at 1K-node scale cost 17-29 seconds each; caching LIST results
 	// converts O(N) individual GETs into O(1) cached lookups. A 30-second TTL is
 	// acceptable because drift and reconciliation checks re-run on subsequent cycles anyway.
-	DefaultMachineListCacheTTL = 30 * time.Second
+	DefaultMachineListCacheTTL      = 30 * time.Second
+	DefaultMachineListCacheInterval = 5 * time.Minute
 
 	// Provisioning state constants for AKS Machine API
 	ProvisioningStateCreating  = "Creating"
