@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -134,6 +135,7 @@ var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
 	azClient                        *azclient.AZClient
+	machinecache                    *machinecache.MachineListCache
 	instanceTypeProvider            instancetype.Provider
 	allocationStrategyProvider      allocationstrategy.Provider
 	imageResolver                   imagefamily.Resolver
@@ -164,6 +166,7 @@ func NewAKSMachineProvider(
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
 		azClient:                        azClient,
+		machinecache:                    machinecache.NewMachineListCache(context.Background(), machinecache.DefaultMachineListCacheTTL, azClient.AKSMachinesClient(), machinecache.DefaultMachineListCacheInterval, clusterResourceGroup, clusterName, aksMachinesPoolName),
 		instanceTypeProvider:            instanceTypeProvider,
 		allocationStrategyProvider:      allocationStrategyProvider,
 		imageResolver:                   imageResolver,
@@ -350,11 +353,17 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	aksMachine, err := p.machinecache.Get(aksMachineName)
+	if err == nil {
+		p.rehydrateMachine(aksMachine)
+		return aksMachine, nil
+	}
+
 	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
 	}
-	aksMachine := lo.ToPtr(resp.Machine)
+	aksMachine = lo.ToPtr(resp.Machine)
 	p.rehydrateMachine(aksMachine)
 
 	return aksMachine, nil
