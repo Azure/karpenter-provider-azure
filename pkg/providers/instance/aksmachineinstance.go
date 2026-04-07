@@ -268,6 +268,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 	if err != nil {
 		return fmt.Errorf("failed to update AKS machine %q during LRO: %w", aksMachineName, err)
 	}
+	p.machinecache.Invalidate(aksMachineName)
 	log.FromContext(ctx).V(1).Info("successfully updated AKS machine", "aksMachineName", aksMachineName)
 	return nil
 }
@@ -511,6 +512,7 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 		return fmt.Errorf("failed to delete AKS machine %q during LRO: %w", aksMachineName, err)
 	}
 
+	p.machinecache.Invalidate(aksMachineName)
 	log.FromContext(ctx).V(1).Info("successfully deleted AKS machine", "aksMachineName", aksMachineName)
 	return nil
 }
