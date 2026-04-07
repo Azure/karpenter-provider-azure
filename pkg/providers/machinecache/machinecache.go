@@ -393,9 +393,19 @@ func (c *MachineCache) updateCache(ctx context.Context) error {
 				entry := &cacheEntry{
 					machine: aksMachine,
 				}
+				log.FromContext(ctx).Info("adding AKS machine to cache",
+					"aksMachineName", *aksMachine.Name,
+					"aksMachineID", aksMachine.ID,
+				)
 				entry.lastUpdatedUnixNs.Store(updateTime.UnixNano())
 				c.machines.Store(*aksMachine.Name, entry)
 				fetchedMachineNames[*aksMachine.Name] = struct{}{}
+			} else {
+				log.FromContext(ctx).Info("skipping invalid AKS machine",
+					"aksMachineName", lo.FromPtr(aksMachine.Name),
+					"aksMachineID", aksMachine.ID,
+				)
+
 			}
 		}
 
