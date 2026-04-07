@@ -41,6 +41,7 @@ on:
           - InPlaceUpdate
           - Integration
           - KubernetesUpgrade
+          - NewSKUs
           - NodeClaim
           - Scheduling
           - Spot

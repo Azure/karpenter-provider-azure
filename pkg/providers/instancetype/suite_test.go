@@ -78,6 +78,7 @@ import (
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var ctx context.Context
@@ -90,7 +91,7 @@ var coreProvisioner, coreProvisionerNonZonal, coreProvisionerBootstrap *provisio
 var cluster, clusterNonZonal, clusterBootstrap *state.Cluster
 var cloudProvider, cloudProviderNonZonal, cloudProviderBootstrap *cloudprovider.CloudProvider
 
-var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
+var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 
 var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
@@ -401,7 +402,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// ensure that initial zone was made unavailable
-				zone, err := utils.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+				zone, err := zones.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 				Expect(err).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
 
@@ -467,7 +468,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// ensure that initial VM size was made unavailable
 				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 				initialVMSize := *vm.Properties.HardwareProfile.VMSize
-				zone, err := utils.MakeAKSLabelZoneFromVM(&vm)
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
 				Expect(err).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, fake.MakeSKU(string(initialVMSize)), zone, karpv1.CapacityTypeSpot)
 
@@ -1739,7 +1740,7 @@ var _ = Describe("InstanceType Provider", func() {
 				vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 				Expect(vm.Zones).To(BeEmpty())
 			})
-			It("should support provisioning non-zonal instance types in zonal regions", func() {
+			It("should provision non-zonal instance types in zonal regions with zone label 0", func() {
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -1750,11 +1751,96 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 
 				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, ""))
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 				Expect(vm.Zones).To(BeEmpty())
+			})
+			It("should not include empty zone domain in instance type offerings", func() {
+				// Verify that no instance type has an offering with zone=""
+				// which would introduce a phantom domain in topology spread constraint calculations.
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instanceTypes).ToNot(BeEmpty())
+
+				for _, it := range instanceTypes {
+					for _, offering := range it.Offerings {
+						zone := offering.Requirements.Get(v1.LabelTopologyZone).Any()
+						Expect(zone).ToNot(BeEmpty(),
+							fmt.Sprintf("instance type %s has an offering with empty zone, which breaks topology spread constraints", it.Name))
+					}
+				}
+			})
+			It("should exclude non-zonal instance types via zone NodePool requirements", func() {
+				// Users can filter out non-zonal SKUs by constraining zones to specific AZs.
+				// Non-zonal SKUs have zone "0", so requiring a specific zone prevents them
+				// from being scheduled.
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelTopologyZone,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{fakeZone1},
+					},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				// Non-zonal SKU (zone="0") is incompatible with the zone requirement (zone-1),
+				// so the pod should not be scheduled.
+				ExpectNotScheduled(ctx, env.Client, pod)
+			})
+			It("should exclude non-zonal instance types when all real zones are specified", func() {
+				// Specifying all availability zones still excludes non-zonal SKUs,
+				// since their zone "0" is not in the allowed list.
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelTopologyZone,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   azureEnv.Zones(),
+					},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+			})
+			It("should schedule pods with zonal topology spread when non-zonal SKUs exist", func() {
+				// Reproduces https://github.com/Azure/karpenter-provider-azure/issues/1384
+				// Previously, non-zonal SKUs had zone="" which collided with Karpenter core's
+				// sentinel value for "no domain found", making topology spread always unsatisfiable.
+				// With zone="0", the non-zonal domain is valid and doesn't poison the spread calculation.
+				podLabels := map[string]string{"app": "tsc-repro"}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pods := []*v1.Pod{}
+				for i := 0; i < 3; i++ {
+					pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
+						ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
+						TopologySpreadConstraints: []v1.TopologySpreadConstraint{
+							{
+								MaxSkew:           1,
+								TopologyKey:       v1.LabelTopologyZone,
+								WhenUnsatisfiable: v1.DoNotSchedule,
+								LabelSelector:     &metav1.LabelSelector{MatchLabels: podLabels},
+							},
+						},
+					}))
+				}
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
+				for _, pod := range pods {
+					ExpectScheduled(ctx, env.Client, pod)
+				}
 			})
 		})
 
@@ -1934,7 +2020,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Eventually(func() []*karpv1.NodeClaim { return ExpectNodeClaims(ctx, env.Client) }).To(HaveLen(0))
 
 				By("marking whatever zone was picked as unavailable - for both spot and on-demand")
-				zone, err := utils.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+				zone, err := zones.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 				Expect(err).ToNot(HaveOccurred())
 				for _, skuToCheck := range expectedUnavailableSKUs {
 					Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
@@ -2072,7 +2158,7 @@ var _ = Describe("InstanceType Provider", func() {
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectNotScheduled(ctx, env.Client, pod)
 					for _, zoneID := range []string{"1", "2", "3"} {
-						ExpectUnavailable(azureEnv, sku, utils.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)
+						ExpectUnavailable(azureEnv, sku, zones.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)
 					}
 				}
 

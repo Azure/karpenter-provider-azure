@@ -14,23 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package azure
+package sku
 
-import (
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+import "strings"
 
-	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-)
-
-func (env *Environment) ExpectMachinesAgentPoolExists() *containerservice.AgentPool {
-	GinkgoHelper()
-	pool, err := env.agentPoolClient.Get(
-		env.Context,
-		env.ClusterResourceGroup,
-		env.ClusterName,
-		env.MachineAgentPoolName,
-		nil)
-	Expect(err).ToNot(HaveOccurred(), "could not find Machine AgentPool %s", env.MachineAgentPoolName)
-	return &pool.AgentPool
+// IsConfidential returns true if the SKU name indicates it's a confidential VM SKU.
+// The skuName is expected to be the VM size with Standard_ trimmed off the front
+func IsConfidential(skuName string) bool {
+	return strings.HasPrefix(skuName, "DC") || strings.HasPrefix(skuName, "EC")
 }

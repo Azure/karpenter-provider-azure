@@ -171,7 +171,7 @@ var _ = Describe("Pricing", func() {
 
 		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
 		// duplicating it here
-		expectedTime, _ := time.Parse(time.RFC3339, "2025-06-03T21:16:07Z")
+		expectedTime, _ := time.Parse(time.RFC3339, "2026-04-02T00:04:39Z")
 		Eventually(func(g Gomega) {
 			g.Expect(p.OnDemandLastUpdated()).ToNot(Equal(expectedTime))
 			g.Expect(p.SpotLastUpdated()).ToNot(Equal(expectedTime))
@@ -184,7 +184,7 @@ var _ = Describe("Pricing", func() {
 
 		price, ok = p.SpotPrice("Standard_D1")
 		Expect(ok).To(BeTrue())
-		Expect(price).To(BeNumerically("==", 1.10))
+		Expect(price).To(BeNumerically("==", 1.1))
 	})
 
 	It("should not poll pricing data in non-public clouds", func() {
@@ -199,7 +199,7 @@ var _ = Describe("Pricing", func() {
 
 		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
 		// duplicating it here
-		expectedTime, _ := time.Parse(time.RFC3339, "2025-06-03T21:16:07Z")
+		expectedTime, _ := time.Parse(time.RFC3339, "2026-04-02T00:04:39Z")
 		Consistently(func(g Gomega) {
 			g.Expect(p.OnDemandLastUpdated()).To(Equal(expectedTime))
 			g.Expect(p.SpotLastUpdated()).To(Equal(expectedTime))

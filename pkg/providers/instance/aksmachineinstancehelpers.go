@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
@@ -98,7 +99,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
 	return &armcontainerservice.Machine{
-		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
+		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: lo.ToPtr(nodeImageVersion),
 			Network: &armcontainerservice.MachineNetworkProperties{
