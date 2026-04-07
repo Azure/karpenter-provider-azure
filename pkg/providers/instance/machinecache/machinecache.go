@@ -231,6 +231,12 @@ func (c *MachineListCache) Shutdown() {
 	c.wg.Wait()      // Wait for worker goroutine to finish
 }
 
+// Invalidate removes a specific machine from the cache by name.
+// Call this after Update or Delete operations to ensure cache consistency.
+func (c *MachineListCache) Invalidate(machineName string) {
+	c.machines.Delete(machineName)
+}
+
 func (c *MachineListCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name, "interval", c.interval.String())
 	ticker := time.NewTicker(c.interval)
@@ -479,7 +485,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 		return true
 	})
 
-	fmt.Printf("Machine list cache updated with %d machines\n", totalMachinesStored)
+	log.FromContext(ctx).Info("machine list cache updated", "totalMachines", totalMachinesStored)
 
 	c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 	return nil
