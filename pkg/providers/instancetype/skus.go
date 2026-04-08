@@ -35,11 +35,21 @@ type SKUEntry struct {
 //go:embed known_skus.yaml
 var allAzureVMSkusString string
 
-var allAzureVMSkus = func() []skewer.SKU {
+var allSKUEntries = func() []SKUEntry {
 	var entries []SKUEntry
 	if err := yaml.Unmarshal([]byte(allAzureVMSkusString), &entries); err != nil {
 		panic("failed to parse embedded known_skus.yaml: " + err.Error())
 	}
+	return entries
+}()
+
+// GetAllSKUEntries returns all SKU entries parsed from the embedded known_skus.yaml.
+func GetAllSKUEntries() []SKUEntry {
+	return allSKUEntries
+}
+
+var allAzureVMSkus = func() []skewer.SKU {
+	entries := GetAllSKUEntries()
 	skus := make([]skewer.SKU, len(entries))
 	for i, e := range entries {
 		skus[i] = skewer.SKU{Name: lo.ToPtr(e.Name)}

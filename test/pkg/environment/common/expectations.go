@@ -341,6 +341,9 @@ func (env *Environment) EventuallyExpectHealthyWithTimeout(timeout time.Duration
 	Eventually(func(g Gomega) {
 		for _, pod := range pods {
 			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(pod), pod)).To(Succeed())
+			if pod.Status.Phase == corev1.PodFailed {
+				StopTrying("pod entered terminal Failed phase, this may be due to https://github.com/Azure/karpenter-provider-azure/issues/1625").Now()
+			}
 			g.Expect(pod.Status.Conditions).To(ContainElement(And(
 				HaveField("Type", Equal(corev1.PodReady)),
 				HaveField("Status", Equal(corev1.ConditionTrue)),
