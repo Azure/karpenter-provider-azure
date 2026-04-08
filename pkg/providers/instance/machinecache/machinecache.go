@@ -293,14 +293,6 @@ func (c *MachineCache) resetRetryState(retryAttemptsLeft *int, currentRetryDelay
 	*currentRetryDelay = c.retryDelay
 }
 
-func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bool) {
-	value, ok := c.machines.Load(machineName)
-	if !ok {
-		return nil, false
-	}
-	return value.(*armcontainerservice.Machine), true
-}
-
 func (c *MachineCache) updateWorker() {
 	defer c.wg.Done()
 
