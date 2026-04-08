@@ -359,3 +359,16 @@ func isValid(ctx context.Context, properties *armcontainerservice.MachinePropert
 
 	return true
 }
+
+func isValid(ctx context.Context, properties *armcontainerservice.MachineProperties, machineName string) bool {
+	if properties == nil || properties.Tags == nil {
+		log.FromContext(ctx).Info("skipping AKS machine with nil properties or tags", "aksMachineName", machineName)
+		return false
+	}
+	if _, hasTags := properties.Tags[nodePoolTagKey]; !hasTags {
+		log.FromContext(ctx).Info("skipping AKS machine without Karpenter nodepool tag", "aksMachineName", machineName)
+		return false
+	}
+
+	return true
+}
