@@ -137,7 +137,7 @@ var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
 	azClient                        *azclient.AZClient
-	machinecache                    *machinecache.MachineListCache
+	machinecache                    *machinecache.MachineCache
 	instanceTypeProvider            instancetype.Provider
 	allocationStrategyProvider      allocationstrategy.Provider
 	imageResolver                   imagefamily.Resolver

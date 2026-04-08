@@ -37,6 +37,13 @@ var (
 )
 
 var (
+	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
+	ErrCacheStale = errors.New("cache is stale")
+	// ErrCacheMiss indicates the requested machine was not found in the cache.
+	ErrCacheMiss = errors.New("machine not found in cache")
+)
+
+var (
 	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
