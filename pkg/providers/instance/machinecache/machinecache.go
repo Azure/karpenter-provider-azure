@@ -3,6 +3,7 @@ package machinecache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -30,6 +31,13 @@ const (
 	provisioningStateDeleting  = "Deleting"
 	provisioningStateSucceeded = "Succeeded"
 	provisioningStateFailed    = "Failed"
+)
+
+var (
+	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
+	ErrCacheStale = errors.New("cache is stale")
+	// ErrCacheMiss indicates the requested machine was not found in the cache.
+	ErrCacheMiss = errors.New("machine not found in cache")
 )
 
 var (
@@ -94,12 +102,12 @@ func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachi
 func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, error) {
 	if !c.isFresh() {
 		c.requestUpdate()
-		return nil, fmt.Errorf("cache is stale for machine %q", machineName)
+		return nil, fmt.Errorf("%w for machine %q", ErrCacheStale, machineName)
 	}
 
 	value, ok := c.machines.Load(machineName)
 	if !ok {
-		return nil, fmt.Errorf("machine %q not found in cache", machineName)
+		return nil, fmt.Errorf("%w: machine %q", ErrCacheMiss, machineName)
 	}
 
 	return value.(*armcontainerservice.Machine), nil
@@ -172,18 +180,16 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
-	if !c.isFresh() {
-		c.requestUpdate()
-		return nil, nil, false
-	}
+	machine, err := c.Get(aksMachineName)
+	if err != nil {
+		if errors.Is(err, ErrCacheStale) || errors.Is(err, ErrCacheMiss) {
+			c.requestUpdate()
+			log.FromContext(ctx).Info("cache miss for AKS machine during poll, requested update",
+				"aksMachineName", aksMachineName,
+				"retryAttemptsLeft", *retryAttemptsLeft,
+			)
+		}
 
-	machine, ok := c.get(aksMachineName)
-	if !ok {
-		c.requestUpdate()
-		log.FromContext(ctx).Info("cache miss for AKS machine during poll, requested update",
-			"aksMachineName", aksMachineName,
-			"retryAttemptsLeft", *retryAttemptsLeft,
-		)
 		shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
 		if backoffErr != nil {
 			return nil, backoffErr, true
