@@ -320,42 +320,21 @@ func (c *MachineListCache) updateWorker() {
 }
 
 func (c *MachineListCache) update(ctx context.Context) error {
-	// Check freshness without lock (atomic operation)
 	if c.isFresh() {
 		return nil
 	}
-	log.FromContext(ctx).Info("Start update for machine list cache", "aksMachinesPoolName", c.aksMachinesPoolName)
+	log.FromContext(ctx).Info("Start update for machine cache", "aksMachinesPoolName", c.aksMachinesPoolName)
 
-	now := time.Now()
-	defer func() {
-		log.FromContext(ctx).Info("finished updating machine list cache",
-			"duration", time.Since(now).Seconds(),
-			"aksMachinesPoolName", c.aksMachinesPoolName,
-		)
-	}()
-
-	// Perform LIST API call WITHOUT holding lock (can take 17-29 seconds)
 	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
 	if pager == nil {
 		return fmt.Errorf("failed to list AKS machines: created pager is nil")
 	}
 
-	// Track machine names returned from API to detect stale cache entries
 	fetchedMachineNames := make(map[string]struct{})
-
-	startPage := time.Now()
-	totalMachinesStored := 0
 	for pager.More() {
-		pageNow := time.Now()
 		page, err := pager.NextPage(ctx)
-		log.FromContext(ctx).Info("fetched page of AKS machines",
-			"duration", time.Since(pageNow).String(),
-			"aksMachinesPoolName", c.aksMachinesPoolName,
-		)
 		if err != nil {
 			if isAKSMachineOrMachinesPoolNotFound(err) {
-				// AKS machines pool not found. Handle gracefully.
-				// Suggestion: separate the util function to not cover more than needed?
 				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
 				break
 			}
@@ -363,49 +342,15 @@ func (c *MachineListCache) update(ctx context.Context) error {
 			return fmt.Errorf("failed to list AKS machines: %w", err)
 		}
 
-		pageSize := len(page.Value)
-		nowPage := time.Now()
-		pageStoredCount := 0
 		for _, aksMachine := range page.Value {
-			// Filter to only include machines created by Karpenter
-			// Check if the AKS machine has the Karpenter nodepool tag
-			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
-				if _, hasKarpenterTag := aksMachine.Properties.Tags[nodePoolTagKey]; hasKarpenterTag {
-					if aksMachine.Name != nil {
-						// Store directly into cache as we fetch (rolling update)
-						c.machines.Store(*aksMachine.Name, aksMachine)
-						fetchedMachineNames[*aksMachine.Name] = struct{}{}
-						pageStoredCount++
-					}
-				} else {
-					log.FromContext(ctx).V(1).Info("skipping AKS machine without Karpenter nodepool tag",
-						"aksMachineName", lo.FromPtr(aksMachine.Name),
-					)
-				}
-			} else {
-				log.FromContext(ctx).V(1).Info("skipping AKS machine with nil tags",
-					"aksMachineName", lo.FromPtr(aksMachine.Name),
-				)
+			if isValid(ctx, aksMachine.Properties, lo.FromPtr(aksMachine.Name)) {
+				c.machines.Store(lo.FromPtr(aksMachine.Name), aksMachine)
+				fetchedMachineNames[lo.FromPtr(aksMachine.Name)] = struct{}{}
 			}
 		}
-		totalMachinesStored += pageStoredCount
-
-		log.FromContext(ctx).Info("processed page of AKS machines",
-			"duration", time.Since(nowPage).String(),
-			"pageSize", pageSize,
-			"filteredSize", pageStoredCount,
-			"aksMachinesPoolName", c.aksMachinesPoolName,
-		)
 
 	}
 
-	log.FromContext(ctx).Info("completed LIST of AKS machines",
-		"duration", time.Since(startPage).String(),
-		"totalMachines", totalMachinesStored,
-		"aksMachinesPoolName", c.aksMachinesPoolName,
-	)
-
-	// Remove stale entries: delete cache keys not in fetchedMachineNames
 	c.machines.Range(func(key, value any) bool {
 		machineName := key.(string)
 		if _, exists := fetchedMachineNames[machineName]; !exists {
@@ -414,8 +359,7 @@ func (c *MachineListCache) update(ctx context.Context) error {
 		return true
 	})
 
-	log.FromContext(ctx).Info("machine list cache updated", "totalMachines", totalMachinesStored)
-
+	log.FromContext(ctx).Info("machine list cache updated", "total", len(fetchedMachineNames))
 	c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 	return nil
 }
@@ -429,13 +373,10 @@ func (c *MachineListCache) isFresh() bool {
 	return time.Since(lastUpdated) < c.ttl
 }
 
-// requestUpdate requests a non-blocking cache refresh from the background worker.
 func (c *MachineListCache) requestUpdate() {
 	select {
 	case c.updateRequests <- struct{}{}:
-		// Update request successfully enqueued
 	default:
-		// Channel buffer full - update already pending, do nothing
 	}
 }
 
@@ -449,4 +390,17 @@ func isAKSMachineOrMachinesPoolNotFound(err error) bool {
 		return true
 	}
 	return false
+}
+
+func isValid(ctx context.Context, properties *armcontainerservice.MachineProperties, machineName string) bool {
+	if properties == nil || properties.Tags == nil {
+		log.FromContext(ctx).Info("skipping AKS machine with nil properties or tags", "aksMachineName", machineName)
+		return false
+	}
+	if _, hasTags := properties.Tags[nodePoolTagKey]; !hasTags {
+		log.FromContext(ctx).Info("skipping AKS machine without Karpenter nodepool tag", "aksMachineName", machineName)
+		return false
+	}
+
+	return true
 }
