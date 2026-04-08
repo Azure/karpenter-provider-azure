@@ -948,8 +948,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile.Enabled)).To(BeTrue())
 			})
 
-			It("should set ArtifactStreamingProfile when not specified (defaults to enabled for AMD64 Ubuntu)", func() {
-				// ArtifactStreaming not set — defaults to enabled for AMD64
+			It("should not set ArtifactStreamingProfile when not specified (defaults to disabled)", func() {
 				nodeClass.Spec.ArtifactStreaming = nil
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -963,8 +962,7 @@ var _ = Describe("CloudProvider", func() {
 				aksMachine := createInput.AKSMachine
 
 				Expect(aksMachine.Properties.Kubernetes).ToNot(BeNil())
-				Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).ToNot(BeNil())
-				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile.Enabled)).To(BeTrue())
+				Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).To(BeNil())
 			})
 
 			It("should not set ArtifactStreamingProfile when explicitly disabled", func() {
