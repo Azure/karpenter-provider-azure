@@ -465,6 +465,11 @@ func TestIsFresh(t *testing.T) {
 			lastUpdated: time.Time{},
 			expected:    false,
 		},
+		{
+			name:        "uninitialized cache",
+			lastUpdated: time.Time{},
+			expected:    false,
+		},
 	}
 
 	for _, tt := range tests {
