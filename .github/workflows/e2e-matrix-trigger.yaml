@@ -28,6 +28,10 @@ on:
           - "1.33"
           - "1.34"
           - "1.35"
+      azure_vm_size:
+        type: string
+        description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
+        default: "Standard_D4ds_v5"  # We have more quota for this VM size so force it to avoid quota errors
   push:
     branches: [main]
 
@@ -50,6 +54,7 @@ jobs:
       location: ${{ inputs.location || 'westus3' }}
       provision_mode: ${{ inputs.provision_mode || 'aksscriptless' }}
       k8s_version: ${{ inputs.k8s_version }}
+      azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
