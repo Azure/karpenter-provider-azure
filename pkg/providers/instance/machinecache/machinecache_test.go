@@ -42,11 +42,14 @@ func (f *fakeAKSMachineNewListPager) NewListPager(resourceGroupName string, reso
 func TestUpdate(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name        string
-		lastUpdated time.Time
-		nilPager    bool
-		pagerErr    error
-		expectError bool
+		name             string
+		lastUpdated      time.Time
+		nilPager         bool
+		pagerErr         error
+		existingCache    []*armcontainerservice.Machine
+		returnedMachines []*armcontainerservice.Machine
+		expectedCache    []*armcontainerservice.Machine
+		expectError      bool
 	}{
 		{
 			name:        "cache is fresh - no op",
@@ -65,6 +68,60 @@ func TestUpdate(t *testing.T) {
 			pagerErr:    errors.New("pager error"),
 			expectError: true,
 		},
+		{
+			name:        "cache update with valid and invalid machines",
+			lastUpdated: time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			existingCache: []*armcontainerservice.Machine{
+				{
+					Name: to.Ptr("machine1"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(provisioningStateCreating),
+						Tags: map[string]*string{
+							nodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+				{
+					Name: to.Ptr("machine2"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(provisioningStateCreating),
+						Tags: map[string]*string{
+							nodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+			},
+			returnedMachines: []*armcontainerservice.Machine{
+				{
+					Name: to.Ptr("machine1"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(provisioningStateSucceeded),
+						Tags: map[string]*string{
+							nodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+				{
+					Name:       to.Ptr("machine3"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(provisioningStateSucceeded),
+						Tags:              nil,
+					},
+				},
+			},
+			expectedCache: []*armcontainerservice.Machine{
+				{
+					Name: to.Ptr("machine1"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(provisioningStateSucceeded),
+						Tags: map[string]*string{
+							nodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -72,17 +129,53 @@ func TestUpdate(t *testing.T) {
 			fakePager := &fakeAKSMachineNewListPager{
 				err:      tt.pagerErr,
 				nilPager: tt.nilPager,
+				machines: tt.returnedMachines,
 			}
 
 			cache := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
 				ttl:                  DefaultMachineListCacheTTL,
 				client:               fakePager,
+				clusterResourceGroup: "test-rg",
+				clusterName:          "test-cluster",
+				aksMachinesPoolName:  "test-pool",
 			}
+
+			for _, m := range tt.existingCache {
+				cache.machines.Store(lo.FromPtr(m.Name), m)
+			}
+
 			cache.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 			err := cache.update(context.Background())
 			if (err != nil) != tt.expectError {
 				t.Errorf("Update() error = %v, expectError %v", err, tt.expectError)
+			}
+
+			if tt.expectedCache != nil {
+				var actualMachines []*armcontainerservice.Machine
+				cache.machines.Range(func(key, value any) bool {
+					actualMachines = append(actualMachines, value.(*armcontainerservice.Machine))
+					return true
+				})
+
+				if len(actualMachines) != len(tt.expectedCache) {
+					t.Errorf("Update() cache size = %d, want %d", len(actualMachines), len(tt.expectedCache))
+				}
+
+				for _, expected := range tt.expectedCache {
+					found := false
+					for _, actual := range actualMachines {
+						if lo.FromPtr(actual.Name) == lo.FromPtr(expected.Name) {
+							if pretty.Compare(actual, expected) == "" {
+								found = true
+								break
+							}
+						}
+					}
+					if !found {
+						t.Errorf("Update() expected machine %q not found in cache", lo.FromPtr(expected.Name))
+					}
+				}
 			}
 		})
 	}
