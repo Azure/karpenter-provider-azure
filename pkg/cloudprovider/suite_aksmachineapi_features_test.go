@@ -1020,6 +1020,93 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(vnetOverride.ServeStaleDurationInSeconds)).To(Equal(int32(60)))
 				Expect(lo.FromPtr(vnetOverride.ServeStale)).To(Equal(armcontainerservice.LocalDNSServeStaleImmediate))
 			})
+
+			It("should set LocalDNSProfile with mode Disabled", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode:             v1beta1.LocalDNSModeDisabled,
+					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+					KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeDisabled))
+			})
+
+			It("should set LocalDNSProfile with mode Preferred", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode:             v1beta1.LocalDNSModePreferred,
+					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+					KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModePreferred))
+			})
+
+			It("should correctly convert KubeDNSOverrides field values", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: v1beta1.LocalDNSModeRequired,
+					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingLog,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(25)),
+							CacheDuration:      karpv1.MustParseNillableDuration("15s"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("45s"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+						validLocalDNSZoneOverride("cluster.local", v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+					},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(aksMachine.Properties.LocalDNSProfile.KubeDNSOverrides).To(HaveLen(2))
+
+				kubeOverride := aksMachine.Properties.LocalDNSProfile.KubeDNSOverrides["."]
+				Expect(kubeOverride).ToNot(BeNil())
+				Expect(lo.FromPtr(kubeOverride.ForwardDestination)).To(Equal(armcontainerservice.LocalDNSForwardDestinationClusterCoreDNS))
+				Expect(lo.FromPtr(kubeOverride.QueryLogging)).To(Equal(armcontainerservice.LocalDNSQueryLoggingLog))
+				Expect(lo.FromPtr(kubeOverride.Protocol)).To(Equal(armcontainerservice.LocalDNSProtocolPreferUDP))
+				Expect(lo.FromPtr(kubeOverride.ForwardPolicy)).To(Equal(armcontainerservice.LocalDNSForwardPolicySequential))
+				Expect(lo.FromPtr(kubeOverride.MaxConcurrent)).To(Equal(int32(25)))
+				Expect(lo.FromPtr(kubeOverride.CacheDurationInSeconds)).To(Equal(int32(15)))
+				Expect(lo.FromPtr(kubeOverride.ServeStaleDurationInSeconds)).To(Equal(int32(45)))
+				Expect(lo.FromPtr(kubeOverride.ServeStale)).To(Equal(armcontainerservice.LocalDNSServeStaleVerify))
+			})
 		})
 	})
 })
