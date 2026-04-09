@@ -102,7 +102,7 @@ func TestUpdate(t *testing.T) {
 					},
 				},
 				{
-					Name:       to.Ptr("machine3"),
+					Name: to.Ptr("machine3"),
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(provisioningStateSucceeded),
 						Tags:              nil,
@@ -236,6 +236,115 @@ func TestGet(t *testing.T) {
 			}
 			if pretty.Compare(machine, tt.expectedMachine) != "" {
 				t.Errorf("Get() = %v, want %v", machine, tt.expectedMachine)
+			}
+		})
+	}
+}
+
+func TestList(t *testing.T) {
+	t.Parallel()
+
+	// Shared test data
+	twoMachines := []*armcontainerservice.Machine{
+		{
+			Name: to.Ptr("machine1"),
+			Properties: &armcontainerservice.MachineProperties{
+				ProvisioningState: to.Ptr(provisioningStateSucceeded),
+			},
+		},
+		{
+			Name: to.Ptr("machine2"),
+			Properties: &armcontainerservice.MachineProperties{
+				ProvisioningState: to.Ptr(provisioningStateCreating),
+			},
+		},
+	}
+
+	tests := []struct {
+		name             string
+		lastUpdated      time.Time
+		cachedMachines   []*armcontainerservice.Machine
+		expectedMachines []*armcontainerservice.Machine
+		expectErr        bool
+		setupCache       func(*MachineCache) func() // returns cleanup function
+	}{
+		{
+			name:             "fresh cache with two items",
+			lastUpdated:      time.Now(),
+			cachedMachines:   twoMachines,
+			expectedMachines: twoMachines,
+			expectErr:        false,
+		},
+		{
+			name:             "stale cache refreshed by background worker",
+			lastUpdated:      time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			cachedMachines:   twoMachines,
+			expectedMachines: twoMachines,
+			expectErr:        false,
+			setupCache: func(c *MachineCache) func() {
+				ctx, cancel := context.WithCancel(context.Background())
+				c.updateRequests = make(chan struct{}, 1)
+				c.workerCtx = ctx
+				c.workerCancel = cancel
+
+				// Background worker that refreshes cache
+				go func() {
+					select {
+					case <-c.updateRequests:
+						c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
+					case <-ctx.Done():
+						return
+					}
+				}()
+
+				return cancel
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &MachineCache{
+				lastUpdatedUnixNanos: atomic.Int64{},
+				ttl:                  DefaultMachineListCacheTTL,
+			}
+
+			for _, m := range tt.cachedMachines {
+				c.machines.Store(lo.FromPtr(m.Name), m)
+			}
+			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
+
+			var cleanup func()
+			if tt.setupCache != nil {
+				cleanup = tt.setupCache(c)
+				defer cleanup()
+			}
+
+			machines, err := c.List(context.Background())
+			if (err != nil) != tt.expectErr {
+				t.Errorf("List() error = %v, expectErr %v", err, tt.expectErr)
+				return
+			}
+
+			if len(machines) != len(tt.expectedMachines) {
+				t.Errorf("List() returned %d machines, want %d", len(machines), len(tt.expectedMachines))
+				return
+			}
+
+			for _, expected := range tt.expectedMachines {
+				found := false
+				for _, actual := range machines {
+					if lo.FromPtr(actual.Name) == lo.FromPtr(expected.Name) {
+						if pretty.Compare(actual, expected) != "" {
+							t.Errorf("List() machine %q mismatch:\n%s", lo.FromPtr(expected.Name), pretty.Compare(actual, expected))
+						}
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("List() expected machine %q not found in results", lo.FromPtr(expected.Name))
+				}
 			}
 		})
 	}
@@ -526,6 +635,11 @@ func TestIsFresh(t *testing.T) {
 		{
 			name:        "stale cache",
 			lastUpdated: time.Now().Add(-1 * DefaultMachineListCacheTTL),
+			expected:    false,
+		},
+		{
+			name:        "uninitialized cache",
+			lastUpdated: time.Time{},
 			expected:    false,
 		},
 	}
