@@ -2,15 +2,90 @@ package machinecache
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/samber/lo"
 )
+
+type fakeAKSMachineNewListPager struct {
+	machines []*armcontainerservice.Machine
+	nilPager bool
+	err      error
+}
+
+func (f *fakeAKSMachineNewListPager) NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
+	if f.nilPager {
+		return nil
+	}
+
+	return runtime.NewPager(runtime.PagingHandler[armcontainerservice.MachinesClientListResponse]{
+		More: func(page armcontainerservice.MachinesClientListResponse) bool {
+			return false
+		},
+		Fetcher: func(ctx context.Context, page *armcontainerservice.MachinesClientListResponse) (armcontainerservice.MachinesClientListResponse, error) {
+			return armcontainerservice.MachinesClientListResponse{
+				MachineListResult: armcontainerservice.MachineListResult{
+					Value: f.machines,
+				},
+			}, f.err
+		},
+	})
+}
+
+func TestUpdate(t *testing.T) {
+	tests := []struct {
+		name        string
+		lastUpdated time.Time
+		nilPager    bool
+		pagerErr    error
+		expectError bool
+	}{
+		{
+			name:        "cache is fresh - no op",
+			lastUpdated: time.Now(),
+			expectError: false,
+		},
+		{
+			name:        "nil pager - error",
+			lastUpdated: time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			nilPager:    true,
+			expectError: true,
+		},
+		{
+			name:        "pager returns error",
+			lastUpdated: time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			pagerErr:    errors.New("pager error"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakePager := &fakeAKSMachineNewListPager{
+				err:      tt.pagerErr,
+				nilPager: tt.nilPager,
+			}
+
+			cache := &MachineCache{
+				lastUpdatedUnixNanos: atomic.Int64{},
+				ttl:                  DefaultMachineListCacheTTL,
+				client:               fakePager,
+			}
+			cache.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
+			err := cache.update(context.Background())
+			if (err != nil) != tt.expectError {
+				t.Errorf("Update() error = %v, expectError %v", err, tt.expectError)
+			}
+		})
+	}
+}
 
 func TestGet(t *testing.T) {
 	tests := []struct {
@@ -105,7 +180,7 @@ func TestPollUntilDone(t *testing.T) {
 					},
 				},
 			},
-			lastUpdated: time.Now(),
+			lastUpdated:   time.Now(),
 			expectPollErr: false,
 			expectedProvisioningErr: &armcontainerservice.ErrorDetail{
 				Code:    to.Ptr("ProvisioningFailed"),
