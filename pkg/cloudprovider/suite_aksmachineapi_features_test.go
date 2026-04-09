@@ -1065,7 +1065,7 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should correctly convert KubeDNSOverrides field values", func() {
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-					Mode: v1beta1.LocalDNSModeRequired,
+					Mode:             v1beta1.LocalDNSModeRequired,
 					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
 					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
 						{
