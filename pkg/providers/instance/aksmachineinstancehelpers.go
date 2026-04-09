@@ -171,7 +171,7 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType) *armconta
 }
 
 func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.AgentPoolArtifactStreamingProfile {
-	arch := instanceType.Requirements.Get(v1.LabelArchStable).Any()
+	arch := instanceType.Requirements.Get(v1.LabelArchStable).Values()[0]
 	if nodeClass.IsArtifactStreamingEnabled(arch) {
 		return &armcontainerservice.AgentPoolArtifactStreamingProfile{
 			Enabled: lo.ToPtr(true),
