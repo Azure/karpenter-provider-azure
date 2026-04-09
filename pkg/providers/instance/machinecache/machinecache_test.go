@@ -126,6 +126,7 @@ func TestUpdate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			fakePager := &fakeAKSMachineNewListPager{
 				err:      tt.pagerErr,
 				nilPager: tt.nilPager,
@@ -219,6 +220,7 @@ func TestGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			c := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
 				ttl:                  DefaultMachineListCacheTTL,
@@ -304,6 +306,8 @@ func TestList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			t.Parallel()
 			c := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
 				ttl:                  DefaultMachineListCacheTTL,
@@ -428,6 +432,7 @@ func TestPollUntilDone(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			c := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
 				ttl:                  DefaultMachineListCacheTTL,
@@ -522,6 +527,7 @@ func TestHandleProvisioningState(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			c := &MachineCache{
 				retryDelay:    time.Millisecond,
 				maxRetryDelay: time.Millisecond,
@@ -589,6 +595,7 @@ func TestHandleNilProvisioningState(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			c := &MachineCache{
 				retryDelay:    time.Millisecond,
 				maxRetryDelay: time.Millisecond,
@@ -646,6 +653,7 @@ func TestIsFresh(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cache := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
 				ttl:                  DefaultMachineListCacheTTL,
@@ -698,6 +706,7 @@ func TestIsValid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := isValid(ctx, tt.properties, "test-nodepool"); got != tt.expected {
 				t.Errorf("isValid() = %v, want %v", got, tt.expected)
 			}
