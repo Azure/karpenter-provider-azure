@@ -40,6 +40,7 @@ func (f *fakeAKSMachineNewListPager) NewListPager(resourceGroupName string, reso
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		lastUpdated time.Time
@@ -88,6 +89,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		lastUpdated     time.Time
@@ -147,6 +149,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestPollUntilDone(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                    string
 		machine                 *armcontainerservice.Machine
@@ -247,6 +250,7 @@ func TestPollUntilDone(t *testing.T) {
 }
 
 func TestHandleProvisioningState(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	tests := []struct {
 		name                    string
@@ -356,6 +360,7 @@ func TestHandleProvisioningState(t *testing.T) {
 }
 
 func TestHandleNilProvisioningState(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	tests := []struct {
 		name                    string
@@ -414,6 +419,7 @@ func TestHandleNilProvisioningState(t *testing.T) {
 }
 
 func TestIsFresh(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		lastUpdated time.Time
@@ -446,6 +452,7 @@ func TestIsFresh(t *testing.T) {
 }
 
 func TestIsValid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	tests := []struct {
 		name       string
