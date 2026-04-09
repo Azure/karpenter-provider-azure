@@ -159,24 +159,7 @@ func TestUpdate(t *testing.T) {
 					return true
 				})
 
-				if len(actualMachines) != len(tt.expectedCache) {
-					t.Errorf("Update() cache size = %d, want %d", len(actualMachines), len(tt.expectedCache))
-				}
-
-				for _, expected := range tt.expectedCache {
-					found := false
-					for _, actual := range actualMachines {
-						if lo.FromPtr(actual.Name) == lo.FromPtr(expected.Name) {
-							if pretty.Compare(actual, expected) == "" {
-								found = true
-								break
-							}
-						}
-					}
-					if !found {
-						t.Errorf("Update() expected machine %q not found in cache", lo.FromPtr(expected.Name))
-					}
-				}
+				compareWithExpected(t, actualMachines, tt.expectedCache, "Update()")
 			}
 		})
 	}
@@ -329,26 +312,7 @@ func TestList(t *testing.T) {
 				return
 			}
 
-			if len(machines) != len(tt.expectedMachines) {
-				t.Errorf("List() returned %d machines, want %d", len(machines), len(tt.expectedMachines))
-				return
-			}
-
-			for _, expected := range tt.expectedMachines {
-				found := false
-				for _, actual := range machines {
-					if lo.FromPtr(actual.Name) == lo.FromPtr(expected.Name) {
-						if pretty.Compare(actual, expected) != "" {
-							t.Errorf("List() machine %q mismatch:\n%s", lo.FromPtr(expected.Name), pretty.Compare(actual, expected))
-						}
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("List() expected machine %q not found in results", lo.FromPtr(expected.Name))
-				}
-			}
+			compareWithExpected(t, machines, tt.expectedMachines, "List()")
 		})
 	}
 }
@@ -710,5 +674,28 @@ func TestIsValid(t *testing.T) {
 				t.Errorf("isValid() = %v, want %v", got, tt.expected)
 			}
 		})
+	}
+}
+
+func compareWithExpected(t *testing.T, got, expected []*armcontainerservice.Machine, testName string) {
+	t.Helper()
+
+	if len(got) != len(expected) {
+		t.Errorf("%s cache size = %d, want %d", testName, len(got), len(expected))
+	}
+
+	for _, expectedMachine := range expected {
+		found := false
+		for _, actualMachine := range got {
+			if lo.FromPtr(actualMachine.Name) == lo.FromPtr(expectedMachine.Name) {
+				if pretty.Compare(actualMachine, expectedMachine) == "" {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s expected machine %q not found in cache", testName, lo.FromPtr(expectedMachine.Name))
+		}
 	}
 }
