@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -46,6 +45,7 @@ import (
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var (
@@ -106,7 +106,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 		// Missing tag (by design, only possible if user intervenes) will eventually be repaired by in-place update controller.
 		// By the time of writing, this is being used for logging purposes within provider only.
 		// That is unlikely to change for core. But be mindful of provider is to rely on this in that situation. Still, rare.
-		// This was less of a concern for VM instance as NodeClaim name is always inferrable from instance name.
+		// This was less of a concern for VM instance as NodeClaim name is always inferable from instance name.
 		nodeClaim.Name = *tag
 	}
 	nodeClaim.Labels = labels
@@ -135,11 +135,9 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 	if err := validateRetrievedAKSMachineBasicProperties(aksMachine); err != nil {
 		return nil, fmt.Errorf("failed to validate AKS machine instance %q: %w", lo.FromPtr(aksMachine.Name), err)
 	}
-	var zonePtr *string // This one is optional.
-	if len(aksMachine.Zones) < 1 || aksMachine.Zones[0] == nil {
-		log.FromContext(ctx).Info("AKS machine instance is missing zone", "aksMachineName", lo.FromPtr(aksMachine.Name))
-	} else {
-		zonePtr = lo.ToPtr(utils.MakeAKSLabelZoneFromARMZone(aksMachineLocation, lo.FromPtr(aksMachine.Zones[0])))
+	zone, err := zones.MakeAKSLabelZoneFromARMZones(aksMachineLocation, aksMachine.Zones)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get zone for AKS machine %q: %w", lo.FromPtr(aksMachine.Name), err)
 	}
 
 	return BuildNodeClaimFromAKSMachineTemplate(
@@ -147,7 +145,7 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 		aksMachine,
 		offerings.GetInstanceTypeFromVMSize(lo.FromPtr(aksMachine.Properties.Hardware.VMSize), possibleInstanceTypes),
 		getCapacityTypeFromAKSScaleSetPriority(lo.FromPtr(aksMachine.Properties.Priority)),
-		zonePtr,
+		&zone,
 		lo.FromPtr(aksMachine.ID),
 		lo.FromPtr(aksMachine.Properties.ResourceID),
 		isAKSMachineDeleting(aksMachine),
@@ -251,25 +249,13 @@ func isAKSMachineDeleting(aksMachine *armcontainerservice.Machine) bool {
 	return false
 }
 
-// GetAKSLabelZoneFromAKSMachine returns the zone for the given AKS machine, or an empty string if there is no zone specified
-// This function is analogous to utils.GetAKSLabelZoneFromVM but for AKS machines
+// GetAKSLabelZoneFromAKSMachine returns the zone for the given AKS machine, or RegionalZone ("0") if there is no zone specified.
+// This function is analogous to zones.MakeAKSLabelZoneFromVM but for AKS machines.
 func GetAKSLabelZoneFromAKSMachine(aksMachine *armcontainerservice.Machine, location string) (string, error) {
 	if aksMachine == nil {
 		return "", fmt.Errorf("cannot pass in a nil AKS machine")
 	}
-	if aksMachine.Zones == nil {
-		return "", nil
-	}
-	if len(aksMachine.Zones) == 1 {
-		if location == "" {
-			return "", fmt.Errorf("AKS machine is missing location")
-		}
-		return utils.MakeAKSLabelZoneFromARMZone(location, lo.FromPtr(aksMachine.Zones[0])), nil
-	}
-	if len(aksMachine.Zones) > 1 {
-		return "", fmt.Errorf("AKS machine has multiple zones")
-	}
-	return "", nil
+	return zones.MakeAKSLabelZoneFromARMZones(location, aksMachine.Zones)
 }
 
 func IsAKSMachineOrMachinesPoolNotFound(err error) bool {

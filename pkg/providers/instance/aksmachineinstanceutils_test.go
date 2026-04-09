@@ -39,6 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -154,7 +155,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
 			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).ToNot(HaveKey(v1.LabelTopologyZone))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
@@ -554,7 +555,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(zone).To(Equal("eastus-1"))
 		})
 
-		It("should return empty string for AKS machine with no zones", func() {
+		It("should return RegionalZone for AKS machine with no zones", func() {
 			machine := &armcontainerservice.Machine{
 				Zones: []*string{},
 			}
@@ -563,10 +564,10 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(""))
+			Expect(zone).To(Equal(zones.Regional))
 		})
 
-		It("should return empty string for AKS machine with nil zones", func() {
+		It("should return RegionalZone for AKS machine with nil zones", func() {
 			machine := &armcontainerservice.Machine{
 				Zones: nil,
 			}
@@ -575,7 +576,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(""))
+			Expect(zone).To(Equal(zones.Regional))
 		})
 
 		It("should return error for nil AKS machine", func() {
@@ -596,7 +597,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AKS machine is missing location"))
+			Expect(err.Error()).To(ContainSubstring("location is required for zonal resource"))
 		})
 
 		It("should return error for AKS machine with multiple zones", func() {
@@ -608,7 +609,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AKS machine has multiple zones"))
+			Expect(err.Error()).To(ContainSubstring("resource has multiple zones"))
 		})
 
 		It("should handle different zones correctly", func() {

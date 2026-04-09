@@ -553,7 +553,7 @@ var _ = Describe("Drift", func() {
 		nodePool.Spec.Template.Annotations = lo.Assign(nodePool.Spec.Template.Annotations, map[string]string{
 			"test-key": "test-value",
 		})
-		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
+		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
 			karpv1.NodePoolHashAnnotationKey:        "test-hash-2",
 			karpv1.NodePoolHashVersionAnnotationKey: "test-hash-version-2",
 		})
@@ -602,7 +602,7 @@ var _ = Describe("Drift", func() {
 		// nodeclass. However, the aksnodeclass-hash-version does not match the controller hash version, so we will see that
 		// none of the nodeclaims will be drifted and all nodeclaims will have an updated `aksnodeclass-hash` and `aksnodeclass-hash-version` annotation
 		nodeClass.Spec.MaxPods = lo.ToPtr[int32](10)
-		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
+		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
 			v1beta1.AnnotationAKSNodeClassHash:        "test-hash-2",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test-hash-version-2",
 		})

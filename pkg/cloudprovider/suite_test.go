@@ -50,7 +50,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var ctx context.Context
@@ -73,7 +73,7 @@ var nodePool *karpv1.NodePool
 var nodeClass *v1beta1.AKSNodeClass
 var nodeClaim *karpv1.NodeClaim
 
-var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
+var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
 func TestCloudProvider(t *testing.T) {
@@ -153,8 +153,9 @@ func validateNodeClaimCommon(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodeP
 	Expect(nodeClaim.Labels).To(HaveKey(v1beta1.LabelSKUMemory))
 
 	// Zone validation (conditional)
-	if nodeClaim.Labels[v1.LabelTopologyZone] != "" {
-		Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(MatchRegexp(`^[a-z0-9-]+-[0-9]+$`))
+	zone := nodeClaim.Labels[v1.LabelTopologyZone]
+	if zone != "" && zone != zones.Regional {
+		Expect(zone).To(MatchRegexp(`^[a-z0-9-]+-[0-9]+$`))
 	}
 
 	// Capacity and Allocatable resources

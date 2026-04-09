@@ -35,6 +35,10 @@ inputs:
     description: "The type of managed identity for the cluster (SystemAssigned or UserAssigned)"
     required: false
     default: "SystemAssigned"
+  azure_vm_size:
+    description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
+    required: false
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -62,7 +66,7 @@ runs:
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
-        AZURE_VM_SIZE: Standard_D4ds_v5 # We have more quota for this VM size so force it to avoid quota errors
+        AZURE_VM_SIZE: ${{ inputs.azure_vm_size }}
         K8S_VERSION: ${{ inputs.k8s_version }}
         PROVISION_MODE: ${{ inputs.provision_mode }}
       run: |

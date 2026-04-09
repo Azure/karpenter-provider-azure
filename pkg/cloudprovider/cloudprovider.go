@@ -58,6 +58,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -635,8 +636,8 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
-	if zone, err := utils.MakeAKSLabelZoneFromVM(vm); err != nil {
-		log.FromContext(ctx).Info("failed to get zone for VM, zone label will be empty", "vmName", *vm.Name, "error", err)
+	if zone, err := zones.MakeAKSLabelZoneFromVM(vm); err != nil {
+		log.FromContext(ctx).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
 	}
