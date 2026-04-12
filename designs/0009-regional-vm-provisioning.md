@@ -23,7 +23,6 @@
   - [Preference Pattern: Weighted NodePools](#preference-pattern-weighted-nodepools)
 - [Recommendation](#recommendation)
   - [Option B Implementation Checklist](#option-b-implementation-checklist)
-  - [Option C: When to Choose Instead](#option-c-when-to-choose-instead)
   - [Conceptual Code Change](#conceptual-code-change)
   - [Implementation Notes](#implementation-notes)
   - [Design Constraints on Future Strategy](#design-constraints-on-future-strategy)
@@ -47,7 +46,7 @@ Support provisioning regional (non-zonal) VMs in Karpenter on Azure for zone-cap
 
 The recommended first version widens the default envelope so both zonal and regional offerings are eligible. It pairs that with launch-side selection of one concrete cheapest compatible offering, plus an internal price-first ranking that prefers zonal offerings on equal-price ties. This ranking is the **zonal-preferred tie-break**. The design also requires regional-aware unavailability handling so zonal failures do not accidentally suppress regional fallback.
 
-> **TL;DR:** Add `karpenter.azure.com/zone-placement` as an offering label (Option B), widen the default envelope to include regional offerings for zone-capable SKUs, and apply zonal-preferred tie-breaking so the common case stays zonal-first. This is a behavioral compatibility change for existing unconstrained NodePools.
+> **TL;DR:** Add `karpenter.azure.com/zone-placement` as an offering label with values `zonal` and `regional` (Option B), widen the default envelope to include regional offerings for zone-capable SKUs, and apply zonal-preferred tie-breaking so the common case stays zonal-first. This is a behavioral compatibility change for existing unconstrained NodePools.
 
 ### Goals
 
@@ -59,8 +58,8 @@ The recommended first version widens the default envelope so both zonal and regi
 
 ### Non-Goals
 
-- VMSS-based regional support — Karpenter creates standalone VMs only; VMSS fault domain distribution is out of scope
-- Topology spread constraint automation — users who mix zonal and regional nodes are responsible for configuring topology spread constraints appropriately
+- VMSS-based placement — Karpenter creates standalone VMs only; VMSS fault domain spreading and related regional behaviors are out of scope
+- Topology spread constraint automation — users who mix zonal and regional nodes are responsible for configuring topology spread constraints appropriately on their workloads
 - Proactive zonal capacity or quota management — this design does not add quota-aware scheduling, capacity-aware zone choice, or other predictive handling of Azure zone-specific state; it continues to react to provisioning failures via the UnavailableOfferings cache
 - Changing the zone label semantics for non-zonal VMs — the `topology.kubernetes.io/zone = "0"` value is determined by cloud-provider-azure, not Karpenter
 
@@ -85,7 +84,7 @@ This design addresses two distinct problems:
 
 Azure VMs can be created **with a zone** (pinned to specific AZ hardware) or **without a zone** (regional — Azure chooses any available hardware in the region, including non-zonal racks). The regional capacity pool is a superset of zonal capacity. A SKU listing zones in the Resource SKUs API means it is zone-capable, not that capacity is guaranteed in those zones — and zone-scoped failures or restrictions do not imply regional restrictions.
 
-Karpenter uses `"0"` as the zone value for non-zonal offerings because it must match the actual AKS node label: cloud-provider-azure reads the fault domain number from ARM (always `0` for standalone VMs) and sets it as `topology.kubernetes.io/zone`. See [#1384](https://github.com/Azure/karpenter-provider-azure/issues/1384) for the prerequisite fix from `""` to `"0"`.
+Karpenter uses `"0"` as the zone value for non-zonal offerings because it must match the actual AKS node label: cloud-provider-azure reads the fault domain number from ARM (always `0` for non-zonal standalone VMs) and sets it as `topology.kubernetes.io/zone`. See [#1384](https://github.com/Azure/karpenter-provider-azure/issues/1384) for the prerequisite fix from `""` to `"0"`.
 
 For detailed Azure zone mechanics, the Resource SKUs API, common failure modes, and zone label semantics, see [Appendix: Azure Zone and Placement Reference](#appendix-azure-zone-and-placement-reference).
 
@@ -133,10 +132,10 @@ This design separates two questions:
 The distinction matters because these look similar but represent different contracts:
 
 - **Envelope-only zonal:** only zonal offerings are eligible
-- **Envelope allowing both (`Any`):** zonal and regional offerings are both eligible and may be chosen interchangeably
-- **`Any` envelope plus ranking:** both are eligible, but zonal wins on equal-price ties
+- **Envelope allowing both (`Any`):** zonal and regional offerings are both eligible; the envelope itself does not prefer one over the other
+- **`Any` envelope plus ranking:** both are eligible, but zonal wins on equal-price ties. (`Any` here is a logical construct describing the envelope state — not a user-facing value. In Option B, it corresponds to omitting the `zone-placement` requirement; in Option C, it becomes an explicit policy value.)
 
-An envelope that allows both is **not** the same as "zonal fallback to regional."
+An envelope that allows both is **not** the same as "zonal fallback to regional" — without additional ranking, regional could win over zonal (e.g., if it appears first in an arbitrary sort), so the envelope alone does not imply any preference order.
 
 > **Zonal-preferred tie-break (definition):** The recommended internal default ranking for the first version. Within an `Any` envelope, keep normal price ordering but prefer a compatible zonal offering when zonal and regional offerings are price-equivalent; fall back to regional when the best available price tier has no compatible zonal offering.
 
@@ -146,7 +145,7 @@ Where different policy types belong:
 - If multiple placement modes are acceptable and the question is which wins first → that is an **allocation strategy** problem
 - **Weighted NodePools** are a coarse-grained, core-visible preference across separate envelopes; **allocation strategy** is fine-grained ranking within one envelope
 
-This framework applies to Options **A**, **B**, and **C** whenever the envelope can expose both zonal and regional offerings. It does not apply to **D**, because silent fallback is not represented in the offering model.
+This framework applies to Options **A**, **B**, and **C** below whenever the envelope can expose both zonal and regional offerings. It does not apply to **D**, because silent fallback is not represented in the offering model.
 
 ### Zone as Placement Instruction and Topology Dimension
 
@@ -165,6 +164,17 @@ Existing users expect:
 - Topology spread on zone works correctly
 - No surprise non-zonal nodes appearing
 
+**User placement intent vs. current and target behavior:**
+
+| User intent | Today's behavior | Target behavior | Compatibility impact |
+|---|---|---|---|
+| Implicitly zonal — no zone requirement, but expects zonal nodes | Zonal only (no regional offerings exist) | Zonal-first via tie-break; regional possible if all zonal offerings unavailable | Behavioral change — widened envelope, but common case unchanged |
+| Explicitly zonal — `zone In [eastus-1, eastus-2, ...]` or equivalent | Zonal only in named zones | Unchanged — explicit zone constraints still exclude `0` | None |
+| Open to regional fallback — would accept regional if zonal is exhausted | Zonal only; SKU becomes unprovisionable if all zones exhausted | Both eligible; zonal preferred, regional available as fallback | New capability — matches user intent better than today |
+| Regional-only — explicitly wants non-zonal placement | Only possible for regional-only SKUs; zone-capable SKUs have no regional offering | `zone-placement In [regional]` or `zone In [0]` enables regional for all SKUs | New capability |
+
+The key tension is the first row: users who never said "zonal only" but got it implicitly. The following compatibility spectrum addresses how to handle that case.
+
 Most compatibility questions in this design are about the **placement envelope** for existing objects, not about ranking. If an upgrade widens the envelope from zonal-only to `Any`, then regional nodes become possible outcomes for launches, consolidation, and topology interactions. That is a real behavioral compatibility change, even if a zonal-preferred strategy keeps zonal as the common case. By contrast, changing ranking inside the same envelope is usually a smaller change: it affects which acceptable offering wins first, not which outcomes are allowed at all.
 
 This gives a useful rule of thumb:
@@ -172,9 +182,9 @@ This gives a useful rule of thumb:
 - If the question is **"can regional ever happen after upgrade?"**, that is an **envelope** question.
 - If the question is **"when zonal and regional are both allowed, which should win first?"**, that is a **ranking** question.
 
-Full preservation is one option, but not the only acceptable one. A smaller behavioral compatibility change may still be acceptable if it is predictable and still leans toward today's zonal-first intent.
+Full preservation of existing behavior is one option, but not the only acceptable one. A smaller behavioral compatibility change may still be acceptable if it is predictable and still leans toward today's zonal-first intent.
 
-This gives a compatibility spectrum:
+The resulting compatibility spectrum:
 
 - **Strict preservation:** existing objects keep an effectively zonal-only envelope unless users opt in to something broader
 - **Softened preservation:** existing objects may include regional placement in the envelope, but the common case stays close to today's zonal-first behavior through internal ranking or similar safeguards
@@ -399,22 +409,9 @@ If the project requires a provider-owned compatibility envelope or provider-owne
 1. **Add `karpenter.azure.com/zone-placement`** with values `zonal` and `regional`
 2. **Generate regional offerings for zone-capable SKUs** with `zone="0"` for capacity types that support regional placement
 3. **Tag all regional offerings**, including regional-only SKUs, as `regional`
-4. **Do not infer a default** from the absence of a NodePool requirement; no `zone-placement` requirement means `Any`
-5. **Apply the zonal-preferred tie-break** within the `Any` envelope, and make the launch path select one concrete offering using that ranking rather than selecting an arbitrary zone within the chosen capacity type
+4. **Do not infer a default** from the absence of a NodePool requirement; no `zone-placement` requirement means `Any` (i.e., equivalent to `zone-placement In [zonal, regional]`)
+5. **Apply the zonal-preferred tie-break** within the `Any` envelope via the provider's allocation strategy (see `allocationstrategy` package), making the launch path select one concrete offering using that ranking rather than selecting an arbitrary zone within the chosen capacity type
 6. **Make error handling and `UnavailableOfferings` marking regional-aware**, so zonal-scoped failures do not automatically mark the regional fallback unavailable
-7. **Use weighted NodePools only as an optional explicit preference pattern** when users want stronger or different precedence than the provider default
-
-### Option C: When to Choose Instead
-
-Choose **Option C** when provider-owned defaults or a strict compatibility envelope justify the extra control-surface complexity. The implementation checklist for that path:
-
-1. **Add a provider-owned placement policy** on AKSNodeClass with explicit values such as `Zonal`, `Regional`, and `Any`
-2. **Avoid `Default` as an API value.** Omission should have one meaning for all AKSNodeClasses in the API version; it can mean `Compatible`, `Any`, or be required explicitly
-3. **Keep omission semantics simple.** Do not introduce a legacy/new split or latching path; pick one meaning and keep it consistent
-4. **Filter zonal vs regional offerings before `computeRequirements` runs**
-5. **Continue to use `topology.kubernetes.io/zone` as a narrowing requirement**, not as the source of the default
-6. **Only expose `zone-placement` as a NodePool-facing label later** if explicit precedence rules are defined
-7. **Layer on the weighted NodePool pattern only where distinct envelopes are visible to the scheduler**
 
 ### Conceptual Code Change
 
