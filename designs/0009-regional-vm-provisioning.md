@@ -493,44 +493,6 @@ case RegionWideForCapacityType:
 
 The exact mapping from Azure error families to these scopes can be finalized later, but handlers that currently iterate all offerings for an instance type or capacity type need review before regional offerings are added.
 
-#### Option C: AKSNodeClass-Owned Envelope
-
-Generate the full set of zonal and regional offerings, then filter them according to the NodeClass policy before they are exposed to scheduling:
-
-```go
-func filterOfferingsByPlacementPolicy(
-    offerings cloudprovider.Offerings,
-    policy *v1beta1.ZonePlacementPolicy,
-) cloudprovider.Offerings {
-  effectivePolicy := lo.FromPtr(policy)
-  if effectivePolicy == "" {
-    return applyOmittedPlacementPolicy(offerings)
-  }
-  switch effectivePolicy {
-  case v1beta1.ZonePlacementPolicyZonal:
-        return lo.Filter(offerings, func(o *cloudprovider.Offering, _ int) bool {
-            return o.Requirements.Get(corev1.LabelTopologyZone).Any() != zones.Regional
-        })
-    case v1beta1.ZonePlacementPolicyRegional:
-        return lo.Filter(offerings, func(o *cloudprovider.Offering, _ int) bool {
-            return o.Requirements.Get(corev1.LabelTopologyZone).Any() == zones.Regional
-        })
-    case v1beta1.ZonePlacementPolicyAny:
-        return offerings
-    default:
-        return offerings
-    }
-}
-```
-
-`applyOmittedPlacementPolicy` is a placeholder for the product choice described in **Default Policy**: omission can mean `Any`, omission can mean `Compatible`, or omission can be rejected by validation if the field is required.
-
-If the API chooses to expose a named compatibility-preserving mode, it should be called `Compatible` rather than `Default`, and it should preserve today's zonal-only behavior for zone-capable SKUs while keeping regional-only SKUs eligible.
-
-This keeps the compatibility envelope, or any explicit policy, provider-owned. NodePool and pod requirements continue to narrow the filtered offering set in the normal way.
-
-If omission is used as the compatibility-preserving default in a given API version, newly created AKSNodeClasses in that version inherit that same behavior until the default changes or the field is set explicitly.
-
 ### Implementation Notes
 
 - **Dependency: zone `"0"` normalization first.** This design depends on [PR #1615](https://github.com/Azure/karpenter-provider-azure/pull/1615) (fixing [#1384](https://github.com/Azure/karpenter-provider-azure/issues/1384)), which establishes `"0"` as the canonical non-zonal zone value.
@@ -576,16 +538,16 @@ This design uses two different kinds of scheduling labels, and they should not b
 | Label | Present on offerings? | Present on launched nodes? | Workload-schedulable? |
 |---|---|---|---|
 | `topology.kubernetes.io/zone` | Yes | Yes | Yes |
-| `karpenter.azure.com/zone-placement` | Yes, if the chosen design adds it | Only if explicit propagation is implemented | Not by default |
+| `karpenter.azure.com/zone-placement` | Yes | Yes — propagated from the selected offering | Yes, once propagated |
 
 - **`topology.kubernetes.io/zone` is fully workload-facing.** Pods may reference it in `nodeSelector`, `nodeAffinity`, and `topologySpreadConstraints`. For regional nodes, the value is `"0"`.
-- **`karpenter.azure.com/zone-placement` is NodePool/NodeClass-facing only** in the first version. Workload use should be a separate later decision.
+- **`karpenter.azure.com/zone-placement` is propagated to nodes** from the selected offering. NodePools use it to control placement; workloads can also reference it in `nodeSelector` or `nodeAffinity` if needed.
 
 Zone `"0"` is not new to AKS — non-zonal agent pools already produce nodes with this value. Regional Karpenter nodes join an existing topology label space. What changes is the frequency of `"0"` nodes, especially for topology spread. See [Appendix: Azure Zone and Placement Reference](#appendix-azure-zone-and-placement-reference).
 
 ### Observability
 
-- **Placement outcome should be visible through one stable operator-facing surface in the first version.** If `zone-placement` is not projected to nodes, document the canonical place to inspect instead, such as NodeClaims, controller events, or provider logs.
+- **Propagate `zone-placement` to launched nodes.** The selected offering's `zone-placement` value (`zonal` or `regional`) should be set as a label on the node, so operators can inspect placement outcome directly via `kubectl get nodes --show-labels`.
 - **Minimum useful signal:** operators should be able to tell whether a launched node was effectively zonal or regional.
 - **Useful additional signal when practical:** distinguish between explicitly requested regional placement and regional placement reached because compatible zonal offerings were unavailable.
 
