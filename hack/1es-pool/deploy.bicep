@@ -17,12 +17,11 @@ var poolName = 'karpenter-ci-1es-pool'
 var sku = 'Standard_D4ds_v5'
 
 // Base 1ES Image Resource IDs
-var ubuntu2204GalleryVersionResourceId = '/subscriptions/723b64f0-884d-4994-b6de-8960d049cb7e/resourceGroups/CloudTestImages/providers/Microsoft.Compute/galleries/CloudTestGallery/images/MMSUbuntu22.04-Secure/versions/latest'
 var ubuntu2404GalleryVersionResourceId = '/subscriptions/723b64f0-884d-4994-b6de-8960d049cb7e/resourceGroups/CloudTestImages/providers/Microsoft.Compute/galleries/CloudTestGallery/images/MMSUbuntu24.04-Secure/versions/latest'
 
 var poolSettings = {
   maxPoolSize: 25 // 25 × 4 = 100 cores (DDSv5 family)
-  resourcePredictions: [
+  resourcePredictions: [ // The reason we pick 12, is for the amount of ci-test jobs that run per PR
     {
       '21:00': 12  // 9 AM Monday NZT
     }
@@ -50,15 +49,6 @@ var poolSettings = {
       '00:00': 0   // 5 PM Friday PST
     }
   ]
-}
-
-resource agentImage2204 'Microsoft.CloudTest/images@2020-05-07' = {
-  name: '1es-ubuntu-22.04'
-  location: location
-  properties: {
-    imageType: 'SharedImageGallery'
-    resourceId: ubuntu2204GalleryVersionResourceId
-  }
 }
 
 resource agentImage2404 'Microsoft.CloudTest/images@2020-05-07' = {

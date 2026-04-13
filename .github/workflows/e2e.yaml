@@ -166,10 +166,10 @@ jobs:
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
           install skaffold /usr/local/bin/
-      - name: generate SSH key
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
+      # - name: generate SSH key
+      #   run: |
+      #     mkdir -p ~/.ssh
+      #     ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}
