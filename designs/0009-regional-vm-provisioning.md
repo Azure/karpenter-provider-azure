@@ -410,7 +410,7 @@ If the project requires a provider-owned compatibility envelope or provider-owne
 2. **Generate regional offerings for zone-capable SKUs** with `zone="0"` for capacity types that support regional placement
 3. **Tag all regional offerings**, including regional-only SKUs, as `regional`
 4. **Do not infer a default** from the absence of a NodePool requirement; no `zone-placement` requirement means any placement is eligible (i.e., equivalent to `zone-placement In [zonal, regional]`)
-5. **Apply the zonal-preferred tie-break** within the any-placement envelope via the provider's allocation strategy (see `allocationstrategy` package), making the launch path select one concrete offering using that ranking rather than selecting an arbitrary zone within the chosen capacity type
+5. **Apply the zonal-preferred tie-break** within the any-placement envelope via the provider's allocation strategy (see `allocationstrategy` package). The implementation should stop deriving capacity type from the cheapest offering and then choosing an arbitrary zone; instead it should consume one concrete offering chosen from an already ordered candidate set. Whether the final `pick first` step remains in the launch helper or moves fully into `allocationstrategy` can be finalized later
 6. **Make error handling and `UnavailableOfferings` marking regional-aware**, so zonal-scoped failures do not automatically mark the regional fallback unavailable
 
 ### Conceptual Code Change
@@ -456,7 +456,7 @@ offering := &cloudprovider.Offering{
 
 In `computeRequirements`, derive the instance type's `zone-placement` requirement from available offerings so NodePool requirements can filter on it. Absence of a NodePool requirement does **not** imply zonal-only behavior.
 
-In launch selection, derive both capacity type and zone from one concrete offering rather than from the cheapest capacity type plus an arbitrary zone within that capacity type. A conservative sketch is:
+In launch selection, derive both capacity type and zone from one concrete offering rather than from the cheapest capacity type plus an arbitrary zone within that capacity type. The key requirement is that selection consume an already ordered concrete-offering view. That can be implemented either by having `allocationstrategy` return ordered candidates and letting the launch helper pick the first one, or by letting `allocationstrategy` own the final pick as well. A conservative sketch of the first shape is:
 
 ```go
 func PickInstanceTypeAndOffering(
@@ -470,13 +470,14 @@ func PickInstanceTypeAndOffering(
   if len(best.Offerings) == 0 {
     return nil, nil
   }
-  // After compatibility filtering and provider-local tie-breaking,
-  // the first offering is the concrete launch choice.
+  // After compatibility filtering and allocation-strategy ordering,
+  // consume the first concrete offering rather than re-deriving
+  // capacity type and then picking an arbitrary zone.
   return best.InstanceType, best.Offerings[0]
 }
 ```
 
-The caller then derives `capacityType` and `zone` from that chosen offering. The exact equal-price precedence between `spot` vs `on-demand` and `zonal` vs `regional` can remain conservative and explicit in the first version.
+The example above keeps the final `pick first` step in the launch helper only to show the data flow more clearly. The actual ownership boundary can remain open. In either shape, the caller derives `capacityType` and `zone` from one concrete offering rather than from `Offerings.Cheapest()` plus arbitrary same-priority zone selection. The exact equal-price precedence between `spot` vs `on-demand` and `zonal` vs `regional` can remain conservative and explicit in the first version.
 
 In unavailability handling, keep the first version conservative by distinguishing zonal-scoped from regional-scoped failures instead of automatically marking every offering on the instance type unavailable:
 
@@ -501,7 +502,7 @@ The exact mapping from Azure error families to these scopes can be finalized lat
 - **`computeRequirements` update:** required only for designs that let NodePools filter on `zone-placement`.
 - **Selected-offering label propagation:** if `zone-placement` should appear on NodeClaims or Nodes, explicit propagation of the selected offering value is needed. Adding the label to offerings and multi-valued instance type requirements is not sufficient on its own.
 - **Empty-envelope diagnostics:** contradictory combinations that narrow the placement envelope to nothing, such as a zonal-only policy plus `zone In [0]`, should not fail silently. Prefer admission-time validation when practical; otherwise surface explicit status or event diagnostics rather than only returning "no instance types available."
-- **Launch-side offering selection must change if zonal preference is desired:** existing code derives capacity type from the cheapest offering and then may choose an arbitrary zone among offerings with that capacity type. A zonal-preferred equal-price policy therefore requires selecting one concrete compatible offering after sorting; changing sort order alone is insufficient.
+- **Launch-side offering selection must change if zonal preference is desired:** existing code derives capacity type from the cheapest offering and then may choose an arbitrary zone among offerings with that capacity type. A zonal-preferred equal-price policy therefore requires consuming one concrete compatible offering after allocation-strategy ordering; changing sort order alone is insufficient. Whether `allocationstrategy` also owns the final pick can remain an implementation detail.
 - **Regional-aware unavailability handling:** handlers that currently mark all offerings for an instance type or capacity type unavailable must distinguish zonal-scoped from regional-scoped failures once `zone="0"` offerings exist. Zone `"0"` works as a cache key, but the scope of which offerings get marked unavailable must change.
 
 ### Design Constraints on Future Strategy
