@@ -132,12 +132,12 @@ This design separates two questions:
 The distinction matters because these look similar but represent different contracts:
 
 - **Envelope-only zonal:** only zonal offerings are eligible
-- **Envelope allowing both (`Any`):** zonal and regional offerings are both eligible; the envelope itself does not prefer one over the other
-- **`Any` envelope plus ranking:** both are eligible, but zonal wins on equal-price ties. (`Any` here is a logical construct describing the envelope state — not a user-facing value. In Option B, it corresponds to omitting the `zone-placement` requirement; in Option C, it becomes an explicit policy value.)
+- **Envelope allowing any placement:** zonal and regional offerings are both eligible; the envelope itself does not prefer one over the other
+- **Any-placement envelope plus ranking:** both are eligible, but zonal wins on equal-price ties. In Option B, this state corresponds to omitting the `zone-placement` requirement; in Option C, it becomes the explicit `Any` policy value.
 
 An envelope that allows both is **not** the same as "zonal fallback to regional" — without additional ranking, regional could win over zonal (e.g., if it appears first in an arbitrary sort), so the envelope alone does not imply any preference order.
 
-> **Zonal-preferred tie-break (definition):** The recommended internal default ranking for the first version. Within an `Any` envelope, keep normal price ordering but prefer a compatible zonal offering when zonal and regional offerings are price-equivalent; fall back to regional when the best available price tier has no compatible zonal offering.
+> **Zonal-preferred tie-break (definition):** The recommended internal default ranking for the first version. Within an any-placement envelope, keep normal price ordering but prefer a compatible zonal offering when zonal and regional offerings are price-equivalent; fall back to regional when the best available price tier has no compatible zonal offering.
 
 Where different policy types belong:
 
@@ -175,7 +175,7 @@ Existing users expect:
 
 The key tension is the first row: users who never said "zonal only" but got it implicitly. The following compatibility spectrum addresses how to handle that case.
 
-Most compatibility questions in this design are about the **placement envelope** for existing objects, not about ranking. If an upgrade widens the envelope from zonal-only to `Any`, then regional nodes become possible outcomes for launches, consolidation, and topology interactions. That is a real behavioral compatibility change, even if a zonal-preferred strategy keeps zonal as the common case. By contrast, changing ranking inside the same envelope is usually a smaller change: it affects which acceptable offering wins first, not which outcomes are allowed at all.
+Most compatibility questions in this design are about the **placement envelope** for existing objects, not about ranking. If an upgrade widens the envelope from zonal-only to any-placement, then regional nodes become possible outcomes for launches, consolidation, and topology interactions. That is a real behavioral compatibility change, even if a zonal-preferred strategy keeps zonal as the common case. By contrast, changing ranking inside the same envelope is usually a smaller change: it affects which acceptable offering wins first, not which outcomes are allowed at all.
 
 This gives a useful rule of thumb:
 
@@ -188,7 +188,7 @@ The resulting compatibility spectrum:
 
 - **Strict preservation:** existing objects keep an effectively zonal-only envelope unless users opt in to something broader
 - **Softened preservation:** existing objects may include regional placement in the envelope, but the common case stays close to today's zonal-first behavior through internal ranking or similar safeguards
-- **Explicit behavioral change:** omission or lack of requirements means `Any`, with no implied zonal-only behavior beyond whatever ranking the implementation applies
+- **Explicit behavioral change:** omission or lack of requirements means any placement is eligible, with no implied zonal-only behavior beyond whatever ranking the implementation applies
 
 The choice between those cases is a product decision. Strict preservation requires a provider-owned compatibility envelope (e.g., AKSNodeClass-owned filtering). Softened preservation makes options that widen eligibility but prefer zonal placement in common cases more viable. The working recommendation is to accept softened preservation (see [Recommendation](#recommendation)).
 
@@ -201,7 +201,7 @@ The options below compare different ways to define the placement envelope. Throu
 | Option | Approach | Backward compatible? | Default semantics | User control | Key tradeoff |
 |---|---|---|---|---|---|
 | **A** | Zone is the only placement control surface | No | Unconstrained NodePool = zonal and regional eligible | `zone` requirements only | Smallest implementation, but overloads topology with placement intent |
-| **B** | Placement mode is modeled explicitly via `zone-placement` | No, though a price-first default that prefers zonal on equal-price ties softens the common-case impact | No `zone-placement` requirement = `Any`; recommended first-version behavior is price-first with zonal preference on equal-price ties | `zone-placement` plus `zone` requirements | Primary recommendation; clean explicit model, but unconstrained existing NodePools widen after upgrade |
+| **B** | Placement mode is modeled explicitly via `zone-placement` | No, though a price-first default that prefers zonal on equal-price ties softens the common-case impact | No `zone-placement` requirement = any placement eligible; recommended first-version behavior is price-first with zonal preference on equal-price ties | `zone-placement` plus `zone` requirements | Primary recommendation; clean explicit model, but unconstrained existing NodePools widen after upgrade |
 | **C** | AKSNodeClass owns the placement envelope before scheduling | Yes, if omission or the defaulted policy preserves current behavior | Compatibility envelope when needed; otherwise a provider-owned default such as `Any` is separate | Optional AKSNodeClass policy plus `zone` requirements | Strongest alternative for stricter compatibility or provider-owned defaults, but adds a second control surface and defaulting complexity |
 | **D** | Regional retry happens outside the offering model | At the API surface only | Automatic fallback after zonal failure | None | Smallest user-facing change, but hides placement changes from the scheduler and user |
 
@@ -251,9 +251,9 @@ Offerings:
 
 The critical design rule is:
 
-> If placement is controlled only through NodePool requirements, then **absence of a `zone-placement` requirement means `Any`**, not "default zonal".
+> If placement is controlled only through NodePool requirements, then **absence of a `zone-placement` requirement means any placement is eligible**, not "default zonal".
 
-The recommended first version pairs that `Any` default with launch-side selection of a concrete compatible offering from the sorted set, plus an internal price-first ranking that prefers zonal offerings on equal-price ties, so the wider envelope still behaves zonal-first in the common case. Changing offering sort order alone is not sufficient.
+The recommended first version pairs that any-placement default with launch-side selection of a concrete compatible offering from the sorted set, plus an internal price-first ranking that prefers zonal offerings on equal-price ties, so the wider envelope still behaves zonal-first in the common case. Changing offering sort order alone is not sufficient.
 
 This model composes cleanly with normal zone requirements because `zone-placement` filters the placement envelope, while `topology.kubernetes.io/zone` continues to select concrete topology domains within that envelope.
 
@@ -409,8 +409,8 @@ If the project requires a provider-owned compatibility envelope or provider-owne
 1. **Add `karpenter.azure.com/zone-placement`** with values `zonal` and `regional`
 2. **Generate regional offerings for zone-capable SKUs** with `zone="0"` for capacity types that support regional placement
 3. **Tag all regional offerings**, including regional-only SKUs, as `regional`
-4. **Do not infer a default** from the absence of a NodePool requirement; no `zone-placement` requirement means `Any` (i.e., equivalent to `zone-placement In [zonal, regional]`)
-5. **Apply the zonal-preferred tie-break** within the `Any` envelope via the provider's allocation strategy (see `allocationstrategy` package), making the launch path select one concrete offering using that ranking rather than selecting an arbitrary zone within the chosen capacity type
+4. **Do not infer a default** from the absence of a NodePool requirement; no `zone-placement` requirement means any placement is eligible (i.e., equivalent to `zone-placement In [zonal, regional]`)
+5. **Apply the zonal-preferred tie-break** within the any-placement envelope via the provider's allocation strategy (see `allocationstrategy` package), making the launch path select one concrete offering using that ranking rather than selecting an arbitrary zone within the chosen capacity type
 6. **Make error handling and `UnavailableOfferings` marking regional-aware**, so zonal-scoped failures do not automatically mark the regional fallback unavailable
 
 ### Conceptual Code Change
@@ -525,7 +525,7 @@ The exact suite split can be decided later. A conservative first pass can rely o
 
 ### Rollout Guidance
 
-- **Self-hosted or existing clusters:** if omission means `Any`, users who want to preserve today's zonal-only behavior should add an explicit zonal-only constraint before or during upgrade, using either `zone-placement In [zonal]` or the zone-only equivalent if that is the final API shape.
+- **Self-hosted or existing clusters:** if omission means any placement is eligible, users who want to preserve today's zonal-only behavior should add an explicit zonal-only constraint before or during upgrade, using either `zone-placement In [zonal]` or the zone-only equivalent if that is the final API shape.
 - **Managed defaults:** managed products may stamp zonal-only defaults onto managed default NodePools or equivalent provider-owned envelopes, but that should be documented as a platform policy rather than implied as a provider-wide default.
 - **Conflicting controls:** if NodeClass policy and NodePool requirements narrow to an empty envelope, prefer validation or explicit status over leaving operators to infer the problem from a generic scheduling failure.
 
