@@ -59,10 +59,6 @@ type MachineCache struct {
 	clusterName          string
 	aksMachinesPoolName  string
 
-	maxRetries    int
-	retryDelay    time.Duration
-	maxRetryDelay time.Duration
-
 	updateRequests chan struct{}
 	workerCtx      context.Context
 	workerCancel   context.CancelFunc
@@ -81,9 +77,6 @@ func NewMachineListCache(ctx context.Context, client AKSMachineNewListPager, clu
 		clusterResourceGroup: clusterResourceGroup,
 		clusterName:          clusterName,
 		aksMachinesPoolName:  aksMachinesPoolName,
-		maxRetries:           500,
-		retryDelay:           1 * time.Second,
-		maxRetryDelay:        30 * time.Second,
 		updateRequests:       make(chan struct{}, 1),
 		workerCtx:            workerCtx,
 		workerCancel:         workerCancel,
@@ -133,21 +126,17 @@ func (c *MachineCache) Invalidate(machineName string) {
 
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
-	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName")
+	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name)
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
-
-	var retryAttemptsLeft int
-	var currentRetryDelay time.Duration
-	c.resetRetryState(&retryAttemptsLeft, &currentRetryDelay)
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("context canceled while polling for AKS machine %q", name)
+			return nil, fmt.Errorf("context canceled while polling for AKS machine %q: %w", name, ctx.Err())
 
 		case <-ticker.C:
-			provisioningErr, pollerErr, done := c.pollOnce(ctx, name, &retryAttemptsLeft, &currentRetryDelay)
+			provisioningErr, pollerErr, done := c.pollOnce(ctx, name)
 			if done {
 				return provisioningErr, pollerErr
 			}
@@ -155,56 +144,33 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 	}
 }
 
-func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
+func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
 	machine, err := c.Get(aksMachineName)
 	if err != nil {
-		if errors.Is(err, ErrCacheStale) || errors.Is(err, ErrCacheMiss) {
+		switch {
+		case errors.Is(err, ErrCacheStale):
 			c.requestUpdate()
-			log.FromContext(ctx).Info("cache miss for AKS machine during poll, requested update",
-				"aksMachineName", aksMachineName,
-				"retryAttemptsLeft", *retryAttemptsLeft,
-			)
+		case errors.Is(err, ErrCacheMiss):
+			log.FromContext(ctx).V(1).Info("Cache poller: cache miss for AKS machine during poll", "aksMachineName", aksMachineName)
+		default:
+			log.FromContext(ctx).Error(err, "Unexpected error while polling for AKS machine from cache", "aksMachineName", aksMachineName)
+			return nil, err, true
 		}
-
-		shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
-		if backoffErr != nil {
-			return nil, backoffErr, true
-		}
-		if shouldRetry {
-			return nil, nil, false
-		}
-		return nil, fmt.Errorf("cache poller: exhausted retries due to repeated cache misses for AKS machine %q", aksMachineName), true
-	}
-
-	c.resetRetryState(retryAttemptsLeft, currentRetryDelay)
-
-	if machine.Properties == nil || machine.Properties.ProvisioningState == nil {
-		return c.handleNilProvisioningState(ctx, machine, aksMachineName, retryAttemptsLeft, currentRetryDelay)
-	}
-
-	return c.handleProvisioningState(ctx, machine, aksMachineName, retryAttemptsLeft, currentRetryDelay)
-}
-
-func (c *MachineCache) handleNilProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
-	log.FromContext(ctx).V(1).Info("Cache poller: warning: polling for AKS machine found nil provisioning state, may retry",
-		"aksMachineName", aksMachineName,
-		"aksMachineID", aksMachine.ID,
-		"provisioningState", nil,
-		"retryAttemptsLeft", *retryAttemptsLeft,
-		"retryDelay", *currentRetryDelay,
-	)
-
-	shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
-	if backoffErr != nil {
-		return nil, backoffErr, true
-	}
-	if shouldRetry {
 		return nil, nil, false
 	}
-	return nil, fmt.Errorf("AKS machine %q sees nil provisioning state after exhausting %d retry attempts", aksMachineName, c.maxRetries), true
+
+	if machine.Properties == nil || machine.Properties.ProvisioningState == nil {
+		log.FromContext(ctx).V(1).Info("Cache poller: warning: polling for AKS machine found nil provisioning state, will retry",
+			"aksMachineName", aksMachineName,
+			"aksMachineID", machine.ID,
+		)
+		return nil, nil, false
+	}
+
+	return c.handleProvisioningState(ctx, machine, aksMachineName)
 }
 
-func (c *MachineCache) handleProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine, aksMachineName string, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
+func (c *MachineCache) handleProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
 	provisioningState := *aksMachine.Properties.ProvisioningState
 	switch provisioningState {
 	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
@@ -213,7 +179,6 @@ func (c *MachineCache) handleProvisioningState(ctx context.Context, aksMachine *
 			"aksMachineID", aksMachine.ID,
 			"provisioningState", provisioningState,
 		)
-		c.resetRetryState(retryAttemptsLeft, currentRetryDelay)
 		return nil, nil, false
 
 	case consts.ProvisioningStateDeleting:
@@ -229,44 +194,13 @@ func (c *MachineCache) handleProvisioningState(ctx context.Context, aksMachine *
 		return nil, fmt.Errorf("AKS machine %q sees fatal provisioning state %s, but ProvisioningError is nil", aksMachineName, provisioningState), true
 
 	default:
-		log.FromContext(ctx).V(1).Info("Cache poller: warning: polling for AKS machine found unrecognized provisioning state, may retry",
+		log.FromContext(ctx).V(1).Info("Cache poller: warning: polling for AKS machine found unrecognized provisioning state, will retry",
 			"aksMachineName", aksMachineName,
 			"aksMachineID", aksMachine.ID,
 			"provisioningState", provisioningState,
-			"retryAttemptsLeft", *retryAttemptsLeft,
-			"retryDelay", *currentRetryDelay,
 		)
-
-		shouldRetry, backoffErr := c.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
-		if backoffErr != nil {
-			return nil, backoffErr, true
-		}
-		if shouldRetry {
-			return nil, nil, false
-		}
-		return nil, fmt.Errorf("AKS machine %q sees unrecognized provisioning state %s after exhausting %d retry attempts", aksMachineName, provisioningState, c.maxRetries), true
+		return nil, nil, false
 	}
-}
-
-func (c *MachineCache) retryWithBackoff(ctx context.Context, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (shouldRetry bool, err error) {
-	if *retryAttemptsLeft <= 0 {
-		return false, nil
-	}
-
-	*retryAttemptsLeft--
-
-	select {
-	case <-time.After(*currentRetryDelay):
-		*currentRetryDelay = min(*currentRetryDelay*2, c.maxRetryDelay)
-		return true, nil
-	case <-ctx.Done():
-		return false, ctx.Err()
-	}
-}
-
-func (c *MachineCache) resetRetryState(retryAttemptsLeft *int, currentRetryDelay *time.Duration) {
-	*retryAttemptsLeft = c.maxRetries
-	*currentRetryDelay = c.retryDelay
 }
 
 func (c *MachineCache) updateWorker() {
