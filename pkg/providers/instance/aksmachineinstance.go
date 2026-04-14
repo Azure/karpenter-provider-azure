@@ -670,7 +670,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 					}
 				}()
 
-				provisioningErr, pollerErr := p.machinecache.PollUntilDone(ctx, aksMachineName)
+				pollCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+				defer cancel()
+
+				provisioningErr, pollerErr := p.machinecache.PollUntilDone(pollCtx, aksMachineName)
 				if pollerErr != nil {
 					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (GET poller), poller error: %w", aksMachineName, pollerErr)
 					return
