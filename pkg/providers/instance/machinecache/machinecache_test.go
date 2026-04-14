@@ -251,7 +251,6 @@ func TestList(t *testing.T) {
 		cachedMachines   []*armcontainerservice.Machine
 		expectedMachines []*armcontainerservice.Machine
 		expectErr        bool
-		setupCache       func(*MachineCache) func() // returns cleanup function
 	}{
 		{
 			name:             "fresh cache with two items",
@@ -261,29 +260,11 @@ func TestList(t *testing.T) {
 			expectErr:        false,
 		},
 		{
-			name:             "stale cache refreshed by background worker",
+			name:             "stale cache - expect error",
 			lastUpdated:      time.Now().Add(-2 * ttl),
 			cachedMachines:   twoMachines,
-			expectedMachines: twoMachines,
-			expectErr:        false,
-			setupCache: func(c *MachineCache) func() {
-				ctx, cancel := context.WithCancel(context.Background())
-				c.updateRequests = make(chan struct{}, 1)
-				c.workerCtx = ctx
-				c.workerCancel = cancel
-
-				// Background worker that refreshes cache
-				go func() {
-					select {
-					case <-c.updateRequests:
-						c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
-					case <-ctx.Done():
-						return
-					}
-				}()
-
-				return cancel
-			},
+			expectedMachines: nil,
+			expectErr:        true,
 		},
 	}
 
@@ -299,12 +280,6 @@ func TestList(t *testing.T) {
 				c.machines.Store(lo.FromPtr(m.Name), m)
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
-
-			var cleanup func()
-			if tt.setupCache != nil {
-				cleanup = tt.setupCache(c)
-				defer cleanup()
-			}
 
 			machines, err := c.List(context.Background())
 			if (err != nil) != tt.expectErr {
@@ -372,7 +347,7 @@ func TestPollUntilDone(t *testing.T) {
 			expectedProvisioningErr: nil,
 		},
 		{
-			name: "stale cache no retries",
+			name: "stale cache times out",
 			machine: &armcontainerservice.Machine{
 				Name: to.Ptr("machine"),
 			},
@@ -381,7 +356,7 @@ func TestPollUntilDone(t *testing.T) {
 			expectedProvisioningErr: nil,
 		},
 		{
-			name: "nil properties no retries",
+			name: "nil properties times out",
 			machine: &armcontainerservice.Machine{
 				Name:       to.Ptr("machine"),
 				ID:         to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/machines/machine"),
@@ -400,15 +375,19 @@ func TestPollUntilDone(t *testing.T) {
 				lastUpdatedUnixNanos: atomic.Int64{},
 				ttl:                  ttl,
 				interval:             time.Millisecond,
-				maxRetries:           0,
-				retryDelay:           time.Millisecond,
-				maxRetryDelay:        time.Millisecond,
 				updateRequests:       make(chan struct{}, 1),
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 			c.machines.Store(lo.FromPtr(tt.machine.Name), tt.machine)
 
-			provisioningErr, pollErr := c.PollUntilDone(context.Background(), *tt.machine.Name)
+			ctx := context.Background()
+			if tt.expectPollErr {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+			}
+
+			provisioningErr, pollErr := c.PollUntilDone(ctx, *tt.machine.Name)
 			if pretty.Compare(provisioningErr, tt.expectedProvisioningErr) != "" {
 				t.Errorf("PollUntilDone() provisioningErr = %v, want %v", provisioningErr, tt.expectedProvisioningErr)
 			}
@@ -425,7 +404,6 @@ func TestHandleProvisioningState(t *testing.T) {
 	tests := []struct {
 		name                    string
 		provisioningState       string
-		retryAttemptsLeft       int
 		expectProvisioningError bool
 		expectPollerError       bool
 		expectDone              bool
@@ -433,7 +411,6 @@ func TestHandleProvisioningState(t *testing.T) {
 		{
 			name:                    "creating state",
 			provisioningState:       "Creating",
-			retryAttemptsLeft:       1,
 			expectProvisioningError: false,
 			expectPollerError:       false,
 			expectDone:              false,
@@ -441,7 +418,6 @@ func TestHandleProvisioningState(t *testing.T) {
 		{
 			name:                    "updating state",
 			provisioningState:       "Updating",
-			retryAttemptsLeft:       1,
 			expectProvisioningError: false,
 			expectPollerError:       false,
 			expectDone:              false,
@@ -449,7 +425,6 @@ func TestHandleProvisioningState(t *testing.T) {
 		{
 			name:                    "deleting state",
 			provisioningState:       "Deleting",
-			retryAttemptsLeft:       1,
 			expectProvisioningError: false,
 			expectPollerError:       true,
 			expectDone:              true,
@@ -457,7 +432,6 @@ func TestHandleProvisioningState(t *testing.T) {
 		{
 			name:                    "succeeded state",
 			provisioningState:       "Succeeded",
-			retryAttemptsLeft:       1,
 			expectProvisioningError: false,
 			expectPollerError:       false,
 			expectDone:              true,
@@ -465,37 +439,23 @@ func TestHandleProvisioningState(t *testing.T) {
 		{
 			name:                    "failed state with provisioning error",
 			provisioningState:       "Failed",
-			retryAttemptsLeft:       1,
 			expectProvisioningError: true,
 			expectPollerError:       false,
 			expectDone:              true,
 		},
 		{
-			name:                    "unrecognized state with retry",
+			name:                    "unrecognized state continues polling",
 			provisioningState:       "UnknownState",
-			retryAttemptsLeft:       1,
 			expectProvisioningError: false,
 			expectPollerError:       false,
 			expectDone:              false,
-		},
-		{
-			name:                    "unrecognized state without retry",
-			provisioningState:       "UnknownState",
-			retryAttemptsLeft:       0,
-			expectProvisioningError: false,
-			expectPollerError:       true,
-			expectDone:              true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := &MachineCache{
-				retryDelay:    time.Millisecond,
-				maxRetryDelay: time.Millisecond,
-				maxRetries:    1,
-			}
+			c := &MachineCache{}
 
 			machine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
@@ -512,10 +472,7 @@ func TestHandleProvisioningState(t *testing.T) {
 				}
 			}
 
-			retryAttemptsLeft := tt.retryAttemptsLeft
-			currentRetryDelay := time.Millisecond
-
-			provisioningErr, pollerErr, done := c.handleProvisioningState(ctx, machine, "test-machine", &retryAttemptsLeft, &currentRetryDelay)
+			provisioningErr, pollerErr, done := c.handleProvisioningState(ctx, machine, "test-machine")
 
 			if (provisioningErr != nil) != tt.expectProvisioningError {
 				t.Errorf("handleProvisioningState() provisioningErr = %v, expectProvisioningError %v", provisioningErr, tt.expectProvisioningError)
@@ -525,66 +482,6 @@ func TestHandleProvisioningState(t *testing.T) {
 			}
 			if done != tt.expectDone {
 				t.Errorf("handleProvisioningState() done = %v, expectDone %v", done, tt.expectDone)
-			}
-		})
-	}
-}
-
-func TestHandleNilProvisioningState(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	tests := []struct {
-		name                    string
-		retryAttemptsLeft       int
-		expectProvisioningError bool
-		expectPollerError       bool
-		expectDone              bool
-	}{
-		{
-			name:                    "retry with attempts remaining",
-			retryAttemptsLeft:       1,
-			expectProvisioningError: false,
-			expectPollerError:       false,
-			expectDone:              false,
-		},
-		{
-			name:                    "no retry without attempts",
-			retryAttemptsLeft:       0,
-			expectProvisioningError: false,
-			expectPollerError:       true,
-			expectDone:              true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			c := &MachineCache{
-				retryDelay:    time.Millisecond,
-				maxRetryDelay: time.Millisecond,
-				maxRetries:    1,
-			}
-
-			machine := &armcontainerservice.Machine{
-				ID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/machines/test-machine"),
-				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: nil,
-				},
-			}
-
-			retryAttemptsLeft := tt.retryAttemptsLeft
-			currentRetryDelay := time.Millisecond
-
-			provisioningErr, pollerErr, done := c.handleNilProvisioningState(ctx, machine, "test-machine", &retryAttemptsLeft, &currentRetryDelay)
-
-			if (provisioningErr != nil) != tt.expectProvisioningError {
-				t.Errorf("handleNilProvisioningState() provisioningErr = %v, expectProvisioningError %v", provisioningErr, tt.expectProvisioningError)
-			}
-			if (pollerErr != nil) != tt.expectPollerError {
-				t.Errorf("handleNilProvisioningState() pollerErr = %v, expectPollerError %v", pollerErr, tt.expectPollerError)
-			}
-			if done != tt.expectDone {
-				t.Errorf("handleNilProvisioningState() done = %v, expectDone %v", done, tt.expectDone)
 			}
 		})
 	}
