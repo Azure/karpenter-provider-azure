@@ -295,12 +295,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 		return []*armcontainerservice.Machine{}, nil
 	}
 
-	aksMachines, err := p.machinecache.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return aksMachines, nil
+	return p.listMachines(ctx)
 }
 
 func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName string) error {
@@ -351,6 +346,37 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
 		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
 	}
+}
+
+func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
+	if machines, err := p.machinecache.List(ctx); err == nil {
+		return machines, nil
+	}
+
+	var machines []*armcontainerservice.Machine
+	pager := p.azClient.AKSMachinesClient().NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
+	if pager == nil {
+		return nil, fmt.Errorf("failed to list AKS machines: created pager is nil")
+	}
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			if IsAKSMachineOrMachinesPoolNotFound(err) {
+				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
+				break
+			}
+			return nil, fmt.Errorf("failed to list AKS machines: %w", err)
+		}
+		for _, aksMachine := range page.Value {
+			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
+				if _, hasKarpenterTag := aksMachine.Properties.Tags[NodePoolTagKey]; hasKarpenterTag {
+					p.rehydrateMachine(aksMachine)
+					machines = append(machines, aksMachine)
+				}
+			}
+		}
+	}
+	return machines, nil
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
