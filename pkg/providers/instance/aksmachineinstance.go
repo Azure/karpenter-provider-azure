@@ -273,7 +273,7 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to get AKS machine, AKS machines pool name is empty"))
 	}
 
-	aksMachine, err := p.getMachine(ctx, aksMachineName)
+	aksMachine, err := p.getMachine(ctx, aksMachineName, false)
 	if err != nil {
 		if IsAKSMachineOrMachinesPoolNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
@@ -379,7 +379,11 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 	return machines, nil
 }
 
-func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string, freshGet bool) (*armcontainerservice.Machine, error) {
+	if freshGet {
+		return p.machinecache.FreshGet(ctx, aksMachineName)
+	}
+
 	aksMachine, err := p.machinecache.Get(aksMachineName)
 	if err == nil {
 		p.rehydrateMachine(aksMachine)
@@ -454,7 +458,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	existingAKSMachine, err := p.getMachine(ctx, aksMachineName, false)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
@@ -569,7 +573,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 					// Could be quota error; will be handled with custom logic below
 
 					// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-					failedAKSMachine, _ := p.getMachine(ctx, aksMachineName)
+					failedAKSMachine, _ := p.getMachine(ctx, aksMachineName, true)
 					if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 						pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 						return
@@ -695,7 +699,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 }
 
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string) (*armcontainerservice.Machine, error) {
-	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	gotAKSMachine, err := p.getMachine(ctx, aksMachineName, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}

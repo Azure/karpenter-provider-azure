@@ -43,8 +43,9 @@ var (
 )
 
 // AKSMachineNewListPager provides paginated list operations for AKS machines.
-type AKSMachineNewListPager interface {
+type AKSMachineClienter interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
+	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
 }
 
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
@@ -53,7 +54,7 @@ type MachineCache struct {
 	lastUpdatedUnixNanos atomic.Int64
 	ttl                  time.Duration
 	interval             time.Duration
-	client               AKSMachineNewListPager
+	client               AKSMachineClienter
 
 	clusterResourceGroup string
 	clusterName          string
@@ -67,8 +68,9 @@ type MachineCache struct {
 }
 
 // NewMachineListCache creates a new cache instance with a background worker for automatic refresh.
-func NewMachineListCache(ctx context.Context, client AKSMachineNewListPager, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
+func NewMachineListCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
 	workerCtx, workerCancel := context.WithCancel(ctx)
+	fmt.Println("DEBUG: NewMachineListCache")
 
 	cache := &MachineCache{
 		ttl:                  ttl,
@@ -89,8 +91,27 @@ func NewMachineListCache(ctx context.Context, client AKSMachineNewListPager, clu
 	return cache
 }
 
+// FreshGet gets a machine directly from the source, bypassing the cache, and updates the cache with the fresh value.
+func (c *MachineCache) FreshGet(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
+	fmt.Printf("DEBUG: MachineCache.FreshGet called for machineName=%q\n", machineName)
+	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AKS machine %q: %w", machineName, err)
+	}
+	aksMachine := lo.ToPtr(resp.Machine)
+
+	if c.isFresh() {
+		c.machines.Store(machineName, aksMachine)
+	} else {
+		c.requestUpdate()
+	}
+
+	return aksMachine, nil
+}
+
 // Get retrieves a machine from the cache by name if the cache is fresh.
 func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, error) {
+	fmt.Printf("DEBUG: MachineCache.Get called for machineName=%q\n", machineName)
 	if !c.isFresh() {
 		c.requestUpdate()
 		return nil, fmt.Errorf("%w for machine %q", ErrCacheStale, machineName)
@@ -106,6 +127,7 @@ func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, er
 
 // List returns all cached machines, blocking until the cache is fresh.
 func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
+	fmt.Println("DEBUG: MachineCache.List called")
 	if !c.isFresh() {
 		return nil, fmt.Errorf("%w while listing machines", ErrCacheStale)
 	}
@@ -126,6 +148,7 @@ func (c *MachineCache) Invalidate(machineName string) {
 
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
+	fmt.Printf("DEBUG: MachineCache.PollUntilDone called for machineName=%q\n", name)
 	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name)
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
@@ -228,6 +251,7 @@ func (c *MachineCache) updateWorker() {
 }
 
 func (c *MachineCache) update(ctx context.Context) error {
+	fmt.Println("DEBUG: MachineCache.update called")
 	if c.isFresh() {
 		return nil
 	}
@@ -273,6 +297,7 @@ func (c *MachineCache) update(ctx context.Context) error {
 }
 
 func (c *MachineCache) isFresh() bool {
+	fmt.Println("DEBUG: MachineCache.isFresh called")
 	lastUpdatedNanos := c.lastUpdatedUnixNanos.Load()
 	if lastUpdatedNanos == 0 {
 		return false

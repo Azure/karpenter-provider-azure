@@ -14,13 +14,13 @@ import (
 	"github.com/samber/lo"
 )
 
-type fakeAKSMachineNewListPager struct {
+type fakeAKSMachineClienter struct {
 	machines []*armcontainerservice.Machine
 	nilPager bool
 	err      error
 }
 
-func (f *fakeAKSMachineNewListPager) NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
+func (f *fakeAKSMachineClienter) NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
 	if f.nilPager {
 		return nil
 	}
@@ -37,6 +37,10 @@ func (f *fakeAKSMachineNewListPager) NewListPager(resourceGroupName string, reso
 			}, f.err
 		},
 	})
+}
+
+func (f *fakeAKSMachineClienter) Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error) {
+	return armcontainerservice.MachinesClientGetResponse{}, nil
 }
 
 func TestUpdate(t *testing.T) {
@@ -127,7 +131,7 @@ func TestUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			fakePager := &fakeAKSMachineNewListPager{
+			fakePager := &fakeAKSMachineClienter{
 				err:      tt.pagerErr,
 				nilPager: tt.nilPager,
 				machines: tt.returnedMachines,
