@@ -574,7 +574,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	existingAKSMachine, err := p.getMachine(ctx, aksMachineName, false)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
@@ -1172,7 +1172,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 					// Could be quota error; will be handled with custom logic below
 
 					// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-					failedAKSMachine, _ := p.getMachine(ctx, aksMachineName)
+					failedAKSMachine, _ := p.getMachine(ctx, aksMachineName, true)
 					if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 						pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 						return
