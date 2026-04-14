@@ -166,7 +166,7 @@ func NewAKSMachineProvider(
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
 		azClient:                        azClient,
-		machinecache:                    machinecache.NewMachineListCache(context.Background(), machinecache.DefaultMachineListCacheTTL, azClient.AKSMachinesClient(), machinecache.DefaultMachineListCacheInterval, clusterResourceGroup, clusterName, aksMachinesPoolName),
+		machinecache:                    machinecache.NewMachineListCache(context.Background(), azClient.AKSMachinesClient(), clusterResourceGroup, clusterName, aksMachinesPoolName),
 		instanceTypeProvider:            instanceTypeProvider,
 		allocationStrategyProvider:      allocationStrategyProvider,
 		imageResolver:                   imageResolver,

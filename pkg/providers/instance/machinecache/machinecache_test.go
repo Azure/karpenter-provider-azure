@@ -58,19 +58,19 @@ func TestUpdate(t *testing.T) {
 		},
 		{
 			name:        "nil pager - error",
-			lastUpdated: time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			lastUpdated: time.Now().Add(-2 * ttl),
 			nilPager:    true,
 			expectError: true,
 		},
 		{
 			name:        "pager returns error",
-			lastUpdated: time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			lastUpdated: time.Now().Add(-2 * ttl),
 			pagerErr:    errors.New("pager error"),
 			expectError: true,
 		},
 		{
 			name:        "cache update with valid and invalid machines",
-			lastUpdated: time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			lastUpdated: time.Now().Add(-2 * ttl),
 			existingCache: []*armcontainerservice.Machine{
 				{
 					Name: to.Ptr("machine1"),
@@ -135,7 +135,7 @@ func TestUpdate(t *testing.T) {
 
 			cache := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  DefaultMachineListCacheTTL,
+				ttl:                  ttl,
 				client:               fakePager,
 				clusterResourceGroup: "test-rg",
 				clusterName:          "test-cluster",
@@ -193,7 +193,7 @@ func TestGet(t *testing.T) {
 		},
 		{
 			name:            "stale cache",
-			lastUpdated:     time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			lastUpdated:     time.Now().Add(-2 * ttl),
 			machineName:     "machine",
 			cachedMachines:  []*armcontainerservice.Machine{&armcontainerservice.Machine{Name: to.Ptr("machine")}},
 			expectErr:       true,
@@ -206,7 +206,7 @@ func TestGet(t *testing.T) {
 			t.Parallel()
 			c := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  DefaultMachineListCacheTTL,
+				ttl:                  ttl,
 			}
 
 			for _, m := range tt.cachedMachines {
@@ -262,7 +262,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name:             "stale cache refreshed by background worker",
-			lastUpdated:      time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			lastUpdated:      time.Now().Add(-2 * ttl),
 			cachedMachines:   twoMachines,
 			expectedMachines: twoMachines,
 			expectErr:        false,
@@ -292,7 +292,7 @@ func TestList(t *testing.T) {
 			t.Parallel()
 			c := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  DefaultMachineListCacheTTL,
+				ttl:                  ttl,
 			}
 
 			for _, m := range tt.cachedMachines {
@@ -376,7 +376,7 @@ func TestPollUntilDone(t *testing.T) {
 			machine: &armcontainerservice.Machine{
 				Name: to.Ptr("machine"),
 			},
-			lastUpdated:             time.Now().Add(-2 * DefaultMachineListCacheTTL),
+			lastUpdated:             time.Now().Add(-2 * ttl),
 			expectPollErr:           true,
 			expectedProvisioningErr: nil,
 		},
@@ -398,7 +398,7 @@ func TestPollUntilDone(t *testing.T) {
 			t.Parallel()
 			c := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  DefaultMachineListCacheTTL,
+				ttl:                  ttl,
 				interval:             time.Millisecond,
 				maxRetries:           0,
 				retryDelay:           time.Millisecond,
@@ -604,7 +604,7 @@ func TestIsFresh(t *testing.T) {
 		},
 		{
 			name:        "stale cache",
-			lastUpdated: time.Now().Add(-1 * DefaultMachineListCacheTTL),
+			lastUpdated: time.Now().Add(-1 * ttl),
 			expected:    false,
 		},
 		{
@@ -619,7 +619,7 @@ func TestIsFresh(t *testing.T) {
 			t.Parallel()
 			cache := &MachineCache{
 				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  DefaultMachineListCacheTTL,
+				ttl:                  ttl,
 			}
 			cache.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 			if got := cache.isFresh(); got != tt.expected {

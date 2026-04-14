@@ -21,10 +21,8 @@ import (
 )
 
 const (
-	// DefaultMachineListCacheTTL is the default TTL for cached machine entries.
-	DefaultMachineListCacheTTL = 30 * time.Second
-	// DefaultMachineListCacheInterval is the default interval for periodic cache refresh.
-	DefaultMachineListCacheInterval = 5 * time.Minute
+	ttl          = 30 * time.Second
+	pollInterval = 5 * time.Minute
 
 	provisioningStateCreating  = "Creating"
 	provisioningStateUpdating  = "Updating"
@@ -73,12 +71,12 @@ type MachineCache struct {
 }
 
 // NewMachineListCache creates a new cache instance with a background worker for automatic refresh.
-func NewMachineListCache(ctx context.Context, ttl time.Duration, client AKSMachineNewListPager, interval time.Duration, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
+func NewMachineListCache(ctx context.Context, client AKSMachineNewListPager, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
 	workerCtx, workerCancel := context.WithCancel(ctx)
 
 	cache := &MachineCache{
 		ttl:                  ttl,
-		interval:             interval,
+		interval:             pollInterval,
 		client:               client,
 		clusterResourceGroup: clusterResourceGroup,
 		clusterName:          clusterName,
@@ -116,23 +114,7 @@ func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, er
 // List returns all cached machines, blocking until the cache is fresh.
 func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
 	if !c.isFresh() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if !c.isFresh() {
-					c.requestUpdate()
-				}
-			case <-ctx.Done():
-				return nil, fmt.Errorf("context canceled while waiting for fresh cache: %w", ctx.Err())
-			}
-
-			if c.isFresh() {
-				break
-			}
-		}
+		return nil, fmt.Errorf("%w while listing machines", ErrCacheStale)
 	}
 
 	machines := make([]*armcontainerservice.Machine, 0)
@@ -142,12 +124,6 @@ func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine
 	})
 
 	return machines, nil
-}
-
-// Shutdown stops the background worker and waits for it to finish.
-func (c *MachineCache) Shutdown() {
-	c.workerCancel()
-	c.wg.Wait()
 }
 
 // Invalidate removes a specific machine from the cache by name.
