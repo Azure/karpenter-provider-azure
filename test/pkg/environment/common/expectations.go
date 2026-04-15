@@ -731,6 +731,18 @@ func (env *Environment) EventuallyExpectRegisteredNodeClaimCount(comparator stri
 	return lo.ToSlicePtr(nodeClaimList.Items)
 }
 
+func (env *Environment) EventuallyExpectRegisteredNodeClaimCountWithSelector(comparator string, count int, selector labels.Selector) []*karpv1.NodeClaim {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for node claims with selector %v to be %s to %d", selector, comparator, count))
+	nodeClaimList := &karpv1.NodeClaimList{}
+	Eventually(func(g Gomega) {
+		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel}, client.MatchingLabelsSelector{Selector: selector})).To(Succeed())
+		g.Expect(lo.CountBy(nodeClaimList.Items, func(nc karpv1.NodeClaim) bool { return nc.StatusConditions().IsTrue(karpv1.ConditionTypeRegistered) })).To(BeNumerically(comparator, count),
+			fmt.Sprintf("expected %d nodeclaims, had %d (%v)", count, len(nodeClaimList.Items), NodeClaimNames(lo.ToSlicePtr(nodeClaimList.Items))))
+	}).Should(Succeed())
+	return lo.ToSlicePtr(nodeClaimList.Items)
+}
+
 func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
 	By(fmt.Sprintf("waiting for node claims to be %s to %d", comparator, count))

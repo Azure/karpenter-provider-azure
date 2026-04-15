@@ -45,6 +45,7 @@ on:
           - InPlaceUpdate
           - Integration
           - KubernetesUpgrade
+          - Machine
           - NewSKUs
           - NodeClaim
           - Scheduling
@@ -225,7 +226,7 @@ jobs:
           location: ${{ inputs.location }}
           k8s_version: ${{ inputs.k8s_version }}
           provision_mode: ${{ inputs.provision_mode }}
-          identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
+          identity_type: ${{ inputs.suite == 'Machine' && 'UserAssigned' || 'SystemAssigned' }}
           azure_vm_size: ${{ inputs.azure_vm_size }}
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
