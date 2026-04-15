@@ -190,6 +190,11 @@ func (p *DefaultAKSMachineProvider) SetFallbackAKSMachinePollerOptions(opts aksm
 	p.fallbackAKSMachinePollerOptions = opts
 }
 
+// SetMachineCache replaces the machine cache instance (used in tests to control cache behavior).
+func (p *DefaultAKSMachineProvider) SetMachineCache(cache *machinecache.MachineCache) {
+	p.machinecache = cache
+}
+
 // BeginCreate creates an instance given the constraints.
 // Note that the returned instance may not be finished provisioning yet.
 // Errors that occur on the "sync side" of the VM create, such as BadRequest due to invalid user input, and similar, will have the error returned here.

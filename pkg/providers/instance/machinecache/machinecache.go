@@ -1,4 +1,17 @@
-// Package machinecache provides an in-memory cache for AKS Machine API resources with TTL-based expiration and background refresh.
+// Portions Copyright (c) Microsoft Corporation.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package machinecache
 
 import (
@@ -48,6 +61,19 @@ type AKSMachineClienter interface {
 	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
 }
 
+// Option is a functional option for configuring MachineCache.
+type Option func(*MachineCache)
+
+// WithTTL sets a custom TTL for the cache. A TTL of 0 means the cache is always stale.
+func WithTTL(d time.Duration) Option {
+	return func(c *MachineCache) { c.ttl = d }
+}
+
+// WithDisableWorker disables the background update worker goroutine.
+func WithDisableWorker() Option {
+	return func(c *MachineCache) { c.disableWorker = true }
+}
+
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
 type MachineCache struct {
 	machines             sync.Map
@@ -65,10 +91,11 @@ type MachineCache struct {
 	workerCancel   context.CancelFunc
 	updateInterval time.Duration
 	wg             sync.WaitGroup
+	disableWorker  bool
 }
 
 // NewMachineListCache creates a new cache instance with a background worker for automatic refresh.
-func NewMachineListCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string) *MachineCache {
+func NewMachineListCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
 	workerCtx, workerCancel := context.WithCancel(ctx)
 
 	cache := &MachineCache{
@@ -84,8 +111,14 @@ func NewMachineListCache(ctx context.Context, client AKSMachineClienter, cluster
 		updateInterval:       5 * time.Minute,
 	}
 
-	cache.wg.Add(1)
-	go cache.updateWorker()
+	for _, opt := range opts {
+		opt(cache)
+	}
+
+	if !cache.disableWorker {
+		cache.wg.Add(1)
+		go cache.updateWorker()
+	}
 
 	return cache
 }
@@ -265,7 +298,6 @@ func (c *MachineCache) update(ctx context.Context) error {
 				fetchedMachineNames[lo.FromPtr(aksMachine.Name)] = struct{}{}
 			}
 		}
-
 	}
 
 	c.machines.Range(func(key, value any) bool {
