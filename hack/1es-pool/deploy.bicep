@@ -1,7 +1,7 @@
 // 1ES Managed DevOps Pool for Karpenter CI
 //
 // Deploys a 1ES hosted pool targeting GitHub Actions for long-running CI jobs
-// (E2E tests, unit tests, deflake). Uses Standard_D4ds_v5 VMs (4 vCPU, 16 GB)
+// (E2E tests, deflake). Uses Standard_D4ds_v5 VMs (4 vCPU, 16 GB)
 // with stateless (ephemeral) agents.
 //
 // Usage:
@@ -21,7 +21,7 @@ var ubuntu2404GalleryVersionResourceId = '/subscriptions/723b64f0-884d-4994-b6de
 
 var poolSettings = {
   maxPoolSize: 25 // 25 × 4 = 100 cores (DDSv5 family)
-  resourcePredictions: [ // The reason we pick 12, is for the amount of ci-test jobs that run per PR
+  resourcePredictions: [ // Standby count of 12 matches the number of E2E suite jobs that run concurrently per PR (one VM per suite)
     {
       '21:00': 12  // 9 AM Monday NZT
     }
