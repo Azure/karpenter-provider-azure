@@ -895,7 +895,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 	Describe("configureSpotBilling", func() {
 		DescribeTable("should configure billing profile correctly",
-			func(capacityType string, spotMaxPrice *float64, expectedBilling *armcontainerservice.MachineBillingProfile) {
+			func(capacityType string, spotMaxPrice *string, expectedBilling *armcontainerservice.MachineBillingProfile) {
 				nc := &v1beta1.AKSNodeClass{}
 				nc.Spec.SpotMaxPrice = spotMaxPrice
 				result := configureSpotBilling(capacityType, nc)
@@ -910,13 +910,13 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Entry("on-demand: no billing profile", karpv1.CapacityTypeOnDemand, nil, nil),
 			Entry("spot with nil SpotMaxPrice defaults to -1", karpv1.CapacityTypeSpot, nil,
 				&armcontainerservice.MachineBillingProfile{SpotMaxPrice: lo.ToPtr(float32(-1))}),
-			Entry("spot with SpotMaxPrice=-1 sets -1", karpv1.CapacityTypeSpot, lo.ToPtr(float64(-1)),
+			Entry("spot with SpotMaxPrice=-1 sets -1", karpv1.CapacityTypeSpot, lo.ToPtr("-1"),
 				&armcontainerservice.MachineBillingProfile{SpotMaxPrice: lo.ToPtr(float32(-1))}),
-			Entry("spot with SpotMaxPrice=0.5", karpv1.CapacityTypeSpot, lo.ToPtr(float64(0.5)),
+			Entry("spot with SpotMaxPrice=0.5", karpv1.CapacityTypeSpot, lo.ToPtr("0.5"),
 				&armcontainerservice.MachineBillingProfile{SpotMaxPrice: lo.ToPtr(float32(0.5))}),
-			Entry("spot with SpotMaxPrice=0.98765", karpv1.CapacityTypeSpot, lo.ToPtr(float64(0.98765)),
+			Entry("spot with SpotMaxPrice=0.98765", karpv1.CapacityTypeSpot, lo.ToPtr("0.98765"),
 				&armcontainerservice.MachineBillingProfile{SpotMaxPrice: lo.ToPtr(float32(0.98765))}),
-			Entry("spot with SpotMaxPrice=100.0", karpv1.CapacityTypeSpot, lo.ToPtr(float64(100.0)),
+			Entry("spot with SpotMaxPrice=100.0", karpv1.CapacityTypeSpot, lo.ToPtr("100.0"),
 				&armcontainerservice.MachineBillingProfile{SpotMaxPrice: lo.ToPtr(float32(100.0))}),
 		)
 	})

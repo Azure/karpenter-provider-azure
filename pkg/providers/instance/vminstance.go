@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -660,8 +661,12 @@ func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageI
 func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string, nodeClass *v1beta1.AKSNodeClass) {
 	if capacityType == karpv1.CapacityTypeSpot {
 		maxPrice := float64(-1)
-		if nodeClass.Spec.SpotMaxPrice != nil {
-			maxPrice = *nodeClass.Spec.SpotMaxPrice
+		if nodeClass.Spec.SpotMaxPrice != nil && *nodeClass.Spec.SpotMaxPrice != "-1" {
+			// The SpotMaxPrice string has already been validated by the CRD pattern,
+			// so ParseFloat should never fail here in normal operation.
+			if parsed, err := strconv.ParseFloat(*nodeClass.Spec.SpotMaxPrice, 64); err == nil {
+				maxPrice = parsed
+			}
 		}
 		vmProperties.EvictionPolicy = lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{

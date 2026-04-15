@@ -110,18 +110,18 @@ func TestGetManagedExtensionNames(t *testing.T) {
 
 func TestSetVMPropertiesBillingProfile(t *testing.T) {
 	tests := []struct {
-		name              string
-		capacityType      string
-		spotMaxPrice      *float64
-		expectBilling     bool
-		expectedMaxPrice  float64
-		expectEviction    bool
+		name             string
+		capacityType     string
+		spotMaxPrice     *string
+		expectBilling    bool
+		expectedMaxPrice float64
+		expectEviction   bool
 	}{
 		{
-			name:          "on-demand: no billing profile set",
-			capacityType:  karpv1.CapacityTypeOnDemand,
-			spotMaxPrice:  nil,
-			expectBilling: false,
+			name:           "on-demand: no billing profile set",
+			capacityType:   karpv1.CapacityTypeOnDemand,
+			spotMaxPrice:   nil,
+			expectBilling:  false,
 			expectEviction: false,
 		},
 		{
@@ -135,7 +135,7 @@ func TestSetVMPropertiesBillingProfile(t *testing.T) {
 		{
 			name:             "spot with SpotMaxPrice=-1 sets -1",
 			capacityType:     karpv1.CapacityTypeSpot,
-			spotMaxPrice:     lo.ToPtr(float64(-1)),
+			spotMaxPrice:     lo.ToPtr("-1"),
 			expectBilling:    true,
 			expectedMaxPrice: -1,
 			expectEviction:   true,
@@ -143,7 +143,7 @@ func TestSetVMPropertiesBillingProfile(t *testing.T) {
 		{
 			name:             "spot with SpotMaxPrice=0.5",
 			capacityType:     karpv1.CapacityTypeSpot,
-			spotMaxPrice:     lo.ToPtr(float64(0.5)),
+			spotMaxPrice:     lo.ToPtr("0.5"),
 			expectBilling:    true,
 			expectedMaxPrice: 0.5,
 			expectEviction:   true,
@@ -151,7 +151,7 @@ func TestSetVMPropertiesBillingProfile(t *testing.T) {
 		{
 			name:             "spot with SpotMaxPrice=0.98765",
 			capacityType:     karpv1.CapacityTypeSpot,
-			spotMaxPrice:     lo.ToPtr(float64(0.98765)),
+			spotMaxPrice:     lo.ToPtr("0.98765"),
 			expectBilling:    true,
 			expectedMaxPrice: 0.98765,
 			expectEviction:   true,
@@ -159,7 +159,7 @@ func TestSetVMPropertiesBillingProfile(t *testing.T) {
 		{
 			name:             "spot with SpotMaxPrice=100.0",
 			capacityType:     karpv1.CapacityTypeSpot,
-			spotMaxPrice:     lo.ToPtr(float64(100.0)),
+			spotMaxPrice:     lo.ToPtr("100.0"),
 			expectBilling:    true,
 			expectedMaxPrice: 100.0,
 			expectEviction:   true,
