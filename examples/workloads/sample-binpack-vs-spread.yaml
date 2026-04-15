@@ -6,7 +6,7 @@
 # 2) sample-spread: encourage distribution across nodes and zones (helps availability).
 #
 # Notes:
-# - "binpacking" isn't a single Kubernetes feature; it’s an emergent behavior you can influence.
+# - "binpacking" isn't a single Kubernetes feature; it's an emergent behavior you can influence.
 # - Strong spreading constraints can increase node count (more cost), especially during scale-out.
 ---
 apiVersion: apps/v1
