@@ -97,7 +97,7 @@ var (
 
 var _ = Describe("LocalDNS", func() {
 	BeforeEach(func() {
-		if env.InClusterController {
+		if !env.IsMachineModeOrNPS() {
 			Skip("LocalDNS tests require NPS (Node Provisioning Service) - only supported in NAP/managed Karpenter mode")
 		}
 	})

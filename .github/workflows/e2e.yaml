@@ -18,6 +18,10 @@ on:
       k8s_version:
         type: string
         description: "the kubernetes version to use (e.g., 1.30). If empty, uses AKS default."
+      azure_vm_size:
+        type: string
+        description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
+        default: "Standard_D4ds_v5"  # We have more quota for this VM size so force it to avoid quota errors
     secrets:
       E2E_CLIENT_ID:
         required: true
@@ -41,6 +45,8 @@ on:
           - InPlaceUpdate
           - Integration
           - KubernetesUpgrade
+          - Machine
+          - NewSKUs
           - NodeClaim
           - Scheduling
           - Spot
@@ -56,7 +62,9 @@ on:
           - westus3
           - southcentralus
           - eastus
-          - westus2  # This is staging in our sub
+          - westus2
+          - eastus2euap
+          - centraluseuap
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"
@@ -77,6 +85,10 @@ on:
         options:
           - aksscriptless
           - aksmachineapi
+      azure_vm_size:
+        type: string
+        description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
+        default: "Standard_D4ds_v5"  # We have more quota for this VM size so force it to avoid quota errors
 
 permissions:
   contents: read
@@ -179,6 +191,9 @@ jobs:
           ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
+      - name: cleanup leftover resources, if any (e.g. from a previous run that failed to clean up)
+        # Could reuse the existing cleanup action, but would require a bit of refactoring (e.g. it uses non-blocking delete)
+        run: az group delete --name "$RG_NAME" --yes 2>/dev/null || true
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
@@ -211,7 +226,8 @@ jobs:
           location: ${{ inputs.location }}
           k8s_version: ${{ inputs.k8s_version }}
           provision_mode: ${{ inputs.provision_mode }}
-          identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
+          identity_type: ${{ inputs.suite == 'Machine' && 'UserAssigned' || 'SystemAssigned' }}
+          azure_vm_size: ${{ inputs.azure_vm_size }}
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:

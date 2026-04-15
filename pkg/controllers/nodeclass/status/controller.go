@@ -34,7 +34,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
@@ -60,8 +60,8 @@ func NewController(
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
-	subnetClient azclient.SubnetsAPI,
-	diskEncryptionSetsClient azclient.DiskEncryptionSetsAPI,
+	subnetClient azapi.SubnetsAPI,
+	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
 ) *Controller {
 	return &Controller{

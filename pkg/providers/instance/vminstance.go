@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -52,6 +53,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var (
@@ -160,6 +162,7 @@ type DefaultVMProvider struct {
 	location                     string
 	azClient                     *azclient.AZClient
 	instanceTypeProvider         instancetype.Provider
+	allocationStrategyProvider   allocationstrategy.Provider
 	launchTemplateProvider       *launchtemplate.Provider
 	loadBalancerProvider         *loadbalancer.Provider
 	networkSecurityGroupProvider *networksecuritygroup.Provider
@@ -178,6 +181,7 @@ type DefaultVMProvider struct {
 func NewDefaultVMProvider(
 	azClient *azclient.AZClient,
 	instanceTypeProvider instancetype.Provider,
+	allocationStrategyProvider allocationstrategy.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
 	networkSecurityGroupProvider *networksecuritygroup.Provider,
@@ -192,6 +196,7 @@ func NewDefaultVMProvider(
 	return &DefaultVMProvider{
 		azClient:                     azClient,
 		instanceTypeProvider:         instanceTypeProvider,
+		allocationStrategyProvider:   allocationStrategyProvider,
 		launchTemplateProvider:       launchTemplateProvider,
 		loadBalancerProvider:         loadBalancerProvider,
 		networkSecurityGroupProvider: networkSecurityGroupProvider,
@@ -221,7 +226,6 @@ func (p *DefaultVMProvider) BeginCreate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
-	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		// There may be orphan NICs (created before promise started)
@@ -232,7 +236,7 @@ func (p *DefaultVMProvider) BeginCreate(
 		return nil, err
 	}
 	vm := vmPromise.VM
-	zone, err := utils.MakeAKSLabelZoneFromVM(vm)
+	zone, err := zones.MakeAKSLabelZoneFromVM(vm)
 	if err != nil {
 		log.FromContext(ctx).V(1).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	}
@@ -299,11 +303,7 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 		}
 
 		for extName, poller := range pollers {
-			// Poll more frequently than the default of 30s
-			opts := &runtime.PollUntilDoneOptions{
-				Frequency: 3 * time.Second,
-			}
-			_, err := poller.PollUntilDone(ctx, opts)
+			_, err := poller.PollUntilDone(ctx, defaultPollerOptions())
 			if err != nil {
 				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
 			}
@@ -602,7 +602,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
 		},
-		Zones: utils.MakeARMZonesFromAKSLabelZone(opts.Zone),
+		Zones: zones.MakeARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
@@ -738,7 +738,13 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
-	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
+	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+		ctx,
+		allocationstrategy.NewInstanceOfferings(instanceTypes),
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+	)
+
+	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
@@ -809,7 +815,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
 	})
 	if err != nil {
-		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 		if skuErr != nil {
 			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
@@ -841,7 +847,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				return nil
 			}
 
-			_, err = result.Poller.PollUntilDone(ctx, nil)
+			_, err = result.Poller.PollUntilDone(ctx, defaultPollerOptions())
 			if err != nil {
 				VMCreateFailureMetric.With(map[string]string{
 					metrics.ImageLabel:        launchTemplate.ImageID,
@@ -853,7 +859,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
 				}).Inc()
 
-				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
@@ -906,13 +912,9 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
 	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
 
-	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
-	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
-	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+	// These may contain restricted labels from the pod that we need to filter out; that's done in getStaticParameters.
+	claimLabels := labels.GetAllSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
-		func(k string, req *scheduling.Requirement) bool {
-			return labels.CanKubeletSetLabel(k)
-		},
 	)
 	additionalLabels := lo.Assign(
 		claimLabels,
@@ -990,14 +992,15 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 		return err
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
-
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil
 		}
+
 		return err
 	}
+
 	return nil
 }
 

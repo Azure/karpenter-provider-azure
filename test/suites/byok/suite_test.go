@@ -68,6 +68,10 @@ var _ = Describe("BYOK", func() {
 	It("should provision a VM with customer-managed key disk encryption", Label("runner"), func(ctx SpecContext) {
 		var diskEncryptionSetID string
 
+		if env.IsMachineMode() {
+			Skip("Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID env setting, so overriding it below doesn't do anything and the test will fail")
+		}
+
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		if env.InClusterController {
 			diskEncryptionSetID = createKeyVaultAndDiskEncryptionSet(ctx, env)
@@ -118,6 +122,10 @@ var _ = Describe("BYOK", func() {
 	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", Label("runner"), func(ctx SpecContext) {
 		var diskEncryptionSetID string
 
+		if env.IsMachineMode() {
+			Skip("Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID env setting, so overriding it below doesn't do anything and the test will fail")
+		}
+
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
@@ -131,11 +139,9 @@ var _ = Describe("BYOK", func() {
 
 		By("Phase 3: Configuring ephemeral OS disk requirement")
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-				Operator: corev1.NodeSelectorOpGt,
-				Values:   []string{"50"},
-			}})
+			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{"50"}})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
 
 		By("Phase 4: Creating test Pod")

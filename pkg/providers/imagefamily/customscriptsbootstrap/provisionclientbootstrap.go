@@ -65,6 +65,7 @@ type ProvisionClientBootstrap struct {
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
 	ArtifactStreaming              *v1beta1.ArtifactStreaming
+	LinuxOSConfig                  *v1beta1.LinuxOSConfiguration
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -104,9 +105,6 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
-	// Artifact streaming is configurable through the AKSNodeClass spec
-	// ARM64 does not support artifact streaming and is always disabled
-	// If not specified, defaults to enabled for AMD64
 	enableArtifactStreaming := p.ArtifactStreaming.IsEnabled(p.Arch)
 
 	// unspecified FIPSMode is effectively no FIPS for now
@@ -136,7 +134,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
-		EnableFIPS: lo.ToPtr(enableFIPS),
+		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
+		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
@@ -164,6 +163,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
 			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
 			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			FailSwapOn:           p.KubeletConfig.FailSwapOn,
 		}
 
 		if p.KubeletConfig.ContainerLogMaxSize != nil {

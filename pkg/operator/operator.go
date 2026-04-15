@@ -57,6 +57,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -215,9 +216,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.NetworkSecurityGroupsClient,
 		options.FromContext(ctx).NodeResourceGroup,
 	)
+	allocationStrategyProvider := allocationstrategy.NewProvider()
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,
+		allocationStrategyProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
@@ -232,6 +235,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypeProvider,
+		allocationStrategyProvider,
 		imageResolver,
 		unavailableOfferingsCache,
 		azConfig.SubscriptionID,

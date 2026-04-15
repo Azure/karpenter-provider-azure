@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,6 +40,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	"sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/metrics"
 	coreexpectations "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -206,6 +209,44 @@ func ExpectProvisionedAndWaitForPromises(
 	GinkgoHelper()
 	coreexpectations.ExpectProvisioned(ctx, c, cluster, cp, provisioner, pods...)
 	cp.(instancePromiseWaiter).WaitForInstancePromises()
+}
+
+func ExpectScheduledNodeClaimsCreated(
+	ctx context.Context,
+	client client.Client,
+	coreProvisioner *provisioning.Provisioner,
+	claims ...*scheduling.NodeClaim,
+) []*karpv1.NodeClaim {
+	GinkgoHelper()
+
+	var nodeClaims []*karpv1.NodeClaim
+	for _, m := range claims {
+		nodeClaimName, err := coreProvisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
+		Expect(err).ToNot(HaveOccurred())
+
+		nodeClaim := &karpv1.NodeClaim{}
+		Expect(client.Get(ctx, types.NamespacedName{Name: nodeClaimName}, nodeClaim)).To(Succeed())
+		nodeClaims = append(nodeClaims, nodeClaim)
+	}
+	return nodeClaims
+}
+
+func BindPodsToNode(ctx context.Context, client client.Client, cluster *state.Cluster, scheduledClaim *scheduling.NodeClaim, node *corev1.Node) {
+	GinkgoHelper()
+
+	for _, pod := range scheduledClaim.Pods {
+		// We have to manually bind the pod to the node when using a fakeClient by setting the value for pod.Spec.NodeName
+		// Note: This is a bit hacky but is what upstream does, see https://github.com/kubernetes-sigs/karpenter/blob/defdfae64097b8e58a211c429fa955896e515400/pkg/test/expectations/expectations.go#L307
+		if strings.Contains(reflect.TypeOf(client).String(), "fake") {
+			pod.Spec.NodeName = node.Name
+			err := client.Update(ctx, pod)
+			Expect(err).ToNot(HaveOccurred())
+			coreexpectations.ExpectExists(ctx, client, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: node.Name, Namespace: node.Namespace}})
+		} else {
+			coreexpectations.ExpectManualBinding(ctx, client, pod, node)
+		}
+		Expect(cluster.UpdatePod(ctx, pod)).To(Succeed()) // track pod bindings
+	}
 }
 
 // CreateAndWaitForPromises calls cloudProvider.Create and waits for async polling goroutines to complete.

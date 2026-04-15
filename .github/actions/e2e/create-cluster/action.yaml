@@ -35,6 +35,10 @@ inputs:
     description: "The type of managed identity for the cluster (SystemAssigned or UserAssigned)"
     required: false
     default: "SystemAssigned"
+  azure_vm_size:
+    description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
+    required: false
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -42,7 +46,7 @@ runs:
       with:
         ref: ${{ inputs.git_ref }}
     - name: az login
-      uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+      uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
       with:
         client-id: ${{ inputs.client_id }}
         tenant-id: ${{ inputs.tenant_id }}
@@ -62,7 +66,7 @@ runs:
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
-        AZURE_VM_SIZE: Standard_D4ds_v5 # We have more quota for this VM size so force it to avoid quota errors
+        AZURE_VM_SIZE: ${{ inputs.azure_vm_size }}
         K8S_VERSION: ${{ inputs.k8s_version }}
         PROVISION_MODE: ${{ inputs.provision_mode }}
       run: |
@@ -74,7 +78,7 @@ runs:
           make ci-mkcluster-all
         fi
     - name: az login 2
-      uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+      uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
       with:
         client-id: ${{ inputs.client_id }}
         tenant-id: ${{ inputs.tenant_id }}

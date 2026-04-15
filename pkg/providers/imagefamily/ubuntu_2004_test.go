@@ -66,6 +66,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeFIPS)
 	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
+	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -79,6 +80,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		fipsMode,
 		nil, // Ubuntu 20.04 does not support LocalDNS
 		artifactStreaming,
+		linuxOSConfig,
 	)
 
 	g := NewWithT(t)
@@ -107,6 +109,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004), "ImageFamily field must be set to prevent unsupported image family errors")
 	g.Expect(provisionBootstrapper.FIPSMode).To(Equal(fipsMode), "FIPSMode field must match the input parameter")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(BeNil(), "Ubuntu 20.04 does not support LocalDNS")
+	g.Expect(provisionBootstrapper.LinuxOSConfig).To(BeNil(), "LinuxOSConfig should be nil when not specified")
 }
 
 func TestUbuntu2004_Name(t *testing.T) {

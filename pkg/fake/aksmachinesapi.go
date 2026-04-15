@@ -18,6 +18,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,9 +27,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/samber/lo"
 )
 
@@ -214,7 +215,7 @@ func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
 }
 
 // assert that the fake implements the interface
-var _ azclient.AKSMachinesAPI = &AKSMachinesAPI{}
+var _ azapi.AKSMachinesAPI = &AKSMachinesAPI{}
 
 type AKSMachinesAPI struct {
 	AKSMachinesBehavior
@@ -257,7 +258,7 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 		AKSMachine:        parameters,
 		Options:           options,
 	}
-	aksMachine := input.AKSMachine
+	aksMachine := deepCopyMachine(input.AKSMachine)
 	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
 	aksMachine.ID = &id
 	aksMachine.Name = &input.AKSMachineName
@@ -516,4 +517,18 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	if machine.Properties.ETag == nil {
 		machine.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
 	}
+}
+
+// deepCopyMachine returns a fully independent copy of an AKS Machine via JSON
+// round-trip, simulating the serialization boundary of a real HTTP call.
+func deepCopyMachine(src armcontainerservice.Machine) armcontainerservice.Machine {
+	data, err := json.Marshal(src)
+	if err != nil {
+		panic(fmt.Sprintf("fake: failed to marshal Machine for deep copy: %v", err))
+	}
+	var dst armcontainerservice.Machine
+	if err := json.Unmarshal(data, &dst); err != nil {
+		panic(fmt.Sprintf("fake: failed to unmarshal Machine for deep copy: %v", err))
+	}
+	return dst
 }

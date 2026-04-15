@@ -40,7 +40,7 @@ import (
 
 	//nolint:SA1019 // deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -58,6 +58,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -156,6 +157,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, err
 	}
 
+	// Note: This filters out any instance types which we're out of capacity for
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
@@ -234,7 +236,8 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 		aksMachinePromise.AKSMachineID,
 		aksMachinePromise.VMResourceID,
 		false,
-		aksMachinePromise.AKSMachineNodeImageVersion)
+		aksMachinePromise.AKSMachineNodeImageVersion,
+		aksMachinePromise.CreationTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
@@ -544,6 +547,11 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 			ConditionStatus:    corev1.ConditionUnknown,
 			TolerationDuration: 10 * time.Minute,
 		},
+		{
+			ConditionType:      "kubernetes.azure.com/NodeHealthy",
+			ConditionStatus:    corev1.ConditionFalse,
+			TolerationDuration: 0,
+		},
 	}
 }
 
@@ -628,8 +636,8 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
-	if zone, err := utils.MakeAKSLabelZoneFromVM(vm); err != nil {
-		log.FromContext(ctx).Info("failed to get zone for VM, zone label will be empty", "vmName", *vm.Name, "error", err)
+	if zone, err := zones.MakeAKSLabelZoneFromVM(vm); err != nil {
+		log.FromContext(ctx).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
 	}
