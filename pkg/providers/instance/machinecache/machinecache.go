@@ -138,6 +138,19 @@ func WithCacheDisabled() Option {
 	return func(o opts) opts { o.disabled = true; return o }
 }
 
+// Option is a functional option for configuring MachineCache.
+type Option func(*MachineCache)
+
+// WithTTL sets a custom TTL for the cache. A TTL of 0 means the cache is always stale.
+func WithTTL(d time.Duration) Option {
+	return func(c *MachineCache) { c.ttl = d }
+}
+
+// WithDisableWorker disables the background update worker goroutine.
+func WithDisableWorker() Option {
+	return func(c *MachineCache) { c.disableWorker = true }
+}
+
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
 type MachineCache struct {
 	machines             sync.Map
