@@ -64,6 +64,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
+// +kubebuilder:validation:XValidation:message="spotMaxPrice must be -1 or a value greater than 0",rule="!has(self.spotMaxPrice) || self.spotMaxPrice == -1.0 || self.spotMaxPrice > 0.0"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -132,6 +133,15 @@ type AKSNodeClassSpec struct {
 	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 	// +optional
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
+	// spotMaxPrice is the maximum price (in USD) you are willing to pay for spot instances.
+	// Valid values are any decimal value greater than zero, or -1.
+	// Setting -1 means the instance will not be evicted based on price; the max price will be the on-demand price.
+	// Supports up to five decimal places (e.g. 0.98765).
+	// This field is only effective when the node class is used with spot capacity type; it is ignored for on-demand nodes.
+	// +default=-1
+	// +kubebuilder:default=-1
+	// +optional
+	SpotMaxPrice *float64 `json:"spotMaxPrice,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -661,7 +671,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v3"
+const AKSNodeClassHashVersion = "v4"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{

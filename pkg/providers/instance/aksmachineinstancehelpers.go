@@ -153,6 +153,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				// EnableSecureBoot:       nil,
 			},
 			Priority: priority,
+			Billing:  configureSpotBilling(capacityType, nodeClass),
 
 			Tags: tags,
 		},
@@ -191,6 +192,22 @@ func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriorit
 	default:
 		// Karpenter defaults to Regular
 		return lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+	}
+}
+
+// configureSpotBilling returns a MachineBillingProfile for Spot capacity type using the
+// SpotMaxPrice from the NodeClass, defaulting to -1 (no price-based eviction) when not specified.
+// Returns nil for non-Spot capacity types.
+func configureSpotBilling(capacityType string, nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.MachineBillingProfile {
+	if capacityType != karpv1.CapacityTypeSpot {
+		return nil
+	}
+	maxPrice := float32(-1)
+	if nodeClass.Spec.SpotMaxPrice != nil {
+		maxPrice = float32(*nodeClass.Spec.SpotMaxPrice)
+	}
+	return &armcontainerservice.MachineBillingProfile{
+		SpotMaxPrice: lo.ToPtr(maxPrice),
 	}
 }
 
