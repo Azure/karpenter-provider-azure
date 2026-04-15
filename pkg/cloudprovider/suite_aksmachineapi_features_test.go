@@ -927,6 +927,74 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+		Context("Create - ArtifactStreaming", func() {
+			It("should set ArtifactStreamingProfile when explicitly enabled", func() {
+				nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+					Enabled: lo.ToPtr(true),
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.Kubernetes).ToNot(BeNil())
+				Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile.Enabled)).To(BeTrue())
+			})
+
+			It("should not set ArtifactStreamingProfile when not specified (defaults to disabled)", func() {
+				nodeClass.Spec.ArtifactStreaming = nil
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.Kubernetes).ToNot(BeNil())
+				Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).To(BeNil())
+			})
+
+			It("should not set ArtifactStreamingProfile when explicitly disabled", func() {
+				nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+					Enabled: lo.ToPtr(false),
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.Kubernetes).ToNot(BeNil())
+				Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).To(BeNil())
+			})
+
+			It("should not set ArtifactStreamingProfile for ARM64 instance types even when enabled", func() {
+				nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+					Enabled: lo.ToPtr(true),
+				}
+				// ARM64 does not support artifact streaming; IsArtifactStreamingEnabled returns false for arm64.
+				// Verify through the NodeClass API directly since the test environment may not have ARM64 instance types.
+				Expect(nodeClass.IsArtifactStreamingEnabled("arm64")).To(BeFalse())
+				Expect(nodeClass.IsArtifactStreamingEnabled("amd64")).To(BeTrue())
+			})
+		})
+
 		Context("Create - LocalDNS", func() {
 			It("should set LocalDNSProfile with mode Required", func() {
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
