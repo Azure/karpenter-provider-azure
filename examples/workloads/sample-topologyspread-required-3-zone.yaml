@@ -19,6 +19,7 @@ spec:
     spec:
       topologySpreadConstraints:
       - maxSkew: 1
+        minDomains: 3
         topologyKey: topology.kubernetes.io/zone
         whenUnsatisfiable: DoNotSchedule  # HARD: keep pending if spread can't be satisfied
         labelSelector:
