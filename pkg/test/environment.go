@@ -291,6 +291,15 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
 
+	// Disable cache background worker and set TTL to 0 so cache is always stale,
+	// ensuring tests always fall through to direct API calls for deterministic behavior.
+	aksMachineInstanceProvider.SetMachineCache(
+		machinecache.NewMachineListCache(ctx, azClient.AKSMachinesClient(), testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName,
+			machinecache.WithTTL(0),
+			machinecache.WithDisableWorker(),
+		),
+	)
+
 	store := nodeoverlay.NewInstanceTypeStore()
 
 	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
