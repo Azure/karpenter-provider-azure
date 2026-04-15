@@ -828,16 +828,30 @@ var _ = Describe("CloudProvider", func() {
 					}
 				}
 
-				It("should handle VMSizeNotSupported sync error and mark SKU unavailable", func() {
+				It("should handle VMSizeNotSupported sync error and mark SKU unavailable for Spot", func() {
 					AssertUnavailableSync(
 						fake.AKSMachineAPIErrorVMSizeNotSupported(lo.FromPtr(defaultTestSKU.Name), azureEnv.SubscriptionID, fake.Region),
-						defaultTestSKU, karpv1.CapacityTypeOnDemand,
+						defaultTestSKU, karpv1.CapacityTypeSpot,
 					)
 				})
 
-				It("should handle BadRequest 'not supported for subscription' sync error and mark SKU unavailable", func() {
+				It("should handle BadRequest 'not supported for subscription' sync error and mark SKU unavailable for Spot", func() {
 					AssertUnavailableSync(
 						fake.AKSMachineAPIErrorVMSizeNotSupportedBadRequest(lo.FromPtr(defaultTestSKU.Name), azureEnv.SubscriptionID, fake.Region),
+						defaultTestSKU, karpv1.CapacityTypeSpot,
+					)
+				})
+
+				It("should handle BadRequest 'restricted by AKS' sync error and mark SKU unavailable for Spot", func() {
+					AssertUnavailableSync(
+						fake.AKSMachineAPIErrorSKURestrictedByAKSSmall(testOptions.AKSMachinesPoolName),
+						defaultTestSKU, karpv1.CapacityTypeSpot,
+					)
+				})
+
+				It("should handle UnsupportedGPUDedicatedVHDVMSize sync error and mark SKU unavailable for Spot", func() {
+					AssertUnavailableSync(
+						fake.AKSMachineAPIErrorUnsupportedGPUDedicatedVHDVMSize(lo.FromPtr(defaultTestSKU.Name), "Standard_NC6s_v3"),
 						defaultTestSKU, karpv1.CapacityTypeSpot,
 					)
 				})
