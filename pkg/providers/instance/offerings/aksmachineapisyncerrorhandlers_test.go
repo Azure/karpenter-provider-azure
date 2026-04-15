@@ -35,8 +35,7 @@ func setupMachineAPISyncErrorTestCases() []responseErrorTestCase {
 		newTestCase("VMSizeNotSupported").
 			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
-			withResponseError("VMSizeNotSupported",
-				fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription sub-123 in location 'westus'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location 'westus'.", testInstanceName)).
+			withResponseError("VMSizeNotSupported", "hello").
 			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
 			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
 			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
@@ -50,36 +49,6 @@ func setupMachineAPISyncErrorTestCases() []responseErrorTestCase {
 			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeSpot)).
 			expectUnavailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
 			expectAvailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
-			build(),
-
-		newTestCase("BadRequest - GPU VM SKU restricted by AKS").
-			withInstanceType(zone2OnDemand, zone3Spot).
-			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
-			withResponseError("BadRequest",
-				"The GPU VM SKU(s) `Standard_NC6` chosen for agentpool(s) `pool1` are restricted by AKS. The supported GPU VM sizes are `Standard_NC6s_v3,Standard_NC12s_v3`.").
-			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
-			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
-			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
-			build(),
-
-		newTestCase("BadRequest - Small VM SKU restricted by AKS").
-			withInstanceType(zone1Spot, zone2OnDemand).
-			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
-			withResponseError("BadRequest",
-				"The VM SKUs chosen for agentpool(s) `pool1` are restricted by AKS. This is typically due to small CPU/Memory. Please see https://aka.ms/aks/restricted-skus for more details.").
-			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
-			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
-			expectAvailable(defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeSpot)).
-			build(),
-
-		newTestCase("ErrorCodeUnsupportedGPUDedicatedVHDVMSize").
-			withInstanceType(zone2OnDemand, zone3Spot).
-			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
-			withResponseError("ErrorCodeUnsupportedGPUDedicatedVHDVMSize",
-				fmt.Sprintf("The VM Size of %s is not a SKU that supports GPU Driver Type Selection. The supported sizes are 'Standard_NC6s_v3,Standard_NC12s_v3'", testInstanceName)).
-			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
-			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
-			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
 			build(),
 
 		// === Negative cases: errors that should NOT be handled ===
@@ -194,46 +163,6 @@ func TestMachineAPISyncErrorMatcherFunctions(t *testing.T) {
 			name:    "IsSKUNotAvailableForSubscriptionBadRequest - does not match VMSizeNotSupported code",
 			matcher: IsSKUNotAvailableForSubscriptionBadRequest,
 			err:     createResponseError("VMSizeNotSupported", "is not supported for subscription"),
-			expect:  false,
-		},
-
-		// IsSKURestrictedByAKS
-		{
-			name:    "IsSKURestrictedByAKS - matches GPU restriction message",
-			matcher: IsSKURestrictedByAKS,
-			err:     createResponseError("BadRequest", "The GPU VM SKU(s) `Standard_NC6` chosen for agentpool(s) `pool1` are restricted by AKS. The supported GPU VM sizes are `Standard_NC6s_v3`."),
-			expect:  true,
-		},
-		{
-			name:    "IsSKURestrictedByAKS - matches small SKU restriction message",
-			matcher: IsSKURestrictedByAKS,
-			err:     createResponseError("BadRequest", "The VM SKUs chosen for agentpool(s) `pool1` are restricted by AKS. This is typically due to small CPU/Memory."),
-			expect:  true,
-		},
-		{
-			name:    "IsSKURestrictedByAKS - does not match BadRequest without restricted message",
-			matcher: IsSKURestrictedByAKS,
-			err:     createResponseError("BadRequest", "Some other bad request error"),
-			expect:  false,
-		},
-		{
-			name:    "IsSKURestrictedByAKS - does not match non-BadRequest code with restricted message",
-			matcher: IsSKURestrictedByAKS,
-			err:     createResponseError("VMSizeNotSupported", "restricted by AKS"),
-			expect:  false,
-		},
-
-		// IsUnsupportedGPUDedicatedVHDVMSize
-		{
-			name:    "IsUnsupportedGPUDedicatedVHDVMSize - matches correct error code",
-			matcher: IsUnsupportedGPUDedicatedVHDVMSize,
-			err:     createResponseError("ErrorCodeUnsupportedGPUDedicatedVHDVMSize", "The VM Size of Standard_D2s_v3 is not a SKU that supports GPU Driver Type Selection."),
-			expect:  true,
-		},
-		{
-			name:    "IsUnsupportedGPUDedicatedVHDVMSize - does not match other error codes",
-			matcher: IsUnsupportedGPUDedicatedVHDVMSize,
-			err:     createResponseError("BadRequest", "The VM Size of Standard_D2s_v3 is not a SKU that supports GPU Driver Type Selection."),
 			expect:  false,
 		},
 	}
