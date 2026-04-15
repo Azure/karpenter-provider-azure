@@ -292,7 +292,6 @@ func (c *MachineCache) run() {
 // update refreshes the machine cache by fetching the latest list of AKS machines from the Azure API.
 // This should NOT be called directly; it is intended to be used by the background worker.
 func (c *MachineCache) update(ctx context.Context) error {
-	fmt.Println("DEBUG: MachineCache.update called")
 	if c.isFresh() {
 		return nil
 	}
@@ -340,7 +339,6 @@ func (c *MachineCache) update(ctx context.Context) error {
 }
 
 func (c *MachineCache) isFresh() bool {
-	fmt.Println("DEBUG: MachineCache.isFresh called")
 	lastUpdatedNanos := c.lastUpdatedUnixNanos.Load()
 	if lastUpdatedNanos == 0 {
 		return false
