@@ -43,7 +43,7 @@ const (
 
 var _ = Describe("ArtifactStreaming", func() {
 	BeforeEach(func() {
-		if env.InClusterController {
+		if !env.IsMachineModeOrNPS() {
 			Skip("ArtifactStreaming tests require NPS (Node Provisioning Service) - only supported in NAP/managed Karpenter mode")
 		}
 	})
