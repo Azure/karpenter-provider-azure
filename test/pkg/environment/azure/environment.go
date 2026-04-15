@@ -166,7 +166,10 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
-	// If ProvisionMode wasn't set, default to scriptless
+	// If ProvisionMode wasn't set, default to scriptless, though note that this is
+	// actually defaulted dynamically based on the value of a toggle in AKS which means
+	// assuming we're always in ProvisionMode Scriptless here is incorrect at times, though OK
+	// for our current usage.
 	if azureEnv.ProvisionMode == "" {
 		azureEnv.ProvisionMode = consts.ProvisionModeAKSScriptless
 	}
@@ -175,11 +178,9 @@ func NewEnvironment(t *testing.T) *Environment {
 	if azureEnv.InClusterController {
 		azureEnv.MachineAgentPoolName = "testmpool"
 	}
-	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
-	// > Note: this only has to occur once per test, since its just a container for the machines
-	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
+	// Confirm we have a machine pool
 	if azureEnv.InClusterController && azureEnv.IsMachineMode() {
-		azureEnv.ExpectRunInClusterControllerWithMachineMode()
+		azureEnv.ExpectMachinesAgentPoolExists()
 	}
 	return azureEnv
 }
@@ -206,8 +207,21 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 	}
 }
 
+// IsMachineMode determines if the test is running in machine mode or not.
+// NOTE: This check is imperfect, because we don't currently set the mode (machine or otherwise) when running the tests with
+// an an out-of-cluster controller, because we don't actually know what mode is configured for the out of cluster controller.
 func (env *Environment) IsMachineMode() bool {
 	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI
+}
+
+func (env *Environment) IsMachineModeOrNPS() bool {
+	// Assumption is if we're not in the cluster, we're in NPS mode. Ideally we would just check this via ProvisionMode, but
+	// we can't do that right now as depending on context we may not set provision mode for the tests
+	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI || !env.InClusterController
+}
+
+func (env *Environment) UsesSharedImageGallery() bool {
+	return env.IsMachineModeOrNPS()
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {

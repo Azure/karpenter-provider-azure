@@ -404,6 +404,7 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 		p.deletingMachinesMu.Unlock()
 	}()
 
+	log.FromContext(ctx).V(1).Info("starting to delete AKS machine", "aksMachineName", aksMachineName)
 	poller, err := p.azClient.AgentPoolsClient().BeginDeleteMachines(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachines, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin delete AKS machine %q: %w", aksMachineName, err)

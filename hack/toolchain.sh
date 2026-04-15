@@ -63,7 +63,7 @@ crosscompilers() {
 }
 
 tools() {
-    go-install go-licenses github.com/google/go-licenses@v1.6.0
+    go-install go-licenses github.com/google/go-licenses/v2@3e084b0caf710f7bfead967567539214f598c0a2 // v2.0.1
     go-install ko github.com/google/ko@v0.17.1
     go-install yq github.com/mikefarah/yq/v4@v4.45.1
     go-install helm-docs github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
