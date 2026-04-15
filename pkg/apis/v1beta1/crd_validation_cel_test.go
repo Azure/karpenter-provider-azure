@@ -1176,4 +1176,29 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
+
+	Context("SpotMaxPrice", func() {
+		DescribeTable("should only accept valid SpotMaxPrice values",
+			func(spotMaxPrice float64, expected bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						SpotMaxPrice: &spotMaxPrice,
+					},
+				}
+				if expected {
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				} else {
+					Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				}
+			},
+			Entry("valid: -1 (no price-based eviction)", float64(-1), true),
+			Entry("valid: 0.5", float64(0.5), true),
+			Entry("valid: 0.98765 (five decimal places)", float64(0.98765), true),
+			Entry("valid: 100.0", float64(100.0), true),
+			Entry("invalid: 0 (zero not allowed)", float64(0), false),
+			Entry("invalid: -0.5 (negative other than -1)", float64(-0.5), false),
+			Entry("invalid: -2 (negative other than -1)", float64(-2), false),
+		)
+	})
 })

@@ -608,7 +608,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
 	setVMPropertiesOSDiskEncryption(vm.Properties, opts.DiskEncryptionSetID)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
-	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
+	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType, opts.NodeClass)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
@@ -655,12 +655,17 @@ func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageI
 	}
 }
 
-// setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
-func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
+// setVMPropertiesBillingProfile sets the MaxPrice for Spot VMs using the value from the NodeClass,
+// defaulting to -1 (no price-based eviction) when not specified.
+func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string, nodeClass *v1beta1.AKSNodeClass) {
 	if capacityType == karpv1.CapacityTypeSpot {
+		maxPrice := float64(-1)
+		if nodeClass.Spec.SpotMaxPrice != nil {
+			maxPrice = *nodeClass.Spec.SpotMaxPrice
+		}
 		vmProperties.EvictionPolicy = lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
-			MaxPrice: lo.ToPtr(float64(-1)),
+			MaxPrice: lo.ToPtr(maxPrice),
 		}
 	}
 }
