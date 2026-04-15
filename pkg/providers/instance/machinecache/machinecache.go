@@ -91,22 +91,12 @@ func NewMachineListCache(ctx context.Context, client AKSMachineClienter, cluster
 	return cache
 }
 
-// FreshGet gets a machine directly from the source, bypassing the cache, and updates the cache with the fresh value.
-func (c *MachineCache) FreshGet(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
-	fmt.Printf("DEBUG: MachineCache.FreshGet called for machineName=%q\n", machineName)
-	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AKS machine %q: %w", machineName, err)
+// Add stores a machine in the cache. This is useful for adding machines that were fetched directly
+// from the API, bypassing the cache.
+func (c *MachineCache) Add(machine *armcontainerservice.Machine) {
+	if machine != nil && machine.Name != nil {
+		c.machines.Store(*machine.Name, machine)
 	}
-	aksMachine := lo.ToPtr(resp.Machine)
-
-	if c.isFresh() {
-		c.machines.Store(machineName, aksMachine)
-	} else {
-		c.requestUpdate()
-	}
-
-	return aksMachine, nil
 }
 
 // Get retrieves a machine from the cache by name if the cache is fresh.
