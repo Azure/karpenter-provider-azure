@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -92,6 +93,44 @@ var AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted = &azcore.R
 }
 var AKSMachineAPIErrorAny = &azcore.ResponseError{
 	ErrorCode: "SomeRandomError",
+}
+
+func AKSMachineAPIErrorVMSizeNotSupported(vmSize, subscription, location string) *azcore.ResponseError {
+	message := fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription %s in location '%s'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%s'.", vmSize, subscription, location, location)
+	return newResponseError("VMSizeNotSupported", http.StatusBadRequest, message)
+}
+
+func AKSMachineAPIErrorVMSizeNotSupportedBadRequest(vmSize, subscription, location string) *azcore.ResponseError {
+	message := fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription %s in location '%s'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%s'.", vmSize, subscription, location, location)
+	return newResponseError("BadRequest", http.StatusBadRequest, message)
+}
+
+func AKSMachineAPIErrorSKURestrictedByAKSGPU(vmSize, agentPoolName, supportedSizes string) *azcore.ResponseError {
+	message := fmt.Sprintf("The GPU VM SKU(s) `%s` chosen for agentpool(s) `%s` are restricted by AKS. The supported GPU VM sizes are `%s`.", vmSize, agentPoolName, supportedSizes)
+	return newResponseError("BadRequest", http.StatusBadRequest, message)
+}
+
+func AKSMachineAPIErrorSKURestrictedByAKSSmall(agentPoolName string) *azcore.ResponseError {
+	message := fmt.Sprintf("The VM SKUs chosen for agentpool(s) `%s` are restricted by AKS. This is typically due to small CPU/Memory. Please see https://aka.ms/aks/restricted-skus for more details.", agentPoolName)
+	return newResponseError("BadRequest", http.StatusBadRequest, message)
+}
+
+func AKSMachineAPIErrorUnsupportedGPUDedicatedVHDVMSize(vmSize, supportedSizes string) *azcore.ResponseError {
+	message := fmt.Sprintf("The VM Size of %s is not a SKU that supports GPU Driver Type Selection. The supported sizes are '%s'", vmSize, supportedSizes)
+	return newResponseError("ErrorCodeUnsupportedGPUDedicatedVHDVMSize", http.StatusBadRequest, message)
+}
+
+func newResponseError(errorCode string, statusCode int, message string) *azcore.ResponseError {
+	errorBody := fmt.Sprintf(`{"code": "%s", "message": "%s"}`, errorCode, message)
+	return &azcore.ResponseError{
+		ErrorCode:  errorCode,
+		StatusCode: statusCode,
+		RawResponse: &http.Response{
+			StatusCode: statusCode,
+			Status:     fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
+			Body:       io.NopCloser(strings.NewReader(errorBody)),
+		},
+	}
 }
 
 func AKSMachineAPIProvisioningErrorSkuNotAvailable(sku string, location string) *armcontainerservice.ErrorDetail {
