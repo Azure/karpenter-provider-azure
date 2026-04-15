@@ -152,7 +152,7 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 	}
 	if in.SpotMaxPrice != nil {
 		in, out := &in.SpotMaxPrice, &out.SpotMaxPrice
-		*out = new(float64)
+		*out = new(string)
 		**out = **in
 	}
 }

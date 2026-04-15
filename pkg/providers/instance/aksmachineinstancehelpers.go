@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -203,8 +204,10 @@ func configureSpotBilling(capacityType string, nodeClass *v1beta1.AKSNodeClass) 
 		return nil
 	}
 	maxPrice := float32(-1)
-	if nodeClass.Spec.SpotMaxPrice != nil {
-		maxPrice = float32(*nodeClass.Spec.SpotMaxPrice)
+	if nodeClass.Spec.SpotMaxPrice != nil && *nodeClass.Spec.SpotMaxPrice != "-1" {
+		if parsed, err := strconv.ParseFloat(*nodeClass.Spec.SpotMaxPrice, 32); err == nil {
+			maxPrice = float32(parsed)
+		}
 	}
 	return &armcontainerservice.MachineBillingProfile{
 		SpotMaxPrice: lo.ToPtr(maxPrice),

@@ -736,14 +736,14 @@ spec:
                     type: boolean
                 type: object
               spotMaxPrice:
-                default: -1
+                default: "-1"
                 description: |-
                   spotMaxPrice is the maximum price (in USD) you are willing to pay for spot instances.
-                  Valid values are any decimal value greater than zero, or -1.
-                  Setting -1 means the instance will not be evicted based on price; the max price will be the on-demand price.
-                  Supports up to five decimal places (e.g. 0.98765).
+                  Valid values are "-1" or a positive decimal string with up to 5 decimal places (e.g. "0.98765").
+                  Setting "-1" means the instance will not be evicted based on price; the max price will be the on-demand price.
                   This field is only effective when the node class is used with spot capacity type; it is ignored for on-demand nodes.
-                type: number
+                pattern: ^(-1|[0-9]+(\.[0-9]{1,5})?)$
+                type: string
               tags:
                 additionalProperties:
                   type: string
@@ -775,9 +775,7 @@ spec:
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
-            - message: spotMaxPrice must be -1 or a value greater than 0
-              rule: '!has(self.spotMaxPrice) || self.spotMaxPrice == -1.0 || self.spotMaxPrice
-                > 0.0'
+
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
@@ -1614,14 +1612,14 @@ spec:
                     type: boolean
                 type: object
               spotMaxPrice:
-                default: -1
+                default: "-1"
                 description: |-
                   spotMaxPrice is the maximum price (in USD) you are willing to pay for spot instances.
-                  Valid values are any decimal value greater than zero, or -1.
-                  Setting -1 means the instance will not be evicted based on price; the max price will be the on-demand price.
-                  Supports up to five decimal places (e.g. 0.98765).
+                  Valid values are "-1" or a positive decimal string with up to 5 decimal places (e.g. "0.98765").
+                  Setting "-1" means the instance will not be evicted based on price; the max price will be the on-demand price.
                   This field is only effective when the node class is used with spot capacity type; it is ignored for on-demand nodes.
-                type: number
+                pattern: ^(-1|[0-9]+(\.[0-9]{1,5})?)$
+                type: string
               tags:
                 additionalProperties:
                   type: string
@@ -1653,9 +1651,7 @@ spec:
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
-            - message: spotMaxPrice must be -1 or a value greater than 0
-              rule: '!has(self.spotMaxPrice) || self.spotMaxPrice == -1.0 || self.spotMaxPrice
-                > 0.0'
+
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
