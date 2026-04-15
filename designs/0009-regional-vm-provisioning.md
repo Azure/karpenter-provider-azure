@@ -46,7 +46,7 @@ Support provisioning regional (non-zonal) VMs in Karpenter on Azure for zone-cap
 
 The recommended first version widens the default envelope so both zonal and regional offerings are eligible. It pairs that with launch-side selection of one concrete cheapest compatible offering, plus an internal price-first ranking that prefers zonal offerings on equal-price ties. This ranking is the **zonal-preferred tie-break**. The design also requires regional-aware unavailability handling so zonal failures do not accidentally suppress regional fallback.
 
-> **TL;DR:** Add `karpenter.azure.com/zone-placement` as an offering label with values `zonal` and `regional` (Option B), widen the default envelope to include regional offerings for zone-capable SKUs, and apply zonal-preferred tie-breaking so the common case stays zonal-first. This is a behavioral compatibility change for existing unconstrained NodePools.
+> **TL;DR:** Add `karpenter.azure.com/placement-scope` as an offering label with values `zonal` and `regional` (Option B), widen the default envelope to include regional offerings for zone-capable SKUs, and apply zonal-preferred tie-breaking so the common case stays zonal-first. This is a behavioral compatibility change for existing unconstrained NodePools.
 
 ### Goals
 
@@ -126,14 +126,14 @@ Three constraints shape the design space: the distinction between which offering
 
 This design separates two questions:
 
-1. **Which offerings are eligible at all?** This is the **placement envelope** — defined by hard constraints such as `topology.kubernetes.io/zone`, `karpenter.azure.com/zone-placement`, or an AKSNodeClass placement policy.
+1. **Which offerings are eligible at all?** This is the **placement envelope** — defined by hard constraints such as `topology.kubernetes.io/zone`, `karpenter.azure.com/placement-scope`, or an AKSNodeClass placement policy.
 2. **If multiple offerings are eligible, which one should win?** This is the **allocation strategy** — a ranking policy applied after the eligible set is determined.
 
 The distinction matters because these look similar but represent different contracts:
 
 - **Envelope-only zonal:** only zonal offerings are eligible
 - **Envelope allowing any placement:** zonal and regional offerings are both eligible; the envelope itself does not prefer one over the other
-- **Any-placement envelope plus ranking:** both are eligible, but zonal wins on equal-price ties. In Option B, this state corresponds to omitting the `zone-placement` requirement; in Option C, it becomes the explicit `Any` policy value.
+- **Any-placement envelope plus ranking:** both are eligible, but zonal wins on equal-price ties. In Option B, this state corresponds to omitting the `placement-scope` requirement; in Option C, it becomes the explicit `Any` policy value.
 
 An envelope that allows both is **not** the same as "zonal fallback to regional" — without additional ranking, regional could win over zonal (e.g., if it appears first in an arbitrary sort), so the envelope alone does not imply any preference order.
 
@@ -171,7 +171,7 @@ Existing users expect:
 | Implicitly zonal — no zone requirement, but expects zonal nodes | Zonal only (no regional offerings exist) | Zonal-first via tie-break; regional possible if all zonal offerings unavailable | Behavioral change — widened envelope, but common case unchanged |
 | Explicitly zonal — `zone In [eastus-1, eastus-2, ...]` or equivalent | Zonal only in named zones | Unchanged — explicit zone constraints still exclude `0` | None |
 | Open to regional fallback — would accept regional if zonal is exhausted | Zonal only; SKU becomes unprovisionable if all zones exhausted | Both eligible; zonal preferred, regional available as fallback | New capability — matches user intent better than today |
-| Regional-only — explicitly wants non-zonal placement | Only possible for regional-only SKUs; zone-capable SKUs have no regional offering | `zone-placement In [regional]` or `zone In [0]` enables regional for all SKUs | New capability |
+| Regional-only — explicitly wants non-zonal placement | Only possible for regional-only SKUs; zone-capable SKUs have no regional offering | `placement-scope In [regional]` or `zone In [0]` enables regional for all SKUs | New capability |
 
 The key tension is the first row: users who never said "zonal only" but got it implicitly. The following compatibility spectrum addresses how to handle that case.
 
@@ -201,7 +201,7 @@ The options below compare different ways to define the placement envelope. Throu
 | Option | Approach | Backward compatible? | Default semantics | User control | Key tradeoff |
 |---|---|---|---|---|---|
 | **A** | Zone is the only placement control surface | No | Unconstrained NodePool = zonal and regional eligible | `zone` requirements only | Smallest implementation, but overloads topology with placement intent |
-| **B** | Placement mode is modeled explicitly via `zone-placement` | No, though a price-first default that prefers zonal on equal-price ties softens the common-case impact | No `zone-placement` requirement = any placement eligible; recommended first-version behavior is price-first with zonal preference on equal-price ties | `zone-placement` plus `zone` requirements | Primary recommendation; clean explicit model, but unconstrained existing NodePools widen after upgrade |
+| **B** | Placement mode is modeled explicitly via `placement-scope` | No, though a price-first default that prefers zonal on equal-price ties softens the common-case impact | No `placement-scope` requirement = any placement eligible; recommended first-version behavior is price-first with zonal preference on equal-price ties | `placement-scope` plus `zone` requirements | Primary recommendation; clean explicit model, but unconstrained existing NodePools widen after upgrade |
 | **C** | AKSNodeClass owns the placement envelope before scheduling | Yes, if omission or the defaulted policy preserves current behavior | Compatibility envelope when needed; otherwise a provider-owned default such as `Any` is separate | Optional AKSNodeClass policy plus `zone` requirements | Strongest alternative for stricter compatibility or provider-owned defaults, but adds a second control surface and defaulting complexity |
 | **D** | Regional retry happens outside the offering model | At the API surface only | Automatic fallback after zonal failure | None | Smallest user-facing change, but hides placement changes from the scheduler and user |
 
@@ -237,39 +237,39 @@ This is the smallest code change and composes naturally with existing exact-zone
 
 ### Option B: Explicit Placement Controls
 
-Introduce an Azure-specific offering label such as `karpenter.azure.com/zone-placement`, and treat placement mode as an orthogonal dimension from zone topology.
+Introduce an Azure-specific offering label such as `karpenter.azure.com/placement-scope`, and treat placement mode as an orthogonal dimension from zone topology.
 
 Example offerings:
 
 ```text
 Offerings:
-  (NC24ads, eastus-1, on-demand, zone-placement=zonal)
-  (NC24ads, eastus-2, on-demand, zone-placement=zonal)
-  (NC24ads, eastus-3, on-demand, zone-placement=zonal)
-  (NC24ads, 0,        on-demand, zone-placement=regional)
+  (NC24ads, eastus-1, on-demand, placement-scope=zonal)
+  (NC24ads, eastus-2, on-demand, placement-scope=zonal)
+  (NC24ads, eastus-3, on-demand, placement-scope=zonal)
+  (NC24ads, 0,        on-demand, placement-scope=regional)
 ```
 
 The critical design rule is:
 
-> If placement is controlled only through NodePool requirements, then **absence of a `zone-placement` requirement means any placement is eligible**, not "default zonal".
+> If placement is controlled only through NodePool requirements, then **absence of a `placement-scope` requirement means any placement is eligible**, not "default zonal".
 
 The recommended first version pairs that any-placement default with launch-side selection of a concrete compatible offering from the sorted set, plus an internal price-first ranking that prefers zonal offerings on equal-price ties, so the wider envelope still behaves zonal-first in the common case. Changing offering sort order alone is not sufficient.
 
-This model composes cleanly with normal zone requirements because `zone-placement` filters the placement envelope, while `topology.kubernetes.io/zone` continues to select concrete topology domains within that envelope.
+This model composes cleanly with normal zone requirements because `placement-scope` filters the placement envelope, while `topology.kubernetes.io/zone` continues to select concrete topology domains within that envelope.
 
-Users can still control placement via `zone` alone when the zone value already identifies the intended mode (e.g., `zone In [0]` effectively means regional only). However, `zone-placement` expresses abstract intent like "zonal anywhere in the region" more cleanly and portably across clusters and regions.
+Users can still control placement via `zone` alone when the zone value already identifies the intended mode (e.g., `zone In [0]` effectively means regional only). However, `placement-scope` expresses abstract intent like "zonal anywhere in the region" more cleanly and portably across clusters and regions.
 
-For brevity, the examples below use `zone-placement` and `zone` as shorthand for `karpenter.azure.com/zone-placement` and `topology.kubernetes.io/zone`.
+For brevity, the examples below use `placement-scope` and `zone` as shorthand for `karpenter.azure.com/placement-scope` and `topology.kubernetes.io/zone`.
 
 **User controls:**
 
 | Intent | Preferred requirement | Zone-only alternative | Note |
 |---|---|---|---|
-| Only zonal | `zone-placement In [zonal]` | `zone NotIn [0]`, or enumerate all concrete zonal values | `NotIn [0]` is preferred over enumerating values for portability across regions |
-| Only regional | `zone-placement In [regional]` | `zone In [0]` | Clean zone-only form because `0` already identifies regional placement |
-| Only regional, explicit zone | `zone-placement In [regional]` + `zone In [0]` | `zone In [0]` | Equivalent in practice; keeping both can make intent more obvious |
-| Specific zonal zones | `zone-placement In [zonal]` + `zone In [eastus-1, eastus-2]` | `zone In [eastus-1, eastus-2]` | Natural when the user really wants named zones |
-| Any | No `zone-placement` requirement, or `zone-placement In [zonal, regional]` | No `zone` requirement | A zone-only include list would require naming all currently eligible zones |
+| Only zonal | `placement-scope In [zonal]` | `zone NotIn [0]`, or enumerate all concrete zonal values | `NotIn [0]` is preferred over enumerating values for portability across regions |
+| Only regional | `placement-scope In [regional]` | `zone In [0]` | Clean zone-only form because `0` already identifies regional placement |
+| Only regional, explicit zone | `placement-scope In [regional]` + `zone In [0]` | `zone In [0]` | Equivalent in practice; keeping both can make intent more obvious |
+| Specific zonal zones | `placement-scope In [zonal]` + `zone In [eastus-1, eastus-2]` | `zone In [eastus-1, eastus-2]` | Natural when the user really wants named zones |
+| Any | No `placement-scope` requirement, or `placement-scope In [zonal, regional]` | No `zone` requirement | A zone-only include list would require naming all currently eligible zones |
 
 **Pros:**
 - Clean separation of concerns — zone topology stays pure, placement mode is an orthogonal dimension
@@ -279,7 +279,7 @@ For brevity, the examples below use `zone-placement` and `zone` as shorthand for
 - Fits Karpenter's existing offering and requirement model
 
 **Cons:**
-- If this is the only control surface, it is **not strictly backward compatible**: no `zone-placement` requirement means regional is eligible. The zonal-preferred tie-break softens the common-case impact, but the widened envelope is a real behavioral compatibility change
+- If this is the only control surface, it is **not strictly backward compatible**: no `placement-scope` requirement means regional is eligible. The zonal-preferred tie-break softens the common-case impact, but the widened envelope is a real behavioral compatibility change
 - A single NodePool still cannot express user-controlled ordered preference between zonal and regional; it can only inherit the provider default unless a future first-class strategy exists
 - If the label should appear on launched nodes, explicit propagation of the selected offering value is needed
 
@@ -287,7 +287,7 @@ For brevity, the examples below use `zone-placement` and `zone` as shorthand for
 
 #### Placement Vocabulary
 
-Two variants for the `zone-placement` label values:
+Two variants for the `placement-scope` label values:
 
 - **Two-value model (recommended):** `zonal` and `regional`. All regional offerings, including regional-only SKUs, are tagged `regional`. This is the simplest design and the recommended form for the first version.
 
@@ -303,7 +303,7 @@ kind: AKSNodeClass
 metadata:
   name: default
 spec:
-  zonePlacementPolicy: Zonal | Regional | Any
+  placementScopePolicy: Zonal | Regional | Any
 ```
 
 Under this model, AKSNodeClass owns the placement envelope and NodePool requirements only narrow further. Avoid `Default` as a policy value; use `Compatible` if a compatibility-preserving mode is needed.
@@ -332,7 +332,7 @@ Composes with zone requirements: `Zonal` + `zone In [eastus-1]` works; `Zonal` +
 
 #### Default Policy
 
-What should an omitted `zonePlacementPolicy` mean? Assuming omission has one meaning per API version (no legacy/new split or per-object latching):
+What should an omitted `placementScopePolicy` mean? Assuming omission has one meaning per API version (no legacy/new split or per-object latching):
 
 | Omitted-field choice | When it fits | Tradeoff |
 |---|---|---|
@@ -377,7 +377,7 @@ spec:
   template:
     spec:
       requirements:
-        - key: karpenter.azure.com/zone-placement
+        - key: karpenter.azure.com/placement-scope
           operator: In
           values: [zonal]
 ---
@@ -391,7 +391,7 @@ spec:
   template:
     spec:
       requirements:
-        - key: karpenter.azure.com/zone-placement
+        - key: karpenter.azure.com/placement-scope
           operator: In
           values: [regional]
 ```
@@ -400,16 +400,16 @@ spec:
 
 ## Recommendation
 
-We recommend **Option B**: add `karpenter.azure.com/zone-placement` as an offering label, widen the default envelope to include regional, and apply the zonal-preferred tie-break. This accepts a behavioral compatibility change for existing unconstrained NodePools — regional nodes become possible outcomes — but the tie-break keeps zonal placement as the common case. For the full rationale, see [Option B](#option-b-explicit-placement-controls). For behavioral implications such as storage interactions, consolidation, and topology spread, see [Behavioral and Operational Considerations](#behavioral-and-operational-considerations).
+We recommend **Option B**: add `karpenter.azure.com/placement-scope` as an offering label, widen the default envelope to include regional, and apply the zonal-preferred tie-break. This accepts a behavioral compatibility change for existing unconstrained NodePools — regional nodes become possible outcomes — but the tie-break keeps zonal placement as the common case. For the full rationale, see [Option B](#option-b-explicit-placement-controls). For behavioral implications such as storage interactions, consolidation, and topology spread, see [Behavioral and Operational Considerations](#behavioral-and-operational-considerations).
 
 If the project requires a provider-owned compatibility envelope or provider-owned defaults, use **Option C** instead; see [Option C](#option-c-provider-owned-placement-policy).
 
 ### Option B Implementation Checklist
 
-1. **Add `karpenter.azure.com/zone-placement`** with values `zonal` and `regional`
+1. **Add `karpenter.azure.com/placement-scope`** with values `zonal` and `regional`
 2. **Generate regional offerings for zone-capable SKUs** with `zone="0"` for capacity types that support regional placement
 3. **Tag all regional offerings**, including regional-only SKUs, as `regional`
-4. **Do not infer a default** from the absence of a NodePool requirement; no `zone-placement` requirement means any placement is eligible (i.e., equivalent to `zone-placement In [zonal, regional]`)
+4. **Do not infer a default** from the absence of a NodePool requirement; no `placement-scope` requirement means any placement is eligible (i.e., equivalent to `placement-scope In [zonal, regional]`)
 5. **Apply the zonal-preferred tie-break** within the any-placement envelope via the provider's allocation strategy (see `allocationstrategy` package). The implementation should stop deriving capacity type from the cheapest offering and then choosing an arbitrary zone; instead it should consume one concrete offering chosen from an already ordered candidate set. Whether the final `pick first` step remains in the launch helper or moves fully into `allocationstrategy` can be finalized later
 6. **Make error handling and `UnavailableOfferings` marking regional-aware**, so zonal-scoped failures do not automatically mark the regional fallback unavailable
 
@@ -436,25 +436,25 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 }
 ```
 
-In `createOfferings`, attach the `zone-placement` label and skip regional offerings for unsupported capacity types if needed:
+In `createOfferings`, attach the `placement-scope` label and skip regional offerings for unsupported capacity types if needed:
 
 ```go
-zonePlacement := "zonal"
+placementScope := "zonal"
 if zone == zones.Regional {
-    zonePlacement = "regional"
+  placementScope = "regional"
 }
 offering := &cloudprovider.Offering{
     Requirements: scheduling.NewRequirements(
         scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, capacityType),
         scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
-        scheduling.NewRequirement("karpenter.azure.com/zone-placement", corev1.NodeSelectorOpIn, zonePlacement),
+    scheduling.NewRequirement("karpenter.azure.com/placement-scope", corev1.NodeSelectorOpIn, placementScope),
     ),
     Price:     price,
     Available: available,
 }
 ```
 
-In `computeRequirements`, derive the instance type's `zone-placement` requirement from available offerings so NodePool requirements can filter on it. Absence of a NodePool requirement does **not** imply zonal-only behavior.
+In `computeRequirements`, derive the instance type's `placement-scope` requirement from available offerings so NodePool requirements can filter on it. Absence of a NodePool requirement does **not** imply zonal-only behavior.
 
 In launch selection, derive both capacity type and zone from one concrete offering rather than from the cheapest capacity type plus an arbitrary zone within that capacity type. The key requirement is that selection consume an already ordered concrete-offering view. That can be implemented either by having `allocationstrategy` return ordered candidates and letting the launch helper pick the first one, or by letting `allocationstrategy` own the final pick as well. A conservative sketch of the first shape is:
 
@@ -497,10 +497,10 @@ The exact mapping from Azure error families to these scopes can be finalized lat
 ### Implementation Notes
 
 - **Dependency: zone `"0"` normalization first.** This design depends on [PR #1615](https://github.com/Azure/karpenter-provider-azure/pull/1615) (fixing [#1384](https://github.com/Azure/karpenter-provider-azure/issues/1384)), which establishes `"0"` as the canonical non-zonal zone value.
-- **WellKnownLabels registration:** add `zone-placement` to `AzureWellKnownLabels` only if it is exposed as a schedulable requirement on offerings.
-- **CRD validation allowlists:** if `zone-placement` is exposed as a NodePool-facing requirement or label, update the generated NodePool CRD allowlist for `karpenter.azure.com` keys at the same time.
-- **`computeRequirements` update:** required only for designs that let NodePools filter on `zone-placement`.
-- **Selected-offering label propagation:** if `zone-placement` should appear on NodeClaims or Nodes, explicit propagation of the selected offering value is needed. Adding the label to offerings and multi-valued instance type requirements is not sufficient on its own.
+- **WellKnownLabels registration:** add `placement-scope` to `AzureWellKnownLabels` only if it is exposed as a schedulable requirement on offerings.
+- **CRD validation allowlists:** if `placement-scope` is exposed as a NodePool-facing requirement or label, update the generated NodePool CRD allowlist for `karpenter.azure.com` keys at the same time.
+- **`computeRequirements` update:** required only for designs that let NodePools filter on `placement-scope`.
+- **Selected-offering label propagation:** if `placement-scope` should appear on NodeClaims or Nodes, explicit propagation of the selected offering value is needed. Adding the label to offerings and multi-valued instance type requirements is not sufficient on its own.
 - **Empty-envelope diagnostics:** contradictory combinations that narrow the placement envelope to nothing, such as a zonal-only policy plus `zone In [0]`, should not fail silently. Prefer admission-time validation when practical; otherwise surface explicit status or event diagnostics rather than only returning "no instance types available."
 - **Launch-side offering selection must change if zonal preference is desired:** existing code derives capacity type from the cheapest offering and then may choose an arbitrary zone among offerings with that capacity type. A zonal-preferred equal-price policy therefore requires consuming one concrete compatible offering after allocation-strategy ordering; changing sort order alone is insufficient. Whether `allocationstrategy` also owns the final pick can remain an implementation detail.
 - **Regional-aware unavailability handling:** handlers that currently mark all offerings for an instance type or capacity type unavailable must distinguish zonal-scoped from regional-scoped failures once `zone="0"` offerings exist. Zone `"0"` works as a cache key, but the scope of which offerings get marked unavailable must change.
@@ -526,7 +526,7 @@ The exact suite split can be decided later. A conservative first pass can rely o
 
 ### Rollout Guidance
 
-- **Self-hosted or existing clusters:** if omission means any placement is eligible, users who want to preserve today's zonal-only behavior should add an explicit zonal-only constraint before or during upgrade, using either `zone-placement In [zonal]` or the zone-only equivalent if that is the final API shape.
+- **Self-hosted or existing clusters:** if omission means any placement is eligible, users who want to preserve today's zonal-only behavior should add an explicit zonal-only constraint before or during upgrade, using either `placement-scope In [zonal]` or the zone-only equivalent if that is the final API shape.
 - **Managed defaults:** managed products may stamp zonal-only defaults onto managed default NodePools or equivalent provider-owned envelopes, but that should be documented as a platform policy rather than implied as a provider-wide default.
 - **Conflicting controls:** if NodeClass policy and NodePool requirements narrow to an empty envelope, prefer validation or explicit status over leaving operators to infer the problem from a generic scheduling failure.
 
@@ -539,16 +539,16 @@ This design uses two different kinds of scheduling labels, and they should not b
 | Label | Present on offerings? | Present on launched nodes? | Workload-schedulable? |
 |---|---|---|---|
 | `topology.kubernetes.io/zone` | Yes | Yes | Yes |
-| `karpenter.azure.com/zone-placement` | Yes | Yes — propagated from the selected offering | Yes, once propagated |
+| `karpenter.azure.com/placement-scope` | Yes | Yes — propagated from the selected offering | Yes, once propagated |
 
 - **`topology.kubernetes.io/zone` is fully workload-facing.** Pods may reference it in `nodeSelector`, `nodeAffinity`, and `topologySpreadConstraints`. For regional nodes, the value is `"0"`.
-- **`karpenter.azure.com/zone-placement` is propagated to nodes** from the selected offering. NodePools use it to control placement; workloads can also reference it in `nodeSelector` or `nodeAffinity` if needed.
+- **`karpenter.azure.com/placement-scope` is propagated to nodes** from the selected offering. NodePools use it to control placement; workloads can also reference it in `nodeSelector` or `nodeAffinity` if needed.
 
 Zone `"0"` is not new to AKS — non-zonal agent pools already produce nodes with this value. Regional Karpenter nodes join an existing topology label space. What changes is the frequency of `"0"` nodes, especially for topology spread. See [Appendix: Azure Zone and Placement Reference](#appendix-azure-zone-and-placement-reference).
 
 ### Observability
 
-- **Propagate `zone-placement` to launched nodes.** The selected offering's `zone-placement` value (`zonal` or `regional`) should be set as a label on the node, so operators can inspect placement outcome directly via `kubectl get nodes --show-labels`.
+- **Propagate `placement-scope` to launched nodes.** The selected offering's `placement-scope` value (`zonal` or `regional`) should be set as a label on the node, so operators can inspect placement outcome directly via `kubectl get nodes --show-labels`.
 - **Minimum useful signal:** operators should be able to tell whether a launched node was effectively zonal or regional.
 - **Useful additional signal when practical:** distinguish between explicitly requested regional placement and regional placement reached because compatible zonal offerings were unavailable.
 
@@ -577,9 +577,9 @@ This design does not need a `zonal-any` value. If Azure-selected zone parity bec
 
 ### Compatibility Modes and Regional-Only SKUs
 
-Regional-only SKUs remain functional under all options without special handling. Under **Option A**, they appear as `zone="0"` offerings. Under **Option B**, they are tagged `zone-placement=regional`. Under **Option C**, the AKSNodeClass policy controls eligibility. A distinct `regional-only` value is not required for correctness; it only adds extra policy or observability semantics.
+Regional-only SKUs remain functional under all options without special handling. Under **Option A**, they appear as `zone="0"` offerings. Under **Option B**, they are tagged `placement-scope=regional`. Under **Option C**, the AKSNodeClass policy controls eligibility. A distinct `regional-only` value is not required for correctness; it only adds extra policy or observability semantics.
 
-Managed environments can stamp placement constraints onto managed default NodePools (e.g., `zone-placement In [zonal]`). This helps the backward-compatibility story for managed pools on new clusters, but does not create a provider-wide default — user-created NodePools and self-hosted deployments follow the generic design semantics.
+Managed environments can stamp placement constraints onto managed default NodePools (e.g., `placement-scope In [zonal]`). This helps the backward-compatibility story for managed pools on new clusters, but does not create a provider-wide default — user-created NodePools and self-hosted deployments follow the generic design semantics.
 
 ### Storage and Zone Topology
 
@@ -615,14 +615,14 @@ The key translation point is `MakeARMZonesFromAKSLabelZone(zone)`, which maps `"
 
 **User-initiated drift** occurs when requirements are narrowed after upgrade — for example, adding `zone NotIn [0]` would drift existing regional nodes. This is intentional behavior.
 
-**Node label projection (Option B):** If `zone-placement` should appear on NodeClaims or Nodes, explicit propagation of the selected offering value is needed. Pre-existing nodes would lack the label unless rotated or backfilled.
+**Node label projection (Option B):** If `placement-scope` should appear on NodeClaims or Nodes, explicit propagation of the selected offering value is needed. Pre-existing nodes would lack the label unless rotated or backfilled.
 
 **Consolidation:** When the envelope allows both zonal and regional offerings, consolidation may propose cross-mode replacements. Equal-price tie-breaking does not create a cost-model mismatch with core, but a ranking strategy with different-price preferences would.
 
 | Option | Drift on upgrade? | Drift from user action? | Mixed label state? | Consolidation risk? |
 |---|---|---|---|---|
 | **A** | No | Yes — `zone NotIn [0]` drifts regional nodes | No | Yes — may replace zonal with regional |
-| **B** | No | Depends on control surface and label projection | Depends on whether `zone-placement` is projected | Depends on which modes the envelope allows |
+| **B** | No | Depends on control surface and label projection | Depends on whether `placement-scope` is projected | Depends on which modes the envelope allows |
 | **C** | No | Yes — if the AKSNodeClass policy changes | No by default | Depends on which envelopes the policy exposes |
 | **D** | No | N/A | No | No |
 
