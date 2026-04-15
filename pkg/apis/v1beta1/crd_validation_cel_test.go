@@ -1196,7 +1196,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("valid: 0.5", "0.5", true),
 			Entry("valid: 0.98765 (five decimal places)", "0.98765", true),
 			Entry("valid: 100.0", "100.0", true),
-			Entry("invalid: 0 (zero not allowed by pattern but passes pattern - rejected by code)", "0", true),
+			Entry("valid pattern: 0 (passes CRD regex, enforced >0 by controller code)", "0", true),
 			Entry("invalid: -0.5 (negative other than -1)", "-0.5", false),
 			Entry("invalid: -2 (negative other than -1)", "-2", false),
 			Entry("invalid: too many decimal places", "1.234567", false),

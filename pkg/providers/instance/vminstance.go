@@ -662,6 +662,8 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	if capacityType == karpv1.CapacityTypeSpot {
 		maxPrice := float64(-1)
 		if nodeClass.Spec.SpotMaxPrice != nil && *nodeClass.Spec.SpotMaxPrice != "-1" {
+			// The SpotMaxPrice string has already been validated by the CRD pattern,
+			// so ParseFloat should never fail here in normal operation.
 			if parsed, err := strconv.ParseFloat(*nodeClass.Spec.SpotMaxPrice, 64); err == nil {
 				maxPrice = parsed
 			}

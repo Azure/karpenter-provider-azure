@@ -205,6 +205,8 @@ func configureSpotBilling(capacityType string, nodeClass *v1beta1.AKSNodeClass) 
 	}
 	maxPrice := float32(-1)
 	if nodeClass.Spec.SpotMaxPrice != nil && *nodeClass.Spec.SpotMaxPrice != "-1" {
+		// The SpotMaxPrice string has already been validated by the CRD pattern,
+		// so ParseFloat should never fail here in normal operation.
 		if parsed, err := strconv.ParseFloat(*nodeClass.Spec.SpotMaxPrice, 32); err == nil {
 			maxPrice = float32(parsed)
 		}
