@@ -105,21 +105,7 @@ func AKSMachineAPIErrorVMSizeNotSupportedBadRequest(vmSize, subscription, locati
 	return newResponseError("BadRequest", http.StatusBadRequest, message)
 }
 
-func AKSMachineAPIErrorSKURestrictedByAKSGPU(vmSize, agentPoolName, supportedSizes string) *azcore.ResponseError {
-	message := fmt.Sprintf("The GPU VM SKU(s) `%s` chosen for agentpool(s) `%s` are restricted by AKS. The supported GPU VM sizes are `%s`.", vmSize, agentPoolName, supportedSizes)
-	return newResponseError("BadRequest", http.StatusBadRequest, message)
-}
-
-func AKSMachineAPIErrorSKURestrictedByAKSSmall(agentPoolName string) *azcore.ResponseError {
-	message := fmt.Sprintf("The VM SKUs chosen for agentpool(s) `%s` are restricted by AKS. This is typically due to small CPU/Memory. Please see https://aka.ms/aks/restricted-skus for more details.", agentPoolName)
-	return newResponseError("BadRequest", http.StatusBadRequest, message)
-}
-
-func AKSMachineAPIErrorUnsupportedGPUDedicatedVHDVMSize(vmSize, supportedSizes string) *azcore.ResponseError {
-	message := fmt.Sprintf("The VM Size of %s is not a SKU that supports GPU Driver Type Selection. The supported sizes are '%s'", vmSize, supportedSizes)
-	return newResponseError("ErrorCodeUnsupportedGPUDedicatedVHDVMSize", http.StatusBadRequest, message)
-}
-
+//nolint:unparam -- we want this to be generic
 func newResponseError(errorCode string, statusCode int, message string) *azcore.ResponseError {
 	errorBody := fmt.Sprintf(`{"code": "%s", "message": "%s"}`, errorCode, message)
 	return &azcore.ResponseError{
