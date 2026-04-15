@@ -300,34 +300,34 @@ const (
 	LocalDNSServeStaleDisable LocalDNSServeStale = "Disable"
 )
 
-// +kubebuilder:validation:Enum:={Install,None}
-type DriverInstallationMode string
+// +kubebuilder:validation:Enum:={Driver,None}
+type GPUMode string
 
 const (
-	// Install GPU drivers. Only schedule to GPU SKUs where driver
-	// installation is supported (NVIDIA). If no supported SKU is available,
-	// scheduling will fail rather than placing the workload on a GPU without
-	// drivers. This is the default behavior.
-	DriverInstallationInstall DriverInstallationMode = "Install"
-	// Do not install GPU drivers. All GPU SKUs are available for scheduling.
-	// Use this when running a GPU Operator or managing drivers outside of AKS.
-	DriverInstallationNone DriverInstallationMode = "None"
+	// GPUModeDriver installs GPU drivers via AKS. Only GPU SKUs with driver
+	// installation support (currently NVIDIA) are schedulable. If no supported
+	// SKU is available, scheduling will fail rather than placing the workload
+	// on a GPU without drivers. This is the default behavior.
+	GPUModeDriver GPUMode = "Driver"
+	// GPUModeNone skips GPU driver installation. All GPU SKUs are available
+	// for scheduling. Use this when running a GPU Operator or managing drivers
+	// outside of AKS.
+	GPUModeNone GPUMode = "None"
 )
 
 // GPU contains configuration for GPU-enabled nodes.
 type GPU struct {
-	// driverInstallation controls whether GPU drivers are installed on
-	// nodes with GPU-capable VM sizes.
-	// When set to Install (or not specified), GPU drivers are always installed
-	// and only GPU SKUs with driver installation support are considered for
-	// scheduling.
+	// mode controls GPU driver management on GPU-enabled nodes.
+	// When set to Driver (or not specified), GPU drivers are installed by AKS
+	// and only GPU SKUs with driver installation support are considered for scheduling,
+	// we are only supporting NVIDIA GPUs for driver installation via AKS.
 	// When set to None, GPU driver installation is skipped — use this when
 	// managing GPU drivers via a GPU Operator or other external mechanism.
 	// All GPU SKUs are available for scheduling in this mode.
 	// This field is ignored for non-GPU VM sizes.
-	// +default="Install"
+	// +default="Driver"
 	// +optional
-	DriverInstallation *DriverInstallationMode `json:"driverInstallation,omitempty"`
+	Mode *GPUMode `json:"mode,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
@@ -740,20 +740,20 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	}
 }
 
-// GetDriverInstallationMode returns the effective driver installation mode.
-// Defaults to Install if gpu or gpu.driverInstallation is nil, ensuring
+// GetGPUMode returns the effective GPU mode.
+// Defaults to Driver if gpu or gpu.mode is nil, ensuring
 // backward compatibility (existing users always got drivers installed).
-func (in *AKSNodeClass) GetDriverInstallationMode() DriverInstallationMode {
-	if in.Spec.GPU == nil || in.Spec.GPU.DriverInstallation == nil {
-		return DriverInstallationInstall
+func (in *AKSNodeClass) GetGPUMode() GPUMode {
+	if in.Spec.GPU == nil || in.Spec.GPU.Mode == nil {
+		return GPUModeDriver
 	}
-	return *in.Spec.GPU.DriverInstallation
+	return *in.Spec.GPU.Mode
 }
 
 // IsGPUDriverInstallationEnabled returns whether GPU driver installation
-// is enabled. Returns true when gpu is nil, gpu.driverInstallation is nil,
-// or driverInstallation is "Install". Returns false only when explicitly
+// is enabled. Returns true when gpu is nil, gpu.mode is nil,
+// or mode is "Driver". Returns false only when explicitly
 // set to "None".
 func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
-	return in.GetDriverInstallationMode() != DriverInstallationNone
+	return in.GetGPUMode() != GPUModeNone
 }

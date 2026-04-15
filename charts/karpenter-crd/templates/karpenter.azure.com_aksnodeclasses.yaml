@@ -81,20 +81,19 @@ spec:
               gpu:
                 description: gpu contains configuration for GPU-enabled nodes.
                 properties:
-                  driverInstallation:
-                    default: Install
+                  mode:
+                    default: Driver
                     description: |-
-                      driverInstallation controls whether GPU drivers are installed on
-                      nodes with GPU-capable VM sizes.
-                      When set to Install (or not specified), GPU drivers are always installed
-                      and only GPU SKUs with driver installation support are considered for
-                      scheduling.
+                      mode controls GPU driver management on GPU-enabled nodes.
+                      When set to Driver (or not specified), GPU drivers are installed by AKS
+                      and only GPU SKUs with driver installation support are considered for scheduling,
+                      we are only supporting NVIDIA GPUs for driver installation via AKS.
                       When set to None, GPU driver installation is skipped — use this when
                       managing GPU drivers via a GPU Operator or other external mechanism.
                       All GPU SKUs are available for scheduling in this mode.
                       This field is ignored for non-GPU VM sizes.
                     enum:
-                    - Install
+                    - Driver
                     - None
                     type: string
                 type: object
@@ -971,20 +970,18 @@ spec:
               gpu:
                 description: gpu contains configuration for GPU-enabled nodes.
                 properties:
-                  driverInstallation:
-                    default: Install
+                  mode:
+                    default: Driver
                     description: |-
-                      driverInstallation controls whether GPU drivers are installed on
-                      nodes with GPU-capable VM sizes.
-                      When set to Install (or not specified), GPU drivers are always installed
-                      and only GPU SKUs with driver installation support are considered for
-                      scheduling.
+                      mode controls GPU driver management on GPU-enabled nodes.
+                      When set to Driver (or not specified), GPU drivers are installed by AKS
+                      and only GPU SKUs with driver installation support are considered for scheduling.
                       When set to None, GPU driver installation is skipped — use this when
                       managing GPU drivers via a GPU Operator or other external mechanism.
                       All GPU SKUs are available for scheduling in this mode.
                       This field is ignored for non-GPU VM sizes.
                     enum:
-                    - Install
+                    - Driver
                     - None
                     type: string
                 type: object

@@ -134,7 +134,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
-		string(nodeClass.GetDriverInstallationMode()),
+		string(nodeClass.GetGPUMode()),
 		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
@@ -328,9 +328,9 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	// Only "Install" mode filters out GPU SKUs without driver installation support.
+	// Only "Driver" mode filters out GPU SKUs without driver installation support.
 	// "None" mode allows all GPU SKUs.
-	if nodeClass.GetDriverInstallationMode() != v1beta1.DriverInstallationInstall {
+	if nodeClass.GetGPUMode() != v1beta1.GPUModeDriver {
 		return true
 	}
 	name := sku.GetName()

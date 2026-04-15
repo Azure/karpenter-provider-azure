@@ -120,12 +120,12 @@ var _ = Describe("GPU", func() {
 		}()),
 	)
 
-	It("should provision a GPU node with driverInstallation None",
+	It("should provision a GPU node with mode None",
 		Label("GPU"),
 		func() {
-			noneMode := v1beta1.DriverInstallationNone
+			noneMode := v1beta1.GPUModeNone
 			nodeClass := env.DefaultAKSNodeClass()
-			nodeClass.Spec.GPU = &v1beta1.GPU{DriverInstallation: &noneMode}
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
 
 			nodePool := env.DefaultNodePool(nodeClass)
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -140,7 +140,7 @@ var _ = Describe("GPU", func() {
 
 			// Deploy a workload that targets GPU nodes via a node selector on
 			// the GPU count label. We do NOT request nvidia.com/gpu resources
-			// because driverInstallation: None means no device plugin is
+			// because mode: None means no device plugin is
 			// installed, so the GPU resource is not advertised. Instead, the
 			// node selector forces Karpenter to provision a GPU SKU.
 			podOptions := test.PodOptions{
@@ -162,7 +162,7 @@ var _ = Describe("GPU", func() {
 			env.ExpectCreated(nodeClass, nodePool, deployment)
 
 			// Verify the GPU node is provisioned, initialized, and the
-			// workload pod becomes healthy. With driverInstallation: None,
+			// workload pod becomes healthy. With mode: None,
 			// Karpenter provisions the node without installing GPU drivers.
 			// The node should still come up and be ready.
 			env.EventuallyExpectHealthyPodCountWithTimeout(

@@ -2158,18 +2158,17 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				It("should not include AMD GPU SKUs", func() {
 					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
-					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_ND96isr_MI300X_v5"))))
 				})
 				It("should include non-GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
 				})
 			})
 
-			Context("when driverInstallation is explicitly set to Install", func() {
+			Context("when mode is explicitly set to Driver", func() {
 				BeforeEach(func() {
-					installMode := v1beta1.DriverInstallationInstall
+					driverMode := v1beta1.GPUModeDriver
 					nodeClassInstall := test.AKSNodeClass()
-					nodeClassInstall.Spec.GPU = &v1beta1.GPU{DriverInstallation: &installMode}
+					nodeClassInstall.Spec.GPU = &v1beta1.GPU{Mode: &driverMode}
 					ExpectApplied(ctx, env.Client, nodeClassInstall)
 					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassInstall)
 					Expect(err).ToNot(HaveOccurred())
@@ -2180,18 +2179,17 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				It("should not include AMD GPU SKUs", func() {
 					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
-					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_ND96isr_MI300X_v5"))))
 				})
 				It("should include non-GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
 				})
 			})
 
-			Context("when driverInstallation is None", func() {
+			Context("when mode is None", func() {
 				BeforeEach(func() {
-					noneMode := v1beta1.DriverInstallationNone
+					noneMode := v1beta1.GPUModeNone
 					nodeClassNone := test.AKSNodeClass()
-					nodeClassNone.Spec.GPU = &v1beta1.GPU{DriverInstallation: &noneMode}
+					nodeClassNone.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
 					ExpectApplied(ctx, env.Client, nodeClassNone)
 					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassNone)
 					Expect(err).ToNot(HaveOccurred())
@@ -2202,7 +2200,6 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				It("should include AMD GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
-					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_ND96isr_MI300X_v5"))))
 				})
 				It("should include non-GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))

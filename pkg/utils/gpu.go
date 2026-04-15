@@ -20,6 +20,7 @@ import (
 	_ "embed"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -70,7 +71,7 @@ func readGPUSKUConfig() {
 		gpuSKUOSSupport[sku] = info.OS
 
 		switch info.GPU {
-		case "nvidia":
+		case v1beta1.ManufacturerNvidia:
 			nvidiaEnabledSKUs[sku] = true
 
 			// Check if this SKU supports azurelinux or azurelinux3
@@ -80,7 +81,7 @@ func readGPUSKUConfig() {
 					break
 				}
 			}
-		case "amd":
+		case v1beta1.ManufacturerAMD:
 			amdEnabledSKUs[sku] = true
 		}
 	}

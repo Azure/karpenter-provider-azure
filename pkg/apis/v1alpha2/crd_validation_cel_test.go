@@ -712,37 +712,37 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("GPU", func() {
-		It("should accept gpu.driverInstallation set to Install", func() {
-			driverMode := v1alpha2.DriverInstallationInstall
+		It("should accept gpu.mode set to Driver", func() {
+			gpuMode := v1alpha2.GPUModeDriver
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					GPU: &v1alpha2.GPU{
-						DriverInstallation: &driverMode,
+						Mode: &gpuMode,
 					},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
-		It("should accept gpu.driverInstallation set to None", func() {
-			driverMode := v1alpha2.DriverInstallationNone
+		It("should accept gpu.mode set to None", func() {
+			gpuMode := v1alpha2.GPUModeNone
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					GPU: &v1alpha2.GPU{
-						DriverInstallation: &driverMode,
+						Mode: &gpuMode,
 					},
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
-		It("should reject invalid gpu.driverInstallation value", func() {
-			invalidMode := v1alpha2.DriverInstallationMode("Invalid")
+		It("should reject invalid gpu.mode value", func() {
+			invalidMode := v1alpha2.GPUMode("Invalid")
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					GPU: &v1alpha2.GPU{
-						DriverInstallation: &invalidMode,
+						Mode: &invalidMode,
 					},
 				},
 			}
@@ -755,7 +755,7 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
-		It("should accept gpu set with driverInstallation omitted", func() {
+		It("should accept gpu set with mode omitted", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{

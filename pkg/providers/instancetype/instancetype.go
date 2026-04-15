@@ -232,9 +232,9 @@ func setRequirementsHyperVGeneration(requirements scheduling.Requirements, sku *
 func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
 	manufacturer := utils.GetGPUManufacturer(sku.GetName())
 	switch manufacturer {
-	case "nvidia":
+	case v1beta1.ManufacturerNvidia:
 		requirements[v1beta1.LabelSKUGPUManufacturer].Insert(v1beta1.ManufacturerNvidia)
-	case "amd":
+	case v1beta1.ManufacturerAMD:
 		requirements[v1beta1.LabelSKUGPUManufacturer].Insert(v1beta1.ManufacturerAMD)
 	default:
 		return
