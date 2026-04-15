@@ -56,6 +56,8 @@ runs:
       AZURE_LOCATION: ${{ inputs.location }}
       PROVISION_MODE: ${{ inputs.provision_mode }}
       AZURE_ACR_NAME: ${{ inputs.acr_name }}
+      # Redirect Go temp/cache to /mnt/ which has more disk space than the default
+      # filesystem. 1ES pool VMs can run out of capacity on / during large builds.
       GOTMPDIR: /mnt/go-tmp
       GOCACHE: /mnt/go-cache
     run: |

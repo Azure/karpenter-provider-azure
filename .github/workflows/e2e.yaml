@@ -90,7 +90,7 @@ jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
     runs-on:
-      labels: [self-hosted, 1ES.Pool=karpenter-ci-1es-pool, "JobId=e2e-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"]
+      labels: [self-hosted, 1ES.Pool=karpenter-ci-1es-pool, "JobId=e2e-${{ inputs.suite }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"]
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
@@ -166,10 +166,6 @@ jobs:
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
           install skaffold /usr/local/bin/
-      # - name: generate SSH key
-      #   run: |
-      #     mkdir -p ~/.ssh
-      #     ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}

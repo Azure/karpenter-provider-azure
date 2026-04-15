@@ -11,8 +11,7 @@ jobs:
     permissions:
       contents: read
       statuses: write
-    runs-on:
-      labels: [self-hosted, 1ES.Pool=karpenter-ci-1es-pool, "JobId=ci-test-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false # https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idstrategyfail-fast
       matrix:
