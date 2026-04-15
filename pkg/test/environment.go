@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -279,6 +280,15 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	if batchCreationEnabled {
 		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
+
+	// Disable cache background worker and set TTL to 0 so cache is always stale,
+	// ensuring tests always fall through to direct API calls for deterministic behavior.
+	aksMachineInstanceProvider.SetMachineCache(
+		machinecache.NewMachineListCache(ctx, azClient.AKSMachinesClient(), testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName,
+			machinecache.WithTTL(0),
+			machinecache.WithDisableWorker(),
+		),
+	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
 
