@@ -138,22 +138,36 @@ func WithCacheDisabled() Option {
 	return func(o opts) opts { o.disabled = true; return o }
 }
 
+type opts struct {
+	ttl             time.Duration
+	pollInterval    time.Duration
+	refreshInterval time.Duration
+}
+
+func defaultOpts() opts {
+	return opts{
+		ttl:             30 * time.Second,
+		pollInterval:    5 * time.Second,
+		refreshInterval: 5 * time.Minute,
+	}
+}
+
 // Option is a functional option for configuring MachineCache.
-type Option func(*MachineCache)
+type Option func(opts) opts
 
 // WithTTL sets a custom TTL for the cache. A TTL of 0 means the cache is always stale.
 func WithTTL(d time.Duration) Option {
-	return func(c *MachineCache) { c.ttl = d }
+	return func(o opts) opts { o.ttl = d; return o }
 }
 
 // WithPollInterval sets the interval for polling machine provisioning state.
 func WithPollInterval(d time.Duration) Option {
-	return func(c *MachineCache) { c.pollInterval = d }
+	return func(o opts) opts { o.pollInterval = d; return o }
 }
 
 // WithRefreshInterval sets the interval for the background worker to refresh the cache.
 func WithRefreshInterval(d time.Duration) Option {
-	return func(c *MachineCache) { c.refreshInterval = d }
+	return func(o opts) opts { o.refreshInterval = d; return o }
 }
 
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
