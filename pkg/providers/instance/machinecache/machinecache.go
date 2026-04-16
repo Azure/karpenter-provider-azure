@@ -55,7 +55,6 @@ var (
 // AKSMachineNewListPager provides paginated list operations for AKS machines.
 type AKSMachineClienter interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
-	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
 }
 
 // Option is a functional option for configuring MachineCache.
@@ -86,10 +85,10 @@ type MachineCache struct {
 	clusterName          string
 	aksMachinesPoolName  string
 
-	updateRequests  chan struct{}
-	workerCtx       context.Context
-	workerCancel    context.CancelFunc
-	wg              sync.WaitGroup
+	updateRequests chan struct{}
+	workerCtx      context.Context
+	workerCancel   context.CancelFunc
+	wg             sync.WaitGroup
 
 	// Configurable intervals
 	ttl             time.Duration
