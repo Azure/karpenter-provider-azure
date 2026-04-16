@@ -116,16 +116,13 @@ func NewMachineListCache(ctx context.Context, client AKSMachineClienter, cluster
 		aksMachinesPoolName:  aksMachinesPoolName,
 		updateRequests:       make(chan struct{}, 1),
 		workerCtx:            ctx,
-		// Set defaults
-		options: defaultOpts(),
+		options:              defaultOpts(),
 	}
 
-	// Apply options to mutate defaults
 	for _, opt := range opts {
 		cache.options = opt(cache.options)
 	}
 
-	// Always start the background worker
 	cache.wg.Add(1)
 	go cache.updateWorker()
 
