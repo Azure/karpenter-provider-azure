@@ -80,6 +80,7 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11008649797056761238", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "4895720480850206885", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
 		Entry("ArtifactStreaming.Enabled", "15355387647114481444", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("SpotMaxPrice", "6122771721045914205", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{SpotMaxPrice: lo.ToPtr("0.5")}}),
 	)
 	It("should match static hash when reordering tags", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
@@ -102,6 +103,7 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("ArtifactStreaming.Enabled", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("SpotMaxPrice", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{SpotMaxPrice: lo.ToPtr("0.5")}}),
 	)
 	It("should not change hash when tags are changed", func() {
 		hash := nodeClass.Hash()
@@ -118,7 +120,7 @@ var _ = Describe("Hash", func() {
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
 	It("when hashing algorithm updates, we should update the hash version", func() {
-		currentHashVersion := "v3"
+		currentHashVersion := "v5"
 		if nodeClass.Hash() != staticHash {
 			Expect(v1alpha2.AKSNodeClassHashVersion).ToNot(Equal(currentHashVersion))
 		} else {

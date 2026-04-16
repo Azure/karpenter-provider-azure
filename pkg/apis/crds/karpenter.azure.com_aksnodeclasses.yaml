@@ -735,6 +735,15 @@ spec:
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
                 type: object
+              spotMaxPrice:
+                default: "-1"
+                description: |-
+                  spotMaxPrice is the maximum price (in USD) you are willing to pay for spot instances.
+                  Valid values are "-1" or a positive decimal string with up to 5 decimal places (e.g. "0.98765").
+                  Setting "-1" means the instance will not be evicted based on price; the max price will be the on-demand price.
+                  This field is only effective when the node class is used with spot capacity type; it is ignored for on-demand nodes.
+                pattern: ^(-1|[0-9]+(\.[0-9]{1,5})?)$
+                type: string
               tags:
                 additionalProperties:
                   type: string
@@ -766,6 +775,7 @@ spec:
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
+
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
@@ -1601,6 +1611,15 @@ spec:
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
                 type: object
+              spotMaxPrice:
+                default: "-1"
+                description: |-
+                  spotMaxPrice is the maximum price (in USD) you are willing to pay for spot instances.
+                  Valid values are "-1" or a positive decimal string with up to 5 decimal places (e.g. "0.98765").
+                  Setting "-1" means the instance will not be evicted based on price; the max price will be the on-demand price.
+                  This field is only effective when the node class is used with spot capacity type; it is ignored for on-demand nodes.
+                pattern: ^(-1|[0-9]+(\.[0-9]{1,5})?)$
+                type: string
               tags:
                 additionalProperties:
                   type: string
@@ -1632,6 +1651,7 @@ spec:
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
+
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:

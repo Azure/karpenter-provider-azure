@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -153,6 +154,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				// EnableSecureBoot:       nil,
 			},
 			Priority: priority,
+			Billing:  configureSpotBilling(capacityType, nodeClass),
 
 			Tags:            tags,
 			LocalDNSProfile: configureLocalDNSProfile(nodeClass),
@@ -252,6 +254,26 @@ func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriorit
 	default:
 		// Karpenter defaults to Regular
 		return lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+	}
+}
+
+// configureSpotBilling returns a MachineBillingProfile for Spot capacity type using the
+// SpotMaxPrice from the NodeClass, defaulting to -1 (no price-based eviction) when not specified.
+// Returns nil for non-Spot capacity types.
+func configureSpotBilling(capacityType string, nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.MachineBillingProfile {
+	if capacityType != karpv1.CapacityTypeSpot {
+		return nil
+	}
+	maxPrice := float32(-1)
+	if nodeClass.Spec.SpotMaxPrice != nil && *nodeClass.Spec.SpotMaxPrice != "-1" {
+		// The SpotMaxPrice string has already been validated by the CRD pattern,
+		// so ParseFloat should never fail here in normal operation.
+		if parsed, err := strconv.ParseFloat(*nodeClass.Spec.SpotMaxPrice, 32); err == nil {
+			maxPrice = float32(parsed)
+		}
+	}
+	return &armcontainerservice.MachineBillingProfile{
+		SpotMaxPrice: lo.ToPtr(maxPrice),
 	}
 }
 

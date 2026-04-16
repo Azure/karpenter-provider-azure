@@ -115,6 +115,14 @@ type AKSNodeClassSpec struct {
 	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 	// +optional
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
+	// spotMaxPrice is the maximum price (in USD) you are willing to pay for spot instances.
+	// Valid values are "-1" or a positive decimal string with up to 5 decimal places (e.g. "0.98765").
+	// Setting "-1" means the instance will not be evicted based on price; the max price will be the on-demand price.
+	// This field is only effective when the node class is used with spot capacity type; it is ignored for on-demand nodes.
+	// +kubebuilder:validation:Pattern=`^(-1|[0-9]+(\.[0-9]{1,5})?)$`
+	// +kubebuilder:default="-1"
+	// +optional
+	SpotMaxPrice *string `json:"spotMaxPrice,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -644,7 +652,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v3"
+const AKSNodeClassHashVersion = "v5"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
