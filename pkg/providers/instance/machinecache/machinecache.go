@@ -87,7 +87,6 @@ type MachineCache struct {
 
 	updateRequests chan struct{}
 	workerCtx      context.Context
-	workerCancel   context.CancelFunc
 	wg             sync.WaitGroup
 
 	// Configurable intervals
@@ -97,17 +96,15 @@ type MachineCache struct {
 }
 
 // NewMachineListCache creates a new cache instance with a background worker for automatic refresh.
+// The background worker will exit when the provided context is cancelled.
 func NewMachineListCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
-	workerCtx, workerCancel := context.WithCancel(ctx)
-
 	cache := &MachineCache{
 		client:               client,
 		clusterResourceGroup: clusterResourceGroup,
 		clusterName:          clusterName,
 		aksMachinesPoolName:  aksMachinesPoolName,
 		updateRequests:       make(chan struct{}, 1),
-		workerCtx:            workerCtx,
-		workerCancel:         workerCancel,
+		workerCtx:            ctx,
 		// Set defaults
 		ttl:             30 * time.Second,
 		pollInterval:    5 * time.Second,
