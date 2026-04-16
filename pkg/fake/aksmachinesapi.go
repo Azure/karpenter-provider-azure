@@ -105,7 +105,7 @@ func AKSMachineAPIErrorVMSizeNotSupportedBadRequest(vmSize, subscription, locati
 	return newResponseError("BadRequest", http.StatusBadRequest, message)
 }
 
-//nolint:unparam // we want this to be generic
+//nolint:unparam // statusCode is always BadRequest today but we want this to be generic
 func newResponseError(errorCode string, statusCode int, message string) *azcore.ResponseError {
 	errorBody := fmt.Sprintf(`{"code": "%s", "message": "%s"}`, errorCode, message)
 	return &azcore.ResponseError{
