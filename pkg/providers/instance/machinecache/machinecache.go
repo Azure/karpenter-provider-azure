@@ -146,9 +146,14 @@ func WithTTL(d time.Duration) Option {
 	return func(c *MachineCache) { c.ttl = d }
 }
 
-// WithDisableWorker disables the background update worker goroutine.
-func WithDisableWorker() Option {
-	return func(c *MachineCache) { c.disableWorker = true }
+// WithPollInterval sets the interval for polling machine provisioning state.
+func WithPollInterval(d time.Duration) Option {
+	return func(c *MachineCache) { c.pollInterval = d }
+}
+
+// WithRefreshInterval sets the interval for the background worker to refresh the cache.
+func WithRefreshInterval(d time.Duration) Option {
+	return func(c *MachineCache) { c.refreshInterval = d }
 }
 
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
@@ -182,6 +187,7 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 		options:              defaultOpts(),
 	}
 
+	// Apply options to mutate defaults
 	for _, opt := range opts {
 		cache.options = opt(cache.options)
 	}
