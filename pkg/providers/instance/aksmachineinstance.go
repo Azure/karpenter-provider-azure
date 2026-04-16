@@ -707,7 +707,7 @@ func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningE
 	}
 	gotAKSMachine := lo.ToPtr(resp.Machine)
 
-	// Add to cache
+	// Add fresh machine to the cache
 	p.machinecache.Add(gotAKSMachine)
 
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {

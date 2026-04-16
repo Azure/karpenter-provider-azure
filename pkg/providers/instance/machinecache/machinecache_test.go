@@ -76,19 +76,19 @@ func TestUpdate(t *testing.T) {
 		},
 		{
 			name:        "nil pager - error",
-			lastUpdated: time.Now().Add(-2 * 30 * time.Second),
+			lastUpdated: time.Now().Add(-60 * time.Second),
 			nilPager:    true,
 			expectError: true,
 		},
 		{
 			name:        "pager returns error",
-			lastUpdated: time.Now().Add(-2 * 30 * time.Second),
+			lastUpdated: time.Now().Add(-60 * time.Second),
 			pagerErr:    errors.New("pager error"),
 			expectError: true,
 		},
 		{
 			name:        "cache update with valid and invalid machines",
-			lastUpdated: time.Now().Add(-2 * 30 * time.Second),
+			lastUpdated: time.Now().Add(-60 * time.Second),
 			existingCache: []*armcontainerservice.Machine{
 				{
 					Name: to.Ptr("machine1"),
@@ -211,7 +211,7 @@ func TestGet(t *testing.T) {
 		},
 		{
 			name:            "stale cache",
-			lastUpdated:     time.Now().Add(-2 * 30 * time.Second),
+			lastUpdated:     time.Now().Add(-60 * time.Second),
 			machineName:     "machine",
 			cachedMachines:  []*armcontainerservice.Machine{&armcontainerservice.Machine{Name: to.Ptr("machine")}},
 			expectErr:       true,
@@ -279,7 +279,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name:             "stale cache - expect error",
-			lastUpdated:      time.Now().Add(-2 * 30 * time.Second),
+			lastUpdated:      time.Now().Add(-60 * time.Second),
 			cachedMachines:   twoMachines,
 			expectedMachines: nil,
 			expectErr:        true,
@@ -369,7 +369,7 @@ func TestPollUntilDone(t *testing.T) {
 			machine: &armcontainerservice.Machine{
 				Name: to.Ptr("machine"),
 			},
-			lastUpdated:             time.Now().Add(-2 * 30 * time.Second),
+			lastUpdated:             time.Now().Add(-60 * time.Second),
 			expectPollErr:           true,
 			expectedProvisioningErr: nil,
 		},
@@ -519,7 +519,7 @@ func TestIsFresh(t *testing.T) {
 		},
 		{
 			name:        "stale cache",
-			lastUpdated: time.Now().Add(-1 * 30 * time.Second),
+			lastUpdated: time.Now().Add(-30 * time.Second),
 			expected:    false,
 		},
 		{
