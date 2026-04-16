@@ -281,12 +281,12 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
 
-	// Disable cache background worker and set TTL to 0 so cache is always stale,
+	// Set TTL to 0 so cache is always stale and refresh interval to 100 hours to effectively disable background worker,
 	// ensuring tests always fall through to direct API calls for deterministic behavior.
 	aksMachineInstanceProvider.SetMachineCache(
 		machinecache.NewMachineListCache(ctx, azClient.AKSMachinesClient(), testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName,
 			machinecache.WithTTL(0),
-			machinecache.WithDisableWorker(),
+			machinecache.WithRefreshInterval(100*time.Hour),
 		),
 	)
 
