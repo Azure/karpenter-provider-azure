@@ -155,7 +155,6 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 		options:              defaultOpts(),
 	}
 
-	// Apply options to mutate defaults
 	for _, opt := range opts {
 		cache.options = opt(cache.options)
 	}
