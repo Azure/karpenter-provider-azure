@@ -134,10 +134,10 @@ func TestMachineAPISyncErrorMatcherFunctions(t *testing.T) {
 			expect:  true,
 		},
 		{
-			name:    "IsSKUNotAvailableForSubscription - does not match VMSizeNotSupported without subscription message",
+			name:    "IsSKUNotAvailableForSubscription - matches VMSizeNotSupported without subscription message too",
 			matcher: IsSKUNotAvailableForSubscription,
 			err:     createResponseError("VMSizeNotSupported", "Some other error"),
-			expect:  false,
+			expect:  true,
 		},
 		{
 			name:    "IsSKUNotAvailableForSubscription - does not match BadRequest code",
