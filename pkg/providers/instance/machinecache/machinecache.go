@@ -57,22 +57,36 @@ type AKSMachineClienter interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
 }
 
+type opts struct {
+	ttl             time.Duration
+	pollInterval    time.Duration
+	refreshInterval time.Duration
+}
+
+func defaultOpts() opts {
+	return opts{
+		ttl:             30 * time.Second,
+		pollInterval:    5 * time.Second,
+		refreshInterval: 5 * time.Minute,
+	}
+}
+
 // Option is a functional option for configuring MachineCache.
-type Option func(*MachineCache)
+type Option func(opts) opts
 
 // WithTTL sets a custom TTL for the cache. A TTL of 0 means the cache is always stale.
 func WithTTL(d time.Duration) Option {
-	return func(c *MachineCache) { c.ttl = d }
+	return func(o opts) opts { o.ttl = d; return o }
 }
 
 // WithPollInterval sets the interval for polling machine provisioning state.
 func WithPollInterval(d time.Duration) Option {
-	return func(c *MachineCache) { c.pollInterval = d }
+	return func(o opts) opts { o.pollInterval = d; return o }
 }
 
 // WithRefreshInterval sets the interval for the background worker to refresh the cache.
 func WithRefreshInterval(d time.Duration) Option {
-	return func(c *MachineCache) { c.refreshInterval = d }
+	return func(o opts) opts { o.refreshInterval = d; return o }
 }
 
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
@@ -89,10 +103,7 @@ type MachineCache struct {
 	workerCtx      context.Context
 	wg             sync.WaitGroup
 
-	// Configurable intervals
-	ttl             time.Duration
-	pollInterval    time.Duration
-	refreshInterval time.Duration
+	options opts
 }
 
 // NewMachineListCache creates a new cache instance with a background worker for automatic refresh.
@@ -106,14 +117,12 @@ func NewMachineListCache(ctx context.Context, client AKSMachineClienter, cluster
 		updateRequests:       make(chan struct{}, 1),
 		workerCtx:            ctx,
 		// Set defaults
-		ttl:             30 * time.Second,
-		pollInterval:    5 * time.Second,
-		refreshInterval: 5 * time.Minute,
+		options: defaultOpts(),
 	}
 
 	// Apply options to mutate defaults
 	for _, opt := range opts {
-		opt(cache)
+		cache.options = opt(cache.options)
 	}
 
 	// Always start the background worker
@@ -169,7 +178,7 @@ func (c *MachineCache) Invalidate(machineName string) {
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name)
-	ticker := time.NewTicker(c.pollInterval)
+	ticker := time.NewTicker(c.options.pollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -248,7 +257,7 @@ func (c *MachineCache) handleProvisioningState(ctx context.Context, aksMachine *
 func (c *MachineCache) updateWorker() {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(c.refreshInterval)
+	ticker := time.NewTicker(c.options.refreshInterval)
 	defer ticker.Stop()
 
 	for {
@@ -319,7 +328,7 @@ func (c *MachineCache) isFresh() bool {
 		return false
 	}
 	lastUpdated := time.Unix(0, lastUpdatedNanos)
-	return time.Since(lastUpdated) < c.ttl
+	return time.Since(lastUpdated) < c.options.ttl
 }
 
 func (c *MachineCache) requestUpdate() {
