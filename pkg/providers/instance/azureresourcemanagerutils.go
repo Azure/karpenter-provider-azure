@@ -22,12 +22,12 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
 func CreateVirtualMachine(
 	ctx context.Context,
-	client azclient.VirtualMachinesAPI,
+	client azapi.VirtualMachinesAPI,
 	rg string,
 	vmName string,
 	vm armcompute.VirtualMachine,
@@ -47,7 +47,7 @@ func CreateVirtualMachine(
 
 func UpdateVirtualMachine(
 	ctx context.Context,
-	client azclient.VirtualMachinesAPI,
+	client azapi.VirtualMachinesAPI,
 	rg string,
 	vmName string,
 	updates armcompute.VirtualMachineUpdate,
@@ -67,7 +67,7 @@ func UpdateVirtualMachine(
 
 func createVirtualMachineExtension(
 	ctx context.Context,
-	client azclient.VirtualMachineExtensionsAPI,
+	client azapi.VirtualMachineExtensionsAPI,
 	rg string,
 	vmName string,
 	extensionName string,
@@ -88,7 +88,7 @@ func createVirtualMachineExtension(
 
 func createNic(
 	ctx context.Context,
-	client azclient.NetworkInterfacesAPI,
+	client azapi.NetworkInterfacesAPI,
 	rg string,
 	nicName string,
 	nic armnetwork.Interface,
@@ -106,7 +106,7 @@ func createNic(
 	return &res.Interface, nil
 }
 
-func deleteNic(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, nicName string) error {
+func deleteNic(ctx context.Context, client azapi.NetworkInterfacesAPI, rg, nicName string) error {
 	poller, err := client.BeginDelete(ctx, rg, nicName, nil)
 	if err != nil {
 		return err
@@ -124,7 +124,7 @@ func deleteNic(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, ni
 	return nil
 }
 
-func deleteNicIfExists(ctx context.Context, client azclient.NetworkInterfacesAPI, rg, nicName string) error {
+func deleteNicIfExists(ctx context.Context, client azapi.NetworkInterfacesAPI, rg, nicName string) error {
 	_, err := client.Get(ctx, rg, nicName, nil)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {

@@ -79,7 +79,7 @@ var _ = Describe("Utilization", func() {
 	)
 
 	It("should provision one pod per node (AzureLinux, arm64)", func() {
-		if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.InClusterController {
+		if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.UsesSharedImageGallery() {
 			Skip("AzureLinux3 ARM64 VHD is not available in CIG")
 		}
 		nc := env.AZLinuxNodeClass()

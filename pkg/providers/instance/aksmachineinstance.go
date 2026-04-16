@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -40,7 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var (
@@ -404,6 +404,7 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 		p.deletingMachinesMu.Unlock()
 	}()
 
+	log.FromContext(ctx).V(1).Info("starting to delete AKS machine", "aksMachineName", aksMachineName)
 	poller, err := p.azClient.AgentPoolsClient().BeginDeleteMachines(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachines, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin delete AKS machine %q: %w", aksMachineName, err)
@@ -583,12 +584,6 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, fmt.Errorf("irretrievable karpenter.azure.com_aksmachine_nodeclaim tag"))
 	}
 
-	var existingAKSMachineZone string
-	if len(existingAKSMachine.Zones) == 0 || existingAKSMachine.Zones[0] == nil {
-		existingAKSMachineZone = "" // No zone
-	} else {
-		existingAKSMachineZone = lo.FromPtr(existingAKSMachine.Zones[0])
-	}
 	existingAKSMachineVMSize := lo.FromPtr(existingAKSMachine.Properties.Hardware.VMSize)
 	existingAKSMachinePriority := lo.FromPtr(existingAKSMachine.Properties.Priority)
 	existingAKSMachineVMResourceID := lo.FromPtr(existingAKSMachine.Properties.ResourceID)
@@ -599,7 +594,10 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
-	zone := utils.MakeAKSLabelZoneFromARMZone(p.aksMachinesPoolLocation, existingAKSMachineZone)
+	zone, err := zones.MakeAKSLabelZoneFromARMZones(p.aksMachinesPoolLocation, existingAKSMachine.Zones)
+	if err != nil {
+		return nil, fmt.Errorf("found existing AKS machine %s, but failed to determine zone: %w", aksMachineName, err)
+	}
 
 	if existingAKSMachineNodeClaimName != nodeClaim.Name {
 		// Might be possible from NodePool name hash collision within AKS machine name

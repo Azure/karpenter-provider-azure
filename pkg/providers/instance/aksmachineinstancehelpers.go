@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
@@ -98,7 +99,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 
 	return &armcontainerservice.Machine{
-		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
+		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: lo.ToPtr(nodeImageVersion),
 			Network: &armcontainerservice.MachineNetworkProperties{
@@ -141,7 +142,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
 				// WorkloadRuntime:          nil,
-				// ArtifactStreamingProfile: nil,
+				ArtifactStreamingProfile: configureArtifactStreamingProfile(nodeClass, instanceType),
 			},
 
 			Mode: modePtr,
@@ -153,7 +154,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			},
 			Priority: priority,
 
-			Tags: tags,
+			Tags:            tags,
+			LocalDNSProfile: configureLocalDNSProfile(nodeClass),
 		},
 	}, nil
 }
@@ -174,6 +176,66 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	return &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
 	}
+}
+
+func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.AgentPoolArtifactStreamingProfile {
+	arch := instanceType.Requirements.Get(v1.LabelArchStable).Values()[0]
+	if nodeClass.IsArtifactStreamingEnabled(arch) {
+		return &armcontainerservice.AgentPoolArtifactStreamingProfile{
+			Enabled: lo.ToPtr(true),
+		}
+	}
+	return nil
+}
+
+func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LocalDNSProfile {
+	if nodeClass.Spec.LocalDNS == nil {
+		return nil
+	}
+	profile := &armcontainerservice.LocalDNSProfile{}
+	if nodeClass.Spec.LocalDNS.Mode != "" {
+		profile.Mode = lo.ToPtr(armcontainerservice.LocalDNSMode(nodeClass.Spec.LocalDNS.Mode))
+	}
+	if len(nodeClass.Spec.LocalDNS.VnetDNSOverrides) > 0 {
+		profile.VnetDNSOverrides = convertLocalDNSOverrides(nodeClass.Spec.LocalDNS.VnetDNSOverrides)
+	}
+	if len(nodeClass.Spec.LocalDNS.KubeDNSOverrides) > 0 {
+		profile.KubeDNSOverrides = convertLocalDNSOverrides(nodeClass.Spec.LocalDNS.KubeDNSOverrides)
+	}
+	return profile
+}
+
+func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[string]*armcontainerservice.LocalDNSOverride {
+	result := make(map[string]*armcontainerservice.LocalDNSOverride, len(overrides))
+	for _, o := range overrides {
+		override := &armcontainerservice.LocalDNSOverride{}
+		if o.QueryLogging != "" {
+			override.QueryLogging = lo.ToPtr(armcontainerservice.LocalDNSQueryLogging(o.QueryLogging))
+		}
+		if o.Protocol != "" {
+			override.Protocol = lo.ToPtr(armcontainerservice.LocalDNSProtocol(o.Protocol))
+		}
+		if o.ForwardDestination != "" {
+			override.ForwardDestination = lo.ToPtr(armcontainerservice.LocalDNSForwardDestination(o.ForwardDestination))
+		}
+		if o.ForwardPolicy != "" {
+			override.ForwardPolicy = lo.ToPtr(armcontainerservice.LocalDNSForwardPolicy(o.ForwardPolicy))
+		}
+		if o.MaxConcurrent != nil {
+			override.MaxConcurrent = o.MaxConcurrent
+		}
+		if o.CacheDuration.Duration != nil {
+			override.CacheDurationInSeconds = lo.ToPtr(int32(o.CacheDuration.Seconds()))
+		}
+		if o.ServeStaleDuration.Duration != nil {
+			override.ServeStaleDurationInSeconds = lo.ToPtr(int32(o.ServeStaleDuration.Seconds()))
+		}
+		if o.ServeStale != "" {
+			override.ServeStale = lo.ToPtr(armcontainerservice.LocalDNSServeStale(o.ServeStale))
+		}
+		result[o.Zone] = override
+	}
+	return result
 }
 
 func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {

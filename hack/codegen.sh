@@ -43,13 +43,25 @@ skugen() {
   NO_UPDATE=" pkg/fake/zz_generated.sku.$location.go | 2 +- 1 file changed, 1 insertion(+), 1 deletion(-)"
   SUBJECT="SKUGEN"
 
-  go run hack/code/instancetype_testdata_gen/main.go -- "${GENERATED_FILE}" "$location" "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_D16plds_v5,Standard_E4d_v5,Standard_B20ms,Standard_F16s_v2,Standard_NC6s,Standard_NC6s_v3,Standard_NC16as_T4_v3,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3,Standard_D2as_v6"
+  go run hack/code/instancetype_gen/main.go --format testfakes --path "${GENERATED_FILE}" --location "$location" --sizes "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_D16plds_v5,Standard_E4d_v5,Standard_B20ms,Standard_F16s_v2,Standard_NC6s,Standard_NC6s_v3,Standard_NC16as_T4_v3,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3,Standard_D2as_v6"
   go fmt "${GENERATED_FILE}"
 
   GIT_DIFF=$(git diff --stat "${GENERATED_FILE}")
   checkForUpdates "${GIT_DIFF}" "${NO_UPDATE}" "${SUBJECT} beside timestamps since last update" "${GENERATED_FILE}"
 }
 
+gen-allazureskus() {
+  GENERATED_FILE=$(pwd)/"pkg/providers/instancetype/known_skus.yaml"
+  NO_UPDATE=""
+  SUBJECT="AllAzureVMSKUs"
+
+  # Note: this checks all regions as we want to include all possible sizes
+  # NOTE: You can use --ignore-families "<family>:<date>" to ignore families if we need to.
+  go run hack/code/instancetype_gen/main.go --format nameonly --path "${GENERATED_FILE}" --ignore-families "standardARMv3Family:2026-05-01"
+
+  GIT_DIFF=$(git diff --stat "${GENERATED_FILE}")
+  checkForUpdates "${GIT_DIFF}" "${NO_UPDATE}" "${SUBJECT} beside timestamps since last update" "${GENERATED_FILE}"
+}
 
 skugen-all() {
   AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
@@ -104,7 +116,32 @@ if [[ $ENABLE_GIT_PUSH == true ]]; then
   gitOpenAndPullBranch
 fi
 
-# Run all the codegen scripts
-pricing
-locationsgen
-skugen-all
+# Run codegen scripts based on args, or all if no args given
+if [[ $# -eq 0 ]]; then
+  pricing
+  locationsgen
+  skugen-all
+  gen-allazureskus
+else
+  for arg in "$@"; do
+    case "$arg" in
+      pricing)
+        pricing
+        ;;
+      locations)
+        locationsgen
+        ;;
+      skugen)
+        skugen-all
+        ;;
+      allazureskus)
+        gen-allazureskus
+        ;;
+      *)
+        echo "Unknown generator: $arg"
+        echo "Available generators: pricing, locations, skugen, allazureskus"
+        exit 1
+        ;;
+    esac
+  done
+fi
