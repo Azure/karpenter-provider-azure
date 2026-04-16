@@ -44,7 +44,7 @@ func NewMachineAPISyncErrorHandler(unavailableOfferings *cache.UnavailableOfferi
 }
 
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."
-// ASSUMPTION: this error occuring means the whole VM family is not available. handleSKUNotAvailableError may mark the whole family as unavailable (not at the time of writing, but will likely be).
+// ASSUMPTION: this error occurring means the whole VM family is not available. handleSKUNotAvailableError may mark the whole family as unavailable (not at the time of writing, but will likely be).
 func IsSKUNotAvailableForSubscription(err error) bool {
 	azErr := errors.IsResponseError(err)
 	return azErr != nil && azErr.ErrorCode == "VMSizeNotSupported"
@@ -52,7 +52,7 @@ func IsSKUNotAvailableForSubscription(err error) bool {
 
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."
 // Similar to IsSKUNotAvailableForSubscription, but this different error code is another possible variant.
-// ASSUMPTION: this error occuring means the whole VM family is not available. handleSKUNotAvailableError may mark the whole family as unavailable (not at the time of writing, but will likely be).
+// ASSUMPTION: this error occurring means the whole VM family is not available. handleSKUNotAvailableError may mark the whole family as unavailable (not at the time of writing, but will likely be).
 func IsSKUNotAvailableForSubscriptionBadRequest(err error) bool {
 	azErr := errors.IsResponseError(err)
 	return azErr != nil && azErr.ErrorCode == "BadRequest" && strings.Contains(azErr.Error(), "is not supported for subscription")

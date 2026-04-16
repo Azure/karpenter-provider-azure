@@ -578,7 +578,7 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 func (p *DefaultAKSMachineProvider) handleMachineSyncError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, syncErr error) error {
 	sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 	if skuErr != nil {
-		return fmt.Errorf("failed to get instance type %q: %w, sync error left unhandled: %v", instanceType.Name, skuErr, syncErr)
+		return fmt.Errorf("failed to get instance type %q: %w, sync error left unhandled: %w", instanceType.Name, skuErr, syncErr)
 	}
 
 	handledError := p.syncErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, syncErr)
