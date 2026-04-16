@@ -17,7 +17,6 @@ package machinecache
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -147,14 +146,18 @@ func TestUpdate(t *testing.T) {
 				machines: tt.returnedMachines,
 			}
 
-			cache := &MachineCache{
-				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  30 * time.Second,
-				client:               fakePager,
-				clusterResourceGroup: "test-rg",
-				clusterName:          "test-cluster",
-				aksMachinesPoolName:  "test-pool",
-			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			cache := NewMachineListCache(
+				ctx,
+				fakePager,
+				"test-rg",
+				"test-cluster",
+				"test-pool",
+				WithTTL(30*time.Second),
+				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+			)
 
 			for _, m := range tt.existingCache {
 				cache.machines.Store(lo.FromPtr(m.Name), m)
@@ -218,10 +221,18 @@ func TestGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := &MachineCache{
-				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  30 * time.Second,
-			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			c := NewMachineListCache(
+				ctx,
+				&fakeAKSMachineClienter{},
+				"test-rg",
+				"test-cluster",
+				"test-pool",
+				WithTTL(30*time.Second),
+				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+			)
 
 			for _, m := range tt.cachedMachines {
 				c.machines.Store(lo.FromPtr(m.Name), m)
@@ -285,10 +296,18 @@ func TestList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := &MachineCache{
-				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  30 * time.Second,
-			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			c := NewMachineListCache(
+				ctx,
+				&fakeAKSMachineClienter{},
+				"test-rg",
+				"test-cluster",
+				"test-pool",
+				WithTTL(30*time.Second),
+				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+			)
 
 			for _, m := range tt.cachedMachines {
 				c.machines.Store(lo.FromPtr(m.Name), m)
@@ -385,23 +404,30 @@ func TestPollUntilDone(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := &MachineCache{
-				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  30 * time.Second,
-				pollInterval:         time.Millisecond,
-				updateRequests:       make(chan struct{}, 1),
-			}
+			cacheCtx, cacheCancel := context.WithCancel(context.Background())
+			defer cacheCancel()
+
+			c := NewMachineListCache(
+				cacheCtx,
+				&fakeAKSMachineClienter{},
+				"test-rg",
+				"test-cluster",
+				"test-pool",
+				WithTTL(30*time.Second),
+				WithPollInterval(time.Millisecond),
+				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+			)
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 			c.machines.Store(lo.FromPtr(tt.machine.Name), tt.machine)
 
-			ctx := context.Background()
+			pollCtx := context.Background()
 			if tt.expectPollErr {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
-				defer cancel()
+				var pollCancel context.CancelFunc
+				pollCtx, pollCancel = context.WithTimeout(pollCtx, 50*time.Millisecond)
+				defer pollCancel()
 			}
 
-			provisioningErr, pollErr := c.PollUntilDone(ctx, *tt.machine.Name)
+			provisioningErr, pollErr := c.PollUntilDone(pollCtx, *tt.machine.Name)
 			if pretty.Compare(provisioningErr, tt.expectedProvisioningErr) != "" {
 				t.Errorf("PollUntilDone() provisioningErr = %v, want %v", provisioningErr, tt.expectedProvisioningErr)
 			}
@@ -528,12 +554,20 @@ func TestIsFresh(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			cache := &MachineCache{
-				lastUpdatedUnixNanos: atomic.Int64{},
-				ttl:                  30 * time.Second,
-			}
-			cache.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
-			if got := cache.isFresh(); got != tt.expected {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			c := NewMachineListCache(
+				ctx,
+				&fakeAKSMachineClienter{},
+				"test-rg",
+				"test-cluster",
+				"test-pool",
+				WithTTL(30*time.Second),
+				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+			)
+			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
+			if got := c.isFresh(); got != tt.expected {
 				t.Errorf("isFresh() = %v, want %v", got, tt.expected)
 			}
 		})
