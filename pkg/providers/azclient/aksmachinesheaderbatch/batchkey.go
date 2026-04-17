@@ -25,7 +25,7 @@ import (
 )
 
 // determineBatchKey computes a grouping key from the AKS machine to be created.
-// Requests with the same resource path and template config batch together.
+// Requests with the same resource path and AKS machine properties (excluding per-machine fields like Tags and Zones) batch together.
 func determineBatchKey(item *aksMachineCreatePayload) string {
 	// Include resource path so requests to different clusters/pools don't mix.
 	prefix := item.resourceGroupName + "/" + item.resourceName + "/" + item.agentPoolName + "/"

@@ -32,7 +32,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// recordingClient — thread-safe AKSMachinesAPI stub that records API calls
+// recordingClient — thread-safe MachinesCreateAPI stub that records API calls
 // ---------------------------------------------------------------------------
 
 type recordingClient struct {
@@ -63,20 +63,6 @@ func (r *recordingClient) BeginCreateOrUpdate(
 	})
 	r.mu.Unlock()
 	return nil, r.err
-}
-
-func (r *recordingClient) Get(
-	context.Context, string, string, string, string,
-	*armcontainerservice.MachinesClientGetOptions,
-) (armcontainerservice.MachinesClientGetResponse, error) {
-	panic("unexpected Get call in executor test")
-}
-
-func (r *recordingClient) NewListPager(
-	string, string, string,
-	*armcontainerservice.MachinesClientListOptions,
-) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
-	panic("unexpected NewListPager call in executor test")
 }
 
 func (r *recordingClient) snapshot() []recordedCall {
