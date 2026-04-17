@@ -10,9 +10,6 @@ set -x # log commands as they run
 ROOT=$(dirname "${BASH_SOURCE[0]}")
 
 RESOURCE_GROUP="karpenter-infra"
-REGION="westus2"
 TIMESTAMP="$(date -Iseconds | tr -d :+-)"
 
-# This group should already exist but create it just in case
-az group create -l "${REGION}" -n "${RESOURCE_GROUP}"
 az deployment group create -n "deployment-pool-${TIMESTAMP}" -g "${RESOURCE_GROUP}" -f "${ROOT}/deploy.bicep"
