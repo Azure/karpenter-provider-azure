@@ -32,7 +32,7 @@ type aksMachineCreatePayload struct {
 	resourceName      string
 	agentPoolName     string
 	machineName       string
-	machineBody       armcontainerservice.Machine
+	machineBody       *armcontainerservice.Machine
 }
 
 // executor sends batches to Azure using the BatchPutMachine HTTP header.
@@ -94,7 +94,7 @@ func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, st
 		first.resourceName,
 		first.agentPoolName,
 		first.machineName,
-		template,
+		*template,
 		nil,
 	)
 

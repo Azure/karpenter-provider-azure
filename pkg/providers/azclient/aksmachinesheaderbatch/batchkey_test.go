@@ -26,7 +26,7 @@ import (
 )
 
 func keyOf(vmSize string, zones []string, tags map[string]string) string {
-	m := armcontainerservice.Machine{
+	m := &armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
 			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
 		},
@@ -70,7 +70,7 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 	t.Parallel()
 
 	vmSize := "Standard_D2s_v3"
-	item1 := aksMachineCreatePayload{machineBody: armcontainerservice.Machine{
+	item1 := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
 			Hardware:          &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
 			ETag:              lo.ToPtr("etag-123"),
@@ -78,7 +78,7 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 			ResourceID:        lo.ToPtr("/subscriptions/sub/resourceGroups/rg/..."),
 		},
 	}}
-	item2 := aksMachineCreatePayload{machineBody: armcontainerservice.Machine{
+	item2 := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
 			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
 		},
@@ -143,7 +143,7 @@ func TestMachineKeyFunc_RealisticMachinesBatchTogether(t *testing.T) {
 	for i := range items {
 		items[i] = aksMachineCreatePayload{
 			machineName: fmt.Sprintf("machine-%d", i),
-			machineBody: armcontainerservice.Machine{
+			machineBody: &armcontainerservice.Machine{
 				Name:       lo.ToPtr(fmt.Sprintf("machine-%d", i)),
 				Zones:      []*string{lo.ToPtr(zones[i%len(zones)])},
 				Properties: realisticMachineProps("Standard_D4s_v3", fmt.Sprintf("nodeclaim-%d", i)),
@@ -163,7 +163,7 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 	t.Parallel()
 
 	baseItem := aksMachineCreatePayload{
-		machineBody: armcontainerservice.Machine{
+		machineBody: &armcontainerservice.Machine{
 			Properties: realisticMachineProps("Standard_D4s_v3", "nc-0"),
 		},
 	}
@@ -196,7 +196,7 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 			t.Parallel()
 			props := realisticMachineProps("Standard_D4s_v3", "nc-0")
 			tt.modify(props)
-			item := aksMachineCreatePayload{machineBody: armcontainerservice.Machine{Properties: props}}
+			item := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{Properties: props}}
 			assert.NotEqual(t, baseHash, determineBatchKey(&item), "hash should differ when %s changes", tt.name)
 		})
 	}

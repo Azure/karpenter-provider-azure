@@ -501,7 +501,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 	capacityType string,
 	zone string,
 ) (*AKSMachinePromise, error) {
-	err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate)
+	err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachineTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
 	}
