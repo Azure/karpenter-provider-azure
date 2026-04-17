@@ -22,7 +22,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -41,10 +40,10 @@ type aksMachineCreatePayload struct {
 // It transforms a pending batch into a single API call, then distributes
 // per-machine results back to each request's channel.
 type executor struct {
-	realClient azapi.AKSMachinesAPI
+	realClient AKSMachinesCreateAPI
 }
 
-func newExecutor(realClient azapi.AKSMachinesAPI) *executor {
+func newExecutor(realClient AKSMachinesCreateAPI) *executor {
 	return &executor{realClient: realClient}
 }
 
