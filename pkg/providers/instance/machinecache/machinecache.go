@@ -96,6 +96,7 @@ type opts struct {
 	ttl             time.Duration
 	pollInterval    time.Duration
 	refreshInterval time.Duration
+	disabled        bool
 }
 
 func defaultOpts() opts {
@@ -122,6 +123,12 @@ func WithPollInterval(d time.Duration) Option {
 // WithRefreshInterval sets the interval for the background worker to refresh the cache.
 func WithRefreshInterval(d time.Duration) Option {
 	return func(o opts) opts { o.refreshInterval = d; return o }
+}
+
+// WithCacheDisabled disables the cache entirely. All Get/List calls will return ErrCacheStale,
+// forcing callers to fall through to direct API calls. No background goroutine is spawned.
+func WithCacheDisabled() Option {
+	return func(o opts) opts { o.disabled = true; return o }
 }
 
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
@@ -217,6 +224,11 @@ func (c *MachineCache) Invalidate(machineName string) {
 		return
 	}
 	c.machines.Delete(machineName)
+}
+
+// WorkerContext returns the context used by the background worker.
+func (c *MachineCache) WorkerContext() context.Context {
+	return c.workerCtx
 }
 
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
