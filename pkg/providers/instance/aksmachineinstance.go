@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -147,6 +148,7 @@ type DefaultAKSMachineProvider struct {
 	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu              sync.RWMutex
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
+	machinecache                    *machinecache.MachineCache
 }
 
 func NewAKSMachineProvider(
@@ -164,6 +166,7 @@ func NewAKSMachineProvider(
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
 		azClient:                        azClient,
+		machinecache:                    machinecache.NewMachineListCache(context.Background(), azClient.AKSMachinesClient(), clusterResourceGroup, clusterName, aksMachinesPoolName),
 		instanceTypeProvider:            instanceTypeProvider,
 		allocationStrategyProvider:      allocationStrategyProvider,
 		imageResolver:                   imageResolver,
@@ -291,12 +294,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 		return []*armcontainerservice.Machine{}, nil
 	}
 
-	aksMachines, err := p.listMachines(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return aksMachines, nil
+	return p.listMachines(ctx)
 }
 
 func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName string) error {
@@ -350,6 +348,11 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	if aksMachine, err := p.machinecache.Get(aksMachineName); err == nil {
+		p.rehydrateMachine(aksMachine)
+		return aksMachine, nil
+	}
+
 	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
@@ -361,6 +364,10 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 }
 
 func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
+	if machines, err := p.machinecache.List(ctx); err == nil {
+		return machines, nil
+	}
+
 	var machines []*armcontainerservice.Machine
 	pager := p.azClient.AKSMachinesClient().NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
 	if pager == nil {
@@ -370,18 +377,12 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if IsAKSMachineOrMachinesPoolNotFound(err) {
-				// AKS machines pool not found. Handle gracefully.
-				// Suggestion: separate the util function to not cover more than needed?
 				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
 				break
 			}
-
 			return nil, fmt.Errorf("failed to list AKS machines: %w", err)
 		}
-
 		for _, aksMachine := range page.Value {
-			// Filter to only include machines created by Karpenter
-			// Check if the AKS machine has the Karpenter nodepool tag
 			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
 				if _, hasKarpenterTag := aksMachine.Properties.Tags[NodePoolTagKey]; hasKarpenterTag {
 					p.rehydrateMachine(aksMachine)
@@ -390,7 +391,6 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 			}
 		}
 	}
-
 	return machines, nil
 }
 
@@ -415,6 +415,7 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 	if err != nil {
 		return fmt.Errorf("failed to begin delete AKS machine %q: %w", aksMachineName, err)
 	}
+	p.machinecache.Invalidate(aksMachineName)
 
 	_, err = poller.PollUntilDone(ctx, nil)
 
@@ -523,15 +524,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 				}
 			}()
 
-			getPoller := aksmachinepoller.NewPoller(
-				p.fallbackAKSMachinePollerOptions,
-				p.azClient.AKSMachinesClient(),
-				p.clusterResourceGroup,
-				p.clusterName,
-				p.aksMachinesPoolName,
-				aksMachineName,
-			)
-			provisioningErr, pollerErr := getPoller.PollUntilDone(ctx)
+			provisioningErr, pollerErr := p.machinecache.PollUntilDone(ctx, aksMachineName)
 			if pollerErr != nil {
 				pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (GET poller), poller error: %w", aksMachineName, pollerErr)
 				return
@@ -718,12 +711,17 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineCreationTimestamp,
 	), nil
 }
-
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string) (*armcontainerservice.Machine, error) {
-	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	// Directly call AKS Machine client to get the fresh machine state
+	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
+	gotAKSMachine := lo.ToPtr(resp.Machine)
+
+	// Add fresh machine to the cache
+	p.machinecache.Add(gotAKSMachine)
+
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
@@ -736,4 +734,9 @@ func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningE
 		return nil, p.handleMachineProvisioningError(ctx, "get once after begin creation", aksMachineName, instanceType, zone, capacityType, gotAKSMachine.Properties.Status.ProvisioningError)
 	}
 	return gotAKSMachine, nil
+}
+
+// SetMachineCache replaces the machine cache instance (used in tests to control cache behavior).
+func (p *DefaultAKSMachineProvider) SetMachineCache(cache *machinecache.MachineCache) {
+	p.machinecache = cache
 }
