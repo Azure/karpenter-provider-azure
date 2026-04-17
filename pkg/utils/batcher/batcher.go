@@ -32,11 +32,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Batch is a group of requests with the same key.
 type Batch[RequestPayload, ResponsePayload any] struct {
+	ID       string
 	Key      string
 	Requests []*BatchedRequest[RequestPayload, ResponsePayload]
 }
@@ -132,6 +134,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayloa
 	if !exists {
 		// First request for this key → need to initialize batch first
 		batch = &Batch[RequestPayload, ResponsePayload]{
+			ID:       uuid.New().String(),
 			Key:      req.Key,
 			Requests: make([]*BatchedRequest[RequestPayload, ResponsePayload], 0, b.opts.MaxBatchSize),
 		}
@@ -163,6 +166,8 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			return
 
 		case <-b.trigger:
+			batcherIterationID := uuid.New().String()
+			waitStartTime := time.Now()
 			// Woken up, as there's a new request and enqueuement. Then:
 			b.waitForIdle()
 			if b.ctx.Err() != nil {
@@ -174,7 +179,14 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			// Execution also fires for all batches at once from that shared timer.
 			// This is tolerable because requests typically arrive in bursts from the provisioner.
 			// Suggestion: if needed, we could add per-batch-key timers for more precise control, but it adds complexity.
-			b.executeBatches()
+
+			// TODO: use metrics instead?
+			log.FromContext(b.ctx).Info("batcher iteration finishing wait, ready to execute batches",
+				"batcherIterationID", batcherIterationID,
+				"waitStartTime", waitStartTime,
+				"waitDuration", time.Since(waitStartTime),
+				"batchCount", len(b.pendingBatches))
+			b.executeBatches(batcherIterationID)
 		}
 	}
 }
@@ -231,7 +243,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) anyBatchFull() bool {
 }
 
 // executeBatches atomically swaps out the batch map and dispatches all batches.
-func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches() {
+func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterationID string) {
 	// Atomically swaps out the batch map.
 	b.mu.Lock()
 	batches := b.pendingBatches
@@ -240,6 +252,12 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches() {
 
 	// Dispatch batches in parallel, as they are independent (different keys).
 	for _, batch := range batches {
+		// TODO: use metrics instead?
+		log.FromContext(b.ctx).Info("begin executing batch",
+			"batcherIterationID", batcherIterationID,
+			"ID", batch.ID,
+			"key", batch.Key,
+			"size", len(batch.Requests))
 		go func(batch *Batch[RequestPayload, ResponsePayload]) {
 			defer func() {
 				if r := recover(); r != nil {
