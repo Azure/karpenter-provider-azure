@@ -144,6 +144,11 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", true), "If set to false then Azure SDK middleware logging is disabled for debugging, and won't be logging all HTTP requests/responses to Azure APIs.")
 }
 
+// IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
+func (o *Options) IsAKSMachineAPIMode() bool {
+	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
 func (o *Options) GetAPIServerName() string {
 	endpoint, _ := url.Parse(o.ClusterEndpoint) // assume to already validated
 	return endpoint.Hostname()

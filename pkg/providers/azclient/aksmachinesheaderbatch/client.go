@@ -19,20 +19,29 @@ package aksmachinesheaderbatch
 import (
 	"context"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 )
 
-// Client implements AKSMachinesBatchAPI by coalescing concurrent
+type AKSMachinesHeaderBatchAPI interface {
+	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine) error
+}
+
+// We don't need the rest of machine API interface. Just create.
+type AKSMachinesCreateAPI interface {
+	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine, options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error)
+}
+
+// Client implements AKSMachinesHeaderBatchAPI by coalescing concurrent
 // BeginCreateWithBatch calls through a generic batcher. Requests are grouped
 // by resource path + template hash and dispatched to the executor, which
-// calls AKSMachinesAPI.BeginCreateOrUpdate with the BatchPutMachine header.
+// calls AKSMachinesCreateAPI.BeginCreateOrUpdate with the BatchPutMachine header.
 type Client struct {
 	b *batcher.Batcher[aksMachineCreatePayload, struct{}]
 }
 
-func NewClient(ctx context.Context, aksMachinesClient azapi.AKSMachinesAPI, opts batcher.Options) *Client {
+func NewClient(ctx context.Context, aksMachinesClient AKSMachinesCreateAPI, opts batcher.Options) *Client {
 	exec := newExecutor(aksMachinesClient)
 
 	b := batcher.New[aksMachineCreatePayload, struct{}](
@@ -56,19 +65,14 @@ func (c *Client) BeginCreateWithBatch(
 	machineName string,
 	template armcontainerservice.Machine,
 ) error {
-	req := &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
-		Payload: aksMachineCreatePayload{
-			resourceGroupName: resourceGroupName,
-			resourceName:      resourceName,
-			agentPoolName:     agentPoolName,
-			machineName:       machineName,
-			machineBody:       template,
-		},
-		ResponseChan: make(chan *batcher.Response[struct{}], 1),
-	}
-
 	select {
-	case response := <-c.b.Enqueue(req):
+	case response := <-c.b.Enqueue(aksMachineCreatePayload{
+		resourceGroupName: resourceGroupName,
+		resourceName:      resourceName,
+		agentPoolName:     agentPoolName,
+		machineName:       machineName,
+		machineBody:       template,
+	}):
 		return response.Err
 	case <-ctx.Done():
 		return ctx.Err()
