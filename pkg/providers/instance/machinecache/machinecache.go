@@ -59,6 +59,7 @@ type opts struct {
 	ttl             time.Duration
 	pollInterval    time.Duration
 	refreshInterval time.Duration
+	disabled        bool
 }
 
 func defaultOpts() opts {
@@ -85,6 +86,12 @@ func WithPollInterval(d time.Duration) Option {
 // WithRefreshInterval sets the interval for the background worker to refresh the cache.
 func WithRefreshInterval(d time.Duration) Option {
 	return func(o opts) opts { o.refreshInterval = d; return o }
+}
+
+// WithCacheDisabled disables the cache entirely. All Get/List calls will return ErrCacheStale,
+// forcing callers to fall through to direct API calls. No background goroutine is spawned.
+func WithCacheDisabled() Option {
+	return func(o opts) opts { o.disabled = true; return o }
 }
 
 // MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
@@ -121,8 +128,10 @@ func NewMachineListCache(ctx context.Context, client AKSMachineClienter, cluster
 		cache.options = opt(cache.options)
 	}
 
-	cache.wg.Add(1)
-	go cache.updateWorker()
+	if !cache.options.disabled {
+		cache.wg.Add(1)
+		go cache.updateWorker()
+	}
 
 	return cache
 }
@@ -130,6 +139,9 @@ func NewMachineListCache(ctx context.Context, client AKSMachineClienter, cluster
 // Add stores a machine in the cache. This is useful for adding machines that were fetched directly
 // from the API, bypassing the cache.
 func (c *MachineCache) Add(machine *armcontainerservice.Machine) {
+	if c.options.disabled {
+		return
+	}
 	if machine != nil && machine.Name != nil {
 		c.machines.Store(*machine.Name, machine)
 	}
@@ -137,7 +149,7 @@ func (c *MachineCache) Add(machine *armcontainerservice.Machine) {
 
 // Get retrieves a machine from the cache by name if the cache is fresh.
 func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, error) {
-	if !c.isFresh() {
+	if c.options.disabled || !c.isFresh() {
 		c.requestUpdate()
 		return nil, fmt.Errorf("%w for machine %q", ErrCacheStale, machineName)
 	}
@@ -152,7 +164,7 @@ func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, er
 
 // List returns all cached machines, blocking until the cache is fresh.
 func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
-	if !c.isFresh() {
+	if c.options.disabled || !c.isFresh() {
 		return nil, fmt.Errorf("%w while listing machines", ErrCacheStale)
 	}
 
@@ -167,7 +179,15 @@ func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine
 
 // Invalidate removes a specific machine from the cache by name.
 func (c *MachineCache) Invalidate(machineName string) {
+	if c.options.disabled {
+		return
+	}
 	c.machines.Delete(machineName)
+}
+
+// WorkerContext returns the context used by the background worker.
+func (c *MachineCache) WorkerContext() context.Context {
+	return c.workerCtx
 }
 
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
