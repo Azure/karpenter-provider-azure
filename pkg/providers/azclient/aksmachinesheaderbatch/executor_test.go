@@ -78,8 +78,8 @@ func (r *recordingClient) snapshot() []recordedCall {
 // ---------------------------------------------------------------------------
 
 //nolint:unparam // vmSize is always the same today but kept as param for future test flexibility
-func tpl(vmSize string, zones []string, tags map[string]string) armcontainerservice.Machine {
-	m := armcontainerservice.Machine{
+func tpl(vmSize string, zones []string, tags map[string]string) *armcontainerservice.Machine {
+	m := &armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
 			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
 		},
@@ -96,7 +96,7 @@ func tpl(vmSize string, zones []string, tags map[string]string) armcontainerserv
 	return m
 }
 
-func makeReq(name string, template armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, struct{}] {
+func makeReq(name string, template *armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, struct{}] {
 	return &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg",

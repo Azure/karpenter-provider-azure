@@ -25,7 +25,7 @@ import (
 )
 
 type AKSMachinesHeaderBatchAPI interface {
-	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine) error
+	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) error
 }
 
 // We don't need the rest of machine API interface. Just create.
@@ -63,7 +63,7 @@ func (c *Client) BeginCreateWithBatch(
 	resourceName string,
 	agentPoolName string,
 	machineName string,
-	template armcontainerservice.Machine,
+	machine *armcontainerservice.Machine,
 ) error {
 	select {
 	case response := <-c.b.Enqueue(aksMachineCreatePayload{
@@ -71,7 +71,7 @@ func (c *Client) BeginCreateWithBatch(
 		resourceName:      resourceName,
 		agentPoolName:     agentPoolName,
 		machineName:       machineName,
-		machineBody:       template,
+		machineBody:       machine,
 	}):
 		return response.Err
 	case <-ctx.Done():
