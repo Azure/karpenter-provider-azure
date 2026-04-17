@@ -40,7 +40,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
@@ -202,7 +201,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
 
 	// Set up batching if provision mode is header batch
-	var aksMachinesBatchAPI azapi.AKSMachinesBatchAPI
+	var aksMachinesBatchAPI aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
 	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
 		aksMachinesBatchAPI = aksmachinesheaderbatch.NewClient(ctx, aksMachinesAPI, batcher.Options{
 			IdleTimeout:  time.Duration(testOptions.BatchIdleTimeoutMS) * time.Millisecond,
@@ -246,7 +245,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		azureEnv,
 	)
 
-	if consts.IsAKSMachineAPIMode(testOptions.ProvisionMode) && testOptions.AKSMachinesPoolName != "" {
+	if testOptions.IsAKSMachineAPIMode() && testOptions.AKSMachinesPoolName != "" {
 		// For this configuration, we assume the AKS machines pool already exists
 		aksDataStorage.AgentPools.Store(
 			fake.MkAgentPoolID(testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName),
