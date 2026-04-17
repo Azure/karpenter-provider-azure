@@ -75,6 +75,8 @@ func (c *Client) BeginCreateWithBatch(
 	}):
 		return response.Err
 	case <-ctx.Done():
+		// WARNING: cancelling context does not cancel Enqueue call and batch execution.
+		// It only prevents the caller from waiting for the response. Created resources may still exist, but will be garbage collected as they don't have NodeClaim.
 		return ctx.Err()
 	}
 }
