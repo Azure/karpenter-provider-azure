@@ -23,7 +23,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
-	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -57,17 +56,16 @@ func newExecutor(realClient AKSMachinesCreateAPI) *executor {
 //nolint:govet // nilness: frontendErrors is intentionally always nil until per-machine error parsing TODO is implemented
 func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, struct{}]) {
 	ctx := context.Background()
-	batchID := uuid.New().String()
 
-	log.FromContext(ctx).Info("executing batch",
-		"batchID", batchID,
+	log.FromContext(ctx).Info("executing an AKS machines header batch",
+		"ID", batch.ID,
 		"size", len(batch.Requests),
 		"key", batch.Key)
 
 	// Attach batch header for the real Azure API.
 	header, entries, err := buildBatchHeader(batch)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to build batch header")
+		log.FromContext(ctx).Error(err, "failed to build header for AKS machines header batch")
 		distributeError(batch, err)
 		return
 	}
@@ -107,8 +105,8 @@ func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, st
 
 	// If there's an API-level error but no per-machine breakdown, all machines failed
 	if err != nil && frontendErrors == nil {
-		log.FromContext(ctx).Error(err, "batch API call failed, distributing error to all machines",
-			"batchID", batchID,
+		log.FromContext(ctx).Error(err, "AKS machines header batch API call failed, distributing error to all machines",
+			"ID", batch.ID,
 			"size", len(batch.Requests))
 		distributeError(batch, err)
 		return
@@ -126,8 +124,8 @@ func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, st
 		}
 	}
 
-	log.FromContext(ctx).Info("batch completed",
-		"batchID", batchID,
+	log.FromContext(ctx).Info("AKS machines header batch execution completed",
+		"ID", batch.ID,
 		"succeeded", successCount,
 		"failed", failCount)
 }
