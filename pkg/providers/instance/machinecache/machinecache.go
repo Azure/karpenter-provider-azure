@@ -18,13 +18,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -290,11 +288,6 @@ func (c *MachineCache) update(ctx context.Context) error {
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			if isAKSMachineOrMachinesPoolNotFound(err) {
-				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
-				break
-			}
-
 			return fmt.Errorf("failed to list AKS machines: %w", err)
 		}
 
@@ -333,18 +326,6 @@ func (c *MachineCache) requestUpdate() {
 	case c.updateRequests <- struct{}{}:
 	default:
 	}
-}
-
-func isAKSMachineOrMachinesPoolNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	azErr := sdkerrors.IsResponseError(err)
-	if azErr != nil && (azErr.StatusCode == http.StatusNotFound ||
-		(azErr.StatusCode == http.StatusBadRequest && azErr.ErrorCode == "InvalidParameter" && strings.Contains(azErr.Error(), "Cannot find any valid machines"))) {
-		return true
-	}
-	return false
 }
 
 func isValid(ctx context.Context, properties *armcontainerservice.MachineProperties, machineName string) bool {
