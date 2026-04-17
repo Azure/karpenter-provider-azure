@@ -736,7 +736,9 @@ func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningE
 	return gotAKSMachine, nil
 }
 
-// SetMachineCache replaces the machine cache instance (used in tests to control cache behavior).
-func (p *DefaultAKSMachineProvider) SetMachineCache(cache *machinecache.MachineCache) {
-	p.machinecache = cache
+// DisableCache replaces the machine cache with a disabled instance, ensuring all operations
+// fall through to direct API calls. Used in tests for deterministic behavior.
+func (p *DefaultAKSMachineProvider) DisableCache() {
+	p.machinecache = machinecache.NewMachineListCache(p.machinecache.WorkerContext(), p.azClient.AKSMachinesClient(),
+		p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, machinecache.WithCacheDisabled())
 }
