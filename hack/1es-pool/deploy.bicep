@@ -64,6 +64,9 @@ resource agentImage2404 'Microsoft.CloudTest/images@2020-05-07' = {
 resource hostedPool 'Microsoft.CloudTest/hostedpools@2020-05-07' = {
   name: poolName
   location: location
+  tags: {
+    UseScaleSet: 'true'
+  }
   properties: {
     organizationProfile: {
       type: 'GitHub'

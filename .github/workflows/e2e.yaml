@@ -89,8 +89,7 @@ env:
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
-    runs-on:
-      labels: [self-hosted, 1ES.Pool=karpenter-ci-1es-pool, "JobId=e2e-${{ inputs.suite }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}"]
+    runs-on: karpenter-ci-1es-pool
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
