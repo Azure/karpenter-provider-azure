@@ -45,11 +45,9 @@ type Batch[RequestPayload, ResponsePayload any] struct {
 
 // BatchedRequest is a single request (w/ payload) being batched with others.
 type BatchedRequest[RequestPayload, ResponsePayload any] struct {
-	// Caller's request context (before going into the batcher)
 	// Warning: the batcher does not currently honor per-request context cancellation.
 	// Once a request is enqueued, it stays in the batch even if the caller's context is canceled.
 	// Suggestion: support per-request cancellation guarantee, only if needed.
-	ctx context.Context
 
 	Key          string                          // Grouping key, set by the batcher after calling DetermineBatchKey
 	ResponseChan chan *Response[ResponsePayload] // Caller waits on this channel for the response after batch execution
