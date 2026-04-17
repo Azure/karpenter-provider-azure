@@ -73,12 +73,15 @@ type ExecuteBatch[RequestPayload, ResponsePayload any] func(batch *Batch[Request
 
 // Options configures the batching behavior.
 //
-//	Small timeouts = lower latency, more API calls
-//	Large timeouts = better batching, higher latency
+// Small timeouts = lower latency, more API calls.
+// Large timeouts = better batching, higher latency.
 type Options struct {
-	IdleTimeout  time.Duration // no new request for this long → fire
-	MaxTimeout   time.Duration // max wait time regardless of activity
-	MaxBatchSize int           // fire immediately when any batch reaches this size
+	// IdleTimeout is how long to wait with no new requests before firing the batch.
+	IdleTimeout time.Duration
+	// MaxTimeout is the maximum time a batch can remain open regardless of activity.
+	MaxTimeout time.Duration
+	// MaxBatchSize causes a batch to fire immediately once it reaches this many requests.
+	MaxBatchSize int
 }
 
 // Batcher collects requests, groups them by key, and dispatches batches
