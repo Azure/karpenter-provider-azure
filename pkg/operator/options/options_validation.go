@@ -118,7 +118,7 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !consts.IsAKSMachineAPIMode(o.ProvisionMode) {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !o.IsAKSMachineAPIMode() {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
@@ -182,7 +182,7 @@ func (o *Options) validateRequiredFields() error {
 
 func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
-		if !consts.IsAKSMachineAPIMode(o.ProvisionMode) {
+		if !o.IsAKSMachineAPIMode() {
 			// For AKS Machine API modes, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
 			if o.SIGAccessTokenServerURL == "" {
 				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")

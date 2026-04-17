@@ -178,7 +178,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
 	// > Note: this only has to occur once per test, since its just a container for the machines
 	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
-	if azureEnv.InClusterController && azureEnv.IsMachineMode() {
+	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
 		azureEnv.ExpectRunInClusterControllerWithMachineMode()
 	}
 	return azureEnv
@@ -206,8 +206,8 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 	}
 }
 
-func (env *Environment) IsMachineMode() bool {
-	return consts.IsAKSMachineAPIMode(env.ProvisionMode)
+func (env *Environment) IsAKSMachineAPIMode() bool {
+	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI || env.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
