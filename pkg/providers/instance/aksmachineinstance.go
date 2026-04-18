@@ -501,9 +501,13 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 	capacityType string,
 	zone string,
 ) (*AKSMachinePromise, error) {
-	err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachineTemplate)
+	handlableError, err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachineTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
+	}
+	if handlableError != nil {
+		// Currently, we do not handle any error. So, just push it downstream.
+		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, handlableError)
 	}
 
 	// Get once after begin create to retrieve VMResourceID.
