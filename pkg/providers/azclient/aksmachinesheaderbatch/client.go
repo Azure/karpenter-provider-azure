@@ -25,7 +25,12 @@ import (
 )
 
 type AKSMachinesHeaderBatchAPI interface {
-	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) error
+	// BeginCreateWithBatch submits a single machine creation into the batch system.
+	// Returns:
+	//   - (*HandlableError, nil):  handlable error — the machine was not created
+	//   - (nil, error):      		operational error (e.g., parsing failure)
+	//   - (nil, nil):        		success — machine creation started
+	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) (*HandlableError, error)
 }
 
 // We don't need the rest of machine API interface. Just create.
@@ -38,13 +43,13 @@ type AKSMachinesCreateAPI interface {
 // by resource path + template hash and dispatched to the executor, which
 // calls AKSMachinesCreateAPI.BeginCreateOrUpdate with the BatchPutMachine header.
 type Client struct {
-	b *batcher.Batcher[aksMachineCreatePayload, struct{}]
+	b *batcher.Batcher[aksMachineCreatePayload, *HandlableError]
 }
 
 func NewClient(ctx context.Context, aksMachinesClient AKSMachinesCreateAPI, opts batcher.Options) *Client {
 	exec := newExecutor(aksMachinesClient)
 
-	b := batcher.New[aksMachineCreatePayload, struct{}](
+	b := batcher.New[aksMachineCreatePayload, *HandlableError](
 		ctx,
 		determineBatchKey,
 		exec.executeBatch,
@@ -64,7 +69,7 @@ func (c *Client) BeginCreateWithBatch(
 	agentPoolName string,
 	machineName string,
 	machine *armcontainerservice.Machine,
-) error {
+) (*HandlableError, error) {
 	select {
 	case response := <-c.b.Enqueue(aksMachineCreatePayload{
 		resourceGroupName: resourceGroupName,
@@ -73,10 +78,10 @@ func (c *Client) BeginCreateWithBatch(
 		machineName:       machineName,
 		machineBody:       machine,
 	}):
-		return response.Err
+		return response.Payload, response.Err
 	case <-ctx.Done():
 		// WARNING: cancelling context does not cancel Enqueue call and batch execution.
 		// It only prevents the caller from waiting for the response. Created resources may still exist, but will be garbage collected as they don't have NodeClaim.
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }

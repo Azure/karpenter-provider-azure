@@ -17,13 +17,18 @@ limitations under the License.
 package aksmachinesheaderbatch
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
@@ -96,8 +101,8 @@ func tpl(vmSize string, zones []string, tags map[string]string) *armcontainerser
 	return m
 }
 
-func makeReq(name string, template *armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, struct{}] {
-	return &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
+func makeReq(name string, template *armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError] {
+	return &batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg",
 			resourceName:      "cluster",
@@ -105,23 +110,23 @@ func makeReq(name string, template *armcontainerservice.Machine) *batcher.Batche
 			machineName:       name,
 			machineBody:       template,
 		},
-		ResponseChan: make(chan *batcher.Response[struct{}], 1),
+		ResponseChan: make(chan *batcher.Response[*HandlableError], 1),
 	}
 }
 
-func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]) *batcher.Batch[aksMachineCreatePayload, struct{}] {
+func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]) *batcher.Batch[aksMachineCreatePayload, *HandlableError] {
 	if len(requests) == 0 {
-		return &batcher.Batch[aksMachineCreatePayload, struct{}]{}
+		return &batcher.Batch[aksMachineCreatePayload, *HandlableError]{}
 	}
-	return &batcher.Batch[aksMachineCreatePayload, struct{}]{
+	return &batcher.Batch[aksMachineCreatePayload, *HandlableError]{
 		Key:      determineBatchKey(&requests[0].Payload),
 		Requests: requests,
 	}
 }
 
-func awaitAll(t *testing.T, requests ...*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]) []*batcher.Response[struct{}] {
+func awaitAll(t *testing.T, requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]) []*batcher.Response[*HandlableError] {
 	t.Helper()
-	out := make([]*batcher.Response[struct{}], len(requests))
+	out := make([]*batcher.Response[*HandlableError], len(requests))
 	for i, r := range requests {
 		select {
 		case resp := <-r.ResponseChan:
@@ -204,8 +209,9 @@ func TestExecutorDistributesErrorToAllCallers(t *testing.T) {
 	exec.executeBatch(makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
-		require.Error(t, resp.Err)
-		assert.Contains(t, resp.Err.Error(), "azure boom")
+		// Plain error (not *azcore.ResponseError) → extractPerMachineErrors fails → operational error
+		require.Error(t, resp.Err, "should be an operational error (parse failure)")
+		assert.Nil(t, resp.Payload)
 	}
 }
 
@@ -235,7 +241,7 @@ func TestConcurrentRequestsBatchThroughClient(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
-			_ = client.BeginCreateWithBatch(ctx, "rg", "cluster", "pool", fmt.Sprintf("machine-%d", i), tmpl)
+			_, _ = client.BeginCreateWithBatch(ctx, "rg", "cluster", "pool", fmt.Sprintf("machine-%d", i), tmpl)
 		}(i)
 	}
 	wg.Wait()
@@ -254,7 +260,7 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 
 	tmpl := tpl("Standard_D2s_v3", []string{"1"}, nil)
 
-	r1 := &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
+	r1 := &batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg-1",
 			resourceName:      "cluster-1",
@@ -262,9 +268,9 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 			machineName:       "m-1",
 			machineBody:       tmpl,
 		},
-		ResponseChan: make(chan *batcher.Response[struct{}], 1),
+		ResponseChan: make(chan *batcher.Response[*HandlableError], 1),
 	}
-	r2 := &batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{
+	r2 := &batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg-2",
 			resourceName:      "cluster-2",
@@ -272,7 +278,7 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 			machineName:       "m-2",
 			machineBody:       tmpl,
 		},
-		ResponseChan: make(chan *batcher.Response[struct{}], 1),
+		ResponseChan: make(chan *batcher.Response[*HandlableError], 1),
 	}
 
 	key1 := determineBatchKey(&r1.Payload)
@@ -280,12 +286,245 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 	assert.NotEqual(t, key1, key2, "different resource paths should produce different batch keys")
 
 	// Execute each as separate batch (as the batcher would)
-	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, struct{}]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{r1}})
-	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, struct{}]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, struct{}]{r2}})
+	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r1}})
+	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r2}})
 
 	assert.Equal(t, int32(2), mock.count.Load(), "different resource paths → 2 API calls")
 
 	calls := mock.snapshot()
 	assert.Equal(t, "m-1", calls[0].machineName)
 	assert.Equal(t, "m-2", calls[1].machineName)
+}
+
+// =====================================================================
+// Batch error helpers for tests
+// =====================================================================
+
+type testErrorDetail struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Target  string `json:"target"`
+}
+
+// makeBatchClientError creates an *azcore.ResponseError simulating a 400 BatchMachineClientError
+// with per-machine error details at the top level.
+func makeBatchClientError(details []testErrorDetail) *azcore.ResponseError {
+	body := struct {
+		Code    string            `json:"code"`
+		Message string            `json:"message"`
+		Details []testErrorDetail `json:"details"`
+	}{
+		Code:    "BatchMachineClientError",
+		Message: "batch client error",
+		Details: details,
+	}
+	bodyJSON, _ := json.Marshal(body)
+	return &azcore.ResponseError{
+		ErrorCode:  "BatchMachineClientError",
+		StatusCode: http.StatusBadRequest,
+		RawResponse: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(bytes.NewReader(bodyJSON)),
+		},
+	}
+}
+
+// makeBatchInternalServerError creates an *azcore.ResponseError simulating a 500 BatchMachineInternalServerError
+// with per-machine error details JSON-encoded in the message field.
+func makeBatchInternalServerError(details []testErrorDetail) *azcore.ResponseError {
+	innerJSON, _ := json.Marshal(struct {
+		Details []testErrorDetail `json:"details"`
+	}{Details: details})
+	body := struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}{
+		Code:    "BatchMachineInternalServerError",
+		Message: string(innerJSON),
+	}
+	bodyJSON, _ := json.Marshal(body)
+	return &azcore.ResponseError{
+		ErrorCode:  "BatchMachineInternalServerError",
+		StatusCode: http.StatusInternalServerError,
+		RawResponse: &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(bytes.NewReader(bodyJSON)),
+		},
+	}
+}
+
+// =====================================================================
+// Per-machine batch error tests
+// =====================================================================
+
+func TestExecutorBatchClientError_PartialFailure(t *testing.T) {
+	t.Parallel()
+	// Simulate: 3 machines, only m-2 fails with client error. m-1 and m-3 succeed.
+	mock := &recordingClient{err: makeBatchClientError([]testErrorDetail{
+		{Code: "InvalidParameter", Message: "simulated client error for machine m-2", Target: "m-2"},
+	})}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r3 := makeReq("m-3", tpl("Standard_D2s_v3", []string{"3"}, nil))
+	exec.executeBatch(makeBatch(r1, r2, r3))
+
+	resps := awaitAll(t, r1, r2, r3)
+	// m-1: success (no operational error, no API error)
+	assert.NoError(t, resps[0].Err, "m-1 should have no operational error")
+	assert.Nil(t, resps[0].Payload, "m-1 should have no API error")
+	// m-2: per-machine API error (no operational error, APIError payload)
+	assert.NoError(t, resps[1].Err, "m-2 should have no operational error")
+	require.NotNil(t, resps[1].Payload, "m-2 should have an API error")
+	assert.Equal(t, "InvalidParameter", resps[1].Payload.Code)
+	// m-3: success
+	assert.NoError(t, resps[2].Err, "m-3 should have no operational error")
+	assert.Nil(t, resps[2].Payload, "m-3 should have no API error")
+}
+
+func TestExecutorBatchClientError_AllFail(t *testing.T) {
+	t.Parallel()
+	// Simulate: all machines fail with client + internal errors mixed
+	mock := &recordingClient{err: makeBatchClientError([]testErrorDetail{
+		{Code: "InvalidParameter", Message: "client error for m-1", Target: "m-1"},
+		{Code: "InternalOperationError", Message: "internal error for m-2", Target: "m-2"},
+	})}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	exec.executeBatch(makeBatch(r1, r2))
+
+	resps := awaitAll(t, r1, r2)
+	assert.NoError(t, resps[0].Err)
+	require.NotNil(t, resps[0].Payload)
+	assert.Equal(t, "InvalidParameter", resps[0].Payload.Code)
+	assert.NoError(t, resps[1].Err)
+	require.NotNil(t, resps[1].Payload)
+	assert.Equal(t, "InternalOperationError", resps[1].Payload.Code)
+}
+
+func TestExecutorBatchInternalServerError_PartialFailure(t *testing.T) {
+	t.Parallel()
+	// Simulate: 500 internal server error, only m-1 fails. m-2 succeeds.
+	mock := &recordingClient{err: makeBatchInternalServerError([]testErrorDetail{
+		{Code: "InternalOperationError", Message: "internal error for m-1", Target: "m-1"},
+	})}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	exec.executeBatch(makeBatch(r1, r2))
+
+	resps := awaitAll(t, r1, r2)
+	assert.NoError(t, resps[0].Err)
+	require.NotNil(t, resps[0].Payload, "m-1 should have an API error detail")
+	assert.Equal(t, "InternalOperationError", resps[0].Payload.Code)
+	assert.NoError(t, resps[1].Err, "m-2 should have no operational error")
+	assert.Nil(t, resps[1].Payload, "m-2 should succeed")
+}
+
+func TestExecutorBatchInternalServerError_AllFail(t *testing.T) {
+	t.Parallel()
+	mock := &recordingClient{err: makeBatchInternalServerError([]testErrorDetail{
+		{Code: "InternalOperationError", Message: "error for m-1", Target: "m-1"},
+		{Code: "InternalOperationError", Message: "error for m-2", Target: "m-2"},
+	})}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	exec.executeBatch(makeBatch(r1, r2))
+
+	resps := awaitAll(t, r1, r2)
+	assert.NoError(t, resps[0].Err)
+	require.NotNil(t, resps[0].Payload)
+	assert.NoError(t, resps[1].Err)
+	require.NotNil(t, resps[1].Payload)
+}
+
+func TestExecutorNonBatchError_FallsBackToDistributeAll(t *testing.T) {
+	t.Parallel()
+	// Non-batch error (plain error) → extractPerMachineErrors fails → operational error
+	mock := &recordingClient{err: fmt.Errorf("plain error")}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	exec.executeBatch(makeBatch(r1, r2))
+
+	for _, resp := range awaitAll(t, r1, r2) {
+		require.Error(t, resp.Err)
+		assert.Nil(t, resp.Payload)
+	}
+}
+
+func TestExecutorUnknownBatchErrorCode_DistributesAsSingleAPIError(t *testing.T) {
+	t.Parallel()
+	// ResponseError with unrecognized error code → non-batch error → single HandlableError to all
+	mock := &recordingClient{err: func() error {
+		body, _ := json.Marshal(map[string]any{"code": "SomeUnknownError", "message": "something broke"})
+		return &azcore.ResponseError{
+			ErrorCode:  "SomeUnknownError",
+			StatusCode: http.StatusBadRequest,
+			RawResponse: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewReader(body)),
+			},
+		}
+	}()}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	exec.executeBatch(makeBatch(r1, r2))
+
+	for _, resp := range awaitAll(t, r1, r2) {
+		assert.NoError(t, resp.Err)
+		require.NotNil(t, resp.Payload)
+		assert.Equal(t, "SomeUnknownError", resp.Payload.Code)
+	}
+}
+
+func TestExecutorBatchErrorMalformedBody_DistributesAsOperationalError(t *testing.T) {
+	t.Parallel()
+	// BatchMachineClientError but with malformed body → extractPerMachineErrors fails → operational error
+	mock := &recordingClient{err: &azcore.ResponseError{
+		ErrorCode:  "BatchMachineClientError",
+		StatusCode: http.StatusBadRequest,
+		RawResponse: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(bytes.NewReader([]byte("not json"))),
+		},
+	}}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	exec.executeBatch(makeBatch(r1, r2))
+
+	for _, resp := range awaitAll(t, r1, r2) {
+		require.Error(t, resp.Err)
+		assert.Nil(t, resp.Payload)
+	}
+}
+
+func TestExecutorBatchErrorNoRawResponse_DistributesAsOperationalError(t *testing.T) {
+	t.Parallel()
+	// BatchMachineClientError but without RawResponse → extractPerMachineErrors fails → operational error
+	mock := &recordingClient{err: &azcore.ResponseError{
+		ErrorCode:  "BatchMachineClientError",
+		StatusCode: http.StatusBadRequest,
+	}}
+	exec := newExecutor(mock)
+
+	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	exec.executeBatch(makeBatch(r1, r2))
+
+	for _, resp := range awaitAll(t, r1, r2) {
+		require.Error(t, resp.Err)
+		assert.Nil(t, resp.Payload)
+	}
 }
