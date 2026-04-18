@@ -1408,6 +1408,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
 	}
+	if handlableError != nil {
+		// Currently, we do not handle any error. So, just push it downstream.
+		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, handlableError)
+	}
 
 	// Get once after begin create to retrieve VMResourceID.
 	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
