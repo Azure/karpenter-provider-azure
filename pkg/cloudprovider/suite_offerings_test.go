@@ -727,7 +727,13 @@ var _ = Describe("CloudProvider - Offerings", func() {
 			})
 
 			// This is from AKS RP frontend errors rather then CRP
+			// Only applicable to AKS Machine API mode (sync errors from BeginCreateOrUpdate)
 			Context("SKUNotAvailable - AKS Machine API sync phase", func() {
+				BeforeEach(func() {
+					if !isAKSMachineMode() {
+						Skip("sync error handling only applies to AKS Machine API mode")
+					}
+				})
 				AssertUnavailableSync := func(syncErr *azcore.ResponseError, sku *skewer.SKU, capacityType string) {
 					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(syncErr)
 
