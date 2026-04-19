@@ -367,62 +367,17 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 	var primaryMachine armcontainerservice.Machine
 
 	for i, entry := range entries {
-		// Skip failed machines — they don't get created
 		if failedMachines[entry.MachineName] {
 			continue
 		}
 
-		// Build a per-machine copy from the shared template
-		machine := template
-		machine.Name = lo.ToPtr(entry.MachineName)
-		id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, entry.MachineName)
-		machine.ID = &id
-
-		// Apply per-machine zones from the batch entry
-		if len(entry.Zones) > 0 {
-			zones := make([]*string, len(entry.Zones))
-			for j := range entry.Zones {
-				zones[j] = lo.ToPtr(entry.Zones[j])
-			}
-			machine.Zones = zones
+		machine, err := c.createOneBatchMachine(input, template, entry)
+		if err != nil {
+			return nil, err
 		}
-
-		// Apply per-machine tags from the batch entry
-		if len(entry.Tags) > 0 {
-			if machine.Properties == nil {
-				machine.Properties = &armcontainerservice.MachineProperties{}
-			} else {
-				// Shallow-copy Properties so we don't mutate the shared template
-				props := *machine.Properties
-				machine.Properties = &props
-			}
-			tags := make(map[string]*string, len(entry.Tags))
-			for k, v := range entry.Tags {
-				tags[k] = lo.ToPtr(v)
-			}
-			machine.Properties.Tags = tags
-		}
-
-		// Check if AKS machine already exists — if so, check for immutable property conflicts
-		// (mirrors the conflict detection in createSingleMachine → updateExistingAKSMachine)
-		if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
-			existing := existingRaw.(armcontainerservice.Machine)
-			if c.doImmutablePropertiesChanged(&existing, &machine) {
-				return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
-			}
-		}
-
-		// Store the machine
-		c.setDefaultMachineValues(&machine, input.ResourceGroupName, input.AgentPoolName)
-		machine.Properties.ProvisioningState = lo.ToPtr("Creating")
-		c.aksDataStorage.AKSMachines.Store(id, machine)
-
-		// Simulate async completion
-		updatedMachine, _ := c.simulateCreateStatusAtAsync(machine)
-		c.aksDataStorage.AKSMachines.Store(id, updatedMachine)
 
 		if i == 0 || primaryMachine.ID == nil {
-			primaryMachine = updatedMachine
+			primaryMachine = machine
 		}
 	}
 
@@ -439,6 +394,55 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
 		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: primaryMachine}, nil
 	})
+}
+
+// createOneBatchMachine builds and stores a single machine from a batch entry.
+func (c *AKSMachinesAPI) createOneBatchMachine(input *AKSMachineCreateOrUpdateInput, template armcontainerservice.Machine, entry aksmachinesheaderbatch.MachineEntry) (armcontainerservice.Machine, error) {
+	machine := template
+	machine.Name = lo.ToPtr(entry.MachineName)
+	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, entry.MachineName)
+	machine.ID = &id
+
+	// Apply per-machine zones from the batch entry
+	if len(entry.Zones) > 0 {
+		zones := make([]*string, len(entry.Zones))
+		for j := range entry.Zones {
+			zones[j] = lo.ToPtr(entry.Zones[j])
+		}
+		machine.Zones = zones
+	}
+
+	// Apply per-machine tags from the batch entry
+	if len(entry.Tags) > 0 {
+		if machine.Properties == nil {
+			machine.Properties = &armcontainerservice.MachineProperties{}
+		} else {
+			props := *machine.Properties
+			machine.Properties = &props
+		}
+		tags := make(map[string]*string, len(entry.Tags))
+		for k, v := range entry.Tags {
+			tags[k] = lo.ToPtr(v)
+		}
+		machine.Properties.Tags = tags
+	}
+
+	// Check if AKS machine already exists — if so, check for immutable property conflicts
+	if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
+		existing := existingRaw.(armcontainerservice.Machine)
+		if c.doImmutablePropertiesChanged(&existing, &machine) {
+			return armcontainerservice.Machine{}, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
+		}
+	}
+
+	c.setDefaultMachineValues(&machine, input.ResourceGroupName, input.AgentPoolName)
+	machine.Properties.ProvisioningState = lo.ToPtr("Creating")
+	c.aksDataStorage.AKSMachines.Store(id, machine)
+
+	updatedMachine, _ := c.simulateCreateStatusAtAsync(machine)
+	c.aksDataStorage.AKSMachines.Store(id, updatedMachine)
+
+	return updatedMachine, nil
 }
 
 // fakeBatchMachineError represents a per-machine error for building fake batch error responses.
