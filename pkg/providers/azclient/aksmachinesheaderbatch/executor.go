@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -49,7 +50,7 @@ func newExecutor(realClient AKSMachinesCreateAPI) *executor {
 
 // executeBatch is the batcher.ExecuteBatch — it sends a batch to Azure as one
 // API call, then distributes results back to each request's channel.
-func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMachineCreatePayload, *HandlableError]) {
+func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]) {
 	log.FromContext(ctx).Info("executing an AKS machines header batch",
 		"ID", batch.ID,
 		"size", len(batch.Requests),
@@ -95,7 +96,7 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 			"ID", batch.ID)
 
 		// Extract per-machine errors from the parsed API error.
-		perMachineErrors := make(map[string]*HandlableError)
+		perMachineErrors := make(map[string]*offerings.HandlableError)
 		for _, req := range batch.Requests {
 			// Default to no error for each machine.
 			// Also, this is to catch the case where API error is erroneously referencing a non-existent machine.
@@ -121,11 +122,11 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 
 // distributePerMachine sends individual API errors back to each request based on the map of machineName → HandlableError.
 // Machines with nil HandlableError are treated as successes. Returns the count of successes and failures.
-func distributePerMachine(batch *batcher.Batch[aksMachineCreatePayload, *HandlableError], perMachineErrors map[string]*HandlableError) (int, int) {
+func distributePerMachine(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError], perMachineErrors map[string]*offerings.HandlableError) (int, int) {
 	successCount, failCount := 0, 0
 	for _, req := range batch.Requests {
 		apiErr := perMachineErrors[req.Payload.machineName]
-		req.ResponseChan <- &batcher.Response[*HandlableError]{Payload: apiErr}
+		req.ResponseChan <- &batcher.Response[*offerings.HandlableError]{Payload: apiErr}
 		if apiErr != nil {
 			failCount++
 		} else {
@@ -138,17 +139,17 @@ func distributePerMachine(batch *batcher.Batch[aksMachineCreatePayload, *Handlab
 
 // distributeSuccess sends a nil-nil response to all requests.
 // Returns the count of requests notified.
-func distributeSuccess(batch *batcher.Batch[aksMachineCreatePayload, *HandlableError]) int {
+func distributeSuccess(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]) int {
 	for _, req := range batch.Requests {
-		req.ResponseChan <- &batcher.Response[*HandlableError]{}
+		req.ResponseChan <- &batcher.Response[*offerings.HandlableError]{}
 	}
 	return len(batch.Requests)
 }
 
 // distributeOperationalError sends the same operational error (via Err) to all requests.
 // Use this only for errors that are not API responses (e.g., header build failure, parse failure).
-func distributeOperationalError(batch *batcher.Batch[aksMachineCreatePayload, *HandlableError], err error) {
+func distributeOperationalError(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError], err error) {
 	for _, req := range batch.Requests {
-		req.ResponseChan <- &batcher.Response[*HandlableError]{Err: err}
+		req.ResponseChan <- &batcher.Response[*offerings.HandlableError]{Err: err}
 	}
 }

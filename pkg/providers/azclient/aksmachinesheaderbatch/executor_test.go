@@ -31,6 +31,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,8 +102,8 @@ func tpl(vmSize string, zones []string, tags map[string]string) *armcontainerser
 	return m
 }
 
-func makeReq(name string, template *armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError] {
-	return &batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{
+func makeReq(name string, template *armcontainerservice.Machine) *batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError] {
+	return &batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg",
 			resourceName:      "cluster",
@@ -110,23 +111,23 @@ func makeReq(name string, template *armcontainerservice.Machine) *batcher.Batche
 			machineName:       name,
 			machineBody:       template,
 		},
-		ResponseChan: make(chan *batcher.Response[*HandlableError], 1),
+		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
 	}
 }
 
-func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]) *batcher.Batch[aksMachineCreatePayload, *HandlableError] {
+func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]) *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError] {
 	if len(requests) == 0 {
-		return &batcher.Batch[aksMachineCreatePayload, *HandlableError]{}
+		return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{}
 	}
-	return &batcher.Batch[aksMachineCreatePayload, *HandlableError]{
+	return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{
 		Key:      determineBatchKey(&requests[0].Payload),
 		Requests: requests,
 	}
 }
 
-func awaitAll(t *testing.T, requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]) []*batcher.Response[*HandlableError] {
+func awaitAll(t *testing.T, requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]) []*batcher.Response[*offerings.HandlableError] {
 	t.Helper()
-	out := make([]*batcher.Response[*HandlableError], len(requests))
+	out := make([]*batcher.Response[*offerings.HandlableError], len(requests))
 	for i, r := range requests {
 		select {
 		case resp := <-r.ResponseChan:
@@ -260,7 +261,7 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 
 	tmpl := tpl("Standard_D2s_v3", []string{"1"}, nil)
 
-	r1 := &batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{
+	r1 := &batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg-1",
 			resourceName:      "cluster-1",
@@ -268,9 +269,9 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 			machineName:       "m-1",
 			machineBody:       tmpl,
 		},
-		ResponseChan: make(chan *batcher.Response[*HandlableError], 1),
+		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
 	}
-	r2 := &batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{
+	r2 := &batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{
 		Payload: aksMachineCreatePayload{
 			resourceGroupName: "rg-2",
 			resourceName:      "cluster-2",
@@ -278,7 +279,7 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 			machineName:       "m-2",
 			machineBody:       tmpl,
 		},
-		ResponseChan: make(chan *batcher.Response[*HandlableError], 1),
+		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
 	}
 
 	key1 := determineBatchKey(&r1.Payload)
@@ -286,8 +287,8 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 	assert.NotEqual(t, key1, key2, "different resource paths should produce different batch keys")
 
 	// Execute each as separate batch (as the batcher would)
-	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r1}})
-	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r2}})
+	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{r1}})
+	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{r2}})
 
 	assert.Equal(t, int32(2), mock.count.Load(), "different resource paths → 2 API calls")
 

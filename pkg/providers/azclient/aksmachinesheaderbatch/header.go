@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 )
 
@@ -37,7 +38,7 @@ type MachineEntry struct {
 }
 
 // buildBatchHeader creates the JSON for the BatchPutMachine HTTP header
-func buildBatchHeader(batch *batcher.Batch[aksMachineCreatePayload, *HandlableError]) (string, []MachineEntry, error) {
+func buildBatchHeader(batch *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]) (string, []MachineEntry, error) {
 	entries := make([]MachineEntry, 0, len(batch.Requests))
 	for _, req := range batch.Requests {
 		var tags map[string]string

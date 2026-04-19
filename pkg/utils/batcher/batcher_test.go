@@ -45,7 +45,7 @@ func TestBatcherEnqueue(t *testing.T) {
 	var mu sync.Mutex
 	var executed []*Batch[testItem, struct{}]
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		executed = append(executed, batch)
 		mu.Unlock()
@@ -73,7 +73,7 @@ func TestBatcherGroupsSameKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}
@@ -100,7 +100,7 @@ func TestBatcherSeparatesDifferentKeys(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}
@@ -124,7 +124,7 @@ func TestBatcherDrainsPendingOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create batcher but DON'T start — requests sit in pending map
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}
@@ -164,7 +164,7 @@ func TestBatcherConcurrentRequests(t *testing.T) {
 	var callCount int32
 	var mu sync.Mutex
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		callCount++ // mutex-protected, not atomic — only accessed under mu
 		mu.Unlock()
@@ -208,7 +208,7 @@ func TestBatcherMixedKeysConcurrent(t *testing.T) {
 	var mu sync.Mutex
 	batchKeys := make(map[string]int) // key → batch count
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		batchKeys[batch.Key]++
 		mu.Unlock()
@@ -261,7 +261,7 @@ func TestBatcherFiresWhenMaxBatchSizeReached(t *testing.T) {
 	var mu sync.Mutex
 	var batchSizes []int
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		batchSizes = append(batchSizes, len(batch.Requests))
 		mu.Unlock()
@@ -310,7 +310,7 @@ func TestBatcherFiresAtMaxTimeout(t *testing.T) {
 
 	executed := make(chan struct{}, 1)
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(batch *Batch[testItem, struct{}]) {
+	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		for _, req := range batch.Requests {
 			req.ResponseChan <- &Response[struct{}]{Err: nil}
 		}

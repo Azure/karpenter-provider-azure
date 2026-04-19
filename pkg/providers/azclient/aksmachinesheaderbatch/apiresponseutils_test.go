@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -183,7 +184,7 @@ func TestExtractPerMachineErrors_BatchError_EmptyDetails(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"code": "BatchMachineClientError", "message": "no details", "details": []any{}})
 	err := makeResponseError("BatchMachineClientError", 400, string(body))
 
-	perMachine := map[string]*HandlableError{"m-1": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil}
 	extractErr := extractPerMachineErrors(err, perMachine)
 	require.Error(t, extractErr, "empty details for batch error code should be operational error")
 	assert.Contains(t, extractErr.Error(), "no per-machine details")
@@ -200,7 +201,7 @@ func TestExtractPerMachineErrors_BatchError_DetailMissingTarget(t *testing.T) {
 	})
 	err := makeResponseError("BatchMachineClientError", 400, string(body))
 
-	perMachine := map[string]*HandlableError{"m-1": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil}
 	extractErr := extractPerMachineErrors(err, perMachine)
 	require.Error(t, extractErr, "detail without target should be operational error")
 	assert.Contains(t, extractErr.Error(), "missing target")
@@ -217,7 +218,7 @@ func TestExtractPerMachineErrors_BatchError_DetailTargetsUnknownMachine(t *testi
 	})
 	err := makeResponseError("BatchMachineClientError", 400, string(body))
 
-	perMachine := map[string]*HandlableError{"m-1": nil, "m-2": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil, "m-2": nil}
 	extractErr := extractPerMachineErrors(err, perMachine)
 	require.Error(t, extractErr, "detail targeting unknown machine should be operational error")
 	assert.Contains(t, extractErr.Error(), "unknown-machine")
@@ -229,7 +230,7 @@ func TestExtractPerMachineErrors_NonBatch_WrappedARMFormat(t *testing.T) {
 	body := `{"error":{"code":"ResourceGroupNotFound","message":"Resource group 'rg' could not be found."}}`
 	err := makeResponseError("ResourceGroupNotFound", 404, body)
 
-	perMachine := map[string]*HandlableError{"m-1": nil, "m-2": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil, "m-2": nil}
 	extractErr := extractPerMachineErrors(err, perMachine)
 	require.NoError(t, extractErr)
 
@@ -244,7 +245,7 @@ func TestExtractPerMachineErrors_NonBatch_FlatAKSFormat(t *testing.T) {
 	body := `{"code":"BadRequest","message":"Agent pool 'np' is not in 'Machines' mode.","subcode":"","details":null}`
 	err := makeResponseError("BadRequest", 400, body)
 
-	perMachine := map[string]*HandlableError{"m-1": nil, "m-2": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil, "m-2": nil}
 	extractErr := extractPerMachineErrors(err, perMachine)
 	require.NoError(t, extractErr)
 
@@ -256,21 +257,21 @@ func TestExtractPerMachineErrors_NonBatch_FlatAKSFormat(t *testing.T) {
 
 func TestExtractPerMachineErrors_NonResponseError_ContextCanceled(t *testing.T) {
 	t.Parallel()
-	perMachine := map[string]*HandlableError{"m-1": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil}
 	extractErr := extractPerMachineErrors(context.Canceled, perMachine)
 	require.Error(t, extractErr)
 }
 
 func TestExtractPerMachineErrors_NonResponseError_ContextDeadlineExceeded(t *testing.T) {
 	t.Parallel()
-	perMachine := map[string]*HandlableError{"m-1": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil}
 	extractErr := extractPerMachineErrors(context.DeadlineExceeded, perMachine)
 	require.Error(t, extractErr)
 }
 
 func TestExtractPerMachineErrors_NonResponseError_PlainError(t *testing.T) {
 	t.Parallel()
-	perMachine := map[string]*HandlableError{"m-1": nil}
+	perMachine := map[string]*offerings.HandlableError{"m-1": nil}
 	extractErr := extractPerMachineErrors(fmt.Errorf("network error"), perMachine)
 	require.Error(t, extractErr)
 }
