@@ -49,13 +49,7 @@ func newExecutor(realClient AKSMachinesCreateAPI) *executor {
 
 // executeBatch is the batcher.ExecuteBatch — it sends a batch to Azure as one
 // API call, then distributes results back to each request's channel.
-//
-// Uses context.Background() intentionally: a batch serves multiple callers with
-// different deadlines, and canceling an in-flight PUT mid-request risks creating
-// phantom Azure resources that Karpenter doesn't track.
-func (e *executor) executeBatch(batch *batcher.Batch[aksMachineCreatePayload, *HandlableError]) {
-	ctx := context.Background()
-
+func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMachineCreatePayload, *HandlableError]) {
 	log.FromContext(ctx).Info("executing an AKS machines header batch",
 		"ID", batch.ID,
 		"size", len(batch.Requests),
