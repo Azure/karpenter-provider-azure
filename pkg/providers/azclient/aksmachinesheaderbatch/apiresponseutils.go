@@ -106,7 +106,8 @@ func parsePerMachineDetails(respErr *azcore.ResponseError) ([]*armcontainerservi
 
 	// Use different parsing logic based on the error code, since the location of details[] is
 	// different for BatchMachineInternalServerError vs BatchMachineClientError. This is per the contract.
-	if respErr.ErrorCode == BatchMachineInternalServerError {
+	switch respErr.ErrorCode {
+	case BatchMachineInternalServerError:
 		// Details are JSON-encoded inside the message field.
 		var inner struct {
 			Details []*armcontainerservice.ErrorDetail `json:"details"`
@@ -115,7 +116,7 @@ func parsePerMachineDetails(respErr *azcore.ResponseError) ([]*armcontainerservi
 			return nil, fmt.Errorf("failed to parse BatchMachineInternalServerError message JSON: %w", err)
 		}
 		return inner.Details, nil
-	} else if respErr.ErrorCode == BatchMachineClientError {
+	case BatchMachineClientError:
 		// Details are at the top level.
 		return errorDetail.Details, nil
 	}

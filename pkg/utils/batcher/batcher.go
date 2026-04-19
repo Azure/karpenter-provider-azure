@@ -172,7 +172,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			// Woken up, as there's a new request and enqueuement. Then:
 			b.waitForIdle()
 			if b.ctx.Err() != nil {
-				return // batcher context cancelled, drain
+				return // batcher context canceled, drain
 			}
 			// Note: the timing window is shared across all batch keys. A late-arriving
 			// request for key B resets the idle timer even if key A's batch was already
