@@ -324,7 +324,11 @@ func runSharedAKSMachineAPITests() {
 		})
 
 		// Note: currently, we do not support different offerings requirements for the NodeClaim with the same name that attempted creation recently. The same applies with VM-based provisioning.
+		// These tests verify the "existing machine reuse" behavior during create, which is specific to the non-batch path.
 		It("should handle AKS machine create - found in get, with the same requirements", func() {
+			if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				Skip("existing machine reuse is not implemented in batch mode")
+			}
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
 			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -398,6 +402,9 @@ func runSharedAKSMachineAPITests() {
 		})
 
 		It("should handle AKS machine create failures - not found in get, but somehow found during create, although with same configuration", func() {
+			if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				Skip("existing machine reuse is not implemented in batch mode")
+			}
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
 			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -464,6 +471,9 @@ func runSharedAKSMachineAPITests() {
 		})
 
 		It("should handle AKS machine create failures - not found in get, but somehow found during create, although with conflicted configuration", func() {
+			if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				Skip("existing machine reuse is not implemented in batch mode")
+			}
 			// Create a fresh nodeClaim with explicit requirements so we know exactly what it will have
 			firstNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
