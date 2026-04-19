@@ -18,10 +18,10 @@ package aksmachinesheaderbatch
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 )
 
@@ -37,19 +37,7 @@ type AKSMachinesHeaderBatchAPI interface {
 	//   API errors, but nothing else).
 	// - The fact that HandlableError is considered one of the "expected" states in this
 	//   context, just not ideal. Operational error, on the other hand, is more of a bug.
-	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) (*HandlableError, error)
-}
-
-// HandlableError is a code + message pair extracted from an API error response.
-// It is intentionally minimal and API-agnostic — the caller decides how to interpret it.
-type HandlableError struct {
-	Code    string
-	Message string
-}
-
-// Implement the error interface so it can be returned as an error type if needed.
-func (e *HandlableError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) (*offerings.HandlableError, error)
 }
 
 // We don't need the rest of machine API interface. Just create.
@@ -62,13 +50,13 @@ type AKSMachinesCreateAPI interface {
 // by resource path + template hash and dispatched to the executor, which
 // calls AKSMachinesCreateAPI.BeginCreateOrUpdate with the BatchPutMachine header.
 type Client struct {
-	b *batcher.Batcher[aksMachineCreatePayload, *HandlableError]
+	b *batcher.Batcher[aksMachineCreatePayload, *offerings.HandlableError]
 }
 
 func NewClient(ctx context.Context, aksMachinesClient AKSMachinesCreateAPI, opts batcher.Options) *Client {
 	exec := newExecutor(aksMachinesClient)
 
-	b := batcher.New[aksMachineCreatePayload, *HandlableError](
+	b := batcher.New[aksMachineCreatePayload, *offerings.HandlableError](
 		ctx,
 		determineBatchKey,
 		exec.executeBatch,
@@ -88,7 +76,7 @@ func (c *Client) BeginCreateWithBatch(
 	agentPoolName string,
 	machineName string,
 	machine *armcontainerservice.Machine,
-) (*HandlableError, error) {
+) (*offerings.HandlableError, error) {
 	select {
 	case response := <-c.b.Enqueue(aksMachineCreatePayload{
 		resourceGroupName: resourceGroupName,
