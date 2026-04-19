@@ -23,7 +23,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 )
@@ -38,15 +37,12 @@ const (
 // extractPerMachineErrors takes an input map that should be pre-populated with all machine names in the batch,
 // then fills in the corresponding HandlableError for each machine based on the API error.
 // If the API error code is not a recognized batch error code, the whole error (top-level code/message) will be applied to all machines.
-func extractPerMachineErrors(apiError error, perMachineErrors map[string]*offerings.HandlableError) error {
+func extractPerMachineErrors(apiError error, perMachineErrors map[string]*HandlableError) error {
 	// Design notes:
-	// - The logic/API assumptions are based on the contract noted in the design doc for batch (0010-aks-machines-batch-creation.md).
+	// - The logic/API assumptions are based on the contract noted in the design doc for batch (0009-aks-machines-batch-creation.md).
 	// - This function assumes that the contract is upheld strictly. Any deviation will result in an error, aborting the operation and failing the whole batch.
 	// - For the case where the whole error will be applied to all machines, we made an ASSUMPTION that the top-level code/message is enough to be used by handle logic.
 	// - perMachineErrors being pre-populated will help validate that no unexpected machine names are referenced by the API error.
-	// - The contract and parsing being fragile is a known issue. It is due to server-side and Azure SDK's technical limitations.
-	// 	 Given the impact, the accepted trade-off is that it is not worth solving now. Upcoming ARM batch integration is expected to be a natural resolution.
-	//   See design doc for details.
 
 	var respErr *azcore.ResponseError
 	if !errors.As(apiError, &respErr) {
@@ -72,7 +68,7 @@ func extractPerMachineErrors(apiError error, perMachineErrors map[string]*offeri
 				return fmt.Errorf("API error detail references machine %q which is not in the batch: Code=%q Message=%q", *d.Target, lo.FromPtr(d.Code), lo.FromPtr(d.Message))
 			}
 
-			perMachineErrors[*d.Target] = &offerings.HandlableError{
+			perMachineErrors[*d.Target] = &HandlableError{
 				Code:    lo.FromPtr(d.Code),
 				Message: lo.FromPtr(d.Message),
 			}
@@ -109,8 +105,7 @@ func parsePerMachineDetails(respErr *azcore.ResponseError) ([]*armcontainerservi
 
 	// Use different parsing logic based on the error code, since the location of details[] is
 	// different for BatchMachineInternalServerError vs BatchMachineClientError. This is per the contract.
-	switch respErr.ErrorCode {
-	case BatchMachineInternalServerError:
+	if respErr.ErrorCode == BatchMachineInternalServerError {
 		// Details are JSON-encoded inside the message field.
 		var inner struct {
 			Details []*armcontainerservice.ErrorDetail `json:"details"`
@@ -119,7 +114,7 @@ func parsePerMachineDetails(respErr *azcore.ResponseError) ([]*armcontainerservi
 			return nil, fmt.Errorf("failed to parse BatchMachineInternalServerError message JSON: %w", err)
 		}
 		return inner.Details, nil
-	case BatchMachineClientError:
+	} else if respErr.ErrorCode == BatchMachineClientError {
 		// Details are at the top level.
 		return errorDetail.Details, nil
 	}
@@ -127,7 +122,7 @@ func parsePerMachineDetails(respErr *azcore.ResponseError) ([]*armcontainerservi
 }
 
 // parseTopLevelError extracts the top-level code + message from an API error response body.
-func parseTopLevelError(respErr *azcore.ResponseError) (*offerings.HandlableError, error) {
+func parseTopLevelError(respErr *azcore.ResponseError) (*HandlableError, error) {
 	body, err := utils.ReadResponseBody(respErr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse response body: %w", err)
@@ -144,7 +139,7 @@ func parseTopLevelError(respErr *azcore.ResponseError) (*offerings.HandlableErro
 		Error *armcontainerservice.ErrorDetail `json:"error"`
 	}
 	if err := json.Unmarshal(body, &wrapped); err == nil && wrapped.Error != nil {
-		return &offerings.HandlableError{Code: lo.FromPtr(wrapped.Error.Code), Message: lo.FromPtr(wrapped.Error.Message)}, nil
+		return &HandlableError{Code: lo.FromPtr(wrapped.Error.Code), Message: lo.FromPtr(wrapped.Error.Message)}, nil
 	}
 
 	// Try flat (AKS RP errors).
@@ -153,5 +148,5 @@ func parseTopLevelError(respErr *azcore.ResponseError) (*offerings.HandlableErro
 	if err := json.Unmarshal(body, &flat); err != nil {
 		return nil, fmt.Errorf("failed to parse API error body: %w", err)
 	}
-	return &offerings.HandlableError{Code: lo.FromPtr(flat.Code), Message: lo.FromPtr(flat.Message)}, nil
+	return &HandlableError{Code: lo.FromPtr(flat.Code), Message: lo.FromPtr(flat.Message)}, nil
 }

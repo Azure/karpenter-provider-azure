@@ -151,7 +151,7 @@ func TestExecutorSingleAPICallForBatch(t *testing.T) {
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, map[string]string{"env": "test"}))
 	r3 := makeReq("m-3", tpl("Standard_D2s_v3", []string{"1", "2"}, map[string]string{"env": "staging"}))
 
-	exec.executeBatch(makeBatch(r1, r2, r3))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2, r3))
 
 	assert.Equal(t, int32(1), mock.count.Load(), "3 machines should produce exactly 1 API call")
 	for i, resp := range awaitAll(t, r1, r2, r3) {
@@ -165,7 +165,7 @@ func TestExecutorClearsPerMachineFieldsFromBody(t *testing.T) {
 	exec := newExecutor(mock)
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"k": "v"}))
-	exec.executeBatch(makeBatch(r1))
+	exec.executeBatch(context.Background(), makeBatch(r1))
 
 	calls := mock.snapshot()
 	require.Len(t, calls, 1)
@@ -182,7 +182,7 @@ func TestExecutorAttachesPerMachineEntriesToContext(t *testing.T) {
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"a": "1"}))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2", "3"}, map[string]string{"b": "2"}))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	calls := mock.snapshot()
 	require.Len(t, calls, 1)
@@ -206,7 +206,7 @@ func TestExecutorDistributesErrorToAllCallers(t *testing.T) {
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
 		// Plain error (not *azcore.ResponseError) → extractPerMachineErrors fails → operational error
@@ -286,8 +286,8 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 	assert.NotEqual(t, key1, key2, "different resource paths should produce different batch keys")
 
 	// Execute each as separate batch (as the batcher would)
-	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r1}})
-	exec.executeBatch(&batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r2}})
+	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key1, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r1}})
+	exec.executeBatch(context.Background(), &batcher.Batch[aksMachineCreatePayload, *HandlableError]{Key: key2, Requests: []*batcher.BatchedRequest[aksMachineCreatePayload, *HandlableError]{r2}})
 
 	assert.Equal(t, int32(2), mock.count.Load(), "different resource paths → 2 API calls")
 
@@ -368,7 +368,7 @@ func TestExecutorBatchClientError_PartialFailure(t *testing.T) {
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
 	r3 := makeReq("m-3", tpl("Standard_D2s_v3", []string{"3"}, nil))
-	exec.executeBatch(makeBatch(r1, r2, r3))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2, r3))
 
 	resps := awaitAll(t, r1, r2, r3)
 	// m-1: success (no operational error, no API error)
@@ -394,7 +394,7 @@ func TestExecutorBatchClientError_AllFail(t *testing.T) {
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	resps := awaitAll(t, r1, r2)
 	assert.NoError(t, resps[0].Err)
@@ -415,7 +415,7 @@ func TestExecutorBatchInternalServerError_PartialFailure(t *testing.T) {
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	resps := awaitAll(t, r1, r2)
 	assert.NoError(t, resps[0].Err)
@@ -435,7 +435,7 @@ func TestExecutorBatchInternalServerError_AllFail(t *testing.T) {
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	resps := awaitAll(t, r1, r2)
 	assert.NoError(t, resps[0].Err)
@@ -452,7 +452,7 @@ func TestExecutorNonBatchError_FallsBackToDistributeAll(t *testing.T) {
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
 		require.Error(t, resp.Err)
@@ -478,7 +478,7 @@ func TestExecutorUnknownBatchErrorCode_DistributesAsSingleAPIError(t *testing.T)
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
 		assert.NoError(t, resp.Err)
@@ -502,7 +502,7 @@ func TestExecutorBatchErrorMalformedBody_DistributesAsOperationalError(t *testin
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
 		require.Error(t, resp.Err)
@@ -521,7 +521,7 @@ func TestExecutorBatchErrorNoRawResponse_DistributesAsOperationalError(t *testin
 
 	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
 	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	exec.executeBatch(makeBatch(r1, r2))
+	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
 		require.Error(t, resp.Err)

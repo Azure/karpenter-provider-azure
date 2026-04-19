@@ -57,8 +57,8 @@ type BatchedRequest[RequestPayload, ResponsePayload any] struct {
 
 // Response is used by ExecuteBatch to send a response to each original request.
 type Response[ResponsePayload any] struct {
-	Payload ResponsePayload // The response payload to send back to the caller (e.g., a poller for async operations, or struct{} if unused)
-	Err     error
+	Payload ResponsePayload // The response payload to send back to the caller (e.g., a poller for async operations and API errors)
+	Err     error           // Operational error (e.g., batch execution failure) to send back to the caller
 }
 
 // DetermineBatchKey computes a grouping key from a payload that will be batched from.
@@ -69,7 +69,7 @@ type DetermineBatchKey[RequestPayload any] func(payload *RequestPayload) string
 // ExecuteBatch is called when a batch fires by the batcher. It receives the batch
 // and must send a response to every request's ResponseChan.
 // The caller module must provide this.
-type ExecuteBatch[RequestPayload, ResponsePayload any] func(batch *Batch[RequestPayload, ResponsePayload])
+type ExecuteBatch[RequestPayload, ResponsePayload any] func(ctx context.Context, batch *Batch[RequestPayload, ResponsePayload])
 
 // Options configures the batching behavior.
 //
@@ -270,7 +270,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterati
 				}
 			}()
 
-			b.executeBatch(batch)
+			b.executeBatch(b.ctx, batch)
 		}(batch)
 	}
 }

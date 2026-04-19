@@ -18,6 +18,7 @@ package aksmachinesheaderbatch
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
@@ -30,7 +31,25 @@ type AKSMachinesHeaderBatchAPI interface {
 	//   - (*HandlableError, nil):  handlable error — the machine was not created
 	//   - (nil, error):      		operational error (e.g., parsing failure)
 	//   - (nil, nil):        		success — machine creation started
+	// Design note: the separation of errors is a result of:
+	// - The different formats of the error that the API returned
+	// - What the caller likely wants to do with them (e.g., look at code + message for
+	//   API errors, but nothing else).
+	// - The fact that HandlableError is considered one of the "expected" states in this
+	//   context, just not ideal. Operational error, on the other hand, is more of a bug.
 	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) (*HandlableError, error)
+}
+
+// HandlableError is a code + message pair extracted from an API error response.
+// It is intentionally minimal and API-agnostic — the caller decides how to interpret it.
+type HandlableError struct {
+	Code    string
+	Message string
+}
+
+// Implement the error interface so it can be returned as an error type if needed.
+func (e *HandlableError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
 }
 
 // We don't need the rest of machine API interface. Just create.
