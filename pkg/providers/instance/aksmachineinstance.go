@@ -574,7 +574,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 ) (*AKSMachinePromise, error) {
 	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
+		he := offerings.ErrorToHandlableError(err)
+		if he != nil {
+			return nil, p.handleMachineBeginCreateError(ctx, aksMachineName, instanceType, zone, capacityType, he)
+		}
+		return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
 	}
 
 	// Get once after begin create to retrieve VMResourceID.
