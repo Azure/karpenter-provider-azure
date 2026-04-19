@@ -178,11 +178,9 @@ func NewEnvironment(t *testing.T) *Environment {
 	if azureEnv.InClusterController {
 		azureEnv.MachineAgentPoolName = "testmpool"
 	}
-	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
-	// > Note: this only has to occur once per test, since its just a container for the machines
-	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
+	// Confirm we have a machine pool
 	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
-		azureEnv.ExpectRunInClusterControllerWithMachineMode()
+		azureEnv.ExpectMachinesAgentPoolExists()
 	}
 	return azureEnv
 }
