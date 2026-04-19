@@ -27,12 +27,7 @@ import (
 
 // batchPutMachineHeader is the JSON structure sent via HTTP header to Azure.
 type batchPutMachineHeader struct {
-	VMSkus        vmSkus         `json:"vmSkus"`
 	BatchMachines []MachineEntry `json:"batchMachines"`
-}
-
-type vmSkus struct {
-	Value []interface{} `json:"value"`
 }
 
 type MachineEntry struct {
@@ -59,7 +54,6 @@ func buildBatchHeader(batch *batcher.Batch[aksMachineCreatePayload, *HandlableEr
 	}
 
 	header := batchPutMachineHeader{
-		VMSkus:        vmSkus{Value: []interface{}{}},
 		BatchMachines: entries,
 	}
 
