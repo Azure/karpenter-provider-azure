@@ -961,8 +961,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
 	}
 	if handlableError != nil {
-		// Currently, we do not handle any error. So, just push it downstream.
-		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, handlableError)
+		return nil, p.handleMachineBeginCreateError(ctx, aksMachineName, instanceType, zone, capacityType, handlableError)
 	}
 
 	// Get once after begin create to retrieve VMResourceID.
