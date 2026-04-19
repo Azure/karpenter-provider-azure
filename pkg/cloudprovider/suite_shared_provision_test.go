@@ -248,7 +248,8 @@ func isVMMode() bool {
 
 // isAKSMachineMode returns true when the current provision mode uses AKS Machine API.
 func isAKSMachineMode() bool {
-	return consts.IsAKSMachineAPIMode(options.FromContext(ctx).ProvisionMode)
+	mode := options.FromContext(ctx).ProvisionMode
+	return mode == consts.ProvisionModeAKSMachineAPI || mode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
 // setProvisioningError injects a provisioning error by error type constant,
