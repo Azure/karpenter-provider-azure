@@ -432,7 +432,7 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 // beginCreateMachine starts the creation of an AKS machine instance.
 // The returned AKSMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
-// nolint: gocyclo
+//nolint:gocyclo
 func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
