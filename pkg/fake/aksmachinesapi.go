@@ -391,6 +391,11 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 		return nil, buildFakeBatchError(perMachineErrors)
 	}
 
+	// If there are per-machine errors, build and return a batch error response
+	if len(perMachineErrors) > 0 {
+		return nil, buildFakeBatchError(perMachineErrors)
+	}
+
 	// Enrich input.AKSMachine with the primary entry's zones/tags so that
 	// CalledWithInput captures meaningful per-machine data (not the cleared template).
 	input.AKSMachine = primaryMachine
