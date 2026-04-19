@@ -141,8 +141,8 @@ type DefaultAKSMachineProvider struct {
 	clusterName                string
 	aksMachinesPoolName        string // Only support one AKS machine pool at a time, for now.
 	aksMachinesPoolLocation    string
-	errorHandling              *offerings.ErrorDetailHandler
-	syncErrorHandling          *offerings.ResponseErrorHandler
+	provisioningErrorHandling  *offerings.ErrorDetailHandler
+	beginCreateErrorHandling   *offerings.HandlableErrorHandler
 	deletingMachines           sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu         sync.RWMutex
 }
@@ -169,8 +169,8 @@ func NewAKSMachineProvider(
 		clusterName:                clusterName,
 		aksMachinesPoolName:        aksMachinesPoolName,
 		aksMachinesPoolLocation:    aksMachinesPoolLocation,
-		errorHandling:              offerings.NewErrorDetailHandler(offeringsCache),
-		syncErrorHandling:          offerings.NewMachineAPISyncErrorHandler(offeringsCache),
+		provisioningErrorHandling:  offerings.NewErrorDetailHandler(offeringsCache),
+		beginCreateErrorHandling:   offerings.NewMachineBeginCreateErrorHandler(offeringsCache),
 		deletingMachines:           sets.New[string](),
 	}
 
@@ -479,7 +479,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
-		return nil, p.handleMachineSyncError(ctx, aksMachineName, instanceType, zone, capacityType, err)
+		he := offerings.ErrorToHandlableError(err)
+		if he != nil {
+			return nil, p.handleMachineBeginCreateError(ctx, aksMachineName, instanceType, zone, capacityType, he)
+		}
+		return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
 	}
 
 	// Get once after begin create to retrieve VMResourceID.
@@ -566,7 +570,7 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 		return fmt.Errorf("failed to get instance type %q: %w, provisioning error left unhandled: code=%s, message=%s", instanceType.Name, skuErr, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
 	}
 
-	handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, innerError)
+	handledError := p.provisioningErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, innerError)
 	if handledError != nil {
 		// If error is handled, return it (wrapped)
 		return fmt.Errorf("failed to create AKS machine %q during %s, handled provisioning error: %w", aksMachineName, phase, handledError)
@@ -575,18 +579,18 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 	return fmt.Errorf("failed to create AKS machine %q during %s, unhandled provisioning error: code=%s, message=%s", aksMachineName, phase, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
 }
 
-func (p *DefaultAKSMachineProvider) handleMachineSyncError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, syncErr error) error {
+func (p *DefaultAKSMachineProvider) handleMachineBeginCreateError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, he *offerings.HandlableError) error {
 	sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
 	if skuErr != nil {
-		return fmt.Errorf("failed to get instance type %q: %w, sync error left unhandled: %w", instanceType.Name, skuErr, syncErr)
+		return fmt.Errorf("failed to get instance type %q: %w, begin create error left unhandled: %w", instanceType.Name, skuErr, he)
 	}
 
-	handledError := p.syncErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, syncErr)
+	handledError := p.beginCreateErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, he)
 	if handledError != nil {
-		return fmt.Errorf("failed to begin create AKS machine %q, handled sync error: %w", aksMachineName, handledError)
+		return fmt.Errorf("failed to begin create AKS machine %q, handled error: %w", aksMachineName, handledError)
 	}
 
-	return fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, syncErr)
+	return fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, he)
 }
 
 func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
