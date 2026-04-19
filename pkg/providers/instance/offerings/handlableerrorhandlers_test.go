@@ -48,11 +48,6 @@ func (b *handlableErrorTestCaseBuilder) withInstanceType(offerings ...offering) 
 	return b
 }
 
-func (b *handlableErrorTestCaseBuilder) withEmptyInstanceType() *handlableErrorTestCaseBuilder {
-	b.tc.instanceType = &cloudprovider.InstanceType{}
-	return b
-}
-
 func (b *handlableErrorTestCaseBuilder) withZoneAndCapacity(zone, capacityType string) *handlableErrorTestCaseBuilder {
 	b.tc.zone = zone
 	b.tc.capacityType = capacityType
@@ -61,11 +56,6 @@ func (b *handlableErrorTestCaseBuilder) withZoneAndCapacity(zone, capacityType s
 
 func (b *handlableErrorTestCaseBuilder) withHandlableError(code, message string) *handlableErrorTestCaseBuilder {
 	b.tc.he = &HandlableError{Code: code, Message: message}
-	return b
-}
-
-func (b *handlableErrorTestCaseBuilder) withNilHandlableError() *handlableErrorTestCaseBuilder {
-	b.tc.he = nil
 	return b
 }
 
