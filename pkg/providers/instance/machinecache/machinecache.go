@@ -112,7 +112,7 @@ type MachineCache struct {
 }
 
 // NewMachineListCache creates a new cache instance with a background worker for automatic refresh.
-// The background worker will exit when the provided context is cancelled.
+// The background worker will exit when the provided context is canceled.
 func NewMachineListCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
 	cache := &MachineCache{
 		client:               client,
