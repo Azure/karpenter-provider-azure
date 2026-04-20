@@ -58,7 +58,3 @@ runs:
       AZURE_ACR_NAME: ${{ inputs.acr_name }}
     run: |
       make ci-install
-  - name: taint nodes as karpenter-system
-    shell: bash
-    run: |
-      make az-taintnodes

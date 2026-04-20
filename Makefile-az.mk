@@ -58,7 +58,6 @@ az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest          
 	yq -i '.manifests.helm.releases[0].overrides.controller.resources.requests = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
 	yq -i '.manifests.helm.releases[0].overrides.controller.resources.limits   = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
 	$(MAKE) az-run
-	$(MAKE) az-taintsystemnodes
 	kubectl apply -f examples/v1/perftest.yaml
 	kubectl apply -f examples/workloads/inflate.yaml
 	# make az-mon-access
@@ -95,22 +94,18 @@ az-cleanup: ## Delete the deployment
 	skaffold delete || true
 
 az-e2etests: az-cleanenv ## Run e2etests
-	$(MAKE) az-taintnodes
 	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
 	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
 	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
 	AZURE_ACR_NAME=$(AZURE_ACR_NAME) \
 	$(MAKE) e2etests
-	$(MAKE) az-untaintnodes
 
 az-upstream-e2etests: az-cleanenv ## Run upstream e2etests
-	$(MAKE) az-taintnodes
 	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
 	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
 	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
 	AZURE_ACR_NAME=$(AZURE_ACR_NAME) \
 	$(MAKE) upstream-e2etests
-	$(MAKE) az-untaintnodes
 
 # ---------------------------------------------
 # CI targets (intended for use in CI pipelines)
@@ -419,16 +414,6 @@ az-rmnodeclasses-fin: ## Remove Karpenter finalizer from all nodeclasses (use wi
 
 az-rmnodeclaims: ## kubectl delete all nodeclaims; don't wait for finalizers (use with care!)
 	kubectl delete --wait=false nodeclaims --all
-
-az-taintsystemnodes: ## Taint all system nodepool nodes
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --selector='kubernetes.azure.com/mode=system' --overwrite
-az-untaintsystemnodes: ## Untaint all system nodepool nodes
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --selector='kubernetes.azure.com/mode=system' --overwrite
-
-az-taintnodes:
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
-az-untaintnodes:
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all --overwrite
 
 az-perftest1: ## Test scaling out/in (1 VM)
 	hack/azure/perftest.sh 1

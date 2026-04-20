@@ -37,7 +37,7 @@ import (
 var _ = Describe("FIPS", Label("runner"), func() {
 	Context("FIPS Validation", func() {
 		It("should reject FIPS without SIG access", func() {
-			if !env.InClusterController {
+			if env.UsesSharedImageGallery() {
 				Skip("Testing FIPS usage cleanly fails without SIG access only makes sense in self-hosted mode - NAP has SIG access")
 			}
 
@@ -63,7 +63,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 
 	Context("FIPS Provisioning", func() {
 		BeforeEach(func() {
-			if env.InClusterController {
+			if !env.UsesSharedImageGallery() {
 				Skip("FIPS tests require SIG access - skipping in self-hosted mode")
 			}
 		})

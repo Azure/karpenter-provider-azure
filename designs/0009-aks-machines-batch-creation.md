@@ -2,7 +2,7 @@
 
 **Author:** @comtalyst
 
-**Last updated:** Apr 16, 2026
+**Last updated:** Apr 19, 2026
 
 **Status:** Completed
 
@@ -58,7 +58,7 @@ Machine name, tags, and zone are selected as machine-unique fields. Other fields
 
 #### Errors
 
-If errors occur before creation starts server-side, they will be returned in a list of failed machines and errors. TODO: exact format.
+If errors occur before creation starts server-side, they are returned in a structured batch error response with per-machine error details. See the "Synchronous phase/batch API call error" section below for the exact format.
 
 #### Updates?
 
@@ -87,7 +87,7 @@ However, `AKSMachinesHeaderBatchAPI.BeginCreateWithBatch` does not support updat
 
 In addition, due to the poller limitations noted earlier, the batching path uses the GET-based poller (`pkg/providers/instance/aksmachinepoller`) to poll each machine individually. A separate interface has been created to make these differences in expectations clear.
 
-In this layer, both batch and non-batch share the same error handling logic. More details in "error handling" section below.
+In this layer, both batch and non-batch share similar error handling semantics, but differ in return types. Non-batch returns `error` (the raw SDK error). Batch returns `(*HandlableError, error)` — separating API errors from operational errors. See "error handling" section below for details.
 
 The divergence is handled with a simple if statement like below.
 
@@ -105,7 +105,7 @@ The "AKS machines header batch client" mentioned earlier utilizes a generic batc
 
 On `BeginCreateWithBatch`, the request is enqueued into the generic batcher, which returns a response channel to watch. The caller then blocks on this response channel.
 
-The batcher handles the grouping logic and request submission. Once the response is delivered through the response channel, `BeginCreateWithBatch` unblocks and returns, with or without an error. The SDK-returned poller is discarded at this point.
+The batcher handles the grouping logic and request submission. Once the response is delivered through the response channel, `BeginCreateWithBatch` unblocks and returns `(*HandlableError, error)`. The SDK-returned poller is discarded at this point.
 
 ### Generic batcher
 
@@ -156,7 +156,7 @@ Per-machine fields (currently only `Tags`) and read-only fields (`ETag`, `Provis
 
 1. Builds per-machine `MachineEntry` data (name, zones, tags) from each request, then constructs the `BatchPutMachine` HTTP header (JSON with per-machine entries).
 2. Calls `AKSMachinesCreateAPI.BeginCreateOrUpdate` (a narrow consumer-side view of the SDK's `MachinesClient`, defined in `aksmachinesheaderbatch`) with the header and template.
-3. If the call returns an error, the executor distributes that error to each request's response channel.
+3. If the call returns an error, the executor parses the API error response, then distributes the `HandlableError`, if exist, to each request's response channel.
 4. Otherwise, the returned SDK poller is discarded and a nil error is returned to the response channel.
 5. The caller (`client.BeginCreateBatch`) receives the response/error, then returns it to the instance provider.
 
@@ -170,7 +170,100 @@ If this is proven to be a significant gap, a solution can be proposed separately
 
 #### Synchronous phase/batch API call error
 
-Currently, an error in the batched request is treated as if every individual create in the batch had failed — the same as the non-batch case. There is no error-handling logic (e.g., quota) in this phase in either batch or non-batch. Thus, they share the same failure mode (e.g., clean-up, then retry if not timed out). TODO: per-machine error (WIP)
+##### Error format from the API
+
+AKS API uses the format defined in `armcontainerservice.ErrorDetail` for most of its responses:
+
+```go
+type ErrorDetail struct {
+  AdditionalInfo []*ErrorAdditionalInfo
+  Code *string
+  Details []*ErrorDetail
+  Message *string
+  Target *string
+}
+```
+
+The contract on errors for header batch API is as below.
+Note that the pattern inconsistencies (e.g., `BatchMachineInternalServerError`) are technical limitations of the API. They are expected to be resolved on the formal API, once available.
+
+| Condition | HTTP Status | Error Code | Response Format |
+|---|---|---|---|
+| ≥1 client error (with or without internal errors/successes) | 400 | `BatchMachineClientError` | `details[]` at top level, each with `code`, `message`, `target` (machine name) for each failed machine. Succeeded ones are omitted. |
+| 0 client errors, ≥1 internal error (with or without successes) | 500 | `BatchMachineInternalServerError` | `message` field contains JSON-encoded `{"details": [{code, message, target}]}` The list contains failed machines. Succeeded ones are omitted. |
+| Validation error from a shared machine property | 400 | varies | Normal machine error response |
+| All success | 200 | — | Normal machine resource response |
+
+For example:
+
+```json
+{
+  "code": "BatchMachineClientError",
+  "details": [
+    {
+      "code": "InvalidParameter",
+      "message": "Some bad parameter",
+      "target": "faultc8"
+    },
+    {
+      "code": "InternalOperationError",
+      "message": "Some bad parameter",
+      "target": "failti5"
+    },
+  ],
+  "message": "the following machines failed with ClientError: faultc8; the following machines failed with InternalError: failti5",
+  "subcode": ""
+}
+```
+
+```json
+{
+  "code": "BatchMachineInternalServerError",
+  "message": "{\"details\":[{\"code\":\"InternalOperationError\",\"message\":\"Some bad parameter\",\"target\":\"failti1\"}]}"
+}
+```
+
+```json
+{
+  "code": "VMSizeNotSupported",
+  "details": null,
+  "message": "Virtual Machine size: 'Invalid_VM_Size' is not supported for subscription ... in location 'eastus2'.",
+  "subcode": ""
+}
+```
+
+`aksmachinesheaderbatch` client's parsing implementation expect the contract to be followed strictly.
+
+##### Error parsing
+
+For batch error codes (`BatchMachineClientError`, `BatchMachineInternalServerError`), per-machine details are extracted and each machine receives its individual `HandlableError` (code + message); machines not listed in the error details are treated as successful.
+
+For non-batch error codes, the top-level error is distributed to all machines as `HandlableError`. We made an assumption that the top-level contains enough information for the calelr to handle. Can extend later if needed.
+
+Unexpected issues (e.g., parsing) will be treated as operational error rather than API error, thus being distributed through `err` field provided by the generic batcher instead of `HandlableError` defined by `aksmachinesheaderbatch` client.
+
+##### Error parsing: implementation
+
+AKS API's format of `ErrorDetail` is not well-supported by the SDK, which means `details` field cannot be retrieved easily. Still, the same difficulty applies to `message` field, even if it is not specific to AKS.
+Moreover, the API call may fail at ARM layer, never reaching AKS RP, which doesn't use `ErrorDetail` (e.g., not having `details` field).
+
+Given API error being SDK `azcore.ResponseError`, `aksmachinesheaderbatch` client can parse `RawResponse.Body` directly to retrieve `details` or `message` fields when needed. For AKS-unique `details`, given we need that only after seeing the batch codes, it is guaranteed that this is AKS error, and can be parsed.
+The same logic applies to other fields that have the same concern.
+
+This difficulties in parsing will continue to be an issue, especially towards the direction to move to handle AKS-based errors rather than CRP-based in a long run. The resolution is out of current scope, but could be a follow-up (e.g., an open-source library that abstract this away).
+
+##### Error type separation
+
+`BeginCreateWithBatch` returns `(*HandlableError, error)` instead of just `error`:
+
+* `*HandlableError`: struct of code and message, taken from API response. Implements `error` interface.
+* `error`: operational error (e.g., unexpected response format).
+
+The decision to separate them comes from:
+
+* The different formats of the error that the API returned. E.g., they cannot be converted to SDK-like error easily.
+* What the caller likely wants to do with them (e.g., look at code + message for API errors, no need for full SDK error).
+* The fact that HandlableError is considered one of the "expected" states in this context, just not ideal. Operational error, on the other hand, is more of a bug.
 
 #### Asynchronous phase error
 
@@ -206,7 +299,9 @@ For example, when Karpenter needs to create 5 machines with the same config:
 3. The batcher groups all 5 requests under the same key (same config = same hash). After the idle timeout passes with no new requests, the batcher fires.
 4. The executor builds a single `BatchPutMachine` HTTP header with per-machine entries (names, zones, tags), clears per-machine fields from the template body, and calls `AKSMachinesCreateAPI.BeginCreateOrUpdate` once.
 5. AKS Machine API begins creating all 5 machines and returns. The executor sends a success response to each of the 5 blocked callers via their response channels.
-   * If the API returns an error, the executor distributes it to all 5 callers. Each caller follows the error handling path.
+   * If the API returns a batch error with per-machine breakdown (i.e., `BatchMachine*Error`), the executor parses it and distributes individual `HandlableError`s to the affected callers while treating the rest as successful.
+   * If the API returns a non-batch error, the executor distributes a single `HandlableError` (top-level code + message) to all 5 callers.
+   * If the error response cannot be parsed, the executor distributes an operational error to all 5 callers.
 6. Each caller unblocks, does a GET to retrieve the machine's details, then starts polling via the GET-based poller for provisioning completion. At this point, 5 individual GET pollers are running — each ticking every 5 seconds. This is where batching shifts load from PUTs to GETs: 1 PUT was sent, but 5 × (provisioning duration / 5s) GETs follow.
 7. Response/error handling beyond this point is shared with the non-batch case.
 

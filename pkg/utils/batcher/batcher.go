@@ -32,22 +32,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Batch is a group of requests with the same key.
 type Batch[RequestPayload, ResponsePayload any] struct {
+	ID       string
 	Key      string
 	Requests []*BatchedRequest[RequestPayload, ResponsePayload]
 }
 
 // BatchedRequest is a single request (w/ payload) being batched with others.
 type BatchedRequest[RequestPayload, ResponsePayload any] struct {
-	// Caller's request context (before going into the batcher)
 	// Warning: the batcher does not currently honor per-request context cancellation.
 	// Once a request is enqueued, it stays in the batch even if the caller's context is canceled.
 	// Suggestion: support per-request cancellation guarantee, only if needed.
-	ctx context.Context
 
 	Key          string                          // Grouping key, set by the batcher after calling DetermineBatchKey
 	ResponseChan chan *Response[ResponsePayload] // Caller waits on this channel for the response after batch execution
@@ -57,8 +57,8 @@ type BatchedRequest[RequestPayload, ResponsePayload any] struct {
 
 // Response is used by ExecuteBatch to send a response to each original request.
 type Response[ResponsePayload any] struct {
-	Payload ResponsePayload // The response payload to send back to the caller (e.g., a poller for async operations, or struct{} if unused)
-	Err     error
+	Payload ResponsePayload // The response payload to send back to the caller (e.g., a poller for async operations and API errors)
+	Err     error           // Operational error (e.g., batch execution failure) to send back to the caller
 }
 
 // DetermineBatchKey computes a grouping key from a payload that will be batched from.
@@ -69,16 +69,19 @@ type DetermineBatchKey[RequestPayload any] func(payload *RequestPayload) string
 // ExecuteBatch is called when a batch fires by the batcher. It receives the batch
 // and must send a response to every request's ResponseChan.
 // The caller module must provide this.
-type ExecuteBatch[RequestPayload, ResponsePayload any] func(batch *Batch[RequestPayload, ResponsePayload])
+type ExecuteBatch[RequestPayload, ResponsePayload any] func(ctx context.Context, batch *Batch[RequestPayload, ResponsePayload])
 
 // Options configures the batching behavior.
 //
-//	Small timeouts = lower latency, more API calls
-//	Large timeouts = better batching, higher latency
+// Small timeouts = lower latency, more API calls.
+// Large timeouts = better batching, higher latency.
 type Options struct {
-	IdleTimeout  time.Duration // no new request for this long → fire
-	MaxTimeout   time.Duration // max wait time regardless of activity
-	MaxBatchSize int           // fire immediately when any batch reaches this size
+	// IdleTimeout is how long to wait with no new requests before firing the batch.
+	IdleTimeout time.Duration
+	// MaxTimeout is the maximum time a batch can remain open regardless of activity.
+	MaxTimeout time.Duration
+	// MaxBatchSize causes a batch to fire immediately once it reaches this many requests.
+	MaxBatchSize int
 }
 
 // Batcher collects requests, groups them by key, and dispatches batches
@@ -132,6 +135,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayloa
 	if !exists {
 		// First request for this key → need to initialize batch first
 		batch = &Batch[RequestPayload, ResponsePayload]{
+			ID:       uuid.New().String(),
 			Key:      req.Key,
 			Requests: make([]*BatchedRequest[RequestPayload, ResponsePayload], 0, b.opts.MaxBatchSize),
 		}
@@ -163,10 +167,12 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			return
 
 		case <-b.trigger:
+			batcherIterationID := uuid.New().String()
+			waitStartTime := time.Now()
 			// Woken up, as there's a new request and enqueuement. Then:
 			b.waitForIdle()
 			if b.ctx.Err() != nil {
-				return // batcher context cancelled, drain
+				return // batcher context canceled, drain
 			}
 			// Note: the timing window is shared across all batch keys. A late-arriving
 			// request for key B resets the idle timer even if key A's batch was already
@@ -174,7 +180,14 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			// Execution also fires for all batches at once from that shared timer.
 			// This is tolerable because requests typically arrive in bursts from the provisioner.
 			// Suggestion: if needed, we could add per-batch-key timers for more precise control, but it adds complexity.
-			b.executeBatches()
+
+			// TODO: use metrics instead?
+			log.FromContext(b.ctx).Info("batcher iteration finishing wait, ready to execute batches",
+				"batcherIterationID", batcherIterationID,
+				"waitStartTime", waitStartTime,
+				"waitDuration", time.Since(waitStartTime),
+				"batchCount", len(b.pendingBatches))
+			b.executeBatches(batcherIterationID)
 		}
 	}
 }
@@ -231,7 +244,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) anyBatchFull() bool {
 }
 
 // executeBatches atomically swaps out the batch map and dispatches all batches.
-func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches() {
+func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterationID string) {
 	// Atomically swaps out the batch map.
 	b.mu.Lock()
 	batches := b.pendingBatches
@@ -240,6 +253,12 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches() {
 
 	// Dispatch batches in parallel, as they are independent (different keys).
 	for _, batch := range batches {
+		// TODO: use metrics instead?
+		log.FromContext(b.ctx).Info("begin executing batch",
+			"batcherIterationID", batcherIterationID,
+			"ID", batch.ID,
+			"key", batch.Key,
+			"size", len(batch.Requests))
 		go func(batch *Batch[RequestPayload, ResponsePayload]) {
 			defer func() {
 				if r := recover(); r != nil {
@@ -251,7 +270,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches() {
 				}
 			}()
 
-			b.executeBatch(batch)
+			b.executeBatch(b.ctx, batch)
 		}(batch)
 	}
 }
