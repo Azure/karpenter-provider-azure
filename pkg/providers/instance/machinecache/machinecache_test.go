@@ -149,7 +149,7 @@ func TestUpdate(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			cache := NewMachineListCache(
+			cache := NewMachineCache(
 				ctx,
 				fakePager,
 				"test-rg",
@@ -224,7 +224,7 @@ func TestGet(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			c := NewMachineListCache(
+			c := NewMachineCache(
 				ctx,
 				&fakeAKSMachineClienter{},
 				"test-rg",
@@ -299,7 +299,7 @@ func TestList(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			c := NewMachineListCache(
+			c := NewMachineCache(
 				ctx,
 				&fakeAKSMachineClienter{},
 				"test-rg",
@@ -407,7 +407,7 @@ func TestPollUntilDone(t *testing.T) {
 			cacheCtx, cacheCancel := context.WithCancel(context.Background())
 			defer cacheCancel()
 
-			c := NewMachineListCache(
+			c := NewMachineCache(
 				cacheCtx,
 				&fakeAKSMachineClienter{},
 				"test-rg",
@@ -557,7 +557,7 @@ func TestIsFresh(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			c := NewMachineListCache(
+			c := NewMachineCache(
 				ctx,
 				&fakeAKSMachineClienter{},
 				"test-rg",
