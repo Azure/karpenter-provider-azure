@@ -216,7 +216,7 @@ func TestIsGPUSKUSupportedOnOS(t *testing.T) {
 	}
 }
 
-func TestHasDriverInstallationSupport(t *testing.T) {
+func TestIsDriverInstallSupported(t *testing.T) {
 	tests := []struct {
 		name   string
 		input  string
@@ -237,7 +237,7 @@ func TestHasDriverInstallationSupport(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result := HasDriverInstallationSupport(test.input)
+			result := IsDriverInstallSupported(test.input)
 			g.Expect(result).To(Equal(test.output), "Failed for input: %s", test.input)
 		})
 	}

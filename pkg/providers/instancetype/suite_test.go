@@ -2264,10 +2264,6 @@ var _ = Describe("InstanceType Provider", func() {
 				It("should include NVIDIA GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
 				})
-				// Standard_NV4ads_V710_v5 is not in the fake SKU data for southcentralus
-				PIt("should not include AMD GPU SKUs", func() {
-					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
-				})
 				It("should include non-GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
 				})
@@ -2285,10 +2281,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 				It("should include NVIDIA GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
-				})
-				// Standard_NV4ads_V710_v5 is not in the fake SKU data for southcentralus
-				PIt("should include AMD GPU SKUs", func() {
-					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NV4ads_V710_v5"))))
 				})
 				It("should include non-GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))

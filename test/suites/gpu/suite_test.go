@@ -128,6 +128,8 @@ var _ = Describe("GPU", func() {
 			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
 
 			nodePool := env.DefaultNodePool(nodeClass)
+			// Override the default requirements to force Karpenter off D-series
+			// (non-GPU) SKUs and onto an actual GPU SKU family.
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      v1beta1.LabelSKUFamily,
 				Operator: corev1.NodeSelectorOpExists,
@@ -171,6 +173,15 @@ var _ = Describe("GPU", func() {
 				int(*deployment.Spec.Replicas),
 			)
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
+
+			// Verify the node does NOT advertise nvidia.com/gpu in its allocatable
+			// resources, confirming that no GPU driver was installed (mode: None).
+			nodes := env.Monitor.CreatedNodes()
+			Expect(nodes).To(HaveLen(int(*deployment.Spec.Replicas)))
+			for _, node := range nodes {
+				_, hasGPUResource := node.Status.Allocatable[corev1.ResourceName("nvidia.com/gpu")]
+				Expect(hasGPUResource).To(BeFalse(), "node %s should not advertise nvidia.com/gpu with mode: None", node.Name)
+			}
 		},
 	)
 })

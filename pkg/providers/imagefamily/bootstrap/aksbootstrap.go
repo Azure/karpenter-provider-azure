@@ -307,9 +307,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverType = a.GPUDriverType
 		nbv.GPUImageSHA = a.GPUImageSHA
 	} else {
-		// For non-GPU nodes or GPU nodes with driverInstallation: None,
-		// ensure ConfigGPUDriverIfNeeded is false so that containerd.toml
-		// uses runc as the default runtime instead of nvidia-container-runtime
+		// For non-GPU nodes or GPU nodes with mode: None,
+		// GPUNode is set to false and ConfigGPUDriverIfNeeded is false.
+		// AgentBaker requires GPU_NODE=false to skip NVIDIA driver installation,
+		// fabric manager setup, and to use runc instead of nvidia-container-runtime.
 		// (which won't be installed without GPU driver setup).
 		nbv.ConfigGPUDriverIfNeeded = false
 	}

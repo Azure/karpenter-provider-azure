@@ -319,8 +319,8 @@ const (
 type GPU struct {
 	// mode controls GPU driver management on GPU-enabled nodes.
 	// When set to Driver (or not specified), GPU drivers are installed by AKS
-	// and only GPU SKUs with driver installation support are considered for scheduling,
-	// we are only supporting NVIDIA GPUs for driver installation via AKS.
+	// and only GPU SKUs with managed driver installation support are considered for scheduling.
+	// Currently, only NVIDIA GPUs support managed driver installation.
 	// When set to None, GPU driver installation is skipped — use this when
 	// managing GPU drivers via a GPU Operator or other external mechanism.
 	// All GPU SKUs are available for scheduling in this mode.

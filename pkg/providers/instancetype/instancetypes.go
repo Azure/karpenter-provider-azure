@@ -342,8 +342,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU
 	if !utils.IsGPUSKU(name) {
 		return true
 	}
-	// In "Install" mode, only allow GPU SKUs with driver installation support
-	return utils.HasDriverInstallationSupport(name)
+	// In "Driver" mode, only allow GPU SKUs with driver installation support
+	return utils.IsDriverInstallSupported(name)
 }
 
 // isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
