@@ -50,8 +50,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/Azure/skewer"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 var ctx context.Context
@@ -74,8 +73,8 @@ var nodePool *karpv1.NodePool
 var nodeClass *v1beta1.AKSNodeClass
 var nodeClaim *karpv1.NodeClaim
 
-var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
-var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
+var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
+var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
 func TestCloudProvider(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -154,8 +153,9 @@ func validateNodeClaimCommon(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodeP
 	Expect(nodeClaim.Labels).To(HaveKey(v1beta1.LabelSKUMemory))
 
 	// Zone validation (conditional)
-	if nodeClaim.Labels[v1.LabelTopologyZone] != "" {
-		Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(MatchRegexp(`^[a-z0-9-]+-[0-9]+$`))
+	zone := nodeClaim.Labels[v1.LabelTopologyZone]
+	if zone != "" && zone != zones.Regional {
+		Expect(zone).To(MatchRegexp(`^[a-z0-9-]+-[0-9]+$`))
 	}
 
 	// Capacity and Allocatable resources
@@ -235,8 +235,8 @@ var _ = Describe("CloudProvider", func() {
 
 			// Simulate a capacity error by marking all offerings for this instance type as unavailable
 			for _, zone := range azureEnv.Zones() {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeOnDemand)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", vmSize, zone, karpv1.CapacityTypeSpot)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU(vmSize), zone, karpv1.CapacityTypeOnDemand)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU(vmSize), zone, karpv1.CapacityTypeSpot)
 			}
 
 			// List should still return the nodeclaim with the correct instance type
@@ -250,11 +250,9 @@ var _ = Describe("CloudProvider", func() {
 			// Specify no instance types and expect to receive a capacity error
 			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"doesnotexist"}, // will not match any instance types
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"doesnotexist"}, // will not match any instance types
 				},
 			}
 
@@ -341,11 +339,9 @@ var _ = Describe("CloudProvider", func() {
 			// Specify no instance types and expect to receive a capacity error
 			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"doesnotexist"}, // will not match any instance types
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"doesnotexist"}, // will not match any instance types
 				},
 			}
 

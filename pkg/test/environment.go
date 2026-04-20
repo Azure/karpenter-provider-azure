@@ -31,12 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -46,6 +47,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 func init() {
@@ -92,7 +94,7 @@ type Environment struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	// Providers
-	InstanceTypesProvider        instancetype.Provider
+	InstanceTypesProvider        *instancetype.DefaultProvider
 	VMInstanceProvider           instance.VMProvider
 	AKSMachineProvider           instance.AKSMachineProvider
 	PricingProvider              *pricing.Provider
@@ -102,6 +104,7 @@ type Environment struct {
 	LaunchTemplateProvider       *launchtemplate.Provider
 	LoadBalancerProvider         *loadbalancer.Provider
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
+	AllocationStrategyProvider   allocationstrategy.Provider
 
 	InstanceTypeStore *nodeoverlay.InstanceTypeStore
 
@@ -210,9 +213,11 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 	)
+	allocationStrategyProvider := allocationstrategy.NewProvider()
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
+		allocationStrategyProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,
 		networkSecurityGroupProvider,
@@ -241,6 +246,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypesProvider,
+		allocationStrategyProvider,
 		imageFamilyResolver,
 		unavailableOfferingsCache,
 		subscription,
@@ -251,6 +257,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
+
+	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
+	// We can update it in individual tests as needed.
+	lo.Must0(instanceTypesProvider.UpdateInstanceTypes(ctx))
 
 	return &Environment{
 		VirtualMachinesAPI:          virtualMachinesAPI,
@@ -289,6 +299,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LaunchTemplateProvider:       launchTemplateProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
+		AllocationStrategyProvider:   allocationStrategyProvider,
 
 		InstanceTypeStore: store,
 
@@ -328,7 +339,7 @@ func (env *Environment) Reset() {
 
 func (env *Environment) Zones() []string {
 	if env.nonZonal {
-		return []string{""}
+		return []string{zones.Regional}
 	} else {
 		return []string{fake.Region + "-1", fake.Region + "-2", fake.Region + "-3"}
 	}

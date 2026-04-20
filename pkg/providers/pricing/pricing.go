@@ -57,12 +57,6 @@ type Provider struct {
 	done               chan struct{}
 }
 
-type Err struct {
-	error
-	lastOnDemandUpdateTime time.Time
-	lastSpotUpdateTime     time.Time
-}
-
 // NewPricingAPI returns a pricing API
 func NewAPI(cloud cloud.Configuration) client.PricingAPI {
 	return client.New(cloud)
@@ -190,65 +184,46 @@ func (p *Provider) updatePricing(ctx context.Context) {
 		return
 	}
 
-	prices := map[client.Item]bool{}
-	err := p.fetchPricing(ctx, processPage(prices))
+	onDemandPrices, spotPrices, err := FetchPricing(ctx, p.pricing, p.region)
 	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		log.FromContext(ctx).Error(err, "failed to fetch updated pricing, using existing pricing data",
-			"lastOnDemandUpdateTime", err.lastOnDemandUpdateTime.Format(time.RFC3339),
-			"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
-		)
+		log.FromContext(ctx).Error(err, "failed to fetch updated pricing, using existing pricing data")
 		return
 	}
 
-	onDemandPrices, spotPrices := categorizePrices(prices)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := p.UpdateOnDemandPricing(ctx, onDemandPrices); err != nil {
-			log.FromContext(ctx).Error(err, "failed to update on-demand pricing, using existing pricing data",
-				"lastOnDemandUpdateTime", err.lastOnDemandUpdateTime.Format(time.RFC3339),
-			)
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := p.UpdateSpotPricing(ctx, spotPrices); err != nil {
-			log.FromContext(ctx).Error(err, "failed to update spot pricing, using existing pricing data",
-				"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
-			)
-		}
-	}()
-
-	wg.Wait()
-}
-
-func (p *Provider) UpdateOnDemandPricing(ctx context.Context, onDemandPrices map[string]float64) *Err {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(onDemandPrices) == 0 {
-		return &Err{error: errors.New("no on-demand pricing found"), lastOnDemandUpdateTime: p.onDemandUpdateTime}
+
+	if len(onDemandPrices) > 0 {
+		p.onDemandPrices = onDemandPrices
+		p.onDemandUpdateTime = time.Now()
+		if p.cm.HasChanged("on-demand-prices", p.onDemandPrices) {
+			log.FromContext(ctx).Info("updated on-demand pricing",
+				"instanceTypeCount", len(p.onDemandPrices),
+			)
+		}
+	} else {
+		log.FromContext(ctx).Error(errors.New("no on-demand pricing found"), "using existing on-demand pricing data")
 	}
 
-	p.onDemandPrices = lo.Assign(onDemandPrices)
-	p.onDemandUpdateTime = time.Now()
-	if p.cm.HasChanged("on-demand-prices", p.onDemandPrices) {
-		log.FromContext(ctx).Info("updated on-demand pricing",
-			"instanceTypeCount", len(p.onDemandPrices),
-		)
+	if len(spotPrices) > 0 {
+		p.spotPrices = spotPrices
+		p.spotUpdateTime = time.Now()
+		if p.cm.HasChanged("spot-prices", p.spotPrices) {
+			log.FromContext(ctx).Info("updated spot pricing",
+				"instanceTypeCount", len(p.spotPrices),
+			)
+		}
+	} else {
+		log.FromContext(ctx).Error(errors.New("no spot pricing found"), "using existing spot pricing data")
 	}
-	return nil
 }
 
-func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *client.ProductsPricePage)) *Err {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// FetchPricing fetches VM pricing from the Azure retail pricing API for the given region,
+// returning on-demand and spot prices keyed by ARM SKU name.
+func FetchPricing(ctx context.Context, pricingAPI client.PricingAPI, region string) (onDemandPrices, spotPrices map[string]float64, err error) {
 	filters := []*client.Filter{
 		{
 			Field:    "priceType",
@@ -273,13 +248,16 @@ func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *cl
 		{
 			Field:    "armRegionName",
 			Operator: client.Equals,
-			Value:    p.region,
+			Value:    region,
 		}}
-	err := p.pricing.GetProductsPricePages(ctx, filters, pageHandler)
-	if err != nil {
-		return &Err{error: err, lastOnDemandUpdateTime: p.onDemandUpdateTime, lastSpotUpdateTime: p.spotUpdateTime}
+
+	prices := map[client.Item]bool{}
+	if err := pricingAPI.GetProductsPricePages(ctx, filters, processPage(prices)); err != nil {
+		return nil, nil, err
 	}
-	return nil
+
+	onDemandPrices, spotPrices = categorizePrices(prices)
+	return onDemandPrices, spotPrices, nil
 }
 
 func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePage) {
@@ -297,25 +275,9 @@ func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePag
 	}
 }
 
-func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]float64) *Err {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(spotPrices) == 0 {
-		return &Err{error: errors.New("no spot pricing found"), lastSpotUpdateTime: p.spotUpdateTime}
-	}
-
-	p.spotPrices = lo.Assign(spotPrices)
-	p.spotUpdateTime = time.Now()
-	if p.cm.HasChanged("spot-prices", p.spotPrices) {
-		log.FromContext(ctx).Info("updated spot pricing",
-			"instanceTypeCount", len(p.spotPrices),
-		)
-	}
-	return nil
-}
-
 func categorizePrices(prices map[client.Item]bool) (map[string]float64, map[string]float64) {
-	var onDemandPrices, spotPrices = map[string]float64{}, map[string]float64{}
+	onDemandPrices := map[string]float64{}
+	spotPrices := map[string]float64{}
 	for price := range prices {
 		if strings.HasSuffix(price.SkuName, " Spot") {
 			spotPrices[price.ArmSkuName] = price.RetailPrice

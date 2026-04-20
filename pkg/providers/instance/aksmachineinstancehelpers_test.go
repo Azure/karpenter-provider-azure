@@ -19,7 +19,7 @@ package instance
 import (
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -556,6 +556,29 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				}
 			})
 		})
+
+		// Previously reserved labels (kubernetes.io/k8s.io domains) were restricted by Karpenter core before 1.9.x.
+		// Now allowed on NodeClaims, they should be filtered out of NodeLabels (sent to kubelet via the AKS RP)
+		// unless they are in a kubelet-allowed namespace (e.g. kubelet.kubernetes.io).
+		DescribeTable("should filter previously reserved labels from nodeClaim.Labels",
+			func(label string, expectedInNodeLabels bool) {
+				nodeClaim.Labels = map[string]string{
+					label: "custom-value",
+				}
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand)
+
+				if expectedInNodeLabels {
+					Expect(labels).To(HaveKey(label))
+					Expect(*labels[label]).To(Equal("custom-value"))
+				} else {
+					Expect(labels).ToNot(HaveKey(label))
+				}
+			},
+			Entry("kubernetes.io (previously reserved)", "kubernetes.io/custom-label", false),
+			Entry("k8s.io (previously reserved)", "k8s.io/custom-label", false),
+			Entry("kubelet.kubernetes.io (kubelet-allowed)", "kubelet.kubernetes.io/custom-label", true),
+		)
 	})
 
 	Context("configureKubeletConfig", func() {

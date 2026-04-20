@@ -168,7 +168,7 @@ func TestMarkOfferingsUnavailableForCapacityType(t *testing.T) {
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot)
 
 	// Mark spot offerings unavailable
-	markOfferingsUnavailableForCapacityType(ctx, unavailableOfferings, instanceType, karpv1.CapacityTypeSpot, SKUNotAvailableReason, SKUNotAvailableSpotTTL)
+	markOfferingsUnavailableForCapacityType(ctx, unavailableOfferings, createDefaultCommonErrorTestSKU(), instanceType, karpv1.CapacityTypeSpot, SKUNotAvailableReason, SKUNotAvailableSpotTTL)
 
 	// Check that spot offerings are unavailable
 	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
@@ -187,7 +187,7 @@ func TestMarkAllZonesUnavailableForBothCapacityTypes(t *testing.T) {
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, zone3Spot)
 
 	// Mark all zones unavailable for both capacity types
-	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, instanceType, AllocationFailureReason, AllocationFailureTTL)
+	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, createDefaultCommonErrorTestSKU(), instanceType, AllocationFailureReason, AllocationFailureTTL)
 
 	// Check that all zones and capacity types are unavailable
 	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())

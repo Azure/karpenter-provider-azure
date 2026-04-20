@@ -37,7 +37,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -45,6 +45,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool) {
@@ -345,18 +346,14 @@ func runSharedAKSMachineAPITests() {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelTopologyZone,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
-							},
+							Key:      v1.LabelTopologyZone,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
 						},
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelInstanceTypeStable,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{"Standard_D2_v2"},
-							},
+							Key:      v1.LabelInstanceTypeStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{"Standard_D2_v2"},
 						},
 					},
 				},
@@ -404,7 +401,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Validate the returned nodeClaim has correct configuration
 			validateAKSMachineNodeClaim(nodeClaim, nodePool)
-			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")))
+			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")))
 			Expect(nodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 
@@ -422,18 +419,14 @@ func runSharedAKSMachineAPITests() {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelTopologyZone,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
-							},
+							Key:      v1.LabelTopologyZone,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
 						},
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelInstanceTypeStable,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{"Standard_D2_v2"},
-							},
+							Key:      v1.LabelInstanceTypeStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{"Standard_D2_v2"},
 						},
 					},
 				},
@@ -474,7 +467,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Validate the returned nodeClaim has correct configuration
 			validateAKSMachineNodeClaim(nodeClaim, nodePool)
-			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")))
+			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")))
 			Expect(nodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 
@@ -492,18 +485,14 @@ func runSharedAKSMachineAPITests() {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelTopologyZone,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
-							},
+							Key:      v1.LabelTopologyZone,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
 						},
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelInstanceTypeStable,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{"Standard_D2_v2"},
-							},
+							Key:      v1.LabelInstanceTypeStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{"Standard_D2_v2"},
 						},
 					},
 				},
@@ -522,18 +511,14 @@ func runSharedAKSMachineAPITests() {
 			// Change zone to create immutable configuration conflict
 			conflictedNodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelTopologyZone,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "2")}, // Different zone
-					},
+					Key:      v1.LabelTopologyZone,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{zones.MakeAKSLabelZoneFromARMZone(fake.Region, "2")}, // Different zone,
 				},
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_D2_v5"}, // Different SKU
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v5"}, // Different SKU,
 				},
 			}
 
@@ -572,7 +557,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Validate the returned nodeClaim has correct configuration
 			validateAKSMachineNodeClaim(createdConflictedNodeClaim, nodePool)
-			Expect(createdConflictedNodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(utils.MakeAKSLabelZoneFromARMZone(fake.Region, "2")))
+			Expect(createdConflictedNodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(zones.MakeAKSLabelZoneFromARMZone(fake.Region, "2")))
 			Expect(createdConflictedNodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v5"))
 			Expect(createdConflictedNodeClaim.CreationTimestamp).ToNot(BeZero())
 		})

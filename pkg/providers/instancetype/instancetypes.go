@@ -41,6 +41,8 @@ import (
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
@@ -52,7 +54,6 @@ import (
 )
 
 const (
-	InstanceTypesCacheKey = "types"
 	InstanceTypesCacheTTL = 23 * time.Hour
 )
 
@@ -61,9 +62,12 @@ type Provider interface {
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
 
 	// Return Azure Skewer Representation of the instance type
-	Get(context.Context, *v1beta1.AKSNodeClass, string) (*skewer.SKU, error)
-	//UpdateInstanceTypes(ctx context.Context) error
-	//UpdateInstanceTypeOfferings(ctx context.Context) error
+	Get(context.Context, string) (*skewer.SKU, error)
+
+	// UpdateInstanceTypes fetches instance types from Azure and updates the cache
+	UpdateInstanceTypes(ctx context.Context) error
+
+	// UpdateInstanceTypeOfferings(ctx context.Context) error
 }
 
 // assert that DefaultProvider implements Provider interface
@@ -75,16 +79,17 @@ type DefaultProvider struct {
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
 
-	// Has one cache entry for all the instance types (key: InstanceTypesCacheKey)
 	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
 	// Fully initialized Instance Types are also cached based on the set of all instance types,
 	// unavailableOfferings cache, AWSNodeClass, and kubelet configuration from the NodePool
-	mu                 sync.Mutex
 	instanceTypesCache *cache.Cache
 
 	cm *pretty.ChangeMonitor
+
 	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
 	instanceTypesSeqNum uint64
+	muInstanceTypesInfo sync.RWMutex
+	instanceTypesInfo   map[string]*skewer.SKU
 }
 
 func NewDefaultProvider(
@@ -108,18 +113,21 @@ func NewDefaultProvider(
 
 // Get all instance type options
 func (p *DefaultProvider) List(
-	ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
-	kc := nodeClass.Spec.Kubelet
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+) ([]*cloudprovider.InstanceType, error) {
+	p.muInstanceTypesInfo.RLock()
+	defer p.muInstanceTypesInfo.RUnlock()
 
-	// Get SKUs from Azure
-	skus, err := p.getInstanceTypes(ctx)
-	if err != nil {
-		return nil, err
+	if len(p.instanceTypesInfo) == 0 {
+		return nil, fmt.Errorf("no instance types found")
 	}
+
+	kc := nodeClass.Spec.Kubelet
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -128,6 +136,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
+		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -136,9 +145,9 @@ func (p *DefaultProvider) List(
 	}
 
 	// Get Viable offerings
-	/// Azure has zones availability directly from SKU info
+	// Azure has zones availability directly from SKU info
 	var result []*cloudprovider.InstanceType
-	for _, sku := range skus {
+	for _, sku := range p.instanceTypesInfo {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
@@ -168,6 +177,9 @@ func (p *DefaultProvider) List(
 		if !p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) {
 			continue
 		}
+		if !p.isInstanceTypeSupportedByArtifactStreaming(architecture, nodeClass) {
+			continue
+		}
 
 		result = append(result, instanceType)
 	}
@@ -180,12 +192,15 @@ func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 	return p.pricingProvider.LivenessProbe(req)
 }
 
-func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
-	skus, err := p.getInstanceTypes(ctx)
-	if err != nil {
-		return nil, err
+func (p *DefaultProvider) Get(ctx context.Context, instanceType string) (*skewer.SKU, error) {
+	p.muInstanceTypesInfo.RLock()
+	defer p.muInstanceTypesInfo.RUnlock()
+
+	if len(p.instanceTypesInfo) == 0 {
+		return nil, fmt.Errorf("no instance types found")
 	}
-	if sku, ok := skus[instanceType]; ok {
+
+	if sku, ok := p.instanceTypesInfo[instanceType]; ok {
 		return sku, nil
 	}
 	return nil, fmt.Errorf("instance type %s not found", instanceType)
@@ -197,14 +212,16 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
-	// If an offering is non-zonal, the availability zones will be empty.
+	// If an offering is regional (non-zonal), the availability zones will be empty.
 	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
 	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return utils.MakeAKSLabelZoneFromARMZone(p.region, zone)
+			return zones.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
 	}
-	return sets.New("") // empty string means non-zonal offering
+	// Regional (non-zonal) SKUs use zone "0" to match the label AKS places on regional nodes
+	// (topology.kubernetes.io/zone=0).
+	return sets.New(zones.Regional)
 }
 
 // TODO: review; switch to controller-driven updates
@@ -311,24 +328,34 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
 }
 
-// getInstanceTypes retrieves all instance types from skewer using some opinionated filters
-func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU, error) {
+// isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
+// is explicitly enabled, since ARM64 does not support artifact streaming.
+// When artifact streaming is not set (nil/default) or explicitly disabled, all architectures are allowed.
+func (p *DefaultProvider) isInstanceTypeSupportedByArtifactStreaming(architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
+	// Only filter when the user explicitly requested artifact streaming enabled
+	if !nodeClass.IsArtifactStreamingExplicitlyEnabled() {
+		return true
+	}
+	// Artifact streaming is explicitly enabled; exclude ARM64 since it doesn't support it
+	kubeArch := getArchitecture(architecture)
+	return kubeArch != karpv1.ArchitectureArm64
+}
+
+// UpdateInstanceTypes fetches all instance types from Azure (using skewer) and updates the cache.
+// This is called periodically by the instance type controller.
+func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	// DO NOT REMOVE THIS LOCK ----------------------------------------------------------------------------
-	// We lock here so that multiple callers to GetInstanceTypes do not result in cache misses and multiple
+	// We lock here so that multiple callers to UpdateInstanceTypes do not result in multiple
 	// calls to Resource API when we could have just made one call. This lock is here because multiple callers result
 	// in A LOT of extra memory generated from the response for simultaneous callers.
-	// (This can be made more efficient by holding a Read lock and only obtaining the Write if not in cache)
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.muInstanceTypesInfo.Lock()
+	defer p.muInstanceTypesInfo.Unlock()
 
-	if cached, ok := p.instanceTypesCache.Get(InstanceTypesCacheKey); ok {
-		return cached.(map[string]*skewer.SKU), nil
-	}
 	instanceTypes := map[string]*skewer.SKU{}
 
 	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
-		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
+		return fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
@@ -345,14 +372,18 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		}
 	}
 
+	if len(instanceTypes) == 0 {
+		return fmt.Errorf("no instance types found")
+	}
+
 	if p.cm.HasChanged("instance-types", instanceTypes) {
-		// Only update instanceTypesSeqNun with the instance types have been changed
+		// Only update instanceTypesSeqNum with the instance types have been changed
 		// This is to not create new keys with duplicate instance types option
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
 		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
 	}
-	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
-	return instanceTypes, nil
+	p.instanceTypesInfo = instanceTypes
+	return nil
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
@@ -401,7 +432,14 @@ func (p *DefaultProvider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
 // confidential VMs (DC, EC) are not yet supported by this Karpenter provider
 func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	size := sku.GetSize()
-	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
+	return skuutil.IsConfidential(size)
+}
+
+func (p *DefaultProvider) Reset() {
+	p.muInstanceTypesInfo.Lock()
+	defer p.muInstanceTypesInfo.Unlock()
+	p.instanceTypesInfo = map[string]*skewer.SKU{}
+	atomic.StoreUint64(&p.instanceTypesSeqNum, 0)
 }
 
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {

@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package utils_test
+package zones_test
 
 import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 )
@@ -50,33 +50,33 @@ func TestMakeAKSLabelZoneFromVM(t *testing.T) {
 			input: &armcompute.VirtualMachine{
 				Zones: []*string{lo.ToPtr("1")},
 			},
-			expectedError: "virtual machine is missing location",
+			expectedError: "location is required for zonal resource",
 		},
 		{
 			testName: "multiple zones",
 			input: &armcompute.VirtualMachine{
 				Zones: []*string{lo.ToPtr("1"), lo.ToPtr("2")},
 			},
-			expectedError: "virtual machine has multiple zones",
+			expectedError: "resource has multiple zones",
 		},
 		{
 			testName: "empty Zones",
 			input: &armcompute.VirtualMachine{
 				Zones: []*string{},
 			},
-			expectedZone: "",
+			expectedZone: zones.Regional,
 		},
 		{
 			testName:     "nil Zones",
 			input:        &armcompute.VirtualMachine{},
-			expectedZone: "",
+			expectedZone: zones.Regional,
 		},
 	}
 
 	for _, c := range tc {
 		g := NewWithT(t)
-		zone, err := utils.MakeAKSLabelZoneFromVM(c.input)
-		g.Expect(zone).To(Equal(c.expectedZone), c.testName)
+		z, err := zones.MakeAKSLabelZoneFromVM(c.input)
+		g.Expect(z).To(Equal(c.expectedZone), c.testName)
 		if err == nil && c.expectedError != "" {
 			g.Expect(err).To(HaveOccurred(), c.testName)
 		}
