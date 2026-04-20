@@ -110,7 +110,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           disable-telemetry: true
           egress-policy: block
@@ -163,7 +163,7 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
       - uses: ./.github/actions/install-deps
       - name: az login
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.E2E_CLIENT_ID }}
           tenant-id: ${{ secrets.E2E_TENANT_ID }}
@@ -241,7 +241,7 @@ jobs:
           location: ${{ inputs.location }}
           provision_mode: ${{ inputs.provision_mode }}
       - name: az login (refresh token before tests)
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.E2E_CLIENT_ID }}
           tenant-id: ${{ secrets.E2E_TENANT_ID }}
