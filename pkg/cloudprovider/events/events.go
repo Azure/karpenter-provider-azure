@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	AsyncProvisioningReason   = "AsyncProvisioningError"
-	NodeClassResolutionReason = "NodeClassResolutionError"
+	AsyncProvisioningReason    = "AsyncProvisioningError"
+	NodeClassResolutionReason  = "NodeClassResolutionError"
+	MachineAPIValidationReason = "MachineAPIValidationError"
 )
 
 func NodePoolFailedToResolveNodeClass(nodePool *v1.NodePool) events.Event {
@@ -56,6 +57,19 @@ func NodeClaimFailedToRegister(nodeClaim *v1.NodeClaim, err error) events.Event 
 		Type:           corev1.EventTypeWarning,
 		Reason:         AsyncProvisioningReason,
 		Message:        fmt.Sprintf("Failed to register: %s", truncateMessage(err.Error())),
+		DedupeValues:   []string{string(nodeClaim.UID)},
+	}
+}
+
+// NodeClaimMachineAPIValidationError emits an event when Machine API rejects a request
+// due to validation errors (e.g., invalid taints, labels, or kubelet config).
+// These errors indicate user-facing configuration problems that require action.
+func NodeClaimMachineAPIValidationError(nodeClaim *v1.NodeClaim, errorCode, errorMessage string) events.Event {
+	return events.Event{
+		InvolvedObject: nodeClaim,
+		Type:           corev1.EventTypeWarning,
+		Reason:         MachineAPIValidationReason,
+		Message:        fmt.Sprintf("Machine API validation error (code=%s): %s", errorCode, truncateMessage(errorMessage)),
 		DedupeValues:   []string{string(nodeClaim.UID)},
 	}
 }

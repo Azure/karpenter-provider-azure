@@ -214,6 +214,26 @@ func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
 	}
 }
 
+// AKSMachineAPIErrorValidation creates a sync error (ResponseError) for validation failures.
+var AKSMachineAPIErrorValidation = &azcore.ResponseError{
+	ErrorCode:  "InvalidParameter",
+	StatusCode: http.StatusBadRequest,
+}
+
+// AKSMachineAPIProvisioningErrorValidation creates an async provisioning error for validation failures.
+func AKSMachineAPIProvisioningErrorValidation() *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
+		Code:    lo.ToPtr("ValidationError"),
+		Message: lo.ToPtr(`Code="ValidationError" Message="The taint key 'invalid/taint/key' is not valid. A taint key must conform to the format [prefix/]name."`),
+		Details: []*armcontainerservice.ErrorDetail{
+			{
+				Code:    lo.ToPtr("InvalidParameter"),
+				Message: lo.ToPtr("The taint key 'invalid/taint/key' is not valid. A taint key must conform to the format [prefix/]name."),
+			},
+		},
+	}
+}
+
 // assert that the fake implements the interface
 var _ azapi.AKSMachinesAPI = &AKSMachinesAPI{}
 

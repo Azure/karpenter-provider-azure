@@ -219,6 +219,13 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	// Begin the creation of the instance
 	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
+		// Check if this is a validation error and emit a user-facing event if so.
+		// Validation errors (e.g., invalid taints, labels, kubelet config) indicate
+		// configuration problems that the user needs to fix. Without this event,
+		// the user only sees their pod stuck pending with no clear reason.
+		if validationErr := extractValidationErrorFromError(err); validationErr != nil {
+			c.recorder.Publish(cloudproviderevents.NodeClaimMachineAPIValidationError(nodeClaim, validationErr.Code, validationErr.Message))
+		}
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating AKS machine failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
@@ -326,6 +333,13 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 
 func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, waitErr error) {
 	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, waitErr))
+
+	// Check if this is a validation error and emit a specific user-facing event.
+	// The generic "FailedToRegister" event above contains the full error, but the
+	// validation-specific event makes it easier for users to identify configuration problems.
+	if validationErr := extractValidationErrorFromError(waitErr); validationErr != nil {
+		c.recorder.Publish(cloudproviderevents.NodeClaimMachineAPIValidationError(nodeClaim, validationErr.Code, validationErr.Message))
+	}
 
 	// Only log if context is still active to avoid logging after test completes
 	if ctx.Err() == nil {
