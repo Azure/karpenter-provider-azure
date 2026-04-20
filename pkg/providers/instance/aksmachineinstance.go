@@ -374,6 +374,7 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 	if pager == nil {
 		return nil, fmt.Errorf("failed to list AKS machines: created pager is nil")
 	}
+
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -397,6 +398,7 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 			}
 		}
 	}
+
 	return machines, nil
 }
 
