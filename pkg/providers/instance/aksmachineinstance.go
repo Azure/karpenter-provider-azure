@@ -252,7 +252,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 		}
 		return fmt.Errorf("failed to begin update AKS machine %q: %w", aksMachineName, err)
 	}
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 	if err != nil {
 		return fmt.Errorf("failed to update AKS machine %q during LRO: %w", aksMachineName, err)
 	}
@@ -419,7 +419,7 @@ func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachin
 	}
 	p.machinecache.Invalidate(aksMachineName)
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, defaultPollerOptions())
 
 	if err != nil {
 		return fmt.Errorf("failed to delete AKS machine %q during LRO: %w", aksMachineName, err)
