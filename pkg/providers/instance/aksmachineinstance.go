@@ -378,12 +378,17 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if IsAKSMachineOrMachinesPoolNotFound(err) {
+				// AKS machines pool not found. Handle gracefully.
+				// Suggestion: separate the util function to not cover more than needed?
 				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
 				break
 			}
+
 			return nil, fmt.Errorf("failed to list AKS machines: %w", err)
 		}
 		for _, aksMachine := range page.Value {
+			// Filter to only include machines created by Karpenter
+			// Check if the AKS machine has the Karpenter nodepool tag
 			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
 				if _, hasKarpenterTag := aksMachine.Properties.Tags[NodePoolTagKey]; hasKarpenterTag {
 					p.rehydrateMachine(aksMachine)
