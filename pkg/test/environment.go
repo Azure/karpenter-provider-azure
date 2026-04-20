@@ -43,6 +43,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -279,6 +280,9 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
 
+	// Disable machine cache in tests to avoid race conditions with the background worker
+	aksMachineInstanceProvider.SetMachineCacheWithOptions(machinecache.WithTTL(0), machinecache.WithCacheDisabled())
+
 	store := nodeoverlay.NewInstanceTypeStore()
 
 	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
@@ -352,6 +356,10 @@ func (env *Environment) Reset() {
 	env.PricingProvider.Reset()
 	env.AKSMachinesAPI.Reset()
 	env.AKSAgentPoolsAPI.Reset()
+
+	if p, ok := env.AKSMachineProvider.(*instance.DefaultAKSMachineProvider); ok {
+		p.SetMachineCacheWithOptions(machinecache.WithTTL(0), machinecache.WithCacheDisabled())
+	}
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()
