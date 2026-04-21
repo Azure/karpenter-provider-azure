@@ -4,6 +4,10 @@
 // (E2E tests, deflake). Uses Standard_D4ds_v5 VMs (4 vCPU, 16 GB)
 // with stateless (ephemeral) agents.
 //
+// Also creates a User-Assigned Managed Identity (UMI) and assigns it to the
+// pool. This UMI is used for E2E test authentication (az login --identity)
+// instead of GitHub OIDC/FIC, avoiding token expiry and cross-tenant issues.
+//
 // Usage:
 //   ./deploy.sh
 //
@@ -15,6 +19,7 @@ param location string = 'westus3'
 
 var poolName = 'karpenter-ci-1es-pool'
 var sku = 'Standard_D4ds_v5'
+var msiName = 'karpenter-ci-identity'
 
 // Base 1ES Image Resource IDs
 var ubuntu2404GalleryVersionResourceId = '/subscriptions/723b64f0-884d-4994-b6de-8960d049cb7e/resourceGroups/CloudTestImages/providers/Microsoft.Compute/galleries/CloudTestGallery/images/MMSUbuntu24.04-Secure/versions/latest'
@@ -49,6 +54,13 @@ var poolSettings = {
       '00:00': 0   // 5 PM Friday PST
     }
   ]
+}
+
+// User-Assigned Managed Identity for E2E test authentication.
+// The client ID of this identity should be stored as the E2E_CLIENT_ID GitHub secret.
+resource msi 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: msiName
+  location: location
 }
 
 resource agentImage2404 'Microsoft.CloudTest/images@2020-05-07' = {
@@ -88,5 +100,29 @@ resource hostedPool 'Microsoft.CloudTest/hostedpools@2020-05-07' = {
       type: 'Stateless'
       resourcePredictions: poolSettings.resourcePredictions
     }
+  }
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${msi.id}': {}
+    }
+  }
+}
+
+// Role assignment at subscription scope (must be in a module due to targetScope mismatch).
+//
+// Owner: the E2E identity needs both resource management (create/delete resource groups,
+// AKS clusters, ACR, VMs, VNets, managed identities, federated credentials) AND
+// Microsoft.Authorization/roleAssignments/write (the Makefile assigns scoped-down roles
+// like VM Contributor, Network Contributor, AcrPull, etc. to per-test Karpenter workload
+// identities). Contributor lacks roleAssignments/write, so Owner is required.
+var ownerRoleId = '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
+module ownerAssignment 'identity.bicep' = {
+  name: '${deployment().name}-owner'
+  scope: subscription()
+  params: {
+    principalId: msi.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: ownerRoleId
   }
 }
