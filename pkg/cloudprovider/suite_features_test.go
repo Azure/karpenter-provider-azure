@@ -1548,7 +1548,6 @@ var _ = Describe("CloudProvider - Features", func() {
 		})
 
 		Context("ImageReference", func() {
-			// SIG image test is now shared in pkg/cloudprovider/suite_features_test.go via runSharedImageSelectionTests
 			It("should use Community Images when options are set to UseSIG=false", func() {
 				options := test.Options(test.OptionsFields{
 					UseSIG: lo.ToPtr(false),

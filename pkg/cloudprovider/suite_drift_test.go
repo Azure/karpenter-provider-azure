@@ -310,7 +310,7 @@ var _ = Describe("CloudProvider", func() {
 	})
 
 	Context("ProvisionMode = AKSScriptless", func() {
-		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
+		BeforeEach(func() { setupProvisionModeAKSScriptlessTestEnvironment() })
 		AfterEach(func() { teardownTestEnvironment() })
 
 		Context("Drift", func() {
