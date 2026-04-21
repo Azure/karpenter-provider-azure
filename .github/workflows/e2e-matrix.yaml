@@ -22,8 +22,6 @@ on:
     secrets:
       E2E_CLIENT_ID:
         required: true
-      E2E_TENANT_ID:
-        required: true
       E2E_SUBSCRIPTION_ID:
         required: true
 
@@ -54,7 +52,6 @@ jobs:
           - Utilization
     permissions:
       contents: read
-      id-token: write
       statuses: write
     uses: ./.github/workflows/e2e.yaml
     with:
@@ -66,5 +63,4 @@ jobs:
       azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
-      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
       E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
