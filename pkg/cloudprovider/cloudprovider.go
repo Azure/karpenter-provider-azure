@@ -232,7 +232,7 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 		ctx, aksMachinePromise.AKSMachineTemplate,
 		aksMachinePromise.InstanceType,
 		aksMachinePromise.CapacityType,
-		lo.ToPtr(aksMachinePromise.Zone),
+		new(aksMachinePromise.Zone),
 		aksMachinePromise.AKSMachineID,
 		aksMachinePromise.VMResourceID,
 		false,
@@ -276,9 +276,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
 	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
 	// only held in memory.
-	c.instancePromiseWg.Add(1)
-	go func() {
-		defer c.instancePromiseWg.Done()
+	c.instancePromiseWg.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				err := fmt.Errorf("%v", r)
@@ -320,7 +318,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 				metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
 			})
 		}
-	}()
+	})
 	return nil
 }
 

@@ -41,7 +41,7 @@ func createTestSKU(name, familyName, size string, cpuCount int) *skewer.SKU {
 		Capabilities: &[]compute.ResourceSkuCapabilities{
 			{
 				Name:  lo.ToPtr(skewer.VCPUs),
-				Value: lo.ToPtr(strconv.Itoa(cpuCount)),
+				Value: new(strconv.Itoa(cpuCount)),
 			},
 		},
 	}

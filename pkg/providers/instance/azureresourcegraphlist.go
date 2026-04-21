@@ -54,7 +54,7 @@ func GetNICListQueryBuilder(rg string) *kql.Builder {
 }
 
 // createVMFromQueryResponseData converts ARG query response data into a VirtualMachine object
-func createVMFromQueryResponseData(data map[string]interface{}) (*armcompute.VirtualMachine, error) {
+func createVMFromQueryResponseData(data map[string]any) (*armcompute.VirtualMachine, error) {
 	jsonString, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
@@ -77,12 +77,12 @@ func createVMFromQueryResponseData(data map[string]interface{}) (*armcompute.Vir
 	// of the vm.ID string. This forces it to be lowercase.
 	parts := strings.Split(lo.FromPtr(vm.ID), "/")
 	parts[len(parts)-1] = strings.ToLower(parts[len(parts)-1])
-	vm.ID = lo.ToPtr(strings.Join(parts, "/"))
+	vm.ID = new(strings.Join(parts, "/"))
 	return &vm, nil
 }
 
 // createNICFromQueryResponseData converts ARG query response data into a Network Interface object
-func createNICFromQueryResponseData(data map[string]interface{}) (*armnetwork.Interface, error) {
+func createNICFromQueryResponseData(data map[string]any) (*armnetwork.Interface, error) {
 	jsonString, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
@@ -106,6 +106,6 @@ func createNICFromQueryResponseData(data map[string]interface{}) (*armnetwork.In
 	// of the nic.ID string. This forces it to be lowercase.
 	parts := strings.Split(lo.FromPtr(nic.ID), "/")
 	parts[len(parts)-1] = strings.ToLower(parts[len(parts)-1])
-	nic.ID = lo.ToPtr(strings.Join(parts, "/"))
+	nic.ID = new(strings.Join(parts, "/"))
 	return &nic, nil
 }

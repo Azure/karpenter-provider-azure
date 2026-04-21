@@ -56,7 +56,7 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				UseSIG:        lo.ToPtr(true),
+				UseSIG:        new(true),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -563,35 +563,35 @@ var _ = Describe("CloudProvider", func() {
 				// When ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
 				expectedUnavailableSKUs := []*skewer.SKU{
 					{
-						Name:   lo.ToPtr("Standard_D2_v2"),
-						Size:   lo.ToPtr("D2_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
+						Name:   new("Standard_D2_v2"),
+						Size:   new("D2_v2"),
+						Family: new("StandardDv2Family"),
 						Capabilities: &[]compute.ResourceSkuCapabilities{
 							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("2"),
+								Name:  new("vCPUs"),
+								Value: new("2"),
 							},
 						},
 					},
 					{
-						Name:   lo.ToPtr("Standard_D16_v2"),
-						Size:   lo.ToPtr("D16_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
+						Name:   new("Standard_D16_v2"),
+						Size:   new("D16_v2"),
+						Family: new("StandardDv2Family"),
 						Capabilities: &[]compute.ResourceSkuCapabilities{
 							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("16"),
+								Name:  new("vCPUs"),
+								Value: new("16"),
 							},
 						},
 					},
 					{
-						Name:   lo.ToPtr("Standard_D32_v2"),
-						Size:   lo.ToPtr("D32_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
+						Name:   new("Standard_D32_v2"),
+						Size:   new("D32_v2"),
+						Family: new("StandardDv2Family"),
 						Capabilities: &[]compute.ResourceSkuCapabilities{
 							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("32"),
+								Name:  new("vCPUs"),
+								Value: new("32"),
 							},
 						},
 					},
@@ -710,7 +710,7 @@ var _ = Describe("CloudProvider", func() {
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_DS2_v2", "Standard_F16s_v2"}})
 				pods := []*v1.Pod{}
-				for i := 0; i < 2; i++ {
+				for range 2 {
 					pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
 						ResourceRequirements: v1.ResourceRequirements{
 							Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},

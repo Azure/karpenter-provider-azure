@@ -120,7 +120,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if isDeleting {
-		nodeClaim.DeletionTimestamp = lo.ToPtr(AKSMachineTimestampToMeta(NewAKSMachineTimestamp()))
+		nodeClaim.DeletionTimestamp = new(AKSMachineTimestampToMeta(NewAKSMachineTimestamp()))
 	}
 	nodeClaim.Status.ProviderID = utils.VMResourceIDToProviderID(ctx, vmResourceID)
 	nodeClaim.Status.ImageID = aksMachineNodeImageVersion // ASSUMPTION: this doesn't need to be full image ID (should be fine on core, as the definition of ID is provider agnostic)

@@ -23,7 +23,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/golang-jwt/jwt/v5"
@@ -79,9 +78,9 @@ func (env *Environment) ExpectCreatedManagedIdentity(ctx context.Context, identi
 	By(fmt.Sprintf("creating managed identity %s in node resource group %s", identityName, env.NodeResourceGroup))
 
 	identity := armmsi.Identity{
-		Location: to.Ptr(env.Region),
+		Location: new(env.Region),
 		Tags: map[string]*string{
-			"test": to.Ptr("karpenter-e2e"),
+			"test": new("karpenter-e2e"),
 		},
 	}
 

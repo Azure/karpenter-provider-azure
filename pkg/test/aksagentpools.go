@@ -79,12 +79,12 @@ func AKSAgentPool(overrides ...AKSAgentPoolOptions) *armcontainerservice.AgentPo
 
 	// Construct the AKS Agent Pool
 	agentPool := &armcontainerservice.AgentPool{
-		ID:   lo.ToPtr(agentPoolID),
-		Name: lo.ToPtr(options.Name),
+		ID:   new(agentPoolID),
+		Name: new(options.Name),
 		Properties: &armcontainerservice.ManagedClusterAgentPoolProfileProperties{
-			Count:               lo.ToPtr(options.Count),
-			VMSize:              lo.ToPtr(options.VMSize),
-			OrchestratorVersion: lo.ToPtr(options.OrchestratorVersion),
+			Count:               new(options.Count),
+			VMSize:              new(options.VMSize),
+			OrchestratorVersion: new(options.OrchestratorVersion),
 			ProvisioningState:   lo.ToPtr(consts.ProvisioningStateSucceeded),
 			Tags:                options.Tags,
 			Mode:                lo.ToPtr(armcontainerservice.AgentPoolModeMachines),

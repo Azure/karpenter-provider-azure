@@ -18,6 +18,7 @@ package utils
 
 import (
 	_ "embed"
+	"slices"
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -200,10 +201,5 @@ func IsGPUSKUSupportedOnOS(vmSize string, osName string) bool {
 	if !ok {
 		return false
 	}
-	for _, os := range osList {
-		if os == osName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(osList, osName)
 }

@@ -21,7 +21,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
-	"github.com/samber/lo"
 )
 
 type DiskEncryptionSetsAPI struct {
@@ -47,8 +46,8 @@ func (d *DiskEncryptionSetsAPI) Get(
 	// Default: return success as if the DES exists and is accessible
 	return armcompute.DiskEncryptionSetsClientGetResponse{
 		DiskEncryptionSet: armcompute.DiskEncryptionSet{
-			Name:     lo.ToPtr(diskEncryptionSetName),
-			Location: lo.ToPtr("eastus"),
+			Name:     new(diskEncryptionSetName),
+			Location: new("eastus"),
 		},
 	}, nil
 }

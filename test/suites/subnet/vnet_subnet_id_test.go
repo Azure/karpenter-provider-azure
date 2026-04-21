@@ -70,9 +70,9 @@ var _ = Describe("Subnets", func() {
 
 		subnetName := "test-subnet"
 		subnet := &armnetwork.Subnet{
-			Name: lo.ToPtr(subnetName),
+			Name: new(subnetName),
 			Properties: &armnetwork.SubnetPropertiesFormat{
-				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
+				AddressPrefix: new("10.225.0.0/16"),
 			},
 		}
 
@@ -98,9 +98,9 @@ var _ = Describe("Subnets", func() {
 
 		subnetName := "test-subnet"
 		subnet := &armnetwork.Subnet{
-			Name: lo.ToPtr(subnetName),
+			Name: new(subnetName),
 			Properties: &armnetwork.SubnetPropertiesFormat{
-				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
+				AddressPrefix: new("10.225.0.0/16"),
 			},
 		}
 
@@ -139,7 +139,7 @@ var _ = Describe("Subnets", func() {
 		Expect(nic.Properties.NetworkSecurityGroup.ID).ToNot(BeNil())
 	})
 	It("should reject the AKSNodeClass if the subnet ID is invalid", func() {
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subnets/fake-subnet")
+		nodeClass.Spec.VNETSubnetID = new("/subnets/fake-subnet")
 		err := env.Client.Create(env.Context, nodeClass)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("Invalid value"))
@@ -209,7 +209,7 @@ var _ = Describe("Subnets", func() {
 				modifiedComponents.SubnetName,
 			)
 
-			nodeClass.Spec.VNETSubnetID = lo.ToPtr(subnetID)
+			nodeClass.Spec.VNETSubnetID = new(subnetID)
 			env.ExpectCreated(nodeClass)
 
 			Eventually(func(g Gomega) {
@@ -251,14 +251,14 @@ var _ = Describe("Subnets", func() {
 
 		newNodeClass := env.DefaultAKSNodeClass()
 		newNodepool := env.DefaultNodePool(newNodeClass)
-		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
+		newNodepool.Spec.Weight = new(int32(10))
 
 		vnet := env.GetClusterVNET() // Use cluster vnet in fake subnet id
 		vnetResourceID, err := arm.ParseResourceID(lo.FromPtr(vnet.ID))
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create a subnet ID that doesn't exist but is in the same vnet
-		newNodeClass.Spec.VNETSubnetID = lo.ToPtr(utils.GetSubnetResourceID(
+		newNodeClass.Spec.VNETSubnetID = new(utils.GetSubnetResourceID(
 			vnetResourceID.SubscriptionID,
 			vnetResourceID.ResourceGroupName,
 			vnetResourceID.Name,

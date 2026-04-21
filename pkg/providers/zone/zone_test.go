@@ -23,7 +23,6 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -105,7 +104,7 @@ func TestProvider_SupportsZones_StopsLoadingAfterMaxFailuresAndStartsAgainAfterW
 	provider := zone.NewProvider(fakeAPI, clk, "test-subscription")
 
 	// Test that failures don't keep being tried
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(10))
@@ -114,7 +113,7 @@ func TestProvider_SupportsZones_StopsLoadingAfterMaxFailuresAndStartsAgainAfterW
 	clk.Step(61 * time.Minute)
 
 	// Try some more
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(20))
@@ -134,7 +133,7 @@ func TestProvider_SupportsZones_ResetsFailuresAfterWindow(t *testing.T) {
 	provider := zone.NewProvider(fakeAPI, clk, "test-subscription")
 
 	// Test that failures don't keep being tried
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(5))
@@ -143,7 +142,7 @@ func TestProvider_SupportsZones_ResetsFailuresAfterWindow(t *testing.T) {
 	clk.Step(61 * time.Minute)
 
 	// Try some more
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(15))
@@ -192,7 +191,7 @@ func TestProvider_SupportsZones_ThreadSafety(t *testing.T) {
 	// Test concurrent access
 	done := make(chan bool, 10)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
 			g.Expect(provider.SupportsZones(ctx, "unknownregion")).To(BeFalse())
@@ -201,7 +200,7 @@ func TestProvider_SupportsZones_ThreadSafety(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 }
@@ -211,13 +210,13 @@ func createZonalLocation(name string, zones []string) armsubscriptions.Location 
 	var zoneMappings []*armsubscriptions.AvailabilityZoneMappings
 	for _, zone := range zones {
 		zoneMappings = append(zoneMappings, &armsubscriptions.AvailabilityZoneMappings{
-			LogicalZone:  lo.ToPtr(zone),
-			PhysicalZone: lo.ToPtr(name + "-az" + zone),
+			LogicalZone:  new(zone),
+			PhysicalZone: new(name + "-az" + zone),
 		})
 	}
 
 	return armsubscriptions.Location{
-		Name:                     lo.ToPtr(name),
+		Name:                     new(name),
 		AvailabilityZoneMappings: zoneMappings,
 	}
 }

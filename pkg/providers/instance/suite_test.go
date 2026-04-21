@@ -85,7 +85,7 @@ func TestAzure(t *testing.T) {
 	ctx = options.ToContext(ctx, test.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 
-	ctx, stop = context.WithCancel(ctx)
+	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118 - stop() is called in AfterSuite
 	azureEnv = test.NewEnvironment(ctx, env)
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
@@ -360,7 +360,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		var originalEnv *test.Environment
 		var originalCloudProvider *cloudprovider.CloudProvider
 		newOptions := test.Options(test.OptionsFields{
-			UseSIG: lo.ToPtr(true),
+			UseSIG: new(true),
 		})
 		BeforeEach(func() {
 			originalOptions = options.FromContext(ctx)
@@ -506,7 +506,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 		})
 		It("should set the number of secondary ips equal to max pods (NodeSubnet)", func() {
-			nodeClass.Spec.MaxPods = lo.ToPtr(int32(11))
+			nodeClass.Spec.MaxPods = new(int32(11))
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -592,7 +592,7 @@ var _ = Describe("VMInstanceProvider", func() {
 	})
 	It("should only list nics that belong to karpenter", func() {
 		managedNic := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
-		unmanagedNic := test.Interface(test.InterfaceOptions{Tags: map[string]*string{"kubernetes.io/cluster/test-cluster": lo.ToPtr("random-aks-vm")}})
+		unmanagedNic := test.Interface(test.InterfaceOptions{Tags: map[string]*string{"kubernetes.io/cluster/test-cluster": new("random-aks-vm")}})
 
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(unmanagedNic.ID), *unmanagedNic)
@@ -605,7 +605,7 @@ var _ = Describe("VMInstanceProvider", func() {
 	It("should create VM with custom Linux admin username", func() {
 		customUsername := "customuser"
 		ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
-			LinuxAdminUsername: lo.ToPtr(customUsername),
+			LinuxAdminUsername: new(customUsername),
 		}))
 
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -633,7 +633,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		ctx = options.ToContext(
 			ctx,
 			test.Options(test.OptionsFields{
-				SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"), // different RG
+				SubnetID: new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"), // different RG
 			}))
 		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, "aks-agentpool-00000000-nsg")
 		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
@@ -655,7 +655,7 @@ var _ = Describe("VMInstanceProvider", func() {
 	})
 
 	It("should attach nsg to nic when NodeClass VNET specified", func() {
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet") // different RG
+		nodeClass.Spec.VNETSubnetID = new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet") // different RG
 
 		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, "aks-agentpool-00000000-nsg")
 		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
@@ -681,10 +681,10 @@ var _ = Describe("VMInstanceProvider", func() {
 			// Ensure that the VM already exists in the fake environment
 			vmName := nodeClaim.Name
 			vm := armcompute.VirtualMachine{
-				ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
-				Name: lo.ToPtr(vmName),
+				ID:   new(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+				Name: new(vmName),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 
@@ -715,36 +715,36 @@ var _ = Describe("VMInstanceProvider", func() {
 			// Ensure that the VM already exists in the fake environment
 			vmName := nodeClaim.Name
 			vm := armcompute.VirtualMachine{
-				ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
-				Name: lo.ToPtr(vmName),
+				ID:   new(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+				Name: new(vmName),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 			// Ensure that the NIC already exists in the fake environment
 			azureEnv.VirtualMachinesAPI.Instances.Store(*vm.ID, vm)
 			nic := armnetwork.Interface{
-				ID:   lo.ToPtr(fake.MakeNetworkInterfaceID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
-				Name: lo.ToPtr(vmName),
+				ID:   new(fake.MakeNetworkInterfaceID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+				Name: new(vmName),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(*nic.ID, nic)
 
 			// Ensure that the two VM extensions already exist in the fake environment
 			billingExt := armcompute.VirtualMachineExtension{
-				ID:   lo.ToPtr(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "computeAksLinuxBilling")),
-				Name: lo.ToPtr("computeAksLinuxBilling"),
+				ID:   new(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "computeAksLinuxBilling")),
+				Name: new("computeAksLinuxBilling"),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 			cseExt := armcompute.VirtualMachineExtension{
-				ID:   lo.ToPtr(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "cse-agent-karpenter")),
-				Name: lo.ToPtr("cse-agent-karpenter"),
+				ID:   new(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "cse-agent-karpenter")),
+				Name: new("cse-agent-karpenter"),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(*billingExt.ID, billingExt)
@@ -755,15 +755,15 @@ var _ = Describe("VMInstanceProvider", func() {
 			// Update the VM tags
 			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
-					"test-tag":                    lo.ToPtr("test-value"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
+					"test-tag":                    new("test-value"),
 				},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
 			ExpectInstanceResourcesHaveTags(ctx, vmName, azureEnv, map[string]*string{
-				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
-				"test-tag":                    lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster": new("test-cluster"),
+				"test-tag":                    new("test-value"),
 			})
 		})
 
@@ -771,29 +771,29 @@ var _ = Describe("VMInstanceProvider", func() {
 			// Ensure that the VM already exists in the fake environment
 			vmName := nodeClaim.Name
 			vm := armcompute.VirtualMachine{
-				ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
-				Name: lo.ToPtr(vmName),
+				ID:   new(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+				Name: new(vmName),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 			// Ensure that the NIC already exists in the fake environment
 			azureEnv.VirtualMachinesAPI.Instances.Store(*vm.ID, vm)
 			nic := armnetwork.Interface{
-				ID:   lo.ToPtr(fake.MakeNetworkInterfaceID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
-				Name: lo.ToPtr(vmName),
+				ID:   new(fake.MakeNetworkInterfaceID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+				Name: new(vmName),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(*nic.ID, nic)
 
 			// Ensure that only one extension exists in the env
 			cseExt := armcompute.VirtualMachineExtension{
-				ID:   lo.ToPtr(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "cse-agent-karpenter")),
-				Name: lo.ToPtr("cse-agent-karpenter"),
+				ID:   new(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "cse-agent-karpenter")),
+				Name: new("cse-agent-karpenter"),
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
 				},
 			}
 			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(*cseExt.ID, cseExt)
@@ -805,15 +805,15 @@ var _ = Describe("VMInstanceProvider", func() {
 			// Update the VM tags
 			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
-					"test-tag":                    lo.ToPtr("test-value"),
+					"karpenter.azure.com_cluster": new("test-cluster"),
+					"test-tag":                    new("test-value"),
 				},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
 			ExpectInstanceResourcesHaveTags(ctx, vmName, azureEnv, map[string]*string{
-				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
-				"test-tag":                    lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster": new("test-cluster"),
+				"test-tag":                    new("test-value"),
 			})
 		})
 	})
@@ -823,7 +823,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			if nodeClass.Spec.Security == nil {
 				nodeClass.Spec.Security = &v1beta1.Security{}
 			}
-			nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+			nodeClass.Spec.Security.EncryptionAtHost = new(true)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -842,7 +842,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			if nodeClass.Spec.Security == nil {
 				nodeClass.Spec.Security = &v1beta1.Security{}
 			}
-			nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(false)
+			nodeClass.Spec.Security.EncryptionAtHost = new(false)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -1048,7 +1048,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			// NodePool A (weight 100): Ds_v3 series (standardDSv3Family) — preferred but limited quota
 			nodePoolA := coretest.NodePool(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
-					Weight: lo.ToPtr(int32(100)),
+					Weight: new(int32(100)),
 					Template: karpv1.NodeClaimTemplate{
 						Spec: karpv1.NodeClaimTemplateSpec{
 							NodeClassRef: &karpv1.NodeClassReference{
@@ -1076,7 +1076,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			// NodePool B (weight 10): D_v5 series (standardDv5Family) — different family, lower priority
 			nodePoolB := coretest.NodePool(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
-					Weight: lo.ToPtr(int32(10)),
+					Weight: new(int32(10)),
 					Template: karpv1.NodeClaimTemplate{
 						Spec: karpv1.NodeClaimTemplateSpec{
 							NodeClassRef: &karpv1.NodeClassReference{

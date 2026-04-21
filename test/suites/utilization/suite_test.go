@@ -59,7 +59,7 @@ var _ = Describe("Utilization", func() {
 	DescribeTable("should provision one pod per node",
 		func(imageFamily string, arch string) {
 			nodeClass := env.DefaultAKSNodeClass()
-			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+			nodeClass.Spec.ImageFamily = new(imageFamily)
 			nodePool := lo.Ternary(arch == karpv1.ArchitectureAmd64, env.DefaultNodePool(nodeClass), env.ArmNodepool(nodeClass))
 			ExpectProvisionPodPerNode(nodeClass, nodePool)
 		},

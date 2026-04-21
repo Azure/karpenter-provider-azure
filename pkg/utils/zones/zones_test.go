@@ -22,7 +22,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 )
 
 func TestMakeAKSLabelZoneFromVM(t *testing.T) {
@@ -40,22 +39,22 @@ func TestMakeAKSLabelZoneFromVM(t *testing.T) {
 		{
 			testName: "happy case",
 			input: &armcompute.VirtualMachine{
-				Location: lo.ToPtr("region"),
-				Zones:    []*string{lo.ToPtr("1")},
+				Location: new("region"),
+				Zones:    []*string{new("1")},
 			},
 			expectedZone: "region-1",
 		},
 		{
 			testName: "missing Location",
 			input: &armcompute.VirtualMachine{
-				Zones: []*string{lo.ToPtr("1")},
+				Zones: []*string{new("1")},
 			},
 			expectedError: "location is required for zonal resource",
 		},
 		{
 			testName: "multiple zones",
 			input: &armcompute.VirtualMachine{
-				Zones: []*string{lo.ToPtr("1"), lo.ToPtr("2")},
+				Zones: []*string{new("1"), new("2")},
 			},
 			expectedError: "resource has multiple zones",
 		},

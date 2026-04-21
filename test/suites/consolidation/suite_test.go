@@ -448,7 +448,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			windowStart := time.Now().Add(-time.Minute * 15).UTC()
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes:    "0",
-				Schedule: lo.ToPtr(fmt.Sprintf("%d %d * * *", windowStart.Minute(), windowStart.Hour())),
+				Schedule: new(fmt.Sprintf("%d %d * * *", windowStart.Minute(), windowStart.Hour())),
 				Duration: &metav1.Duration{Duration: time.Minute * 30},
 			}}
 
@@ -659,7 +659,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 							corev1.ResourceCPU: func() resource.Quantity {
 								dsOverhead := env.GetDaemonSetOverhead(nodePool)
 								metricsServerBuffer := resource.MustParse("200m")
-								base := lo.ToPtr(resource.MustParse("1900m"))
+								base := new(resource.MustParse("1900m"))
 								base.Sub(*dsOverhead.Cpu())
 								base.Sub(metricsServerBuffer)
 								return *base
@@ -774,7 +774,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 					Requests: corev1.ResourceList{corev1.ResourceCPU: func() resource.Quantity {
 						dsOverhead := env.GetDaemonSetOverhead(nodePool)
 						metricsServerBuffer := resource.MustParse("200m")
-						base := lo.ToPtr(resource.MustParse("1800m"))
+						base := new(resource.MustParse("1800m"))
 						base.Sub(*dsOverhead.Cpu())
 						base.Sub(metricsServerBuffer)
 						return *base
@@ -870,7 +870,7 @@ var _ = Describe("Node Overlay", func() {
 		})
 		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
-				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
+				PriceAdjustment: new("-99.99999999999%"),
 				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
@@ -922,7 +922,7 @@ var _ = Describe("Node Overlay", func() {
 		})
 		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
-				Price: lo.ToPtr("0.0000000232"),
+				Price: new("0.0000000232"),
 				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,

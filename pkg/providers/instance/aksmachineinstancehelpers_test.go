@@ -117,7 +117,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		Context("AzureLinux Image Family with FIPS Mode", func() {
 			BeforeEach(func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+				nodeClass.Spec.FIPSMode = new(v1beta1.FIPSModeFIPS)
 			})
 
 			It("should configure AzureLinux with FIPS mode enabled", func() {
@@ -134,7 +134,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		Context("Generic Ubuntu Image Family with FIPS Mode", func() {
 			BeforeEach(func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
-				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+				nodeClass.Spec.FIPSMode = new(v1beta1.FIPSModeFIPS)
 			})
 
 			It("should configure Ubuntu with FIPS mode enabled", func() {
@@ -597,15 +597,15 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should configure all kubelet settings correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:            lo.ToPtr("static"),
-				CPUCFSQuota:                 lo.ToPtr(true),
-				TopologyManagerPolicy:       lo.ToPtr("single-numa-node"),
-				ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-				ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
+				CPUManagerPolicy:            new("static"),
+				CPUCFSQuota:                 new(true),
+				TopologyManagerPolicy:       new("single-numa-node"),
+				ImageGCHighThresholdPercent: new(int32(85)),
+				ImageGCLowThresholdPercent:  new(int32(80)),
 				AllowedUnsafeSysctls:        []string{"kernel.shm_rmid_forced", "net.core.somaxconn"},
-				ContainerLogMaxSize:         lo.ToPtr("100Mi"),
-				ContainerLogMaxFiles:        lo.ToPtr(int32(5)),
-				PodPidsLimit:                lo.ToPtr(int64(2048)),
+				ContainerLogMaxSize:         new("100Mi"),
+				ContainerLogMaxFiles:        new(int32(5)),
+				PodPidsLimit:                new(int64(2048)),
 			}
 
 			config := configureKubeletConfig(nodeClass)
@@ -625,12 +625,12 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should handle empty/nil values correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:     lo.ToPtr(""),    // Empty string should be nil
-				CPUCFSQuota:          lo.ToPtr(false), // False should be preserved
-				AllowedUnsafeSysctls: []string{},      // Empty slice should be nil
-				ContainerLogMaxSize:  nil,             // nil should stay nil
-				ContainerLogMaxFiles: nil,             // Nil should stay nil
-				PodPidsLimit:         nil,             // Nil should stay nil
+				CPUManagerPolicy:     new(""),    // Empty string should be nil
+				CPUCFSQuota:          new(false), // False should be preserved
+				AllowedUnsafeSysctls: []string{}, // Empty slice should be nil
+				ContainerLogMaxSize:  nil,        // nil should stay nil
+				ContainerLogMaxFiles: nil,        // Nil should stay nil
+				PodPidsLimit:         nil,        // Nil should stay nil
 			}
 
 			config := configureKubeletConfig(nodeClass)

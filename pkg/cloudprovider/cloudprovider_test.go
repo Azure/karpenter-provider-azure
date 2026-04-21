@@ -23,7 +23,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -70,16 +69,16 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 		{
 			name: "nil Properties - fallback to time.Now()",
 			vm: &armcompute.VirtualMachine{
-				Name: lo.ToPtr("aks-test-vm"),
-				ID:   lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
+				Name: new("aks-test-vm"),
+				ID:   new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
 			},
 			expectFallbackToNow: true,
 		},
 		{
 			name: "nil TimeCreated - fallback to time.Now()",
 			vm: &armcompute.VirtualMachine{
-				Name:       lo.ToPtr("aks-test-vm"),
-				ID:         lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
+				Name:       new("aks-test-vm"),
+				ID:         new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
 				Properties: &armcompute.VirtualMachineProperties{},
 			},
 			expectFallbackToNow: true,
@@ -87,13 +86,13 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 		{
 			name: "valid TimeCreated - use exact time",
 			vm: &armcompute.VirtualMachine{
-				Name: lo.ToPtr("aks-test-vm"),
-				ID:   lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
+				Name: new("aks-test-vm"),
+				ID:   new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
 				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+					TimeCreated: new(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				},
 			},
-			expectExactTime: lo.ToPtr(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+			expectExactTime: new(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 		},
 	}
 

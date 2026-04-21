@@ -347,7 +347,7 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
 	}
-	aksMachine := lo.ToPtr(resp.Machine)
+	aksMachine := new(resp.Machine)
 	p.rehydrateMachine(aksMachine)
 
 	return aksMachine, nil

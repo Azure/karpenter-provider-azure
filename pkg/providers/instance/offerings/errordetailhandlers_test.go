@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -99,8 +98,8 @@ type errorDetailTestCase struct {
 
 func createErrorDetail(code, message string) armcontainerservice.ErrorDetail {
 	return armcontainerservice.ErrorDetail{
-		Code:    lo.ToPtr(code),
-		Message: lo.ToPtr(message),
+		Code:    new(code),
+		Message: new(message),
 	}
 }
 

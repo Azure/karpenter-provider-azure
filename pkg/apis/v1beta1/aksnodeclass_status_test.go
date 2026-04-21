@@ -36,25 +36,25 @@ var _ = Describe("Status, successful outcomes", func() {
 		nodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1beta1.AKSNodeClassSpec{
-				VNETSubnetID: lo.ToPtr("subnet-id"),
-				OSDiskSizeGB: lo.ToPtr(int32(30)),
-				ImageFamily:  lo.ToPtr("Ubuntu2204"),
+				VNETSubnetID: new("subnet-id"),
+				OSDiskSizeGB: new(int32(30)),
+				ImageFamily:  new("Ubuntu2204"),
 				Tags: map[string]string{
 					"keyTag-1": "valueTag-1",
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       lo.ToPtr("none"),
+					ImageGCHighThresholdPercent: new(int32(85)),
+					ImageGCLowThresholdPercent:  new(int32(80)),
+					TopologyManagerPolicy:       new("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         lo.ToPtr("10Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+					ContainerLogMaxSize:         new("10Mi"),
+					ContainerLogMaxFiles:        new(int32(10)),
 				},
-				MaxPods: lo.ToPtr(int32(100)),
+				MaxPods: new(int32(100)),
 			},
 			Status: v1beta1.AKSNodeClassStatus{
 				Conditions: []status.Condition{
@@ -75,7 +75,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						ObservedGeneration: 1,
 					},
 				},
-				KubernetesVersion: lo.ToPtr("1.31.0"),
+				KubernetesVersion: new("1.31.0"),
 				Images: []v1beta1.NodeImage{
 					{
 						ID: "/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0",
@@ -131,25 +131,25 @@ var _ = Describe("Status, successful outcomes", func() {
 		errNodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1beta1.AKSNodeClassSpec{
-				VNETSubnetID: lo.ToPtr("subnet-id"),
-				OSDiskSizeGB: lo.ToPtr(int32(30)),
-				ImageFamily:  lo.ToPtr("Ubuntu2204"),
+				VNETSubnetID: new("subnet-id"),
+				OSDiskSizeGB: new(int32(30)),
+				ImageFamily:  new("Ubuntu2204"),
 				Tags: map[string]string{
 					"keyTag-1": "valueTag-1",
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       lo.ToPtr("none"),
+					ImageGCHighThresholdPercent: new(int32(85)),
+					ImageGCLowThresholdPercent:  new(int32(80)),
+					TopologyManagerPolicy:       new("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         lo.ToPtr("10Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+					ContainerLogMaxSize:         new("10Mi"),
+					ContainerLogMaxFiles:        new(int32(10)),
 				},
-				MaxPods: lo.ToPtr(int32(100)),
+				MaxPods: new(int32(100)),
 			},
 			Status: v1beta1.AKSNodeClassStatus{
 				Conditions: []status.Condition{
@@ -161,7 +161,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						Message:            "Images are not ready for use",
 					},
 				},
-				KubernetesVersion: lo.ToPtr("1.31.0"),
+				KubernetesVersion: new("1.31.0"),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
@@ -175,25 +175,25 @@ var _ = Describe("Status, successful outcomes", func() {
 		errNodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1beta1.AKSNodeClassSpec{
-				VNETSubnetID: lo.ToPtr("subnet-id"),
-				OSDiskSizeGB: lo.ToPtr(int32(30)),
-				ImageFamily:  lo.ToPtr("Ubuntu2204"),
+				VNETSubnetID: new("subnet-id"),
+				OSDiskSizeGB: new(int32(30)),
+				ImageFamily:  new("Ubuntu2204"),
 				Tags: map[string]string{
 					"keyTag-1": "valueTag-1",
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       lo.ToPtr("none"),
+					ImageGCHighThresholdPercent: new(int32(85)),
+					ImageGCLowThresholdPercent:  new(int32(80)),
+					TopologyManagerPolicy:       new("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         lo.ToPtr("10Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+					ContainerLogMaxSize:         new("10Mi"),
+					ContainerLogMaxFiles:        new(int32(10)),
 				},
-				MaxPods: lo.ToPtr(int32(100)),
+				MaxPods: new(int32(100)),
 			},
 			Status: v1beta1.AKSNodeClassStatus{
 				Conditions: []status.Condition{
@@ -212,7 +212,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						Message:            "Kubernetes version is ready for use",
 					},
 				},
-				KubernetesVersion: lo.ToPtr("1.31.0"),
+				KubernetesVersion: new("1.31.0"),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
@@ -226,25 +226,25 @@ var _ = Describe("Status, successful outcomes", func() {
 		errNodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1beta1.AKSNodeClassSpec{
-				VNETSubnetID: lo.ToPtr("subnet-id"),
-				OSDiskSizeGB: lo.ToPtr(int32(30)),
-				ImageFamily:  lo.ToPtr("Ubuntu2204"),
+				VNETSubnetID: new("subnet-id"),
+				OSDiskSizeGB: new(int32(30)),
+				ImageFamily:  new("Ubuntu2204"),
 				Tags: map[string]string{
 					"keyTag-1": "valueTag-1",
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       lo.ToPtr("none"),
+					ImageGCHighThresholdPercent: new(int32(85)),
+					ImageGCLowThresholdPercent:  new(int32(80)),
+					TopologyManagerPolicy:       new("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         lo.ToPtr("10Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+					ContainerLogMaxSize:         new("10Mi"),
+					ContainerLogMaxFiles:        new(int32(10)),
 				},
-				MaxPods: lo.ToPtr(int32(100)),
+				MaxPods: new(int32(100)),
 			},
 			Status: v1beta1.AKSNodeClassStatus{
 				Conditions: []status.Condition{
@@ -264,7 +264,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						ObservedGeneration: 1,
 					},
 				},
-				KubernetesVersion: lo.ToPtr(""),
+				KubernetesVersion: new(""),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()

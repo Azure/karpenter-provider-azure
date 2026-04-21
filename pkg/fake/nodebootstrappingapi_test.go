@@ -83,25 +83,25 @@ func TestNodeBootstrappingAPI_Get_MissingProvisionHelperValues(t *testing.T) {
 // Helper functions
 func createValidProvisionProfile() *models.ProvisionProfile {
 	return &models.ProvisionProfile{
-		Name:                lo.ToPtr("test-node"),
-		VMSize:              lo.ToPtr("Standard_D2s_v3"),
+		Name:                new("test-node"),
+		VMSize:              new("Standard_D2s_v3"),
 		OsType:              lo.ToPtr(models.OSTypeLinux),
 		OsSku:               lo.ToPtr(models.OSSKUAzureLinux),
 		StorageProfile:      lo.ToPtr(consts.StorageProfileManagedDisks),
-		Distro:              lo.ToPtr("AzureLinux"),
-		OrchestratorVersion: lo.ToPtr("1.31.0"),
+		Distro:              new("AzureLinux"),
+		OrchestratorVersion: new("1.31.0"),
 		VnetCidrs:           []string{"10.0.0.0/8"},
-		VnetSubnetID:        lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"),
+		VnetSubnetID:        new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"),
 		Mode:                lo.ToPtr(models.AgentPoolModeSystem),
-		Architecture:        lo.ToPtr("amd64"),
-		MaxPods:             lo.ToPtr(int32(110)),
+		Architecture:        new("amd64"),
+		MaxPods:             new(int32(110)),
 	}
 }
 
 func createValidProvisionHelperValues() *models.ProvisionHelperValues {
 	return &models.ProvisionHelperValues{
-		SkuCPU:    lo.ToPtr(float64(2)),
-		SkuMemory: lo.ToPtr(float64(8192)),
+		SkuCPU:    new(float64(2)),
+		SkuMemory: new(float64(8192)),
 	}
 }
 
@@ -139,18 +139,18 @@ func TestNodeBootstrappingAPI_RecordsMultipleRequests(t *testing.T) {
 
 	params2 := &models.ProvisionValues{
 		ProvisionProfile: &models.ProvisionProfile{
-			Name:                lo.ToPtr("test-node-2"),
-			VMSize:              lo.ToPtr("Standard_D4s_v3"),
+			Name:                new("test-node-2"),
+			VMSize:              new("Standard_D4s_v3"),
 			OsType:              lo.ToPtr(models.OSTypeLinux),
 			OsSku:               lo.ToPtr(models.OSSKUAzureLinux),
 			StorageProfile:      lo.ToPtr(consts.StorageProfileManagedDisks),
-			Distro:              lo.ToPtr("AzureLinux"),
-			OrchestratorVersion: lo.ToPtr("1.31.0"),
+			Distro:              new("AzureLinux"),
+			OrchestratorVersion: new("1.31.0"),
 			VnetCidrs:           []string{"10.0.0.0/8"},
-			VnetSubnetID:        lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"),
+			VnetSubnetID:        new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"),
 			Mode:                lo.ToPtr(models.AgentPoolModeSystem),
-			Architecture:        lo.ToPtr("amd64"),
-			MaxPods:             lo.ToPtr(int32(110)),
+			Architecture:        new("amd64"),
+			MaxPods:             new(int32(110)),
 		},
 		ProvisionHelperValues: createValidProvisionHelperValues(),
 	}

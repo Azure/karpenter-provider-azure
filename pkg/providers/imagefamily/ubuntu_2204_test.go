@@ -64,11 +64,11 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
-	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
+	fipsMode := new(v1beta1.FIPSModeDisabled)
 	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
-	artifactStreaming := &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}
+	artifactStreaming := &v1beta1.ArtifactStreaming{Enabled: new(false)}
 	linuxOSConfig := &v1beta1.LinuxOSConfiguration{
-		SwapFileSize:               lo.ToPtr("1500Mi"),
+		SwapFileSize:               new("1500Mi"),
 		TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
 	}
 

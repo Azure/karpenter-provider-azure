@@ -51,7 +51,7 @@ func ConvertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	q, err := resource.ParseQuantity(containerLogMaxSize)
 	if err == nil {
 		// This could be improved later
-		return lo.ToPtr(int32(math.Round(q.AsApproximateFloat64() / 1024 / 1024)))
+		return new(int32(math.Round(q.AsApproximateFloat64() / 1024 / 1024)))
 	}
 	return nil
 }
@@ -64,9 +64,9 @@ func ConvertPodMaxPids(podPidsLimit *int64) *int32 {
 			return lo.ToPtr(int32(math.MaxInt32))
 		} else if podPidsLimitInt64 < 0 {
 			// This as well
-			return lo.ToPtr(int32(-1))
+			return new(int32(-1))
 		} else {
-			return lo.ToPtr(int32(podPidsLimitInt64)) // golint:ignore G115 already check overflow
+			return new(int32(podPidsLimitInt64)) // golint:ignore G115 already check overflow
 		}
 	}
 	return nil
@@ -171,10 +171,10 @@ func convertLinuxOSConfigToModel(linuxOSConfig *v1beta1.LinuxOSConfiguration) *m
 		result.SwapFileSizeMB = ConvertContainerLogMaxSizeToMB(*linuxOSConfig.SwapFileSize)
 	}
 	if linuxOSConfig.TransparentHugePageDefrag != nil {
-		result.TransparentHugePageDefrag = lo.ToPtr(string(*linuxOSConfig.TransparentHugePageDefrag))
+		result.TransparentHugePageDefrag = new(string(*linuxOSConfig.TransparentHugePageDefrag))
 	}
 	if linuxOSConfig.TransparentHugePageEnabled != nil {
-		result.TransparentHugePageEnabled = lo.ToPtr(string(*linuxOSConfig.TransparentHugePageEnabled))
+		result.TransparentHugePageEnabled = new(string(*linuxOSConfig.TransparentHugePageEnabled))
 	}
 	return result
 }

@@ -23,8 +23,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/samber/lo"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -85,9 +83,9 @@ func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGr
 
 	return c.NetworkInterfacesCreateOrUpdateBehavior.Invoke(input, func(input *NetworkInterfaceCreateOrUpdateInput) (*armnetwork.InterfacesClientCreateOrUpdateResponse, error) {
 		iface := input.Interface
-		iface.Name = lo.ToPtr(input.InterfaceName)
+		iface.Name = new(input.InterfaceName)
 		id := MakeNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
-		iface.ID = lo.ToPtr(id)
+		iface.ID = new(id)
 		c.NetworkInterfaces.Store(id, iface)
 		return &armnetwork.InterfacesClientCreateOrUpdateResponse{
 			Interface: iface,

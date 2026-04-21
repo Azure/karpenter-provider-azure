@@ -101,7 +101,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	return &armcontainerservice.Machine{
 		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
-			NodeImageVersion: lo.ToPtr(nodeImageVersion),
+			NodeImageVersion: new(nodeImageVersion),
 			Network: &armcontainerservice.MachineNetworkProperties{
 				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
 				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
@@ -111,7 +111,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				// IPTags:               nil,
 			},
 			Hardware: &armcontainerservice.MachineHardwareProfile{
-				VMSize: lo.ToPtr(instanceType.Name),
+				VMSize: new(instanceType.Name),
 				// GPUInstanceProfile: nil,
 				GpuProfile: gpuProfile,
 			},
@@ -135,7 +135,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 
 			Kubernetes: &armcontainerservice.MachineKubernetesProfile{
 				NodeLabels:          nodeLabels,
-				OrchestratorVersion: lo.ToPtr(orchestratorVersion),
+				OrchestratorVersion: new(orchestratorVersion),
 				// KubeletDiskType:          "",
 				KubeletConfig:            configureKubeletConfig(nodeClass),
 				NodeInitializationTaints: nodeInitializationTaints,
@@ -148,7 +148,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Mode: modePtr,
 			Security: &armcontainerservice.MachineSecurityProfile{
 				SSHAccess:              lo.ToPtr(armcontainerservice.AgentPoolSSHAccessLocalUser),
-				EnableEncryptionAtHost: lo.ToPtr(nodeClass.GetEncryptionAtHost()),
+				EnableEncryptionAtHost: new(nodeClass.GetEncryptionAtHost()),
 				// EnableVTPM:             nil,
 				// EnableSecureBoot:       nil,
 			},
@@ -174,7 +174,7 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 		driverSetting = armcontainerservice.GPUDriverInstall
 	}
 	return &armcontainerservice.GPUProfile{
-		Driver: lo.ToPtr(driverSetting),
+		Driver: new(driverSetting),
 	}
 }
 
@@ -182,7 +182,7 @@ func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instance
 	arch := instanceType.Requirements.Get(v1.LabelArchStable).Values()[0]
 	if nodeClass.IsArtifactStreamingEnabled(arch) {
 		return &armcontainerservice.AgentPoolArtifactStreamingProfile{
-			Enabled: lo.ToPtr(true),
+			Enabled: new(true),
 		}
 	}
 	return nil
@@ -194,7 +194,7 @@ func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerserv
 	}
 	profile := &armcontainerservice.LocalDNSProfile{}
 	if nodeClass.Spec.LocalDNS.Mode != "" {
-		profile.Mode = lo.ToPtr(armcontainerservice.LocalDNSMode(nodeClass.Spec.LocalDNS.Mode))
+		profile.Mode = new(armcontainerservice.LocalDNSMode(nodeClass.Spec.LocalDNS.Mode))
 	}
 	if len(nodeClass.Spec.LocalDNS.VnetDNSOverrides) > 0 {
 		profile.VnetDNSOverrides = convertLocalDNSOverrides(nodeClass.Spec.LocalDNS.VnetDNSOverrides)
@@ -210,28 +210,28 @@ func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[stri
 	for _, o := range overrides {
 		override := &armcontainerservice.LocalDNSOverride{}
 		if o.QueryLogging != "" {
-			override.QueryLogging = lo.ToPtr(armcontainerservice.LocalDNSQueryLogging(o.QueryLogging))
+			override.QueryLogging = new(armcontainerservice.LocalDNSQueryLogging(o.QueryLogging))
 		}
 		if o.Protocol != "" {
-			override.Protocol = lo.ToPtr(armcontainerservice.LocalDNSProtocol(o.Protocol))
+			override.Protocol = new(armcontainerservice.LocalDNSProtocol(o.Protocol))
 		}
 		if o.ForwardDestination != "" {
-			override.ForwardDestination = lo.ToPtr(armcontainerservice.LocalDNSForwardDestination(o.ForwardDestination))
+			override.ForwardDestination = new(armcontainerservice.LocalDNSForwardDestination(o.ForwardDestination))
 		}
 		if o.ForwardPolicy != "" {
-			override.ForwardPolicy = lo.ToPtr(armcontainerservice.LocalDNSForwardPolicy(o.ForwardPolicy))
+			override.ForwardPolicy = new(armcontainerservice.LocalDNSForwardPolicy(o.ForwardPolicy))
 		}
 		if o.MaxConcurrent != nil {
 			override.MaxConcurrent = o.MaxConcurrent
 		}
 		if o.CacheDuration.Duration != nil {
-			override.CacheDurationInSeconds = lo.ToPtr(int32(o.CacheDuration.Seconds()))
+			override.CacheDurationInSeconds = new(int32(o.CacheDuration.Seconds()))
 		}
 		if o.ServeStaleDuration.Duration != nil {
-			override.ServeStaleDurationInSeconds = lo.ToPtr(int32(o.ServeStaleDuration.Seconds()))
+			override.ServeStaleDurationInSeconds = new(int32(o.ServeStaleDuration.Seconds()))
 		}
 		if o.ServeStale != "" {
-			override.ServeStale = lo.ToPtr(armcontainerservice.LocalDNSServeStale(o.ServeStale))
+			override.ServeStale = new(armcontainerservice.LocalDNSServeStale(o.ServeStale))
 		}
 		result[o.Zone] = override
 	}
@@ -291,7 +291,7 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 		}
 	}
 
-	return lo.ToPtr(ossku), lo.ToPtr(enableFIPS), nil
+	return new(ossku), new(enableFIPS), nil
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
@@ -304,7 +304,7 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	// Currently, we will use "nodeInitializationTaints" field for all taints, as "taints" field are subjected to server-side reconciliation and extra validation
 	// Server-side reconciliation is not necessarily a bad thing, but needs to resolve validation conflicts at least. E.g., system node cannot have hard taints other than CriticalAddonsOnly, per AKS Machine API.
 	// If changing, don't forget to update unit + acceptance tests accordingly.
-	nodeInitializationTaintPtrs := lo.Map(allTaintsStr, func(taint string, _ int) *string { return lo.ToPtr(taint) })
+	nodeInitializationTaintPtrs := lo.Map(allTaintsStr, func(taint string, _ int) *string { return new(taint) })
 	nodeTaintPtrs := []*string{}
 	return nodeInitializationTaintPtrs, nodeTaintPtrs
 }
@@ -338,7 +338,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))
 	for k, v := range nodeLabels {
-		nodeLabelPtrs[k] = lo.ToPtr(v)
+		nodeLabelPtrs[k] = new(v)
 	}
 
 	return nodeLabelPtrs, modePtr
@@ -353,7 +353,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
 
 	// Add AKS machine distinguishing tags
-	tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)
+	tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] = new(nodeClaim.Name)
 
 	return tags
 }
@@ -376,7 +376,7 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig.CPUCfsQuota = nodeClass.Spec.Kubelet.CPUCFSQuota
 
 	if nodeClass.Spec.Kubelet.CPUCFSQuotaPeriod.Duration.String() != "0s" {
-		kubeletConfig.CPUCfsQuotaPeriod = lo.ToPtr(nodeClass.Spec.Kubelet.CPUCFSQuotaPeriod.Duration.String())
+		kubeletConfig.CPUCfsQuotaPeriod = new(nodeClass.Spec.Kubelet.CPUCFSQuotaPeriod.Duration.String())
 	}
 
 	kubeletConfig.ImageGcHighThreshold = nodeClass.Spec.Kubelet.ImageGCHighThresholdPercent
@@ -387,7 +387,7 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	}
 
 	if len(nodeClass.Spec.Kubelet.AllowedUnsafeSysctls) > 0 {
-		kubeletConfig.AllowedUnsafeSysctls = lo.Map(nodeClass.Spec.Kubelet.AllowedUnsafeSysctls, func(sysctl string, _ int) *string { return lo.ToPtr(sysctl) })
+		kubeletConfig.AllowedUnsafeSysctls = lo.Map(nodeClass.Spec.Kubelet.AllowedUnsafeSysctls, func(sysctl string, _ int) *string { return new(sysctl) })
 	}
 
 	// Convert container log max size to MB
@@ -425,7 +425,7 @@ func convertPodMaxPids(podPidsLimit int64) *int32 {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
-	return customscriptsbootstrap.ConvertPodMaxPids(lo.ToPtr(podPidsLimit))
+	return customscriptsbootstrap.ConvertPodMaxPids(new(podPidsLimit))
 }
 
 func configureLinuxOSConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LinuxOSConfig {
@@ -438,10 +438,10 @@ func configureLinuxOSConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 		linuxOSConfig.SwapFileSizeMB = convertSwapFileSizeToMB(*nodeClass.Spec.LinuxOSConfig.SwapFileSize)
 	}
 	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag != nil {
-		linuxOSConfig.TransparentHugePageDefrag = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag))
+		linuxOSConfig.TransparentHugePageDefrag = new(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageDefrag))
 	}
 	if nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled != nil {
-		linuxOSConfig.TransparentHugePageEnabled = lo.ToPtr(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled))
+		linuxOSConfig.TransparentHugePageEnabled = new(string(*nodeClass.Spec.LinuxOSConfig.TransparentHugePageEnabled))
 	}
 	linuxOSConfig.Sysctls = configureSysctlConfig(nodeClass.Spec.LinuxOSConfig.Sysctls)
 

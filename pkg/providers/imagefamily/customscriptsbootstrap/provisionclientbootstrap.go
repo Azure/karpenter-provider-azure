@@ -112,15 +112,15 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
 
 	provisionProfile := &models.ProvisionProfile{
-		Name:                     lo.ToPtr(""),
-		Architecture:             lo.ToPtr(lo.Ternary(p.Arch == karpv1.ArchitectureAmd64, "x64", "Arm64")),
-		OsType:                   lo.ToPtr(lo.Ternary(p.IsWindows, models.OSTypeWindows, models.OSTypeLinux)),
-		VMSize:                   lo.ToPtr(p.InstanceType.Name),
-		Distro:                   lo.ToPtr(p.ImageDistro),
+		Name:                     new(""),
+		Architecture:             new(lo.Ternary(p.Arch == karpv1.ArchitectureAmd64, "x64", "Arm64")),
+		OsType:                   new(lo.Ternary(p.IsWindows, models.OSTypeWindows, models.OSTypeLinux)),
+		VMSize:                   new(p.InstanceType.Name),
+		Distro:                   new(p.ImageDistro),
 		CustomNodeLabels:         nodeLabels,
-		OrchestratorVersion:      lo.ToPtr(p.KubernetesVersion),
-		VnetSubnetID:             lo.ToPtr(p.SubnetID),
-		StorageProfile:           lo.ToPtr(p.StorageProfile),
+		OrchestratorVersion:      new(p.KubernetesVersion),
+		VnetSubnetID:             new(p.SubnetID),
+		StorageProfile:           new(p.StorageProfile),
 		NodeInitializationTaints: lo.Map(p.StartupTaints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		NodeTaints:               lo.Map(p.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		SecurityProfile: &models.AgentPoolSecurityProfile{
@@ -128,7 +128,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 			// EnableVTPM:       lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 		},
-		MaxPods: lo.ToPtr(p.KubeletConfig.MaxPods),
+		MaxPods: new(p.KubeletConfig.MaxPods),
 
 		VnetCidrs: []string{}, // Unsupported as of now; TODO(Windows)
 		// MessageOfTheDay:         lo.ToPtr(""),                                    // Unsupported as of now
@@ -136,11 +136,11 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
 		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
-		EnableFIPS:          lo.ToPtr(enableFIPS),
+		EnableFIPS:          new(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
-			Enabled: lo.ToPtr(enableArtifactStreaming),
+			Enabled: new(enableArtifactStreaming),
 		},
 		LocalDNSProfile: convertLocalDNSToModel(p.LocalDNSProfile),
 	}
@@ -173,7 +173,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 		// NodeClaim defaults don't work somehow and keep giving invalid values. Can be improved later.
 		if p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String() != "0s" {
-			provisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod = lo.ToPtr(p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String())
+			provisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod = new(p.KubeletConfig.CPUCFSQuotaPeriod.Duration.String())
 		}
 		if p.KubeletConfig.CPUManagerPolicy != nil && *p.KubeletConfig.CPUManagerPolicy != "" {
 			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = p.KubeletConfig.CPUManagerPolicy
@@ -194,14 +194,14 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	if utils.IsNvidiaEnabledSKU(p.InstanceType.Name) {
 		provisionProfile.GpuProfile = &models.GPUProfile{
-			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverTypeGRID, models.DriverTypeCUDA)),
-			InstallGPUDriver: lo.ToPtr(p.GPUDriverInstallationEnabled),
+			DriverType:       new(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverTypeGRID, models.DriverTypeCUDA)),
+			InstallGPUDriver: new(p.GPUDriverInstallationEnabled),
 		}
 	}
 
 	provisionHelperValues := &models.ProvisionHelperValues{
-		SkuCPU:    lo.ToPtr(p.InstanceType.Capacity.Cpu().AsApproximateFloat64()),
-		SkuMemory: lo.ToPtr(math.Ceil(reverseVMMemoryOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
+		SkuCPU:    new(p.InstanceType.Capacity.Cpu().AsApproximateFloat64()),
+		SkuMemory: new(math.Ceil(reverseVMMemoryOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
 	}
 
 	return &models.ProvisionValues{

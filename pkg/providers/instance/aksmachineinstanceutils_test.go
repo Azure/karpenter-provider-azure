@@ -105,22 +105,22 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			}
 
 			aksMachine = &armcontainerservice.Machine{
-				ID:    lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.ContainerService/managedClusters/test/agentPools/pool/machines/test-machine"),
-				Name:  lo.ToPtr("test-machine"),
-				Zones: []*string{lo.ToPtr("1")},
+				ID:    new("/subscriptions/test/resourceGroups/test/providers/Microsoft.ContainerService/managedClusters/test/agentPools/pool/machines/test-machine"),
+				Name:  new("test-machine"),
+				Zones: []*string{new("1")},
 				Properties: &armcontainerservice.MachineProperties{
 					Hardware: &armcontainerservice.MachineHardwareProfile{
-						VMSize: lo.ToPtr("Standard_D2_v2"),
+						VMSize: new("Standard_D2_v2"),
 					},
 					Priority:   lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
-					ResourceID: lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
+					ResourceID: new("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
 					Status: &armcontainerservice.MachineStatus{
-						CreationTimestamp: lo.ToPtr(creationTime),
+						CreationTimestamp: new(creationTime),
 					},
-					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
+					NodeImageVersion: new("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
-						NodePoolTagKey: lo.ToPtr("test-nodepool"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
+						NodePoolTagKey: new("test-nodepool"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: new("test-nodeclaim"),
 					},
 				},
 			}
@@ -198,7 +198,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			aksMachine = &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
 					Tags: map[string]*string{
-						"karpenter.sh_nodepool": lo.ToPtr("test-nodepool"),
+						"karpenter.sh_nodepool": new("test-nodepool"),
 					},
 				},
 			}
@@ -230,7 +230,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should return NotFound error when NodePool tag is empty", func() {
-			aksMachine.Properties.Tags["karpenter.sh_nodepool"] = lo.ToPtr("")
+			aksMachine.Properties.Tags["karpenter.sh_nodepool"] = new("")
 			client := fake.NewClientBuilder().Build()
 
 			_, err := FindNodePoolFromAKSMachine(ctx, aksMachine, client)
@@ -508,7 +508,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		It("should return false when provisioning state is not Deleting", func() {
 			machine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: lo.ToPtr("Running"),
+					ProvisioningState: new("Running"),
 				},
 			}
 
@@ -545,7 +545,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 	Context("GetAKSLabelZoneFromAKSMachine", func() {
 		It("should return zone for AKS machine with single zone", func() {
 			machine := &armcontainerservice.Machine{
-				Zones: []*string{lo.ToPtr("1")},
+				Zones: []*string{new("1")},
 			}
 			location := "eastus"
 
@@ -590,7 +590,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error for empty location", func() {
 			machine := &armcontainerservice.Machine{
-				Zones: []*string{lo.ToPtr("2")},
+				Zones: []*string{new("2")},
 			}
 			location := ""
 
@@ -602,7 +602,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error for AKS machine with multiple zones", func() {
 			machine := &armcontainerservice.Machine{
-				Zones: []*string{lo.ToPtr("1"), lo.ToPtr("2")},
+				Zones: []*string{new("1"), new("2")},
 			}
 			location := "eastus"
 
@@ -625,7 +625,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 			for _, tc := range testCases {
 				machine := &armcontainerservice.Machine{
-					Zones: []*string{lo.ToPtr(tc.zoneID)},
+					Zones: []*string{new(tc.zoneID)},
 				}
 
 				zone, err := GetAKSLabelZoneFromAKSMachine(machine, tc.location)
@@ -705,7 +705,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return valid JSON for a minimal machine", func() {
 			machine := &armcontainerservice.Machine{
-				Name: lo.ToPtr("test-machine"),
+				Name: new("test-machine"),
 			}
 			result := BuildJSONFromAKSMachine(machine)
 			Expect(result).To(ContainSubstring(`"name":"test-machine"`))
@@ -713,33 +713,33 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return valid JSON for a fully populated machine", func() {
 			machine := &armcontainerservice.Machine{
-				Name:  lo.ToPtr("test-machine"),
-				Zones: []*string{lo.ToPtr("1")},
+				Name:  new("test-machine"),
+				Zones: []*string{new("1")},
 				Properties: &armcontainerservice.MachineProperties{
-					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15"),
+					NodeImageVersion: new("AKSUbuntu-2204gen2containerd-2023.11.15"),
 					Hardware: &armcontainerservice.MachineHardwareProfile{
-						VMSize: lo.ToPtr("Standard_D2s_v3"),
+						VMSize: new("Standard_D2s_v3"),
 					},
 					OperatingSystem: &armcontainerservice.MachineOSProfile{
 						OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
 						OSSKU:        lo.ToPtr(armcontainerservice.OSSKUUbuntu2204),
-						OSDiskSizeGB: lo.ToPtr(int32(128)),
+						OSDiskSizeGB: new(int32(128)),
 						OSDiskType:   lo.ToPtr(armcontainerservice.OSDiskTypeManaged),
-						EnableFIPS:   lo.ToPtr(false),
+						EnableFIPS:   new(false),
 					},
 					Kubernetes: &armcontainerservice.MachineKubernetesProfile{
-						OrchestratorVersion:      lo.ToPtr("1.29.0"),
-						MaxPods:                  lo.ToPtr(int32(30)),
-						NodeLabels:               map[string]*string{"env": lo.ToPtr("test")},
-						NodeInitializationTaints: []*string{lo.ToPtr("node.kubernetes.io/not-ready:NoSchedule")},
+						OrchestratorVersion:      new("1.29.0"),
+						MaxPods:                  new(int32(30)),
+						NodeLabels:               map[string]*string{"env": new("test")},
+						NodeInitializationTaints: []*string{new("node.kubernetes.io/not-ready:NoSchedule")},
 					},
 					Mode:     lo.ToPtr(armcontainerservice.AgentPoolModeUser),
 					Priority: lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
 					Security: &armcontainerservice.MachineSecurityProfile{
-						EnableEncryptionAtHost: lo.ToPtr(false),
+						EnableEncryptionAtHost: new(false),
 					},
 					Tags: map[string]*string{
-						"karpenter.sh/nodepool": lo.ToPtr("default"),
+						"karpenter.sh/nodepool": new("default"),
 					},
 				},
 			}
@@ -763,7 +763,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should handle machine with empty properties", func() {
 			machine := &armcontainerservice.Machine{
-				Name:       lo.ToPtr("test-machine"),
+				Name:       new("test-machine"),
 				Properties: &armcontainerservice.MachineProperties{},
 			}
 			result := BuildJSONFromAKSMachine(machine)

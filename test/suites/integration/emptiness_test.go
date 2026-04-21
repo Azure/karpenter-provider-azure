@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -81,7 +80,7 @@ var _ = Describe("Emptiness", func() {
 			windowStart := time.Now().Add(-time.Minute * 15).UTC()
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes:    "0",
-				Schedule: lo.ToPtr(fmt.Sprintf("%d %d * * *", windowStart.Minute(), windowStart.Hour())),
+				Schedule: new(fmt.Sprintf("%d %d * * *", windowStart.Minute(), windowStart.Hour())),
 				Duration: &metav1.Duration{Duration: time.Minute * 30},
 			}}
 
@@ -115,7 +114,7 @@ var _ = Describe("Emptiness", func() {
 
 		By("making the nodeclaim empty")
 		persisted := deployment.DeepCopy()
-		deployment.Spec.Replicas = lo.ToPtr(int32(0))
+		deployment.Spec.Replicas = new(int32(0))
 		Expect(env.Client.Patch(env, deployment, client.StrategicMergeFrom(persisted))).To(Succeed())
 
 		env.EventuallyExpectConsolidatable(nodeClaim)

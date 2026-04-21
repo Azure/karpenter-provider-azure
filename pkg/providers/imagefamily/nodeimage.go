@@ -169,7 +169,7 @@ func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultIma
 func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string) (string, error) {
 	// Note: the kubernetes version is part of the cache key here, because we bump images on kubernetes upgrade meaning
 	// we want to ensure if there is a kubernetes change we'll get fresh images if there are any.
-	hash, err := hashstructure.Hash([]interface{}{
+	hash, err := hashstructure.Hash([]any{
 		supportedImages,
 		k8sVersion,
 	}, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})

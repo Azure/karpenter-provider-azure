@@ -23,7 +23,6 @@ import (
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -58,7 +57,7 @@ var _ = Describe("CEL/Validation", func() {
 			Protocol:           v1alpha2.LocalDNSProtocolPreferUDP,
 			ForwardDestination: forwardDest,
 			ForwardPolicy:      v1alpha2.LocalDNSForwardPolicySequential,
-			MaxConcurrent:      lo.ToPtr(int32(100)),
+			MaxConcurrent:      new(int32(100)),
 			CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 			ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 			ServeStale:         v1alpha2.LocalDNSServeStaleVerify,
@@ -472,12 +471,12 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid: 0 (minimum)", lo.ToPtr(int32(0)), ""),
-			Entry("valid: 1", lo.ToPtr(int32(1)), ""),
-			Entry("valid: 100", lo.ToPtr(int32(100)), ""),
-			Entry("valid: 1000", lo.ToPtr(int32(1000)), ""),
-			Entry("invalid: -1 (below minimum)", lo.ToPtr(int32(-1)), "maxConcurrent"),
-			Entry("invalid: -100 (below minimum)", lo.ToPtr(int32(-100)), "maxConcurrent"),
+			Entry("valid: 0 (minimum)", new(int32(0)), ""),
+			Entry("valid: 1", new(int32(1)), ""),
+			Entry("valid: 100", new(int32(100)), ""),
+			Entry("valid: 1000", new(int32(1000)), ""),
+			Entry("invalid: -1 (below minimum)", new(int32(-1)), "maxConcurrent"),
+			Entry("invalid: -100 (below minimum)", new(int32(-100)), "maxConcurrent"),
 		)
 
 		It("should reject duplicate zones in VnetDNSOverrides due to listType=map", func() {
@@ -663,14 +662,14 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid minimum size (30 GB)", lo.ToPtr(int32(30)), true),
-			Entry("valid default size (128 GB)", lo.ToPtr(int32(128)), true),
-			Entry("valid large size (1024 GB)", lo.ToPtr(int32(1024)), true),
-			Entry("valid maximum size (2048 GB)", lo.ToPtr(int32(2048)), true),
+			Entry("valid minimum size (30 GB)", new(int32(30)), true),
+			Entry("valid default size (128 GB)", new(int32(128)), true),
+			Entry("valid large size (1024 GB)", new(int32(1024)), true),
+			Entry("valid maximum size (2048 GB)", new(int32(2048)), true),
 			Entry("nil value (uses default)", nil, true),
-			Entry("below minimum (29 GB)", lo.ToPtr(int32(29)), false),
-			Entry("above maximum (2049 GB)", lo.ToPtr(int32(2049)), false),
-			Entry("well above maximum (4096 GB)", lo.ToPtr(int32(4096)), false),
+			Entry("below minimum (29 GB)", new(int32(29)), false),
+			Entry("above maximum (2049 GB)", new(int32(2049)), false),
+			Entry("well above maximum (4096 GB)", new(int32(4096)), false),
 		)
 	})
 

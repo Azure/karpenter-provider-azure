@@ -23,7 +23,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -77,7 +76,7 @@ func TestNoAKSAgentPoolsClient_BeginDeleteMachines(t *testing.T) {
 
 	_, err := client.BeginDeleteMachines(ctx, "test-rg", "test-cluster", "test-pool", armcontainerservice.AgentPoolDeleteMachinesParameter{
 		MachineNames: []*string{
-			lo.ToPtr("machine1"),
+			new("machine1"),
 		},
 	}, nil)
 

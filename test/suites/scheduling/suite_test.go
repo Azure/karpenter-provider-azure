@@ -354,7 +354,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							TopologyKey:       corev1.LabelTopologyZone,
 							WhenUnsatisfiable: corev1.DoNotSchedule,
 							LabelSelector:     &metav1.LabelSelector{MatchLabels: podLabels},
-							MinDomains:        lo.ToPtr(int32(3)),
+							MinDomains:        new(int32(3)),
 							NodeTaintsPolicy:  lo.ToPtr(corev1.NodeInclusionPolicyHonor),
 						},
 					},
@@ -371,7 +371,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		It("should provision a node using a NodePool with higher priority", func() {
 			nodePoolLowPri := test.NodePool(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
-					Weight: lo.ToPtr(int32(10)),
+					Weight: new(int32(10)),
 					Template: karpv1.NodeClaimTemplate{
 						Spec: karpv1.NodeClaimTemplateSpec{
 							NodeClassRef: &karpv1.NodeClassReference{
@@ -397,7 +397,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			})
 			nodePoolHighPri := test.NodePool(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
-					Weight: lo.ToPtr(int32(100)),
+					Weight: new(int32(100)),
 					Template: karpv1.NodeClaimTemplate{
 						Spec: karpv1.NodeClaimTemplateSpec{
 							NodeClassRef: &karpv1.NodeClassReference{
@@ -456,7 +456,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU: func() resource.Quantity {
 								dsOverhead := env.GetDaemonSetOverhead(nodePool)
-								base := lo.ToPtr(resource.MustParse("3"))
+								base := new(resource.MustParse("3"))
 								base.Sub(*dsOverhead.Cpu())
 								return *base
 							}(),
@@ -587,7 +587,7 @@ var _ = Describe("Node Overlay", func() {
 		pod := test.Pod()
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
-				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
+				PriceAdjustment: new("-99.99999999999%"),
 				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
@@ -611,7 +611,7 @@ var _ = Describe("Node Overlay", func() {
 		pod := test.Pod()
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
-				Price: lo.ToPtr("0.0000000232"),
+				Price: new("0.0000000232"),
 				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,

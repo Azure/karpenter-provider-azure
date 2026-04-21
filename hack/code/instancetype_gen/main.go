@@ -83,12 +83,12 @@ func main() {
 	switch args.Format {
 	case "testfakes":
 		pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{
-			Filter: lo.ToPtr(fmt.Sprintf("location eq '%s'", args.Location)),
+			Filter: new(fmt.Sprintf("location eq '%s'", args.Location)),
 		})
 		var targetSkus map[string]struct{}
 		if args.Sizes != "" {
 			targetSkus = map[string]struct{}{}
-			for _, s := range strings.Split(args.Sizes, ",") {
+			for s := range strings.SplitSeq(args.Sizes, ",") {
 				targetSkus[s] = struct{}{}
 			}
 		}
@@ -164,7 +164,7 @@ func parseIgnoreFamilies(raw string) map[string]time.Time {
 	if raw == "" {
 		return result
 	}
-	for _, pair := range strings.Split(raw, ",") {
+	for pair := range strings.SplitSeq(raw, ",") {
 		parts := strings.SplitN(pair, ":", 2)
 		if len(parts) != 2 {
 			panic(fmt.Sprintf("invalid --ignore-families entry %q: expected family:date", pair))

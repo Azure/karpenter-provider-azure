@@ -48,7 +48,7 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				UseSIG:        lo.ToPtr(true),
+				UseSIG:        new(true),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -160,7 +160,7 @@ var _ = Describe("CloudProvider", func() {
 						aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
 					}
 					aksMachine.Properties.Status.DriftAction = lo.ToPtr(armcontainerservice.DriftActionRecreate)
-					aksMachine.Properties.Status.DriftReason = lo.ToPtr("ClusterConfigurationChanged")
+					aksMachine.Properties.Status.DriftReason = new("ClusterConfigurationChanged")
 
 					// Update the machine in the fake store
 					azureEnv.AKSDataStorage.AKSMachines.Store(aksMachineID, aksMachine)
@@ -225,7 +225,7 @@ var _ = Describe("CloudProvider", func() {
 				// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 				It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					nodeClass.Status.KubernetesVersion = lo.ToPtr("")
+					nodeClass.Status.KubernetesVersion = new("")
 					ExpectApplied(ctx, env.Client, nodeClass)
 					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 					Expect(err).ToNot(HaveOccurred())
@@ -270,7 +270,7 @@ var _ = Describe("CloudProvider", func() {
 
 					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(*nodeClass.Status.KubernetesVersion))
 					semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
-					nodeClass.Status.KubernetesVersion = lo.ToPtr(semverCurrentK8sVersion.String())
+					nodeClass.Status.KubernetesVersion = new(semverCurrentK8sVersion.String())
 
 					ExpectApplied(ctx, env.Client, nodeClass)
 

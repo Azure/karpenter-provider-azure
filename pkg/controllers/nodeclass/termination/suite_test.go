@@ -86,7 +86,7 @@ var _ = Describe("NodeClass Termination", func() {
 
 	It("should not delete the AKSNodeClass until all associated NodeClaims are terminated", func() {
 		var nodeClaims []*karpv1.NodeClaim
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			nc := coretest.NodeClaim(karpv1.NodeClaim{
 				Spec: karpv1.NodeClaimSpec{
 					NodeClassRef: &karpv1.NodeClassReference{

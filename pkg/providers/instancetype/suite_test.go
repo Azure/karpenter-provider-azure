@@ -100,7 +100,7 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx, stop = context.WithCancel(ctx)
+	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118 - stop() is called in AfterSuite
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
 	ctxBootstrap := options.ToContext(ctx, test.Options(test.OptionsFields{
@@ -200,12 +200,12 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			vmName := instance.GenerateResourceName(nodeClaim.Name)
 			vm := &armcompute.VirtualMachine{
-				Name:     lo.ToPtr(vmName),
-				ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+				Name:     new(vmName),
+				ID:       new(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
 				Location: lo.ToPtr(fake.Region),
-				Zones:    []*string{lo.ToPtr("fantasy-zone")},
+				Zones:    []*string{new("fantasy-zone")},
 				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now()),
+					TimeCreated: new(time.Now()),
 					HardwareProfile: &armcompute.HardwareProfile{
 						VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
 					},
@@ -254,7 +254,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should include stateless CNI label for kubernetes 1.34+ set to true", func() {
 				// Set kubernetes version to 1.34.0
-				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
+				nodeClass.Status.KubernetesVersion = new("1.34.0")
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -267,7 +267,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should include stateless CNI label for kubernetes < 1.34 set to false", func() {
 				// Set kubernetes version to 1.33.0
-				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.33.0")
+				nodeClass.Status.KubernetesVersion = new("1.33.0")
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -279,7 +279,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			})
 			It("should use the subnet specified in the nodeclass", func() {
-				nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
+				nodeClass.Spec.VNETSubnetID = new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -300,12 +300,12 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				vmName := instance.GenerateResourceName(nodeClaim.Name)
 				vm := &armcompute.VirtualMachine{
-					Name:     lo.ToPtr(vmName),
-					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+					Name:     new(vmName),
+					ID:       new(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
 					Location: lo.ToPtr(fake.Region),
-					Zones:    []*string{lo.ToPtr("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
+					Zones:    []*string{new("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
 					Properties: &armcompute.VirtualMachineProperties{
-						TimeCreated: lo.ToPtr(time.Now()),
+						TimeCreated: new(time.Now()),
 						HardwareProfile: &armcompute.HardwareProfile{
 							VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
 						},
@@ -583,19 +583,19 @@ var _ = Describe("InstanceType Provider", func() {
 				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 				Expect(vm).NotTo(BeNil())
 				Expect(vm.Tags).To(Equal(map[string]*string{
-					"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
-					"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
-					"compute.aks.billing":          lo.ToPtr("linux"),
-					"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+					"karpenter.azure.com_test-tag": new("test-value"),
+					"karpenter.azure.com_cluster":  new("test-cluster"),
+					"compute.aks.billing":          new("linux"),
+					"karpenter.sh_nodepool":        new(nodePool.Name),
 				}))
 
 				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 				Expect(nic).NotTo(BeNil())
 				Expect(nic.Interface.Tags).To(Equal(map[string]*string{
-					"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
-					"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
-					"compute.aks.billing":          lo.ToPtr("linux"),
-					"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+					"karpenter.azure.com_test-tag": new("test-value"),
+					"karpenter.azure.com_cluster":  new("test-cluster"),
+					"compute.aks.billing":          new("linux"),
+					"karpenter.sh_nodepool":        new(nodePool.Name),
 				}))
 			})
 		})
@@ -614,7 +614,7 @@ var _ = Describe("InstanceType Provider", func() {
 								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 								ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
+								MaxConcurrent:      new(int32(100)),
 								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -625,7 +625,7 @@ var _ = Describe("InstanceType Provider", func() {
 								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 								ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
+								MaxConcurrent:      new(int32(100)),
 								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -638,7 +638,7 @@ var _ = Describe("InstanceType Provider", func() {
 								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 								ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
+								MaxConcurrent:      new(int32(100)),
 								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -649,7 +649,7 @@ var _ = Describe("InstanceType Provider", func() {
 								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 								ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
+								MaxConcurrent:      new(int32(100)),
 								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -659,7 +659,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 				if k8sVersion != "" {
-					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
+					nodeClass.Status.KubernetesVersion = new(k8sVersion)
 				}
 				ExpectApplied(ctx, env.Client, nodeClass)
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
@@ -706,7 +706,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -717,7 +717,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -730,7 +730,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -741,7 +741,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -763,7 +763,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -774,7 +774,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -787,7 +787,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -798,7 +798,7 @@ var _ = Describe("InstanceType Provider", func() {
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
+							MaxConcurrent:      new(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -855,9 +855,9 @@ var _ = Describe("InstanceType Provider", func() {
 			Entry("when artifact streaming is not set (default) - includes ARM64",
 				nil, true),
 			Entry("when artifact streaming is explicitly enabled - excludes ARM64",
-				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}, false),
+				&v1beta1.ArtifactStreaming{Enabled: new(true)}, false),
 			Entry("when artifact streaming is explicitly disabled - includes ARM64",
-				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}, true),
+				&v1beta1.ArtifactStreaming{Enabled: new(false)}, true),
 		)
 
 		Context("Ephemeral Disk", func() {
@@ -867,7 +867,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx = options.ToContext(
 					ctx,
 					test.Options(test.OptionsFields{
-						UseSIG: lo.ToPtr(true),
+						UseSIG: new(true),
 					}))
 
 				// Repopilate instance types based on above ctx
@@ -1114,7 +1114,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx = options.ToContext(
 					ctx,
 					test.Options(test.OptionsFields{
-						ClusterDNSServiceIP: lo.ToPtr("10.244.0.1"),
+						ClusterDNSServiceIP: new("10.244.0.1"),
 					}),
 				)
 
@@ -1136,14 +1136,14 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("Nodepool with KubeletConfig", func() {
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
+					ImageGCHighThresholdPercent: new(int32(30)),
+					ImageGCLowThresholdPercent:  new(int32(20)),
+					TopologyManagerPolicy:       new("best-effort"),
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
+					ContainerLogMaxSize:         new("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}
@@ -1189,7 +1189,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx = options.ToContext(
 					ctx,
 					test.Options(test.OptionsFields{
-						NetworkPlugin: lo.ToPtr("kubenet"),
+						NetworkPlugin: new("kubenet"),
 					}))
 			})
 
@@ -1212,14 +1212,14 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
+					ImageGCHighThresholdPercent: new(int32(30)),
+					ImageGCLowThresholdPercent:  new(int32(20)),
+					TopologyManagerPolicy:       new("best-effort"),
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
+					ContainerLogMaxSize:         new("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}
@@ -1255,18 +1255,18 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
+					ImageGCHighThresholdPercent: new(int32(30)),
+					ImageGCLowThresholdPercent:  new(int32(20)),
+					TopologyManagerPolicy:       new("best-effort"),
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
+					ContainerLogMaxSize:         new("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}
-				nodeClass.Spec.MaxPods = lo.ToPtr(int32(15))
+				nodeClass.Spec.MaxPods = new(int32(15))
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
@@ -1303,7 +1303,7 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("ImageReference", func() {
 			It("should use shared image gallery images when options are set to UseSIG", func() {
 				options := test.Options(test.OptionsFields{
-					UseSIG: lo.ToPtr(true),
+					UseSIG: new(true),
 				})
 				ctx = options.ToContext(ctx)
 				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID)
@@ -1326,7 +1326,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should use Community Images when options are set to UseSIG=false", func() {
 				options := test.Options(test.OptionsFields{
-					UseSIG: lo.ToPtr(false),
+					UseSIG: new(false),
 				})
 				ctx = options.ToContext(ctx)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1352,12 +1352,12 @@ var _ = Describe("InstanceType Provider", func() {
 
 			DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
 				options := test.Options(test.OptionsFields{
-					UseSIG: lo.ToPtr(true),
+					UseSIG: new(true),
 				})
 				ctx = options.ToContext(ctx)
 				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID)
 
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				nodeClass.Spec.ImageFamily = new(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -1391,7 +1391,7 @@ var _ = Describe("InstanceType Provider", func() {
 					if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
 						Skip("AzureLinux3 ARM64 VHD is not available in CIG")
 					}
-					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+					nodeClass.Spec.ImageFamily = new(imageFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
@@ -1635,9 +1635,9 @@ var _ = Describe("InstanceType Provider", func() {
 			networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
 			expectedNodeLabels sets.Set[string]) {
 			options := test.Options(test.OptionsFields{
-				NetworkPlugin:     lo.ToPtr(networkPlugin),
-				NetworkPluginMode: lo.ToPtr(networkPluginMode),
-				NetworkDataplane:  lo.ToPtr(networkDataplane),
+				NetworkPlugin:     new(networkPlugin),
+				NetworkPluginMode: new(networkPluginMode),
+				NetworkDataplane:  new(networkDataplane),
 			})
 			ctx = options.ToContext(ctx)
 
@@ -1824,7 +1824,7 @@ var _ = Describe("InstanceType Provider", func() {
 				podLabels := map[string]string{"app": "tsc-repro"}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pods := []*v1.Pod{}
-				for i := 0; i < 3; i++ {
+				for range 3 {
 					pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
 						ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 						TopologySpreadConstraints: []v1.TopologySpreadConstraint{
@@ -1974,35 +1974,35 @@ var _ = Describe("InstanceType Provider", func() {
 				// when ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
 				expectedUnavailableSKUs := []*skewer.SKU{
 					{
-						Name:   lo.ToPtr("Standard_D2_v2"),
-						Size:   lo.ToPtr("D2_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
+						Name:   new("Standard_D2_v2"),
+						Size:   new("D2_v2"),
+						Family: new("StandardDv2Family"),
 						Capabilities: &[]compute.ResourceSkuCapabilities{
 							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("2"),
+								Name:  new("vCPUs"),
+								Value: new("2"),
 							},
 						},
 					},
 					{
-						Name:   lo.ToPtr("Standard_D16_v2"),
-						Size:   lo.ToPtr("D16_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
+						Name:   new("Standard_D16_v2"),
+						Size:   new("D16_v2"),
+						Family: new("StandardDv2Family"),
 						Capabilities: &[]compute.ResourceSkuCapabilities{
 							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("16"),
+								Name:  new("vCPUs"),
+								Value: new("16"),
 							},
 						},
 					},
 					{
-						Name:   lo.ToPtr("Standard_D32_v2"),
-						Size:   lo.ToPtr("D32_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
+						Name:   new("Standard_D32_v2"),
+						Size:   new("D32_v2"),
+						Family: new("StandardDv2Family"),
 						Capabilities: &[]compute.ResourceSkuCapabilities{
 							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("32"),
+								Name:  new("vCPUs"),
+								Value: new("32"),
 							},
 						},
 					},
@@ -2096,7 +2096,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_DS2_v2", "Standard_F16s_v2"}})
 				pods := []*v1.Pod{}
-				for i := 0; i < 2; i++ {
+				for range 2 {
 					pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
 						ResourceRequirements: v1.ResourceRequirements{
 							Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
@@ -2210,7 +2210,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			BeforeEach(func() {
 				nodeClassAZLinux := test.AKSNodeClass()
-				nodeClassAZLinux.Spec.ImageFamily = lo.ToPtr("AzureLinux")
+				nodeClassAZLinux.Spec.ImageFamily = new("AzureLinux")
 				ExpectApplied(ctx, env.Client, nodeClassAZLinux)
 				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassAZLinux)
 				Expect(err).ToNot(HaveOccurred())
@@ -2299,7 +2299,7 @@ var _ = Describe("InstanceType Provider", func() {
 					if nodeClassWithEncryption.Spec.Security == nil {
 						nodeClassWithEncryption.Spec.Security = &v1beta1.Security{}
 					}
-					nodeClassWithEncryption.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+					nodeClassWithEncryption.Spec.Security.EncryptionAtHost = new(true)
 					ExpectApplied(ctx, env.Client, nodeClassWithEncryption)
 					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithEncryption)
 					Expect(err).ToNot(HaveOccurred())
@@ -2339,13 +2339,13 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should set pods equal to MaxPods in the AKSNodeClass when specified", func() {
 				maxPods := int32(150)
-				nodeClass.Spec.MaxPods = lo.ToPtr(maxPods)
+				nodeClass.Spec.MaxPods = new(maxPods)
 
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
 				ExpectCapacityPodsToMatchMaxPods(instanceTypes, maxPods)
 
-				nodeClass.Spec.MaxPods = lo.ToPtr(int32(100))
+				nodeClass.Spec.MaxPods = new(int32(100))
 				// Expect that an updated nodeclass is reflected
 				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
@@ -2355,8 +2355,8 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx = options.ToContext(
 					ctx,
 					test.Options(test.OptionsFields{
-						NetworkPlugin:     lo.ToPtr("azure"),
-						NetworkPluginMode: lo.ToPtr(""),
+						NetworkPlugin:     new("azure"),
+						NetworkPluginMode: new(""),
 					}),
 				)
 				Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("azure"))
@@ -2377,7 +2377,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx = options.ToContext(
 					ctx,
 					test.Options(test.OptionsFields{
-						NetworkPlugin: lo.ToPtr("none"),
+						NetworkPlugin: new("none"),
 					}),
 				)
 				Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("none"))
@@ -2390,7 +2390,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx = options.ToContext(
 					ctx,
 					test.Options(test.OptionsFields{
-						NetworkPlugin: lo.ToPtr("kubenet"),
+						NetworkPlugin: new("kubenet"),
 					}),
 				)
 				Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("kubenet"))
@@ -2901,7 +2901,7 @@ var _ = Describe("Tax Calculator", func() {
 })
 
 func createSDKErrorBody(code, message string) io.ReadCloser {
-	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
+	return io.NopCloser(bytes.NewReader(fmt.Appendf(nil, `{"error":{"code": "%s", "message": "%s"}}`, code, message)))
 }
 
 func ExpectKubeletFlagsPassed(customData string) string {

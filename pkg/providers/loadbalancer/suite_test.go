@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/patrickmn/go-cache"
-	"github.com/samber/lo"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -112,7 +111,7 @@ var _ = Describe("LoadBalancer Provider", func() {
 			standardLB.Properties.BackendAddressPools[1].Properties.LoadBalancerBackendAddresses = []*armnetwork.LoadBalancerBackendAddress{
 				{
 					Properties: &armnetwork.LoadBalancerBackendAddressPropertiesFormat{
-						IPAddress: lo.ToPtr("1.2.3.4"),
+						IPAddress: new("1.2.3.4"),
 					},
 				},
 			}

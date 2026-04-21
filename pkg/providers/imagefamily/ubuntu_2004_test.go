@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -64,7 +63,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
-	fipsMode := lo.ToPtr(v1beta1.FIPSModeFIPS)
+	fipsMode := new(v1beta1.FIPSModeFIPS)
 	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
 

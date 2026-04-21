@@ -17,7 +17,6 @@ limitations under the License.
 package test
 
 import (
-	"github.com/samber/lo"
 	k8srand "k8s.io/apimachinery/pkg/util/rand"
 )
 
@@ -36,15 +35,15 @@ func RandomName(prefix string) string {
 
 func ManagedTags(nodepoolName string) map[string]*string {
 	return map[string]*string{
-		"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
-		"karpenter.sh_nodepool":       lo.ToPtr(nodepoolName),
+		"karpenter.azure.com_cluster": new("test-cluster"),
+		"karpenter.sh_nodepool":       new(nodepoolName),
 	}
 }
 
 func ManagedTagsAKSMachine(nodepoolName string, nodeClaimName string) map[string]*string {
 	return map[string]*string{
-		"karpenter.azure.com_cluster":              lo.ToPtr("test-cluster"),
-		"karpenter.sh_nodepool":                    lo.ToPtr(nodepoolName),
-		"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaimName),
+		"karpenter.azure.com_cluster":              new("test-cluster"),
+		"karpenter.sh_nodepool":                    new(nodepoolName),
+		"karpenter.azure.com_aksmachine_nodeclaim": new(nodeClaimName),
 	}
 }

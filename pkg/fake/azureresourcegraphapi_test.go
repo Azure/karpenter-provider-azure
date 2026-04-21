@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 )
 
 func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
@@ -43,7 +42,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 		{
 			testName:      "happy case",
 			vmNames:       []string{"A", "B", "C"},
-			tags:          map[string]*string{launchtemplate.NodePoolTagKey: lo.ToPtr("default")},
+			tags:          map[string]*string{launchtemplate.NodePoolTagKey: new("default")},
 			expectedError: "",
 		},
 		{
@@ -55,7 +54,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 		{
 			testName:      "wrong tags",
 			vmNames:       []string{"A", "B", "C"},
-			tags:          map[string]*string{"dummy tag": lo.ToPtr("default")},
+			tags:          map[string]*string{"dummy tag": new("default")},
 			expectedError: "Unexpected nil resource data",
 		},
 	}
@@ -63,7 +62,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 		t.Run(c.testName, func(t *testing.T) {
 			g := NewWithT(t)
 			for _, name := range c.vmNames {
-				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags, Zones: []*string{lo.ToPtr("1")}})
+				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags, Zones: []*string{new("1")}})
 				if err != nil {
 					t.Errorf("Unexpected error %v", err)
 					return
@@ -137,14 +136,14 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 				{
 					name: "karpenter-vm",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+						launchtemplate.NodePoolTagKey: new("default"),
 					},
 				},
 				{
 					name: "aks-machine-vm",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-claim"),
+						launchtemplate.NodePoolTagKey:                     new("default"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: new("test-claim"),
 					},
 				},
 			},
@@ -157,13 +156,13 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 				{
 					name: "vm1",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+						launchtemplate.NodePoolTagKey: new("default"),
 					},
 				},
 				{
 					name: "vm2",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+						launchtemplate.NodePoolTagKey: new("default"),
 					},
 				},
 			},
@@ -176,15 +175,15 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 				{
 					name: "aks-vm1",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("claim1"),
+						launchtemplate.NodePoolTagKey:                     new("default"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: new("claim1"),
 					},
 				},
 				{
 					name: "aks-vm2",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("claim2"),
+						launchtemplate.NodePoolTagKey:                     new("default"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: new("claim2"),
 					},
 				},
 			},
@@ -200,7 +199,7 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 			for _, vmConfig := range c.vmConfigs {
 				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, vmConfig.name, armcompute.VirtualMachine{
 					Tags:  vmConfig.tags,
-					Zones: []*string{lo.ToPtr("1")},
+					Zones: []*string{new("1")},
 				})
 				if err != nil {
 					t.Errorf("Unexpected error creating VM %s: %v", vmConfig.name, err)
@@ -261,14 +260,14 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 				{
 					name: "karpenter-nic",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+						launchtemplate.NodePoolTagKey: new("default"),
 					},
 				},
 				{
 					name: "aks-machine-nic",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-claim"),
+						launchtemplate.NodePoolTagKey:                     new("default"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: new("test-claim"),
 					},
 				},
 			},
@@ -281,7 +280,7 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 				{
 					name: "karpenter-nic",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+						launchtemplate.NodePoolTagKey: new("default"),
 					},
 				},
 				{
@@ -298,13 +297,13 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 				{
 					name: "nic1",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+						launchtemplate.NodePoolTagKey: new("default"),
 					},
 				},
 				{
 					name: "nic2",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey: lo.ToPtr("default"),
+						launchtemplate.NodePoolTagKey: new("default"),
 					},
 				},
 			},
@@ -317,15 +316,15 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 				{
 					name: "aks-nic1",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("claim1"),
+						launchtemplate.NodePoolTagKey:                     new("default"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: new("claim1"),
 					},
 				},
 				{
 					name: "aks-nic2",
 					tags: map[string]*string{
-						launchtemplate.NodePoolTagKey:                     lo.ToPtr("default"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("claim2"),
+						launchtemplate.NodePoolTagKey:                     new("default"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: new("claim2"),
 					},
 				},
 			},

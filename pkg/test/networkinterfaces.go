@@ -61,10 +61,10 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 		options.Properties = &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
-					Name: lo.ToPtr("ipConfig"),
+					Name: new("ipConfig"),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-						Subnet:                    &armnetwork.Subnet{ID: lo.ToPtr("/subscriptions/.../resourceGroups/.../providers/Microsoft.Network/virtualNetworks/.../subnets/default")},
+						Subnet:                    &armnetwork.Subnet{ID: new("/subscriptions/.../resourceGroups/.../providers/Microsoft.Network/virtualNetworks/.../subnets/default")},
 					},
 				},
 			},
@@ -72,7 +72,7 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 	}
 
 	nic := &armnetwork.Interface{
-		ID:         lo.ToPtr(fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/networkInterfaces/%s", options.Name)),
+		ID:         new(fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/networkInterfaces/%s", options.Name)),
 		Name:       &options.Name,
 		Location:   &options.Location,
 		Properties: options.Properties,

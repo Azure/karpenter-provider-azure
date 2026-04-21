@@ -134,14 +134,14 @@ func TestGetCredentialProviderURL(t *testing.T) {
 func TestKubeletConfigMap(t *testing.T) {
 	kubeletConfiguration := KubeletConfiguration{
 		KubeletConfiguration: v1beta1.KubeletConfiguration{
-			CPUManagerPolicy:            lo.ToPtr("static"),
-			CPUCFSQuota:                 lo.ToPtr(true),
+			CPUManagerPolicy:            new("static"),
+			CPUCFSQuota:                 new(true),
 			CPUCFSQuotaPeriod:           metav1.Duration{},
 			ImageGCHighThresholdPercent: lo.ToPtr[int32](42),
 			ImageGCLowThresholdPercent:  lo.ToPtr[int32](24),
-			TopologyManagerPolicy:       lo.ToPtr("best-effort"),
+			TopologyManagerPolicy:       new("best-effort"),
 			AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-			ContainerLogMaxSize:         lo.ToPtr("42Mi"),
+			ContainerLogMaxSize:         new("42Mi"),
 			ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 			PodPidsLimit:                lo.ToPtr[int64](99),
 		},

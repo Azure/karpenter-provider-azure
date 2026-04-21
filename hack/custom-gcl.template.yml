@@ -1,4 +1,4 @@
-version: v2.8.0 # Must be the same version as installed by hack/toolchain.sh
+version: v2.11.4 # Must be the same version as installed by hack/toolchain.sh
 name: golangci-lint-custom
 destination: $TOOL_DEST
 plugins:

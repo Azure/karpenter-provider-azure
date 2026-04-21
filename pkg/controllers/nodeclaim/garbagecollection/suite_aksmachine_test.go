@@ -46,7 +46,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		BeforeEach(func() {
 			// Enable AKS machines management for these tests
 			testOptions = test.Options(test.OptionsFields{
-				ManageExistingAKSMachines: lo.ToPtr(true),
+				ManageExistingAKSMachines: new(true),
 			})
 			ctx = options.ToContext(ctx, testOptions)
 
@@ -66,7 +66,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 		It("should delete an AKS machine if there is no NodeClaim owner", func() {
 			// Launch happened 10m ago
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
+			aksMachine.Properties.Status.CreationTimestamp = new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ExpectSingletonReconciled(ctx, InstanceGCController)
@@ -77,7 +77,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 		It("should not delete an AKS machine if there is no NodeClaim owner, but was not launched by a NodeClaim", func() {
 			// Remove the managed-by tag (this isn't launched by a NodeClaim)
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
+			aksMachine.Properties.Status.CreationTimestamp = new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			aksMachine.Properties.Tags = lo.OmitBy(aksMachine.Properties.Tags, func(key string, value *string) bool {
 				return key == launchtemplate.NodePoolTagKey
 			})
@@ -90,7 +90,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 		It("should not delete an AKS machine if there is no NodeClaim owner, but within the nodeClaim resolution window (5m)", func() {
 			// Launch time just happened
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp())
+			aksMachine.Properties.Status.CreationTimestamp = new(instance.NewAKSMachineTimestamp())
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ExpectSingletonReconciled(ctx, InstanceGCController)
@@ -100,7 +100,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 		It("should not delete the AKS machine or node if it already has a nodeClaim that matches it", func() {
 			// Launch time was 10m ago
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
+			aksMachine.Properties.Status.CreationTimestamp = new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
@@ -121,7 +121,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 		It("should delete an AKS machine along with the node if there is no NodeClaim owner (to quicken scheduling)", func() {
 			// Launch happened 10m ago
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
+			aksMachine.Properties.Status.CreationTimestamp = new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			node := coretest.Node(coretest.NodeOptions{
 				ProviderID: providerID,
@@ -142,7 +142,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		BeforeEach(func() {
 			// Enable AKS machines management for these tests
 			testOptions = test.Options(test.OptionsFields{
-				ManageExistingAKSMachines: lo.ToPtr(true),
+				ManageExistingAKSMachines: new(true),
 			})
 			ctx = options.ToContext(ctx, testOptions)
 
@@ -162,7 +162,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				Name:         "vm-mixed",
 				NodepoolName: "default",
 				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)),
+					TimeCreated: new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)),
 				},
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
@@ -174,7 +174,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				Name:             "aks-machine-mixed",
 				MachinesPoolName: opts.AKSMachinesPoolName,
 			})
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
+			aksMachine.Properties.Status.CreationTimestamp = new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 
@@ -196,7 +196,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				Name:         "vm-with-claim",
 				NodepoolName: "default",
 				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)),
+					TimeCreated: new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)),
 				},
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
@@ -214,7 +214,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				Name:             "aks-machine-orphaned",
 				MachinesPoolName: opts.AKSMachinesPoolName,
 			})
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
+			aksMachine.Properties.Status.CreationTimestamp = new(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 

@@ -33,7 +33,6 @@ import (
 	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
@@ -50,7 +49,7 @@ var _ = Describe("SubnetStatus", func() {
 			return armnetwork.SubnetsClientGetResponse{
 				Subnet: armnetwork.Subnet{
 					Properties: &armnetwork.SubnetPropertiesFormat{
-						AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+						AddressPrefix: new("10.0.0.0/16"),
 						IPConfigurations: []*armnetwork.IPConfiguration{
 							{}, {}, {}, {}, {}, // 5 used IPs
 						},
@@ -73,11 +72,11 @@ var _ = Describe("SubnetStatus", func() {
 	It("should use nodeclass subnet ID when specified (BYO VNet)", func() {
 		// Override context to use a BYO VNet instead of managed VNet
 		byoOpts := test.Options(test.OptionsFields{
-			SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
+			SubnetID: new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
 		})
 		byoCtx := options.ToContext(ctx, byoOpts)
 
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclass-subnet")
+		nodeClass.Spec.VNETSubnetID = new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclass-subnet")
 
 		azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
 			Expect(resourceGroupName).To(Equal("test-resourceGroup"))
@@ -87,7 +86,7 @@ var _ = Describe("SubnetStatus", func() {
 			return armnetwork.SubnetsClientGetResponse{
 				Subnet: armnetwork.Subnet{
 					Properties: &armnetwork.SubnetPropertiesFormat{
-						AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+						AddressPrefix: new("10.0.0.0/16"),
 					},
 				},
 			}, nil
@@ -117,7 +116,7 @@ var _ = Describe("SubnetStatus", func() {
 				return armnetwork.SubnetsClientGetResponse{
 					Subnet: armnetwork.Subnet{
 						Properties: &armnetwork.SubnetPropertiesFormat{
-							AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+							AddressPrefix: new("10.0.0.0/16"),
 							IPConfigurations: []*armnetwork.IPConfiguration{
 								{}, {}, {}, {}, {}, // 5 used IPs
 							},
@@ -157,11 +156,11 @@ var _ = Describe("SubnetStatus", func() {
 		It("should use nodeclass subnet ID when specified (BYO VNet)", func() {
 			// Override context to use a BYO VNet instead of managed VNet
 			byoOpts := test.Options(test.OptionsFields{
-				SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
+				SubnetID: new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
 			})
 			byoCtx := options.ToContext(ctx, byoOpts)
 
-			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclass-subnet")
+			nodeClass.Spec.VNETSubnetID = new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclass-subnet")
 
 			azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
 				Expect(resourceGroupName).To(Equal("test-resourceGroup"))
@@ -171,7 +170,7 @@ var _ = Describe("SubnetStatus", func() {
 				return armnetwork.SubnetsClientGetResponse{
 					Subnet: armnetwork.Subnet{
 						Properties: &armnetwork.SubnetPropertiesFormat{
-							AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+							AddressPrefix: new("10.0.0.0/16"),
 						},
 					},
 				}, nil
@@ -186,7 +185,7 @@ var _ = Describe("SubnetStatus", func() {
 		})
 
 		It("should mark nodeclass as not ready when custom subnet is in managed VNet", func() {
-			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/custom-subnet")
+			nodeClass.Spec.VNETSubnetID = new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/custom-subnet")
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())

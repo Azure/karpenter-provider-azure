@@ -20,7 +20,6 @@ import (
 	_ "embed"
 
 	"github.com/Azure/skewer"
-	"github.com/samber/lo"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -52,7 +51,7 @@ var allAzureVMSkus = func() []skewer.SKU {
 	entries := GetAllSKUEntries()
 	skus := make([]skewer.SKU, len(entries))
 	for i, e := range entries {
-		skus[i] = skewer.SKU{Name: lo.ToPtr(e.Name)}
+		skus[i] = skewer.SKU{Name: new(e.Name)}
 	}
 	return skus
 }()

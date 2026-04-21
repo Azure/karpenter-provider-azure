@@ -42,7 +42,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			}
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+			nodeClass.Spec.FIPSMode = new(v1beta1.FIPSModeFIPS)
 
 			env.ExpectCreated(nodeClass, nodePool)
 
@@ -75,7 +75,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			}
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+			nodeClass.Spec.FIPSMode = new(v1beta1.FIPSModeFIPS)
 
 			pod := test.Pod()
 			env.ExpectCreated(nodeClass, nodePool, pod)
@@ -88,7 +88,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 
 		It("should provision FIPS-enabled AzureLinux nodes", func() {
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+			nodeClass.Spec.FIPSMode = new(v1beta1.FIPSModeFIPS)
 
 			pod := test.Pod()
 			env.ExpectCreated(nodeClass, nodePool, pod)
@@ -108,7 +108,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			// However, since we don't have the defaulting actually set "Disabled" on the NodeClass, and instead
 			// leaves it unset, this tests is run to ensure "Disabled" behavior is expected.
 			// - Additionally, the default (unset behavior) may change in the future depending upon other settings.
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
+			nodeClass.Spec.FIPSMode = new(v1beta1.FIPSModeDisabled)
 
 			pod := test.Pod()
 			env.ExpectCreated(nodeClass, nodePool, pod)

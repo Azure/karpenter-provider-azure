@@ -30,7 +30,7 @@ var _ = Describe("EncryptionAtHost", func() {
 		if nodeClass.Spec.Security == nil {
 			nodeClass.Spec.Security = &v1beta1.Security{}
 		}
-		nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+		nodeClass.Spec.Security.EncryptionAtHost = new(true)
 
 		pod := test.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
