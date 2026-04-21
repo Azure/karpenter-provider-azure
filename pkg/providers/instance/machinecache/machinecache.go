@@ -73,7 +73,7 @@ func defaultOpts() opts {
 // Option is a functional option for configuring MachineCache.
 type Option func(opts) opts
 
-// WithTTL sets a custom TTL for the cache. A TTL of 0 means the cache is always stale.
+// WithTTL sets a custom Time-to-Live (TTL) for the cache. It determines how long the cache is considered fresh before it needs to be refreshed. A TTL of 0 means the cache is always stale.
 func WithTTL(d time.Duration) Option {
 	return func(o opts) opts { o.ttl = d; return o }
 }
@@ -112,7 +112,8 @@ type MachineCache struct {
 }
 
 // NewMachineCache creates a new cache instance with a background worker for automatic refresh.
-// The background worker will exit when the provided context is canceled.
+// By default, the cache will automatically refresh its contents in the background at the interval specified by the refreshInterval option.
+// Updates to the cache are also triggered when a stale cache is accessed.
 func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
 	cache := &MachineCache{
 		client:               client,
