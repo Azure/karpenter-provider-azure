@@ -156,7 +156,7 @@ func defaultOpts() opts {
 // Option is a functional option for configuring MachineCache.
 type Option func(opts) opts
 
-// WithTTL sets a custom TTL for the cache. A TTL of 0 means the cache is always stale.
+// WithTTL sets a custom Time-to-Live (TTL) for the cache. It determines how long the cache is considered fresh before it needs to be refreshed. A TTL of 0 means the cache is always stale.
 func WithTTL(d time.Duration) Option {
 	return func(o opts) opts { o.ttl = d; return o }
 }
