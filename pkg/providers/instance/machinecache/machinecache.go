@@ -272,11 +272,6 @@ func (c *MachineCache) Invalidate(machineName string) {
 	c.machines.Delete(machineName)
 }
 
-// WorkerContext returns the context used by the background worker.
-func (c *MachineCache) WorkerContext() context.Context {
-	return c.workerCtx
-}
-
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
 // This polls indefinitely until the machine reaches a terminal state (Succeeded, Failed, or Deleting) or the context is canceled.
 // If at any point the machine is not found, PollUntilDone will return an error.
