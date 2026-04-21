@@ -17,49 +17,53 @@ limitations under the License.
 package v1beta1_test
 
 import (
+	"testing"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	aztest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("IsLocalDNSEnabled", func() {
-	var nodeClass *v1beta1.AKSNodeClass
-
-	BeforeEach(func() {
-		nodeClass = test.AKSNodeClass()
-		nodeClass.Status = v1beta1.AKSNodeClassStatus{
-			Conditions: []status.Condition{{
-				Type:               v1beta1.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}},
-		}
-	})
-
-	DescribeTable("should return correct value based on LocalDNS mode and Kubernetes version",
-		func(mode v1beta1.LocalDNSMode, kubernetesVersion string, expected bool) {
-			if mode != "" {
-				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: mode}
+func TestIsLocalDNSEnabled(t *testing.T) {
+	tests := []struct {
+		name              string
+		mode              v1beta1.LocalDNSMode
+		kubernetesVersion string
+		expected          bool
+	}{
+		{"LocalDNS is nil", v1beta1.LocalDNSMode(""), "", false},
+		{"Mode is Required", v1beta1.LocalDNSModeRequired, "", true},
+		{"Mode is Disabled", v1beta1.LocalDNSModeDisabled, "", false},
+		{"Mode is Preferred, no k8s version", v1beta1.LocalDNSModePreferred, "", false},
+		{"Mode is Preferred, k8s 1.34.0", v1beta1.LocalDNSModePreferred, "1.34.0", false},
+		{"Mode is Preferred, k8s 1.35.0", v1beta1.LocalDNSModePreferred, "1.35.0", true},
+		{"Mode is Preferred, k8s v1.35.0", v1beta1.LocalDNSModePreferred, "v1.35.0", true},
+		{"Mode is Preferred, k8s 1.36.0", v1beta1.LocalDNSModePreferred, "1.36.0", true},
+		{"Mode is Preferred, k8s 1.35.5", v1beta1.LocalDNSModePreferred, "1.35.5", true},
+		{"Mode is Preferred, k8s 1.34.99", v1beta1.LocalDNSModePreferred, "1.34.99", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeClass := aztest.AKSNodeClass()
+			nodeClass.Status = v1beta1.AKSNodeClassStatus{
+				Conditions: []status.Condition{{
+					Type:               v1beta1.ConditionTypeKubernetesVersionReady,
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: nodeClass.Generation,
+				}},
 			}
-			if kubernetesVersion != "" {
-				nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
+			if tt.mode != "" {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: tt.mode}
 			}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(Equal(expected))
-		},
-		Entry("LocalDNS is nil", v1beta1.LocalDNSMode(""), "", false),
-		Entry("Mode is Required", v1beta1.LocalDNSModeRequired, "", true),
-		Entry("Mode is Disabled", v1beta1.LocalDNSModeDisabled, "", false),
-		Entry("Mode is Preferred, no k8s version", v1beta1.LocalDNSModePreferred, "", false),
-		Entry("Mode is Preferred, k8s 1.34.0", v1beta1.LocalDNSModePreferred, "1.34.0", false),
-		Entry("Mode is Preferred, k8s 1.35.0", v1beta1.LocalDNSModePreferred, "1.35.0", true),
-		Entry("Mode is Preferred, k8s v1.35.0", v1beta1.LocalDNSModePreferred, "v1.35.0", true),
-		Entry("Mode is Preferred, k8s 1.36.0", v1beta1.LocalDNSModePreferred, "1.36.0", true),
-		Entry("Mode is Preferred, k8s 1.35.5", v1beta1.LocalDNSModePreferred, "1.35.5", true),
-		Entry("Mode is Preferred, k8s 1.34.99", v1beta1.LocalDNSModePreferred, "1.34.99", false),
-	)
-})
+			if tt.kubernetesVersion != "" {
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(tt.kubernetesVersion)
+			}
+			got := nodeClass.IsLocalDNSEnabled()
+			if got != tt.expected {
+				t.Errorf("IsLocalDNSEnabled() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
