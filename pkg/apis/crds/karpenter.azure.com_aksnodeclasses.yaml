@@ -78,6 +78,25 @@ spec:
                 - FIPS
                 - Disabled
                 type: string
+              gpu:
+                description: gpu contains configuration for GPU-enabled nodes.
+                properties:
+                  mode:
+                    default: Driver
+                    description: |-
+                      mode controls GPU driver management on GPU-enabled nodes.
+                      When set to Driver (or not specified), GPU drivers are installed by AKS
+                      and only GPU SKUs with managed driver installation support are considered for scheduling.
+                      Currently, only NVIDIA GPUs support managed driver installation.
+                      When set to None, GPU driver installation is skipped — use this when
+                      managing GPU drivers via a GPU Operator or other external mechanism.
+                      All GPU SKUs are available for scheduling in this mode.
+                      This field is ignored for non-GPU VM sizes.
+                    enum:
+                    - Driver
+                    - None
+                    type: string
+                type: object
               imageFamily:
                 default: Ubuntu
                 description: imageFamily is the image family that instances use.
@@ -944,6 +963,25 @@ spec:
                 - FIPS
                 - Disabled
                 type: string
+              gpu:
+                description: gpu contains configuration for GPU-enabled nodes.
+                properties:
+                  mode:
+                    default: Driver
+                    description: |-
+                      mode controls GPU driver management on GPU-enabled nodes.
+                      When set to Driver (or not specified), GPU drivers are installed by AKS
+                      and only GPU SKUs with managed driver installation support are considered for scheduling.
+                      Currently, only NVIDIA GPUs support managed driver installation.
+                      When set to None, GPU driver installation is skipped — use this when
+                      managing GPU drivers via a GPU Operator or other external mechanism.
+                      All GPU SKUs are available for scheduling in this mode.
+                      This field is ignored for non-GPU VM sizes.
+                    enum:
+                    - Driver
+                    - None
+                    type: string
+                type: object
               imageFamily:
                 default: Ubuntu
                 description: imageFamily is the image family that instances use.

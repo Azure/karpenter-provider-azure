@@ -170,7 +170,7 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
 		scheduling.NewRequirement(v1beta1.AKSLabelCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),      // AKS domain.
 		scheduling.NewRequirement(v1beta1.AKSLabelMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // AKS domain.
-		scheduling.NewRequirement(v1beta1.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
+		scheduling.NewRequirement(v1beta1.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuTotalCount(sku).Value())),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUManufacturer, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUName, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.AKSLabelCluster, corev1.NodeSelectorOpIn, utils.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)),
@@ -230,11 +230,17 @@ func setRequirementsHyperVGeneration(requirements scheduling.Requirements, sku *
 }
 
 func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
-	if utils.IsNvidiaEnabledSKU(sku.GetName()) {
+	manufacturer := utils.GetGPUManufacturer(sku.GetName())
+	switch manufacturer {
+	case v1beta1.ManufacturerNvidia:
 		requirements[v1beta1.LabelSKUGPUManufacturer].Insert(v1beta1.ManufacturerNvidia)
-		if vmsize.AcceleratorType != nil {
-			requirements[v1beta1.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
-		}
+	case v1beta1.ManufacturerAMD:
+		requirements[v1beta1.LabelSKUGPUManufacturer].Insert(v1beta1.ManufacturerAMD)
+	default:
+		return
+	}
+	if vmsize.AcceleratorType != nil {
+		requirements[v1beta1.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
 	}
 }
 
@@ -261,13 +267,35 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AK
 		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
 		corev1.ResourcePods:                   *pods(ctx, nodeClass),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
+		corev1.ResourceName("amd.com/gpu"):    *gpuAMDCount(sku),
 	}
 }
 
-// gpuNvidiaCount returns the number of Nvidia GPUs in the SKU. Currently nvidia is the only gpu manufacturer we support.
+// gpuNvidiaCount returns the number of Nvidia GPUs in the SKU.
 func gpuNvidiaCount(sku *skewer.SKU) *resource.Quantity {
 	count, err := sku.GPU()
 	if err != nil || !utils.IsNvidiaEnabledSKU(sku.GetName()) {
+		count = 0
+	}
+	return resources.Quantity(fmt.Sprint(count))
+}
+
+// gpuAMDCount returns the number of AMD GPUs in the SKU.
+func gpuAMDCount(sku *skewer.SKU) *resource.Quantity {
+	count, err := sku.GPU()
+	if err != nil || !utils.IsAMDEnabledSKU(sku.GetName()) {
+		count = 0
+	}
+	return resources.Quantity(fmt.Sprint(count))
+}
+
+// gpuTotalCount returns the total number of GPUs in the SKU for any supported vendor.
+func gpuTotalCount(sku *skewer.SKU) *resource.Quantity {
+	if !utils.IsGPUSKU(sku.GetName()) {
+		return resources.Quantity("0")
+	}
+	count, err := sku.GPU()
+	if err != nil {
 		count = 0
 	}
 	return resources.Quantity(fmt.Sprint(count))

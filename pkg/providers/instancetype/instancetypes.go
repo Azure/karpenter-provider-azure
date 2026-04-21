@@ -126,7 +126,7 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%t",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%s-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -135,6 +135,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
+		string(nodeClass.GetGPUMode()),
 		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
@@ -167,16 +168,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 
-		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
-			continue
-		}
-		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
-			continue
-		}
-		if !p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) {
-			continue
-		}
-		if !p.isInstanceTypeSupportedByArtifactStreaming(architecture, nodeClass) {
+		if !p.isInstanceTypeSupportedByFilters(sku, architecture, nodeClass) {
 			continue
 		}
 
@@ -279,16 +271,27 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 	return offerings
 }
 
+// isInstanceTypeSupportedByFilters consolidates all per-NodeClass instance type
+// filters into a single call to keep the List() method's cyclomatic complexity low.
+func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
+	return p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) &&
+		p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) &&
+		p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) &&
+		p.isInstanceTypeSupportedByGPUDriverMode(sku, nodeClass) &&
+		p.isInstanceTypeSupportedByArtifactStreaming(architecture, nodeClass)
+}
+
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
-	// Currently only GPU has conditional support by image family
-	if !utils.IsNvidiaEnabledSKU(skuName) && !utils.IsMarinerEnabledGPUSKU(skuName) {
+	// Non-GPU SKUs are supported by all image families
+	if !utils.IsGPUSKU(skuName) {
 		return true
 	}
 	switch {
 	case v1beta1.UbuntuFamilies.Has(imageFamily):
-		return utils.IsNvidiaEnabledSKU(skuName)
+		return utils.IsGPUSKUSupportedOnOS(skuName, "ubuntu")
 	case imageFamily == v1beta1.AzureLinuxImageFamily:
-		return utils.IsMarinerEnabledGPUSKU(skuName)
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux") ||
+			utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux3")
 	default:
 		return false
 	}
@@ -325,6 +328,21 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 	}
 
 	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// Only "Driver" mode filters out GPU SKUs without driver installation support.
+	// "None" mode allows all GPU SKUs.
+	if nodeClass.GetGPUMode() != v1beta1.GPUModeDriver {
+		return true
+	}
+	name := sku.GetName()
+	// Non-GPU SKUs are always allowed
+	if !utils.IsGPUSKU(name) {
+		return true
+	}
+	// In "Driver" mode, only allow GPU SKUs with driver installation support
+	return utils.IsDriverInstallSupported(name)
 }
 
 // isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
@@ -411,14 +429,14 @@ func (p *DefaultProvider) isUnsupportedByAKS(sku *skewer.SKU) bool {
 	return AKSRestrictedVMSizes.Has(sku.GetName())
 }
 
-// GPU SKUs AKS does not support
+// GPU SKUs not in the supported GPU registry
 func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	name := lo.FromPtr(sku.Name)
 	gpu, err := sku.GPU()
 	if err != nil || gpu <= 0 {
 		return false
 	}
-	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
+	return !utils.IsGPUSKU(name)
 }
 
 // SKU with constrained CPUs
