@@ -287,6 +287,112 @@ var _ = Describe("CloudProvider - Offerings", func() {
 				result := popCreationResult()
 				Expect(result.zones).To(BeEmpty())
 			})
+
+			// Zone tests from PR #1615 (zone "0" for regional VMs)
+			It("should provision non-zonal instance types in zonal regions with zone label 0", func() {
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_NC6s_v3"}})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+
+				result := popCreationResult()
+				Expect(result.zones).To(BeEmpty())
+			})
+			It("should not include empty zone domain in instance type offerings", func() {
+				// Verify that no instance type has an offering with zone=""
+				// which would introduce a phantom domain in topology spread constraint calculations.
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instanceTypes).ToNot(BeEmpty())
+
+				for _, it := range instanceTypes {
+					for _, offering := range it.Offerings {
+						zone := offering.Requirements.Get(v1.LabelTopologyZone).Any()
+						Expect(zone).ToNot(BeEmpty(),
+							fmt.Sprintf("instance type %s has an offering with empty zone, which breaks topology spread constraints", it.Name))
+					}
+				}
+			})
+			It("should exclude non-zonal instance types via zone NodePool requirements", func() {
+				// Users can filter out non-zonal SKUs by constraining zones to specific AZs.
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC6s_v3", "Standard_D2_v3"},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelTopologyZone,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{fmt.Sprintf("%s-1", fake.Region)},
+					},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v3"))
+			})
+			It("should exclude non-zonal instance types when all real zones are specified", func() {
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC6s_v3", "Standard_D2_v3"},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelTopologyZone,
+						Operator: v1.NodeSelectorOpIn,
+						Values: []string{
+							fmt.Sprintf("%s-1", fake.Region),
+							fmt.Sprintf("%s-2", fake.Region),
+							fmt.Sprintf("%s-3", fake.Region),
+						},
+					},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v3"))
+			})
+			It("should schedule pods with zonal topology spread when non-zonal SKUs exist", func() {
+				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+					{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pods := []*v1.Pod{}
+				for i := 0; i < 3; i++ {
+					pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
+						TopologySpreadConstraints: []v1.TopologySpreadConstraint{
+							{
+								MaxSkew:           1,
+								TopologyKey:       v1.LabelTopologyZone,
+								WhenUnsatisfiable: v1.DoNotSchedule,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{"app": "spread-test"},
+								},
+							},
+						},
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{"app": "spread-test"},
+						},
+					}))
+				}
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
+				for _, pod := range pods {
+					ExpectScheduled(ctx, env.Client, pod)
+				}
+			})
 		})
 	}
 
