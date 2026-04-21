@@ -292,7 +292,10 @@ func (c *MachineCache) update(ctx context.Context) error {
 	if c.isFresh() {
 		return nil
 	}
-	log.FromContext(ctx).Info("Start update for machine cache", "aksMachinesPoolName", c.aksMachinesPoolName)
+	nowTime := time.Now()
+	defer func() {
+		log.FromContext(ctx).Info("finished update for machine cache", "aksMachinesPoolName", c.aksMachinesPoolName, "duration", time.Since(nowTime).Seconds())
+	}()
 
 	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
 	if pager == nil {
@@ -306,6 +309,7 @@ func (c *MachineCache) update(ctx context.Context) error {
 			return fmt.Errorf("failed to list AKS machines: %w", err)
 		}
 
+		log.FromContext(ctx).Info("fetched AKS machines page", "count", len(page.Value))
 		for _, aksMachine := range page.Value {
 			if isValid(ctx, aksMachine.Properties, lo.FromPtr(aksMachine.Name)) {
 				c.machines.Store(lo.FromPtr(aksMachine.Name), aksMachine)
