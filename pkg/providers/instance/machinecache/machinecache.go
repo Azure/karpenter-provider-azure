@@ -185,11 +185,6 @@ func (c *MachineCache) Invalidate(machineName string) {
 	c.machines.Delete(machineName)
 }
 
-// WorkerContext returns the context used by the background worker.
-func (c *MachineCache) WorkerContext() context.Context {
-	return c.workerCtx
-}
-
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name)
