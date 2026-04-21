@@ -187,6 +187,7 @@ func (c *MachineCache) Invalidate(machineName string) {
 }
 
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
+// This polls indefinitely until the machine reaches a terminal state (Succeeded, Failed, or Deleting) or the context is canceled.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name)
 	ticker := time.NewTicker(c.options.pollInterval)
@@ -289,6 +290,8 @@ func (c *MachineCache) updateWorker() {
 	}
 }
 
+// update refreshes the machine cache by fetching the latest list of AKS machines from the Azure API.
+// This should NOT be called directly; it is intended to be used by the background worker.
 func (c *MachineCache) update(ctx context.Context) error {
 	if c.isFresh() {
 		return nil
