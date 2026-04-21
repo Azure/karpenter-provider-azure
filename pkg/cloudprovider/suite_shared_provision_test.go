@@ -28,6 +28,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -50,6 +51,8 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -890,6 +893,163 @@ func runBatchSpecificMultiInstanceTests() {
 				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
 			}
 			Expect(countMachinesInDataStore()).To(Equal(0))
+		})
+	})
+
+	Context("Batch Error Handling", func() {
+		BeforeEach(func() {
+			mode := options.FromContext(ctx).ProvisionMode
+			if mode != consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				Skip("batch error handling tests only apply to batch mode")
+			}
+		})
+
+		It("should handle per-machine partial failure: failed machines get errors, successful machines provision", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// m-fail machines get client error, others succeed
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				if strings.Contains(name, "claim-0") {
+					return "InvalidParameter", "simulated client error"
+				}
+				return "", ""
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			claims := makeNClaims(3, "Standard_D2_v2")
+			// Override claim names so we can predict which fails
+			claims[0].Name = "claim-0-fail"
+			claims[1].Name = "claim-1-ok"
+			claims[2].Name = "claim-2-ok"
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			failCount, successCount := 0, 0
+			for _, r := range results {
+				if r.Err != nil {
+					failCount++
+				} else {
+					successCount++
+					Expect(r.NodeClaim).ToNot(BeNil())
+				}
+			}
+			Expect(failCount).To(BeNumerically(">=", 1), "at least one machine should fail")
+			Expect(successCount).To(BeNumerically(">=", 1), "at least one machine should succeed")
+			// Successful machines should be in the data store, failed ones should not
+			Expect(countMachinesInDataStore()).To(Equal(successCount))
+		})
+
+		It("should handle per-machine internal error (BatchMachineInternalServerError)", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// All machines get internal error (InternalOperationError prefix → 500)
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				return "InternalOperationError", "simulated internal error for " + name
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			claims := makeNClaims(2, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
+			}
+			Expect(countMachinesInDataStore()).To(Equal(0))
+		})
+
+		It("should handle non-batch error code distributed to all machines", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// A non-batch error (e.g., NotFound) — not BatchMachineClientError/InternalServerError
+			// extractPerMachineErrors should distribute it to all machines via the default branch
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{ErrorCode: "NotFound", StatusCode: http.StatusNotFound},
+			)
+			defer azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+
+			claims := makeNClaims(3, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
+			}
+			Expect(countMachinesInDataStore()).To(Equal(0))
+		})
+
+		It("should handle per-machine error and mark SKU unavailable in offerings cache", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				return "VMSizeNotSupported", fmt.Sprintf(
+					"Virtual Machine size: 'Standard_D2_v3' is not supported for subscription %s in location '%s'.",
+					azureEnv.SubscriptionID, fake.Region)
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+			)
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// Verify offerings cache was updated
+			for _, zoneID := range []string{"1", "2", "3"} {
+				ExpectUnavailable(azureEnv, sku, zones.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), karpv1.CapacityTypeOnDemand)
+			}
+		})
+
+		It("should handle mixed per-machine errors: some client, some internal", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				if strings.Contains(name, "claim-0") {
+					return "InvalidParameter", "client error"
+				}
+				if strings.Contains(name, "claim-1") {
+					return "InternalOperationError", "internal error"
+				}
+				return "", "" // claim-2 succeeds
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			claims := makeNClaims(3, "Standard_D2_v2")
+			claims[0].Name = "claim-0-client"
+			claims[1].Name = "claim-1-internal"
+			claims[2].Name = "claim-2-ok"
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			failCount := 0
+			for _, r := range results {
+				if r.Err != nil {
+					failCount++
+				}
+			}
+			// At least the two error-injected machines should fail
+			// (the third may or may not depending on batch grouping)
+			Expect(failCount).To(BeNumerically(">=", 2))
+		})
+
+		It("should succeed when no per-machine errors occur in batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// No BatchMachineErrorFunc set → all succeed
+			claims := makeNClaims(3, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d should have succeeded", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d should have a NodeClaim", i)
+			}
+			Expect(countMachinesInDataStore()).To(Equal(3))
 		})
 	})
 }
