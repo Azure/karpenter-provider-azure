@@ -116,10 +116,16 @@ resource hostedPool 'Microsoft.CloudTest/hostedpools@2020-05-07' = {
 // Microsoft.Authorization/roleAssignments/write (the Makefile assigns scoped-down roles
 // like VM Contributor, Network Contributor, AcrPull, etc. to per-test Karpenter workload
 // identities). Contributor lacks roleAssignments/write, so Owner is required.
+//
+// The role is granted on the E2E test subscription where clusters are actually created,
+// NOT the pool's home subscription. Pass the E2E sub ID via parameter or env var in deploy.sh.
+@description('Subscription ID where E2E tests create AKS clusters (the identity needs Owner there)')
+param e2eSubscriptionId string
+
 var ownerRoleId = '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
 module ownerAssignment 'identity.bicep' = {
   name: '${deployment().name}-owner'
-  scope: subscription()
+  scope: subscription(e2eSubscriptionId)
   params: {
     principalId: msi.properties.principalId
     principalType: 'ServicePrincipal'
