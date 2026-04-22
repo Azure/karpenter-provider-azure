@@ -119,7 +119,7 @@ func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *off
 		return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{}
 	}
 	return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{
-		Key: func() string { k, _ := determineBatchKey(&requests[0].Payload); return k }(),
+		Key:      func() string { k, _ := determineBatchKey(&requests[0].Payload); return k }(),
 		Requests: requests,
 	}
 }

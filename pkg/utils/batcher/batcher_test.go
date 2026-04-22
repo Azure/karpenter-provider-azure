@@ -185,7 +185,10 @@ func TestBatcherConcurrentRequests(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			select {
-			case <-func() chan *Response[struct{}] { c, _ := b.Enqueue(testItem{Group: "same-group", Name: fmt.Sprintf("item-%d", i)}); return c }():
+			case <-func() chan *Response[struct{}] {
+				c, _ := b.Enqueue(testItem{Group: "same-group", Name: fmt.Sprintf("item-%d", i)})
+				return c
+			}():
 			case <-ctx.Done():
 			}
 		}(i)
@@ -236,7 +239,10 @@ func TestBatcherMixedKeysConcurrent(t *testing.T) {
 			go func(group string, i int) {
 				defer wg.Done()
 				select {
-				case <-func() chan *Response[struct{}] { c, _ := b.Enqueue(testItem{Group: group, Name: fmt.Sprintf("item-%d", i)}); return c }():
+				case <-func() chan *Response[struct{}] {
+					c, _ := b.Enqueue(testItem{Group: group, Name: fmt.Sprintf("item-%d", i)})
+					return c
+				}():
 				case <-ctx.Done():
 				}
 			}(grp.group, i)
@@ -282,7 +288,10 @@ func TestBatcherFiresWhenMaxBatchSizeReached(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			select {
-			case <-func() chan *Response[struct{}] { c, _ := b.Enqueue(testItem{Group: "same-group", Name: fmt.Sprintf("item-%d", i)}); return c }():
+			case <-func() chan *Response[struct{}] {
+				c, _ := b.Enqueue(testItem{Group: "same-group", Name: fmt.Sprintf("item-%d", i)})
+				return c
+			}():
 			case <-ctx.Done():
 			}
 		}(i)
