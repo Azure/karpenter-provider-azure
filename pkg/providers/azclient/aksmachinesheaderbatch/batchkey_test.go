@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 )
 
 func keyOf(vmSize string, zones []string, tags map[string]string) string {
@@ -56,28 +56,31 @@ func mustDetermineBatchKey(t *testing.T, item *aksMachineCreatePayload) string {
 
 func TestMachineKeyFunc(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 
 	h1 := keyOf("Standard_D2s_v3", []string{"1"}, nil)
 	h2 := keyOf("Standard_D2s_v3", []string{"2"}, nil)
 	h3 := keyOf("Standard_D4s_v3", []string{"1"}, nil)
 
-	assert.Equal(t, h1, h2, "hashes should be equal when only zones differ")
-	assert.NotEqual(t, h1, h3, "hashes should differ when VM size differs")
+	g.Expect(h2).To(gomega.Equal(h1), "hashes should be equal when only zones differ")
+	g.Expect(h3).ToNot(gomega.Equal(h1), "hashes should differ when VM size differs")
 }
 
 func TestMachineKeyFunc_TagsExcluded(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 
 	h1 := keyOf("Standard_D2s_v3", nil, map[string]string{"nodeclaim": "nc-abc"})
 	h2 := keyOf("Standard_D2s_v3", nil, nil)
 	h3 := keyOf("Standard_D2s_v3", nil, map[string]string{"nodeclaim": "nc-xyz"})
 
-	assert.Equal(t, h1, h2, "tags should not affect hash")
-	assert.Equal(t, h1, h3, "different tags should not affect hash")
+	g.Expect(h2).To(gomega.Equal(h1), "tags should not affect hash")
+	g.Expect(h3).To(gomega.Equal(h1), "different tags should not affect hash")
 }
 
 func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 
 	vmSize := "Standard_D2s_v3"
 	item1 := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{
@@ -94,7 +97,7 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 		},
 	}}
 
-	assert.Equal(t, mustDetermineBatchKey(t, &item1), mustDetermineBatchKey(t, &item2), "read-only fields should not affect hash")
+	g.Expect(mustDetermineBatchKey(t, &item2)).To(gomega.Equal(mustDetermineBatchKey(t, &item1)), "read-only fields should not affect hash")
 }
 
 // realisticMachineProps returns a fully-populated MachineProperties matching
@@ -147,6 +150,7 @@ func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.Ma
 
 func TestMachineKeyFunc_RealisticMachinesBatchTogether(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 
 	items := make([]aksMachineCreatePayload, 10)
 	zones := []string{"1", "2", "3"}
@@ -162,15 +166,16 @@ func TestMachineKeyFunc_RealisticMachinesBatchTogether(t *testing.T) {
 	}
 
 	baseHash := mustDetermineBatchKey(t, &items[0])
-	assert.NotEmpty(t, baseHash)
+	g.Expect(baseHash).ToNot(gomega.BeEmpty())
 	for i := 1; i < len(items); i++ {
-		assert.Equal(t, baseHash, mustDetermineBatchKey(t, &items[i]),
+		g.Expect(mustDetermineBatchKey(t, &items[i])).To(gomega.Equal(baseHash),
 			"machine %d should hash the same as machine 0", i)
 	}
 }
 
 func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 
 	baseItem := aksMachineCreatePayload{
 		machineBody: &armcontainerservice.Machine{
@@ -207,7 +212,7 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 			props := realisticMachineProps("Standard_D4s_v3", "nc-0")
 			tt.modify(props)
 			item := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{Properties: props}}
-			assert.NotEqual(t, baseHash, mustDetermineBatchKey(t, &item), "hash should differ when %s changes", tt.name)
+			g.Expect(mustDetermineBatchKey(t, &item)).ToNot(gomega.Equal(baseHash), "hash should differ when %s changes", tt.name)
 		})
 	}
 }

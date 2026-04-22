@@ -36,9 +36,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
+	"github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // These are based on the contract defined in design doc 0009-aks-machines-batch-creation.md.
@@ -67,12 +66,13 @@ func callBatch(t *testing.T, api *AKSMachinesAPI, ctx context.Context, names []s
 
 func requireBatchClientError(t *testing.T, err error) (targets map[string]string) {
 	t.Helper()
+	g := gomega.NewWithT(t)
 
 	var respErr *azcore.ResponseError
-	require.True(t, errors.As(err, &respErr))
+	g.Expect(errors.As(err, &respErr)).To(gomega.BeTrue())
 
-	assert.Equal(t, "BatchMachineClientError", respErr.ErrorCode)
-	assert.Equal(t, 400, respErr.StatusCode)
+	g.Expect(respErr.ErrorCode).To(gomega.Equal("BatchMachineClientError"))
+	g.Expect(respErr.StatusCode).To(gomega.Equal(400))
 
 	body, _ := io.ReadAll(respErr.RawResponse.Body)
 	var parsed struct {
@@ -82,9 +82,9 @@ func requireBatchClientError(t *testing.T, err error) (targets map[string]string
 			Target string `json:"target"`
 		} `json:"details"`
 	}
-	require.NoError(t, json.Unmarshal(body, &parsed))
+	g.Expect(json.Unmarshal(body, &parsed)).ToNot(gomega.HaveOccurred())
 
-	assert.Equal(t, "BatchMachineClientError", parsed.Code)
+	g.Expect(parsed.Code).To(gomega.Equal("BatchMachineClientError"))
 
 	targets = map[string]string{}
 	for _, d := range parsed.Details {
@@ -95,12 +95,13 @@ func requireBatchClientError(t *testing.T, err error) (targets map[string]string
 
 func requireBatchInternalServerError(t *testing.T, err error) (targets map[string]string) {
 	t.Helper()
+	g := gomega.NewWithT(t)
 
 	var respErr *azcore.ResponseError
-	require.True(t, errors.As(err, &respErr))
+	g.Expect(errors.As(err, &respErr)).To(gomega.BeTrue())
 
-	assert.Equal(t, "BatchMachineInternalServerError", respErr.ErrorCode)
-	assert.Equal(t, 500, respErr.StatusCode)
+	g.Expect(respErr.ErrorCode).To(gomega.Equal("BatchMachineInternalServerError"))
+	g.Expect(respErr.StatusCode).To(gomega.Equal(500))
 
 	body, _ := io.ReadAll(respErr.RawResponse.Body)
 	var topLevel struct {
@@ -108,10 +109,10 @@ func requireBatchInternalServerError(t *testing.T, err error) (targets map[strin
 		Message string          `json:"message"`
 		Details json.RawMessage `json:"details"`
 	}
-	require.NoError(t, json.Unmarshal(body, &topLevel))
+	g.Expect(json.Unmarshal(body, &topLevel)).ToNot(gomega.HaveOccurred())
 
-	assert.Equal(t, "BatchMachineInternalServerError", topLevel.Code)
-	assert.True(t, topLevel.Details == nil || string(topLevel.Details) == "null",
+	g.Expect(topLevel.Code).To(gomega.Equal("BatchMachineInternalServerError"))
+	g.Expect(topLevel.Details == nil || string(topLevel.Details) == "null").To(gomega.BeTrue(),
 		"InternalServerError must have no top-level details")
 
 	var inner struct {
@@ -120,7 +121,7 @@ func requireBatchInternalServerError(t *testing.T, err error) (targets map[strin
 			Target string `json:"target"`
 		} `json:"details"`
 	}
-	require.NoError(t, json.Unmarshal([]byte(topLevel.Message), &inner),
+	g.Expect(json.Unmarshal([]byte(topLevel.Message), &inner)).ToNot(gomega.HaveOccurred(),
 		"message must be valid JSON with details[]")
 
 	targets = map[string]string{}
@@ -132,14 +133,16 @@ func requireBatchInternalServerError(t *testing.T, err error) (targets map[strin
 
 func assertMachineExists(t *testing.T, api *AKSMachinesAPI, ctx context.Context, name string) {
 	t.Helper()
+	g := gomega.NewWithT(t)
 	_, err := api.Get(ctx, "rg", "cluster", "pool", name, nil)
-	assert.NoError(t, err, "machine %q should exist in storage", name)
+	g.Expect(err).ToNot(gomega.HaveOccurred(), "machine %q should exist in storage", name)
 }
 
 func assertMachineNotExists(t *testing.T, api *AKSMachinesAPI, ctx context.Context, name string) {
 	t.Helper()
+	g := gomega.NewWithT(t)
 	_, err := api.Get(ctx, "rg", "cluster", "pool", name, nil)
-	require.Error(t, err, "machine %q should NOT exist in storage", name)
+	g.Expect(err).To(gomega.HaveOccurred(), "machine %q should NOT exist in storage", name)
 }
 
 // =====================================================================
@@ -149,6 +152,7 @@ func assertMachineNotExists(t *testing.T, api *AKSMachinesAPI, ctx context.Conte
 // 1 client error + 2 valid → 400 BatchMachineClientError, 1 detail, successes omitted
 func TestBatchFake_1ClientError_2Valid(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 	api.BatchMachineErrorFunc = func(n string) (string, string) {
 		if n == "m-bad" {
@@ -158,10 +162,10 @@ func TestBatchFake_1ClientError_2Valid(t *testing.T) {
 	}
 
 	err := callBatch(t, api, ctx, []string{"m-ok1", "m-bad", "m-ok2"})
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	targets := requireBatchClientError(t, err)
-	assert.Equal(t, map[string]string{"m-bad": "InvalidParameter"}, targets)
+	g.Expect(targets).To(gomega.Equal(map[string]string{"m-bad": "InvalidParameter"}))
 
 	assertMachineExists(t, api, ctx, "m-ok1")
 	assertMachineExists(t, api, ctx, "m-ok2")
@@ -171,6 +175,7 @@ func TestBatchFake_1ClientError_2Valid(t *testing.T) {
 // 1 internal error + 2 valid → 500 BatchMachineInternalServerError, 1 detail, successes omitted
 func TestBatchFake_1InternalError_2Valid(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 	api.BatchMachineErrorFunc = func(n string) (string, string) {
 		if n == "m-bad" {
@@ -180,10 +185,10 @@ func TestBatchFake_1InternalError_2Valid(t *testing.T) {
 	}
 
 	err := callBatch(t, api, ctx, []string{"m-ok1", "m-bad", "m-ok2"})
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	targets := requireBatchInternalServerError(t, err)
-	assert.Equal(t, map[string]string{"m-bad": "InternalOperationError"}, targets)
+	g.Expect(targets).To(gomega.Equal(map[string]string{"m-bad": "InternalOperationError"}))
 
 	assertMachineExists(t, api, ctx, "m-ok1")
 	assertMachineExists(t, api, ctx, "m-ok2")
@@ -193,6 +198,7 @@ func TestBatchFake_1InternalError_2Valid(t *testing.T) {
 // 2 client errors + 1 valid → 400 BatchMachineClientError, 2 details
 func TestBatchFake_2ClientErrors_1Valid(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 	api.BatchMachineErrorFunc = func(n string) (string, string) {
 		if n == "m-bad1" || n == "m-bad2" {
@@ -202,13 +208,13 @@ func TestBatchFake_2ClientErrors_1Valid(t *testing.T) {
 	}
 
 	err := callBatch(t, api, ctx, []string{"m-ok", "m-bad1", "m-bad2"})
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	targets := requireBatchClientError(t, err)
-	assert.Len(t, targets, 2)
-	assert.Equal(t, "InvalidParameter", targets["m-bad1"])
-	assert.Equal(t, "InvalidParameter", targets["m-bad2"])
-	assert.NotContains(t, targets, "m-ok")
+	g.Expect(targets).To(gomega.HaveLen(2))
+	g.Expect(targets["m-bad1"]).To(gomega.Equal("InvalidParameter"))
+	g.Expect(targets["m-bad2"]).To(gomega.Equal("InvalidParameter"))
+	g.Expect(targets).ToNot(gomega.HaveKey("m-ok"))
 
 	assertMachineExists(t, api, ctx, "m-ok")
 	assertMachineNotExists(t, api, ctx, "m-bad1")
@@ -218,6 +224,7 @@ func TestBatchFake_2ClientErrors_1Valid(t *testing.T) {
 // 2 internal errors + 1 valid → 500 BatchMachineInternalServerError, 2 details
 func TestBatchFake_2InternalErrors_1Valid(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 	api.BatchMachineErrorFunc = func(n string) (string, string) {
 		if n == "m-bad1" || n == "m-bad2" {
@@ -227,13 +234,13 @@ func TestBatchFake_2InternalErrors_1Valid(t *testing.T) {
 	}
 
 	err := callBatch(t, api, ctx, []string{"m-ok", "m-bad1", "m-bad2"})
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	targets := requireBatchInternalServerError(t, err)
-	assert.Len(t, targets, 2)
-	assert.Equal(t, "InternalOperationError", targets["m-bad1"])
-	assert.Equal(t, "InternalOperationError", targets["m-bad2"])
-	assert.NotContains(t, targets, "m-ok")
+	g.Expect(targets).To(gomega.HaveLen(2))
+	g.Expect(targets["m-bad1"]).To(gomega.Equal("InternalOperationError"))
+	g.Expect(targets["m-bad2"]).To(gomega.Equal("InternalOperationError"))
+	g.Expect(targets).ToNot(gomega.HaveKey("m-ok"))
 
 	assertMachineExists(t, api, ctx, "m-ok")
 }
@@ -241,6 +248,7 @@ func TestBatchFake_2InternalErrors_1Valid(t *testing.T) {
 // 2 client + 2 internal → 400 BatchMachineClientError (client error presence wins), all 4 in details
 func TestBatchFake_2Client_2Internal_AllFail(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 	api.BatchMachineErrorFunc = func(n string) (string, string) {
 		switch n {
@@ -253,14 +261,14 @@ func TestBatchFake_2Client_2Internal_AllFail(t *testing.T) {
 	}
 
 	err := callBatch(t, api, ctx, []string{"m-client1", "m-internal1", "m-client2", "m-internal2"})
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	targets := requireBatchClientError(t, err)
-	assert.Len(t, targets, 4, "all 4 errors in details")
-	assert.Equal(t, "InvalidParameter", targets["m-client1"])
-	assert.Equal(t, "InvalidParameter", targets["m-client2"])
-	assert.Equal(t, "InternalOperationError", targets["m-internal1"])
-	assert.Equal(t, "InternalOperationError", targets["m-internal2"])
+	g.Expect(targets).To(gomega.HaveLen(4), "all 4 errors in details")
+	g.Expect(targets["m-client1"]).To(gomega.Equal("InvalidParameter"))
+	g.Expect(targets["m-client2"]).To(gomega.Equal("InvalidParameter"))
+	g.Expect(targets["m-internal1"]).To(gomega.Equal("InternalOperationError"))
+	g.Expect(targets["m-internal2"]).To(gomega.Equal("InternalOperationError"))
 
 	for _, n := range []string{"m-client1", "m-internal1", "m-client2", "m-internal2"} {
 		assertMachineNotExists(t, api, ctx, n)
@@ -270,6 +278,7 @@ func TestBatchFake_2Client_2Internal_AllFail(t *testing.T) {
 // 2 client + 1 internal → 400 BatchMachineClientError, all 3 in details
 func TestBatchFake_2Client_1Internal_AllFail(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 	api.BatchMachineErrorFunc = func(n string) (string, string) {
 		switch n {
@@ -282,18 +291,19 @@ func TestBatchFake_2Client_1Internal_AllFail(t *testing.T) {
 	}
 
 	err := callBatch(t, api, ctx, []string{"m-client1", "m-internal", "m-client2"})
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	targets := requireBatchClientError(t, err)
-	assert.Len(t, targets, 3)
-	assert.Equal(t, "InvalidParameter", targets["m-client1"])
-	assert.Equal(t, "InternalOperationError", targets["m-internal"])
-	assert.Equal(t, "InvalidParameter", targets["m-client2"])
+	g.Expect(targets).To(gomega.HaveLen(3))
+	g.Expect(targets["m-client1"]).To(gomega.Equal("InvalidParameter"))
+	g.Expect(targets["m-internal"]).To(gomega.Equal("InternalOperationError"))
+	g.Expect(targets["m-client2"]).To(gomega.Equal("InvalidParameter"))
 }
 
 // Single machine error, no batch header → direct error (not wrapped in batch error code)
 func TestBatchFake_SingleError_NoBatchHeader(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 
 	api.AKSMachineCreateOrUpdateBehavior.BeginError.Set(AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted)
@@ -306,23 +316,24 @@ func TestBatchFake_SingleError_NoBatchHeader(t *testing.T) {
 
 	// No batch entries in context → single machine path
 	_, err := api.BeginCreateOrUpdate(ctx, "rg", "cluster", "pool", "m-1", template, nil)
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	var respErr *azcore.ResponseError
-	require.True(t, errors.As(err, &respErr))
-	assert.NotEqual(t, "BatchMachineClientError", respErr.ErrorCode,
+	g.Expect(errors.As(err, &respErr)).To(gomega.BeTrue())
+	g.Expect(respErr.ErrorCode).ToNot(gomega.Equal("BatchMachineClientError"),
 		"non-batch error should NOT be wrapped in batch error code")
-	assert.NotEqual(t, "BatchMachineInternalServerError", respErr.ErrorCode,
+	g.Expect(respErr.ErrorCode).ToNot(gomega.Equal("BatchMachineInternalServerError"),
 		"non-batch error should NOT be wrapped in batch error code")
 }
 
 // All success → nil error, all machines created
 func TestBatchFake_AllSuccess(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 
 	err := callBatch(t, api, ctx, []string{"m-1", "m-2", "m-3"})
-	assert.NoError(t, err)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	assertMachineExists(t, api, ctx, "m-1")
 	assertMachineExists(t, api, ctx, "m-2")
@@ -332,6 +343,7 @@ func TestBatchFake_AllSuccess(t *testing.T) {
 // 3 internal errors → 500 BatchMachineInternalServerError, all 3 in details
 func TestBatchFake_3InternalErrors_AllFail(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	api, ctx := setupBatchFake()
 	api.BatchMachineErrorFunc = func(n string) (string, string) {
 		switch n {
@@ -342,13 +354,13 @@ func TestBatchFake_3InternalErrors_AllFail(t *testing.T) {
 	}
 
 	err := callBatch(t, api, ctx, []string{"m-1", "m-2", "m-3"})
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	targets := requireBatchInternalServerError(t, err)
-	assert.Len(t, targets, 3)
-	assert.Equal(t, "InternalOperationError", targets["m-1"])
-	assert.Equal(t, "InternalOperationError", targets["m-2"])
-	assert.Equal(t, "InternalOperationError", targets["m-3"])
+	g.Expect(targets).To(gomega.HaveLen(3))
+	g.Expect(targets["m-1"]).To(gomega.Equal("InternalOperationError"))
+	g.Expect(targets["m-2"]).To(gomega.Equal("InternalOperationError"))
+	g.Expect(targets["m-3"]).To(gomega.Equal("InternalOperationError"))
 
 	for _, n := range []string{"m-1", "m-2", "m-3"} {
 		assertMachineNotExists(t, api, ctx, n)
