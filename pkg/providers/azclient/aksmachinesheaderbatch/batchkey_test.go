@@ -171,15 +171,28 @@ func TestMachineKeyFunc_RealisticMachinesBatchTogether(t *testing.T) {
 	t.Parallel()
 	g := gomega.NewWithT(t)
 
+	// Simulate a realistic batch: 10 machines with the same shared template
+	// but ALL per-machine and read-only fields varying simultaneously,
+	// exactly as production would produce them.
 	items := make([]aksMachineCreatePayload, 10)
 	zones := []string{"1", "2", "3"}
 	for i := range items {
+		props := realisticMachineProps("Standard_D4s_v3", fmt.Sprintf("nodeclaim-%d", i))
+		// Vary read-only fields (normally not set by Karpenter, but must not affect hash if they are)
+		props.ETag = lo.ToPtr(fmt.Sprintf("etag-%d", i))
+		props.ProvisioningState = lo.ToPtr("Creating")
+		props.ResourceID = lo.ToPtr(fmt.Sprintf("/subscriptions/sub/resourceGroups/rg/machines/machine-%d", i))
+		props.Status = &armcontainerservice.MachineStatus{}
+
 		items[i] = aksMachineCreatePayload{
-			machineName: fmt.Sprintf("machine-%d", i),
+			machineName:       fmt.Sprintf("machine-%d", i),
+			resourceGroupName: "rg",
+			resourceName:      "cluster",
+			agentPoolName:     "aksmachinepool",
 			machineBody: &armcontainerservice.Machine{
 				Name:       lo.ToPtr(fmt.Sprintf("machine-%d", i)),
 				Zones:      []*string{lo.ToPtr(zones[i%len(zones)])},
-				Properties: realisticMachineProps("Standard_D4s_v3", fmt.Sprintf("nodeclaim-%d", i)),
+				Properties: props,
 			},
 		}
 	}
@@ -188,7 +201,7 @@ func TestMachineKeyFunc_RealisticMachinesBatchTogether(t *testing.T) {
 	g.Expect(baseHash).ToNot(gomega.BeEmpty())
 	for i := 1; i < len(items); i++ {
 		g.Expect(mustDetermineBatchKey(t, &items[i])).To(gomega.Equal(baseHash),
-			"machine %d should hash the same as machine 0", i)
+			"machine %d should hash the same as machine 0 despite different per-machine+read-only fields", i)
 	}
 }
 
