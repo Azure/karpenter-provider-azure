@@ -191,7 +191,7 @@ jobs:
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
@@ -208,7 +208,7 @@ jobs:
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
         uses: ./.github/actions/e2e/create-cluster
         with:
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
@@ -221,7 +221,7 @@ jobs:
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
@@ -246,7 +246,7 @@ jobs:
         uses: ./.github/actions/e2e/dump-logs
         if: failure() || cancelled()
         with:
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           git_ref: ${{ inputs.git_ref }}
@@ -254,7 +254,7 @@ jobs:
         uses: ./.github/actions/e2e/cleanup
         if: always()
         with:
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
