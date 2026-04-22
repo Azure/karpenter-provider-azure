@@ -877,6 +877,117 @@ func runBatchSpecificMultiInstanceTests() {
 			}
 		})
 
+		// Batch grouping combination matrix: [VM Size × NodeClass identity]
+		// The batch key hashes the full MachineProperties template, so two different NodeClasses
+		// always produce different batches (even if their fields happen to match) because they
+		// resolve to different images, k8s versions, etc. Only same-NodeClass + same-VM-size batches together.
+		DescribeTable("batch grouping by VM size and NodeClass",
+			func(vmSizeA, vmSizeB string, sameNodeClass bool, expectedBatches int) {
+				var nodeClassA, nodeClassB *v1beta1.AKSNodeClass
+				var nodePoolA, nodePoolB *karpv1.NodePool
+
+				nodeClassA = test.AKSNodeClass()
+				test.ApplyDefaultStatus(nodeClassA, env, options.FromContext(ctx).UseSIG)
+				nodePoolA = coretest.NodePool(karpv1.NodePool{
+					Spec: karpv1.NodePoolSpec{
+						Template: karpv1.NodeClaimTemplate{
+							Spec: karpv1.NodeClaimTemplateSpec{
+								NodeClassRef: &karpv1.NodeClassReference{
+									Group: object.GVK(nodeClassA).Group,
+									Kind:  object.GVK(nodeClassA).Kind,
+									Name:  nodeClassA.Name,
+								},
+							},
+						},
+					},
+				})
+
+				if sameNodeClass {
+					nodeClassB = nodeClassA
+					nodePoolB = nodePoolA
+				} else {
+					nodeClassB = test.AKSNodeClass()
+					test.ApplyDefaultStatus(nodeClassB, env, options.FromContext(ctx).UseSIG)
+					nodePoolB = coretest.NodePool(karpv1.NodePool{
+						Spec: karpv1.NodePoolSpec{
+							Template: karpv1.NodeClaimTemplate{
+								Spec: karpv1.NodeClaimTemplateSpec{
+									NodeClassRef: &karpv1.NodeClassReference{
+										Group: object.GVK(nodeClassB).Group,
+										Kind:  object.GVK(nodeClassB).Kind,
+										Name:  nodeClassB.Name,
+									},
+								},
+							},
+						},
+					})
+				}
+
+				ExpectApplied(ctx, env.Client, nodeClassA, nodePoolA)
+				if !sameNodeClass {
+					ExpectApplied(ctx, env.Client, nodeClassB, nodePoolB)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClassB)
+				}
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClassA)
+				resetBatchCallCounter()
+
+				claimA := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePoolA.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClassA).Group,
+							Kind:  object.GVK(nodeClassA).Kind,
+							Name:  nodeClassA.Name,
+						},
+						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+							{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
+								Values: []string{vmSizeA}},
+						},
+					},
+				})
+				claimB := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePoolB.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClassB).Group,
+							Kind:  object.GVK(nodeClassB).Kind,
+							Name:  nodeClassB.Name,
+						},
+						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+							{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
+								Values: []string{vmSizeB}},
+						},
+					},
+				})
+
+				ExpectApplied(ctx, env.Client, claimA, claimB)
+				results := concurrentCreateAndWaitForPromises([]*karpv1.NodeClaim{claimA, claimB})
+				expectAllSucceeded(results)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(
+					Equal(expectedBatches),
+					"expected %d batch(es) for vmSize=[%s,%s] sameNodeClass=%v",
+					expectedBatches, vmSizeA, vmSizeB, sameNodeClass)
+				Expect(countMachinesInDataStore()).To(Equal(2))
+			},
+			// Same NodeClass + same VM size → 1 batch (only case that groups)
+			Entry("same NodeClass + same VM size → 1 batch",
+				"Standard_D2_v2", "Standard_D2_v2", true, 1),
+			// Same NodeClass + different VM size → 2 batches (VM size differs in template)
+			Entry("same NodeClass + different VM size → 2 batches",
+				"Standard_D2_v2", "Standard_D4s_v3", true, 2),
+			// Different NodeClass + same VM size → 2 batches (templates differ due to NodeClass identity)
+			Entry("different NodeClass + same VM size → 2 batches",
+				"Standard_D2_v2", "Standard_D2_v2", false, 2),
+			// Different NodeClass + different VM size → 2 batches (both dimensions differ)
+			Entry("different NodeClass + different VM size → 2 batches",
+				"Standard_D2_v2", "Standard_D4s_v3", false, 2),
+		)
+
 		It("should propagate batch error to all machines in the batch", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			resetBatchCallCounter()
