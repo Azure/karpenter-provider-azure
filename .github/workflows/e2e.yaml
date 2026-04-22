@@ -104,7 +104,7 @@ jobs:
       contents: read
       statuses: write # ./.github/actions/commit-status/*
     env:
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
       AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
     steps:
       - name: Harden Runner
@@ -233,7 +233,7 @@ jobs:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
           AZURE_RESOURCE_GROUP: ${{ env.RG_NAME }}
           AZURE_LOCATION: ${{ inputs.location }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
           AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
           TEST_SUITE: ${{ inputs.suite }}
