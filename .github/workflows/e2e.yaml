@@ -165,7 +165,7 @@ jobs:
       - uses: ./.github/actions/install-deps
       - name: az login
         shell: bash
-        run: az login --identity --username "$AZURE_CLIENT_ID"
+        run: az login --identity --client-id "$AZURE_CLIENT_ID"
       - name: az set sub
         shell: bash
         run: az account set --subscription "$AZURE_SUBSCRIPTION_ID"
