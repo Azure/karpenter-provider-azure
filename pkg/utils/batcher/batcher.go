@@ -269,7 +269,12 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterati
 					log.FromContext(b.ctx).Error(fmt.Errorf("%v", r), "panic in batch executor, distributing error to callers")
 					err := fmt.Errorf("batch execution panicked: %v", r)
 					for _, req := range batch.Requests {
-						req.ResponseChan <- &Response[ResponsePayload]{Err: err}
+						// Non-blocking: if executeBatch already wrote a response before
+						// panicking, the buffer is full — skip to avoid goroutine leak.
+						select {
+						case req.ResponseChan <- &Response[ResponsePayload]{Err: err}:
+						default:
+						}
 					}
 				}
 			}()
