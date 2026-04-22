@@ -1118,5 +1118,101 @@ func runBatchSpecificMultiInstanceTests() {
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(
 				Equal(1), "different zones should not split batches")
 		})
+
+		It("should store non-empty zones for each machine in the batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			for _, m := range machines {
+				Expect(m.Zones).ToNot(BeEmpty(), "machine %s should have zones set", lo.FromPtr(m.Name))
+				for _, z := range m.Zones {
+					Expect(z).ToNot(BeNil(), "zone should not be nil for machine %s", lo.FromPtr(m.Name))
+					Expect(*z).To(MatchRegexp(`^[1-9][0-9]*$`), "zone should be a valid number for machine %s", lo.FromPtr(m.Name))
+				}
+			}
+		})
+
+		It("should preserve shared MachineProperties fields through batch for all machines", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			for _, m := range machines {
+				props := m.Properties
+				Expect(props).ToNot(BeNil(), "machine %s should have properties", lo.FromPtr(m.Name))
+
+				// Hardware
+				Expect(props.Hardware).ToNot(BeNil(), "machine %s: Hardware should not be nil", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.Hardware.VMSize)).To(Equal("Standard_D2_v2"), "machine %s: VMSize mismatch", lo.FromPtr(m.Name))
+
+				// OperatingSystem
+				Expect(props.OperatingSystem).ToNot(BeNil(), "machine %s: OperatingSystem should not be nil", lo.FromPtr(m.Name))
+				Expect(props.OperatingSystem.OSType).ToNot(BeNil(), "machine %s: OSType should not be nil", lo.FromPtr(m.Name))
+				Expect(*props.OperatingSystem.OSType).To(Equal(armcontainerservice.OSTypeLinux))
+
+				// Kubernetes
+				Expect(props.Kubernetes).ToNot(BeNil(), "machine %s: Kubernetes should not be nil", lo.FromPtr(m.Name))
+				Expect(props.Kubernetes.OrchestratorVersion).ToNot(BeNil(), "machine %s: OrchestratorVersion should not be nil", lo.FromPtr(m.Name))
+
+				// NodeImageVersion
+				Expect(props.NodeImageVersion).ToNot(BeNil(), "machine %s: NodeImageVersion should not be nil", lo.FromPtr(m.Name))
+
+				// Mode
+				Expect(props.Mode).ToNot(BeNil(), "machine %s: Mode should not be nil", lo.FromPtr(m.Name))
+
+				// Security
+				Expect(props.Security).ToNot(BeNil(), "machine %s: Security should not be nil", lo.FromPtr(m.Name))
+
+				// Network
+				Expect(props.Network).ToNot(BeNil(), "machine %s: Network should not be nil", lo.FromPtr(m.Name))
+			}
+		})
+
+		It("should give each machine its own tags map (no shared reference)", func() {
+			// Verifies that template mutation in batch doesn't cause machines to share the same tags map
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			// Collect all tag map pointers — they must be distinct (no aliasing)
+			tagPtrs := make(map[*map[string]*string]bool)
+			for _, m := range machines {
+				Expect(m.Properties.Tags).ToNot(BeNil())
+				ptr := &m.Properties.Tags
+				Expect(tagPtrs).ToNot(HaveKey(ptr), "machines should not share the same tags map reference")
+				tagPtrs[ptr] = true
+			}
+
+			// Also verify NodeClaim tag values are all distinct
+			ncTagValues := make(map[string]bool)
+			for _, m := range machines {
+				ncTag := m.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
+				Expect(ncTag).ToNot(BeNil())
+				Expect(ncTagValues).ToNot(HaveKey(*ncTag), "NodeClaim tags should be unique across machines")
+				ncTagValues[*ncTag] = true
+			}
+		})
 	})
 }
