@@ -101,11 +101,16 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 }
 
 // realisticMachineProps returns a fully-populated MachineProperties matching
-// production templates built by buildAKSMachineTemplate.
+// production templates built by buildAKSMachineTemplate. All nested structs
+// are populated so tests can verify that a single leaf-value change is enough
+// to produce a different batch key.
 func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.MachineProperties {
 	return &armcontainerservice.MachineProperties{
 		Hardware: &armcontainerservice.MachineHardwareProfile{
 			VMSize: lo.ToPtr(vmSize),
+			GpuProfile: &armcontainerservice.GPUProfile{
+				Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
+			},
 		},
 		Kubernetes: &armcontainerservice.MachineKubernetesProfile{
 			OrchestratorVersion: lo.ToPtr("1.31.0"),
@@ -122,6 +127,9 @@ func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.Ma
 			KubeletConfig: &armcontainerservice.KubeletConfig{
 				CPUManagerPolicy: lo.ToPtr("static"),
 			},
+			ArtifactStreamingProfile: &armcontainerservice.AgentPoolArtifactStreamingProfile{
+				Enabled: lo.ToPtr(true),
+			},
 		},
 		OperatingSystem: &armcontainerservice.MachineOSProfile{
 			OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
@@ -129,6 +137,14 @@ func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.Ma
 			OSDiskSizeGB: lo.ToPtr[int32](128),
 			OSDiskType:   lo.ToPtr(armcontainerservice.OSDiskTypeEphemeral),
 			EnableFIPS:   lo.ToPtr(false),
+			LinuxProfile: &armcontainerservice.MachineOSProfileLinuxProfile{
+				LinuxOSConfig: &armcontainerservice.LinuxOSConfig{
+					Sysctls: &armcontainerservice.SysctlConfig{
+						NetCoreRmemMax: lo.ToPtr[int32](16777216),
+						NetCoreSomaxconn: lo.ToPtr[int32](4096),
+					},
+				},
+			},
 		},
 		Network: &armcontainerservice.MachineNetworkProperties{
 			VnetSubnetID: lo.ToPtr("/subscriptions/sub-123/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nodesubnet"),
@@ -139,6 +155,9 @@ func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.Ma
 		Security: &armcontainerservice.MachineSecurityProfile{
 			SSHAccess:              lo.ToPtr(armcontainerservice.AgentPoolSSHAccessLocalUser),
 			EnableEncryptionAtHost: lo.ToPtr(true),
+		},
+		LocalDNSProfile: &armcontainerservice.LocalDNSProfile{
+			Mode: lo.ToPtr(armcontainerservice.LocalDNSModeRequired),
 		},
 		Tags: map[string]*string{
 			"karpenter.azure.com_cluster":              lo.ToPtr("prod-cluster"),
@@ -190,9 +209,10 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 	}{
 		// Hardware
 		{"different VM size", func(p *armcontainerservice.MachineProperties) { p.Hardware.VMSize = lo.ToPtr("Standard_D8s_v3") }},
-		{"GPU profile added", func(p *armcontainerservice.MachineProperties) {
-			p.Hardware.GpuProfile = &armcontainerservice.GPUProfile{Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall)}
+		{"GPU driver change (leaf in nested struct)", func(p *armcontainerservice.MachineProperties) {
+			p.Hardware.GpuProfile.Driver = lo.ToPtr(armcontainerservice.GPUDriverNone)
 		}},
+		{"GPU profile removed", func(p *armcontainerservice.MachineProperties) { p.Hardware.GpuProfile = nil }},
 
 		// Priority / Mode
 		{"spot priority", func(p *armcontainerservice.MachineProperties) {
@@ -212,30 +232,31 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 			p.OperatingSystem.OSDiskType = lo.ToPtr(armcontainerservice.OSDiskTypeManaged)
 		}},
 
-		// OperatingSystem (nested: LinuxOSConfig)
-		{"LinuxOSConfig added", func(p *armcontainerservice.MachineProperties) {
-			p.OperatingSystem.LinuxProfile = &armcontainerservice.MachineOSProfileLinuxProfile{
-				LinuxOSConfig: &armcontainerservice.LinuxOSConfig{
-					Sysctls: &armcontainerservice.SysctlConfig{
-						NetCoreRmemMax: lo.ToPtr[int32](16777216),
-					},
-				},
-			}
+		// OperatingSystem (nested leaf: single sysctl value change)
+		{"sysctl leaf value change (NetCoreRmemMax)", func(p *armcontainerservice.MachineProperties) {
+			p.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreRmemMax = lo.ToPtr[int32](8388608)
 		}},
+		{"sysctl leaf value change (NetCoreSomaxconn)", func(p *armcontainerservice.MachineProperties) {
+			p.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreSomaxconn = lo.ToPtr[int32](8192)
+		}},
+		{"LinuxOSConfig removed", func(p *armcontainerservice.MachineProperties) { p.OperatingSystem.LinuxProfile = nil }},
 
 		// Kubernetes (flat fields)
 		{"different K8s version", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.OrchestratorVersion = lo.ToPtr("1.32.0") }},
 		{"different MaxPods", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.MaxPods = lo.ToPtr[int32](110) }},
 
-		// Kubernetes (nested: KubeletConfig)
-		{"different KubeletConfig", func(p *armcontainerservice.MachineProperties) {
-			p.Kubernetes.KubeletConfig = &armcontainerservice.KubeletConfig{CPUManagerPolicy: lo.ToPtr("none")}
+		// Kubernetes (nested leaf: KubeletConfig value change)
+		{"KubeletConfig CPUManagerPolicy change (leaf)", func(p *armcontainerservice.MachineProperties) {
+			p.Kubernetes.KubeletConfig.CPUManagerPolicy = lo.ToPtr("none")
 		}},
 		{"KubeletConfig removed", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.KubeletConfig = nil }},
 
-		// Kubernetes (nested: ArtifactStreamingProfile)
-		{"ArtifactStreaming enabled", func(p *armcontainerservice.MachineProperties) {
-			p.Kubernetes.ArtifactStreamingProfile = &armcontainerservice.AgentPoolArtifactStreamingProfile{Enabled: lo.ToPtr(true)}
+		// Kubernetes (nested leaf: ArtifactStreaming bool flip)
+		{"ArtifactStreaming disabled (leaf bool flip)", func(p *armcontainerservice.MachineProperties) {
+			p.Kubernetes.ArtifactStreamingProfile.Enabled = lo.ToPtr(false)
+		}},
+		{"ArtifactStreaming removed", func(p *armcontainerservice.MachineProperties) {
+			p.Kubernetes.ArtifactStreamingProfile = nil
 		}},
 
 		// Network
@@ -246,15 +267,16 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 			p.NodeImageVersion = lo.ToPtr("AKSUbuntu-2404gen2containerd-2025.03.01")
 		}},
 
-		// Security (nested)
-		{"EncryptionAtHost disabled", func(p *armcontainerservice.MachineProperties) {
+		// Security (nested leaf: bool flip)
+		{"EncryptionAtHost disabled (leaf bool flip)", func(p *armcontainerservice.MachineProperties) {
 			p.Security.EnableEncryptionAtHost = lo.ToPtr(false)
 		}},
 
-		// LocalDNS (nested)
-		{"LocalDNS added", func(p *armcontainerservice.MachineProperties) {
-			p.LocalDNSProfile = &armcontainerservice.LocalDNSProfile{Mode: lo.ToPtr(armcontainerservice.LocalDNSModeRequired)}
+		// LocalDNS (nested leaf: mode change, not nil→populated)
+		{"LocalDNS mode change (leaf)", func(p *armcontainerservice.MachineProperties) {
+			p.LocalDNSProfile.Mode = lo.ToPtr(armcontainerservice.LocalDNSModeDisabled)
 		}},
+		{"LocalDNS removed", func(p *armcontainerservice.MachineProperties) { p.LocalDNSProfile = nil }},
 	}
 
 	for _, tt := range tests {
