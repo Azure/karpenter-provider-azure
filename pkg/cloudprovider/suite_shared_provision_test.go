@@ -61,6 +61,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -1050,6 +1051,72 @@ func runBatchSpecificMultiInstanceTests() {
 				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d should have a NodeClaim", i)
 			}
 			Expect(countMachinesInDataStore()).To(Equal(3))
+		})
+	})
+
+	Context("Batch Per-Machine Fields Correctness", func() {
+		It("should store correct per-machine zones for each machine in the batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			// Each machine should have its own identity, not sharing the template's cleared values
+			names := make(map[string]bool)
+			for _, m := range machines {
+				Expect(m.Name).ToNot(BeNil())
+				Expect(names).ToNot(HaveKey(*m.Name), "duplicate machine name: %s", *m.Name)
+				names[*m.Name] = true
+				Expect(m.Properties).ToNot(BeNil())
+			}
+		})
+
+		It("should store unique per-machine tags (NodeClaim name) for each machine", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			// Each machine should have a unique NodeClaim tag value
+			nodeClaimTags := make(map[string]bool)
+			for _, m := range machines {
+				Expect(m.Properties).ToNot(BeNil())
+				Expect(m.Properties.Tags).ToNot(BeNil(), "machine %s should have tags", lo.FromPtr(m.Name))
+
+				ncTag, ok := m.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
+				Expect(ok).To(BeTrue(), "machine %s should have NodeClaim tag", lo.FromPtr(m.Name))
+				Expect(ncTag).ToNot(BeNil())
+				Expect(nodeClaimTags).ToNot(HaveKey(*ncTag), "duplicate NodeClaim tag: %s", *ncTag)
+				nodeClaimTags[*ncTag] = true
+			}
+		})
+
+		It("should not split batches for machines with different zones (zones are per-machine)", func() {
+			// Zones differ per machine but are per-machine fields — they should NOT split batches.
+			// All machines with the same VM size should go in one batch regardless of zone.
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			// Should be 1 batch call even though machines may land in different zones
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(
+				Equal(1), "different zones should not split batches")
 		})
 	})
 }
