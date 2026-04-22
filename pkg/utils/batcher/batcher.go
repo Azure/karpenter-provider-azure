@@ -186,7 +186,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			// Suggestion: if needed, we could add per-batch-key timers for more precise control, but it adds complexity.
 
 			// TODO: use metrics instead?
-			log.FromContext(b.ctx).Info("batcher iteration finishing wait, ready to execute batches",
+			log.FromContext(b.ctx).V(2).Info("batcher iteration finishing wait, ready to execute batches",
 				"batcherIterationID", batcherIterationID,
 				"waitStartTime", waitStartTime,
 				"waitDuration", time.Since(waitStartTime),
@@ -258,7 +258,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterati
 	// Dispatch batches in parallel, as they are independent (different keys).
 	for _, batch := range batches {
 		// TODO: use metrics instead?
-		log.FromContext(b.ctx).Info("begin executing batch",
+		log.FromContext(b.ctx).V(2).Info("begin executing batch",
 			"batcherIterationID", batcherIterationID,
 			"ID", batch.ID,
 			"key", batch.Key,
@@ -296,7 +296,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) drain() {
 	}
 
 	if drained > 0 {
-		log.FromContext(b.ctx).Info("batcher drained pending requests on shutdown",
+		log.FromContext(b.ctx).V(2).Info("batcher drained pending requests on shutdown",
 			"drainedRequests", drained)
 	}
 }
