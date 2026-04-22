@@ -468,7 +468,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
+	nowTime := time.Now()
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
+	log.FromContext(ctx).Info("fetched AKS machine", "aksMachineName", aksMachineName, "duration", time.Since(nowTime).Seconds())
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
@@ -772,6 +774,14 @@ func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningE
 // getAndStore directly fetches the machine and stores the result in the cache. This is useful for situations
 // where we want to ensure we have the latest data.
 func (p *DefaultAKSMachineProvider) getAndStore(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	nowTime := time.Now()
+	defer func() {
+		log.FromContext(ctx).V(1).Info("fetched AKS machine",
+			"aksMachineName", aksMachineName,
+			"duration", time.Since(nowTime).Seconds(),
+		)
+	}()
+
 	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
