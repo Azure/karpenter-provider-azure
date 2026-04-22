@@ -73,7 +73,7 @@ func defaultOpts() opts {
 // Option is a functional option for configuring MachineCache.
 type Option func(opts) opts
 
-// WithTTL sets a custom TTL for the cache. A TTL of 0 means the cache is always stale.
+// WithTTL sets a custom Time-to-Live (TTL) for the cache. It determines how long the cache is considered fresh before it needs to be refreshed. A TTL of 0 means the cache is always stale.
 func WithTTL(d time.Duration) Option {
 	return func(o opts) opts { o.ttl = d; return o }
 }
@@ -112,7 +112,8 @@ type MachineCache struct {
 }
 
 // NewMachineCache creates a new cache instance with a background worker for automatic refresh.
-// The background worker will exit when the provided context is canceled.
+// By default, the cache will automatically refresh its contents in the background at the interval specified by the refreshInterval option.
+// Updates to the cache are also triggered when a stale cache is accessed.
 func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
 	cache := &MachineCache{
 		client:               client,
@@ -186,6 +187,7 @@ func (c *MachineCache) Invalidate(machineName string) {
 }
 
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
+// This polls indefinitely until the machine reaches a terminal state (Succeeded, Failed, or Deleting) or the context is canceled.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name)
 	ticker := time.NewTicker(c.options.pollInterval)
@@ -288,6 +290,8 @@ func (c *MachineCache) updateWorker() {
 	}
 }
 
+// update refreshes the machine cache by fetching the latest list of AKS machines from the Azure API.
+// This should NOT be called directly; it is intended to be used by the background worker.
 func (c *MachineCache) update(ctx context.Context) error {
 	if c.isFresh() {
 		return nil
