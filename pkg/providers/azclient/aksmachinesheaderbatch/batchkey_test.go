@@ -188,21 +188,72 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 		name   string
 		modify func(p *armcontainerservice.MachineProperties)
 	}{
+		// Hardware
 		{"different VM size", func(p *armcontainerservice.MachineProperties) { p.Hardware.VMSize = lo.ToPtr("Standard_D8s_v3") }},
+		{"GPU profile added", func(p *armcontainerservice.MachineProperties) {
+			p.Hardware.GpuProfile = &armcontainerservice.GPUProfile{Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall)}
+		}},
+
+		// Priority / Mode
 		{"spot priority", func(p *armcontainerservice.MachineProperties) {
 			p.Priority = lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot)
 		}},
-		{"different OS SKU", func(p *armcontainerservice.MachineProperties) {
-			p.OperatingSystem.OSSKU = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
-		}},
-		{"different K8s version", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.OrchestratorVersion = lo.ToPtr("1.32.0") }},
-		{"different subnet", func(p *armcontainerservice.MachineProperties) { p.Network.VnetSubnetID = lo.ToPtr("/other/subnet") }},
 		{"system mode", func(p *armcontainerservice.MachineProperties) {
 			p.Mode = lo.ToPtr(armcontainerservice.AgentPoolModeSystem)
 		}},
+
+		// OperatingSystem (flat fields)
+		{"different OS SKU", func(p *armcontainerservice.MachineProperties) {
+			p.OperatingSystem.OSSKU = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
+		}},
 		{"FIPS enabled", func(p *armcontainerservice.MachineProperties) { p.OperatingSystem.EnableFIPS = lo.ToPtr(true) }},
+		{"different OSDiskSizeGB", func(p *armcontainerservice.MachineProperties) { p.OperatingSystem.OSDiskSizeGB = lo.ToPtr[int32](256) }},
+		{"different OSDiskType", func(p *armcontainerservice.MachineProperties) {
+			p.OperatingSystem.OSDiskType = lo.ToPtr(armcontainerservice.OSDiskTypeManaged)
+		}},
+
+		// OperatingSystem (nested: LinuxOSConfig)
+		{"LinuxOSConfig added", func(p *armcontainerservice.MachineProperties) {
+			p.OperatingSystem.LinuxProfile = &armcontainerservice.MachineOSProfileLinuxProfile{
+				LinuxOSConfig: &armcontainerservice.LinuxOSConfig{
+					Sysctls: &armcontainerservice.SysctlConfig{
+						NetCoreRmemMax: lo.ToPtr[int32](16777216),
+					},
+				},
+			}
+		}},
+
+		// Kubernetes (flat fields)
+		{"different K8s version", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.OrchestratorVersion = lo.ToPtr("1.32.0") }},
+		{"different MaxPods", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.MaxPods = lo.ToPtr[int32](110) }},
+
+		// Kubernetes (nested: KubeletConfig)
+		{"different KubeletConfig", func(p *armcontainerservice.MachineProperties) {
+			p.Kubernetes.KubeletConfig = &armcontainerservice.KubeletConfig{CPUManagerPolicy: lo.ToPtr("none")}
+		}},
+		{"KubeletConfig removed", func(p *armcontainerservice.MachineProperties) { p.Kubernetes.KubeletConfig = nil }},
+
+		// Kubernetes (nested: ArtifactStreamingProfile)
+		{"ArtifactStreaming enabled", func(p *armcontainerservice.MachineProperties) {
+			p.Kubernetes.ArtifactStreamingProfile = &armcontainerservice.AgentPoolArtifactStreamingProfile{Enabled: lo.ToPtr(true)}
+		}},
+
+		// Network
+		{"different subnet", func(p *armcontainerservice.MachineProperties) { p.Network.VnetSubnetID = lo.ToPtr("/other/subnet") }},
+
+		// NodeImageVersion
 		{"different node image", func(p *armcontainerservice.MachineProperties) {
 			p.NodeImageVersion = lo.ToPtr("AKSUbuntu-2404gen2containerd-2025.03.01")
+		}},
+
+		// Security (nested)
+		{"EncryptionAtHost disabled", func(p *armcontainerservice.MachineProperties) {
+			p.Security.EnableEncryptionAtHost = lo.ToPtr(false)
+		}},
+
+		// LocalDNS (nested)
+		{"LocalDNS added", func(p *armcontainerservice.MachineProperties) {
+			p.LocalDNSProfile = &armcontainerservice.LocalDNSProfile{Mode: lo.ToPtr(armcontainerservice.LocalDNSModeRequired)}
 		}},
 	}
 
@@ -213,6 +264,92 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 			tt.modify(props)
 			item := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{Properties: props}}
 			g.Expect(mustDetermineBatchKey(t, &item)).ToNot(gomega.Equal(baseHash), "hash should differ when %s changes", tt.name)
+		})
+	}
+}
+
+// TestMachineKeyFunc_PerMachineFieldsDoNotSplit verifies that per-machine fields
+// (Tags, Zones, Machine Name, read-only fields) do NOT affect the batch key.
+// This is the positive counterpart to TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit.
+func TestMachineKeyFunc_PerMachineFieldsDoNotSplit(t *testing.T) {
+	t.Parallel()
+	g := gomega.NewWithT(t)
+
+	baseItem := aksMachineCreatePayload{
+		machineName: "machine-base",
+		machineBody: &armcontainerservice.Machine{
+			Name:       lo.ToPtr("machine-base"),
+			Zones:      []*string{lo.ToPtr("1")},
+			Properties: realisticMachineProps("Standard_D4s_v3", "nc-base"),
+		},
+	}
+	baseHash := mustDetermineBatchKey(t, &baseItem)
+
+	tests := []struct {
+		name   string
+		modify func(m *armcontainerservice.Machine, p *aksMachineCreatePayload)
+	}{
+		// Per-machine: Tags
+		{"different Tags", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Properties.Tags = map[string]*string{
+				"completely": lo.ToPtr("different-tags"),
+			}
+		}},
+		{"nil Tags", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Properties.Tags = nil
+		}},
+		{"extra Tags", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Properties.Tags["extra-key"] = lo.ToPtr("extra-val")
+		}},
+
+		// Per-machine: Zones
+		{"different zone", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Zones = []*string{lo.ToPtr("3")}
+		}},
+		{"multiple zones", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Zones = []*string{lo.ToPtr("1"), lo.ToPtr("2"), lo.ToPtr("3")}
+		}},
+		{"nil zones", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Zones = nil
+		}},
+
+		// Per-machine: Machine Name (on payload and Machine object)
+		{"different machine name", func(m *armcontainerservice.Machine, p *aksMachineCreatePayload) {
+			m.Name = lo.ToPtr("different-machine")
+			p.machineName = "different-machine"
+		}},
+
+		// Read-only fields
+		{"ETag set", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Properties.ETag = lo.ToPtr("etag-123")
+		}},
+		{"ProvisioningState set", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+		}},
+		{"ResourceID set", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Properties.ResourceID = lo.ToPtr("/subscriptions/sub/resourceGroups/rg/...")
+		}},
+		{"Status set", func(m *armcontainerservice.Machine, _ *aksMachineCreatePayload) {
+			m.Properties.Status = &armcontainerservice.MachineStatus{}
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			props := realisticMachineProps("Standard_D4s_v3", "nc-variant")
+			machine := &armcontainerservice.Machine{
+				Name:       lo.ToPtr("machine-variant"),
+				Zones:      []*string{lo.ToPtr("1")},
+				Properties: props,
+			}
+			item := aksMachineCreatePayload{
+				machineName: "machine-variant",
+				machineBody: machine,
+			}
+			tt.modify(machine, &item)
+			g.Expect(mustDetermineBatchKey(t, &item)).To(gomega.Equal(baseHash),
+				"per-machine field change (%s) should NOT affect batch key", tt.name)
 		})
 	}
 }
