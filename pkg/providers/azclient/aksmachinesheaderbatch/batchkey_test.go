@@ -41,7 +41,17 @@ func keyOf(vmSize string, zones []string, tags map[string]string) string {
 		}
 	}
 	item := aksMachineCreatePayload{machineBody: m}
-	return determineBatchKey(&item)
+	key, _ := determineBatchKey(&item)
+	return key
+}
+
+func mustDetermineBatchKey(t *testing.T, item *aksMachineCreatePayload) string {
+	t.Helper()
+	key, err := determineBatchKey(item)
+	if err != nil {
+		t.Fatalf("determineBatchKey failed: %v", err)
+	}
+	return key
 }
 
 func TestMachineKeyFunc(t *testing.T) {
@@ -84,7 +94,7 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 		},
 	}}
 
-	assert.Equal(t, determineBatchKey(&item1), determineBatchKey(&item2), "read-only fields should not affect hash")
+	assert.Equal(t, mustDetermineBatchKey(t, &item1), mustDetermineBatchKey(t, &item2), "read-only fields should not affect hash")
 }
 
 // realisticMachineProps returns a fully-populated MachineProperties matching
@@ -151,10 +161,10 @@ func TestMachineKeyFunc_RealisticMachinesBatchTogether(t *testing.T) {
 		}
 	}
 
-	baseHash := determineBatchKey(&items[0])
+	baseHash := mustDetermineBatchKey(t, &items[0])
 	assert.NotEmpty(t, baseHash)
 	for i := 1; i < len(items); i++ {
-		assert.Equal(t, baseHash, determineBatchKey(&items[i]),
+		assert.Equal(t, baseHash, mustDetermineBatchKey(t, &items[i]),
 			"machine %d should hash the same as machine 0", i)
 	}
 }
@@ -167,7 +177,7 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 			Properties: realisticMachineProps("Standard_D4s_v3", "nc-0"),
 		},
 	}
-	baseHash := determineBatchKey(&baseItem)
+	baseHash := mustDetermineBatchKey(t, &baseItem)
 
 	tests := []struct {
 		name   string
@@ -197,7 +207,7 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 			props := realisticMachineProps("Standard_D4s_v3", "nc-0")
 			tt.modify(props)
 			item := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{Properties: props}}
-			assert.NotEqual(t, baseHash, determineBatchKey(&item), "hash should differ when %s changes", tt.name)
+			assert.NotEqual(t, baseHash, mustDetermineBatchKey(t, &item), "hash should differ when %s changes", tt.name)
 		})
 	}
 }

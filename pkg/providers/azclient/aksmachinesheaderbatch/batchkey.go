@@ -26,43 +26,53 @@ import (
 
 // determineBatchKey computes a grouping key from the AKS machine to be created.
 // Requests with the same resource path and AKS machine properties (excluding per-machine fields like Tags and Zones) batch together.
-func determineBatchKey(item *aksMachineCreatePayload) string {
-	// Include resource path so requests to different clusters/pools don't mix.
+func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
+	if item == nil || item.machineBody == nil || item.machineBody.Properties == nil {
+		return "", fmt.Errorf("nil payload, machine body, or properties")
+	}
+
+	template := buildSharedAKSMachineTemplate(*item.machineBody.Properties)
+	jsonBytes, err := json.Marshal(template)
+	if err != nil {
+		return "", err
+	}
+
+	hash := sha256.Sum256(jsonBytes)
 	prefix := item.resourceGroupName + "/" + item.resourceName + "/" + item.agentPoolName + "/"
 
-	if item.machineBody.Properties == nil {
-		return prefix
-	}
-	props := *item.machineBody.Properties
-	clearPerMachineFields(&props)
-	clearReadOnlyFields(&props)
-
-	jsonBytes, err := json.Marshal(props)
-	if err != nil {
-		jsonBytes = []byte(fmt.Sprintf("%+v", props))
-	}
-	hash := sha256.Sum256(jsonBytes)
-	return prefix + fmt.Sprintf("%x", hash[:8])
+	return prefix + fmt.Sprintf("%x", hash[:8]), nil
 }
 
-// clearPerMachineFields zeros MachineProperties fields that vary per machine and
-// travel via the BatchPutMachine HTTP header instead of the shared request body.
+// buildSharedAKSMachineTemplate returns a Machine containing only the fields shared across all
+// machines in a batch, with per-machine and read-only fields zeroed.
+// Takes MachineProperties by value so the caller's original is never mutated.
 //
-// When adding a field here, also (at least):
-//  1. Add extraction logic in executor.buildBatchHeader (executor.go)
-//     so the field value is included in the per-machine header entries
-//  2. Add the field to MachineEntry in types.go
-func clearPerMachineFields(props *armcontainerservice.MachineProperties) {
-	props.Tags = nil
-	// Zones field is not in Properties (but in its parent--Machine struct).
-}
+// TODO(eidolon): add go doc comment
+func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.MachineProperties) armcontainerservice.Machine {
+	// Design notes: for each section, we can either:
+	// - (A) Recreate a new struct with only the shared fields selected from the old struct, or
+	// - (B) Mutate the existing struct to nil-out the per-machine fields
+	// (A) risks dropping newly supported fields (by both Karpenter and API) from the request.
+	// (B) risks hurting batch performance (size) from not addressing per-machine fields.
+	// (B) is chosen as the primary philosophy in MachineProperties. (A) is chosen for top-level Machine struct (unlikely to change too).
 
-// clearReadOnlyFields zeros MachineProperties fields that are set by the server
-// and should never influence template hashing or request bodies.
-// It is unlikely these fields would be set on a create request in the first place, but just in case.
-func clearReadOnlyFields(props *armcontainerservice.MachineProperties) {
-	props.ETag = nil
-	props.ProvisioningState = nil
-	props.ResourceID = nil
-	props.Status = nil
+	// Clean-up per-machine fields
+	// When adding this, also:
+	// 1. Add extraction logic in buildBatchHeader (header.go) so the field value is included in the per-machine header entries
+	// 2. Add the field to MachineEntry in header.go
+	// WARNING: be careful if we want to nil-out a nested field. Merely assigning nil will mutate the caller's struct. Value-copy/deep-copy it first.
+	aksMachineProperties.Tags = nil
+
+	// Clean-up read-only fields
+	// Technically these won't be populated by default. Though it acts as a safeguard.
+	// TODO: consider removing this once acceptance tests for batch are in place?
+	aksMachineProperties.ETag = nil
+	aksMachineProperties.ProvisioningState = nil
+	aksMachineProperties.ResourceID = nil
+	aksMachineProperties.Status = nil
+
+	return armcontainerservice.Machine{
+		// Dropping all fields outside of properties. They are per-machine/read-only by default.
+		Properties: &aksMachineProperties,
+	}
 }

@@ -77,14 +77,19 @@ func (c *Client) BeginCreateWithBatch(
 	machineName string,
 	machine *armcontainerservice.Machine,
 ) (*offerings.HandlableError, error) {
-	select {
-	case response := <-c.b.Enqueue(aksMachineCreatePayload{
+	responseChan, err := c.b.Enqueue(aksMachineCreatePayload{
 		resourceGroupName: resourceGroupName,
 		resourceName:      resourceName,
 		agentPoolName:     agentPoolName,
 		machineName:       machineName,
 		machineBody:       machine,
-	}):
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case response := <-responseChan:
 		return response.Payload, response.Err
 	case <-ctx.Done():
 		// WARNING: canceling context does not cancel Enqueue call and batch execution.

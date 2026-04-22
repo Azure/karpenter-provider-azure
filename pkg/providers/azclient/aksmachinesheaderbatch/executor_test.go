@@ -120,7 +120,7 @@ func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *off
 		return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{}
 	}
 	return &batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError]{
-		Key:      determineBatchKey(&requests[0].Payload),
+		Key: func() string { k, _ := determineBatchKey(&requests[0].Payload); return k }(),
 		Requests: requests,
 	}
 }
@@ -282,8 +282,8 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
 	}
 
-	key1 := determineBatchKey(&r1.Payload)
-	key2 := determineBatchKey(&r2.Payload)
+	key1, _ := determineBatchKey(&r1.Payload)
+	key2, _ := determineBatchKey(&r2.Payload)
 	assert.NotEqual(t, key1, key2, "different resource paths should produce different batch keys")
 
 	// Execute each as separate batch (as the batcher would)

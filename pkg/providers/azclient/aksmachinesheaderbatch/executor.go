@@ -72,13 +72,13 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 	// Use resource params from the first request (all requests in a batch
 	// share the same resource path due to the key function).
 	first := batch.Requests[0].Payload
-	template := first.machineBody
-	template.Zones = nil
-	if template.Properties != nil {
-		props := *template.Properties
-		clearPerMachineFields(&props)
-		template.Properties = &props
+
+	// Build the template body to be used as a base for the batch.
+	if first.machineBody.Properties == nil {
+		distributeOperationalError(batch, fmt.Errorf("AKS machine properties is nil"))
+		return
 	}
+	template := buildSharedAKSMachineTemplate(*first.machineBody.Properties)
 
 	successCount, failCount := 0, 0
 	// Note: We discard the SDK poller - callers should use the GET-based poller instead
@@ -88,7 +88,7 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 		first.resourceName,
 		first.agentPoolName,
 		first.machineName,
-		*template,
+		template,
 		nil,
 	)
 	if apiError != nil {

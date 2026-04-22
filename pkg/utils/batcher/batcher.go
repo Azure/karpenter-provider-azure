@@ -64,7 +64,7 @@ type Response[ResponsePayload any] struct {
 // DetermineBatchKey computes a grouping key from a payload that will be batched from.
 // Payloads with the same key land in the same batch.
 // The caller module must provide this.
-type DetermineBatchKey[RequestPayload any] func(payload *RequestPayload) string
+type DetermineBatchKey[RequestPayload any] func(payload *RequestPayload) (string, error)
 
 // ExecuteBatch is called when a batch fires by the batcher. It receives the batch
 // and must send a response to every request's ResponseChan.
@@ -122,11 +122,15 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Start() {
 
 // Enqueue adds a request to the appropriate batch and returns a response channel.
 // The caller should select on the channel and ctx.Done().
-func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayload) chan *Response[ResponsePayload] {
+func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayload) (chan *Response[ResponsePayload], error) {
+	key, err := b.determineBatchKey(&payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine batch key: %w", err)
+	}
 	req := &BatchedRequest[RequestPayload, ResponsePayload]{
 		Payload:      payload,
 		ResponseChan: make(chan *Response[ResponsePayload], 1),
-		Key:          b.determineBatchKey(&payload),
+		Key:          key,
 	}
 
 	b.mu.Lock()
@@ -154,7 +158,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayloa
 
 	// Return the channel the caller should wait on.
 	// The channel will receive the batch response once the batch fires and executeBatch is done.
-	return req.ResponseChan
+	return req.ResponseChan, nil
 }
 
 // Main loop: keep collecting requests → wait for trigger → execute batches → repeat.
