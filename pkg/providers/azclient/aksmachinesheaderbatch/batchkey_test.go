@@ -104,7 +104,7 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 // production templates built by buildAKSMachineTemplate. All nested structs
 // are populated so tests can verify that a single leaf-value change is enough
 // to produce a different batch key.
-func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.MachineProperties {
+func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.MachineProperties { //nolint:unparam
 	return &armcontainerservice.MachineProperties{
 		Hardware: &armcontainerservice.MachineHardwareProfile{
 			VMSize: lo.ToPtr(vmSize),

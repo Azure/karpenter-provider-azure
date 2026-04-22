@@ -780,7 +780,7 @@ func countMachinesByVMSize() map[string]int {
 }
 
 // makeNClaims creates n NodeClaims all requesting the same instance type.
-func makeNClaims(n int, instanceType string) []*karpv1.NodeClaim {
+func makeNClaims(n int, instanceType string) []*karpv1.NodeClaim { //nolint:unparam
 	claims := make([]*karpv1.NodeClaim, n)
 	for i := 0; i < n; i++ {
 		claims[i] = makeNodeClaimForInstanceType(instanceType)
@@ -810,6 +810,14 @@ func resetBatchCallCounter() {
 // BeginCreateOrUpdate was called. The coordinator calls it once per batch,
 // so N same-template creates → 1 call, K distinct templates → K calls.
 func runBatchSpecificMultiInstanceTests() {
+	runBatchGroupingTests()
+	runBatchErrorHandlingTests()
+	runBatchPerMachineFieldsCorrectnessTests()
+}
+
+// runBatchGroupingTests verifies batch grouping behavior — that
+// BeginCreateOrUpdate was called the right number of times.
+func runBatchGroupingTests() {
 	Context("Batch Grouping", func() {
 		It("should batch same-template instances into a single API call", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
@@ -1007,7 +1015,9 @@ func runBatchSpecificMultiInstanceTests() {
 			Expect(countMachinesInDataStore()).To(Equal(0))
 		})
 	})
+}
 
+func runBatchErrorHandlingTests() {
 	Context("Batch Error Handling", func() {
 		BeforeEach(func() {
 			mode := options.FromContext(ctx).ProvisionMode
@@ -1164,7 +1174,9 @@ func runBatchSpecificMultiInstanceTests() {
 			Expect(countMachinesInDataStore()).To(Equal(3))
 		})
 	})
+}
 
+func runBatchPerMachineFieldsCorrectnessTests() {
 	Context("Batch Per-Machine Fields Correctness", func() {
 		It("should store correct per-machine zones for each machine in the batch", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
