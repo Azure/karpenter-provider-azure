@@ -1340,13 +1340,19 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 
 		It("should preserve all NodeClass-derived shared fields through batch for multiple machines", func() {
 			// Set additional fields on the shared nodeClass, then provision 3 machines through batch
-			// and verify all shared fields arrive on every machine.
+			// and verify all shared fields arrive on every machine — including deeply nested ones.
 			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUCFSQuota: lo.ToPtr(false),
+			}
 			nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 				Sysctls: &v1beta1.SysctlConfiguration{
 					NetCoreRmemMax:   lo.ToPtr[int32](16777216),
 					NetCoreSomaxconn: lo.ToPtr[int32](4096),
 				},
+			}
+			nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+				Enabled: lo.ToPtr(true),
 			}
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1367,15 +1373,21 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 				props := m.Properties
 				Expect(props).ToNot(BeNil())
 
-				// MaxPods (flat field from NodeClass)
+				// MaxPods (flat field from NodeClass → Kubernetes.MaxPods)
 				Expect(props.Kubernetes).ToNot(BeNil())
 				Expect(lo.FromPtr(props.Kubernetes.MaxPods)).To(Equal(int32(100)),
 					"MaxPods should be preserved through batch for machine %s", lo.FromPtr(m.Name))
 
-				// OSDiskSizeGB (default from test.AKSNodeClass)
+				// OSDiskSizeGB (default from test.AKSNodeClass → OperatingSystem.OSDiskSizeGB)
 				Expect(props.OperatingSystem).ToNot(BeNil())
 				Expect(lo.FromPtr(props.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)),
 					"OSDiskSizeGB should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+
+				// KubeletConfig (nested: NodeClass.Kubelet → Kubernetes.KubeletConfig)
+				Expect(props.Kubernetes.KubeletConfig).ToNot(BeNil(),
+					"KubeletConfig should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.Kubernetes.KubeletConfig.CPUCfsQuota)).To(BeFalse(),
+					"KubeletConfig.CPUCfsQuota should be preserved through batch for machine %s", lo.FromPtr(m.Name))
 
 				// LinuxOSConfig sysctls (deeply nested: 4 levels)
 				Expect(props.OperatingSystem.LinuxProfile).ToNot(BeNil(),
@@ -1388,6 +1400,12 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 					"NetCoreRmemMax sysctl should be preserved through batch for machine %s", lo.FromPtr(m.Name))
 				Expect(lo.FromPtr(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreSomaxconn)).To(Equal(int32(4096)),
 					"NetCoreSomaxconn sysctl should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+
+				// ArtifactStreaming (nested: NodeClass.ArtifactStreaming → Kubernetes.ArtifactStreamingProfile)
+				Expect(props.Kubernetes.ArtifactStreamingProfile).ToNot(BeNil(),
+					"ArtifactStreamingProfile should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.Kubernetes.ArtifactStreamingProfile.Enabled)).To(BeTrue(),
+					"ArtifactStreamingProfile.Enabled should be true for machine %s", lo.FromPtr(m.Name))
 			}
 		})
 
@@ -1396,6 +1414,9 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 			// (tags, zones) still arrive correctly on each machine — the batch pipeline
 			// doesn't corrupt or drop them when shared fields are present.
 			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUCFSQuota: lo.ToPtr(false),
+			}
 			nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 				Sysctls: &v1beta1.SysctlConfiguration{
 					NetCoreRmemMax: lo.ToPtr[int32](16777216),
@@ -1431,6 +1452,7 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 				// Shared fields also present (not dropped by per-machine extraction)
 				Expect(lo.FromPtr(m.Properties.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)))
 				Expect(lo.FromPtr(m.Properties.Kubernetes.MaxPods)).To(Equal(int32(100)))
+				Expect(m.Properties.Kubernetes.KubeletConfig).ToNot(BeNil())
 				Expect(m.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
 				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig).ToNot(BeNil())
 				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls).ToNot(BeNil())
