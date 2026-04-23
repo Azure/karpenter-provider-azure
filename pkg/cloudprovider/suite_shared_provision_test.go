@@ -1019,7 +1019,12 @@ func runBatchGroupingTests() {
 }
 
 func runBatchErrorHandlingTests() {
-	Context("Batch Error Handling", func() {
+	runBatchErrorHandlingPerMachineTests()
+	runBatchErrorHandlingMiscTests()
+}
+
+func runBatchErrorHandlingPerMachineTests() {
+	Context("Batch Error Handling - Per-Machine", func() {
 		BeforeEach(func() {
 			mode := options.FromContext(ctx).ProvisionMode
 			if mode != consts.ProvisionModeAKSMachineAPIHeaderBatch {
@@ -1080,7 +1085,11 @@ func runBatchErrorHandlingTests() {
 			}
 			Expect(countMachinesInDataStore()).To(Equal(0))
 		})
+	})
+}
 
+func runBatchErrorHandlingMiscTests() {
+	Context("Batch Error Handling - Misc", func() {
 		It("should handle non-batch error code distributed to all machines", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			resetBatchCallCounter()
@@ -1178,6 +1187,11 @@ func runBatchErrorHandlingTests() {
 }
 
 func runBatchPerMachineFieldsCorrectnessTests() {
+	runBatchPerMachineBasicTests()
+	runBatchFieldPreservationTests()
+}
+
+func runBatchPerMachineBasicTests() {
 	Context("Batch Per-Machine Fields Correctness", func() {
 		It("should store correct per-machine zones for each machine in the batch", func() {
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
@@ -1338,7 +1352,11 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 				ncTagValues[*ncTag] = true
 			}
 		})
+	})
+}
 
+func runBatchFieldPreservationTests() {
+	Context("Batch Field Preservation", func() {
 		It("should preserve all NodeClass-derived shared fields through batch for multiple machines", func() {
 			// Set additional fields on the shared nodeClass, then provision 3 machines through batch
 			// and verify all shared fields arrive on every machine — including deeply nested ones.
