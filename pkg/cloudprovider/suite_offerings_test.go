@@ -36,8 +36,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
@@ -727,7 +729,13 @@ var _ = Describe("CloudProvider - Offerings", func() {
 			})
 
 			// This is from AKS RP frontend errors rather then CRP
+			// Only applicable to AKS Machine API mode (sync errors from BeginCreateOrUpdate)
 			Context("SKUNotAvailable - AKS Machine API sync phase", func() {
+				BeforeEach(func() {
+					if !isAKSMachineMode() {
+						Skip("sync error handling only applies to AKS Machine API mode")
+					}
+				})
 				AssertUnavailableSync := func(syncErr *azcore.ResponseError, sku *skewer.SKU, capacityType string) {
 					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(syncErr)
 
@@ -760,6 +768,41 @@ var _ = Describe("CloudProvider - Offerings", func() {
 					)
 				})
 			})
+
+			// Batch-specific: per-machine error via BatchMachineErrorFunc.
+			// This exercises the full batch error pipeline: fake → BatchMachineClientError response →
+			// extractPerMachineErrors → per-machine HandlableError → handleMachineBeginCreateError → offerings cache.
+			// Only applicable to batch mode since it uses BatchMachineErrorFunc.
+			Context("SKUNotAvailable - Batch per-machine error", func() {
+				BeforeEach(func() {
+					mode := options.FromContext(ctx).ProvisionMode
+					if mode != consts.ProvisionModeAKSMachineAPIHeaderBatch {
+						Skip("batch per-machine error tests only apply to batch mode")
+					}
+				})
+
+				It("should handle per-machine VMSizeNotSupported batch error and mark SKU unavailable", func() {
+					// Inject per-machine error: any machine created with this SKU gets VMSizeNotSupported
+					azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(machineName string) (string, string) {
+						return "VMSizeNotSupported", fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription %s in location '%s'.",
+							lo.FromPtr(defaultTestSKU.Name), azureEnv.SubscriptionID, fake.Region)
+					}
+
+					coretest.ReplaceRequirements(nodePool,
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{defaultTestSKU.GetName()}},
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+					)
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectNotScheduled(ctx, env.Client, pod)
+					for _, zoneID := range []string{"1", "2", "3"} {
+						ExpectUnavailable(azureEnv, defaultTestSKU, zones.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), karpv1.CapacityTypeOnDemand)
+					}
+				})
+			})
 		})
 	}
 
@@ -767,6 +810,16 @@ var _ = Describe("CloudProvider - Offerings", func() {
 
 	Context("ProvisionMode = AKSMachineAPI", func() {
 		BeforeEach(func() { setupProvisionModeAKSMachineAPITestEnvironment() })
+		AfterEach(func() { teardownTestEnvironment() })
+
+		runSharedCreationFailureTests()
+		runSharedZoneAwareTests()
+		runSharedErrorCaseTests()
+		runSharedUnavailableOfferingsTests()
+	})
+
+	Context("ProvisionMode = AKSMachineAPI + Batch", func() {
+		BeforeEach(func() { setupAKSMachineAPIModeWithBatch() })
 		AfterEach(func() { teardownTestEnvironment() })
 
 		runSharedCreationFailureTests()
