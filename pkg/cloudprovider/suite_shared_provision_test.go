@@ -1337,5 +1337,104 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 				ncTagValues[*ncTag] = true
 			}
 		})
+
+		It("should preserve all NodeClass-derived shared fields through batch for multiple machines", func() {
+			// Set additional fields on the shared nodeClass, then provision 3 machines through batch
+			// and verify all shared fields arrive on every machine.
+			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+				Sysctls: &v1beta1.SysctlConfiguration{
+					NetCoreRmemMax:   lo.ToPtr[int32](16777216),
+					NetCoreSomaxconn: lo.ToPtr[int32](4096),
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			// Should batch into a single call (same template)
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			for _, m := range machines {
+				props := m.Properties
+				Expect(props).ToNot(BeNil())
+
+				// MaxPods (flat field from NodeClass)
+				Expect(props.Kubernetes).ToNot(BeNil())
+				Expect(lo.FromPtr(props.Kubernetes.MaxPods)).To(Equal(int32(100)),
+					"MaxPods should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+
+				// OSDiskSizeGB (default from test.AKSNodeClass)
+				Expect(props.OperatingSystem).ToNot(BeNil())
+				Expect(lo.FromPtr(props.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)),
+					"OSDiskSizeGB should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+
+				// LinuxOSConfig sysctls (deeply nested: 4 levels)
+				Expect(props.OperatingSystem.LinuxProfile).ToNot(BeNil(),
+					"LinuxProfile should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+				Expect(props.OperatingSystem.LinuxProfile.LinuxOSConfig).ToNot(BeNil(),
+					"LinuxOSConfig should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+				Expect(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls).ToNot(BeNil(),
+					"Sysctls should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreRmemMax)).To(Equal(int32(16777216)),
+					"NetCoreRmemMax sysctl should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreSomaxconn)).To(Equal(int32(4096)),
+					"NetCoreSomaxconn sysctl should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+			}
+		})
+
+		It("should preserve per-machine fields when shared fields are also populated", func() {
+			// Verifies that with a richly-configured NodeClass, per-machine fields
+			// (tags, zones) still arrive correctly on each machine — the batch pipeline
+			// doesn't corrupt or drop them when shared fields are present.
+			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+				Sysctls: &v1beta1.SysctlConfiguration{
+					NetCoreRmemMax: lo.ToPtr[int32](16777216),
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			ncTagValues := make(map[string]bool)
+			for _, m := range machines {
+				// Per-machine: zones present
+				Expect(m.Zones).ToNot(BeEmpty(),
+					"zones should be set for machine %s", lo.FromPtr(m.Name))
+
+				// Per-machine: tags present and unique
+				Expect(m.Properties.Tags).ToNot(BeNil(),
+					"tags should be set for machine %s", lo.FromPtr(m.Name))
+				ncTag := m.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
+				Expect(ncTag).ToNot(BeNil())
+				Expect(ncTagValues).ToNot(HaveKey(*ncTag), "NodeClaim tag should be unique")
+				ncTagValues[*ncTag] = true
+
+				// Shared fields also present (not dropped by per-machine extraction)
+				Expect(lo.FromPtr(m.Properties.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)))
+				Expect(lo.FromPtr(m.Properties.Kubernetes.MaxPods)).To(Equal(int32(100)))
+				Expect(m.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
+				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig).ToNot(BeNil())
+				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls).ToNot(BeNil())
+			}
+		})
 	})
 }
