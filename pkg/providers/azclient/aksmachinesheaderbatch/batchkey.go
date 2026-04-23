@@ -46,8 +46,6 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 // buildSharedAKSMachineTemplate returns a Machine containing only the fields shared across all
 // machines in a batch, with per-machine and read-only fields zeroed.
 // Takes MachineProperties by value so the caller's original is never mutated.
-//
-// TODO(eidolon): add go doc comment
 func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.MachineProperties) armcontainerservice.Machine {
 	// Design notes: for each section, we can either:
 	// - (A) Recreate a new struct with only the shared fields selected from the old struct, or
