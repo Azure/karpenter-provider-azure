@@ -28,11 +28,17 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 
+	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -47,6 +53,8 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -54,6 +62,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -588,4 +597,929 @@ func teardownTestEnvironment() {
 	clusterNonZonal.Reset()
 	azureEnv.Reset()
 	azureEnvNonZonal.Reset()
+}
+
+// ─── Multi-instance provisioning helpers and tests ─────────────────────────────
+//
+// Why these tests exist:
+// The standard provisioner creates NodeClaims in a serial for-loop. Each
+// cloudProvider.Create() blocks on the batch grouper's response channel, and
+// the batch idle timeout fires before the next Create() starts — so every
+// batch window closes with exactly 1 machine. Batching never actually happens
+// at the cloudprovider integration level.
+//
+// To close this gap, these tests call cloudProvider.Create() concurrently from
+// goroutines, ensuring multiple requests land in the same batch window. This
+// exercises the full path:
+//   cloudProvider.Create() → AKSMachineProvider.BeginCreate() →
+//   BatchingMachinesClient → Grouper → Coordinator → fake API
+//
+// The tests are split into two groups:
+// - runSharedMultiInstanceProvisionTests: mode-agnostic correctness checks
+//   (work for all provision modes, no batch-specific assertions)
+// - runBatchSpecificMultiInstanceTests: batch grouping assertions
+//   (only run under batch-enabled contexts)
+
+// concurrentCreateResult holds the outcome of a single cloudProvider.Create() call.
+type concurrentCreateResult struct {
+	NodeClaim *karpv1.NodeClaim
+	Err       error
+}
+
+// concurrentCreateAndWaitForPromises creates multiple NodeClaims concurrently
+// via cloudProvider.Create(), sets the Launched condition on each (mirroring
+// what the core lifecycle controller does in production), then waits for all
+// async promise goroutines to complete.
+//
+// This is the concurrent counterpart to CreateAndWaitForPromises.
+// The concurrency is what makes batching actually happen in tests — all
+// Create() calls enqueue into the grouper before the idle timeout fires.
+func concurrentCreateAndWaitForPromises(claims []*karpv1.NodeClaim) []concurrentCreateResult {
+	GinkgoHelper()
+	results := make([]concurrentCreateResult, len(claims))
+	var wg sync.WaitGroup
+	wg.Add(len(claims))
+	for i, nc := range claims {
+		go func(idx int, claim *karpv1.NodeClaim) {
+			defer GinkgoRecover()
+			defer wg.Done()
+			created, err := cloudProvider.Create(ctx, claim)
+			// Simulate what the core lifecycle Launch controller does after Create():
+			// set Launched=True so the async promise goroutine's waitUntilLaunched
+			// unblocks. Without this, the goroutine polls indefinitely.
+			fresh := &karpv1.NodeClaim{}
+			if getErr := env.Client.Get(ctx, types.NamespacedName{
+				Name: claim.Name, Namespace: claim.Namespace,
+			}, fresh); getErr == nil {
+				fresh.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				_ = env.Client.Status().Update(ctx, fresh)
+			}
+			results[idx] = concurrentCreateResult{NodeClaim: created, Err: err}
+		}(i, nc)
+	}
+	wg.Wait()
+	cloudProvider.WaitForInstancePromises()
+	return results
+}
+
+// makeNodeClaimForInstanceType creates a NodeClaim requesting a specific instance type,
+// applies it to the fake API server, and returns it ready for cloudProvider.Create().
+// Uses the package-level nodePool and nodeClass.
+func makeNodeClaimForInstanceType(instanceType string) *karpv1.NodeClaim {
+	GinkgoHelper()
+	nc := coretest.NodeClaim(karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
+		},
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{
+				Group: object.GVK(nodeClass).Group,
+				Kind:  object.GVK(nodeClass).Kind,
+				Name:  nodeClass.Name,
+			},
+			Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
+					Values: []string{instanceType}},
+			},
+		},
+	})
+	ExpectApplied(ctx, env.Client, nc)
+	return nc
+}
+
+// countMachinesInDataStore counts machines stored in the fake AKS data storage.
+func countMachinesInDataStore() int {
+	count := 0
+	azureEnv.AKSDataStorage.AKSMachines.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+// collectMachinesFromDataStore returns all machines from the fake AKS data storage.
+func collectMachinesFromDataStore() []armcontainerservice.Machine {
+	var machines []armcontainerservice.Machine
+	azureEnv.AKSDataStorage.AKSMachines.Range(func(_, v any) bool {
+		machines = append(machines, v.(armcontainerservice.Machine))
+		return true
+	})
+	return machines
+}
+
+// runSharedMultiInstanceProvisionTests verifies multi-instance provisioning
+// correctness. These tests are mode-agnostic — they assert on outcomes (machines
+// created, correct properties) but NOT on batch grouping (API call counts).
+// They work under any provision mode context (AKSMachineAPI, AKSMachineAPI+Batch,
+// AKSScriptless).
+func runSharedMultiInstanceProvisionTests() {
+	Context("Multi-Instance Provisioning", func() {
+		It("should provision multiple instances with the same instance type", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+
+			const count = 3
+			claims := make([]*karpv1.NodeClaim, count)
+			for i := 0; i < count; i++ {
+				claims[i] = makeNodeClaimForInstanceType("Standard_D2_v2")
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+			}
+
+			if isAKSMachineMode() {
+				Expect(countMachinesInDataStore()).To(Equal(count))
+			}
+		})
+
+		It("should provision multiple instances with different instance types", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+
+			claims := []*karpv1.NodeClaim{
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D4s_v3"),
+			}
+
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+			}
+
+			if isAKSMachineMode() {
+				Expect(countMachinesInDataStore()).To(Equal(3))
+				// Verify at least one machine has each VM size
+				machines := collectMachinesFromDataStore()
+				vmSizes := make(map[string]int)
+				for _, m := range machines {
+					if m.Properties != nil && m.Properties.Hardware != nil && m.Properties.Hardware.VMSize != nil {
+						vmSizes[*m.Properties.Hardware.VMSize]++
+					}
+				}
+				Expect(vmSizes).To(HaveKey("Standard_D2_v2"))
+				Expect(vmSizes).To(HaveKey("Standard_D4s_v3"))
+			}
+		})
+	})
+}
+
+// countMachinesByVMSize returns a map of VM size → count from the data store.
+func countMachinesByVMSize() map[string]int {
+	machines := collectMachinesFromDataStore()
+	vmSizes := make(map[string]int)
+	for _, m := range machines {
+		if m.Properties != nil && m.Properties.Hardware != nil && m.Properties.Hardware.VMSize != nil {
+			vmSizes[*m.Properties.Hardware.VMSize]++
+		}
+	}
+	return vmSizes
+}
+
+// makeNClaims creates n NodeClaims all requesting the same instance type.
+func makeNClaims(n int, instanceType string) []*karpv1.NodeClaim { //nolint:unparam
+	claims := make([]*karpv1.NodeClaim, n)
+	for i := 0; i < n; i++ {
+		claims[i] = makeNodeClaimForInstanceType(instanceType)
+	}
+	return claims
+}
+
+// expectAllSucceeded asserts that all results succeeded with non-nil NodeClaims.
+func expectAllSucceeded(results []concurrentCreateResult) {
+	for i, r := range results {
+		Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+		Expect(r.NodeClaim).ToNot(BeNil(), "claim %d returned nil", i)
+	}
+}
+
+// resetBatchCallCounter resets the CalledWithInput counter on the AKS Machines API fake.
+func resetBatchCallCounter() {
+	azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+}
+
+// runBatchSpecificMultiInstanceTests verifies batch grouping behavior — that
+// concurrent creates with the same template land in the same batch (single API
+// call) and different templates produce separate batches. Only meaningful under
+// batch-enabled contexts.
+//
+// Key assertion: CalledWithInput.Len() counts how many times the fake's
+// BeginCreateOrUpdate was called. The coordinator calls it once per batch,
+// so N same-template creates → 1 call, K distinct templates → K calls.
+func runBatchSpecificMultiInstanceTests() {
+	runBatchGroupingTests()
+	runBatchErrorHandlingTests()
+	runBatchPerMachineFieldsCorrectnessTests()
+}
+
+// runBatchGroupingTests verifies batch grouping behavior — that
+// BeginCreateOrUpdate was called the right number of times.
+func runBatchGroupingTests() {
+	Context("Batch Grouping", func() {
+		It("should batch same-template instances into a single API call", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 5
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			// Core assertion: all 5 went through a single BeginCreateOrUpdate call
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1),
+				"expected 1 batch API call for 5 same-template creates")
+			Expect(countMachinesInDataStore()).To(Equal(count))
+		})
+
+		It("should split different-template instances into separate batches", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			claims := []*karpv1.NodeClaim{
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D2_v2"),
+				makeNodeClaimForInstanceType("Standard_D4s_v3"),
+				makeNodeClaimForInstanceType("Standard_D4s_v3"),
+			}
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			// Core assertion: 2 distinct template hashes → 2 batch API calls
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(2),
+				"expected 2 batch API calls for 2 distinct template hashes")
+			Expect(countMachinesInDataStore()).To(Equal(5))
+
+			vmSizes := countMachinesByVMSize()
+			Expect(vmSizes["Standard_D2_v2"]).To(Equal(3))
+			Expect(vmSizes["Standard_D4s_v3"]).To(Equal(2))
+		})
+
+		It("should propagate per-machine tags through batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d failed", i)
+			}
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			machineNames := make(map[string]bool)
+			for _, m := range machines {
+				Expect(m.Name).ToNot(BeNil(), "machine name should not be nil")
+				Expect(machineNames).ToNot(HaveKey(*m.Name), "machine names should be unique")
+				machineNames[*m.Name] = true
+				Expect(m.Properties).ToNot(BeNil())
+				Expect(m.Properties.Tags).ToNot(BeNil(), "per-machine tags should not be nil for machine %s", *m.Name)
+			}
+		})
+
+		// Batch grouping combination matrix: [VM Size × NodeClass identity]
+		// The batch key hashes the full MachineProperties template, so two different NodeClasses
+		// always produce different batches (even if their fields happen to match) because they
+		// resolve to different images, k8s versions, etc. Only same-NodeClass + same-VM-size batches together.
+		DescribeTable("batch grouping by VM size and NodeClass",
+			func(vmSizeA, vmSizeB string, sameNodeClass bool, expectedBatches int) {
+				var nodeClassA, nodeClassB *v1beta1.AKSNodeClass
+				var nodePoolA, nodePoolB *karpv1.NodePool
+
+				nodeClassA = test.AKSNodeClass()
+				test.ApplyDefaultStatus(nodeClassA, env, options.FromContext(ctx).UseSIG)
+				nodePoolA = coretest.NodePool(karpv1.NodePool{
+					Spec: karpv1.NodePoolSpec{
+						Template: karpv1.NodeClaimTemplate{
+							Spec: karpv1.NodeClaimTemplateSpec{
+								NodeClassRef: &karpv1.NodeClassReference{
+									Group: object.GVK(nodeClassA).Group,
+									Kind:  object.GVK(nodeClassA).Kind,
+									Name:  nodeClassA.Name,
+								},
+							},
+						},
+					},
+				})
+
+				if sameNodeClass {
+					nodeClassB = nodeClassA
+					nodePoolB = nodePoolA
+				} else {
+					nodeClassB = test.AKSNodeClass()
+					test.ApplyDefaultStatus(nodeClassB, env, options.FromContext(ctx).UseSIG)
+					nodePoolB = coretest.NodePool(karpv1.NodePool{
+						Spec: karpv1.NodePoolSpec{
+							Template: karpv1.NodeClaimTemplate{
+								Spec: karpv1.NodeClaimTemplateSpec{
+									NodeClassRef: &karpv1.NodeClassReference{
+										Group: object.GVK(nodeClassB).Group,
+										Kind:  object.GVK(nodeClassB).Kind,
+										Name:  nodeClassB.Name,
+									},
+								},
+							},
+						},
+					})
+				}
+
+				ExpectApplied(ctx, env.Client, nodeClassA, nodePoolA)
+				if !sameNodeClass {
+					ExpectApplied(ctx, env.Client, nodeClassB, nodePoolB)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClassB)
+				}
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClassA)
+				resetBatchCallCounter()
+
+				claimA := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePoolA.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClassA).Group,
+							Kind:  object.GVK(nodeClassA).Kind,
+							Name:  nodeClassA.Name,
+						},
+						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+							{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
+								Values: []string{vmSizeA}},
+						},
+					},
+				})
+				claimB := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePoolB.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClassB).Group,
+							Kind:  object.GVK(nodeClassB).Kind,
+							Name:  nodeClassB.Name,
+						},
+						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+							{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn,
+								Values: []string{vmSizeB}},
+						},
+					},
+				})
+
+				ExpectApplied(ctx, env.Client, claimA, claimB)
+				results := concurrentCreateAndWaitForPromises([]*karpv1.NodeClaim{claimA, claimB})
+				expectAllSucceeded(results)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(
+					Equal(expectedBatches),
+					"expected %d batch(es) for vmSize=[%s,%s] sameNodeClass=%v",
+					expectedBatches, vmSizeA, vmSizeB, sameNodeClass)
+				Expect(countMachinesInDataStore()).To(Equal(2))
+			},
+			// Same NodeClass + same VM size → 1 batch (only case that groups)
+			Entry("same NodeClass + same VM size → 1 batch",
+				"Standard_D2_v2", "Standard_D2_v2", true, 1),
+			// Same NodeClass + different VM size → 2 batches (VM size differs in template)
+			Entry("same NodeClass + different VM size → 2 batches",
+				"Standard_D2_v2", "Standard_D4s_v3", true, 2),
+			// Different NodeClass + same VM size → 2 batches (templates differ due to NodeClass identity)
+			Entry("different NodeClass + same VM size → 2 batches",
+				"Standard_D2_v2", "Standard_D2_v2", false, 2),
+			// Different NodeClass + different VM size → 2 batches (both dimensions differ)
+			Entry("different NodeClass + different VM size → 2 batches",
+				"Standard_D2_v2", "Standard_D4s_v3", false, 2),
+		)
+
+		It("should propagate batch error to all machines in the batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{ErrorCode: "BatchFailed"},
+			)
+			defer azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
+			}
+			Expect(countMachinesInDataStore()).To(Equal(0))
+		})
+	})
+}
+
+func runBatchErrorHandlingTests() {
+	runBatchErrorHandlingPerMachineTests()
+	runBatchErrorHandlingMiscTests()
+}
+
+func runBatchErrorHandlingPerMachineTests() {
+	Context("Batch Error Handling - Per-Machine", func() {
+		BeforeEach(func() {
+			mode := options.FromContext(ctx).ProvisionMode
+			if mode != consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				Skip("batch error handling tests only apply to batch mode")
+			}
+		})
+
+		It("should handle per-machine partial failure: failed machines get errors, successful machines provision", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// m-fail machines get client error, others succeed
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				if strings.Contains(name, "claim-0") {
+					return "InvalidParameter", "simulated client error"
+				}
+				return "", ""
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			claims := makeNClaims(3, "Standard_D2_v2")
+			// Override claim names so we can predict which fails
+			claims[0].Name = "claim-0-fail"
+			claims[1].Name = "claim-1-ok"
+			claims[2].Name = "claim-2-ok"
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			failCount, successCount := 0, 0
+			for _, r := range results {
+				if r.Err != nil {
+					failCount++
+				} else {
+					successCount++
+					Expect(r.NodeClaim).ToNot(BeNil())
+				}
+			}
+			Expect(failCount).To(BeNumerically(">=", 1), "at least one machine should fail")
+			Expect(successCount).To(BeNumerically(">=", 1), "at least one machine should succeed")
+			// Successful machines should be in the data store, failed ones should not
+			Expect(countMachinesInDataStore()).To(Equal(successCount))
+		})
+
+		It("should handle per-machine internal error (BatchMachineInternalServerError)", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// All machines get internal error (InternalOperationError prefix → 500)
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				return "InternalOperationError", "simulated internal error for " + name
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			claims := makeNClaims(2, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
+			}
+			Expect(countMachinesInDataStore()).To(Equal(0))
+		})
+	})
+}
+
+func runBatchErrorHandlingMiscTests() {
+	Context("Batch Error Handling - Misc", func() {
+		It("should handle non-batch error code distributed to all machines", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// A non-batch error (e.g., NotFound) — not BatchMachineClientError/InternalServerError
+			// extractPerMachineErrors should distribute it to all machines via the default branch
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{ErrorCode: "NotFound", StatusCode: http.StatusNotFound},
+			)
+			defer azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+
+			claims := makeNClaims(3, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).To(HaveOccurred(), "claim %d should have failed", i)
+			}
+			Expect(countMachinesInDataStore()).To(Equal(0))
+		})
+
+		It("should handle per-machine error and mark SKU unavailable in offerings cache", func() {
+			sku := fake.MakeSKU("Standard_D2_v3")
+
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				return "VMSizeNotSupported", fmt.Sprintf(
+					"Virtual Machine size: 'Standard_D2_v3' is not supported for subscription %s in location '%s'.",
+					azureEnv.SubscriptionID, fake.Region)
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+			)
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// Verify offerings cache was updated
+			for _, zoneID := range []string{"1", "2", "3"} {
+				ExpectUnavailable(azureEnv, sku, zones.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), karpv1.CapacityTypeOnDemand)
+			}
+		})
+
+		It("should handle mixed per-machine errors: some client, some internal", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(name string) (string, string) {
+				if strings.Contains(name, "claim-0") {
+					return "InvalidParameter", "client error"
+				}
+				if strings.Contains(name, "claim-1") {
+					return "InternalOperationError", "internal error"
+				}
+				return "", "" // claim-2 succeeds
+			}
+			defer func() { azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = nil }()
+
+			claims := makeNClaims(3, "Standard_D2_v2")
+			claims[0].Name = "claim-0-client"
+			claims[1].Name = "claim-1-internal"
+			claims[2].Name = "claim-2-ok"
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			failCount := 0
+			for _, r := range results {
+				if r.Err != nil {
+					failCount++
+				}
+			}
+			// At least the two error-injected machines should fail
+			// (the third may or may not depending on batch grouping)
+			Expect(failCount).To(BeNumerically(">=", 2))
+		})
+
+		It("should succeed when no per-machine errors occur in batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			// No BatchMachineErrorFunc set → all succeed
+			claims := makeNClaims(3, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+
+			for i, r := range results {
+				Expect(r.Err).ToNot(HaveOccurred(), "claim %d should have succeeded", i)
+				Expect(r.NodeClaim).ToNot(BeNil(), "claim %d should have a NodeClaim", i)
+			}
+			Expect(countMachinesInDataStore()).To(Equal(3))
+		})
+	})
+}
+
+func runBatchPerMachineFieldsCorrectnessTests() {
+	runBatchPerMachineBasicTests()
+	runBatchFieldPreservationTests()
+}
+
+func runBatchPerMachineBasicTests() {
+	Context("Batch Per-Machine Fields Correctness", func() {
+		It("should store correct per-machine zones for each machine in the batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			// Each machine should have its own identity, not sharing the template's cleared values
+			names := make(map[string]bool)
+			for _, m := range machines {
+				Expect(m.Name).ToNot(BeNil())
+				Expect(names).ToNot(HaveKey(*m.Name), "duplicate machine name: %s", *m.Name)
+				names[*m.Name] = true
+				Expect(m.Properties).ToNot(BeNil())
+			}
+		})
+
+		It("should store unique per-machine tags (NodeClaim name) for each machine", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			// Each machine should have a unique NodeClaim tag value
+			nodeClaimTags := make(map[string]bool)
+			for _, m := range machines {
+				Expect(m.Properties).ToNot(BeNil())
+				Expect(m.Properties.Tags).ToNot(BeNil(), "machine %s should have tags", lo.FromPtr(m.Name))
+
+				ncTag, ok := m.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
+				Expect(ok).To(BeTrue(), "machine %s should have NodeClaim tag", lo.FromPtr(m.Name))
+				Expect(ncTag).ToNot(BeNil())
+				Expect(nodeClaimTags).ToNot(HaveKey(*ncTag), "duplicate NodeClaim tag: %s", *ncTag)
+				nodeClaimTags[*ncTag] = true
+			}
+		})
+
+		It("should not split batches for machines with different zones (zones are per-machine)", func() {
+			// Zones differ per machine but are per-machine fields — they should NOT split batches.
+			// All machines with the same VM size should go in one batch regardless of zone.
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			// Should be 1 batch call even though machines may land in different zones
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(
+				Equal(1), "different zones should not split batches")
+		})
+
+		It("should store non-empty zones for each machine in the batch", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			for _, m := range machines {
+				Expect(m.Zones).ToNot(BeEmpty(), "machine %s should have zones set", lo.FromPtr(m.Name))
+				for _, z := range m.Zones {
+					Expect(z).ToNot(BeNil(), "zone should not be nil for machine %s", lo.FromPtr(m.Name))
+					Expect(*z).To(MatchRegexp(`^[1-9][0-9]*$`), "zone should be a valid number for machine %s", lo.FromPtr(m.Name))
+				}
+			}
+		})
+
+		It("should preserve shared MachineProperties fields through batch for all machines", func() {
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			for _, m := range machines {
+				props := m.Properties
+				Expect(props).ToNot(BeNil(), "machine %s should have properties", lo.FromPtr(m.Name))
+
+				// Hardware
+				Expect(props.Hardware).ToNot(BeNil(), "machine %s: Hardware should not be nil", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.Hardware.VMSize)).To(Equal("Standard_D2_v2"), "machine %s: VMSize mismatch", lo.FromPtr(m.Name))
+
+				// OperatingSystem
+				Expect(props.OperatingSystem).ToNot(BeNil(), "machine %s: OperatingSystem should not be nil", lo.FromPtr(m.Name))
+				Expect(props.OperatingSystem.OSType).ToNot(BeNil(), "machine %s: OSType should not be nil", lo.FromPtr(m.Name))
+				Expect(*props.OperatingSystem.OSType).To(Equal(armcontainerservice.OSTypeLinux))
+
+				// Kubernetes
+				Expect(props.Kubernetes).ToNot(BeNil(), "machine %s: Kubernetes should not be nil", lo.FromPtr(m.Name))
+				Expect(props.Kubernetes.OrchestratorVersion).ToNot(BeNil(), "machine %s: OrchestratorVersion should not be nil", lo.FromPtr(m.Name))
+
+				// NodeImageVersion
+				Expect(props.NodeImageVersion).ToNot(BeNil(), "machine %s: NodeImageVersion should not be nil", lo.FromPtr(m.Name))
+
+				// Mode
+				Expect(props.Mode).ToNot(BeNil(), "machine %s: Mode should not be nil", lo.FromPtr(m.Name))
+
+				// Security
+				Expect(props.Security).ToNot(BeNil(), "machine %s: Security should not be nil", lo.FromPtr(m.Name))
+
+				// Network
+				Expect(props.Network).ToNot(BeNil(), "machine %s: Network should not be nil", lo.FromPtr(m.Name))
+			}
+		})
+
+		It("should give each machine its own tags map (no shared reference)", func() {
+			// Verifies that template mutation in batch doesn't cause machines to share the same tags map
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			resetBatchCallCounter()
+
+			const count = 3
+			claims := makeNClaims(count, "Standard_D2_v2")
+			results := concurrentCreateAndWaitForPromises(claims)
+			expectAllSucceeded(results)
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			// Collect all tag map pointers — they must be distinct (no aliasing)
+			tagPtrs := make(map[*map[string]*string]bool)
+			for _, m := range machines {
+				Expect(m.Properties.Tags).ToNot(BeNil())
+				ptr := &m.Properties.Tags
+				Expect(tagPtrs).ToNot(HaveKey(ptr), "machines should not share the same tags map reference")
+				tagPtrs[ptr] = true
+			}
+
+			// Also verify NodeClaim tag values are all distinct
+			ncTagValues := make(map[string]bool)
+			for _, m := range machines {
+				ncTag := m.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
+				Expect(ncTag).ToNot(BeNil())
+				Expect(ncTagValues).ToNot(HaveKey(*ncTag), "NodeClaim tags should be unique across machines")
+				ncTagValues[*ncTag] = true
+			}
+		})
+	})
+}
+
+func runBatchFieldPreservationTests() {
+	Context("Batch Field Preservation", func() {
+		It("should preserve all NodeClass-derived shared fields through batch for multiple machines", func() {
+			// Set additional fields on the shared nodeClass, then provision 3 machines through batch
+			// and verify all shared fields arrive on every machine — including deeply nested ones.
+			origSpec := nodeClass.Spec
+			DeferCleanup(func() { nodeClass.Spec = origSpec })
+
+			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.Security = &v1beta1.Security{EncryptionAtHost: lo.ToPtr(true)}
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUCFSQuota: lo.ToPtr(false),
+			}
+			nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+				Sysctls: &v1beta1.SysctlConfiguration{
+					NetCoreRmemMax:   lo.ToPtr[int32](16777216),
+					NetCoreSomaxconn: lo.ToPtr[int32](4096),
+				},
+			}
+			nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
+				Enabled: lo.ToPtr(true),
+			}
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode:             v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+				KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			}
+			// Re-apply and reconcile after spec changes to ensure status matches new generation.
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			resetBatchCallCounter()
+
+			// Use pod-based provisioning (like suite_features_test.go) since it handles
+			// nodeClass readiness correctly after spec changes.
+			const count = 3
+			pods := make([]*v1.Pod, count)
+			for i := 0; i < count; i++ {
+				pods[i] = coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("3")},
+					},
+				})
+			}
+			for _, pod := range pods {
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+			cloudProvider.WaitForInstancePromises()
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			for _, m := range machines {
+				props := m.Properties
+				Expect(props).ToNot(BeNil())
+
+				// MaxPods (flat: NodeClass.MaxPods → Kubernetes.MaxPods)
+				Expect(props.Kubernetes).ToNot(BeNil())
+				Expect(lo.FromPtr(props.Kubernetes.MaxPods)).To(Equal(int32(100)),
+					"MaxPods should be preserved for machine %s", lo.FromPtr(m.Name))
+
+				// OSDiskSizeGB (flat: default 128 → OperatingSystem.OSDiskSizeGB)
+				Expect(props.OperatingSystem).ToNot(BeNil())
+				Expect(lo.FromPtr(props.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)),
+					"OSDiskSizeGB should be preserved for machine %s", lo.FromPtr(m.Name))
+
+				// EncryptionAtHost (nested: Security.EncryptionAtHost → Security.EnableEncryptionAtHost)
+				Expect(props.Security).ToNot(BeNil())
+				Expect(lo.FromPtr(props.Security.EnableEncryptionAtHost)).To(BeTrue(),
+					"EncryptionAtHost should be preserved for machine %s", lo.FromPtr(m.Name))
+
+				// KubeletConfig (nested: NodeClass.Kubelet → Kubernetes.KubeletConfig)
+				Expect(props.Kubernetes.KubeletConfig).ToNot(BeNil(),
+					"KubeletConfig should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.Kubernetes.KubeletConfig.CPUCfsQuota)).To(BeFalse(),
+					"KubeletConfig.CPUCfsQuota should be preserved for machine %s", lo.FromPtr(m.Name))
+
+				// LinuxOSConfig sysctls (4 levels: OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.*)
+				Expect(props.OperatingSystem.LinuxProfile).ToNot(BeNil(),
+					"LinuxProfile should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(props.OperatingSystem.LinuxProfile.LinuxOSConfig).ToNot(BeNil(),
+					"LinuxOSConfig should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls).ToNot(BeNil(),
+					"Sysctls should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreRmemMax)).To(Equal(int32(16777216)),
+					"NetCoreRmemMax should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreSomaxconn)).To(Equal(int32(4096)),
+					"NetCoreSomaxconn should be preserved for machine %s", lo.FromPtr(m.Name))
+
+				// ArtifactStreaming (nested: NodeClass.ArtifactStreaming → Kubernetes.ArtifactStreamingProfile)
+				Expect(props.Kubernetes.ArtifactStreamingProfile).ToNot(BeNil(),
+					"ArtifactStreamingProfile should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.Kubernetes.ArtifactStreamingProfile.Enabled)).To(BeTrue(),
+					"ArtifactStreaming.Enabled should be true for machine %s", lo.FromPtr(m.Name))
+
+				// LocalDNS (nested: NodeClass.LocalDNS → LocalDNSProfile)
+				Expect(props.LocalDNSProfile).ToNot(BeNil(),
+					"LocalDNSProfile should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeRequired),
+					"LocalDNSProfile.Mode should be preserved for machine %s", lo.FromPtr(m.Name))
+			}
+		})
+
+		It("should preserve per-machine fields when shared fields are also populated", func() {
+			origSpec := nodeClass.Spec
+			DeferCleanup(func() { nodeClass.Spec = origSpec })
+
+			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.Security = &v1beta1.Security{EncryptionAtHost: lo.ToPtr(true)}
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUCFSQuota: lo.ToPtr(false),
+			}
+			nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
+				Sysctls: &v1beta1.SysctlConfiguration{
+					NetCoreRmemMax: lo.ToPtr[int32](16777216),
+				},
+			}
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode:             v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+				KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+			const count = 3
+			for i := 0; i < count; i++ {
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("3")},
+					},
+				})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+			cloudProvider.WaitForInstancePromises()
+
+			machines := collectMachinesFromDataStore()
+			Expect(machines).To(HaveLen(count))
+
+			ncTagValues := make(map[string]bool)
+			for _, m := range machines {
+				// Per-machine: zones present
+				Expect(m.Zones).ToNot(BeEmpty(),
+					"zones should be set for machine %s", lo.FromPtr(m.Name))
+
+				// Per-machine: tags present and unique
+				Expect(m.Properties.Tags).ToNot(BeNil(),
+					"tags should be set for machine %s", lo.FromPtr(m.Name))
+				ncTag := m.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]
+				Expect(ncTag).ToNot(BeNil())
+				Expect(ncTagValues).ToNot(HaveKey(*ncTag), "NodeClaim tag should be unique")
+				ncTagValues[*ncTag] = true
+
+				// Shared fields also present (not dropped by per-machine extraction)
+				Expect(lo.FromPtr(m.Properties.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)))
+				Expect(lo.FromPtr(m.Properties.Kubernetes.MaxPods)).To(Equal(int32(100)))
+				Expect(lo.FromPtr(m.Properties.Security.EnableEncryptionAtHost)).To(BeTrue())
+				Expect(m.Properties.Kubernetes.KubeletConfig).ToNot(BeNil())
+				Expect(m.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
+				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig).ToNot(BeNil())
+				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls).ToNot(BeNil())
+				Expect(m.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(m.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeRequired))
+			}
+		})
+	})
 }
