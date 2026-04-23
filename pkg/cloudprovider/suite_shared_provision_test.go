@@ -36,6 +36,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -1341,7 +1342,11 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 		It("should preserve all NodeClass-derived shared fields through batch for multiple machines", func() {
 			// Set additional fields on the shared nodeClass, then provision 3 machines through batch
 			// and verify all shared fields arrive on every machine — including deeply nested ones.
+			origSpec := nodeClass.Spec
+			DeferCleanup(func() { nodeClass.Spec = origSpec })
+
 			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.Security = &v1beta1.Security{EncryptionAtHost: lo.ToPtr(true)}
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				CPUCFSQuota: lo.ToPtr(false),
 			}
@@ -1354,17 +1359,32 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 			nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
 				Enabled: lo.ToPtr(true),
 			}
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode:             v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+				KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			}
+			// Re-apply and reconcile after spec changes to ensure status matches new generation.
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 			resetBatchCallCounter()
 
+			// Use pod-based provisioning (like suite_features_test.go) since it handles
+			// nodeClass readiness correctly after spec changes.
 			const count = 3
-			claims := makeNClaims(count, "Standard_D2_v2")
-			results := concurrentCreateAndWaitForPromises(claims)
-			expectAllSucceeded(results)
-
-			// Should batch into a single call (same template)
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			pods := make([]*v1.Pod, count)
+			for i := 0; i < count; i++ {
+				pods[i] = coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("3")},
+					},
+				})
+			}
+			for _, pod := range pods {
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+			cloudProvider.WaitForInstancePromises()
 
 			machines := collectMachinesFromDataStore()
 			Expect(machines).To(HaveLen(count))
@@ -1373,47 +1393,59 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 				props := m.Properties
 				Expect(props).ToNot(BeNil())
 
-				// MaxPods (flat field from NodeClass → Kubernetes.MaxPods)
+				// MaxPods (flat: NodeClass.MaxPods → Kubernetes.MaxPods)
 				Expect(props.Kubernetes).ToNot(BeNil())
 				Expect(lo.FromPtr(props.Kubernetes.MaxPods)).To(Equal(int32(100)),
-					"MaxPods should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"MaxPods should be preserved for machine %s", lo.FromPtr(m.Name))
 
-				// OSDiskSizeGB (default from test.AKSNodeClass → OperatingSystem.OSDiskSizeGB)
+				// OSDiskSizeGB (flat: default 128 → OperatingSystem.OSDiskSizeGB)
 				Expect(props.OperatingSystem).ToNot(BeNil())
 				Expect(lo.FromPtr(props.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)),
-					"OSDiskSizeGB should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"OSDiskSizeGB should be preserved for machine %s", lo.FromPtr(m.Name))
+
+				// EncryptionAtHost (nested: Security.EncryptionAtHost → Security.EnableEncryptionAtHost)
+				Expect(props.Security).ToNot(BeNil())
+				Expect(lo.FromPtr(props.Security.EnableEncryptionAtHost)).To(BeTrue(),
+					"EncryptionAtHost should be preserved for machine %s", lo.FromPtr(m.Name))
 
 				// KubeletConfig (nested: NodeClass.Kubelet → Kubernetes.KubeletConfig)
 				Expect(props.Kubernetes.KubeletConfig).ToNot(BeNil(),
-					"KubeletConfig should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"KubeletConfig should be preserved for machine %s", lo.FromPtr(m.Name))
 				Expect(lo.FromPtr(props.Kubernetes.KubeletConfig.CPUCfsQuota)).To(BeFalse(),
-					"KubeletConfig.CPUCfsQuota should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"KubeletConfig.CPUCfsQuota should be preserved for machine %s", lo.FromPtr(m.Name))
 
-				// LinuxOSConfig sysctls (deeply nested: 4 levels)
+				// LinuxOSConfig sysctls (4 levels: OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.*)
 				Expect(props.OperatingSystem.LinuxProfile).ToNot(BeNil(),
-					"LinuxProfile should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"LinuxProfile should be preserved for machine %s", lo.FromPtr(m.Name))
 				Expect(props.OperatingSystem.LinuxProfile.LinuxOSConfig).ToNot(BeNil(),
-					"LinuxOSConfig should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"LinuxOSConfig should be preserved for machine %s", lo.FromPtr(m.Name))
 				Expect(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls).ToNot(BeNil(),
-					"Sysctls should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"Sysctls should be preserved for machine %s", lo.FromPtr(m.Name))
 				Expect(lo.FromPtr(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreRmemMax)).To(Equal(int32(16777216)),
-					"NetCoreRmemMax sysctl should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"NetCoreRmemMax should be preserved for machine %s", lo.FromPtr(m.Name))
 				Expect(lo.FromPtr(props.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls.NetCoreSomaxconn)).To(Equal(int32(4096)),
-					"NetCoreSomaxconn sysctl should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"NetCoreSomaxconn should be preserved for machine %s", lo.FromPtr(m.Name))
 
 				// ArtifactStreaming (nested: NodeClass.ArtifactStreaming → Kubernetes.ArtifactStreamingProfile)
 				Expect(props.Kubernetes.ArtifactStreamingProfile).ToNot(BeNil(),
-					"ArtifactStreamingProfile should be preserved through batch for machine %s", lo.FromPtr(m.Name))
+					"ArtifactStreamingProfile should be preserved for machine %s", lo.FromPtr(m.Name))
 				Expect(lo.FromPtr(props.Kubernetes.ArtifactStreamingProfile.Enabled)).To(BeTrue(),
-					"ArtifactStreamingProfile.Enabled should be true for machine %s", lo.FromPtr(m.Name))
+					"ArtifactStreaming.Enabled should be true for machine %s", lo.FromPtr(m.Name))
+
+				// LocalDNS (nested: NodeClass.LocalDNS → LocalDNSProfile)
+				Expect(props.LocalDNSProfile).ToNot(BeNil(),
+					"LocalDNSProfile should be preserved for machine %s", lo.FromPtr(m.Name))
+				Expect(lo.FromPtr(props.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeRequired),
+					"LocalDNSProfile.Mode should be preserved for machine %s", lo.FromPtr(m.Name))
 			}
 		})
 
 		It("should preserve per-machine fields when shared fields are also populated", func() {
-			// Verifies that with a richly-configured NodeClass, per-machine fields
-			// (tags, zones) still arrive correctly on each machine — the batch pipeline
-			// doesn't corrupt or drop them when shared fields are present.
+			origSpec := nodeClass.Spec
+			DeferCleanup(func() { nodeClass.Spec = origSpec })
+
 			nodeClass.Spec.MaxPods = lo.ToPtr[int32](100)
+			nodeClass.Spec.Security = &v1beta1.Security{EncryptionAtHost: lo.ToPtr(true)}
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				CPUCFSQuota: lo.ToPtr(false),
 			}
@@ -1422,15 +1454,25 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 					NetCoreRmemMax: lo.ToPtr[int32](16777216),
 				},
 			}
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode:             v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+				KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-			resetBatchCallCounter()
 
 			const count = 3
-			claims := makeNClaims(count, "Standard_D2_v2")
-
-			results := concurrentCreateAndWaitForPromises(claims)
-			expectAllSucceeded(results)
+			for i := 0; i < count; i++ {
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("3")},
+					},
+				})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+			cloudProvider.WaitForInstancePromises()
 
 			machines := collectMachinesFromDataStore()
 			Expect(machines).To(HaveLen(count))
@@ -1452,10 +1494,13 @@ func runBatchPerMachineFieldsCorrectnessTests() {
 				// Shared fields also present (not dropped by per-machine extraction)
 				Expect(lo.FromPtr(m.Properties.OperatingSystem.OSDiskSizeGB)).To(Equal(int32(128)))
 				Expect(lo.FromPtr(m.Properties.Kubernetes.MaxPods)).To(Equal(int32(100)))
+				Expect(lo.FromPtr(m.Properties.Security.EnableEncryptionAtHost)).To(BeTrue())
 				Expect(m.Properties.Kubernetes.KubeletConfig).ToNot(BeNil())
 				Expect(m.Properties.OperatingSystem.LinuxProfile).ToNot(BeNil())
 				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig).ToNot(BeNil())
 				Expect(m.Properties.OperatingSystem.LinuxProfile.LinuxOSConfig.Sysctls).ToNot(BeNil())
+				Expect(m.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(m.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeRequired))
 			}
 		})
 	})
