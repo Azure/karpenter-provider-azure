@@ -198,7 +198,6 @@ jobs:
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID_TEST || secrets.E2E_CLIENT_ID }}
           subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           acr_name: ${{ env.ACR_NAME }}
@@ -216,7 +215,6 @@ jobs:
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
         uses: ./.github/actions/e2e/create-cluster
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID_TEST || secrets.E2E_CLIENT_ID }}
           subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
@@ -230,7 +228,6 @@ jobs:
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID_TEST || secrets.E2E_CLIENT_ID }}
           subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
@@ -264,7 +261,6 @@ jobs:
         uses: ./.github/actions/e2e/cleanup
         if: always()
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID_TEST || secrets.E2E_CLIENT_ID }}
           subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}

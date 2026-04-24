@@ -1,9 +1,6 @@
 name: CreateCluster
 description: 'Installs Go Downloads and installs Karpenter Dependencies'
 inputs:
-  client_id:
-    description: "Client ID of the managed identity to authenticate with"
-    required: true
   k8s_version:
     description: "Version of Kubernetes to use for the launched cluster (e.g., 1.30). If empty, uses AKS default."
     required: false
@@ -42,11 +39,6 @@ runs:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         ref: ${{ inputs.git_ref }}
-    - name: az login
-      shell: bash
-      env:
-        AZURE_CLIENT_ID: ${{ inputs.client_id }}
-      run: az login --identity --client-id "$AZURE_CLIENT_ID"
     - name: az set sub
       shell: bash
       env:
