@@ -1,6 +1,9 @@
 name: InstallKarpenter
 description: 'Installs Karpenter on the aks cluster'
 inputs:
+  client_id:
+    description: "Client ID of the managed identity to authenticate with"
+    required: true
   subscription_id:
     description: "ID of the subscription containing the cluster to install Karpenter into"
     required: true
@@ -28,6 +31,11 @@ runs:
   - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
     with:
       ref: ${{ inputs.git_ref }}
+  - name: az login
+    shell: bash
+    env:
+      AZURE_CLIENT_ID: ${{ inputs.client_id }}
+    run: az login --identity --client-id "$AZURE_CLIENT_ID"
   - name: az set sub
     shell: bash
     env:
@@ -41,8 +49,8 @@ runs:
       AZURE_LOCATION: ${{ inputs.location }}
       PROVISION_MODE: ${{ inputs.provision_mode }}
       AZURE_ACR_NAME: ${{ inputs.acr_name }}
-      # Redirect Go temp/cache to /mnt/ which has more disk space than the default
-      # filesystem. 1ES pool VMs can run out of capacity on / during large builds.
+      # Redirect Go temp/cache to /mnt/ (Azure temporary disk) which has more disk
+      # space than the OS disk. 1ES pool VMs can run out of disk on / during large builds.
       GOTMPDIR: /mnt/go-tmp
       GOCACHE: /mnt/go-cache
     run: |
