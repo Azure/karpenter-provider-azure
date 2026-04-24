@@ -367,7 +367,7 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
-	if aksMachine, err := p.machinecache.Get(aksMachineName); err == nil {
+	if aksMachine, err := p.machineCache.Get(aksMachineName); err == nil {
 		p.rehydrateMachine(aksMachine)
 		return aksMachine, nil
 	}
@@ -383,7 +383,7 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 }
 
 func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
-	if machines, err := p.machinecache.List(ctx); err == nil {
+	if machines, err := p.machineCache.List(ctx); err == nil {
 		return machines, nil
 	}
 
