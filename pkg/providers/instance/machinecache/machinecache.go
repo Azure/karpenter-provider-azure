@@ -158,6 +158,7 @@ func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, er
 // List returns all cached machines, blocking until the cache is fresh.
 func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
 	if c.options.disabled || !c.isFresh() {
+		c.requestUpdate()
 		return nil, fmt.Errorf("%w while listing machines", ErrCacheStale)
 	}
 
