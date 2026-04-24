@@ -31,14 +31,6 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
-const (
-	provisioningStateCreating  = "Creating"
-	provisioningStateUpdating  = "Updating"
-	provisioningStateDeleting  = "Deleting"
-	provisioningStateSucceeded = "Succeeded"
-	provisioningStateFailed    = "Failed"
-)
-
 var (
 	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
 	ErrCacheStale = errors.New("cache is stale")

@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/samber/lo"
 )
@@ -88,7 +89,7 @@ func TestUpdate(t *testing.T) {
 				{
 					Name: to.Ptr("machine1"),
 					Properties: &armcontainerservice.MachineProperties{
-						ProvisioningState: to.Ptr(provisioningStateCreating),
+						ProvisioningState: to.Ptr(consts.ProvisioningStateCreating),
 						Tags: map[string]*string{
 							nodePoolTagKey: to.Ptr("test-pool"),
 						},
@@ -97,7 +98,7 @@ func TestUpdate(t *testing.T) {
 				{
 					Name: to.Ptr("machine2"),
 					Properties: &armcontainerservice.MachineProperties{
-						ProvisioningState: to.Ptr(provisioningStateCreating),
+						ProvisioningState: to.Ptr(consts.ProvisioningStateCreating),
 						Tags: map[string]*string{
 							nodePoolTagKey: to.Ptr("test-pool"),
 						},
@@ -108,7 +109,7 @@ func TestUpdate(t *testing.T) {
 				{
 					Name: to.Ptr("machine1"),
 					Properties: &armcontainerservice.MachineProperties{
-						ProvisioningState: to.Ptr(provisioningStateSucceeded),
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
 							nodePoolTagKey: to.Ptr("test-pool"),
 						},
@@ -117,7 +118,7 @@ func TestUpdate(t *testing.T) {
 				{
 					Name: to.Ptr("machine3"),
 					Properties: &armcontainerservice.MachineProperties{
-						ProvisioningState: to.Ptr(provisioningStateSucceeded),
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags:              nil,
 					},
 				},
@@ -126,7 +127,7 @@ func TestUpdate(t *testing.T) {
 				{
 					Name: to.Ptr("machine1"),
 					Properties: &armcontainerservice.MachineProperties{
-						ProvisioningState: to.Ptr(provisioningStateSucceeded),
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
 							nodePoolTagKey: to.Ptr("test-pool"),
 						},
@@ -259,13 +260,13 @@ func TestList(t *testing.T) {
 		{
 			Name: to.Ptr("machine1"),
 			Properties: &armcontainerservice.MachineProperties{
-				ProvisioningState: to.Ptr(provisioningStateSucceeded),
+				ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 			},
 		},
 		{
 			Name: to.Ptr("machine2"),
 			Properties: &armcontainerservice.MachineProperties{
-				ProvisioningState: to.Ptr(provisioningStateCreating),
+				ProvisioningState: to.Ptr(consts.ProvisioningStateCreating),
 			},
 		},
 	}
@@ -339,7 +340,7 @@ func TestPollUntilDone(t *testing.T) {
 			machine: &armcontainerservice.Machine{
 				Name: to.Ptr("machine"),
 				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: to.Ptr(provisioningStateSucceeded),
+					ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 				},
 			},
 			lastUpdated:             time.Now(),
@@ -351,7 +352,7 @@ func TestPollUntilDone(t *testing.T) {
 			machine: &armcontainerservice.Machine{
 				Name: to.Ptr("machine"),
 				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: to.Ptr(provisioningStateFailed),
+					ProvisioningState: to.Ptr(consts.ProvisioningStateFailed),
 					Status: &armcontainerservice.MachineStatus{
 						ProvisioningError: &armcontainerservice.ErrorDetail{
 							Code:    to.Ptr("ProvisioningFailed"),
@@ -372,7 +373,7 @@ func TestPollUntilDone(t *testing.T) {
 			machine: &armcontainerservice.Machine{
 				Name: to.Ptr("machine"),
 				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: to.Ptr(provisioningStateDeleting),
+					ProvisioningState: to.Ptr(consts.ProvisioningStateDeleting),
 				},
 			},
 			lastUpdated:             time.Now(),
