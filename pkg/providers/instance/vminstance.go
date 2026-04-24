@@ -74,6 +74,10 @@ var (
 		armcompute.VirtualMachinePriorityTypesSpot:    v1beta1.ScaleSetPrioritySpot,
 		armcompute.VirtualMachinePriorityTypesRegular: v1beta1.ScaleSetPriorityRegular,
 	}
+	VMPriorityToPriority = map[armcompute.VirtualMachinePriorityTypes]string{
+		armcompute.VirtualMachinePriorityTypesSpot:    v1beta1.PrioritySpot,
+		armcompute.VirtualMachinePriorityTypesRegular: v1beta1.PriorityRegular,
+	}
 
 	aksIdentifyingExtensionEnvs = sets.New(
 		azureclouds.PublicCloud.Name,
@@ -1086,6 +1090,13 @@ func GetCapacityTypeFromVM(vm *armcompute.VirtualMachine) string {
 func GetScaleSetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
 	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
 		return VMPriorityToScaleSetPriority[*vm.Properties.Priority]
+	}
+	return ""
+}
+
+func GetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
+	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
+		return VMPriorityToPriority[*vm.Properties.Priority]
 	}
 	return ""
 }
