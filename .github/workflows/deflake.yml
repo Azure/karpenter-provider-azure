@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   deflake:
-    runs-on: ubuntu-latest
+    runs-on: karpenter-ci-1es-pool
     permissions:
       contents: read
       statuses: write
