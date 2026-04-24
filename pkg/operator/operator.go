@@ -61,6 +61,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -232,12 +233,22 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).DiskEncryptionSetID,
 		env,
 	)
+
+	aksMachineCache := machinecache.NewMachineCache(
+		ctx,
+		azClient.AKSMachinesClient(),
+		azConfig.ResourceGroup,
+		options.FromContext(ctx).ClusterName,
+		options.FromContext(ctx).AKSMachinesPoolName,
+	)
+
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypeProvider,
 		allocationStrategyProvider,
 		imageResolver,
 		unavailableOfferingsCache,
+		aksMachineCache,
 		azConfig.SubscriptionID,
 		azConfig.ResourceGroup,
 		options.FromContext(ctx).ClusterName,

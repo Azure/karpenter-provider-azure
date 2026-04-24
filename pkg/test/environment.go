@@ -261,12 +261,23 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	batchCreationEnabled := testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 
+	aksMachineCache := machinecache.NewMachineCache(
+		ctx,
+		azClient.AKSMachinesClient(),
+		testOptions.NodeResourceGroup,
+		clusterName,
+		testOptions.AKSMachinesPoolName,
+		machinecache.WithTTL(0),
+		machinecache.WithCacheDisabled(),
+	)
+
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypesProvider,
 		allocationStrategyProvider,
 		imageFamilyResolver,
 		unavailableOfferingsCache,
+		aksMachineCache,
 		subscription,
 		testOptions.NodeResourceGroup,
 		clusterName,
@@ -279,9 +290,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	if batchCreationEnabled {
 		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
-
-	// Disable machine cache in tests to avoid race conditions with the background worker
-	aksMachineInstanceProvider.SetMachineCacheWithOptions(machinecache.WithTTL(0), machinecache.WithCacheDisabled())
 
 	store := nodeoverlay.NewInstanceTypeStore()
 
