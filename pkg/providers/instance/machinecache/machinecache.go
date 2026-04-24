@@ -26,6 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -47,7 +48,8 @@ var (
 )
 
 var (
-	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
+	nodePoolTagKey   = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
+	nodeClaimTagKey  = launchtemplate.KarpenterAKSMachineNodeClaimTagKey
 )
 
 // AKSMachineNewListPager provides paginated list operations for AKS machines.
@@ -356,8 +358,12 @@ func isValid(ctx context.Context, properties *armcontainerservice.MachinePropert
 		log.FromContext(ctx).Info("skipping AKS machine with nil properties or tags", "aksMachineName", machineName)
 		return false
 	}
-	if _, hasTags := properties.Tags[nodePoolTagKey]; !hasTags {
-		log.FromContext(ctx).Info("skipping AKS machine without Karpenter nodepool tag", "aksMachineName", machineName)
+	// Check for Karpenter-managed machine: must have EITHER nodepool tag OR nodeclaim tag.
+	// Standalone NodeClaims (created without a NodePool) have the nodeclaim tag but not the nodepool tag.
+	_, hasNodePoolTag := properties.Tags[nodePoolTagKey]
+	_, hasNodeClaimTag := properties.Tags[nodeClaimTagKey]
+	if !hasNodePoolTag && !hasNodeClaimTag {
+		log.FromContext(ctx).Info("skipping AKS machine without Karpenter tags", "aksMachineName", machineName)
 		return false
 	}
 
