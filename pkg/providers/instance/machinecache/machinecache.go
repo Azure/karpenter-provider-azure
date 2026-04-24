@@ -205,7 +205,7 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrCacheStale):
-			c.requestUpdate()
+			log.FromContext(ctx).V(1).Info("Cache poller: cache stale for AKS machine during poll", "aksMachineName", aksMachineName)
 		case errors.Is(err, ErrCacheMiss):
 			log.FromContext(ctx).V(1).Info("Cache poller: cache miss for AKS machine during poll", "aksMachineName", aksMachineName)
 		default:
