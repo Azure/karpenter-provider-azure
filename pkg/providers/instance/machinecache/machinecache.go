@@ -182,7 +182,7 @@ func (c *MachineCache) Invalidate(machineName string) {
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
 // This polls indefinitely until the machine reaches a terminal state (Succeeded, Failed, or Deleting) or the context is canceled.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
-	log.FromContext(ctx).Info("starting cache poller for AKS machine", "aksMachineName", name)
+	log.FromContext(ctx).V(2).Info("starting cache poller for AKS machine", "aksMachineName", name)
 	ticker := time.NewTicker(c.options.pollInterval)
 	defer ticker.Stop()
 
