@@ -48,7 +48,6 @@ import (
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/utils"
 )
 
@@ -206,11 +205,16 @@ func (p *Poller) pollOnce(ctx context.Context, retryAttemptsLeft *int, currentRe
 		return errDetails, pollerErr, true
 	}
 
+	shouldRetry := false
+	var retryErr error
 	if errDetails == nil && pollerErr == nil {
-		p.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
+		shouldRetry, retryErr = p.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
+		if retryErr != nil {
+			return nil, retryErr, true
+		}
 	}
 
-	return errDetails, pollerErr, false
+	return errDetails, pollerErr, shouldRetry
 }
 
 // handleGetError processes errors from the GET call during polling.
@@ -261,58 +265,6 @@ func (p *Poller) handleNilProvisioningState(ctx context.Context, aksMachine *arm
 		return nil, nil, false
 	}
 	return nil, fmt.Errorf("AKS machine %q sees nil provisioning state after exhausting %d retry attempts", p.aksMachineName, p.config.MaxRetries), true
-}
-
-// handleProvisioningState processes the machine's provisioning state and returns the appropriate action.
-func (p *Poller) handleProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine, retryAttemptsLeft *int, currentRetryDelay *time.Duration) (*armcontainerservice.ErrorDetail, error, bool) {
-	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
-	switch provisioningState {
-	// Non-terminal state
-	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
-		log.FromContext(ctx).V(2).Info("Poller: polling for AKS machine ongoing",
-			"aksMachineName", p.aksMachineName,
-			"aksMachineID", aksMachine.ID,
-			"provisioningState", provisioningState,
-		)
-		// Reset retry counter on healthy non-terminal state (progress is being made)
-		p.resetRetryState(retryAttemptsLeft, currentRetryDelay)
-		return nil, nil, false
-
-	// Canceled terminal state
-	case consts.ProvisioningStateDeleting:
-		// If polling interval is too long/deletion is too fast, then we might get 404 from GET instead of reaching here.
-		return nil, fmt.Errorf("AKS machine %q sees canceled provisioning state %s", p.aksMachineName, provisioningState), true
-
-	// Succeeded terminal state
-	case consts.ProvisioningStateSucceeded:
-		return nil, nil, true
-
-	// Fatal terminal state
-	case consts.ProvisioningStateFailed:
-		if aksMachine.Properties.Status != nil && aksMachine.Properties.Status.ProvisioningError != nil {
-			return aksMachine.Properties.Status.ProvisioningError, nil, true
-		}
-		return nil, fmt.Errorf("AKS machine %q sees fatal provisioning state %s, but ProvisioningError is nil", p.aksMachineName, provisioningState), true
-
-	// Unrecognized state
-	default:
-		log.FromContext(ctx).V(1).Info("Poller: warning: polling for AKS machine found unrecognized provisioning state, may retry",
-			"aksMachineName", p.aksMachineName,
-			"aksMachineID", aksMachine.ID,
-			"provisioningState", provisioningState,
-			"retryAttemptsLeft", *retryAttemptsLeft,
-			"retryDelay", *currentRetryDelay,
-		)
-
-		shouldRetry, backoffErr := p.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
-		if backoffErr != nil {
-			return nil, backoffErr, true
-		}
-		if shouldRetry {
-			return nil, nil, false
-		}
-		return nil, fmt.Errorf("AKS machine %q sees unrecognized provisioning state %s after exhausting %d retry attempts", p.aksMachineName, provisioningState, p.config.MaxRetries), true
-	}
 }
 
 // isTransientError determines if an error is retryable based on Azure SDK retry policy.
