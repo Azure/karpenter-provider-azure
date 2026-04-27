@@ -12,6 +12,9 @@ additionalAnnotations: {}
 imagePullPolicy: IfNotPresent
 # -- Image pull secrets for Docker images.
 imagePullSecrets: []
+service:
+  # -- Additional annotations for the Service.
+  annotations: {}
 serviceAccount:
   # -- Specifies if a ServiceAccount should be created.
   create: true
@@ -60,6 +63,8 @@ podDisruptionBudget:
 # -- SecurityContext for the pod.
 podSecurityContext:
   fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 # -- PriorityClass name for the pod.
 priorityClassName: system-cluster-critical
 # -- Override the default termination grace period for the pod.
@@ -67,6 +72,8 @@ terminationGracePeriodSeconds:
 # -- Bind the pod to the host network.
 # This is required when using a custom CNI.
 hostNetwork: false
+# -- Specify which Kubernetes scheduler should dispatch the pod.
+schedulerName: default-scheduler
 # -- Configure the DNS Policy for the pod
 dnsPolicy: ClusterFirst
 # -- Configure DNS Config for the pod
@@ -99,8 +106,6 @@ tolerations:
     operator: Exists
 # -- Additional volumes for the pod.
 extraVolumes: []
-# -- Scheduler name for the pod.
-schedulerName: ""
 # -- initContainers for the pod.
 initContainers: []
 
@@ -111,15 +116,22 @@ controller:
     # -- Repository path to the controller image.
     repository: mcr.microsoft.com/aks/karpenter/controller
     # -- Tag of the controller image.
-    tag:
+    tag: 1.10.2
     # -- SHA256 digest of the controller image.
     # digest:
-    digest: sha256:dd095cdcf857c3812f2084a7b20294932f461b0bff912acf58d592faa032fbef
+    digest: sha256:de1354078031cd1beeacb0a59114bd5f6cb3c6028591129dc5d5a34842a32ad7
   # -- Additional environment variables for the controller pod.
   env: []
   # - name:
   #   value:
   envFrom: []
+  securityContext:
+    # -- AppArmor profile for the controller container.
+    appArmorProfile: {}
+    # -- SELinux options for the controller container.
+    seLinuxOptions: {}
+    # -- Seccomp profile for the controller container.
+    seccompProfile: {}
   # -- Resources for the controller pod.
   resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
@@ -198,7 +210,7 @@ settings:
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
-    # -- reservedCapacity is BETA and is disabled by default.
+    # -- reservedCapacity is BETA and is disabled until Azure provider support is implemented.
     # Setting this to true will enable reserved capacity provisioning.
     reservedCapacity: false
     # -- spotToSpotConsolidation is ALPHA and is disabled by default.
