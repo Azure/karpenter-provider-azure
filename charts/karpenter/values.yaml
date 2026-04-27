@@ -40,7 +40,7 @@ serviceMonitor:
   # -- Specifies the sampleLimit for prometheus scrapes.
   # Per-scrape limit on the number of scraped samples that will be accepted.
   # If more than this number of samples are present after metric relabeling
-  # the entire scrape will be treated as failed. 0 means no limit.
+  # the entire scrape will be treated as failed. 0 (which is also the default if not specified / set to null here) means no limit.
   sampleLimit: null
 # -- Number of replicas.
 replicas: 2
