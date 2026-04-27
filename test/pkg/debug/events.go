@@ -19,6 +19,7 @@ package debug
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -101,7 +102,33 @@ func collateEvents(events []corev1.Event) map[corev1.ObjectReference]*corev1.Eve
 		}
 		eventMap[objectKey].Items = append(eventMap[objectKey].Items, elem)
 	}
+
+	// Sort the events in ascending order by event time
+	for k := range eventMap {
+		slices.SortFunc(eventMap[k].Items, func(a, b corev1.Event) int {
+			t1 := eventTime(a)
+			t2 := eventTime(b)
+			if t1.Before(t2) {
+				return -1
+			} else if t1.After(t2) {
+				return 1
+			}
+			return 0
+		})
+	}
 	return eventMap
+}
+
+// Return the time that should be used for sorting, which can come from
+// various places in corev1.Event.
+func eventTime(event corev1.Event) time.Time {
+	if event.Series != nil {
+		return event.Series.LastObservedTime.Time
+	}
+	if !event.LastTimestamp.Time.IsZero() {
+		return event.LastTimestamp.Time
+	}
+	return event.EventTime.Time
 }
 
 // Partially copied from
