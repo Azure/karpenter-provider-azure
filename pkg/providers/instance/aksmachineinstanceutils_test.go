@@ -640,67 +640,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 	})
 
-	Context("IsAKSMachineOrMachinesPoolNotFound", func() {
-		It("should return false for nil error", func() {
-			result := IsAKSMachineOrMachinesPoolNotFound(nil)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return true for HTTP 404 status code", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "lol",
-				StatusCode:  404,
-				RawResponse: nil,
-			}
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeTrue())
-		})
-
-		It("should return true for InvalidParameter error with 'Cannot find any valid machines' message", func() {
-			// Create the exact error message from your example
-			errorMessage := "Cannot find any valid machines to delete. Please check your input machine names. The valid machines to delete in agent pool 'testmpool' are: testmachine."
-			azureError := createAzureResponseError("InvalidParameter", errorMessage, 400)
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeTrue())
-		})
-
-		It("should return false for HTTP 400 with InvalidParameter but different message", func() {
-			// Create an InvalidParameter error with a different message that shouldn't match
-			differentMessage := "InvalidParameter: Some other validation error"
-			azureError := createAzureResponseError("InvalidParameter", differentMessage, 400)
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return false for other HTTP status codes", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "Unauthorized",
-				StatusCode:  401,
-				RawResponse: nil,
-			}
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-
-			azureError = &azcore.ResponseError{
-				ErrorCode:   "InternalOperationError",
-				StatusCode:  500,
-				RawResponse: nil,
-			}
-
-			result = IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return false for non-Azure SDK errors", func() {
-			result := IsAKSMachineOrMachinesPoolNotFound(fmt.Errorf("some generic error"))
-			Expect(result).To(BeFalse())
-		})
-	})
-
 	Context("BuildJSONFromAKSMachine", func() {
 		It("should return empty JSON object for nil machine", func() {
 			result := BuildJSONFromAKSMachine(nil)

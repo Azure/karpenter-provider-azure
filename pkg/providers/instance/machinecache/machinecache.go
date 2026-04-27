@@ -25,7 +25,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/utils"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -223,40 +223,7 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 		return nil, nil, false
 	}
 
-	return c.handleProvisioningState(ctx, machine, aksMachineName)
-}
-
-func (c *MachineCache) handleProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
-	provisioningState := *aksMachine.Properties.ProvisioningState
-	switch provisioningState {
-	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
-		log.FromContext(ctx).V(2).Info("Cache poller: polling for AKS machine ongoing",
-			"aksMachineName", aksMachineName,
-			"aksMachineID", aksMachine.ID,
-			"provisioningState", provisioningState,
-		)
-		return nil, nil, false
-
-	case consts.ProvisioningStateDeleting:
-		return nil, fmt.Errorf("AKS machine %q sees canceled provisioning state %s", aksMachineName, provisioningState), true
-
-	case consts.ProvisioningStateSucceeded:
-		return nil, nil, true
-
-	case consts.ProvisioningStateFailed:
-		if aksMachine.Properties.Status != nil && aksMachine.Properties.Status.ProvisioningError != nil {
-			return aksMachine.Properties.Status.ProvisioningError, nil, true
-		}
-		return nil, fmt.Errorf("AKS machine %q sees fatal provisioning state %s, but ProvisioningError is nil", aksMachineName, provisioningState), true
-
-	default:
-		log.FromContext(ctx).V(1).Info("Cache poller: warning: polling for AKS machine found unrecognized provisioning state, will retry",
-			"aksMachineName", aksMachineName,
-			"aksMachineID", aksMachine.ID,
-			"provisioningState", provisioningState,
-		)
-		return nil, nil, false
-	}
+	return utils.HandleProvisioningState(ctx, machine)
 }
 
 func (c *MachineCache) updateWorker() {

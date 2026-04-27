@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -217,7 +218,7 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	if err != nil {
 		// Clean up if creation fails.
 		if err := p.deleteMachine(ctx, aksMachineName); err != nil {
-			if !IsAKSMachineOrMachinesPoolNotFound(err) {
+			if !utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 				log.FromContext(ctx).Error(err, "failed to delete AKS machine after failed creation", "aksMachineName", aksMachineName)
 			}
 			// We don't return the cleanup error here, as we want to return the original error from beginCreateMachine
@@ -252,7 +253,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 	}
 	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
-		if IsAKSMachineOrMachinesPoolNotFound(err) {
+		if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 			// Can only be AKS machines pool not found.
 			// Suggestion: separate the util function to not cover more than needed?
 			return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to begin update AKS machine %q: %w", aksMachineName, err))
@@ -282,7 +283,7 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 
 	aksMachine, err := p.getMachine(ctx, aksMachineName)
 	if err != nil {
-		if IsAKSMachineOrMachinesPoolNotFound(err) {
+		if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, err
@@ -334,7 +335,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 
 	err = p.deleteMachine(ctx, aksMachineName)
 	if err != nil {
-		if IsAKSMachineOrMachinesPoolNotFound(err) {
+		if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 			return corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return err
@@ -384,7 +385,7 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			if IsAKSMachineOrMachinesPoolNotFound(err) {
+			if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 				// AKS machines pool not found. Handle gracefully.
 				// Suggestion: separate the util function to not cover more than needed?
 				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
@@ -475,7 +476,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
-	} else if !IsAKSMachineOrMachinesPoolNotFound(err) {
+	} else if !utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
 	}

@@ -49,6 +49,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/utils"
 )
 
 type AKSMachineGetter interface {
@@ -200,7 +201,16 @@ func (p *Poller) pollOnce(ctx context.Context, retryAttemptsLeft *int, currentRe
 		return p.handleNilProvisioningState(ctx, aksMachine, retryAttemptsLeft, currentRetryDelay)
 	}
 
-	return p.handleProvisioningState(ctx, aksMachine, retryAttemptsLeft, currentRetryDelay)
+	errDetails, pollerErr, done := utils.HandleProvisioningState(ctx, aksMachine)
+	if done {
+		return errDetails, pollerErr, true
+	}
+
+	if errDetails == nil && pollerErr == nil {
+		p.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
+	}
+
+	return errDetails, pollerErr, false
 }
 
 // handleGetError processes errors from the GET call during polling.

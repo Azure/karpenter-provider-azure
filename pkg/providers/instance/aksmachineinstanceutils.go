@@ -20,11 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
-	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -256,18 +254,6 @@ func GetAKSLabelZoneFromAKSMachine(aksMachine *armcontainerservice.Machine, loca
 		return "", fmt.Errorf("cannot pass in a nil AKS machine")
 	}
 	return zones.MakeAKSLabelZoneFromARMZones(location, aksMachine.Zones)
-}
-
-func IsAKSMachineOrMachinesPoolNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	azErr := sdkerrors.IsResponseError(err)
-	if azErr != nil && (azErr.StatusCode == http.StatusNotFound || // Covers AKS machines pool not found on PUT machine, GET machine, GET (list) machines, POST agent pool (DELETE machines), and AKS machine not found on GET machine
-		(azErr.StatusCode == http.StatusBadRequest && azErr.ErrorCode == "InvalidParameter" && strings.Contains(azErr.Error(), "Cannot find any valid machines"))) { // Covers AKS machine not found on POST agent pool (DELETE machines)
-		return true
-	}
-	return false
 }
 
 func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.Machine) error {
