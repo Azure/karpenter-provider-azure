@@ -360,3 +360,5 @@ Come discuss Karpenter in the [#karpenter](https://kubernetes.slack.com/archives
 Check out the [Docs](https://karpenter.sh/) to learn more.
 
 Check out our [contributing guide](https://github.com/Azure/karpenter-provider-azure/blob/main/CONTRIBUTING.md).
+
+This open-source project is subject to best-effort support by project maintainers and not covered by Microsoft support channels. [File an issue](https://github.com/Azure/karpenter-provider-azure/issues) in this project for any questions, feature requests, or issues.
