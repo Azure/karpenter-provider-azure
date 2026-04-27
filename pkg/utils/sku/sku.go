@@ -14,16 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package opts
+package sku
 
-import (
-	"net/http"
+import "strings"
 
-	"github.com/Azure/azure-sdk-for-go-extensions/pkg/middleware"
-)
-
-var defaultHTTPClient *http.Client
-
-func init() {
-	defaultHTTPClient = middleware.DefaultHTTPClient()
+// IsConfidential returns true if the SKU name indicates it's a confidential VM SKU.
+// The skuName is expected to be the VM size with Standard_ trimmed off the front
+func IsConfidential(skuName string) bool {
+	return strings.HasPrefix(skuName, "DC") || strings.HasPrefix(skuName, "EC")
 }

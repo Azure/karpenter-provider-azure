@@ -63,7 +63,7 @@ crosscompilers() {
 }
 
 tools() {
-    go-install go-licenses github.com/google/go-licenses@v1.6.0
+    go-install go-licenses github.com/google/go-licenses/v2@3e084b0caf710f7bfead967567539214f598c0a2 // v2.0.1
     go-install ko github.com/google/ko@v0.17.1
     go-install yq github.com/mikefarah/yq/v4@v4.45.1
     go-install helm-docs github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
@@ -118,10 +118,12 @@ kubebuilder() {
 
 gettrivy() {
     if ! command -v trivy &> /dev/null; then
-        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-        sudo apt-get update
-        sudo apt-get install -y trivy
+        TRIVY_VERSION="0.69.3"
+        TRIVY_SHA256="a484057aafde31089cf2558ca0f79a4bc835125a5ee6834183a5bcf0735af358"
+        wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
+        echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
+        sudo dpkg -i /tmp/trivy.deb
+        rm /tmp/trivy.deb
     fi
 }
 

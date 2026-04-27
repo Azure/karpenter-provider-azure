@@ -29,14 +29,13 @@ jobs:
   versionCompatibility:
     permissions:
       contents: read
-      id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*
     needs: [resolve]
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        k8s_version: ["1.28", "1.29", "1.30", "1.31", "1.32", "1.33", "1.34"]
+        k8s_version: ["1.28", "1.29", "1.30", "1.31", "1.32", "1.33", "1.34", "1.35"]
     uses: ./.github/workflows/e2e-matrix.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
@@ -44,5 +43,6 @@ jobs:
       k8s_version: ${{ matrix.k8s_version }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
-      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
       E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
+      E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}

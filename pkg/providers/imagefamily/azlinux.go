@@ -127,17 +127,18 @@ func (u AzureLinux) ScriptlessCustomData(
 ) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:      u.Options.ClusterName,
-			ClusterEndpoint:  u.Options.ClusterEndpoint,
-			KubeletConfig:    kubeletConfig,
-			Taints:           taints,
-			Labels:           labels,
-			CABundle:         caBundle,
-			GPUNode:          u.Options.GPUNode,
-			GPUDriverVersion: u.Options.GPUDriverVersion,
-			GPUDriverType:    u.Options.GPUDriverType,
-			GPUImageSHA:      u.Options.GPUImageSHA,
-			SubnetID:         u.Options.SubnetID,
+			ClusterName:                  u.Options.ClusterName,
+			ClusterEndpoint:              u.Options.ClusterEndpoint,
+			KubeletConfig:                kubeletConfig,
+			Taints:                       taints,
+			Labels:                       labels,
+			CABundle:                     caBundle,
+			GPUNode:                      u.Options.GPUNode,
+			GPUDriverVersion:             u.Options.GPUDriverVersion,
+			GPUDriverType:                u.Options.GPUDriverType,
+			GPUImageSHA:                  u.Options.GPUImageSHA,
+			GPUDriverInstallationEnabled: u.Options.GPUDriverInstallationEnabled,
+			SubnetID:                     u.Options.SubnetID,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
@@ -166,6 +167,8 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
 	localDNS *v1beta1.LocalDNS,
+	artifactStreaming *v1beta1.ArtifactStreaming,
+	linuxOSConfig *v1beta1.LinuxOSConfiguration,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -183,9 +186,12 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 		InstanceType:                   instanceType,
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
+		GPUDriverInstallationEnabled:   u.Options.GPUDriverInstallationEnabled,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 		FIPSMode:                       fipsMode,
 		LocalDNSProfile:                localDNS,
+		ArtifactStreaming:              artifactStreaming,
+		LinuxOSConfig:                  linuxOSConfig,
 	}
 }

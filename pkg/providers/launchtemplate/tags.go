@@ -29,6 +29,8 @@ import (
 const (
 	KarpenterManagedTagKey             = "karpenter.azure.com_cluster"
 	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
+	BillingTagKey                      = "compute.aks.billing"
+	BillingTagValueLinux               = "linux"
 )
 
 var (
@@ -44,6 +46,7 @@ func Tags(
 ) map[string]*string {
 	defaultTags := map[string]string{
 		KarpenterManagedTagKey: options.ClusterName,
+		BillingTagKey:          BillingTagValueLinux,
 	}
 	// Note: Be careful depending on nodeClaim.Labels here, as we assign some additional labels during the creation
 	// of the static parameters for the launch template. Those labels haven't actually been applied to the nodeClaim yet,

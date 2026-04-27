@@ -102,7 +102,7 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		KubeBinaryURL:                     "",                     // cd
 		CustomKubeBinaryURL:               "",                     // -
 		KubeproxyURL:                      "",                     // -
-		VMType:                            "vmss",                 // xd
+		VMType:                            "standard",             // xd
 		Subnet:                            "aks-subnet",           // xd
 		VirtualNetworkResourceGroup:       "",                     // xd
 		PrimaryAvailabilitySet:            "",                     // -
@@ -134,7 +134,7 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		IsVHD:                             true,                   // s
 		SGXNode:                           false,                  // -
 		MIGNode:                           false,                  // td
-		ConfigGPUDriverIfNeeded:           true,                   // s
+		ConfigGPUDriverIfNeeded:           false,                  // s
 		EnableGPUDevicePluginIfNeeded:     false,                  // -
 		TeleportdPluginDownloadURL:        "",                     // -
 		ContainerdVersion:                 "",                     // -

@@ -30,7 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/samber/lo"
 )
 
@@ -69,11 +69,11 @@ type VirtualMachinesBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ instance.VirtualMachinesAPI = &VirtualMachinesAPI{}
+var _ azapi.VirtualMachinesAPI = &VirtualMachinesAPI{}
 
 type VirtualMachinesAPI struct {
 	// TODO: document the implications of embedding vs. not embedding the interface here
-	// instance.VirtualMachinesAPI // - this is the interface we are mocking.
+	// azapi.VirtualMachinesAPI // - this is the interface we are mocking.
 	VirtualMachinesBehavior
 	AuxiliaryTokenPolicy *auth.AuxiliaryTokenPolicy
 }
@@ -154,7 +154,7 @@ ERROR CODE: PropertyChangeNotAllowed
 				return nil, &azcore.ResponseError{
 					ErrorCode: errCode,
 					RawResponse: &http.Response{
-						Body: createSDKErrorBody(errCode, msg),
+						Body: CreateSDKErrorBody(errCode, msg),
 					},
 				}
 			}
@@ -259,7 +259,7 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 	})
 }
 
-func createSDKErrorBody(code, message string) io.ReadCloser {
+func CreateSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }
 
@@ -272,7 +272,7 @@ func getAuthTokenError(err error) *azcore.ResponseError {
 	return &azcore.ResponseError{
 		ErrorCode: "AuthenticationFailed",
 		RawResponse: &http.Response{
-			Body: createSDKErrorBody("AuthenticationFailed", err.Error()),
+			Body: CreateSDKErrorBody("AuthenticationFailed", err.Error()),
 		},
 	}
 }

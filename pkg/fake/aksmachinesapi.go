@@ -18,17 +18,18 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/samber/lo"
 )
 
@@ -44,19 +45,6 @@ func NewAKSDataStorage() *AKSDataStorage {
 		AgentPools:  &sync.Map{},
 		AKSMachines: &sync.Map{},
 	}
-}
-
-type VMImageIDContextKey string
-
-const VMImageIDKey VMImageIDContextKey = "vmimageid"
-
-// This is not really the real one being used, which is the header.
-// But the header cannot be extracted due to azure-sdk-for-go being restrictive. This is good enough.
-func GetVMImageIDFromContext(ctx context.Context) string {
-	if ctx.Value(VMImageIDKey) != nil {
-		return ctx.Value(VMImageIDKey).(string)
-	}
-	return ""
 }
 
 type AKSMachineCreateOrUpdateInput struct {
@@ -227,7 +215,7 @@ func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
 }
 
 // assert that the fake implements the interface
-var _ instance.AKSMachinesAPI = &AKSMachinesAPI{}
+var _ azapi.AKSMachinesAPI = &AKSMachinesAPI{}
 
 type AKSMachinesAPI struct {
 	AKSMachinesBehavior
@@ -270,7 +258,7 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 		AKSMachine:        parameters,
 		Options:           options,
 	}
-	aksMachine := input.AKSMachine
+	aksMachine := deepCopyMachine(input.AKSMachine)
 	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
 	aksMachine.ID = &id
 	aksMachine.Name = &input.AKSMachineName
@@ -287,9 +275,8 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 	}
 
 	// Default values + update status, for sync phase
-	vmImageID := GetVMImageIDFromContext(ctx)
-	c.setDefaultMachineValues(&aksMachine, vmImageID, input.ResourceGroupName, input.AgentPoolName)
-	aksMachine.Properties.ProvisioningState = lo.ToPtr("Creating")
+	c.setDefaultMachineValues(&aksMachine, input.ResourceGroupName, input.AgentPoolName)
+	aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateCreating)
 	c.aksDataStorage.AKSMachines.Store(id, aksMachine)
 
 	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
@@ -340,14 +327,14 @@ func (c *AKSMachinesAPI) updateExistingAKSMachine(input *AKSMachineCreateOrUpdat
 func (c *AKSMachinesAPI) simulateCreateStatusAtAsync(aksMachine armcontainerservice.Machine) (armcontainerservice.Machine, error) {
 	var pollingError error
 	if c.AfterPollProvisioningErrorOverride != nil {
-		aksMachine.Properties.ProvisioningState = lo.ToPtr("Failed")
+		aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateFailed)
 		if aksMachine.Properties.Status == nil {
 			aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
 		}
 		aksMachine.Properties.Status.ProvisioningError = c.AfterPollProvisioningErrorOverride
 		pollingError = AKSMachineAPIErrorAny
 	} else {
-		aksMachine.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+		aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
 	}
 
 	return aksMachine, pollingError
@@ -486,34 +473,9 @@ func MkMachineID(resourceGroupName string, clusterName string, agentPoolName str
 	return fmt.Sprintf(idFormat, resourceGroupName, clusterName, agentPoolName, aksMachineName)
 }
 
-// Convert from "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
-// to "AKSUbuntu-2204gen2containerd-2022.10.03".
-func getAKSMachineNodeImageVersionFromSIGImageID(imageID string) (string, error) {
-	matches := regexp.MustCompile(`(?i)/subscriptions/(\S+)/resourceGroups/(\S+)/providers/Microsoft.Compute/galleries/(\S+)/images/(\S+)/versions/(\S+)`).FindStringSubmatch(imageID)
-	if matches == nil {
-		return "", fmt.Errorf("incorrect SIG image ID id=%s", imageID)
-	}
-
-	// SubscriptionID := matches[1]
-	// ResourceGroup := matches[2]
-	Gallery := matches[3]
-	Definition := matches[4]
-	Version := matches[5]
-
-	prefix := Gallery
-	osVersion := Definition
-	// if strings.Contains(prefix, windowsPrefix) {		// TODO(Windows)
-	// 	osVersion = extractOsVersionForWindows(Definition)
-	// }
-
-	return strings.Join([]string{prefix, osVersion, Version}, "-"), nil
-}
-
 // setDefaultMachineValues sets comprehensive default values for AKS machine creation
 // Note: this may not be accurate. But likely sufficient for testing.
-//
-//nolint:gocyclo
-func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, vmImageID string, resourceGroupName string, agentPoolName string) {
+func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, resourceGroupName string, agentPoolName string) {
 	if machine.Properties == nil {
 		machine.Properties = &armcontainerservice.MachineProperties{}
 	}
@@ -528,7 +490,7 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 
 	// Set ProvisioningState
 	if machine.Properties.ProvisioningState == nil {
-		machine.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+		machine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
 	}
 
 	// Set Priority - default to Regular if not set
@@ -537,20 +499,15 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	}
 
 	// Set ResourceID - simulates VM resource ID
-	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
+	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm
 	if machine.Properties.ResourceID == nil {
-		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", agentPoolName, *machine.Name)
+		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm", agentPoolName, *machine.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", resourceGroupName, vmName)
 		machine.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}
 
-	// Set NodeImageVersion from vmImageID header
-	if vmImageID != "" {
-		nodeImageVersion, err := getAKSMachineNodeImageVersionFromSIGImageID(vmImageID)
-		if err == nil && nodeImageVersion != "" {
-			machine.Properties.NodeImageVersion = lo.ToPtr(nodeImageVersion)
-		}
-	}
+	// NodeImageVersion is now set directly on the machine template by the caller.
+	// Only apply default if not provided.
 	if machine.Properties.NodeImageVersion == nil {
 		// Default node image version if none provided
 		machine.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
@@ -560,4 +517,18 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	if machine.Properties.ETag == nil {
 		machine.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
 	}
+}
+
+// deepCopyMachine returns a fully independent copy of an AKS Machine via JSON
+// round-trip, simulating the serialization boundary of a real HTTP call.
+func deepCopyMachine(src armcontainerservice.Machine) armcontainerservice.Machine {
+	data, err := json.Marshal(src)
+	if err != nil {
+		panic(fmt.Sprintf("fake: failed to marshal Machine for deep copy: %v", err))
+	}
+	var dst armcontainerservice.Machine
+	if err := json.Unmarshal(data, &dst); err != nil {
+		panic(fmt.Sprintf("fake: failed to unmarshal Machine for deep copy: %v", err))
+	}
+	return dst
 }

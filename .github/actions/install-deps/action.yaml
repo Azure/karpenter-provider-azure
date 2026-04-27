@@ -7,7 +7,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+    - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
       id: setup-go
       with:
         go-version-file: go.mod
@@ -22,20 +22,23 @@ runs:
         path: |
           /usr/local/kubebuilder/bin
           ~/go/bin
-        key: ${{ runner.os }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
+        # Include runner.environment in key because ~/go/bin expands differently on github-hosted vs self-hosted runners
+        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-go-${{ steps.setup-go.outputs.go-version }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
       run: make toolchain
-    # Install trivy separately since apt installs to /usr/bin which isn't cacheable
+    # Install trivy v0.69.3 with SHA256 verification (pinned binary, no apt repo trust)
     - shell: bash
       run: |
         if ! command -v trivy &> /dev/null; then
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install -y trivy
+          TRIVY_VERSION="0.69.3"
+          TRIVY_SHA256="a484057aafde31089cf2558ca0f79a4bc835125a5ee6834183a5bcf0735af358"
+          wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
+          echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
+          sudo dpkg -i /tmp/trivy.deb
+          rm /tmp/trivy.deb
         fi
     # Install CGO cross-compilers for multi-arch builds (apt installs to /usr which isn't cacheable)
     - shell: bash
@@ -44,3 +47,19 @@ runs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
         fi
+    # Log environment setup (useful for debugging)
+    - shell: bash
+      run: |
+        echo "=== Environment ==="
+        echo "HOME: $HOME"
+        echo "GOPATH: $(go env GOPATH)"
+        echo "PATH: $PATH"
+        echo ""
+        echo "=== Contents of $HOME/go/bin ==="
+        ls -la "$HOME/go/bin" || echo "$HOME/go/bin does not exist"
+        echo ""
+        echo "=== Contents of \$(go env GOPATH)/bin ==="
+        ls -la "$(go env GOPATH)/bin" || echo "\$(go env GOPATH)/bin does not exist"
+        echo ""
+        echo "=== Go version ==="
+        go version

@@ -70,10 +70,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		// Make the NodePool requirements fully flexible, so we can match well-known label keys
 		nodePool = test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1beta1.LabelSKUFamily,
-					Operator: corev1.NodeSelectorOpExists,
-				},
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
 			},
 		)
 	})
@@ -85,6 +83,11 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
 		)
+
+		if env.IsMachineModeOrNPS() {
+			// Can't test FIPS on self-hosted Karpenter
+			selectors.Insert(v1beta1.AKSLabelFIPSEnabled)
+		}
 
 		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
 		// ignore GPU labels in the coverage assertion.
@@ -236,12 +239,41 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 
+		It("should support FIPS label for instance type selection", func() {
+			if !env.UsesSharedImageGallery() {
+				Skip("FIPS tests require SIG access - skipping in self-hosted mode")
+			}
+
+			nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+
+			nodeSelector := map[string]string{
+				// Well Known
+				karpv1.NodePoolLabelKey:        nodePool.Name,
+				corev1.LabelInstanceTypeStable: "Standard_D2s_v3",
+				// Well Known to Azure
+				v1beta1.AKSLabelFIPSEnabled: "true",
+			}
+			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
+			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
+				return corev1.NodeSelectorRequirement{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}
+			})
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
+				NodeSelector:     nodeSelector,
+				NodePreferences:  requirements,
+				NodeRequirements: requirements,
+			}})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.ExpectCreatedNodeCount("==", 1)
+		})
+
 		DescribeTable("should support restricted label domain exceptions", func(domain string) {
 			// Assign labels to the nodepool so that it has known values
 			test.ReplaceRequirements(nodePool,
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: domain + "/team", Operator: corev1.NodeSelectorOpExists}},
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: domain + "/custom-label", Operator: corev1.NodeSelectorOpExists}},
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "subdomain." + domain + "/custom-label", Operator: corev1.NodeSelectorOpExists}},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: domain + "/team", Operator: corev1.NodeSelectorOpExists},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: domain + "/custom-label", Operator: corev1.NodeSelectorOpExists},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: "subdomain." + domain + "/custom-label", Operator: corev1.NodeSelectorOpExists},
 			)
 			nodeSelector := map[string]string{
 				domain + "/team":                        "team-1",
@@ -349,18 +381,14 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							},
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelOSStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{string(corev1.Linux)},
-									},
+									Key:      corev1.LabelOSStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{string(corev1.Linux)},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelInstanceTypeStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"Standard_D2s_v5"},
-									},
+									Key:      corev1.LabelInstanceTypeStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"Standard_D2s_v5"},
 								},
 							},
 						},
@@ -379,18 +407,14 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							},
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelOSStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{string(corev1.Linux)},
-									},
+									Key:      corev1.LabelOSStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{string(corev1.Linux)},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelInstanceTypeStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"Standard_D4s_v5"},
-									},
+									Key:      corev1.LabelInstanceTypeStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"Standard_D4s_v5"},
 								},
 							},
 						},
@@ -441,18 +465,15 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				})
 
 				test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"4", "8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"4", "8"},
 				}, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUFamily,
-						Operator: corev1.NodeSelectorOpNotIn,
-						// remove some cheap burstable types so we have more control over what gets provisioned
-						Values: []string{"B"},
-					},
+
+					Key:      v1beta1.LabelSKUFamily,
+					Operator: corev1.NodeSelectorOpNotIn,
+					// remove some cheap burstable types so we have more control over what gets provisioned
+					Values: []string{"B"},
 				})
 				pod := test.Pod(test.PodOptions{
 					ObjectMeta: metav1.ObjectMeta{
@@ -567,7 +588,7 @@ var _ = Describe("Node Overlay", func() {
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,
@@ -591,7 +612,7 @@ var _ = Describe("Node Overlay", func() {
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				Price: lo.ToPtr("0.0000000232"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,

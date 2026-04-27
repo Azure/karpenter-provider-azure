@@ -1,6 +1,6 @@
-defaultBaseImage: mcr.microsoft.com/azurelinux/distroless/base:3.0@sha256:0c7284e31883d4f526d031eca9049922229289e6867a02be1e2eabf1d8fd5627
+defaultBaseImage: mcr.microsoft.com/azurelinux/distroless/minimal:3.0@sha256:138fe2905465e384b232ffe8ba3147de04c633a83f29d8df00d6817e3eacb0d2
 defaultPlatforms:
   - linux/arm64
   - linux/amd64
 defaultEnv:
-  - CGO_ENABLED=1
+  - MS_GO_NOSYSTEMCRYPTO=1

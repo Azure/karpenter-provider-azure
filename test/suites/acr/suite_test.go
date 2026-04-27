@@ -57,7 +57,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Acr", func() {
 	Describe("Image Pull", func() {
-		It("should allow karpenter user pool nodes to pull images from the clusters attached acr", func() {
+		It("should allow karpenter user pool nodes to pull images from the clusters attached acr", Label("runner"), func() {
 			deployment := test.Deployment(test.DeploymentOptions{
 				Replicas: 1,
 				PodOptions: test.PodOptions{

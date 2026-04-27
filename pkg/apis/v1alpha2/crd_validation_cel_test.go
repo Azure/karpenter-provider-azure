@@ -81,10 +81,8 @@ var _ = Describe("CEL/Validation", func() {
 						},
 						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 							{
-								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      karpv1.CapacityTypeLabelKey,
-									Operator: corev1.NodeSelectorOpExists,
-								},
+								Key:      karpv1.CapacityTypeLabelKey,
+								Operator: corev1.NodeSelectorOpExists,
 							},
 						},
 					},
@@ -149,6 +147,44 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("ArtifactStreaming", func() {
+		It("should accept when ArtifactStreaming is completely omitted", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1alpha2.AKSNodeClassSpec{
+					// ArtifactStreaming is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled true", func() {
+			enabled := true
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{
+						Enabled: &enabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled false", func() {
+			disabled := false
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{
+						Enabled: &disabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
 
@@ -675,24 +711,67 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
-	Context("Requirements", func() {
-		It("should allow restricted domains exceptions", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.LabelDomainExceptions {
-				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label + "/test", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
+	Context("GPU", func() {
+		It("should accept gpu.mode set to Driver", func() {
+			gpuMode := v1alpha2.GPUModeDriver
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{
+						Mode: &gpuMode,
+					},
+				},
 			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
+		It("should accept gpu.mode set to None", func() {
+			gpuMode := v1alpha2.GPUModeNone
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{
+						Mode: &gpuMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject invalid gpu.mode value", func() {
+			invalidMode := v1alpha2.GPUMode("Invalid")
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{
+						Mode: &invalidMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept when gpu field is omitted entirely", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1alpha2.AKSNodeClassSpec{},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu set with mode omitted", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
+	Context("Requirements", func() {
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey, karpv1.CapacityTypeLabelKey)) {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
 				}
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
@@ -703,11 +782,9 @@ var _ = Describe("CEL/Validation", func() {
 		It("should fail validation with only invalid capacity types", func() {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"xspot"}, // Invalid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"xspot"}, // Invalid value,
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
@@ -717,11 +794,9 @@ var _ = Describe("CEL/Validation", func() {
 		It("should pass validation with valid capacity types", func() {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand}, // Valid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand}, // Valid value,
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
@@ -731,11 +806,9 @@ var _ = Describe("CEL/Validation", func() {
 		It("should fail open if invalid and valid capacity types are present", func() {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand, "xspot"}, // Valid and invalid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand, "xspot"}, // Valid and invalid value,
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
@@ -744,18 +817,6 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 	Context("Labels", func() {
-		It("should allow restricted domains exceptions", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.LabelDomainExceptions {
-				nodePool.Spec.Template.Labels = map[string]string{
-					label: "test",
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
-			}
-		})
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey)) {

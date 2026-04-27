@@ -90,6 +90,11 @@ var _ = Describe("Repair Policy", func() {
 			Status:             corev1.ConditionUnknown,
 			LastTransitionTime: metav1.Time{Time: time.Now().Add(-11 * time.Minute)},
 		}),
+		Entry("Node Healthy False", corev1.NodeCondition{
+			Type:               corev1.NodeConditionType("kubernetes.azure.com/NodeHealthy"),
+			Status:             corev1.ConditionFalse,
+			LastTransitionTime: metav1.Time{Time: time.Now()},
+		}),
 	)
 	It("should ignore disruption budgets", func() {
 		nodePool.Spec.Disruption.Budgets = []karpenterv1.Budget{

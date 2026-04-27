@@ -85,7 +85,7 @@ az group create --name ${RG} --location ${LOCATION}
 Create the workload MSI that backs the karpenter pod auth:
 
 ```bash
-KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}")
+KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}" --output json)
 ```
 
 Create the AKS cluster compatible with Karpenter, where workload identity is enabled:
@@ -96,7 +96,8 @@ AKS_JSON=$(az aks create \
   --node-count 3 --generate-ssh-keys \
   --network-plugin azure --network-plugin-mode overlay --network-dataplane cilium \
   --enable-managed-identity \
-  --enable-oidc-issuer --enable-workload-identity)
+  --enable-oidc-issuer --enable-workload-identity \
+  --output json)
 az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overwrite-existing
 ```
 
@@ -105,8 +106,8 @@ az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overw
 
 > Note: If you've been disconnected from Cloud Shell, the env vars may have been removed. If you experience this issue follow [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md), along with restoring AKS_JSON, and KMSI_JSON using the command below. AKS_JSON, and KMSI_JSON are only required for the next two bash scripts, and not required for any future env recovery.
 > ```bash
-> AKS_JSON=$(az aks show --name "${CLUSTER_NAME}" --resource-group "${RG}")
-> KMSI_JSON=$(az identity show --name karpentermsi --resource-group "${RG}")
+> AKS_JSON=$(az aks show --name "${CLUSTER_NAME}" --resource-group "${RG}" --output json)
+> KMSI_JSON=$(az identity show --name karpentermsi --resource-group "${RG}" --output json)
 > ```
 
 Create federated credential linked to the karpenter service account for auth usage:
@@ -123,7 +124,7 @@ Create role assignments to let Karpenter manage VMs and Network resources:
 ```bash
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(jq -r '.principalId' <<< "$KMSI_JSON")
 RG_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
-RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" -otsv)
+RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" --output tsv)
 for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator"; do
   az role assignment create --assignee "${KARPENTER_USER_ASSIGNED_CLIENT_ID}" --scope "${RG_MC_RES}" --role "$role"
 done
