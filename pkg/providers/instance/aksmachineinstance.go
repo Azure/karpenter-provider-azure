@@ -395,7 +395,7 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			if IsAKSMachineOrMachinesPoolNotFound(err) {
+			if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 				// AKS machines pool not found. Handle gracefully.
 				// Suggestion: separate the util function to not cover more than needed?
 				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
