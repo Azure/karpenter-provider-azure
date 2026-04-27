@@ -172,7 +172,7 @@ var _ = Describe("Persistent Volumes", func() {
 			})
 		})
 
-		It("should run a pod with a dynamic persistent volume", func() {
+		It("should run a pod with a dynamic persistent volume", Label("runner"), func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: &storageClass.Name,
 			})
@@ -184,7 +184,7 @@ var _ = Describe("Persistent Volumes", func() {
 			env.EventuallyExpectHealthy(pod)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
-		It("should run a pod with a dynamic persistent volume while respecting allowed topologies", func() {
+		It("should run a pod with a dynamic persistent volume while respecting allowed topologies", Label("runner"), func() {
 			availableZones := env.GetAvailableZones()
 			if len(availableZones) == 0 {
 				Skip(fmt.Sprintf("skipping allowed topologies test because region %s does not support availability zones", env.Region))
