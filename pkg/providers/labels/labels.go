@@ -111,6 +111,7 @@ func Get(
 	// See https://github.com/kubernetes-sigs/karpenter/issues/1772
 	labels[karpv1.NodeDoNotSyncTaintsLabelKey] = "true"
 	labels[v1beta1.AKSLabelScaleSetPriority] = v1beta1.ScaleSetPriorityRegular
+	labels[v1beta1.AKSLabelPriority] = v1beta1.PriorityRegular
 	// Add os-sku label based on imageFamily
 	labels[v1beta1.AKSLabelOSSKU] = v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
 	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
