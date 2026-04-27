@@ -18,13 +18,8 @@ package instance
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -44,18 +39,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-// createAzureResponseError creates a proper Azure SDK error with the given error code and message
-func createAzureResponseError(errorCode, errorMessage string, statusCode int) error {
-	errorBody := fmt.Sprintf(`{"error": {"code": "%s", "message": "%s"}}`, errorCode, errorMessage)
-	return &azcore.ResponseError{
-		ErrorCode:  errorCode,
-		StatusCode: statusCode,
-		RawResponse: &http.Response{
-			Body: io.NopCloser(strings.NewReader(errorBody)),
-		},
-	}
-}
 
 var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
