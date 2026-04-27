@@ -19,7 +19,7 @@ package instance
 import (
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -556,6 +556,29 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				}
 			})
 		})
+
+		// Previously reserved labels (kubernetes.io/k8s.io domains) were restricted by Karpenter core before 1.9.x.
+		// Now allowed on NodeClaims, they should be filtered out of NodeLabels (sent to kubelet via the AKS RP)
+		// unless they are in a kubelet-allowed namespace (e.g. kubelet.kubernetes.io).
+		DescribeTable("should filter previously reserved labels from nodeClaim.Labels",
+			func(label string, expectedInNodeLabels bool) {
+				nodeClaim.Labels = map[string]string{
+					label: "custom-value",
+				}
+
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand)
+
+				if expectedInNodeLabels {
+					Expect(labels).To(HaveKey(label))
+					Expect(*labels[label]).To(Equal("custom-value"))
+				} else {
+					Expect(labels).ToNot(HaveKey(label))
+				}
+			},
+			Entry("kubernetes.io (previously reserved)", "kubernetes.io/custom-label", false),
+			Entry("k8s.io (previously reserved)", "k8s.io/custom-label", false),
+			Entry("kubelet.kubernetes.io (kubelet-allowed)", "kubelet.kubernetes.io/custom-label", true),
+		)
 	})
 
 	Context("configureKubeletConfig", func() {
@@ -574,13 +597,13 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should configure all kubelet settings correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:            "static",
+				CPUManagerPolicy:            lo.ToPtr("static"),
 				CPUCFSQuota:                 lo.ToPtr(true),
-				TopologyManagerPolicy:       "single-numa-node",
+				TopologyManagerPolicy:       lo.ToPtr("single-numa-node"),
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 				AllowedUnsafeSysctls:        []string{"kernel.shm_rmid_forced", "net.core.somaxconn"},
-				ContainerLogMaxSize:         "100Mi",
+				ContainerLogMaxSize:         lo.ToPtr("100Mi"),
 				ContainerLogMaxFiles:        lo.ToPtr(int32(5)),
 				PodPidsLimit:                lo.ToPtr(int64(2048)),
 			}
@@ -602,10 +625,10 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should handle empty/nil values correctly", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				CPUManagerPolicy:     "",              // Empty string should be nil
+				CPUManagerPolicy:     lo.ToPtr(""),    // Empty string should be nil
 				CPUCFSQuota:          lo.ToPtr(false), // False should be preserved
 				AllowedUnsafeSysctls: []string{},      // Empty slice should be nil
-				ContainerLogMaxSize:  "",              // Empty string should be nil
+				ContainerLogMaxSize:  nil,             // nil should stay nil
 				ContainerLogMaxFiles: nil,             // Nil should stay nil
 				PodPidsLimit:         nil,             // Nil should stay nil
 			}
@@ -867,6 +890,48 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(imageName).To(Equal("2204gen2containerd"))
 				Expect(version).To(Equal("2022.10.03"))
 			})
+		})
+	})
+
+	Context("configureGPUProfile", func() {
+		It("should return GPUDriverInstall for NVIDIA SKU with default (Install) mode", func() {
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should return GPUDriverInstall for NVIDIA SKU with Driver mode", func() {
+			driverMode := v1beta1.GPUModeDriver
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &driverMode}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should return GPUDriverNone for NVIDIA SKU with None mode", func() {
+			noneMode := v1beta1.GPUModeNone
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
+			instanceType.Name = "Standard_NC6s_v3"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+		})
+
+		It("should return nil for non-GPU SKU", func() {
+			instanceType.Name = "Standard_D2_v2"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).To(BeNil())
+		})
+
+		It("should return GPUDriverNone for AMD GPU SKU with None mode", func() {
+			noneMode := v1beta1.GPUModeNone
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
+			instanceType.Name = "Standard_NV4ads_V710_v5"
+			profile := configureGPUProfile(instanceType, nodeClass)
+			Expect(profile).ToNot(BeNil())
+			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
 		})
 	})
 })

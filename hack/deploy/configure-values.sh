@@ -27,10 +27,10 @@ fi
 # Optional values through env vars:
 LOG_LEVEL=${LOG_LEVEL:-"info"}
 
-AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" -o json)
+AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --output json)
 AZURE_LOCATION=$(jq -r ".location" <<< "$AKS_JSON")
 AZURE_RESOURCE_GROUP_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
-AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' -otsv)
+AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
 
 CLUSTER_ENDPOINT=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 
@@ -47,14 +47,14 @@ get_vnet_json() {
     local aks_json=$2
 
     local vnet_json
-    vnet_json=$(az network vnet list --resource-group "$resource_group" | jq -r ".[0]")
+    vnet_json=$(az network vnet list --resource-group "$resource_group" --output json | jq -r ".[0]")
 
     if [[ -z "$vnet_json" || "$vnet_json" == "null" ]]; then
         local subnet_id
         subnet_id=$(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$aks_json")
         local vnet_id
         vnet_id=${subnet_id%/subnets/*}
-        vnet_json=$(az network vnet show --ids "$vnet_id")
+        vnet_json=$(az network vnet show --ids "$vnet_id" --output json)
     fi
 
     echo "$vnet_json"
@@ -74,7 +74,7 @@ NETWORK_POLICY=$(jq -r ".networkProfile.networkPolicy // empty | if . == \"none\
 
 NODE_IDENTITIES=$(jq -r ".identityProfile.kubeletidentity.resourceId" <<< "$AKS_JSON")
 
-KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv)
+KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' --output tsv)
 KUBELET_IDENTITY_CLIENT_ID=$(jq -r ".identityProfile.kubeletidentity.clientId // empty" <<< "$AKS_JSON")
 
 AZURE_SIG_SUBSCRIPTION_ID=""

@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,7 +37,9 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -113,13 +115,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					Priority:   lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
 					ResourceID: lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
 					Status: &armcontainerservice.MachineStatus{
-						CreationTimestamp: lo.ToPtr(creationTime.Add(10 * time.Minute)),
+						CreationTimestamp: lo.ToPtr(creationTime),
 					},
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
 						NodePoolTagKey: lo.ToPtr("test-nodepool"),
-						launchtemplate.KarpenterAKSMachineNodeClaimTagKey:         lo.ToPtr("test-nodeclaim"),
-						launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(AKSMachineTimestampToTag(creationTime)),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 					},
 				},
 			}
@@ -154,30 +155,10 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
 			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).ToNot(HaveKey(v1.LabelTopologyZone))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
-		})
-
-		It("should handle missing creation time gracefully", func() {
-			// Remove the creation timestamp tag to test missing timestamp handling
-			delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineCreationTimestampTagKey)
-
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
-
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
-			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
-			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
-			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
-			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
-			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
-			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
-			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
-			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
 		})
 
 		It("should return error when properties is missing", func() {
@@ -516,7 +497,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		It("should return true when provisioning state is Deleting", func() {
 			machine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: lo.ToPtr("Deleting"),
+					ProvisioningState: lo.ToPtr(consts.ProvisioningStateDeleting),
 				},
 			}
 
@@ -574,7 +555,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(zone).To(Equal("eastus-1"))
 		})
 
-		It("should return empty string for AKS machine with no zones", func() {
+		It("should return RegionalZone for AKS machine with no zones", func() {
 			machine := &armcontainerservice.Machine{
 				Zones: []*string{},
 			}
@@ -583,10 +564,10 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(""))
+			Expect(zone).To(Equal(zones.Regional))
 		})
 
-		It("should return empty string for AKS machine with nil zones", func() {
+		It("should return RegionalZone for AKS machine with nil zones", func() {
 			machine := &armcontainerservice.Machine{
 				Zones: nil,
 			}
@@ -595,7 +576,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			zone, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(zone).To(Equal(""))
+			Expect(zone).To(Equal(zones.Regional))
 		})
 
 		It("should return error for nil AKS machine", func() {
@@ -616,7 +597,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AKS machine is missing location"))
+			Expect(err.Error()).To(ContainSubstring("location is required for zonal resource"))
 		})
 
 		It("should return error for AKS machine with multiple zones", func() {
@@ -628,7 +609,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := GetAKSLabelZoneFromAKSMachine(machine, location)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AKS machine has multiple zones"))
+			Expect(err.Error()).To(ContainSubstring("resource has multiple zones"))
 		})
 
 		It("should handle different zones correctly", func() {

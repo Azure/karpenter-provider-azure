@@ -21,11 +21,11 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -112,7 +112,7 @@ func createTestSKU(name, size, family, cpuCount string) *skewer.SKU {
 		Family: &family,
 		Capabilities: &[]compute.ResourceSkuCapabilities{
 			{
-				Name:  to.Ptr(skewer.VCPUs),
+				Name:  lo.ToPtr(skewer.VCPUs),
 				Value: &cpuCount,
 			},
 		},
@@ -128,7 +128,7 @@ func createCommonErrorTestSKU(name, size, family, cpuCount string) *skewer.SKU {
 		Family: &family,
 		Capabilities: &[]compute.ResourceSkuCapabilities{
 			{
-				Name:  to.Ptr(skewer.VCPUs),
+				Name:  lo.ToPtr(skewer.VCPUs),
 				Value: &cpuCount,
 			},
 		},
@@ -168,7 +168,7 @@ func TestMarkOfferingsUnavailableForCapacityType(t *testing.T) {
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot)
 
 	// Mark spot offerings unavailable
-	markOfferingsUnavailableForCapacityType(ctx, unavailableOfferings, instanceType, karpv1.CapacityTypeSpot, SKUNotAvailableReason, SKUNotAvailableSpotTTL)
+	markOfferingsUnavailableForCapacityType(ctx, unavailableOfferings, createDefaultCommonErrorTestSKU(), instanceType, karpv1.CapacityTypeSpot, SKUNotAvailableReason, SKUNotAvailableSpotTTL)
 
 	// Check that spot offerings are unavailable
 	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
@@ -187,7 +187,7 @@ func TestMarkAllZonesUnavailableForBothCapacityTypes(t *testing.T) {
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, zone3Spot)
 
 	// Mark all zones unavailable for both capacity types
-	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, instanceType, AllocationFailureReason, AllocationFailureTTL)
+	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, createDefaultCommonErrorTestSKU(), instanceType, AllocationFailureReason, AllocationFailureTTL)
 
 	// Check that all zones and capacity types are unavailable
 	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())

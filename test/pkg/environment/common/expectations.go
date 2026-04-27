@@ -341,6 +341,9 @@ func (env *Environment) EventuallyExpectHealthyWithTimeout(timeout time.Duration
 	Eventually(func(g Gomega) {
 		for _, pod := range pods {
 			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(pod), pod)).To(Succeed())
+			if pod.Status.Phase == corev1.PodFailed {
+				StopTrying("pod entered terminal Failed phase, this may be due to https://github.com/Azure/karpenter-provider-azure/issues/1625").Now()
+			}
 			g.Expect(pod.Status.Conditions).To(ContainElement(And(
 				HaveField("Type", Equal(corev1.PodReady)),
 				HaveField("Status", Equal(corev1.ConditionTrue)),
@@ -718,7 +721,7 @@ func (env *Environment) EventuallyExpectNodesUntaintedWithTimeout(timeout time.D
 
 func (env *Environment) EventuallyExpectRegisteredNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
-	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
+	By(fmt.Sprintf("waiting for node claims to be %s to %d", comparator, count))
 	nodeClaimList := &karpv1.NodeClaimList{}
 	Eventually(func(g Gomega) {
 		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel})).To(Succeed())
@@ -728,9 +731,21 @@ func (env *Environment) EventuallyExpectRegisteredNodeClaimCount(comparator stri
 	return lo.ToSlicePtr(nodeClaimList.Items)
 }
 
+func (env *Environment) EventuallyExpectRegisteredNodeClaimCountWithSelector(comparator string, count int, selector labels.Selector) []*karpv1.NodeClaim {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for node claims with selector %v to be %s to %d", selector, comparator, count))
+	nodeClaimList := &karpv1.NodeClaimList{}
+	Eventually(func(g Gomega) {
+		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel}, client.MatchingLabelsSelector{Selector: selector})).To(Succeed())
+		g.Expect(lo.CountBy(nodeClaimList.Items, func(nc karpv1.NodeClaim) bool { return nc.StatusConditions().IsTrue(karpv1.ConditionTypeRegistered) })).To(BeNumerically(comparator, count),
+			fmt.Sprintf("expected %d nodeclaims, had %d (%v)", count, len(nodeClaimList.Items), NodeClaimNames(lo.ToSlicePtr(nodeClaimList.Items))))
+	}).Should(Succeed())
+	return lo.ToSlicePtr(nodeClaimList.Items)
+}
+
 func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
-	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
+	By(fmt.Sprintf("waiting for node claims to be %s to %d", comparator, count))
 	nodeClaimList := &karpv1.NodeClaimList{}
 	Eventually(func(g Gomega) {
 		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel})).To(Succeed())

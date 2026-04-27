@@ -147,11 +147,16 @@ func (p *Provider) getStaticParameters(
 	}
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-	baseLabels, err := karplabels.Get(ctx, nodeClass)
+	baseLabels, err := karplabels.Get(ctx, nodeClass, arch)
 	if err != nil {
 		return nil, err
 	}
 	labels = lo.Assign(baseLabels, labels)
+
+	// Remove labels kubelet can't set (e.g. kubernetes.io/*, k8s.io/* outside allowed namespaces)
+	labels = lo.OmitBy(labels, func(key string, _ string) bool {
+		return !karplabels.CanKubeletSetLabel(key)
+	})
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
@@ -165,6 +170,7 @@ func (p *Provider) getStaticParameters(
 		GPUDriverVersion:               utils.GetGPUDriverVersion(instanceType.Name),
 		GPUDriverType:                  utils.GetGPUDriverType(instanceType.Name),
 		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
+		GPUDriverInstallationEnabled:   nodeClass.IsGPUDriverInstallationEnabled(),
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
 		KubeletIdentityClientID:        p.kubeletIdentityClientID,

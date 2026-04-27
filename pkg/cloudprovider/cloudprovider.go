@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
@@ -39,7 +40,7 @@ import (
 
 	//nolint:SA1019 // deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -57,6 +58,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -85,6 +87,7 @@ type CloudProvider struct {
 	imageProvider              imagefamily.NodeImageProvider
 	recorder                   events.Recorder
 	instanceTypeStore          *nodeoverlay.InstanceTypeStore
+	instancePromiseWg          sync.WaitGroup
 }
 
 func New(
@@ -105,6 +108,11 @@ func New(
 		recorder:                   recorder,
 		instanceTypeStore:          store,
 	}
+}
+
+// WaitForInstancePromises blocks until all in-flight async Create goroutines have completed.
+func (c *CloudProvider) WaitForInstancePromises() {
+	c.instancePromiseWg.Wait()
 }
 
 func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error {
@@ -149,6 +157,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, err
 	}
 
+	// Note: This filters out any instance types which we're out of capacity for
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
@@ -227,7 +236,8 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 		aksMachinePromise.AKSMachineID,
 		aksMachinePromise.VMResourceID,
 		false,
-		aksMachinePromise.AKSMachineNodeImageVersion)
+		aksMachinePromise.AKSMachineNodeImageVersion,
+		aksMachinePromise.CreationTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
@@ -266,7 +276,9 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
 	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
 	// only held in memory.
+	c.instancePromiseWg.Add(1)
 	go func() {
+		defer c.instancePromiseWg.Done()
 		defer func() {
 			if r := recover(); r != nil {
 				err := fmt.Errorf("%v", r)
@@ -453,6 +465,10 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 	return instanceTypes, nil
 }
 
+// Delete deletes the underlying node
+// Note: Delete may be called many times while delete is ongoing (blocking) as the core Karpenter termination controller
+// watches and reconciles on all node updates (including node status updates, which happen during deletion), so while
+// one Delete call is blocking more will come in every ~5s due to excess Node events + requeues.
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 
@@ -469,6 +485,18 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	return c.vmInstanceProvider.Delete(ctx, vmName)
 }
 
+// IsDrifted checks if the NodeClaim has drifted from our goal state.
+// Note: During the initial launch and registration of a NodeClaim,
+// core calls IsDrifted quite frequently as it waits for the Node to register and become ready. This is
+// because the core pkg/controllers/nodeclaim/disruption/controller.go watches NodeClaims without a
+// generation filter, so any update to the NodeClaim (including updates to status such as when updating conditions during launch)
+// will trigger a call to IsDrifted.
+// The following things produce a large number of IsDrifted calls:
+//   - The initialization controller pkg/controllers/nodeclaim/lifecycle/initialization.go changes the ConditionTypeInitialized condition a number of times during
+//     this process, which triggers disruption/controller.go to call IsDrifted each time.
+//   - Any pod scheduling that happens during this time will trigger the core disruption/controller.go, because it watches pod updates and
+//     maps each pod update to a NodeClaim event. This means every time a pod (including a DaemonSet pod) is scheduled to the node
+//     we'll get called.
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	// Not needed when GetInstanceTypes removes nodepool dependency
 	nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]
@@ -518,6 +546,11 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 			ConditionType:      corev1.NodeReady,
 			ConditionStatus:    corev1.ConditionUnknown,
 			TolerationDuration: 10 * time.Minute,
+		},
+		{
+			ConditionType:      "kubernetes.azure.com/NodeHealthy",
+			ConditionStatus:    corev1.ConditionFalse,
+			TolerationDuration: 0,
 		},
 	}
 }
@@ -603,8 +636,8 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
-	if zone, err := utils.MakeAKSLabelZoneFromVM(vm); err != nil {
-		log.FromContext(ctx).Info("failed to get zone for VM, zone label will be empty", "vmName", *vm.Name, "error", err)
+	if zone, err := zones.MakeAKSLabelZoneFromVM(vm); err != nil {
+		log.FromContext(ctx).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
 	}

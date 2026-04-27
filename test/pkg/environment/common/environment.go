@@ -151,32 +151,24 @@ func (env *Environment) DefaultNodePool(nodeClass *v1beta1.AKSNodeClass) *karpv1
 	}
 	nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelOSStable,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{string(corev1.Linux)},
-			},
+			Key:      corev1.LabelOSStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{string(corev1.Linux)},
 		},
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      karpv1.CapacityTypeLabelKey,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{karpv1.CapacityTypeOnDemand},
-			},
+			Key:      karpv1.CapacityTypeLabelKey,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{karpv1.CapacityTypeOnDemand},
 		},
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelArchStable,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{karpv1.ArchitectureAmd64},
-			},
+			Key:      corev1.LabelArchStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{karpv1.ArchitectureAmd64},
 		},
 		{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.LabelSKUFamily,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{"D"},
-			},
+			Key:      v1beta1.LabelSKUFamily,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"D"},
 		},
 	}
 
@@ -213,10 +205,9 @@ func (env *Environment) AdaptToClusterConfig(nodePool *karpv1.NodePool) *karpv1.
 func (env *Environment) ArmNodepool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
 	nodePool := env.DefaultNodePool(nodeClass)
 	coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-		NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-			Key:      corev1.LabelArchStable,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{karpv1.ArchitectureArm64},
-		}})
+		Key:      corev1.LabelArchStable,
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{karpv1.ArchitectureArm64},
+	})
 	return nodePool
 }

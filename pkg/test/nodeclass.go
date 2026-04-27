@@ -72,7 +72,7 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
-	nodeClass.Status.KubernetesVersion = testK8sVersion
+	nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
@@ -147,7 +147,11 @@ func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {
 }
 
 func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion string) {
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, nodeClass.Status.KubernetesVersion)
+	var kubernetesVersion string
+	if nodeClass.Status.KubernetesVersion != nil {
+		kubernetesVersion = *nodeClass.Status.KubernetesVersion
+	}
+	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
@@ -176,7 +180,7 @@ func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, ve
 func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1beta1.NodeImage {
 	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item karpv1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
-			return item.NodeSelectorRequirement
+			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
 		})
 
 		// sorted for consistency

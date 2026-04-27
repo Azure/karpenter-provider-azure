@@ -17,6 +17,7 @@ limitations under the License.
 package cloudprovider
 
 import (
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
@@ -33,7 +34,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -55,7 +56,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
@@ -70,6 +71,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -86,10 +89,12 @@ var _ = Describe("CloudProvider", func() {
 				pod := coretest.UnschedulablePod(coretest.PodOptions{
 					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node = ExpectScheduled(ctx, env.Client, pod)
 				// KubeletVersion must be applied to the node to satisfy k8s drift
-				node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
+				if nodeClass.Status.KubernetesVersion != nil {
+					node.Status.NodeInfo.KubeletVersion = "v" + *nodeClass.Status.KubernetesVersion
+				}
 				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
 
 				ExpectApplied(ctx, env.Client, node)
@@ -220,7 +225,7 @@ var _ = Describe("CloudProvider", func() {
 				// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 				It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					nodeClass.Status.KubernetesVersion = ""
+					nodeClass.Status.KubernetesVersion = lo.ToPtr("")
 					ExpectApplied(ctx, env.Client, nodeClass)
 					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 					Expect(err).ToNot(HaveOccurred())
@@ -263,9 +268,9 @@ var _ = Describe("CloudProvider", func() {
 				It("should succeed with drift true when KubernetesVersion is new", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(nodeClass.Status.KubernetesVersion))
+					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(*nodeClass.Status.KubernetesVersion))
 					semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
-					nodeClass.Status.KubernetesVersion = semverCurrentK8sVersion.String()
+					nodeClass.Status.KubernetesVersion = lo.ToPtr(semverCurrentK8sVersion.String())
 
 					ExpectApplied(ctx, env.Client, nodeClass)
 

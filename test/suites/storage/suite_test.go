@@ -26,7 +26,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -108,12 +108,12 @@ var _ = Describe("Persistent Volumes", func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume while respecting topology constraints", func() {
-			zones := env.GetAvailableZones()
-			if len(zones) == 0 {
+			availableZones := env.GetAvailableZones()
+			if len(availableZones) == 0 {
 				Skip(fmt.Sprintf("skipping topology constraint test because region %s does not support availability zones", env.Region))
 			}
-			mutable.Shuffle(zones)
-			zone := utils.MakeAKSLabelZoneFromARMZone(env.Region, zones[0])
+			mutable.Shuffle(availableZones)
+			zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
 
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
@@ -185,12 +185,12 @@ var _ = Describe("Persistent Volumes", func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a dynamic persistent volume while respecting allowed topologies", func() {
-			zones := env.GetAvailableZones()
-			if len(zones) == 0 {
+			availableZones := env.GetAvailableZones()
+			if len(availableZones) == 0 {
 				Skip(fmt.Sprintf("skipping allowed topologies test because region %s does not support availability zones", env.Region))
 			}
-			mutable.Shuffle(zones)
-			zone := utils.MakeAKSLabelZoneFromARMZone(env.Region, zones[0])
+			mutable.Shuffle(availableZones)
+			zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
 
 			storageClass.AllowedTopologies = []corev1.TopologySelectorTerm{{
 				MatchLabelExpressions: []corev1.TopologySelectorLabelRequirement{{
@@ -234,8 +234,8 @@ var _ = Describe("Stateful workloads", func() {
 	var statefulSet *appsv1.StatefulSet
 	var selector labels.Selector
 	BeforeEach(func() {
-		zones := env.GetAvailableZones()
-		if len(zones) == 0 {
+		availableZones := env.GetAvailableZones()
+		if len(availableZones) == 0 {
 			Skip(fmt.Sprintf("skipping stateful workload test because region %s does not support availability zones", env.Region))
 		}
 		// Ensure that the Azure Disk driver is installed, or we can't run the test.
@@ -252,8 +252,8 @@ var _ = Describe("Stateful workloads", func() {
 		}
 
 		numPods = 1
-		mutable.Shuffle(zones)
-		zone := utils.MakeAKSLabelZoneFromARMZone(env.Region, zones[0])
+		mutable.Shuffle(availableZones)
+		zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
 
 		storageClass = test.StorageClass(test.StorageClassOptions{
 			ObjectMeta: metav1.ObjectMeta{

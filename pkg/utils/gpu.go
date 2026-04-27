@@ -20,6 +20,7 @@ import (
 	_ "embed"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -35,38 +36,53 @@ const (
 	AKSGPUGridVersionSuffix = "20250512225043"
 )
 
-type NvidiaSKUConfig struct {
-	NvidiaEnabledSKUFamilies        map[string][]string `yaml:"nvidiaEnabledSKUs"`
-	MarinerNvidiaEnabledSKUFamilies map[string][]string `yaml:"marinerNvidiaEnabledSKUs"`
+type GPUSKUInfo struct {
+	GPU string   `yaml:"gpu"`
+	OS  []string `yaml:"os"`
 }
+
+type GPUSKUConfig map[string]GPUSKUInfo
 
 var (
 	nvidiaEnabledSKUs        = make(map[string]bool)
 	marinerNvidiaEnabledSKUs = make(map[string]bool)
+	amdEnabledSKUs           = make(map[string]bool)
+	allGPUSKUs               = make(map[string]string)   // sku -> manufacturer ("nvidia", "amd", etc.)
+	gpuSKUOSSupport          = make(map[string][]string) // sku -> supported OS list
 )
 
 //go:embed supported-gpus.yaml
 var configFile []byte
 
 func init() {
-	readNvidiaSKUConfig()
+	readGPUSKUConfig()
 }
 
-func readNvidiaSKUConfig() {
-	var nvidiaSKUConfig NvidiaSKUConfig
+func readGPUSKUConfig() {
+	var gpuSKUConfig GPUSKUConfig
 
-	err := yaml.Unmarshal(configFile, &nvidiaSKUConfig)
+	err := yaml.Unmarshal(configFile, &gpuSKUConfig)
 	if err != nil {
 		panic(err)
 	}
-	for _, skus := range nvidiaSKUConfig.NvidiaEnabledSKUFamilies {
-		for _, sku := range skus {
+
+	for sku, info := range gpuSKUConfig {
+		allGPUSKUs[sku] = info.GPU
+		gpuSKUOSSupport[sku] = info.OS
+
+		switch info.GPU {
+		case v1beta1.ManufacturerNvidia:
 			nvidiaEnabledSKUs[sku] = true
-		}
-	}
-	for _, skus := range nvidiaSKUConfig.MarinerNvidiaEnabledSKUFamilies {
-		for _, sku := range skus {
-			marinerNvidiaEnabledSKUs[sku] = true
+
+			// Check if this SKU supports azurelinux or azurelinux3
+			for _, os := range info.OS {
+				if os == "azurelinux" || os == "azurelinux3" {
+					marinerNvidiaEnabledSKUs[sku] = true
+					break
+				}
+			}
+		case v1beta1.ManufacturerAMD:
+			amdEnabledSKUs[sku] = true
 		}
 	}
 }
@@ -141,4 +157,53 @@ var ConvergedGPUDriverSizes = map[string]bool{
 	"standard_nc8ads_a10_v4":   true,
 	"standard_nc16ads_a10_v4":  true,
 	"standard_nc32ads_a10_v4":  true,
+}
+
+// normalizeVMSize applies standard normalization: lowercase and trim _promo suffix
+func normalizeVMSize(vmSize string) string {
+	vmSize = strings.ToLower(vmSize)
+	vmSize = strings.TrimSuffix(vmSize, "_promo")
+	return vmSize
+}
+
+// IsGPUSKU determines if a VM SKU is a known GPU SKU (any vendor: nvidia, amd, etc.)
+func IsGPUSKU(vmSize string) bool {
+	vmSize = normalizeVMSize(vmSize)
+	_, ok := allGPUSKUs[vmSize]
+	return ok
+}
+
+// IsAMDEnabledSKU determines if a VM SKU is an AMD GPU SKU
+func IsAMDEnabledSKU(vmSize string) bool {
+	vmSize = normalizeVMSize(vmSize)
+	return amdEnabledSKUs[vmSize]
+}
+
+// GetGPUManufacturer returns the GPU manufacturer for a VM SKU ("nvidia", "amd", or "")
+func GetGPUManufacturer(vmSize string) string {
+	vmSize = normalizeVMSize(vmSize)
+	return allGPUSKUs[vmSize]
+}
+
+// IsDriverInstallSupported returns true if the system knows how to install
+// GPU drivers for this VM SKU. Currently all NVIDIA SKUs have driver installation
+// support, while AMD SKUs do not. This is the single abstraction point for this
+// decision — when AMD driver support is added, only this function needs to change.
+func IsDriverInstallSupported(vmSize string) bool {
+	return IsNvidiaEnabledSKU(vmSize)
+}
+
+// IsGPUSKUSupportedOnOS checks if a GPU SKU supports a given OS identifier (e.g., "ubuntu", "azurelinux", "azurelinux3")
+func IsGPUSKUSupportedOnOS(vmSize string, osName string) bool {
+	vmSize = normalizeVMSize(vmSize)
+	osList, ok := gpuSKUOSSupport[vmSize]
+	if !ok {
+		return false
+	}
+	for _, os := range osList {
+		if os == osName {
+			return true
+		}
+	}
+	return false
 }
