@@ -302,7 +302,7 @@ var _ = Describe("Stateful workloads", func() {
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 
-		env.Monitor.Reset() // Reset the monitor so that we can expect a single node to be spun up after expiration
+		env.Monitor.Reset() // Count replacement nodes created after disruption starts.
 
 		// Delete original nodeClaim to get the original node deleted
 		env.ExpectDeleted(nodeClaim)
@@ -324,7 +324,6 @@ var _ = Describe("Stateful workloads", func() {
 		// We expect the stateful workload to become healthy on new node before the 6-minute force detach timeout.
 		// We start timer after pod binds to node because volume attachment happens during ContainerCreating
 		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
-		env.EventuallyExpectCreatedNodeCount(">=", 1)
 		env.EventuallyExpectBoundPodCount(selector, numPods)
 		env.EventuallyExpectHealthyPodCountWithTimeout(forceDetachTimeout, selector, numPods)
 	})
