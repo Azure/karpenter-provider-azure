@@ -64,7 +64,7 @@ Follow the instructions in the Node Auto Provisioning [documentation](https://le
 
 ## Installation (self-hosted Karpenter)
 
-**⚠️ Warning ⚠️** We strongly recommend using [Node Auto Provisioning](#installation-nap) (aka managed Karpenter) instead of self-hosted. Official support via MSFT support channels is limited to NAP. Self-hosted Karpenter is supported primarily via GitHub issues.
+**⚠️ Warning ⚠️** We strongly recommend using [Node Auto Provisioning](#installation-nap) (aka managed Karpenter) instead of self-hosted. Official support via Microsoft support channels is limited to NAP. Self-hosted Karpenter is supported primarily via GitHub issues, and subject to best-effort response time.
 
 This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
 
