@@ -266,26 +266,26 @@ standard_nd128isr_gb300_v6:
   os: ["ubuntu"]
 
 # NVads V710 v5-series (AMD GPU)
-# standard_nv4ads_v710_v5:
-#   gpu: amd
-#   os: ["ubuntu"]
-# standard_nv8ads_v710_v5:
-#   gpu: amd
-#   os: ["ubuntu"]
-# standard_nv12ads_v710_v5:
-#   gpu: amd
-#   os: ["ubuntu"]
-# standard_nv24ads_v710_v5:
-#   gpu: amd
-#   os: ["ubuntu"]
-# standard_nv28adms_v710_v5:
-#   gpu: amd
-#   os: ["ubuntu"]
+standard_nv4ads_v710_v5:
+  gpu: amd
+  os: ["ubuntu"]
+standard_nv8ads_v710_v5:
+  gpu: amd
+  os: ["ubuntu"]
+standard_nv12ads_v710_v5:
+  gpu: amd
+  os: ["ubuntu"]
+standard_nv24ads_v710_v5:
+  gpu: amd
+  os: ["ubuntu"]
+standard_nv28adms_v710_v5:
+  gpu: amd
+  os: ["ubuntu"]
 
 # ND-MI300X-v5 series (AMD GPU)
-# standard_nd96isr_mi300x_v5:
-#   gpu: amd
-#   os: ["ubuntu"]
-# standard_nd96is_mi300x_v5:
-#   gpu: amd
-#   os: ["ubuntu"]
+standard_nd96isr_mi300x_v5:
+  gpu: amd
+  os: ["ubuntu"]
+standard_nd96is_mi300x_v5:
+  gpu: amd
+  os: ["ubuntu"]

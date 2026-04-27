@@ -1,18 +1,9 @@
 name: Cleanup
 description: 'Runs all the cleanup tasks to cleanup resources deployed during E2E'
 inputs:
-  client_id:
-    description: "Client ID"
-    required: true
-  tenant_id:
-    description: "Tenant ID"
-    required: true
   subscription_id:
     description: "Subscription ID"
     required: true
-  # region:
-  #   description: "Region to create aks cluster"
-  #   required: true
   resource_group:
     description: "Name of the resource group to create the cluster within"
     required: true
@@ -31,12 +22,6 @@ runs:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         ref: ${{ inputs.git_ref }}
-    - name: az login
-      uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
-      with:
-        client-id: ${{ inputs.client_id }}
-        tenant-id: ${{ inputs.tenant_id }}
-        subscription-id: ${{ inputs.subscription_id }}
     - name: az set sub
       shell: bash
       env:
