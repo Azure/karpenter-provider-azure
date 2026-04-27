@@ -64,7 +64,7 @@ Follow the instructions in the Node Auto Provisioning [documentation](https://le
 
 ## Installation (self-hosted Karpenter)
 
-**⚠️ Warning ⚠️** We strongly recommend using [Node Auto Provisioning](#installation-nap) (aka managed Karpenter) instead of self-hosted.
+**⚠️ Warning ⚠️** We strongly recommend using [Node Auto Provisioning](#installation-nap) (aka managed Karpenter) instead of self-hosted. Official support via Microsoft support channels is limited to NAP. Self-hosted Karpenter is supported primarily via GitHub issues, and subject to best-effort response time.
 
 This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
 
@@ -360,3 +360,5 @@ Come discuss Karpenter in the [#karpenter](https://kubernetes.slack.com/archives
 Check out the [Docs](https://karpenter.sh/) to learn more.
 
 Check out our [contributing guide](https://github.com/Azure/karpenter-provider-azure/blob/main/CONTRIBUTING.md).
+
+This open-source project is subject to best-effort support by project maintainers and not covered by Microsoft support channels. [File an issue](https://github.com/Azure/karpenter-provider-azure/issues) in this project for any questions, feature requests, or issues.
