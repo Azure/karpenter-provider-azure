@@ -1,18 +1,9 @@
 name: InstallKarpenter
 description: 'Installs Karpenter on the aks cluster'
 inputs:
-  client_id:
-    description: "ID of the client to install Karpenter with"
-    required: true
-  tenant_id:
-    description: "ID of the tenant containing the cluster to install Karpenter into"
-    required: true
   subscription_id:
     description: "ID of the subscription containing the cluster to install Karpenter into"
     required: true
-  # region:
-  #   description: "Region to create aks cluster"
-  #   required: true
   resource_group:
     description: "Name of the resource group containing the cluster to install Karpenter into"
     required: true
@@ -37,12 +28,6 @@ runs:
   - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
     with:
       ref: ${{ inputs.git_ref }}
-  - name: az login
-    uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
-    with:
-      client-id: ${{ inputs.client_id }}
-      tenant-id: ${{ inputs.tenant_id }}
-      subscription-id: ${{ inputs.subscription_id }}
   - name: az set sub
     shell: bash
     env:
@@ -56,5 +41,11 @@ runs:
       AZURE_LOCATION: ${{ inputs.location }}
       PROVISION_MODE: ${{ inputs.provision_mode }}
       AZURE_ACR_NAME: ${{ inputs.acr_name }}
+      # Redirect Go temp/cache to /mnt/ (Azure temporary disk) which has more disk
+      # space than the OS disk. 1ES pool VMs can run out of disk on / during large builds.
+      GOTMPDIR: /mnt/go-tmp
+      GOCACHE: /mnt/go-cache
     run: |
+      sudo mkdir -p "$GOTMPDIR" "$GOCACHE"
+      sudo chown "$(id -u):$(id -g)" "$GOTMPDIR" "$GOCACHE"
       make ci-install

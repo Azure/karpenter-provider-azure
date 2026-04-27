@@ -25,10 +25,15 @@ on:
     secrets:
       E2E_CLIENT_ID:
         required: true
-      E2E_TENANT_ID:
-        required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+      # TODO(1ES migration): temporary override secrets for testing the new
+      # 1ES pool identity. Once validated, update E2E_CLIENT_ID and
+      # E2E_SUBSCRIPTION_ID to the new values and remove these.
+      E2E_SUBSCRIPTION_ID_TEST:
+        required: false
+      E2E_CLIENT_ID_TEST:
+        required: false
   workflow_dispatch:
     inputs:
       suite:
@@ -101,16 +106,16 @@ env:
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
-    runs-on: ubuntu-latest
+    runs-on: karpenter-ci-1es-pool
     permissions:
       contents: read
-      id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*
     env:
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID_TEST || secrets.E2E_CLIENT_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           disable-telemetry: true
           egress-policy: block
@@ -152,6 +157,7 @@ jobs:
             azure.archive.ubuntu.com:80
             packages.microsoft.com:443
             esm.ubuntu.com:443
+            169.254.169.254:80
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -163,16 +169,11 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
       - uses: ./.github/actions/install-deps
       - name: az login
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-        with:
-          client-id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+        shell: bash
+        run: az login --identity --client-id "$AZURE_CLIENT_ID"
       - name: az set sub
         shell: bash
-        env:
-          SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
-        run: az account set --subscription "$SUBSCRIPTION_ID"
+        run: az account set --subscription "$AZURE_SUBSCRIPTION_ID"
       - name: install skaffold
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
@@ -197,9 +198,7 @@ jobs:
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant_id: ${{ secrets.E2E_TENANT_ID }}
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
@@ -216,9 +215,7 @@ jobs:
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
         uses: ./.github/actions/e2e/create-cluster
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant_id: ${{ secrets.E2E_TENANT_ID }}
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
@@ -231,28 +228,21 @@ jobs:
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant_id: ${{ secrets.E2E_TENANT_ID }}
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
           provision_mode: ${{ inputs.provision_mode }}
-      - name: az login (refresh token before tests)
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-        with:
-          client-id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       - name: run the ${{ inputs.suite }} test suite
         env:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
           AZURE_RESOURCE_GROUP: ${{ env.RG_NAME }}
           AZURE_LOCATION: ${{ inputs.location }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
+          AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID_TEST || secrets.E2E_CLIENT_ID }}
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
           PROVISION_MODE: ${{ inputs.provision_mode }}
@@ -263,9 +253,7 @@ jobs:
         uses: ./.github/actions/e2e/dump-logs
         if: failure() || cancelled()
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant_id: ${{ secrets.E2E_TENANT_ID }}
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           git_ref: ${{ inputs.git_ref }}
@@ -273,9 +261,7 @@ jobs:
         uses: ./.github/actions/e2e/cleanup
         if: always()
         with:
-          client_id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant_id: ${{ secrets.E2E_TENANT_ID }}
-          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST || secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
