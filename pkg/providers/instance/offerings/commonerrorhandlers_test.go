@@ -47,7 +47,8 @@ const (
 	errMsgAllocationFailureFmt         = "unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)"
 	errMsgOverconstrainedZonalFmt      = "unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)"
 	errMsgOverconstrainedAllocationFmt = "unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)"
-	errMsgRegionalQuotaExceeded        = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
+	errMsgRegionalQuotaExceeded              = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
+	errMsgSKUNotAvailableForSubscriptionFmt = "VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector"
 )
 
 var (

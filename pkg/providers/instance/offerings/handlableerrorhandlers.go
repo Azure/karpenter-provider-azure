@@ -72,11 +72,11 @@ func NewMachineBeginCreateErrorHandler(unavailableOfferings *cache.UnavailableOf
 		HandlerEntries: []handlableErrorHandlerEntry{
 			{
 				match:  isSKUNotAvailableForSubscription,
-				handle: handleSKUNotAvailableError,
+				handle: handleSKUNotAvailableForSubscriptionError,
 			},
 			{
 				match:  isSKUNotAvailableForSubscriptionBadRequest,
-				handle: handleSKUNotAvailableError,
+				handle: handleSKUNotAvailableForSubscriptionError,
 			},
 		},
 	}
@@ -91,15 +91,36 @@ func (h *HandlableErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, ins
 	return nil
 }
 
+// handleSKUNotAvailableForSubscriptionError marks both capacity types unavailable because
+// subscription-level VM size restrictions apply equally to spot and on-demand.
+// This differs from CRP's SkuNotAvailable (handleSKUNotAvailableError) which may be
+// spot-only due to capacity — here the error is a hard subscription restriction.
+func handleSKUNotAvailableForSubscriptionError(
+	ctx context.Context,
+	unavailableOfferings *cache.UnavailableOfferings,
+	sku *skewer.SKU,
+	instanceType *corecloudprovider.InstanceType,
+	zone,
+	capacityType,
+	errorCode,
+	errorMessage string,
+) error {
+	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, SKUNotAvailableReason, SKUNotAvailableOnDemandTTL)
+
+	return fmt.Errorf(
+		"VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector",
+		instanceType.Name)
+}
+
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."
-// ASSUMPTION: this error occurring means the whole VM family is not available. handleSKUNotAvailableError may mark the whole family as unavailable (not at the time of writing, but will likely be).
+// ASSUMPTION: this error occurring means the whole VM family is not available.
 func isSKUNotAvailableForSubscription(he *HandlableError) bool {
 	return he.Code == "VMSizeNotSupported"
 }
 
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."
 // Similar to IsSKUNotAvailableForSubscription, but this different error code is another possible variant.
-// ASSUMPTION: this error occurring means the whole VM family is not available. handleSKUNotAvailableError may mark the whole family as unavailable (not at the time of writing, but will likely be).
+// ASSUMPTION: this error occurring means the whole VM family is not available.
 func isSKUNotAvailableForSubscriptionBadRequest(he *HandlableError) bool {
 	return he.Code == "BadRequest" && strings.Contains(he.Message, "is not supported for subscription")
 }

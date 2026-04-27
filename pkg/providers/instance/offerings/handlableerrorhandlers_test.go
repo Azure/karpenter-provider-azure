@@ -100,9 +100,11 @@ func setupHandlableErrorTestCases() []handlableErrorTestCase {
 			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("VMSizeNotSupported", "hello").
-			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
-			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
-			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			expectError(fmt.Errorf(errMsgSKUNotAvailableForSubscriptionFmt, testInstanceName)).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+			).
 			build(),
 
 		newHandlableErrorTestCase("BadRequest - VM size not supported for subscription").
@@ -110,9 +112,11 @@ func setupHandlableErrorTestCases() []handlableErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withHandlableError("BadRequest",
 				fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription sub-123 in location 'westus'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location 'westus'.", testInstanceName)).
-			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeSpot)).
-			expectUnavailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
-			expectAvailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectError(fmt.Errorf(errMsgSKUNotAvailableForSubscriptionFmt, testInstanceName)).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+			).
 			build(),
 
 		// === Negative cases: errors that should NOT be handled ===
