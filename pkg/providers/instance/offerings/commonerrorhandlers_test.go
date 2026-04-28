@@ -40,14 +40,14 @@ const (
 	testZone2              = "westus-2"
 	testZone3              = "westus-3"
 
-	errMsgLowPriorityQuota             = "this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota"
-	errMsgSKUFamilyQuotaFmt            = "subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)"
-	errMsgSKUNotAvailableFmt           = "the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable"
-	errMsgZonalAllocationFailureFmt    = "unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)"
-	errMsgAllocationFailureFmt         = "unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)"
-	errMsgOverconstrainedZonalFmt      = "unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)"
-	errMsgOverconstrainedAllocationFmt = "unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)"
-	errMsgRegionalQuotaExceeded              = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
+	errMsgLowPriorityQuota                  = "this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota"
+	errMsgSKUFamilyQuotaFmt                 = "subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)"
+	errMsgSKUNotAvailableFmt                = "the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable"
+	errMsgZonalAllocationFailureFmt         = "unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)"
+	errMsgAllocationFailureFmt              = "unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)"
+	errMsgOverconstrainedZonalFmt           = "unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)"
+	errMsgOverconstrainedAllocationFmt      = "unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)"
+	errMsgRegionalQuotaExceeded             = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
 	errMsgSKUNotAvailableForSubscriptionFmt = "VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector"
 )
 
