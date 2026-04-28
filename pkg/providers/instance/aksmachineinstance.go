@@ -594,9 +594,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	nowTime := time.Now()
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
-	log.FromContext(ctx).Info("fetched AKS machine", "aksMachineName", aksMachineName, "duration", time.Since(nowTime).Seconds())
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
