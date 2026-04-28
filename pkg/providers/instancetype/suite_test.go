@@ -407,7 +407,7 @@ var _ = Describe("InstanceType Provider", func() {
 				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
 				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
 				Expect(err).ToNot(HaveOccurred())
-				ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
+				ExpectUnavailable(azureEnv, fake.MakeSKU(initialVMSize), zone, karpv1.CapacityTypeSpot)
 
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -2312,9 +2312,6 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should not include confidential SKUs", func() {
 				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
 			})
-			It("should not include SKUs without compatible image", func() {
-				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2as_v6"))))
-			})
 		})
 		Context("Filtering GPU SKUs AzureLinux", func() {
 			var instanceTypes corecloudprovider.InstanceTypes
@@ -2620,6 +2617,8 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1beta1.AKSLabelMode + "=system", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "system" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.AKSLabelScaleSetPriority + "=regular", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.AKSLabelScaleSetPriority + "=spot", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{Name: v1beta1.AKSLabelPriority + "=regular", Label: v1beta1.AKSLabelPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{Name: v1beta1.AKSLabelPriority + "=spot", Label: v1beta1.AKSLabelPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.AKSLabelOSSKU, Label: v1beta1.AKSLabelOSSKU, ValueFunc: func() string { return "Ubuntu" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{
 					Name:  v1beta1.AKSLabelFIPSEnabled,

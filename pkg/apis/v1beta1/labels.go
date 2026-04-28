@@ -69,6 +69,7 @@ var (
 		AKSLabelCluster,
 		AKSLabelMode,
 		AKSLabelScaleSetPriority,
+		AKSLabelPriority,
 		AKSLabelOSSKU,
 		AKSLabelFIPSEnabled,
 	)
@@ -122,6 +123,7 @@ var (
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
 	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
 	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelPriority                = AKSLabelDomain + "/priority"         // "spot" or "regular".
 	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
 	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
 
@@ -162,6 +164,11 @@ const (
 const (
 	ScaleSetPriorityRegular = "regular"
 	ScaleSetPrioritySpot    = "spot"
+)
+
+const (
+	PriorityRegular = "regular"
+	PrioritySpot    = "spot"
 )
 
 var UbuntuFamilies = sets.New(

@@ -31,7 +31,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -241,6 +240,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zoneSet sets.Set[stri
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
 			),
@@ -252,6 +252,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zoneSet sets.Set[stri
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
 				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
 			),
@@ -389,8 +390,7 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
 			continue
 		}
-		useSIG := options.FromContext(ctx).UseSIG
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -410,14 +410,13 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool) bool {
+func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
-		!p.isConfidential(sku) &&
-		isCompatibleImageAvailable(sku, useSIG)
+		!p.isConfidential(sku)
 }
 
 // at least 2 cpus
@@ -492,18 +491,6 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	}
 
 	return 0, nil
-}
-
-func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
-	hasSCSISupport := func(sku *skewer.SKU) bool { // TODO: move capability determination to skewer
-		const diskControllerTypeCapability = "DiskControllerTypes"
-		declaresSCSI := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.SCSI))
-		declaresNVMe := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.NVMe))
-		declaresNothing := !declaresSCSI && !declaresNVMe
-		return declaresSCSI || declaresNothing // if nothing is declared, assume SCSI is supported
-	}
-
-	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
 }
 
 func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {

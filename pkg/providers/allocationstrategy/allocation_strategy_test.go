@@ -149,6 +149,39 @@ func TestFilterInstanceOfferings_ZerothItemHasExpectedPriority(t *testing.T) {
 			),
 			expectedPriority: karpv1.CapacityTypeOnDemand,
 		},
+		{
+			name: "Select spot when requested via kubernetes.azure.com/priority label",
+			instanceTypes: []*corecloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: corecloudprovider.Offerings{
+						{
+							Price: 0.05,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+								scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+			),
+			expectedPriority: karpv1.CapacityTypeSpot,
+		},
 	}
 
 	for _, c := range cases {

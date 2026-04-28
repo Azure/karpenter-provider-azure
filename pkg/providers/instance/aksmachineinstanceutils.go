@@ -57,6 +57,14 @@ var (
 		armcontainerservice.ScaleSetPrioritySpot:    karpv1.CapacityTypeSpot,
 		armcontainerservice.ScaleSetPriorityRegular: karpv1.CapacityTypeOnDemand,
 	}
+	KarpCapacityTypeToScaleSetPriorityLabel = map[string]string{
+		karpv1.CapacityTypeSpot:     v1beta1.ScaleSetPrioritySpot,
+		karpv1.CapacityTypeOnDemand: v1beta1.ScaleSetPriorityRegular,
+	}
+	KarpCapacityTypeToPriorityLabel = map[string]string{
+		karpv1.CapacityTypeSpot:     v1beta1.PrioritySpot,
+		karpv1.CapacityTypeOnDemand: v1beta1.PriorityRegular,
+	}
 )
 
 // Convention(?) These can change if needed. The purpose is to make assumptions more visible.
@@ -100,6 +108,8 @@ func BuildNodeClaimFromAKSMachineTemplate(
 		labels[v1beta1.LabelPlacementScope] = zones.PlacementScopeForZone(*zone)
 	}
 	labels[karpv1.CapacityTypeLabelKey] = capacityType
+	labels[v1beta1.AKSLabelScaleSetPriority] = KarpCapacityTypeToScaleSetPriorityLabel[capacityType]
+	labels[v1beta1.AKSLabelPriority] = KarpCapacityTypeToPriorityLabel[capacityType]
 	if tag, ok := aksMachineTemplate.Properties.Tags[NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
