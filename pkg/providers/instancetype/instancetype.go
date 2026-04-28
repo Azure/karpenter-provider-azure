@@ -176,6 +176,7 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.AKSLabelCluster, corev1.NodeSelectorOpIn, utils.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)),
 		scheduling.NewRequirement(v1beta1.AKSLabelMode, corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser),
 		scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
+		scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular, v1beta1.PrioritySpot),
 		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))),
 		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist), // AKS only sets this label if FIPS is enabled, otherwise it's expected to be empty
 
