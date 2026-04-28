@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Tests verifying that the fake's batch error behavior adheres to the batch error
-// contract defined in design doc 0009-aks-machines-batch-creation.md.
+// contract defined in design doc 0010-aks-machines-batch-creation.md.
 //
 // The batch API returns per-machine errors in two formats:
 //   - BatchMachineClientError (400): details[] at top level
@@ -40,7 +40,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// These are based on the contract defined in design doc 0009-aks-machines-batch-creation.md.
+// These are based on the contract defined in design doc 0010-aks-machines-batch-creation.md.
 
 func setupBatchFake() (*AKSMachinesAPI, context.Context) {
 	storage := NewAKSDataStorage()

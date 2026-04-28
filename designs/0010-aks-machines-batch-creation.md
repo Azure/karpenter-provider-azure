@@ -185,7 +185,8 @@ type ErrorDetail struct {
 ```
 
 The contract on errors for header batch API is as below.
-Note that the pattern inconsistencies (e.g., `BatchMachineInternalServerError`) are technical limitations of the API. They are expected to be resolved on the formal API, once available.
+Note that the pattern inconsistencies (e.g., `BatchMachineInternalServerError`) is a known issue, due to server-side technical limitations of the API.
+Given the impact, the accepted trade-off is that it is not worth solving now. Upcoming formal API, once available, is expected to be a natural resolution.
 
 | Condition | HTTP Status | Error Code | Response Format |
 |---|---|---|---|
