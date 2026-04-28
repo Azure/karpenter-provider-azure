@@ -159,6 +159,10 @@ spec:
             - name: VM_MEMORY_OVERHEAD_PERCENT
               value: "{{ . }}"
           {{- end }}
+          {{- with .Values.settings.tags }}
+            - name: ADDITIONAL_TAGS
+              value: "{{- $tags := list -}}{{- range $key, $value := . -}}{{- $tags = append $tags (printf "%s=%s" $key (toString $value)) -}}{{- end -}}{{ join "," $tags }}"
+          {{- end }}
           {{- with .Values.settings.preferencePolicy }}
             - name: PREFERENCE_POLICY
               value: "{{ . }}"

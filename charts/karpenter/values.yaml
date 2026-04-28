@@ -26,7 +26,7 @@ serviceAccount:
 # -- Specifies additional rules for the core ClusterRole.
 additionalClusterRoleRules: []
 serviceMonitor:
-  # -- Specifies whether a ServiceMonitor should be created.
+  # -- Specifies whether a ServiceMonitor should be created when the monitoring.coreos.com/v1 API is available.
   enabled: false
   # -- Additional labels for the ServiceMonitor.
   additionalLabels: {}
@@ -70,7 +70,7 @@ priorityClassName: system-cluster-critical
 # -- Override the default termination grace period for the pod.
 terminationGracePeriodSeconds:
 # -- Bind the pod to the host network.
-# This is required when using a custom CNI.
+# This may be needed when the API server cannot reach pod IPs directly.
 hostNetwork: false
 # -- Specify which Kubernetes scheduler should dispatch the pod.
 schedulerName: default-scheduler
@@ -120,7 +120,7 @@ controller:
     # -- SHA256 digest of the controller image.
     # digest:
     digest: sha256:de1354078031cd1beeacb0a59114bd5f6cb3c6028591129dc5d5a34842a32ad7
-  # -- Additional environment variables for the controller pod.
+  # -- Additional environment variables for the controller container.
   env: []
   # - name:
   #   value:
@@ -132,7 +132,7 @@ controller:
     seLinuxOptions: {}
     # -- Seccomp profile for the controller container.
     seccompProfile: {}
-  # -- Resources for the controller pod.
+  # -- Resources for the controller container.
   resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
@@ -145,14 +145,14 @@ controller:
   #    cpu: 1
   #    memory: 1Gi
 
-  # -- Additional volumeMounts for the controller pod.
+  # -- Additional volumeMounts for the controller container.
   extraVolumeMounts: []
   # - name:
   #   mountPath:
   #   readOnly:
-  # -- Additional sidecarContainer config
+  # -- Additional sidecar container configuration.
   sidecarContainer: []
-  # -- Additional volumeMounts for the sidecar - this will be added to the volume mounts on top of extraVolumeMounts
+  # -- Additional volumeMounts for the sidecar container, added in addition to extraVolumeMounts.
   sidecarVolumeMounts: []
   metrics:
     # -- The container port to use for metrics.
@@ -181,7 +181,7 @@ settings:
   # -- The maximum length of a batch window. The longer this is, the more pods we can consider for provisioning at one
   # time which usually results in fewer but larger nodes.
   batchMaxDuration: 10s
-  # -- The maximum amount of time with no new ending pods that if exceeded ends the current batching window. If pods arrive
+  # -- The maximum amount of time with no new pending pods that if exceeded ends the current batching window. If pods arrive
   # faster than this time, the batching window will be extended up to the maxDuration. If they arrive slower, the pods
   # will be batched separately.
   batchIdleDuration: 1s
@@ -193,25 +193,24 @@ settings:
   clusterEndpoint: ""
   # -- The VM memory overhead as a percent that will be subtracted from the total memory for all instance types
   vmMemoryOverheadPercent: 0.075
-  # -- The global tags to use on all Azure infrastructure resources (VMs, etc.)
-  # TODO: not propagated yet ...
-  tags:
-  # -- preferencePolicy controls how Karpenter prioritizes node configurations when multiple options meet requirements.
-  # Valid values: "" (default - balanced), "PrioritizeNodePools", "PrioritizeMinCost"
+  # -- Additional tags to apply to Azure resources. These tags are merged with AKSNodeClass tags, with AKSNodeClass tags taking precedence on collisions.
+  tags: {}
+  # -- How the Karpenter scheduler should treat preferences. Preferences include preferredDuringSchedulingIgnoreDuringExecution
+  # node and pod affinities/anti-affinities and ScheduleAnyways topologySpreadConstraints. Can be one of 'Ignore' and 'Respect'
   preferencePolicy: ""
-  # -- minValuesPolicy controls behavior when fewer than the requested minimum number of values are available.
-  # Valid values: "" (default), "Ignore", "Honor"
+  # -- How the Karpenter scheduler treats min values. Options include 'Strict' (fails scheduling when min values can't be met) and 'BestEffort' (relaxes min values when they can't be met).
   minValuesPolicy: ""
-  # -- ignoreDRARequests configures Karpenter to ignore Dynamic Resource Allocation requests during scheduling.
+  # -- When set, Karpenter ignores pods' Dynamic Resource Allocation requests during scheduling simulations.
+  # This flag will be removed once formal DRA support is GA in Karpenter.
   ignoreDRARequests: false
-  # -- disableClusterStateObservability disables the cluster state observability feature.
+  # -- Disable cluster state metrics and events.
   disableClusterStateObservability: false
 
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
     # -- reservedCapacity is BETA and is disabled until Azure provider support is implemented.
-    # Setting this to true will enable reserved capacity provisioning.
+    # Setting this to true only enables the core feature gate; Azure reserved capacity provisioning is not implemented yet.
     reservedCapacity: false
     # -- spotToSpotConsolidation is ALPHA and is disabled by default.
     # Setting this to true will enable spot replacement consolidation for both single and multi-node consolidation.
