@@ -368,6 +368,9 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
 	if aksMachine, err := p.machineCache.Get(aksMachineName); err == nil {
+		if aksMachine == nil {
+			return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("AKS machine %q not found in cache", aksMachineName))
+		}
 		p.rehydrateMachine(aksMachine)
 		return aksMachine, nil
 	}
