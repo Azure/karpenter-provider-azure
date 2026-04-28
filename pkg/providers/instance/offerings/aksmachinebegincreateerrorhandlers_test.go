@@ -28,13 +28,13 @@ import (
 	cloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type handlableErrorTestCaseBuilder struct {
-	tc handlableErrorTestCase
+type aksMachineBeginCreateErrorTestCaseBuilder struct {
+	tc aksMachineBeginCreateErrorTestCase
 }
 
-func newHandlableErrorTestCase(name string) *handlableErrorTestCaseBuilder {
-	return &handlableErrorTestCaseBuilder{
-		tc: handlableErrorTestCase{
+func newAKSMachineBeginCreateErrorTestCase(name string) *aksMachineBeginCreateErrorTestCaseBuilder {
+	return &aksMachineBeginCreateErrorTestCaseBuilder{
+		tc: aksMachineBeginCreateErrorTestCase{
 			testName:                                name,
 			originalRequestSKU:                      createDefaultTestSKU(),
 			expectedUnavailableOfferingsInformation: []offeringToCheck{},
@@ -43,42 +43,42 @@ func newHandlableErrorTestCase(name string) *handlableErrorTestCaseBuilder {
 	}
 }
 
-func (b *handlableErrorTestCaseBuilder) withInstanceType(offerings ...offering) *handlableErrorTestCaseBuilder {
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) withInstanceType(offerings ...offering) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.instanceType = createInstanceType(testInstanceName, offerings...)
 	return b
 }
 
-func (b *handlableErrorTestCaseBuilder) withZoneAndCapacity(zone, capacityType string) *handlableErrorTestCaseBuilder {
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) withZoneAndCapacity(zone, capacityType string) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.zone = zone
 	b.tc.capacityType = capacityType
 	return b
 }
 
-func (b *handlableErrorTestCaseBuilder) withHandlableError(code, message string) *handlableErrorTestCaseBuilder {
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) withHandlableError(code, message string) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.he = &HandlableError{Code: code, Message: message}
 	return b
 }
 
-func (b *handlableErrorTestCaseBuilder) expectError(err error) *handlableErrorTestCaseBuilder {
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectError(err error) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.expectedErr = err
 	return b
 }
 
-func (b *handlableErrorTestCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *handlableErrorTestCaseBuilder {
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.expectedUnavailableOfferingsInformation = offerings
 	return b
 }
 
-func (b *handlableErrorTestCaseBuilder) expectAvailable(offerings ...offeringToCheck) *handlableErrorTestCaseBuilder {
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectAvailable(offerings ...offeringToCheck) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.expectedAvailableOfferingsInformation = offerings
 	return b
 }
 
-func (b *handlableErrorTestCaseBuilder) build() handlableErrorTestCase {
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) build() aksMachineBeginCreateErrorTestCase {
 	return b.tc
 }
 
-type handlableErrorTestCase struct {
+type aksMachineBeginCreateErrorTestCase struct {
 	testName                                string
 	instanceType                            *cloudprovider.InstanceType
 	originalRequestSKU                      *skewer.SKU
@@ -90,13 +90,13 @@ type handlableErrorTestCase struct {
 	expectedAvailableOfferingsInformation   []offeringToCheck
 }
 
-func newTestHandlableErrorHandler() *HandlableErrorHandler {
-	return NewMachineBeginCreateErrorHandler(cache.NewUnavailableOfferings())
+func newTestAKSMachineBeginCreateErrorHandler() *AKSMachineBeginCreateErrorHandler {
+	return NewAKSMachineBeginCreateErrorHandler(cache.NewUnavailableOfferings())
 }
 
-func setupHandlableErrorTestCases() []handlableErrorTestCase {
-	return []handlableErrorTestCase{
-		newHandlableErrorTestCase("VMSizeNotSupported").
+func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTestCase {
+	return []aksMachineBeginCreateErrorTestCase{
+		newAKSMachineBeginCreateErrorTestCase("VMSizeNotSupported").
 			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("VMSizeNotSupported", "hello").
@@ -107,7 +107,7 @@ func setupHandlableErrorTestCases() []handlableErrorTestCase {
 			).
 			build(),
 
-		newHandlableErrorTestCase("BadRequest - VM size not supported for subscription").
+		newAKSMachineBeginCreateErrorTestCase("BadRequest - VM size not supported for subscription").
 			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withHandlableError("BadRequest",
@@ -121,14 +121,14 @@ func setupHandlableErrorTestCases() []handlableErrorTestCase {
 
 		// === Negative cases: errors that should NOT be handled ===
 
-		newHandlableErrorTestCase("BadRequest without subscription message - not handled").
+		newAKSMachineBeginCreateErrorTestCase("BadRequest without subscription message - not handled").
 			withInstanceType(zone2OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("BadRequest", "Some other bad request error").
 			expectError(nil).
 			build(),
 
-		newHandlableErrorTestCase("VMSizeDoesNotSupportEncryptionAtHost - not handled").
+		newAKSMachineBeginCreateErrorTestCase("VMSizeDoesNotSupportEncryptionAtHost - not handled").
 			withInstanceType(zone2OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("VMSizeDoesNotSupportEncryptionAtHost",
@@ -136,14 +136,14 @@ func setupHandlableErrorTestCases() []handlableErrorTestCase {
 			expectError(nil).
 			build(),
 
-		newHandlableErrorTestCase("Unknown error code - not handled").
+		newAKSMachineBeginCreateErrorTestCase("Unknown error code - not handled").
 			withInstanceType(zone2OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("UnknownErrorCode", "Some unknown error").
 			expectError(nil).
 			build(),
 
-		newHandlableErrorTestCase("Internal server error - not handled").
+		newAKSMachineBeginCreateErrorTestCase("Internal server error - not handled").
 			withInstanceType(zone1Spot, zone2OnDemand).
 			withZoneAndCapacity(testZone1, karpv1.CapacityTypeSpot).
 			withHandlableError("InternalServerError", "Azure service temporarily unavailable").
@@ -153,12 +153,12 @@ func setupHandlableErrorTestCases() []handlableErrorTestCase {
 }
 
 func TestHandleMachineAPISyncErrors(t *testing.T) {
-	testCases := setupHandlableErrorTestCases()
+	testCases := setupAKSMachineBeginCreateErrorTestCases()
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
 			g := NewWithT(t)
-			handler := newTestHandlableErrorHandler()
+			handler := newTestAKSMachineBeginCreateErrorHandler()
 
 			err := handler.Handle(
 				context.Background(),

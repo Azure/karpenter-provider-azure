@@ -52,24 +52,24 @@ func ErrorToHandlableError(err error) *HandlableError {
 	}
 }
 
-type handlableErrorHandlerEntry struct {
+type aksMachineBeginCreateErrorHandlerEntry struct {
 	match  func(*HandlableError) bool
 	handle errorHandle
 }
 
-// HandlableErrorHandler classifies HandlableErrors and takes appropriate offerings cache actions.
+// AKSMachineBeginCreateErrorHandler classifies HandlableErrors and takes appropriate offerings cache actions.
 // TODO: consider replacing other error handlers with this one, which is more generic and serves the purpose. Can consider this when moving towards handling AKS errors more.
-type HandlableErrorHandler struct {
+type AKSMachineBeginCreateErrorHandler struct {
 	UnavailableOfferings *cache.UnavailableOfferings
-	HandlerEntries       []handlableErrorHandlerEntry
+	HandlerEntries       []aksMachineBeginCreateErrorHandlerEntry
 }
 
-// NewMachineBeginCreateErrorHandler creates a handler for AKS Machine API sync-phase errors.
+// NewAKSMachineBeginCreateErrorHandler creates a handler for AKS Machine API sync-phase errors.
 // TODO: consider sharing this on azure-sdk-for-go-extensions like other error handlers.
-func NewMachineBeginCreateErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *HandlableErrorHandler {
-	return &HandlableErrorHandler{
+func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *AKSMachineBeginCreateErrorHandler {
+	return &AKSMachineBeginCreateErrorHandler{
 		UnavailableOfferings: unavailableOfferings,
-		HandlerEntries: []handlableErrorHandlerEntry{
+		HandlerEntries: []aksMachineBeginCreateErrorHandlerEntry{
 			{
 				match:  isSKUNotAvailableForSubscription,
 				handle: handleSKUNotAvailableForSubscriptionError,
@@ -82,7 +82,7 @@ func NewMachineBeginCreateErrorHandler(unavailableOfferings *cache.UnavailableOf
 	}
 }
 
-func (h *HandlableErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, he *HandlableError) error {
+func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, he *HandlableError) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(he) {
 			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, he.Code, he.Message)

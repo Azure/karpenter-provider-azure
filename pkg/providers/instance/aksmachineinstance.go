@@ -142,7 +142,7 @@ type DefaultAKSMachineProvider struct {
 	aksMachinesPoolName        string // Only support one AKS machine pool at a time, for now.
 	aksMachinesPoolLocation    string
 	provisioningErrorHandling  *offerings.ErrorDetailHandler
-	beginCreateErrorHandling   *offerings.HandlableErrorHandler
+	beginCreateErrorHandling   *offerings.AKSMachineBeginCreateErrorHandler
 	deletingMachines           sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu         sync.RWMutex
 }
@@ -170,7 +170,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolName:        aksMachinesPoolName,
 		aksMachinesPoolLocation:    aksMachinesPoolLocation,
 		provisioningErrorHandling:  offerings.NewErrorDetailHandler(offeringsCache),
-		beginCreateErrorHandling:   offerings.NewMachineBeginCreateErrorHandler(offeringsCache),
+		beginCreateErrorHandling:   offerings.NewAKSMachineBeginCreateErrorHandler(offeringsCache),
 		deletingMachines:           sets.New[string](),
 	}
 
