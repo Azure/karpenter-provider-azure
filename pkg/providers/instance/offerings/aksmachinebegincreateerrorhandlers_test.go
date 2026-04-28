@@ -69,11 +69,6 @@ func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectUnavailable(offerings 
 	return b
 }
 
-func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectAvailable(offerings ...offeringToCheck) *aksMachineBeginCreateErrorTestCaseBuilder {
-	b.tc.expectedAvailableOfferingsInformation = offerings
-	return b
-}
-
 func (b *aksMachineBeginCreateErrorTestCaseBuilder) build() aksMachineBeginCreateErrorTestCase {
 	return b.tc
 }
