@@ -270,6 +270,10 @@ func (c *MachineCache) update(ctx context.Context) error {
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
+			if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
+				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
+				break
+			}
 			return fmt.Errorf("failed to list AKS machines: %w", err)
 		}
 
