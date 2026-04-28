@@ -137,6 +137,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.AKSLabelCluster:                   env.NodeResourceGroup,
 				v1beta1.AKSLabelMode:                      "system",
 				v1beta1.AKSLabelScaleSetPriority:          "regular",
+				v1beta1.AKSLabelPriority:                  "regular",
 				v1beta1.AKSLabelOSSKU:                     "Ubuntu",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
