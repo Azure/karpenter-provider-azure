@@ -58,7 +58,6 @@ type aksMachineBeginCreateErrorHandlerEntry struct {
 }
 
 // AKSMachineBeginCreateErrorHandler classifies HandlableErrors and takes appropriate offerings cache actions.
-// TODO: consider replacing other error handlers with this one, which is more generic and serves the purpose. Can consider this when moving towards handling AKS errors more.
 type AKSMachineBeginCreateErrorHandler struct {
 	UnavailableOfferings *cache.UnavailableOfferings
 	HandlerEntries       []aksMachineBeginCreateErrorHandlerEntry
