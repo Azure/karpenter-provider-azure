@@ -455,18 +455,21 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	// Decide on offerings
-	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+	selection := p.allocationStrategyProvider.Allocate(
 		ctx,
-		allocationstrategy.NewInstanceOfferings(instanceTypes),
+		instanceTypes,
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
-	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
-	if instanceType == nil {
+	if selection == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
+	instanceType := selection.InstanceType
+	capacityType := selection.CapacityType()
+	zone := selection.Zone()
+	placementScope := selection.PlacementScope()
 
 	// Build the AKS machine template
-	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim)
+	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, placementScope, zone, nodeClass, nodeClaim)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}

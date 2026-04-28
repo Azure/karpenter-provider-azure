@@ -377,7 +377,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(nodes.Items[0].Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			})
 
-			It("should fail to provision when OverconstrainedZonalAllocation errors are hit, then switch zone and succeed", func() {
+			It("should fail to provision when OverconstrainedZonalAllocation errors are hit, then switch offering and succeed", func() {
 				OverconstrainedZonalAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again."
 				// Create nodepool that has both ondemand and spot capacity types enabled
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -402,17 +402,22 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// ensure that initial zone was made unavailable
-				zone, err := zones.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				initialVMSize := string(*vm.Properties.HardwareProfile.VMSize)
+				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
 				Expect(err).ToNot(HaveOccurred())
 				ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
 
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
+				Expect(node.Labels[v1.LabelInstanceTypeStable] == initialVMSize &&
+					node.Labels[karpv1.CapacityTypeLabelKey] == initialCapacityType &&
+					node.Labels[v1.LabelTopologyZone] == zone).To(BeFalse())
 			})
 
-			It("should fail to provision when OverconstrainedAllocation errors are hit, then switch capacity type and succeed", func() {
+			It("should fail to provision when OverconstrainedAllocation errors are hit, then switch offering and succeed", func() {
 				OverconstrainedAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive."
 				// Create nodepool that has both ondemand and spot capacity types enabled
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -436,13 +441,21 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				initialVMSize := string(*vm.Properties.HardwareProfile.VMSize)
+				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				Expect(err).ToNot(HaveOccurred())
+
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+				Expect(node.Labels[v1.LabelInstanceTypeStable] == initialVMSize &&
+					node.Labels[karpv1.CapacityTypeLabelKey] == initialCapacityType &&
+					node.Labels[v1.LabelTopologyZone] == zone).To(BeFalse())
 			})
 
-			It("should fail to provision when AllocationFailure errors are hit, then switch VM size and succeed", func() {
+			It("should fail to provision when AllocationFailure errors are hit, then switch placement and succeed", func() {
 				// Create nodepool that has both ondemand and spot capacity types enabled
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
@@ -450,7 +463,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Values:   []string{"Standard_D2_v3", "Standard_D64s_v3"}})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				// Set the OverconstrainedZonalAllocation error to be returned when creating the vm
+				// Set the AllocationFailed error to be returned when creating the vm
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
 					&azcore.ResponseError{
 						ErrorCode: sdkerrors.AllocationFailed,
@@ -475,7 +488,45 @@ var _ = Describe("InstanceType Provider", func() {
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelInstanceTypeStable]).ToNot(Equal(string(initialVMSize)))
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(string(initialVMSize)))
+				Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
+			})
+
+			It("should fail to provision when AllocationFailure errors are hit and regional placement is unavailable", func() {
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v3"}})
+				sku := fake.MakeSKU("Standard_D2_v3")
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "RegionalUnavailable", sku, zones.Regional, karpv1.CapacityTypeSpot)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "RegionalUnavailable", sku, zones.Regional, karpv1.CapacityTypeOnDemand)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.AllocationFailed,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.AllocationFailed, "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."),
+						},
+					},
+				)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				Expect(err).ToNot(HaveOccurred())
+				ExpectUnavailable(azureEnv, sku, zone, karpv1.CapacityTypeSpot)
+				ExpectUnavailable(azureEnv, sku, zone, karpv1.CapacityTypeOnDemand)
+				ExpectUnavailable(azureEnv, sku, zones.Regional, karpv1.CapacityTypeSpot)
+				ExpectUnavailable(azureEnv, sku, zones.Regional, karpv1.CapacityTypeOnDemand)
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 			})
 
 			It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
@@ -1714,6 +1765,58 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		Context("Zone-aware provisioning", func() {
+			It("should prefer zonal placement for zone-capable instance types by default", func() {
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC24ads_A100_v4"}},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
+				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zones.Regional))
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Zones).ToNot(BeEmpty())
+			})
+
+			It("should launch zone-capable instance types regionally when placement scope requires it", func() {
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC24ads_A100_v4"}},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1beta1.LabelPlacementScope,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{v1beta1.PlacementScopeRegional}},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Zones).To(BeEmpty())
+			})
+
 			It("should launch in the NodePool-requested zone", func() {
 				zone, vmZone := fmt.Sprintf("%s-3", fake.Region), "3"
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
@@ -2044,10 +2147,14 @@ var _ = Describe("InstanceType Provider", func() {
 				seeUnavailable := false
 				for _, instanceType := range instanceTypes {
 					if instanceType.Name == "Standard_D2_v2" {
-						// We want to validate we see the offering in the list,
-						// but we also expect it to not have any available offerings
 						seeUnavailable = true
-						Expect(len(instanceType.Offerings.Available())).To(Equal(0))
+						if azEnv == azureEnv {
+							Expect(lo.Map(instanceType.Offerings.Available(), func(offering *corecloudprovider.Offering, _ int) string {
+								return offering.Requirements.Get(v1.LabelTopologyZone).Any()
+							})).To(ConsistOf(zones.Regional, zones.Regional))
+						} else {
+							Expect(len(instanceType.Offerings.Available())).To(Equal(0))
+						}
 					} else {
 						Expect(len(instanceType.Offerings.Available())).To(Not(Equal(0)))
 					}
@@ -2123,6 +2230,12 @@ var _ = Describe("InstanceType Provider", func() {
 					for _, zone := range azureEnv.Zones() {
 						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
 						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
+					}
+					if azureEnv == azureEnvNonZonal {
+						// Non-zonal environments already use zone="0" as their only zone.
+					} else {
+						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeSpot)
+						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeOnDemand)
 					}
 
 					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
@@ -2486,6 +2599,7 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1.LabelOSStable, Label: v1.LabelOSStable, ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1.LabelArchStable, Label: v1.LabelArchStable, ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: karpv1.CapacityTypeLabelKey, Label: karpv1.CapacityTypeLabelKey, ValueFunc: func() string { return "on-demand" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{Name: v1beta1.LabelPlacementScope, Label: v1beta1.LabelPlacementScope, ValueFunc: func() string { return v1beta1.PlacementScopeZonal }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				// Well Known to AKS
 				{Name: v1beta1.LabelSKUName, Label: v1beta1.LabelSKUName, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUFamily, Label: v1beta1.LabelSKUFamily, ValueFunc: func() string { return "N" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},

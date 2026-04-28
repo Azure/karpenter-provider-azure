@@ -33,5 +33,9 @@ type InstanceOffering struct {
 }
 
 type Stage interface {
+	// Process applies the stage's transformation to the provided slice. Stages
+	// may mutate the input slice and the Offerings slice on each entry in place;
+	// callers must pass slices they own (see NewInstanceOfferings, which returns
+	// shallow copies safe to mutate).
 	Process(ctx context.Context, instanceOfferings []InstanceOffering) []InstanceOffering
 }

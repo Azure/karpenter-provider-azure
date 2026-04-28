@@ -21,7 +21,10 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 // Regional is the zone label value AKS assigns to regional (non-zonal) VMs.
@@ -29,6 +32,26 @@ import (
 // Technically this value represents fault domain, but for standalone VMs this is always "0";
 // see https://github.com/kubernetes-sigs/cloud-provider-azure/blob/84bacac916c52e3dbae8ec01f1d8ab5a20267b7d/pkg/provider/azure_standard.go#L579-L601
 const Regional = "0"
+
+func PlacementScopeForZone(zone string) string {
+	if zone == Regional {
+		return v1beta1.PlacementScopeRegional
+	}
+	return v1beta1.PlacementScopeZonal
+}
+
+// PlacementScopeForOffering returns the placement scope of an offering. It
+// reads the karpenter.azure.com/placement-scope requirement when present and
+// otherwise falls back to inferring the scope from the offering's zone.
+func PlacementScopeForOffering(offering *corecloudprovider.Offering) string {
+	if offering == nil {
+		return ""
+	}
+	if scope := offering.Requirements.Get(v1beta1.LabelPlacementScope).Any(); scope != "" {
+		return scope
+	}
+	return PlacementScopeForZone(offering.Requirements.Get(corev1.LabelTopologyZone).Any())
+}
 
 // MakeAKSLabelZoneFromARMZone returns the zone value in format of <region>-<zone-id>.
 func MakeAKSLabelZoneFromARMZone(location string, zoneID string) string {

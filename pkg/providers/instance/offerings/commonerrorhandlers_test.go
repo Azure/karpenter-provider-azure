@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -51,12 +52,14 @@ const (
 )
 
 var (
-	zone1OnDemand = offering{zone: testZone1, capacityType: karpv1.CapacityTypeOnDemand}
-	zone1Spot     = offering{zone: testZone1, capacityType: karpv1.CapacityTypeSpot}
-	zone2OnDemand = offering{zone: testZone2, capacityType: karpv1.CapacityTypeOnDemand}
-	zone2Spot     = offering{zone: testZone2, capacityType: karpv1.CapacityTypeSpot}
-	zone3OnDemand = offering{zone: testZone3, capacityType: karpv1.CapacityTypeOnDemand}
-	zone3Spot     = offering{zone: testZone3, capacityType: karpv1.CapacityTypeSpot}
+	zone1OnDemand    = offering{zone: testZone1, capacityType: karpv1.CapacityTypeOnDemand}
+	zone1Spot        = offering{zone: testZone1, capacityType: karpv1.CapacityTypeSpot}
+	zone2OnDemand    = offering{zone: testZone2, capacityType: karpv1.CapacityTypeOnDemand}
+	zone2Spot        = offering{zone: testZone2, capacityType: karpv1.CapacityTypeSpot}
+	zone3OnDemand    = offering{zone: testZone3, capacityType: karpv1.CapacityTypeOnDemand}
+	zone3Spot        = offering{zone: testZone3, capacityType: karpv1.CapacityTypeSpot}
+	regionalOnDemand = offering{zone: zones.Regional, capacityType: karpv1.CapacityTypeOnDemand}
+	regionalSpot     = offering{zone: zones.Regional, capacityType: karpv1.CapacityTypeSpot}
 )
 
 // offering represents a zone and capacity type combination for cleaner test setup
@@ -85,6 +88,7 @@ func createInstanceType(instanceName string, offerings ...offering) *cloudprovid
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, o.capacityType),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, o.zone),
+				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, zones.PlacementScopeForZone(o.zone)),
 			),
 		})
 	}
@@ -139,9 +143,9 @@ func createDefaultCommonErrorTestSKU() *skewer.SKU {
 	return createCommonErrorTestSKU(testInstanceName, testInstanceVMSize, testInstanceFamilyName, "2")
 }
 
-func createCommonErrorInstanceType(instanceName string, offerings ...offering) *cloudprovider.InstanceType {
+func createCommonErrorInstanceType(offerings ...offering) *cloudprovider.InstanceType {
 	it := &cloudprovider.InstanceType{
-		Name: instanceName,
+		Name: testInstanceName,
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
 		),
@@ -153,6 +157,7 @@ func createCommonErrorInstanceType(instanceName string, offerings ...offering) *
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, o.capacityType),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, o.zone),
+				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, zones.PlacementScopeForZone(o.zone)),
 			),
 		})
 	}
@@ -160,40 +165,34 @@ func createCommonErrorInstanceType(instanceName string, offerings ...offering) *
 	return it
 }
 
-func TestMarkOfferingsUnavailableForCapacityType(t *testing.T) {
+func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement(t *testing.T) {
 	g := NewWithT(t)
 	ctx := context.Background()
 	unavailableOfferings := cache.NewUnavailableOfferings()
-	instanceType := createCommonErrorInstanceType(testInstanceName,
-		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot)
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
 
-	// Mark spot offerings unavailable
-	markOfferingsUnavailableForCapacityType(ctx, unavailableOfferings, createDefaultCommonErrorTestSKU(), instanceType, karpv1.CapacityTypeSpot, SKUNotAvailableReason, SKUNotAvailableSpotTTL)
+	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings, sku, instanceType, testZone1, karpv1.CapacityTypeSpot, AllocationFailureReason, AllocationFailureTTL)
 
-	// Check that spot offerings are unavailable
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
-
-	// Check that on-demand offerings are still available
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeSpot)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 }
 
-func TestMarkAllZonesUnavailableForBothCapacityTypes(t *testing.T) {
+func TestMarkOfferingsUnavailableForRegionalPlacement(t *testing.T) {
 	g := NewWithT(t)
 	ctx := context.Background()
 	unavailableOfferings := cache.NewUnavailableOfferings()
-	instanceType := createCommonErrorInstanceType(testInstanceName,
-		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, zone3Spot)
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
 
-	// Mark all zones unavailable for both capacity types
-	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, createDefaultCommonErrorTestSKU(), instanceType, AllocationFailureReason, AllocationFailureTTL)
+	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, zones.Regional, AllocationFailureReason, AllocationFailureTTL)
 
-	// Check that all zones and capacity types are unavailable
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeOnDemand)).To(BeTrue())
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone3, karpv1.CapacityTypeOnDemand)).To(BeTrue())
-	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone3, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone2, karpv1.CapacityTypeSpot)).To(BeFalse())
 }

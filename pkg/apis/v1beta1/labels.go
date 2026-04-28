@@ -64,6 +64,7 @@ var (
 		LabelSKUGPUName,
 		LabelSKUGPUManufacturer,
 		LabelSKUGPUCount,
+		LabelPlacementScope,
 
 		AKSLabelCluster,
 		AKSLabelMode,
@@ -80,10 +81,12 @@ var (
 		options.AllowUndefined = karpv1.WellKnownLabels.Union(RestrictedLabels)
 	}
 
-	HyperVGenerationV1 = "1"
-	HyperVGenerationV2 = "2"
-	ManufacturerNvidia = "nvidia"
-	ManufacturerAMD    = "amd"
+	HyperVGenerationV1     = "1"
+	HyperVGenerationV2     = "2"
+	ManufacturerNvidia     = "nvidia"
+	ManufacturerAMD        = "amd"
+	PlacementScopeZonal    = "zonal"
+	PlacementScopeRegional = "regional"
 
 	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
 	LabelSKUFamily  = Group + "/sku-family"  // D
@@ -106,6 +109,8 @@ var (
 	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize
 	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
 	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
+
+	LabelPlacementScope = Group + "/placement-scope"
 
 	// Internal/restricted labels
 	LabelSKUHyperVGeneration = Group + "/sku-hyperv-generation" // sku.HyperVGenerations

@@ -42,7 +42,7 @@ import (
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
 // May return error whenever required fields are not set (check carefully).
-func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
+func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
 	}
@@ -89,7 +89,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	nodeInitializationTaints, nodeTaints := configureTaints(nodeClaim)
 
 	// NodeLabels, Mode
-	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType)
+	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType, placementScope)
 
 	// Priority (e.g., regular, spot)
 	priority := configurePriority(capacityType)
@@ -309,7 +309,7 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	return nodeInitializationTaintPtrs, nodeTaintPtrs
 }
 
-func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string) (map[string]*string, *armcontainerservice.AgentPoolMode) {
+func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string) (map[string]*string, *armcontainerservice.AgentPoolMode) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and instance/vminstance.go
 
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
@@ -319,7 +319,10 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	claimLabels := labels.GetAllSingleValuedRequirementLabels(
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
-	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{
+		karpv1.CapacityTypeLabelKey: capacityType,
+		v1beta1.LabelPlacementScope: placementScope,
+	})
 	var modePtr *armcontainerservice.AgentPoolMode
 	if modeFromLabel, ok := nodeLabels["kubernetes.azure.com/mode"]; ok && modeFromLabel == "system" {
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeSystem)

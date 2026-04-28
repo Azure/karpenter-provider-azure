@@ -38,6 +38,11 @@ spec:
         - key: karpenter.azure.com/sku-family
           operator: In
           values: [D]
+        # Optional: Uncomment if you want to constrain Azure placement to zonal or regional capacity.
+        #           Regional capacity is labeled with topology.kubernetes.io/zone=0.
+        # - key: karpenter.azure.com/placement-scope
+        #   operator: In
+        #   values: ["regional"]
         # Optional: Uncomment if you want to add a restriction on max sku cpus.
         #           Useful for ensuring karpneter provisions multiple nodes for feature testing.
         # - key: karpenter.azure.com/sku-cpu

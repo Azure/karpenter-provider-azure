@@ -19,12 +19,29 @@ package allocationstrategy
 import (
 	"context"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy/stages"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy/stages"
 )
 
 type Provider interface {
-	FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering
+	// Allocate selects a single instance type and offering for a NodeClaim.
+	// Returns nil when no compatible offering is available.
+	//
+	// This interface models client-side allocation: the provider chooses one
+	// concrete offering and the caller is responsible for provisioning. It
+	// accommodates future client-side strategies that consult external Azure
+	// APIs (e.g. placement-score, capacity advice) to inform the decision,
+	// since the contract here is just "given candidates, return a choice."
+	//
+	// It does NOT accommodate future server-side APIs that combine decision
+	// and provisioning into a single call (Fleet-like APIs): such APIs do
+	// not return a separable Selection that the caller then provisions, so
+	// they would replace this provider rather than implement it.
+	Allocate(ctx context.Context, instanceTypes []*corecloudprovider.InstanceType, requirements scheduling.Requirements) *Selection
 }
 
 var _ Provider = &DefaultProvider{}
@@ -35,13 +52,28 @@ func NewProvider() *DefaultProvider {
 	return &DefaultProvider{}
 }
 
+func (p *DefaultProvider) Allocate(ctx context.Context, instanceTypes []*corecloudprovider.InstanceType, requirements scheduling.Requirements) *Selection {
+	candidates := p.FilterInstanceOfferings(ctx, NewInstanceOfferings(instanceTypes), requirements)
+	if len(candidates) == 0 {
+		return nil
+	}
+	best := candidates[0]
+	if best.InstanceType == nil || len(best.Offerings) == 0 {
+		return nil
+	}
+	log.FromContext(ctx).Info("selected instance type", logging.InstanceType, best.InstanceType.Name)
+	return &Selection{
+		InstanceType: best.InstanceType,
+		Offering:     best.Offerings[0],
+	}
+}
+
 func (p *DefaultProvider) FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering {
 	stages := []stages.Stage{
-		// TODO: One of these filters may need to evolve to be a "scoring" filter, which takes into account a variety of inputs (e.g. price, availability, performance)
-		// to determine the best instance types to launch. They're separate stages for now because that's what we've historically been doing, but as we consider more
-		// inputs re-ordering the list over and over becomes problematic (last reorder wins?).
 		stages.NewAvailabilityCompatibilityFilterStage(requirements),
-		stages.NewPriceSortStage(),
+		// Keep offering ranking in a single stage so future customizable allocation strategy work can swap or parameterize the ranker
+		// without introducing multiple reorder stages where the last reorder wins.
+		stages.NewDefaultOfferingRankStage(),
 	}
 	for _, stage := range stages {
 		instanceOfferings = stage.Process(ctx, instanceOfferings)
