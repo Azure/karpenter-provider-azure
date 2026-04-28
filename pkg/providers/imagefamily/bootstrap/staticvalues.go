@@ -134,7 +134,7 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		IsVHD:                             true,                   // s
 		SGXNode:                           false,                  // -
 		MIGNode:                           false,                  // td
-		ConfigGPUDriverIfNeeded:           true,                   // s
+		ConfigGPUDriverIfNeeded:           false,                  // s
 		EnableGPUDevicePluginIfNeeded:     false,                  // -
 		TeleportdPluginDownloadURL:        "",                     // -
 		ContainerdVersion:                 "",                     // -

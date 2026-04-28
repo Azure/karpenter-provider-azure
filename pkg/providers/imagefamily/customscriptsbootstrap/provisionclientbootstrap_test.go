@@ -412,17 +412,18 @@ func TestConstructProvisionValues(t *testing.T) {
 		{
 			name: "GPU instance type",
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
-				ClusterName:               "test-cluster",
-				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
-				Arch:                      karpv1.ArchitectureAmd64,
-				ResourceGroup:             "test-rg",
-				KubernetesVersion:         "1.31.0",
-				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
-				IsWindows:                 false,
-				StorageProfile:            consts.StorageProfileManagedDisks,
-				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
-				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				ClusterName:                  "test-cluster",
+				KubeletConfig:                &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                     "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                         karpv1.ArchitectureAmd64,
+				ResourceGroup:                "test-rg",
+				KubernetesVersion:            "1.31.0",
+				ImageDistro:                  "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                    false,
+				StorageProfile:               consts.StorageProfileManagedDisks,
+				OSSKU:                        customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider:    &fake.NodeBootstrappingAPI{},
+				GPUDriverInstallationEnabled: true,
 				InstanceType: &cloudprovider.InstanceType{
 					Name: "Standard_NC6s_v3", // GPU instance
 					Capacity: v1.ResourceList{
@@ -437,6 +438,38 @@ func TestConstructProvisionValues(t *testing.T) {
 				g := NewWithT(t)
 				g.Expect(values.ProvisionProfile.GpuProfile).ToNot(BeNil())
 				g.Expect(*values.ProvisionProfile.GpuProfile.InstallGPUDriver).To(BeTrue())
+				g.Expect(*values.ProvisionProfile.GpuProfile.DriverType).To(Equal(models.DriverTypeCUDA))
+			},
+		},
+		{
+			name: "GPU instance type with driver installation disabled",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:                  "test-cluster",
+				KubeletConfig:                &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                     "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                         karpv1.ArchitectureAmd64,
+				ResourceGroup:                "test-rg",
+				KubernetesVersion:            "1.31.0",
+				ImageDistro:                  "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                    false,
+				StorageProfile:               consts.StorageProfileManagedDisks,
+				OSSKU:                        customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider:    &fake.NodeBootstrappingAPI{},
+				GPUDriverInstallationEnabled: false,
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_NC6s_v3", // GPU instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("6"),
+						v1.ResourceMemory: resource.MustParse("112Gi"),
+						"nvidia.com/gpu":  resource.MustParse("1"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile.GpuProfile).ToNot(BeNil())
+				g.Expect(*values.ProvisionProfile.GpuProfile.InstallGPUDriver).To(BeFalse())
 				g.Expect(*values.ProvisionProfile.GpuProfile.DriverType).To(Equal(models.DriverTypeCUDA))
 			},
 		},

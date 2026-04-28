@@ -105,6 +105,9 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// gpu contains configuration for GPU-enabled nodes.
+	// +optional
+	GPU *GPU `json:"gpu,omitempty"`
 	// artifactStreaming configures artifact streaming for provisioned nodes.
 	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 	// +optional
@@ -296,6 +299,36 @@ const (
 	// Disable serving stale data.
 	LocalDNSServeStaleDisable LocalDNSServeStale = "Disable"
 )
+
+// +kubebuilder:validation:Enum:={Driver,None}
+type GPUMode string
+
+const (
+	// GPUModeDriver installs GPU drivers via AKS. Only GPU SKUs with driver
+	// installation support (currently NVIDIA) are schedulable. If no supported
+	// SKU is available, scheduling will fail rather than placing the workload
+	// on a GPU without drivers. This is the default behavior.
+	GPUModeDriver GPUMode = "Driver"
+	// GPUModeNone skips GPU driver installation. All GPU SKUs are available
+	// for scheduling. Use this when running a GPU Operator or managing drivers
+	// outside of AKS.
+	GPUModeNone GPUMode = "None"
+)
+
+// GPU contains configuration for GPU-enabled nodes.
+type GPU struct {
+	// mode controls GPU driver management on GPU-enabled nodes.
+	// When set to Driver (or not specified), GPU drivers are installed by AKS
+	// and only GPU SKUs with managed driver installation support are considered for scheduling.
+	// Currently, only NVIDIA GPUs support managed driver installation.
+	// When set to None, GPU driver installation is skipped — use this when
+	// managing GPU drivers via a GPU Operator or other external mechanism.
+	// All GPU SKUs are available for scheduling in this mode.
+	// This field is ignored for non-GPU VM sizes.
+	// +default="Driver"
+	// +optional
+	Mode *GPUMode `json:"mode,omitempty"`
+}
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
 // They are a subset of the upstream types, recognizing not all options may be supported.
@@ -701,4 +734,22 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	default:
 		return false
 	}
+}
+
+// GetGPUMode returns the effective GPU mode.
+// Defaults to Driver if gpu or gpu.mode is nil, ensuring
+// backward compatibility (existing users always got drivers installed).
+func (in *AKSNodeClass) GetGPUMode() GPUMode {
+	if in.Spec.GPU == nil || in.Spec.GPU.Mode == nil {
+		return GPUModeDriver
+	}
+	return *in.Spec.GPU.Mode
+}
+
+// IsGPUDriverInstallationEnabled returns whether GPU driver installation
+// is enabled. Returns true when gpu is nil, gpu.mode is nil,
+// or mode is "Driver". Returns false only when explicitly
+// set to "None".
+func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
+	return in.GetGPUMode() != GPUModeNone
 }

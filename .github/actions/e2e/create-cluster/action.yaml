@@ -4,12 +4,6 @@ inputs:
   k8s_version:
     description: "Version of Kubernetes to use for the launched cluster (e.g., 1.30). If empty, uses AKS default."
     required: false
-  client_id:
-    description: "ID of the client to create the cluster with"
-    required: true
-  tenant_id:
-    description: "ID of the tenant to create the cluster in"
-    required: true
   subscription_id:
     description: "ID of the subscription to create the cluster in"
     required: true
@@ -45,12 +39,6 @@ runs:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         ref: ${{ inputs.git_ref }}
-    - name: az login
-      uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
-      with:
-        client-id: ${{ inputs.client_id }}
-        tenant-id: ${{ inputs.tenant_id }}
-        subscription-id: ${{ inputs.subscription_id }}
     - name: az set sub
       shell: bash
       env:
@@ -60,8 +48,6 @@ runs:
       shell: bash
       env:
         AZURE_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
-        AZURE_CLIENT_ID: ${{ inputs.client_id }}
-        AZURE_TENANT_ID: ${{ inputs.tenant_id }}
         AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
@@ -77,9 +63,3 @@ runs:
           echo "Creating cluster with system-assigned managed identity"
           make ci-mkcluster-all
         fi
-    - name: az login 2
-      uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
-      with:
-        client-id: ${{ inputs.client_id }}
-        tenant-id: ${{ inputs.tenant_id }}
-        subscription-id: ${{ inputs.subscription_id }}
