@@ -118,7 +118,7 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !o.IsAKSMachineAPIMode() {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
@@ -126,13 +126,34 @@ func (o *Options) validateProvisionMode() error {
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
 		}
-	case consts.ProvisionModeAKSMachineAPI:
+	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
 		if o.AKSMachinesPoolName == "" {
-			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is aksmachineapi")
+			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
 		}
 		if !o.UseSIG {
-			return fmt.Errorf("use-sig is required to be true when provision-mode is aksmachineapi")
+			return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
 		}
+		if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+			if err := o.validateBatchOptions(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (o *Options) validateBatchOptions() error {
+	if o.MaxBatchSize < 1 || o.MaxBatchSize > 50 {
+		return fmt.Errorf("max-batch-size must be between 1 and 50, got %d", o.MaxBatchSize)
+	}
+	if o.BatchIdleTimeoutMS < 0 {
+		return fmt.Errorf("batch-idle-timeout-ms must be non-negative, got %d", o.BatchIdleTimeoutMS)
+	}
+	if o.BatchMaxTimeoutMS < 0 {
+		return fmt.Errorf("batch-max-timeout-ms must be non-negative, got %d", o.BatchMaxTimeoutMS)
+	}
+	if o.BatchMaxTimeoutMS < o.BatchIdleTimeoutMS {
+		return fmt.Errorf("batch-max-timeout-ms (%d) must be >= batch-idle-timeout-ms (%d)", o.BatchMaxTimeoutMS, o.BatchIdleTimeoutMS)
 	}
 	return nil
 }
@@ -161,8 +182,8 @@ func (o *Options) validateRequiredFields() error {
 
 func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
-		if o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
-			// For ProvisionModeAKSMachineAPI, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
+		if !o.IsAKSMachineAPIMode() {
+			// For AKS Machine API modes, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
 			if o.SIGAccessTokenServerURL == "" {
 				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
 			}

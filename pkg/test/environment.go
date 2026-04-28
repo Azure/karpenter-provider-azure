@@ -39,14 +39,17 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
@@ -196,10 +199,22 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
+
+	// Set up batching if provision mode is header batch
+	var aksMachinesBatchAPI aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
+	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+		aksMachinesBatchAPI = aksmachinesheaderbatch.NewClient(ctx, aksMachinesAPI, batcher.Options{
+			IdleTimeout:  time.Duration(testOptions.BatchIdleTimeoutMS) * time.Millisecond,
+			MaxTimeout:   time.Duration(testOptions.BatchMaxTimeoutMS) * time.Millisecond,
+			MaxBatchSize: testOptions.MaxBatchSize,
+		})
+	}
+
 	azClient := azclient.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		aksMachinesAPI,
+		aksMachinesBatchAPI,
 		aksAgentPoolsAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
@@ -230,7 +245,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		azureEnv,
 	)
 
-	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI && testOptions.AKSMachinesPoolName != "" {
+	if testOptions.IsAKSMachineAPIMode() && testOptions.AKSMachinesPoolName != "" {
 		// For this configuration, we assume the AKS machines pool already exists
 		aksDataStorage.AgentPools.Store(
 			fake.MkAgentPoolID(testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName),
@@ -243,6 +258,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		)
 	}
 
+	batchCreationEnabled := testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypesProvider,
@@ -254,7 +271,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		clusterName,
 		testOptions.AKSMachinesPoolName,
 		region,
+		batchCreationEnabled,
 	)
+
+	// Use instant poller for batch mode tests to minimize async polling time.
+	if batchCreationEnabled {
+		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
+	}
 
 	store := nodeoverlay.NewInstanceTypeStore()
 
