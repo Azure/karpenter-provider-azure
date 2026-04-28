@@ -53,6 +53,10 @@ func (f *fakeAKSMachineClienter) NewListPager(resourceGroupName string, resource
 	})
 }
 
+func (f *fakeAKSMachineClienter) Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, machineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error) {
+	return armcontainerservice.MachinesClientGetResponse{}, nil
+}
+
 func TestUpdate(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
