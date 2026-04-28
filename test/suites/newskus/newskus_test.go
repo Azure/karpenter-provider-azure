@@ -25,7 +25,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
@@ -47,13 +46,6 @@ var _ = Describe("NewSKUs", func() {
 
 			if tc.Reason != "" {
 				Skip(tc.Reason)
-			}
-
-			// NOTE: env.ProvisionMode is currently only set in selfhosted
-			// (which is fine in this case because we're also checking for InClusterController)
-			if env.ProvisionMode == consts.ProvisionModeAKSScriptless && env.InClusterController {
-				// TODO: Remove this when CIG images support NVMe
-				Skip("New sizes mostly require NVMe, which requires USE_SIG=true, which we cannot set in the in-cluster controller")
 			}
 
 			// Constrain NodePool to this specific VM size
