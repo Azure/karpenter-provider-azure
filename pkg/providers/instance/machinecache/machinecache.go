@@ -123,7 +123,7 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 
 	if !cache.options.disabled {
 		cache.wg.Add(1)
-		go cache.updateWorker()
+		go cache.run()
 	}
 
 	return cache
@@ -226,7 +226,7 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 	return utils.HandleProvisioningState(ctx, machine)
 }
 
-func (c *MachineCache) updateWorker() {
+func (c *MachineCache) run() {
 	defer c.wg.Done()
 
 	ticker := time.NewTicker(c.options.refreshInterval)
