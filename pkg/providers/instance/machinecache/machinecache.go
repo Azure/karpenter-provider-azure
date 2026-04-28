@@ -42,9 +42,10 @@ var (
 	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
-// AKSMachineNewListPager provides paginated list operations for AKS machines.
+// AKSMachineClienter provides operations for AKS machines.
 type AKSMachineClienter interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
+	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, machineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
 }
 
 type opts struct {
@@ -183,6 +184,12 @@ func (c *MachineCache) Invalidate(machineName string) {
 // This polls indefinitely until the machine reaches a terminal state (Succeeded, Failed, or Deleting) or the context is canceled.
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).V(2).Info("starting cache poller for AKS machine", "aksMachineName", name)
+
+	// First check if the machine exists before starting to poll
+	if err := c.checkMachineExists(ctx, name); err != nil {
+		return nil, err
+	}
+
 	ticker := time.NewTicker(c.options.pollInterval)
 	defer ticker.Stop()
 
@@ -198,6 +205,29 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 			}
 		}
 	}
+}
+
+func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
+	_, err := c.Get(name)
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, ErrCacheStale) || errors.Is(err, ErrCacheMiss) {
+		resp, apiErr := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, name, nil)
+		if apiErr != nil {
+			if utils.IsAKSMachineOrMachinesPoolNotFound(apiErr) {
+				return fmt.Errorf("AKS machine %q does not exist", name)
+			}
+			return fmt.Errorf("failed to check if AKS machine %q exists: %w", name, apiErr)
+		}
+
+		machine := lo.ToPtr(resp.Machine)
+		c.Add(machine)
+		return nil
+	}
+
+	return err
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
