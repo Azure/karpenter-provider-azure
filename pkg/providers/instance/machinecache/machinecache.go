@@ -34,8 +34,6 @@ import (
 var (
 	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
 	ErrCacheStale = errors.New("cache is stale")
-	// ErrCacheMiss indicates the requested machine was not found in the cache.
-	ErrCacheMiss = errors.New("machine not found in cache")
 )
 
 var (
@@ -142,6 +140,8 @@ func (c *MachineCache) Add(machine *armcontainerservice.Machine) {
 }
 
 // Get retrieves a machine from the cache by name if the cache is fresh.
+// Returns nil if the machine is not found in the cache.
+// Returns ErrCacheStale if the cache is stale.
 func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, error) {
 	if c.options.disabled || !c.isFresh() {
 		c.requestUpdate()
@@ -150,7 +150,7 @@ func (c *MachineCache) Get(machineName string) (*armcontainerservice.Machine, er
 
 	value, ok := c.machines.Load(machineName)
 	if !ok {
-		return nil, fmt.Errorf("%w: machine %q", ErrCacheMiss, machineName)
+		return nil, nil
 	}
 
 	return value.(*armcontainerservice.Machine), nil
@@ -208,12 +208,12 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
-	_, err := c.Get(name)
-	if err == nil {
+	machine, err := c.Get(name)
+	if err == nil && machine != nil {
 		return nil
 	}
 
-	if errors.Is(err, ErrCacheStale) || errors.Is(err, ErrCacheMiss) {
+	if err == nil || errors.Is(err, ErrCacheStale) {
 		resp, apiErr := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, name, nil)
 		if apiErr != nil {
 			if utils.IsAKSMachineOrMachinesPoolNotFound(apiErr) {
@@ -233,15 +233,16 @@ func (c *MachineCache) checkMachineExists(ctx context.Context, name string) erro
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
 	machine, err := c.Get(aksMachineName)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrCacheStale):
+		if errors.Is(err, ErrCacheStale) {
 			log.FromContext(ctx).V(1).Info("Cache poller: cache stale for AKS machine during poll", "aksMachineName", aksMachineName)
-		case errors.Is(err, ErrCacheMiss):
-			log.FromContext(ctx).V(1).Info("Cache poller: cache miss for AKS machine during poll", "aksMachineName", aksMachineName)
-		default:
+		} else {
 			log.FromContext(ctx).Error(err, "Unexpected error while polling for AKS machine from cache", "aksMachineName", aksMachineName)
 			return nil, err, true
 		}
+	}
+
+	if machine == nil {
+		log.FromContext(ctx).V(1).Info("Cache poller: cache miss for AKS machine during poll", "aksMachineName", aksMachineName)
 		return nil, nil, false
 	}
 

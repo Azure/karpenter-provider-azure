@@ -206,11 +206,11 @@ func TestGet(t *testing.T) {
 			expectedMachine: &armcontainerservice.Machine{Name: to.Ptr("machine")},
 		},
 		{
-			name:            "machine not found",
+			name:            "machine not found - returns nil",
 			lastUpdated:     time.Now(),
 			machineName:     "machine",
 			cachedMachines:  []*armcontainerservice.Machine{},
-			expectErr:       true,
+			expectErr:       false,
 			expectedMachine: nil,
 		},
 		{
