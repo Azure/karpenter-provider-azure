@@ -59,16 +59,16 @@ type aksMachineBeginCreateErrorHandlerEntry struct {
 
 // AKSMachineBeginCreateErrorHandler classifies HandlableErrors and takes appropriate offerings cache actions.
 type AKSMachineBeginCreateErrorHandler struct {
-	UnavailableOfferings *cache.UnavailableOfferings
-	HandlerEntries       []aksMachineBeginCreateErrorHandlerEntry
+	unavailableOfferings *cache.UnavailableOfferings
+	handlerEntries       []aksMachineBeginCreateErrorHandlerEntry
 }
 
 // NewAKSMachineBeginCreateErrorHandler creates a handler for AKS Machine API sync-phase errors.
 // TODO: consider sharing this on azure-sdk-for-go-extensions like other error handlers.
 func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *AKSMachineBeginCreateErrorHandler {
 	return &AKSMachineBeginCreateErrorHandler{
-		UnavailableOfferings: unavailableOfferings,
-		HandlerEntries: []aksMachineBeginCreateErrorHandlerEntry{
+		unavailableOfferings: unavailableOfferings,
+		handlerEntries: []aksMachineBeginCreateErrorHandlerEntry{
 			{
 				match:  isSKUNotAvailableForSubscription,
 				handle: handleSKUNotAvailableForSubscriptionError,
@@ -82,9 +82,9 @@ func NewAKSMachineBeginCreateErrorHandler(unavailableOfferings *cache.Unavailabl
 }
 
 func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, he *HandlableError) error {
-	for _, handler := range h.HandlerEntries {
+	for _, handler := range h.handlerEntries {
 		if handler.match(he) {
-			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, he.Code, he.Message)
+			return handler.handle(ctx, h.unavailableOfferings, sku, instanceType, zone, capacityType, he.Code, he.Message)
 		}
 	}
 	return nil

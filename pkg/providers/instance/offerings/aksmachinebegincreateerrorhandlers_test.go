@@ -174,7 +174,7 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 			} else {
 				g.Expect(err).To(Equal(tc.expectedErr))
 			}
-			assertOfferingsState(t, handler.UnavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, handler.unavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }
