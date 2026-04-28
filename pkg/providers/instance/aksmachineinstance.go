@@ -122,7 +122,8 @@ type AKSMachineProvider interface {
 	// Return NodeClaimNotFoundError if not found.
 	Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine, etag *string) error
 	// Get retrieves the AKS machine instance with the specified AKS machine name. Return NodeClaimNotFoundError if not found.
-	Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error)
+	// If useCache is true, attempts to retrieve from cache first; otherwise, makes a direct API call and stores the result.
+	Get(ctx context.Context, aksMachineName string, useCache bool) (*armcontainerservice.Machine, error)
 	// List lists all AKS machine instances in the cluster.
 	List(ctx context.Context) ([]*armcontainerservice.Machine, error)
 	// Delete deletes the AKS machine instance with the specified name. Return NodeClaimNotFoundError if not found.
@@ -269,7 +270,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 }
 
 // ASSUMPTION: the AKS machine will be in the current p.aksMachinesPoolName. Otherwise need rework to pass the pool name in.
-func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if !shouldAKSMachinesBeVisible(ctx) {
 		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
 	}
@@ -281,7 +282,14 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to get AKS machine, AKS machines pool name is empty"))
 	}
 
-	aksMachine, err := p.getMachine(ctx, aksMachineName)
+	var aksMachine *armcontainerservice.Machine
+	var err error
+	if useCache {
+		aksMachine, err = p.getMachine(ctx, aksMachineName)
+	} else {
+		aksMachine, err = p.getAndStore(ctx, aksMachineName)
+	}
+
 	if err != nil {
 		if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
@@ -325,7 +333,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 	// With it, we may do an extra unneeded get before delete, but without it we may erroneously issue
 	// 2 deletes if the instance was being deleted and the operator restarted.
 	// Since get quota is generally higher, we prefer to check w/ get rather than issue 2 deletes.
-	aksMachine, err := p.Get(ctx, aksMachineName)
+	aksMachine, err := p.Get(ctx, aksMachineName, true)
 	if err != nil {
 		return err
 	}
