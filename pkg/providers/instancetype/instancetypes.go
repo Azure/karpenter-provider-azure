@@ -31,7 +31,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -127,7 +126,7 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%t",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%s-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -136,6 +135,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
+		string(nodeClass.GetGPUMode()),
 		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
@@ -168,16 +168,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 
-		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
-			continue
-		}
-		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
-			continue
-		}
-		if !p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) {
-			continue
-		}
-		if !p.isInstanceTypeSupportedByArtifactStreaming(architecture, nodeClass) {
+		if !p.isInstanceTypeSupportedByFilters(sku, architecture, nodeClass) {
 			continue
 		}
 
@@ -246,6 +237,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 			),
 			Price:     onDemandPrice,
@@ -256,6 +248,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
 				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 			),
 			Price:     spotPrice,
@@ -280,16 +273,27 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 	return offerings
 }
 
+// isInstanceTypeSupportedByFilters consolidates all per-NodeClass instance type
+// filters into a single call to keep the List() method's cyclomatic complexity low.
+func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
+	return p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) &&
+		p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) &&
+		p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) &&
+		p.isInstanceTypeSupportedByGPUDriverMode(sku, nodeClass) &&
+		p.isInstanceTypeSupportedByArtifactStreaming(architecture, nodeClass)
+}
+
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
-	// Currently only GPU has conditional support by image family
-	if !utils.IsNvidiaEnabledSKU(skuName) && !utils.IsMarinerEnabledGPUSKU(skuName) {
+	// Non-GPU SKUs are supported by all image families
+	if !utils.IsGPUSKU(skuName) {
 		return true
 	}
 	switch {
 	case v1beta1.UbuntuFamilies.Has(imageFamily):
-		return utils.IsNvidiaEnabledSKU(skuName)
+		return utils.IsGPUSKUSupportedOnOS(skuName, "ubuntu")
 	case imageFamily == v1beta1.AzureLinuxImageFamily:
-		return utils.IsMarinerEnabledGPUSKU(skuName)
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux") ||
+			utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux3")
 	default:
 		return false
 	}
@@ -326,6 +330,21 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 	}
 
 	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// Only "Driver" mode filters out GPU SKUs without driver installation support.
+	// "None" mode allows all GPU SKUs.
+	if nodeClass.GetGPUMode() != v1beta1.GPUModeDriver {
+		return true
+	}
+	name := sku.GetName()
+	// Non-GPU SKUs are always allowed
+	if !utils.IsGPUSKU(name) {
+		return true
+	}
+	// In "Driver" mode, only allow GPU SKUs with driver installation support
+	return utils.IsDriverInstallSupported(name)
 }
 
 // isInstanceTypeSupportedByArtifactStreaming filters out ARM64 instance types when artifact streaming
@@ -366,8 +385,7 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
 			continue
 		}
-		useSIG := options.FromContext(ctx).UseSIG
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -387,14 +405,13 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool) bool {
+func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
-		!p.isConfidential(sku) &&
-		isCompatibleImageAvailable(sku, useSIG)
+		!p.isConfidential(sku)
 }
 
 // at least 2 cpus
@@ -414,14 +431,14 @@ func (p *DefaultProvider) isUnsupportedByAKS(sku *skewer.SKU) bool {
 	return AKSRestrictedVMSizes.Has(sku.GetName())
 }
 
-// GPU SKUs AKS does not support
+// GPU SKUs not in the supported GPU registry
 func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	name := lo.FromPtr(sku.Name)
 	gpu, err := sku.GPU()
 	if err != nil || gpu <= 0 {
 		return false
 	}
-	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
+	return !utils.IsGPUSKU(name)
 }
 
 // SKU with constrained CPUs
@@ -469,18 +486,6 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	}
 
 	return 0, nil
-}
-
-func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
-	hasSCSISupport := func(sku *skewer.SKU) bool { // TODO: move capability determination to skewer
-		const diskControllerTypeCapability = "DiskControllerTypes"
-		declaresSCSI := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.SCSI))
-		declaresNVMe := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.NVMe))
-		declaresNothing := !declaresSCSI && !declaresNVMe
-		return declaresSCSI || declaresNothing // if nothing is declared, assume SCSI is supported
-	}
-
-	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
 }
 
 func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {

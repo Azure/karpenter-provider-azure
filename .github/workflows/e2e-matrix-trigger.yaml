@@ -46,7 +46,6 @@ jobs:
   e2e-matrix:
     permissions:
       contents: read
-      id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*
     needs: [resolve]
     uses: ./.github/workflows/e2e-matrix.yaml
@@ -58,5 +57,6 @@ jobs:
       azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
-      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
       E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
+      E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}

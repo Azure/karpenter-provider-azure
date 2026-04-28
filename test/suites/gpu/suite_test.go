@@ -119,6 +119,71 @@ var _ = Describe("GPU", func() {
 			return nodeClass
 		}()),
 	)
+
+	It("should provision a GPU node with mode None",
+		Label("GPU"),
+		func() {
+			noneMode := v1beta1.GPUModeNone
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
+
+			nodePool := env.DefaultNodePool(nodeClass)
+			// Override the default requirements to force Karpenter off D-series
+			// (non-GPU) SKUs and onto an actual GPU SKU family.
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
+			})
+
+			nodePool.Spec.Limits = karpv1.Limits{
+				corev1.ResourceCPU:                    resource.MustParse("25"),
+				corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+			}
+
+			// Deploy a workload that targets GPU nodes via a node selector on
+			// the GPU count label. We do NOT request nvidia.com/gpu resources
+			// because mode: None means no device plugin is
+			// installed, so the GPU resource is not advertised. Instead, the
+			// node selector forces Karpenter to provision a GPU SKU.
+			podOptions := test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "gpu-none-driver-test",
+					Labels: map[string]string{
+						"app": "gpu-none-driver-test",
+					},
+				},
+				NodeSelector: map[string]string{
+					v1beta1.LabelSKUGPUCount: "1",
+				},
+			}
+			deployment := test.Deployment(test.DeploymentOptions{
+				Replicas:   1,
+				PodOptions: podOptions,
+			})
+
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+
+			// Verify the GPU node is provisioned, initialized, and the
+			// workload pod becomes healthy. With mode: None,
+			// Karpenter provisions the node without installing GPU drivers.
+			// The node should still come up and be ready.
+			env.EventuallyExpectHealthyPodCountWithTimeout(
+				time.Minute*15,
+				labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels),
+				int(*deployment.Spec.Replicas),
+			)
+			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
+
+			// Verify the node does NOT advertise nvidia.com/gpu in its allocatable
+			// resources, confirming that no GPU driver was installed (mode: None).
+			nodes := env.Monitor.CreatedNodes()
+			Expect(nodes).To(HaveLen(int(*deployment.Spec.Replicas)))
+			for _, node := range nodes {
+				_, hasGPUResource := node.Status.Allocatable[corev1.ResourceName("nvidia.com/gpu")]
+				Expect(hasGPUResource).To(BeFalse(), "node %s should not advertise nvidia.com/gpu with mode: None", node.Name)
+			}
+		},
+	)
 })
 
 func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {

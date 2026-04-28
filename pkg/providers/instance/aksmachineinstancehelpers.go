@@ -73,7 +73,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// GPUProfile
-	gpuProfile := configureGPUProfile(instanceType)
+	gpuProfile := configureGPUProfile(instanceType, nodeClass)
 
 	// OrchestratorVersion (i.e., Kubernetes version)
 	orchestratorVersion, err := nodeClass.GetKubernetesVersion()
@@ -175,15 +175,22 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}, nil
 }
 
-func configureGPUProfile(instanceType *corecloudprovider.InstanceType) *armcontainerservice.GPUProfile {
-	// If none is specified, then that's not GPU instance, so nil is fine. Current version of AKS machine API supports this.
-	if utils.IsNvidiaEnabledSKU(instanceType.Name) {
-		return &armcontainerservice.GPUProfile{
-			Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
-			// DriverType: nil,
-		}
+func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.GPUProfile {
+	// Non-GPU SKUs don't need a GPU profile.
+	if !utils.IsGPUSKU(instanceType.Name) {
+		return nil
 	}
-	return nil
+	// GPU SKUs: pass through the driver setting from nodeClass.
+	// "Driver" mode → Install, "None" mode → None (treat as non-GPU).
+	// Upstream instance type filtering already ensures invalid SKU+mode combinations
+	// (e.g., AMD GPU with Driver mode) are excluded before reaching here.
+	driverSetting := armcontainerservice.GPUDriverNone
+	if nodeClass.IsGPUDriverInstallationEnabled() {
+		driverSetting = armcontainerservice.GPUDriverInstall
+	}
+	return &armcontainerservice.GPUProfile{
+		Driver: lo.ToPtr(driverSetting),
+	}
 }
 
 func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.AgentPoolArtifactStreamingProfile {

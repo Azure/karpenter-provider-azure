@@ -68,6 +68,7 @@ var (
 		AKSLabelCluster,
 		AKSLabelMode,
 		AKSLabelScaleSetPriority,
+		AKSLabelPriority,
 		AKSLabelOSSKU,
 		AKSLabelFIPSEnabled,
 	)
@@ -83,6 +84,7 @@ var (
 	HyperVGenerationV1 = "1"
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
+	ManufacturerAMD    = "amd"
 
 	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
 	LabelSKUFamily  = Group + "/sku-family"  // D
@@ -116,6 +118,7 @@ var (
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
 	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
 	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelPriority                = AKSLabelDomain + "/priority"         // "spot" or "regular".
 	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
 	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
 
@@ -156,6 +159,11 @@ const (
 const (
 	ScaleSetPriorityRegular = "regular"
 	ScaleSetPrioritySpot    = "spot"
+)
+
+const (
+	PriorityRegular = "regular"
+	PrioritySpot    = "spot"
 )
 
 var UbuntuFamilies = sets.New(

@@ -144,7 +144,7 @@ type DefaultAKSMachineProvider struct {
 	aksMachinesPoolLocation         string
 	batchCreationEnabled            bool
 	provisioningErrorHandling       *offerings.ErrorDetailHandler
-	beginCreateErrorHandling        *offerings.HandlableErrorHandler
+	beginCreateErrorHandling        *offerings.AKSMachineBeginCreateErrorHandler
 	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu              sync.RWMutex
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
@@ -175,7 +175,7 @@ func NewAKSMachineProvider(
 		aksMachinesPoolLocation:         aksMachinesPoolLocation,
 		batchCreationEnabled:            batchCreationEnabled,
 		provisioningErrorHandling:       offerings.NewErrorDetailHandler(offeringsCache),
-		beginCreateErrorHandling:        offerings.NewMachineBeginCreateErrorHandler(offeringsCache),
+		beginCreateErrorHandling:        offerings.NewAKSMachineBeginCreateErrorHandler(offeringsCache),
 		deletingMachines:                sets.New[string](),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
 	}
@@ -654,10 +654,10 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 		return fmt.Errorf("failed to get instance type %q: %w, provisioning error left unhandled: code=%s, message=%s", instanceType.Name, skuErr, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
 	}
 
-	handledError := p.provisioningErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, innerError)
-	if handledError != nil {
+	err := p.provisioningErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, innerError)
+	if err != nil {
 		// If error is handled, return it (wrapped)
-		return fmt.Errorf("failed to create AKS machine %q during %s, handled provisioning error: %w", aksMachineName, phase, handledError)
+		return fmt.Errorf("failed to create AKS machine %q during %s, handled provisioning error: %w", aksMachineName, phase, err)
 	}
 
 	return fmt.Errorf("failed to create AKS machine %q during %s, unhandled provisioning error: code=%s, message=%s", aksMachineName, phase, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
@@ -669,9 +669,9 @@ func (p *DefaultAKSMachineProvider) handleMachineBeginCreateError(ctx context.Co
 		return fmt.Errorf("failed to get instance type %q: %w, begin create error left unhandled: %w", instanceType.Name, skuErr, he)
 	}
 
-	handledError := p.beginCreateErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, he)
-	if handledError != nil {
-		return fmt.Errorf("failed to begin create AKS machine %q, handled error: %w", aksMachineName, handledError)
+	err := p.beginCreateErrorHandling.Handle(ctx, sku, instanceType, zone, capacityType, he)
+	if err != nil {
+		return fmt.Errorf("failed to begin create AKS machine %q, handled error: %w", aksMachineName, err)
 	}
 
 	return fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, he)
