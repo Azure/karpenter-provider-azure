@@ -118,6 +118,28 @@ func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 	}
 }
 
+// markAllPlacementsUnavailableForBothCapacityTypes marks every placement for
+// both capacity types. Use this for restrictions that are not scoped to the
+// attempted zonal or regional placement.
+func markAllPlacementsUnavailableForBothCapacityTypes(
+	ctx context.Context,
+	unavailableOfferings *cache.UnavailableOfferings,
+	sku *skewer.SKU,
+	instanceType *corecloudprovider.InstanceType,
+	reason string,
+	ttl time.Duration,
+) {
+	zonesToBlock := make(map[string]struct{})
+	for _, offering := range instanceType.Offerings {
+		offeringZone := getOfferingZone(offering)
+		zonesToBlock[offeringZone] = struct{}{}
+	}
+	for blockedZone := range zonesToBlock {
+		unavailableOfferings.MarkUnavailableWithTTL(ctx, reason, sku, blockedZone, karpv1.CapacityTypeOnDemand, ttl)
+		unavailableOfferings.MarkUnavailableWithTTL(ctx, reason, sku, blockedZone, karpv1.CapacityTypeSpot, ttl)
+	}
+}
+
 func handleLowPriorityQuotaError(
 	ctx context.Context,
 	unavailableOfferings *cache.UnavailableOfferings,

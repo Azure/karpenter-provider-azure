@@ -154,9 +154,9 @@ The Karpenter Helm chart requires specific configuration values to work with an 
 
 ```bash
 # Select version to install
-export KARPENTER_VERSION=1.12.0
+export KARPENTER_VERSION=1.10.2
 
-# Download the specific's version template
+# Download the template for the selected version
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/karpenter-values-template.yaml
 
 # use configure-values.sh to generate karpenter-values.yaml

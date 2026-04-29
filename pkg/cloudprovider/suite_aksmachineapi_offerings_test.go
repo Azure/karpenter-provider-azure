@@ -39,6 +39,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -885,6 +886,41 @@ var _ = Describe("CloudProvider", func() {
 				// Ported from VM test: "should mark SKU as unavailable in all zones for OnDemand"
 				It("should mark SKU as unavailable in all zones for OnDemand", func() {
 					AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeOnDemand)
+				})
+			})
+
+			// This is from AKS RP frontend errors rather then CRP
+			Context("SKUNotAvailable - AKS Machine API sync phase", func() {
+				AssertUnavailableSync := func(syncErr *azcore.ResponseError, sku *skewer.SKU, capacityType string) {
+					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(syncErr)
+
+					coretest.ReplaceRequirements(nodePool,
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}},
+					)
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectNotScheduled(ctx, env.Client, pod)
+					for _, zoneID := range []string{"1", "2", "3"} {
+						ExpectUnavailable(azureEnv, sku, zones.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)
+					}
+				}
+
+				It("should handle VMSizeNotSupported sync error and mark SKU unavailable", func() {
+					AssertUnavailableSync(
+						fake.AKSMachineAPIErrorVMSizeNotSupported(lo.FromPtr(defaultTestSKU.Name), azureEnv.SubscriptionID, fake.Region),
+						defaultTestSKU, karpv1.CapacityTypeOnDemand,
+					)
+				})
+
+				It("should handle BadRequest 'not supported for subscription' sync error and mark SKU unavailable", func() {
+					AssertUnavailableSync(
+						fake.AKSMachineAPIErrorVMSizeNotSupportedBadRequest(lo.FromPtr(defaultTestSKU.Name), azureEnv.SubscriptionID, fake.Region),
+						defaultTestSKU, karpv1.CapacityTypeSpot,
+					)
 				})
 			})
 		})
