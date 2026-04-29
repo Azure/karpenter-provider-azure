@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -149,6 +150,7 @@ type DefaultAKSMachineProvider struct {
 	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
 	deletingMachinesMu              sync.RWMutex
 	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
+	machineCache                    *machinecache.MachineCache
 }
 
 func NewAKSMachineProvider(
@@ -163,6 +165,7 @@ func NewAKSMachineProvider(
 	aksMachinesPoolName string,
 	aksMachinesPoolLocation string,
 	batchCreationEnabled bool,
+	machineCache *machinecache.MachineCache,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
 		azClient:                        azClient,
@@ -179,6 +182,7 @@ func NewAKSMachineProvider(
 		beginCreateErrorHandling:        offerings.NewAKSMachineBeginCreateErrorHandler(offeringsCache),
 		deletingMachines:                sets.New[string](),
 		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
+		machineCache:                    machineCache,
 	}
 
 	return provider

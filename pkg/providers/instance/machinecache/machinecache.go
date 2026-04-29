@@ -18,27 +18,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/machine"
 
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 var (
 	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
 	ErrCacheStale = errors.New("cache is stale")
-)
-
-var (
-	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
 // AKSMachineClienter provides operations for AKS machines.
@@ -353,7 +348,7 @@ func isValid(ctx context.Context, properties *armcontainerservice.MachinePropert
 		log.FromContext(ctx).Info("skipping AKS machine with nil properties or tags", "aksMachineName", machineName)
 		return false
 	}
-	if _, hasTags := properties.Tags[nodePoolTagKey]; !hasTags {
+	if _, hasTags := properties.Tags[launchtemplate.NodePoolTagKey]; !hasTags {
 		log.FromContext(ctx).Info("skipping AKS machine without Karpenter nodepool tag", "aksMachineName", machineName)
 		return false
 	}
