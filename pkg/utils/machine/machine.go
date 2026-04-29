@@ -17,7 +17,7 @@ import (
 // It returns the provisioning error if the machine failed, a polling error if the provisioning
 // state indicates a canceled or otherwise fatal state, and a boolean indicating whether the
 // provisioning is complete (either succeeded or failed).
-func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine) (errorDetails *armcontainerservice.ErrorDetail, pollingErr error, done bool) {
+func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine) (*armcontainerservice.ErrorDetail, error, bool) {
 	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
 	switch provisioningState {
 	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
@@ -48,6 +48,9 @@ func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservic
 	}
 }
 
+// IsAKSMachineOrMachinesPoolNotFound returns true if the error
+// returned from the Azure API indicates that the AKS machine or the AKS machines pool
+// could not be found.
 func IsAKSMachineOrMachinesPoolNotFound(err error) bool {
 	if err == nil {
 		return false
