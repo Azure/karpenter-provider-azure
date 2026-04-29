@@ -277,13 +277,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		allocationStrategyProvider,
 		imageFamilyResolver,
 		unavailableOfferingsCache,
-		aksMachineCache,
 		subscription,
 		testOptions.NodeResourceGroup,
 		clusterName,
 		testOptions.AKSMachinesPoolName,
 		region,
 		batchCreationEnabled,
+		aksMachineCache,
 	)
 
 	// Use instant poller for batch mode tests to minimize async polling time.
