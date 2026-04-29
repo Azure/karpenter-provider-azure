@@ -45,10 +45,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/machine"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/utils"
 )
 
 type AKSMachineGetter interface {
@@ -200,7 +199,7 @@ func (p *Poller) pollOnce(ctx context.Context, retryAttemptsLeft *int, currentRe
 		return p.handleNilProvisioningState(ctx, aksMachine, retryAttemptsLeft, currentRetryDelay)
 	}
 
-	errDetails, pollerErr, done := utils.HandleProvisioningState(ctx, aksMachine)
+	errDetails, pollerErr, done := machine.HandleProvisioningState(ctx, aksMachine)
 	if done {
 		return errDetails, pollerErr, true
 	}

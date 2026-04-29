@@ -25,7 +25,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/machine"
+
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -209,15 +210,15 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
-	machine, err := c.Get(name)
-	if err == nil && machine != nil {
+	aksMachine, err := c.Get(name)
+	if err == nil && aksMachine != nil {
 		return nil
 	}
 
 	if err == nil || errors.Is(err, ErrCacheStale) {
 		resp, apiErr := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, name, nil)
 		if apiErr != nil {
-			if utils.IsAKSMachineOrMachinesPoolNotFound(apiErr) {
+			if machine.IsAKSMachineOrMachinesPoolNotFound(apiErr) {
 				return fmt.Errorf("AKS machine %q does not exist", name)
 			}
 			return fmt.Errorf("failed to check if AKS machine %q exists: %w", name, apiErr)
@@ -232,7 +233,7 @@ func (c *MachineCache) checkMachineExists(ctx context.Context, name string) erro
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
-	machine, err := c.Get(aksMachineName)
+	aksMachine, err := c.Get(aksMachineName)
 	if err != nil {
 		if errors.Is(err, ErrCacheStale) {
 			log.FromContext(ctx).V(1).Info("Cache poller: cache stale for AKS machine during poll", "aksMachineName", aksMachineName)
@@ -242,20 +243,20 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 		}
 	}
 
-	if machine == nil {
+	if aksMachine == nil {
 		log.FromContext(ctx).V(1).Info("Cache poller: cache miss for AKS machine during poll", "aksMachineName", aksMachineName)
 		return nil, nil, false
 	}
 
-	if machine.Properties == nil || machine.Properties.ProvisioningState == nil {
+	if aksMachine.Properties == nil || aksMachine.Properties.ProvisioningState == nil {
 		log.FromContext(ctx).V(1).Info("Cache poller: warning: polling for AKS machine found nil provisioning state, will retry",
 			"aksMachineName", aksMachineName,
-			"aksMachineID", machine.ID,
+			"aksMachineID", aksMachine.ID,
 		)
 		return nil, nil, false
 	}
 
-	return utils.HandleProvisioningState(ctx, machine)
+	return machine.HandleProvisioningState(ctx, aksMachine)
 }
 
 func (c *MachineCache) run() {
@@ -302,7 +303,7 @@ func (c *MachineCache) update(ctx context.Context) error {
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			if utils.IsAKSMachineOrMachinesPoolNotFound(err) {
+			if machine.IsAKSMachineOrMachinesPoolNotFound(err) {
 				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
 				break
 			}
