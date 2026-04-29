@@ -422,7 +422,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		// AKS machine-based node
 		ctx := log.IntoContext(ctx, log.FromContext(ctx).WithValues("aksMachineName", aksMachineName))
 
-		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName, false)
+		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
 		if err != nil {
 			return nil, fmt.Errorf("getting AKS machine instance, %w", err)
 		}
