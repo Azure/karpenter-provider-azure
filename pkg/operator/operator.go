@@ -248,13 +248,13 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		allocationStrategyProvider,
 		imageResolver,
 		unavailableOfferingsCache,
-		aksMachineCache,
 		azConfig.SubscriptionID,
 		azConfig.ResourceGroup,
 		options.FromContext(ctx).ClusterName,
 		options.FromContext(ctx).AKSMachinesPoolName,
 		azConfig.Location,
 		options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch,
+		aksMachineCache,
 	)
 
 	return ctx, &Operator{

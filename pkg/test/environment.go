@@ -291,9 +291,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
 	}
 
-	// Disable the machine cache so tests always fall through to direct API calls for deterministic behavior.
-	aksMachineInstanceProvider.DisableCache()
-
 	store := nodeoverlay.NewInstanceTypeStore()
 
 	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
@@ -367,10 +364,6 @@ func (env *Environment) Reset() {
 	env.PricingProvider.Reset()
 	env.AKSMachinesAPI.Reset()
 	env.AKSAgentPoolsAPI.Reset()
-
-	if p, ok := env.AKSMachineProvider.(*instance.DefaultAKSMachineProvider); ok {
-		p.SetMachineCacheWithOptions(machinecache.WithTTL(0), machinecache.WithCacheDisabled())
-	}
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()
