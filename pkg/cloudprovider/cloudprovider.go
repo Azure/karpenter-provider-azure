@@ -422,7 +422,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		// AKS machine-based node
 		ctx := log.IntoContext(ctx, log.FromContext(ctx).WithValues("aksMachineName", aksMachineName))
 
-		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName, false)
 		if err != nil {
 			return nil, fmt.Errorf("getting AKS machine instance, %w", err)
 		}
@@ -643,6 +643,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityTypeFromVM(vm)
 	labels[v1beta1.AKSLabelScaleSetPriority] = instance.GetScaleSetPriorityLabelFromVM(vm)
+	labels[v1beta1.AKSLabelPriority] = instance.GetPriorityLabelFromVM(vm)
 
 	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag

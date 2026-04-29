@@ -386,16 +386,6 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 		return nil, buildFakeBatchError(perMachineErrors)
 	}
 
-	// If there are per-machine errors, build and return a batch error response
-	if len(perMachineErrors) > 0 {
-		return nil, buildFakeBatchError(perMachineErrors)
-	}
-
-	// If there are per-machine errors, build and return a batch error response
-	if len(perMachineErrors) > 0 {
-		return nil, buildFakeBatchError(perMachineErrors)
-	}
-
 	// Enrich input.AKSMachine with the primary entry's zones/tags so that
 	// CalledWithInput captures meaningful per-machine data (not the cleared template).
 	input.AKSMachine = primaryMachine
@@ -409,6 +399,11 @@ func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInpu
 // createOneBatchMachine builds and stores a single machine from a batch entry.
 func (c *AKSMachinesAPI) createOneBatchMachine(input *AKSMachineCreateOrUpdateInput, template armcontainerservice.Machine, entry aksmachinesheaderbatch.MachineEntry) (armcontainerservice.Machine, error) {
 	machine := template
+	// Shallow-copy Properties to avoid mutating the shared template across loop iterations.
+	if machine.Properties != nil {
+		props := *machine.Properties
+		machine.Properties = &props
+	}
 	machine.Name = lo.ToPtr(entry.MachineName)
 	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, entry.MachineName)
 	machine.ID = &id
@@ -426,9 +421,6 @@ func (c *AKSMachinesAPI) createOneBatchMachine(input *AKSMachineCreateOrUpdateIn
 	if len(entry.Tags) > 0 {
 		if machine.Properties == nil {
 			machine.Properties = &armcontainerservice.MachineProperties{}
-		} else {
-			props := *machine.Properties
-			machine.Properties = &props
 		}
 		tags := make(map[string]*string, len(entry.Tags))
 		for k, v := range entry.Tags {

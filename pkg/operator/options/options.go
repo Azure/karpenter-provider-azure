@@ -133,7 +133,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with AKS machine API provision modes. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE is an AKS machine API mode.")
 	fs.IntVar(&o.BatchIdleTimeoutMS, "batch-idle-timeout-ms", env.WithDefaultInt("BATCH_IDLE_TIMEOUT_MS", 1000), "Idle timeout in milliseconds for batch accumulation. Only used on provision mode aksmachineapiheaderbatch.")
 	fs.IntVar(&o.BatchMaxTimeoutMS, "batch-max-timeout-ms", env.WithDefaultInt("BATCH_MAX_TIMEOUT_MS", 5000), "Maximum timeout in milliseconds for batch accumulation. Only used on provision mode aksmachineapiheaderbatch.")
-	fs.IntVar(&o.MaxBatchSize, "max-batch-size", env.WithDefaultInt("MAX_BATCH_SIZE", 50), "Maximum number of machines per batch (AKS API limit is 50). Only used on provision mode aksmachineapiheaderbatch.")
+	fs.IntVar(&o.MaxBatchSize, "max-batch-size", env.WithDefaultInt("MAX_BATCH_SIZE", consts.AKSMachineAPIHeaderBatchMaxSize), fmt.Sprintf("Maximum number of machines per batch (AKS API limit is %d). Only used on provision mode aksmachineapiheaderbatch.", consts.AKSMachineAPIHeaderBatchMaxSize))
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
