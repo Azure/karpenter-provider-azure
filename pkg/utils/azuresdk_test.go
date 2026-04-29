@@ -18,6 +18,7 @@ package utils
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -25,12 +26,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/onsi/gomega"
 )
 
 func TestReadResponseBody_SDKConstructedError(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	bodyContent := `{"code":"TestError","message":"test message"}`
 	resp := &http.Response{
 		StatusCode: http.StatusBadRequest,
@@ -41,32 +42,35 @@ func TestReadResponseBody_SDKConstructedError(t *testing.T) {
 
 	err := runtime.NewResponseError(resp)
 	var respErr *azcore.ResponseError
-	require.ErrorAs(t, err, &respErr)
+	g.Expect(errors.As(err, &respErr)).To(gomega.BeTrue())
 
 	body, readErr := ReadResponseBody(respErr)
-	require.NoError(t, readErr)
-	assert.Contains(t, string(body), "TestError")
+	g.Expect(readErr).ToNot(gomega.HaveOccurred())
+	g.Expect(string(body)).To(gomega.ContainSubstring("TestError"))
 }
 
 func TestReadResponseBody_NilRawResponse(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	respErr := &azcore.ResponseError{ErrorCode: "Test"}
 	_, err := ReadResponseBody(respErr)
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 }
 
 func TestReadResponseBody_NilBody(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	respErr := &azcore.ResponseError{
 		ErrorCode:   "Test",
 		RawResponse: &http.Response{Body: nil},
 	}
 	_, err := ReadResponseBody(respErr)
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 }
 
 func TestReadResponseBody_EmptyBody(t *testing.T) {
 	t.Parallel()
+	g := gomega.NewWithT(t)
 	respErr := &azcore.ResponseError{
 		ErrorCode: "Test",
 		RawResponse: &http.Response{
@@ -74,5 +78,5 @@ func TestReadResponseBody_EmptyBody(t *testing.T) {
 		},
 	}
 	_, err := ReadResponseBody(respErr)
-	require.Error(t, err)
+	g.Expect(err).To(gomega.HaveOccurred())
 }

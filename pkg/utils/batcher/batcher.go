@@ -64,7 +64,7 @@ type Response[ResponsePayload any] struct {
 // DetermineBatchKey computes a grouping key from a payload that will be batched from.
 // Payloads with the same key land in the same batch.
 // The caller module must provide this.
-type DetermineBatchKey[RequestPayload any] func(payload *RequestPayload) string
+type DetermineBatchKey[RequestPayload any] func(payload *RequestPayload) (string, error)
 
 // ExecuteBatch is called when a batch fires by the batcher. It receives the batch
 // and must send a response to every request's ResponseChan.
@@ -122,11 +122,15 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Start() {
 
 // Enqueue adds a request to the appropriate batch and returns a response channel.
 // The caller should select on the channel and ctx.Done().
-func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayload) chan *Response[ResponsePayload] {
+func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayload) (chan *Response[ResponsePayload], error) {
+	key, err := b.determineBatchKey(&payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine batch key: %w", err)
+	}
 	req := &BatchedRequest[RequestPayload, ResponsePayload]{
 		Payload:      payload,
 		ResponseChan: make(chan *Response[ResponsePayload], 1),
-		Key:          b.determineBatchKey(&payload),
+		Key:          key,
 	}
 
 	b.mu.Lock()
@@ -154,7 +158,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayloa
 
 	// Return the channel the caller should wait on.
 	// The channel will receive the batch response once the batch fires and executeBatch is done.
-	return req.ResponseChan
+	return req.ResponseChan, nil
 }
 
 // Main loop: keep collecting requests → wait for trigger → execute batches → repeat.
@@ -182,7 +186,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			// Suggestion: if needed, we could add per-batch-key timers for more precise control, but it adds complexity.
 
 			// TODO: use metrics instead?
-			log.FromContext(b.ctx).Info("batcher iteration finishing wait, ready to execute batches",
+			log.FromContext(b.ctx).V(2).Info("batcher iteration finishing wait, ready to execute batches",
 				"batcherIterationID", batcherIterationID,
 				"waitStartTime", waitStartTime,
 				"waitDuration", time.Since(waitStartTime),
@@ -254,7 +258,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterati
 	// Dispatch batches in parallel, as they are independent (different keys).
 	for _, batch := range batches {
 		// TODO: use metrics instead?
-		log.FromContext(b.ctx).Info("begin executing batch",
+		log.FromContext(b.ctx).V(2).Info("begin executing batch",
 			"batcherIterationID", batcherIterationID,
 			"ID", batch.ID,
 			"key", batch.Key,
@@ -265,7 +269,12 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterati
 					log.FromContext(b.ctx).Error(fmt.Errorf("%v", r), "panic in batch executor, distributing error to callers")
 					err := fmt.Errorf("batch execution panicked: %v", r)
 					for _, req := range batch.Requests {
-						req.ResponseChan <- &Response[ResponsePayload]{Err: err}
+						// Non-blocking: if executeBatch already wrote a response before
+						// panicking, the buffer is full — skip to avoid goroutine leak.
+						select {
+						case req.ResponseChan <- &Response[ResponsePayload]{Err: err}:
+						default:
+						}
 					}
 				}
 			}()
@@ -292,7 +301,7 @@ func (b *Batcher[RequestPayload, ResponsePayload]) drain() {
 	}
 
 	if drained > 0 {
-		log.FromContext(b.ctx).Info("batcher drained pending requests on shutdown",
+		log.FromContext(b.ctx).V(2).Info("batcher drained pending requests on shutdown",
 			"drainedRequests", drained)
 	}
 }

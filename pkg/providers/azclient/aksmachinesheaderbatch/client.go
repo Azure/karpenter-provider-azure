@@ -40,30 +40,6 @@ type AKSMachinesHeaderBatchAPI interface {
 	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) (*offerings.HandlableError, error)
 }
 
-// HandlableError is a code + message pair extracted from an API error response.
-// It is intentionally minimal and API-agnostic — the caller decides how to interpret it.
-type HandlableError struct {
-	Code    string
-	Message string
-}
-
-// Implement the error interface so it can be returned as an error type if needed.
-func (e *HandlableError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
-
-// HandlableError is a code + message pair extracted from an API error response.
-// It is intentionally minimal and API-agnostic — the caller decides how to interpret it.
-type HandlableError struct {
-	Code    string
-	Message string
-}
-
-// Implement the error interface so it can be returned as an error type if needed.
-func (e *HandlableError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
-
 // We don't need the rest of machine API interface. Just create.
 type AKSMachinesCreateAPI interface {
 	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine, options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error)
@@ -101,18 +77,24 @@ func (c *Client) BeginCreateWithBatch(
 	machineName string,
 	machine *armcontainerservice.Machine,
 ) (*offerings.HandlableError, error) {
-	select {
-	case response := <-c.b.Enqueue(aksMachineCreatePayload{
+	responseChan, err := c.b.Enqueue(aksMachineCreatePayload{
 		resourceGroupName: resourceGroupName,
 		resourceName:      resourceName,
 		agentPoolName:     agentPoolName,
 		machineName:       machineName,
 		machineBody:       machine,
-	}):
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case response := <-responseChan:
 		return response.Payload, response.Err
 	case <-ctx.Done():
 		// WARNING: canceling context does not cancel Enqueue call and batch execution.
 		// It only prevents the caller from waiting for the response. Created resources may still exist, but will be garbage collected as they don't have NodeClaim.
+		// Suggestion: add canceling mechanism? But may not worth working on?
 		return nil, ctx.Err()
 	}
 }

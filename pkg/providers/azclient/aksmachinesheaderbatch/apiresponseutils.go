@@ -40,10 +40,13 @@ const (
 // If the API error code is not a recognized batch error code, the whole error (top-level code/message) will be applied to all machines.
 func extractPerMachineErrors(apiError error, perMachineErrors map[string]*offerings.HandlableError) error {
 	// Design notes:
-	// - The logic/API assumptions are based on the contract noted in the design doc for batch (0009-aks-machines-batch-creation.md).
+	// - The logic/API assumptions are based on the contract noted in the design doc for batch (0010-aks-machines-batch-creation.md).
 	// - This function assumes that the contract is upheld strictly. Any deviation will result in an error, aborting the operation and failing the whole batch.
 	// - For the case where the whole error will be applied to all machines, we made an ASSUMPTION that the top-level code/message is enough to be used by handle logic.
 	// - perMachineErrors being pre-populated will help validate that no unexpected machine names are referenced by the API error.
+	// - The contract and parsing being fragile is a known issue. It is due to server-side and Azure SDK's technical limitations.
+	// 	 Given the impact, the accepted trade-off is that it is not worth solving now. Upcoming ARM batch integration is expected to be a natural resolution.
+	//   See design doc for details.
 
 	var respErr *azcore.ResponseError
 	if !errors.As(apiError, &respErr) {
