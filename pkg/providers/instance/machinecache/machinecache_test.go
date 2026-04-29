@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/samber/lo"
 )
@@ -95,7 +96,7 @@ func TestUpdate(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateCreating),
 						Tags: map[string]*string{
-							nodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
 						},
 					},
 				},
@@ -104,7 +105,7 @@ func TestUpdate(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateCreating),
 						Tags: map[string]*string{
-							nodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
 						},
 					},
 				},
@@ -115,7 +116,7 @@ func TestUpdate(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
-							nodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
 						},
 					},
 				},
@@ -133,7 +134,7 @@ func TestUpdate(t *testing.T) {
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
 						Tags: map[string]*string{
-							nodePoolTagKey: to.Ptr("test-pool"),
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
 						},
 					},
 				},
@@ -512,7 +513,7 @@ func TestIsValid(t *testing.T) {
 			name: "valid properties",
 			properties: &armcontainerservice.MachineProperties{
 				Tags: map[string]*string{
-					nodePoolTagKey: lo.ToPtr("test-nodepool"),
+					launchtemplate.NodePoolTagKey: lo.ToPtr("test-nodepool"),
 				},
 			},
 			expected: true,
