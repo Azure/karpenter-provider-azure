@@ -85,15 +85,18 @@ func compareOfferings(i, j *corecloudprovider.Offering) int {
 	if j == nil {
 		return -1
 	}
+	// Prefer the lower priced offering.
 	if i.Price < j.Price {
 		return -1
 	}
 	if i.Price > j.Price {
 		return 1
 	}
+	// Preserve Karpenter's spot-before-on-demand tie-break.
 	if iCapacityRank, jCapacityRank := capacityTypeRank(i), capacityTypeRank(j); iCapacityRank != jCapacityRank {
 		return iCapacityRank - jCapacityRank
 	}
+	// Prefer zonal over regional within the same price and capacity type.
 	if iScopeRank, jScopeRank := placementScopeRank(i), placementScopeRank(j); iScopeRank != jScopeRank {
 		return iScopeRank - jScopeRank
 	}
@@ -107,6 +110,8 @@ func placementScopeRank(offering *corecloudprovider.Offering) int {
 	case v1beta1.PlacementScopeRegional:
 		return 1
 	default:
+		// This should be unreachable for provider-generated offerings. Rank
+		// malformed offerings last so they never outrank known placement scopes.
 		return 2
 	}
 }

@@ -377,7 +377,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(nodes.Items[0].Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			})
 
-			It("should fail to provision when OverconstrainedZonalAllocation errors are hit, then switch offering and succeed", func() {
+			It("should fail to provision when OverconstrainedZonalAllocation errors are hit, then switch zone and succeed", func() {
 				OverconstrainedZonalAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again."
 				// Create nodepool that has both ondemand and spot capacity types enabled
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -412,18 +412,27 @@ var _ = Describe("InstanceType Provider", func() {
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelInstanceTypeStable] == initialVMSize &&
-					node.Labels[karpv1.CapacityTypeLabelKey] == initialCapacityType &&
-					node.Labels[v1.LabelTopologyZone] == zone).To(BeFalse())
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(initialVMSize))
+				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(initialCapacityType))
+				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
 			})
 
-			It("should fail to provision when OverconstrainedAllocation errors are hit, then switch offering and succeed", func() {
+			It("should fail to provision when OverconstrainedAllocation errors are hit, then switch capacity type and succeed", func() {
 				OverconstrainedAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive."
 				// Create nodepool that has both ondemand and spot capacity types enabled
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot}})
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1beta1.LabelPlacementScope,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{v1beta1.PlacementScopeZonal},
+					},
+				)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				// Set the OverconstrainedAllocationError error to be returned when creating the vm
@@ -444,15 +453,16 @@ var _ = Describe("InstanceType Provider", func() {
 				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 				initialVMSize := string(*vm.Properties.HardwareProfile.VMSize)
 				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
-				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				_, err := zones.MakeAKSLabelZoneFromVM(&vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelInstanceTypeStable] == initialVMSize &&
-					node.Labels[karpv1.CapacityTypeLabelKey] == initialCapacityType &&
-					node.Labels[v1.LabelTopologyZone] == zone).To(BeFalse())
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(initialVMSize))
+				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).ToNot(Equal(initialCapacityType))
+				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
 			})
 
 			It("should fail to provision when AllocationFailure errors are hit, then switch placement and succeed", func() {

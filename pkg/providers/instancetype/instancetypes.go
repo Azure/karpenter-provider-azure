@@ -206,11 +206,11 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// If an offering is regional (non-zonal), the availability zones will be empty.
 	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
 	if len(skuZones) > 0 {
-		zoneSet := sets.New(lo.Map(skuZones, func(zone string, _ int) string {
+		offeringZones := sets.New(lo.Map(skuZones, func(zone string, _ int) string {
 			return zones.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
-		zoneSet.Insert(zones.Regional)
-		return zoneSet
+		offeringZones.Insert(zones.Regional)
+		return offeringZones
 	}
 	// Regional (non-zonal) SKUs use zone "0" to match the label AKS places on regional nodes
 	// (topology.kubernetes.io/zone=0).
@@ -227,9 +227,9 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zoneSet sets.Set[string]) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
-	for zone := range zoneSet {
+	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)

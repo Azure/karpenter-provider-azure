@@ -67,6 +67,10 @@ var (
 
 type errorHandle func(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
 
+// markOfferingsUnavailableForCapacityTypeAndPlacement marks every offering for
+// the attempted capacity type within the attempted placement scope. The zone
+// parameter identifies the selected offering and is used to infer placement
+// scope; for a zonal offering this intentionally includes sibling zones.
 func markOfferingsUnavailableForCapacityTypeAndPlacement(
 	ctx context.Context,
 	unavailableOfferings *cache.UnavailableOfferings,
@@ -86,6 +90,10 @@ func markOfferingsUnavailableForCapacityTypeAndPlacement(
 	}
 }
 
+// markOfferingsUnavailableForPlacementForBothCapacityTypes marks every offering
+// within the attempted placement scope for both capacity types. The zone
+// parameter identifies the selected offering and is used to infer placement
+// scope; for a zonal offering this intentionally includes sibling zones.
 func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 	ctx context.Context,
 	unavailableOfferings *cache.UnavailableOfferings,
@@ -201,10 +209,11 @@ func handleZonalAllocationFailureError(
 //
 // Scope: this error is treated as exhaustion across the *attempted placement
 // scope* (zonal or regional) for both capacity types, but does NOT block the
-// other placement scope. A zonal allocation failure leaves regional offerings
-// available as a fallback, and vice versa. Azure returns a separate
-// ZonalAllocationFailed code for single-zone exhaustion (handled above);
-// plain AllocationFailed is treated as region-wide for the requested scope.
+// other placement scope. An AllocationFailed for an attempted zonal offering
+// leaves regional offerings available as a fallback, and vice versa. Azure
+// returns a separate ZonalAllocationFailed code for single-zone exhaustion
+// (handled above); plain AllocationFailed is treated as region-wide for the
+// requested scope.
 func handleAllocationFailureError(
 	ctx context.Context,
 	unavailableOfferings *cache.UnavailableOfferings,

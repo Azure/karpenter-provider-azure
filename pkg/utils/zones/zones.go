@@ -23,7 +23,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
-	corev1 "k8s.io/api/core/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
@@ -40,17 +39,11 @@ func PlacementScopeForZone(zone string) string {
 	return v1beta1.PlacementScopeZonal
 }
 
-// PlacementScopeForOffering returns the placement scope of an offering. It
-// reads the karpenter.azure.com/placement-scope requirement when present and
-// otherwise falls back to inferring the scope from the offering's zone.
+// PlacementScopeForOffering returns the explicit karpenter.azure.com/placement-scope
+// requirement from an offering. The instance type provider is responsible for
+// setting this requirement on every generated offering.
 func PlacementScopeForOffering(offering *corecloudprovider.Offering) string {
-	if offering == nil {
-		return ""
-	}
-	if scope := offering.Requirements.Get(v1beta1.LabelPlacementScope).Any(); scope != "" {
-		return scope
-	}
-	return PlacementScopeForZone(offering.Requirements.Get(corev1.LabelTopologyZone).Any())
+	return offering.Requirements.Get(v1beta1.LabelPlacementScope).Any()
 }
 
 // MakeAKSLabelZoneFromARMZone returns the zone value in format of <region>-<zone-id>.

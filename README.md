@@ -258,11 +258,11 @@ spec:
         - key: karpenter.azure.com/sku-family
           operator: In
           values: [D]
-        # Optional: constrain Azure placement to zonal or regional capacity.
-        # Regional capacity is labeled with topology.kubernetes.io/zone=0.
+        # Optional: constrain Azure placement to zonal capacity.
+        # Use "regional" instead to request non-zonal capacity, labeled with topology.kubernetes.io/zone=0.
         # - key: karpenter.azure.com/placement-scope
         #   operator: In
-        #   values: ["regional"]
+        #   values: ["zonal"]
       expireAfter: Never
   limits:
     cpu: 100

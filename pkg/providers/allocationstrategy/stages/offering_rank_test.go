@@ -19,22 +19,25 @@ package stages
 import (
 	"testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
+// TestCompareOfferings_DoesNotRankEquivalentZonalOfferingsByZoneName pins a
+// helper invariant: zone name is not a comparator dimension. Full rank stage
+// behavior is tested through allocation strategy tests.
 func TestCompareOfferings_DoesNotRankEquivalentZonalOfferingsByZoneName(t *testing.T) {
+	g := NewWithT(t)
 	westus1 := testOffering(0.1, karpv1.CapacityTypeOnDemand, "westus-1")
 	westus2 := testOffering(0.1, karpv1.CapacityTypeOnDemand, "westus-2")
 
-	if comparison := compareOfferings(westus1, westus2); comparison != 0 {
-		t.Fatalf("expected equivalent offerings in different zones to compare equal, got %d", comparison)
-	}
-	if comparison := compareOfferings(westus2, westus1); comparison != 0 {
-		t.Fatalf("expected equivalent offerings in different zones to compare equal, got %d", comparison)
-	}
+	g.Expect(compareOfferings(westus1, westus2)).To(Equal(0))
+	g.Expect(compareOfferings(westus2, westus1)).To(Equal(0))
 }
 
 func testOffering(price float64, capacityType, zone string) *corecloudprovider.Offering {
@@ -43,6 +46,7 @@ func testOffering(price float64, capacityType, zone string) *corecloudprovider.O
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, capacityType),
 			scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
+			scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, zones.PlacementScopeForZone(zone)),
 		),
 		Available: true,
 	}

@@ -40,7 +40,9 @@ type Provider interface {
 	// It does NOT accommodate future server-side APIs that combine decision
 	// and provisioning into a single call (Fleet-like APIs): such APIs do
 	// not return a separable Selection that the caller then provisions, so
-	// they would replace this provider rather than implement it.
+	// they would replace this provider rather than implement it. Those paths
+	// can still reuse the default filtering/ranking stages when they need an
+	// ordered candidate set to pass to the server-side API.
 	Allocate(ctx context.Context, instanceTypes []*corecloudprovider.InstanceType, requirements scheduling.Requirements) *Selection
 }
 

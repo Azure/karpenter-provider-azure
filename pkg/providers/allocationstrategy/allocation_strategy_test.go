@@ -396,6 +396,7 @@ func TestFilterInstanceOfferings_ZonalInstanceTypeBeforeRegionalAtSamePriceAndCa
 // The test runs many iterations and asserts that every eligible zone shows up
 // at index 0 at least once. With a uniform shuffle the probability of any zone
 // being missed across 200 trials is vanishingly small.
+// TODO: Consider a property-based test helper if we add more randomized ranker checks.
 func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
 	g := NewWithT(t)
 	provider := allocationstrategy.NewProvider()
