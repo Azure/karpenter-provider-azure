@@ -489,9 +489,11 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
 
-				// Should still have capacity type
+				// Should still have capacity type and placement scope
 				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+				Expect(labels).To(HaveKey(v1beta1.LabelPlacementScope))
+				Expect(*labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeZonal))
 			})
 
 			It("should handle empty instance type requirements", func() {
@@ -499,11 +501,13 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
 
-				// Should include original labels plus capacity type
+				// Should include original labels plus capacity type and placement scope
 				Expect(labels).To(HaveKey("test-label"))
 				Expect(*labels["test-label"]).To(Equal("test-value"))
 				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+				Expect(labels).To(HaveKey(v1beta1.LabelPlacementScope))
+				Expect(*labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeZonal))
 			})
 
 			It("should handle complex instance type requirements", func() {
