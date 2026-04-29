@@ -128,9 +128,10 @@ label writers as well.
 | topology.kubernetes.io/zone                             | ✅               | ✅                     | ✅                      | ✅                          |                                                                                         |
 | kubernetes.azure.com/cluster                            | ✅               | ✅                     | ❌                      | ✅                          |                                                                                         |
 | kubernetes.azure.com/managedby                          | ✅               |                        | ❌                      | ❌                          | Not written to nodes I don't think, deployments/daemonsets, etc instead                 |
-| **kubernetes.azure.com/mode**                           | ✅               | ✅                     | ❌                      | ❌                          |                                                                                         |
+| **kubernetes.azure.com/mode**                           | ✅               | ✅                     | ✅ (added)              | ✅ (added)                  |                                                                                         |
 | kubernetes.azure.com/role                               | ✅               | ✅                     | ❌                      | ✅                          |                                                                                         |
-| **kubernetes.azure.com/scalesetpriority**               | ✅               | ✅                     | ❌                      | ❌                          | Only written on spot nodes                                                              |
+| **kubernetes.azure.com/scalesetpriority**               | ✅               | ✅                     | ✅ (added)              | ✅ (added)                  | Only written on spot nodes                                                              |
+| **kubernetes.azure.com/priority**                       | ✅               | ✅                     | ✅ (added)              | ✅ (added)                  | Unlike above, written on all nodes ( which is required for Karpenter scheduling)        |
 | kubernetes.io/hostname                                  | ✅               | ✅                     | ❌                      | ✅                          |                                                                                         |
 | storageprofile                                          | ❌               | ✅                     | ❌                      | ❌                          | I believe this is semi-deprecated, although AgentBaker still writes it                  |
 | storagetier                                             | ❌               | ✅                     | ❌                      | ❌                          | I believe this is semi-deprecated, although AgentBaker still writes it                  |
@@ -144,8 +145,8 @@ label writers as well.
 | kubernetes.azure.com/encrypted-set                      | ✅               | ❌                     | ❌                      | ❌                          | Can find no reference to it in code (maybe in AgentBaker?)                              |
 | accelerator                                             | ❌               | ✅                     | ❌                      | ❌                          | Soon to be deprecated                                                                   |
 | **kubernetes.azure.com/accelerator**                    | ✅               | ✅                     | ❌                      | ❌                          | Removed by #837, due to redundant w/ sku-gpu-name                                       |
-| **kubernetes.azure.com/fips_enabled**                   | ✅               | ✅                     | ❌                      | ❌                          | Users specifically asking for this for scheduling even though it's via AKSNodeClass too |
-| **kubernetes.azure.com/os-sku**                         | ✅               | ✅                     | ❌                      | ❌                          |                                                                                         |
+| **kubernetes.azure.com/fips_enabled**                   | ✅               | ✅                     | ✅ (added)              | ✅ (added)                  | Users specifically asking for this for scheduling even though it's via AKSNodeClass too |
+| **kubernetes.azure.com/os-sku**                         | ✅               | ✅                     | ✅ (added)              | ✅ (added)                  |                                                                                         |
 | kubernetes.azure.com/sku-cpu                            | ✅               | ✅                     | ✅                      | ✅                          |                                                                                         |
 | kubernetes.azure.com/sku-memory                         | ✅               | ✅                     | ✅                      | ✅                          |                                                                                         |
 | kubernetes.azure.com/network-policy                     | ❌               | ✅                     | ❌                      | ❌                          | none or calico or azure, we have this data today but don't write a label for it         |
@@ -205,6 +206,7 @@ We will add these labels to WellKnownLabels + requirements now/soon:
 * kubernetes.azure.com/fips_enabled
 * kubernetes.azure.com/os-sku
 * kubernetes.azure.com/mode
+* kubernetes.azure.com/priority (new) -- replacement for kubernetes.azure.com/scalesetpriority which doesn't have the correct semantics for priority = regular (it never sets that label)
 
 We will consider adding these labels to WellKnownLabels + requirements in the future:
 

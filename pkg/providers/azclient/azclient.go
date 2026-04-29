@@ -18,6 +18,7 @@ package azclient
 
 import (
 	"context"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -30,15 +31,17 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/skewer"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
@@ -46,6 +49,7 @@ type AZClient struct {
 	azureResourceGraphClient       azapi.AzureResourceGraphAPI
 	virtualMachinesClient          azapi.VirtualMachinesAPI
 	aksMachinesClient              azapi.AKSMachinesAPI
+	aksMachinesBatchClient         aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
 	agentPoolsClient               azapi.AKSAgentPoolsAPI
 	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI
 	networkInterfacesClient        azapi.NetworkInterfacesAPI
@@ -74,10 +78,8 @@ func (c *AZClient) AKSMachinesClient() azapi.AKSMachinesAPI {
 	return c.aksMachinesClient
 }
 
-// SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
-// with a batching layer when BatchCreationEnabled is true.
-func (c *AZClient) SetAKSMachinesClient(client azapi.AKSMachinesAPI) {
-	c.aksMachinesClient = client
+func (c *AZClient) AKSMachinesBatchClient() aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI {
+	return c.aksMachinesBatchClient
 }
 
 func (c *AZClient) AgentPoolsClient() azapi.AKSAgentPoolsAPI {
@@ -104,6 +106,7 @@ func NewAZClientFromAPI(
 	virtualMachinesClient azapi.VirtualMachinesAPI,
 	azureResourceGraphClient azapi.AzureResourceGraphAPI,
 	aksMachinesClient azapi.AKSMachinesAPI,
+	aksMachinesBatchClient aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI,
 	agentPoolsClient azapi.AKSAgentPoolsAPI,
 	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI,
 	interfacesClient azapi.NetworkInterfacesAPI,
@@ -121,6 +124,7 @@ func NewAZClientFromAPI(
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
 		aksMachinesClient:              aksMachinesClient,
+		aksMachinesBatchClient:         aksMachinesBatchClient,
 		agentPoolsClient:               agentPoolsClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
@@ -158,7 +162,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
-	if o.UseSIG && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI { // Not doing this if PROVISION_MODE is aksmachineapi as Create will never use VM client, but want to allow other VM client operations
+	if o.UseSIG && !o.IsAKSMachineAPIMode() { // Not doing this if PROVISION_MODE is an AKS machine API mode as Create will never use VM client, but want to allow other VM client operations
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
@@ -211,6 +215,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	var aksMachinesClient azapi.AKSMachinesAPI
+	var aksMachinesBatchClient aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
 	var agentPoolsClient azapi.AKSAgentPoolsAPI
 
 	// Only create the bootstrapping client if we need to use it.
@@ -231,7 +236,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
-	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
+	if o.IsAKSMachineAPIMode() || o.ManageExistingAKSMachines {
 		// copy the options to avoid modifying the original
 		var machinesClientOptions = *opts
 		machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{})
@@ -259,10 +264,23 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		}
 	}
 
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+		aksMachinesBatchClient = aksmachinesheaderbatch.NewClient(
+			ctx,
+			aksMachinesClient,
+			batcher.Options{
+				IdleTimeout:  time.Duration(o.BatchIdleTimeoutMS) * time.Millisecond,
+				MaxTimeout:   time.Duration(o.BatchMaxTimeoutMS) * time.Millisecond,
+				MaxBatchSize: o.MaxBatchSize,
+			},
+		)
+	}
+
 	return NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
 		aksMachinesClient,
+		aksMachinesBatchClient,
 		agentPoolsClient,
 		extensionsClient,
 		interfacesClient,

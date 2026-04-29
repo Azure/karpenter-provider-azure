@@ -186,7 +186,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		azureEnv.MachineAgentPoolName = "testmpool"
 	}
 	// Confirm we have a machine pool
-	if azureEnv.InClusterController && azureEnv.IsMachineMode() {
+	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
 		azureEnv.ExpectMachinesAgentPoolExists()
 	}
 	return azureEnv
@@ -229,17 +229,14 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 	}
 }
 
-// IsMachineMode determines if the test is running in machine mode or not.
-// NOTE: This check is imperfect, because we don't currently set the mode (machine or otherwise) when running the tests with
-// an an out-of-cluster controller, because we don't actually know what mode is configured for the out of cluster controller.
-func (env *Environment) IsMachineMode() bool {
-	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI
+func (env *Environment) IsAKSMachineAPIMode() bool {
+	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI || env.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
 func (env *Environment) IsMachineModeOrNPS() bool {
 	// Assumption is if we're not in the cluster, we're in NPS mode. Ideally we would just check this via ProvisionMode, but
 	// we can't do that right now as depending on context we may not set provision mode for the tests
-	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI || !env.InClusterController
+	return env.IsAKSMachineAPIMode() || !env.InClusterController
 }
 
 func (env *Environment) UsesSharedImageGallery() bool {

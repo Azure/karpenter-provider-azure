@@ -91,6 +91,7 @@ on:
         options:
           - aksscriptless
           - aksmachineapi
+          - aksmachineapiheaderbatch
       azure_vm_size:
         type: string
         description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
