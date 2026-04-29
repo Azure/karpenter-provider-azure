@@ -21,7 +21,7 @@ func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservic
 	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
 	switch provisioningState {
 	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
-		log.FromContext(ctx).V(2).Info("Poller: polling for AKS machine ongoing",
+		log.FromContext(ctx).V(2).Info("Provisioning ongoing",
 			"aksMachineID", aksMachine.ID,
 			"provisioningState", provisioningState,
 		)
@@ -40,7 +40,7 @@ func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservic
 		return nil, fmt.Errorf("AKS machine %q sees fatal provisioning state %s, but ProvisioningError is nil", lo.FromPtr(aksMachine.Name), provisioningState), true
 
 	default:
-		log.FromContext(ctx).V(1).Info("Poller: warning: polling for AKS machine found unrecognized provisioning state, may retry",
+		log.FromContext(ctx).V(1).Info("AKS machine is in unrecognized provisioning state",
 			"aksMachineID", aksMachine.ID,
 			"provisioningState", provisioningState,
 		)
