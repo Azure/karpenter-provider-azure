@@ -37,20 +37,6 @@ var (
 )
 
 var (
-	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
-	ErrCacheStale = errors.New("cache is stale")
-	// ErrCacheMiss indicates the requested machine was not found in the cache.
-	ErrCacheMiss = errors.New("machine not found in cache")
-)
-
-var (
-	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
-	ErrCacheStale = errors.New("cache is stale")
-	// ErrCacheMiss indicates the requested machine was not found in the cache.
-	ErrCacheMiss = errors.New("machine not found in cache")
-)
-
-var (
 	nodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
@@ -58,84 +44,6 @@ var (
 type AKSMachineClienter interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
 	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, machineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
-}
-
-type opts struct {
-	ttl             time.Duration
-	pollInterval    time.Duration
-	refreshInterval time.Duration
-	disabled        bool
-}
-
-func defaultOpts() opts {
-	return opts{
-		ttl:             30 * time.Second,
-		pollInterval:    5 * time.Second,
-		refreshInterval: 5 * time.Minute,
-	}
-}
-
-// Option is a functional option for configuring MachineCache.
-type Option func(opts) opts
-
-// WithTTL sets a custom Time-to-Live (TTL) for the cache. It determines how long the cache is considered fresh before it needs to be refreshed. A TTL of 0 means the cache is always stale.
-func WithTTL(d time.Duration) Option {
-	return func(o opts) opts { o.ttl = d; return o }
-}
-
-// WithPollInterval sets the interval for polling machine provisioning state.
-func WithPollInterval(d time.Duration) Option {
-	return func(o opts) opts { o.pollInterval = d; return o }
-}
-
-// WithRefreshInterval sets the interval for the background worker to refresh the cache.
-func WithRefreshInterval(d time.Duration) Option {
-	return func(o opts) opts { o.refreshInterval = d; return o }
-}
-
-// WithCacheDisabled disables the cache entirely. All Get/List calls will return ErrCacheStale,
-// forcing callers to fall through to direct API calls. No background goroutine is spawned.
-func WithCacheDisabled() Option {
-	return func(o opts) opts { o.disabled = true; return o }
-}
-
-type opts struct {
-	ttl             time.Duration
-	pollInterval    time.Duration
-	refreshInterval time.Duration
-	disabled        bool
-}
-
-func defaultOpts() opts {
-	return opts{
-		ttl:             30 * time.Second,
-		pollInterval:    5 * time.Second,
-		refreshInterval: 5 * time.Minute,
-	}
-}
-
-// Option is a functional option for configuring MachineCache.
-type Option func(opts) opts
-
-// WithTTL sets a custom Time-to-Live (TTL) for the cache. It determines how long the cache is considered fresh before it needs to be refreshed. A TTL of 0 means the cache is always stale.
-func WithTTL(d time.Duration) Option {
-	return func(o opts) opts { o.ttl = d; return o }
-}
-
-// WithPollInterval sets the interval for polling machine provisioning state.
-func WithPollInterval(d time.Duration) Option {
-	return func(o opts) opts { o.pollInterval = d; return o }
-}
-
-// WithRefreshInterval sets the interval for the background worker to refresh the cache.
-func WithRefreshInterval(d time.Duration) Option {
-	return func(o opts) opts { o.refreshInterval = d; return o }
-}
-
-// WithCacheDisabled disables the cache entirely. All Get/List calls will return ErrCacheStale,
-// forcing callers to fall through to direct API calls. No background goroutine is spawned.
-func WithCacheDisabled() Option {
-	return func(o opts) opts { o.disabled = true; return o }
 }
 
 type opts struct {
@@ -437,32 +345,6 @@ func (c *MachineCache) requestUpdate() {
 	case c.updateRequests <- struct{}{}:
 	default:
 	}
-}
-
-func isValid(ctx context.Context, properties *armcontainerservice.MachineProperties, machineName string) bool {
-	if properties == nil || properties.Tags == nil {
-		log.FromContext(ctx).Info("skipping AKS machine with nil properties or tags", "aksMachineName", machineName)
-		return false
-	}
-	if _, hasTags := properties.Tags[nodePoolTagKey]; !hasTags {
-		log.FromContext(ctx).Info("skipping AKS machine without Karpenter nodepool tag", "aksMachineName", machineName)
-		return false
-	}
-
-	return true
-}
-
-func isValid(ctx context.Context, properties *armcontainerservice.MachineProperties, machineName string) bool {
-	if properties == nil || properties.Tags == nil {
-		log.FromContext(ctx).Info("skipping AKS machine with nil properties or tags", "aksMachineName", machineName)
-		return false
-	}
-	if _, hasTags := properties.Tags[nodePoolTagKey]; !hasTags {
-		log.FromContext(ctx).Info("skipping AKS machine without Karpenter nodepool tag", "aksMachineName", machineName)
-		return false
-	}
-
-	return true
 }
 
 func isValid(ctx context.Context, properties *armcontainerservice.MachineProperties, machineName string) bool {
