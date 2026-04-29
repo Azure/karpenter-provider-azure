@@ -272,4 +272,3 @@ jobs:
         with:
           name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
           git_ref: ${{ inputs.git_ref }}
-          
