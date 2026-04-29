@@ -162,7 +162,7 @@ func TestUpdate(t *testing.T) {
 				"test-cluster",
 				"test-pool",
 				WithTTL(30*time.Second),
-				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+				WithCacheDisabled(),
 			)
 
 			for _, m := range tt.existingCache {
@@ -237,7 +237,7 @@ func TestGet(t *testing.T) {
 				"test-cluster",
 				"test-pool",
 				WithTTL(30*time.Second),
-				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+				WithCacheDisabled(),
 			)
 
 			for _, m := range tt.cachedMachines {
@@ -312,7 +312,7 @@ func TestList(t *testing.T) {
 				"test-cluster",
 				"test-pool",
 				WithTTL(30*time.Second),
-				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+				WithCacheDisabled(),
 			)
 
 			for _, m := range tt.cachedMachines {
@@ -421,7 +421,6 @@ func TestPollUntilDone(t *testing.T) {
 				"test-pool",
 				WithTTL(30*time.Second),
 				WithPollInterval(time.Millisecond),
-				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
 			)
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 			c.machines.Store(lo.FromPtr(tt.machine.Name), tt.machine)
@@ -491,7 +490,7 @@ func TestIsFresh(t *testing.T) {
 				"test-cluster",
 				"test-pool",
 				WithTTL(30*time.Second),
-				WithRefreshInterval(100*time.Hour), // Disable background worker for tests
+				WithCacheDisabled(),
 			)
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 			if got := c.isFresh(); got != tt.expected {

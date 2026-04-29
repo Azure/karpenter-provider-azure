@@ -43,17 +43,15 @@ type AKSMachineClienter interface {
 }
 
 type opts struct {
-	ttl             time.Duration
-	pollInterval    time.Duration
-	refreshInterval time.Duration
-	disabled        bool
+	ttl          time.Duration
+	pollInterval time.Duration
+	disabled     bool
 }
 
 func defaultOpts() opts {
 	return opts{
-		ttl:             30 * time.Second,
-		pollInterval:    5 * time.Second,
-		refreshInterval: 5 * time.Minute,
+		ttl:          30 * time.Second,
+		pollInterval: 5 * time.Second,
 	}
 }
 
@@ -70,18 +68,13 @@ func WithPollInterval(d time.Duration) Option {
 	return func(o opts) opts { o.pollInterval = d; return o }
 }
 
-// WithRefreshInterval sets the interval for the background worker to refresh the cache.
-func WithRefreshInterval(d time.Duration) Option {
-	return func(o opts) opts { o.refreshInterval = d; return o }
-}
-
 // WithCacheDisabled disables the cache entirely. All Get/List calls will return ErrCacheStale,
 // forcing callers to fall through to direct API calls. No background goroutine is spawned.
 func WithCacheDisabled() Option {
 	return func(o opts) opts { o.disabled = true; return o }
 }
 
-// MachineCache caches AKS machine resources with TTL-based expiration and automatic background refresh.
+// MachineCache caches AKS machine resources with TTL-based expiration and on-demand refresh.
 type MachineCache struct {
 	machines             sync.Map
 	lastUpdatedUnixNanos atomic.Int64
@@ -98,9 +91,8 @@ type MachineCache struct {
 	options opts
 }
 
-// NewMachineCache creates a new cache instance with a background worker for automatic refresh.
-// By default, the cache will automatically refresh its contents in the background at the interval specified by the refreshInterval option.
-// Updates to the cache are also triggered when a stale cache is accessed.
+// NewMachineCache creates a new cache instance with a background worker for on-demand updates.
+// Updates to the cache are triggered when a stale cache is accessed.
 func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
 	cache := &MachineCache{
 		client:               client,
@@ -257,9 +249,6 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 func (c *MachineCache) run() {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(c.options.refreshInterval)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case <-c.workerCtx.Done():
@@ -268,11 +257,6 @@ func (c *MachineCache) run() {
 		case <-c.updateRequests:
 			if err := c.update(c.workerCtx); err != nil {
 				log.FromContext(c.workerCtx).Error(err, "background cache update failed (on-demand)")
-			}
-
-		case <-ticker.C:
-			if err := c.update(c.workerCtx); err != nil {
-				log.FromContext(c.workerCtx).Error(err, "background cache update failed (periodic)")
 			}
 		}
 	}
@@ -284,10 +268,6 @@ func (c *MachineCache) update(ctx context.Context) error {
 	if c.isFresh() {
 		return nil
 	}
-	nowTime := time.Now()
-	defer func() {
-		log.FromContext(ctx).Info("finished update for machine cache", "aksMachinesPoolName", c.aksMachinesPoolName, "duration", time.Since(nowTime).Seconds())
-	}()
 
 	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
 	if pager == nil {
@@ -305,7 +285,6 @@ func (c *MachineCache) update(ctx context.Context) error {
 			return fmt.Errorf("failed to list AKS machines: %w", err)
 		}
 
-		log.FromContext(ctx).Info("fetched AKS machines page", "count", len(page.Value))
 		for _, aksMachine := range page.Value {
 			if isValid(ctx, aksMachine.Properties, lo.FromPtr(aksMachine.Name)) {
 				c.machines.Store(lo.FromPtr(aksMachine.Name), aksMachine)
