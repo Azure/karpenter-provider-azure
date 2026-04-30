@@ -16,6 +16,7 @@ package machinecache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -29,6 +30,8 @@ import (
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+var ErrMachineNotFoundInCache = errors.New("machine not found in cache")
 
 // AKSMachineClienter provides operations for AKS machines.
 type AKSMachineClienter interface {
@@ -114,9 +117,12 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 // The returned machine is stored in the cache after a successful API call.
 func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
-		machine, found, fresh := c.getFromCache(machineName)
-		if fresh && found {
+		machine, err := c.getFromCache(machineName)
+		if err == nil {
 			return machine, nil
+		}
+		if !errors.Is(err, ErrMachineNotFoundInCache) {
+			return nil, err
 		}
 	}
 
@@ -174,11 +180,11 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
-	_, found, fresh := c.getFromCache(name)
-	if fresh {
-		if found {
-			return nil
-		}
+	_, err := c.getFromCache(name)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrMachineNotFoundInCache) {
 		return fmt.Errorf("AKS machine %q not found in cache", name)
 	}
 
@@ -190,29 +196,29 @@ func (c *MachineCache) checkMachineExists(ctx context.Context, name string) erro
 }
 
 // getFromCache retrieves a machine from the cache by name.
-// It returns the machine, a boolean indicating whether the machine was found in the cache,
-// and a boolean indicating whether the cache is fresh.
-func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Machine, bool, bool) {
+// It returns the machine and an error. If the cache is stale, it returns an error.
+// If the cache is fresh but the machine is not found, it returns ErrMachineNotFoundInCache.
+func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Machine, error) {
 	if !c.isFresh() {
 		c.requestUpdate()
-		return nil, false, false
+		return nil, fmt.Errorf("cache is stale")
 	}
 	value, ok := c.machines.Load(machineName)
 	if !ok {
-		return nil, false, true
+		return nil, ErrMachineNotFoundInCache
 	}
 
-	return value.(*armcontainerservice.Machine), ok, true
+	return value.(*armcontainerservice.Machine), nil
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
-	aksMachine, found, fresh := c.getFromCache(aksMachineName)
-	if !fresh {
+	aksMachine, err := c.getFromCache(aksMachineName)
+	if err != nil && !errors.Is(err, ErrMachineNotFoundInCache) {
 		return nil, nil, false
 	}
 
 	// Terminate early. This indicates the machine was not found in the cache and there is no point in continuing to poll
-	if !found || aksMachine == nil {
+	if errors.Is(err, ErrMachineNotFoundInCache) || aksMachine == nil {
 		return nil, fmt.Errorf("AKS machine %q not found in cache", aksMachineName), true
 	}
 
