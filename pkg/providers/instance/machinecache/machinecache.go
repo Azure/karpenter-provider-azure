@@ -31,11 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var (
-	// ErrCacheStale indicates the cache has exceeded its TTL and needs refresh.
-	ErrCacheStale = errors.New("cache is stale")
-)
-
 // AKSMachineClienter provides operations for AKS machines.
 type AKSMachineClienter interface {
 	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
@@ -145,22 +140,6 @@ func (c *MachineCache) Get(ctx context.Context, machineName string, useCache boo
 	return machine, nil
 }
 
-// List returns all cached machines, blocking until the cache is fresh.
-func (c *MachineCache) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
-	if c.options.disabled || !c.isFresh() {
-		c.requestUpdate()
-		return nil, fmt.Errorf("%w while listing machines", ErrCacheStale)
-	}
-
-	machines := make([]*armcontainerservice.Machine, 0)
-	c.machines.Range(func(key, value any) bool {
-		machines = append(machines, value.(*armcontainerservice.Machine))
-		return true
-	})
-
-	return machines, nil
-}
-
 // Invalidate removes a specific machine from the cache by name.
 func (c *MachineCache) Invalidate(machineName string) {
 	if c.options.disabled {
@@ -198,26 +177,15 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
-	aksMachine, err := c.Get(ctx, name, true)
-	if err == nil && aksMachine != nil {
-		return nil
-	}
-
-	if err == nil || errors.Is(err, ErrCacheStale) {
-		resp, apiErr := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, name, nil)
-		if apiErr != nil {
-			if machine.IsAKSMachineOrMachinesPoolNotFound(apiErr) {
-				return fmt.Errorf("AKS machine %q does not exist", name)
-			}
-			return fmt.Errorf("failed to check if AKS machine %q exists: %w", name, apiErr)
+	if _, ok := c.machines.Load(name); !ok {
+		if machine, err := c.Get(ctx, name, false); err != nil {
+			return fmt.Errorf("failed to check if AKS machine %q exists: %w", name, err)
+		} else if machine == nil {
+			return fmt.Errorf("AKS machine %q does not exist", name)
 		}
-
-		machine := lo.ToPtr(resp.Machine)
 		c.machines.Store(name, machine)
-		return nil
 	}
-
-	return err
+	return nil
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
