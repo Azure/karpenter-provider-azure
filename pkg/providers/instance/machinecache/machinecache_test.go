@@ -272,119 +272,6 @@ func TestGetWithFallback(t *testing.T) {
 	}
 }
 
-func TestPollUntilDone(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name                    string
-		machine                 *armcontainerservice.Machine
-		lastUpdated             time.Time
-		expectPollErr           bool
-		expectedProvisioningErr *armcontainerservice.ErrorDetail
-	}{
-		{
-			name: "success",
-			machine: &armcontainerservice.Machine{
-				Name: to.Ptr("machine"),
-				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
-				},
-			},
-			lastUpdated:             time.Now(),
-			expectPollErr:           false,
-			expectedProvisioningErr: nil,
-		},
-		{
-			name: "provisioning error",
-			machine: &armcontainerservice.Machine{
-				Name: to.Ptr("machine"),
-				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: to.Ptr(consts.ProvisioningStateFailed),
-					Status: &armcontainerservice.MachineStatus{
-						ProvisioningError: &armcontainerservice.ErrorDetail{
-							Code:    to.Ptr("ProvisioningFailed"),
-							Message: to.Ptr("Provisioning failed due to an error"),
-						},
-					},
-				},
-			},
-			lastUpdated:   time.Now(),
-			expectPollErr: false,
-			expectedProvisioningErr: &armcontainerservice.ErrorDetail{
-				Code:    to.Ptr("ProvisioningFailed"),
-				Message: to.Ptr("Provisioning failed due to an error"),
-			},
-		},
-		{
-			name: "polling error",
-			machine: &armcontainerservice.Machine{
-				Name: to.Ptr("machine"),
-				Properties: &armcontainerservice.MachineProperties{
-					ProvisioningState: to.Ptr(consts.ProvisioningStateDeleting),
-				},
-			},
-			lastUpdated:             time.Now(),
-			expectPollErr:           true,
-			expectedProvisioningErr: nil,
-		},
-		{
-			name: "stale cache times out",
-			machine: &armcontainerservice.Machine{
-				Name: to.Ptr("machine"),
-			},
-			lastUpdated:             time.Now().Add(-60 * time.Second),
-			expectPollErr:           true,
-			expectedProvisioningErr: nil,
-		},
-		{
-			name: "nil properties times out",
-			machine: &armcontainerservice.Machine{
-				Name:       to.Ptr("machine"),
-				ID:         to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/machines/machine"),
-				Properties: nil,
-			},
-			lastUpdated:             time.Now(),
-			expectPollErr:           true,
-			expectedProvisioningErr: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			cacheCtx, cacheCancel := context.WithCancel(context.Background())
-			defer cacheCancel()
-
-			c := NewMachineCache(
-				cacheCtx,
-				&fakeAKSMachineClienter{},
-				"test-rg",
-				"test-cluster",
-				"test-pool",
-				WithTTL(30*time.Second),
-				WithPollInterval(time.Millisecond),
-			)
-			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
-			c.machines.Store(lo.FromPtr(tt.machine.Name), tt.machine)
-
-			pollCtx := context.Background()
-			if tt.expectPollErr {
-				var pollCancel context.CancelFunc
-				pollCtx, pollCancel = context.WithTimeout(pollCtx, 50*time.Millisecond)
-				defer pollCancel()
-			}
-
-			provisioningErr, pollErr := c.PollUntilDone(pollCtx, *tt.machine.Name)
-			g := NewWithT(t)
-			g.Expect(provisioningErr).To(Equal(tt.expectedProvisioningErr))
-			if tt.expectPollErr {
-				g.Expect(pollErr).To(HaveOccurred())
-			} else {
-				g.Expect(pollErr).ToNot(HaveOccurred())
-			}
-		})
-	}
-}
-
 func TestIsFresh(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -438,6 +325,90 @@ func TestIsFresh(t *testing.T) {
 			if got := c.isFresh(); got != tt.expected {
 				t.Errorf("isFresh() = %v, want %v", got, tt.expected)
 			}
+		})
+	}
+}
+
+func TestPollOnce(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name                    string
+		machine                 *armcontainerservice.Machine
+		lastUpdated             time.Time
+		expectedProvisioningErr *armcontainerservice.ErrorDetail
+		expectedPollerErr       bool
+		expectedDone            bool
+	}{
+		{
+			name:        "cache not fresh - returns not done",
+			lastUpdated: time.Now().Add(-60 * time.Second),
+			machine: &armcontainerservice.Machine{
+				Name: to.Ptr("machine"),
+			},
+			expectedProvisioningErr: nil,
+			expectedPollerErr:       false,
+			expectedDone:            false,
+		},
+		{
+			name:                    "machine not found in cache - returns error and done",
+			lastUpdated:             time.Now(),
+			machine:                 nil,
+			expectedProvisioningErr: nil,
+			expectedPollerErr:       true,
+			expectedDone:            true,
+		},
+		{
+			name:        "nil properties - returns not done",
+			lastUpdated: time.Now(),
+			machine: &armcontainerservice.Machine{
+				Name:       to.Ptr("machine"),
+				ID:         to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/machines/machine"),
+				Properties: nil,
+			},
+			expectedProvisioningErr: nil,
+			expectedPollerErr:       false,
+			expectedDone:            false,
+		},
+		{
+			name:        "succeeded state - returns done",
+			lastUpdated: time.Now(),
+			machine: &armcontainerservice.Machine{
+				Name: to.Ptr("machine"),
+				Properties: &armcontainerservice.MachineProperties{
+					ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
+				},
+			},
+			expectedProvisioningErr: nil,
+			expectedPollerErr:       false,
+			expectedDone:            true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			ctx := context.Background()
+
+			c := MachineCache{
+				options: defaultOpts(),
+			}
+			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
+
+			if tt.machine != nil {
+				c.machines.Store(lo.FromPtr(tt.machine.Name), tt.machine)
+			}
+
+			machineName := "machine"
+			provisioningErr, pollerErr, done := c.pollOnce(ctx, machineName)
+
+			g.Expect(provisioningErr).To(Equal(tt.expectedProvisioningErr))
+			if tt.expectedPollerErr {
+				g.Expect(pollerErr).To(HaveOccurred())
+			} else {
+				g.Expect(pollerErr).ToNot(HaveOccurred())
+			}
+			g.Expect(done).To(Equal(tt.expectedDone))
 		})
 	}
 }
