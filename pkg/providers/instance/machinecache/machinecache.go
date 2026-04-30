@@ -116,14 +116,12 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 // The returned machine is stored in the cache after a successful API call.
 func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
-		if !c.isFresh() {
-			c.requestUpdate()
-		} else {
-			value, ok := c.machines.Load(machineName)
-			if !ok {
-				return nil, nil
+		if c.isFresh() {
+			if machine, ok := c.get(machineName); ok && machine != nil {
+				return machine, nil
 			}
-			return value.(*armcontainerservice.Machine), nil
+		} else {
+			c.requestUpdate()
 		}
 	}
 
