@@ -116,8 +116,9 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 // The returned machine is stored in the cache after a successful API call.
 func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
-		if c.isFresh() {
-			if machine, ok := c.get(machineName); ok && machine != nil {
+		machine, found, fresh := c.get(machineName)
+		if fresh {
+			if found && machine != nil {
 				return machine, nil
 			}
 		} else {
@@ -175,8 +176,12 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
-	if _, ok := c.machines.Load(name); ok {
-		return nil
+	_, found, fresh := c.get(name)
+	if fresh {
+		if found {
+			return nil
+		}
+		return fmt.Errorf("AKS machine %q not found in cache", name)
 	}
 
 	machine, err := c.GetWithFallback(ctx, name, false)
@@ -186,23 +191,30 @@ func (c *MachineCache) checkMachineExists(ctx context.Context, name string) erro
 	return err
 }
 
-func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bool) {
+// get retrieves a machine from the cache by name.
+// It returns the machine, a boolean indicating whether the machine was found in the cache,
+// and a boolean indicating whether the cache is fresh.
+func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bool, bool) {
+	if !c.isFresh() {
+		c.requestUpdate()
+		return nil, false, false
+	}
 	value, ok := c.machines.Load(machineName)
 	if !ok {
-		return nil, false
+		return nil, false, true
 	}
-	machine, ok := value.(*armcontainerservice.Machine)
-	return machine, ok
+
+	return value.(*armcontainerservice.Machine), ok, true
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
-	if !c.isFresh() {
-		c.requestUpdate()
+	aksMachine, found, fresh := c.get(aksMachineName)
+	if !fresh {
 		return nil, nil, false
 	}
 
-	aksMachine, ok := c.get(aksMachineName)
-	if !ok || aksMachine == nil {
+	// Terminate early. This indicates the machine was not found in the cache and there is no point in continuing to poll
+	if !found || aksMachine == nil {
 		return nil, fmt.Errorf("AKS machine %q not found in cache", aksMachineName), true
 	}
 
