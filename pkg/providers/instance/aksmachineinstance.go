@@ -18,7 +18,6 @@ package instance
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -294,7 +293,7 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 		opt(&options)
 	}
 
-	aksMachine, err := p.getMachine(ctx, aksMachineName, options.useCache)
+	aksMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, options.useCache)
 	if err != nil {
 		if machine.IsAKSMachineOrMachinesPoolNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
@@ -321,7 +320,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context, opts ...Option) ([
 		opt(&options)
 	}
 
-	aksMachines, err := p.listMachines(ctx, options.useCache)
+	aksMachines, err := p.listMachines(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +378,7 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 	}
 }
 
+/*
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && p.machineCache != nil {
 		aksMachine, err := p.machineCache.Get(ctx, aksMachineName, true)
@@ -397,28 +397,16 @@ func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineNa
 	}
 	aksMachine := lo.ToPtr(resp.Machine)
 	p.rehydrateMachine(aksMachine)
-	/*
+
 		if useCache && p.machineCache != nil {
 			p.machineCache.Add(aksMachine)
 		}
-	*/
+
 	return aksMachine, nil
 }
+*/
 
-func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context, useCache bool) ([]*armcontainerservice.Machine, error) {
-	if useCache && p.machineCache != nil {
-		machines, err := p.machineCache.List(ctx)
-		if err == nil {
-			for _, aksMachine := range machines {
-				p.rehydrateMachine(aksMachine)
-			}
-			return machines, nil
-		}
-		if err != nil && !errors.Is(err, machinecache.ErrCacheStale) {
-			log.FromContext(ctx).V(1).Info("cache error while listing AKS machines, falling back to direct API call", "error", err)
-		}
-	}
-
+func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
 	var machines []*armcontainerservice.Machine
 	pager := p.azClient.AKSMachinesClient().NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
 	if pager == nil {
@@ -511,7 +499,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	existingAKSMachine, err := p.getMachine(ctx, aksMachineName, false)
+	existingAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, true)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
@@ -662,7 +650,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 				// Could be quota error; will be handled with custom logic below
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-				failedAKSMachine, _ := p.getMachine(ctx, aksMachineName, false)
+				failedAKSMachine, _ := p.machineCache.GetWithFallback(ctx, aksMachineName, true)
 				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 					return
@@ -801,7 +789,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 }
 
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string) (*armcontainerservice.Machine, error) {
-	gotAKSMachine, err := p.getMachine(ctx, aksMachineName, false)
+	gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
