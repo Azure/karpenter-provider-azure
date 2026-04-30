@@ -128,9 +128,6 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 
 	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
 	if err != nil {
-		if machine.IsAKSMachineOrMachinesPoolNotFound(err) {
-			return nil, fmt.Errorf("AKS machine pool %q not found", c.aksMachinesPoolName)
-		}
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", machineName, err)
 	}
 
