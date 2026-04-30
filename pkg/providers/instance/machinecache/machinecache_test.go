@@ -362,6 +362,21 @@ func TestPollUntilDone(t *testing.T) {
 			expectPollingErr: false,
 			expectedDone:     true,
 		},
+		{
+			name:   "PollOnce returns failed state",
+			getErr: nil,
+			getRetval: armcontainerservice.MachinesClientGetResponse{
+				Machine: armcontainerservice.Machine{
+					Name: to.Ptr("machine"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(consts.ProvisioningStateFailed),
+					},
+				},
+			},
+			expectErr:        false,
+			expectPollingErr: false,
+			expectedDone:     true,
+		},
 	}
 }
 
