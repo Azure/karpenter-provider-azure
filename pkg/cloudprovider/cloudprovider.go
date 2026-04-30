@@ -78,6 +78,11 @@ const (
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
+type instanceTypeOverlayStore interface {
+	ApplyAll(nodePoolName string, its []*cloudprovider.InstanceType) ([]*cloudprovider.InstanceType, error)
+	Apply(nodePoolName string, it *cloudprovider.InstanceType) (*cloudprovider.InstanceType, error)
+}
+
 type CloudProvider struct {
 	instanceTypeProvider       instancetype.Provider
 	vmInstanceProvider         instance.VMProvider // Note that even when provision mode does not create with VM instance provider, it is still being used to handle existing VM instances.
@@ -85,7 +90,7 @@ type CloudProvider struct {
 	kubeClient                 client.Client
 	imageProvider              imagefamily.NodeImageProvider
 	recorder                   events.Recorder
-	instanceTypeStore          *nodeoverlay.InstanceTypeStore
+	instanceTypeStore          instanceTypeOverlayStore
 	instancePromiseWg          sync.WaitGroup
 }
 
@@ -163,14 +168,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
-	}
-	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
-		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
-			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
-			if err != nil {
-				return nil, fmt.Errorf("creating instance, %w", err)
-			}
-		}
 	}
 
 	// Choose provider based on provision mode
@@ -572,6 +569,14 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance types, %w", err)
+	}
+	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
+			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
+			if err != nil {
+				return nil, fmt.Errorf("applying instance type overlays, %w", err)
+			}
+		}
 	}
 
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
