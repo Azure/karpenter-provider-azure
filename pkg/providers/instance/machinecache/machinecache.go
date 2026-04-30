@@ -113,7 +113,7 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 
 // GetWithFallback gets a machine.
 // If useCache is true and the cache is fresh, it will attempt to return the machine from the cache.
-// If the cache is stale or disabled, or the machine is not found in the cache, it will fall back to calling the AKS API directly.
+// If the cache is stale or disabled, or if the machine is not found in the cache, it will fall back to calling the AKS API directly.
 // The returned machine is stored in the cache after a successful API call.
 func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
@@ -121,6 +121,10 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 		if err == nil && found {
 			return machine, nil
 		}
+
+		// Even if the cache is fresh but the machine is not found, we fall through to call the AKS API directly.
+		// This ensures that an out-of-date but fresh cache does not prevent us from retrieving a machine.
+		// It also ensures that the returned error for a missing machine is consistent.
 	}
 
 	return c.getAndStore(ctx, machineName)
