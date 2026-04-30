@@ -329,6 +329,42 @@ func TestIsFresh(t *testing.T) {
 	}
 }
 
+func TestPollUntilDone(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		getErr           error
+		getRetval        armcontainerservice.MachinesClientGetResponse
+		expectErr        bool
+		expectPollingErr bool
+		expectedDone     bool
+	}{
+		{
+			name:             "CheckMachineExists fails - machine does not exist",
+			getErr:           errors.New("Machine not found"),
+			getRetval:        armcontainerservice.MachinesClientGetResponse{},
+			expectErr:        true,
+			expectPollingErr: false,
+			expectedDone:     true,
+		},
+		{
+			name:   "PollOnce returns success state",
+			getErr: nil,
+			getRetval: armcontainerservice.MachinesClientGetResponse{
+				Machine: armcontainerservice.Machine{
+					Name: to.Ptr("machine"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
+					},
+				},
+			},
+			expectErr:        false,
+			expectPollingErr: false,
+			expectedDone:     true,
+		},
+	}
+}
+
 func TestPollOnce(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
