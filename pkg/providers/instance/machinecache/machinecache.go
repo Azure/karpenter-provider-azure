@@ -16,7 +16,6 @@ package machinecache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -111,10 +110,11 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 	return cache
 }
 
-// Get retrieves a machine from the cache by name if the cache is fresh.
-// Returns nil if the machine is not found in the cache.
-// Returns ErrCacheStale if the cache is stale.
-func (c *MachineCache) Get(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
+// GetWithFallback gets a machine.
+// If useCache is true and the cache is fresh, it will attempt to return the machine from the cache.
+// If the cache is stale or disabled, it will fall back to calling the AKS API directly.
+// The returned machine is stored in the cache after a successful API call.
+func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
 		if !c.isFresh() {
 			c.requestUpdate()
@@ -177,26 +177,35 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
-	if _, ok := c.machines.Load(name); !ok {
-		if machine, err := c.Get(ctx, name, false); err != nil {
-			return fmt.Errorf("failed to check if AKS machine %q exists: %w", name, err)
-		} else if machine == nil {
-			return fmt.Errorf("AKS machine %q does not exist", name)
-		}
+	if _, ok := c.machines.Load(name); ok {
+		return nil
+	}
+
+	machine, err := c.GetWithFallback(ctx, name, false)
+	if machine != nil && err == nil {
 		c.machines.Store(name, machine)
 	}
-	return nil
+	return err
+}
+
+func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bool) {
+	value, ok := c.machines.Load(machineName)
+	if !ok {
+		return nil, false
+	}
+	machine, ok := value.(*armcontainerservice.Machine)
+	return machine, ok
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
-	aksMachine, err := c.Get(ctx, aksMachineName, true)
-	if err != nil {
-		if errors.Is(err, ErrCacheStale) {
-			log.FromContext(ctx).V(1).Info("Cache poller: cache stale for AKS machine during poll", "aksMachineName", aksMachineName)
-		} else {
-			log.FromContext(ctx).Error(err, "Unexpected error while polling for AKS machine from cache", "aksMachineName", aksMachineName)
-			return nil, err, true
-		}
+	if !c.isFresh() {
+		c.requestUpdate()
+		return nil, nil, false
+	}
+
+	aksMachine, ok := c.get(aksMachineName)
+	if !ok {
+		return nil, fmt.Errorf("AKS machine %q not found in cache", aksMachineName), true
 	}
 
 	if aksMachine == nil {
