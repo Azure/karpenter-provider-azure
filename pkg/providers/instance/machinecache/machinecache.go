@@ -204,13 +204,8 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 	}
 
 	aksMachine, ok := c.get(aksMachineName)
-	if !ok {
+	if !ok || aksMachine == nil {
 		return nil, fmt.Errorf("AKS machine %q not found in cache", aksMachineName), true
-	}
-
-	if aksMachine == nil {
-		log.FromContext(ctx).V(1).Info("Cache poller: cache miss for AKS machine during poll", "aksMachineName", aksMachineName)
-		return nil, nil, false
 	}
 
 	if aksMachine.Properties == nil || aksMachine.Properties.ProvisioningState == nil {
@@ -234,7 +229,7 @@ func (c *MachineCache) run() {
 
 		case <-c.updateRequests:
 			if err := c.update(c.workerCtx); err != nil {
-				log.FromContext(c.workerCtx).Error(err, "background cache update failed (on-demand)")
+				log.FromContext(c.workerCtx).Error(err, "cache update failed")
 			}
 		}
 	}

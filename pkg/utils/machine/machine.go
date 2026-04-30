@@ -16,7 +16,7 @@ import (
 // HandleProvisioningState inspects the provisioning state of an AKS machine.
 // It returns the provisioning error if the machine failed, a polling error if the provisioning
 // state indicates a canceled or otherwise fatal state, and a boolean indicating whether the
-// provisioning is complete (either succeeded or failed).
+// provisioning is complete (either succeeded, deleting or failed).
 func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservice.Machine) (*armcontainerservice.ErrorDetail, error, bool) {
 	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
 	switch provisioningState {
