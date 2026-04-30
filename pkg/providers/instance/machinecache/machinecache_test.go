@@ -25,7 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/kylelemons/godebug/pretty"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 )
 
@@ -243,6 +243,7 @@ func TestGetWithFallback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			g := NewWithT(t)
 
 			c := MachineCache{
 				client: &fakeAKSMachineClienter{
@@ -261,13 +262,12 @@ func TestGetWithFallback(t *testing.T) {
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 
 			machine, err := c.GetWithFallback(context.Background(), tt.machineName, true)
-			if (err != nil) != tt.expectErr {
-				t.Errorf("Get() error = %v, wantErr %v", err, tt.expectErr)
-				return
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
 			}
-			if pretty.Compare(machine, tt.expectedMachine) != "" {
-				t.Errorf("Get() = %v, want %v", machine, tt.expectedMachine)
-			}
+			g.Expect(machine).To(Equal(tt.expectedMachine))
 		})
 	}
 }
@@ -374,11 +374,12 @@ func TestPollUntilDone(t *testing.T) {
 			}
 
 			provisioningErr, pollErr := c.PollUntilDone(pollCtx, *tt.machine.Name)
-			if pretty.Compare(provisioningErr, tt.expectedProvisioningErr) != "" {
-				t.Errorf("PollUntilDone() provisioningErr = %v, want %v", provisioningErr, tt.expectedProvisioningErr)
-			}
-			if (pollErr != nil) != tt.expectPollErr {
-				t.Errorf("PollUntilDone() pollErr = %v, expectPollErr %v", pollErr, tt.expectPollErr)
+			g := NewWithT(t)
+			g.Expect(provisioningErr).To(Equal(tt.expectedProvisioningErr))
+			if tt.expectPollErr {
+				g.Expect(pollErr).To(HaveOccurred())
+			} else {
+				g.Expect(pollErr).ToNot(HaveOccurred())
 			}
 		})
 	}
@@ -491,23 +492,21 @@ func TestIsValid(t *testing.T) {
 
 func compareWithExpected(t *testing.T, got, expected []*armcontainerservice.Machine, testName string) {
 	t.Helper()
+	g := NewWithT(t)
 
-	if len(got) != len(expected) {
-		t.Errorf("%s cache size = %d, want %d", testName, len(got), len(expected))
-	}
+	g.Expect(got).To(HaveLen(len(expected)), "%s cache size mismatch", testName)
 
 	for _, expectedMachine := range expected {
 		found := false
 		for _, actualMachine := range got {
 			if lo.FromPtr(actualMachine.Name) == lo.FromPtr(expectedMachine.Name) {
-				if pretty.Compare(actualMachine, expectedMachine) == "" {
+				success, _ := Equal(actualMachine).Match(expectedMachine)
+				if success {
 					found = true
 					break
 				}
 			}
 		}
-		if !found {
-			t.Errorf("%s expected machine %q not found in cache", testName, lo.FromPtr(expectedMachine.Name))
-		}
+		g.Expect(found).To(BeTrue(), "%s expected machine %q not found in cache", testName, lo.FromPtr(expectedMachine.Name))
 	}
 }
