@@ -116,23 +116,26 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 // The returned machine is stored in the cache after a successful API call.
 func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
-		machine, found, fresh := c.get(machineName)
-		if fresh {
-			if found && machine != nil {
-				return machine, nil
-			}
-		} else {
-			c.requestUpdate()
+		machine, found, fresh := c.getFromCache(machineName)
+		if fresh && found {
+			return machine, nil
 		}
 	}
 
+	return c.getAndStore(ctx, machineName)
+}
+
+// getAndStore fetches a machine from the AKS API and stores it in the cache.
+func (c *MachineCache) getAndStore(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
 	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", machineName, err)
 	}
 
 	machine := lo.ToPtr(resp.Machine)
-	c.machines.Store(machineName, machine)
+	if !c.options.disabled {
+		c.machines.Store(machineName, machine)
+	}
 	return machine, nil
 }
 
@@ -173,7 +176,7 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 }
 
 func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
-	_, found, fresh := c.get(name)
+	_, found, fresh := c.getFromCache(name)
 	if fresh {
 		if found {
 			return nil
@@ -188,10 +191,10 @@ func (c *MachineCache) checkMachineExists(ctx context.Context, name string) erro
 	return err
 }
 
-// get retrieves a machine from the cache by name.
+// getFromCache retrieves a machine from the cache by name.
 // It returns the machine, a boolean indicating whether the machine was found in the cache,
 // and a boolean indicating whether the cache is fresh.
-func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bool, bool) {
+func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Machine, bool, bool) {
 	if !c.isFresh() {
 		c.requestUpdate()
 		return nil, false, false
@@ -205,7 +208,7 @@ func (c *MachineCache) get(machineName string) (*armcontainerservice.Machine, bo
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
-	aksMachine, found, fresh := c.get(aksMachineName)
+	aksMachine, found, fresh := c.getFromCache(aksMachineName)
 	if !fresh {
 		return nil, nil, false
 	}
