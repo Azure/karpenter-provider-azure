@@ -32,7 +32,10 @@ import (
 type fakeAKSMachineClienter struct {
 	machines []*armcontainerservice.Machine
 	nilPager bool
-	err      error
+	listErr  error
+
+	getErr    error
+	getRetval armcontainerservice.MachinesClientGetResponse
 }
 
 func (f *fakeAKSMachineClienter) NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
@@ -49,13 +52,13 @@ func (f *fakeAKSMachineClienter) NewListPager(resourceGroupName string, resource
 				MachineListResult: armcontainerservice.MachineListResult{
 					Value: f.machines,
 				},
-			}, f.err
+			}, f.listErr
 		},
 	})
 }
 
 func (f *fakeAKSMachineClienter) Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, machineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error) {
-	return armcontainerservice.MachinesClientGetResponse{}, nil
+	return f.getRetval, f.getErr
 }
 
 func TestUpdate(t *testing.T) {
@@ -147,7 +150,7 @@ func TestUpdate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fakePager := &fakeAKSMachineClienter{
-				err:      tt.pagerErr,
+				listErr:  tt.pagerErr,
 				nilPager: tt.nilPager,
 				machines: tt.returnedMachines,
 			}
@@ -188,18 +191,20 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
-func TestGet(t *testing.T) {
+func TestGetWithFallback(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name            string
 		lastUpdated     time.Time
 		cachedMachines  []*armcontainerservice.Machine
 		machineName     string
+		getErr          error
+		getRetval       armcontainerservice.MachinesClientGetResponse
 		expectErr       bool
 		expectedMachine *armcontainerservice.Machine
 	}{
 		{
-			name:            "success",
+			name:            "success - cache hit",
 			lastUpdated:     time.Now(),
 			machineName:     "machine",
 			cachedMachines:  []*armcontainerservice.Machine{&armcontainerservice.Machine{Name: to.Ptr("machine")}},
@@ -207,18 +212,29 @@ func TestGet(t *testing.T) {
 			expectedMachine: &armcontainerservice.Machine{Name: to.Ptr("machine")},
 		},
 		{
-			name:            "machine not found - returns nil",
+			name:            "cache miss - fallback to API",
 			lastUpdated:     time.Now(),
 			machineName:     "machine",
 			cachedMachines:  []*armcontainerservice.Machine{},
+			getRetval:       armcontainerservice.MachinesClientGetResponse{Machine: armcontainerservice.Machine{Name: to.Ptr("machine")}},
 			expectErr:       false,
-			expectedMachine: nil,
+			expectedMachine: &armcontainerservice.Machine{Name: to.Ptr("machine")},
 		},
 		{
-			name:            "stale cache",
+			name:            "cache is stale - fallback to API",
 			lastUpdated:     time.Now().Add(-60 * time.Second),
 			machineName:     "machine",
 			cachedMachines:  []*armcontainerservice.Machine{&armcontainerservice.Machine{Name: to.Ptr("machine")}},
+			getRetval:       armcontainerservice.MachinesClientGetResponse{Machine: armcontainerservice.Machine{Name: to.Ptr("machine")}},
+			expectErr:       false,
+			expectedMachine: &armcontainerservice.Machine{Name: to.Ptr("machine")},
+		},
+		{
+			name:            "cache miss - API returns error",
+			lastUpdated:     time.Now(),
+			machineName:     "machine",
+			cachedMachines:  []*armcontainerservice.Machine{},
+			getErr:          errors.New("API error"),
 			expectErr:       true,
 			expectedMachine: nil,
 		},
@@ -227,25 +243,24 @@ func TestGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
 
-			c := NewMachineCache(
-				ctx,
-				&fakeAKSMachineClienter{},
-				"test-rg",
-				"test-cluster",
-				"test-pool",
-				WithTTL(30*time.Second),
-				WithCacheDisabled(),
-			)
+			c := MachineCache{
+				client: &fakeAKSMachineClienter{
+					getErr:    tt.getErr,
+					getRetval: tt.getRetval,
+				},
+				clusterResourceGroup: "test-rg",
+				clusterName:          "test-cluster",
+				aksMachinesPoolName:  "test-pool",
+				options:              defaultOpts(),
+			}
 
 			for _, m := range tt.cachedMachines {
 				c.machines.Store(lo.FromPtr(m.Name), m)
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 
-			machine, err := c.GetWithFallback(t.Context(), tt.machineName, true)
+			machine, err := c.GetWithFallback(context.Background(), tt.machineName, true)
 			if (err != nil) != tt.expectErr {
 				t.Errorf("Get() error = %v, wantErr %v", err, tt.expectErr)
 				return
