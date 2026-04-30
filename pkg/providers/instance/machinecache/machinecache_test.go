@@ -245,7 +245,7 @@ func TestGet(t *testing.T) {
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 
-			machine, err := c.Get(tt.machineName)
+			machine, err := c.GetWithFallback(t.Context(), tt.machineName, true)
 			if (err != nil) != tt.expectErr {
 				t.Errorf("Get() error = %v, wantErr %v", err, tt.expectErr)
 				return

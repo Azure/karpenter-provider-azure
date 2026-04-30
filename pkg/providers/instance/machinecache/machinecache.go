@@ -79,7 +79,6 @@ type MachineCache struct {
 	aksMachinesPoolName  string
 
 	updateRequests chan struct{}
-	workerCtx      context.Context
 	wg             sync.WaitGroup
 
 	options opts
@@ -94,7 +93,6 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 		clusterName:          clusterName,
 		aksMachinesPoolName:  aksMachinesPoolName,
 		updateRequests:       make(chan struct{}, 1),
-		workerCtx:            ctx,
 		options:              defaultOpts(),
 	}
 
@@ -104,7 +102,7 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 
 	if !cache.options.disabled {
 		cache.wg.Add(1)
-		go cache.run()
+		go cache.run(ctx)
 	}
 
 	return cache
@@ -229,17 +227,17 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 	return machine.HandleProvisioningState(ctx, aksMachine)
 }
 
-func (c *MachineCache) run() {
+func (c *MachineCache) run(ctx context.Context) {
 	defer c.wg.Done()
 
 	for {
 		select {
-		case <-c.workerCtx.Done():
+		case <-ctx.Done():
 			return
 
 		case <-c.updateRequests:
-			if err := c.update(c.workerCtx); err != nil {
-				log.FromContext(c.workerCtx).Error(err, "cache update failed")
+			if err := c.update(ctx); err != nil {
+				log.FromContext(ctx).Error(err, "cache update failed")
 			}
 		}
 	}
