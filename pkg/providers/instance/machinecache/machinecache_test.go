@@ -335,8 +335,8 @@ func TestPollUntilDone(t *testing.T) {
 		name             string
 		getErr           error
 		getRetval        armcontainerservice.MachinesClientGetResponse
-		expectErr        bool
 		expectPollingErr bool
+		expectErr        bool
 		expectedDone     bool
 	}{
 		{
@@ -345,7 +345,6 @@ func TestPollUntilDone(t *testing.T) {
 			getRetval:        armcontainerservice.MachinesClientGetResponse{},
 			expectErr:        true,
 			expectPollingErr: false,
-			expectedDone:     true,
 		},
 		{
 			name:   "PollOnce returns success state",
@@ -360,7 +359,6 @@ func TestPollUntilDone(t *testing.T) {
 			},
 			expectErr:        false,
 			expectPollingErr: false,
-			expectedDone:     true,
 		},
 		{
 			name:   "PollOnce returns failed state",
@@ -370,13 +368,57 @@ func TestPollUntilDone(t *testing.T) {
 					Name: to.Ptr("machine"),
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateFailed),
+						Status: &armcontainerservice.MachineStatus{
+							ProvisioningError: &armcontainerservice.ErrorDetail{
+								Message: to.Ptr("Provisioning failed due to some error"),
+							},
+						},
 					},
 				},
 			},
 			expectErr:        false,
-			expectPollingErr: false,
-			expectedDone:     true,
+			expectPollingErr: true,
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			fakeClient := &fakeAKSMachineClienter{
+				getErr:    tt.getErr,
+				getRetval: tt.getRetval,
+			}
+
+			c := MachineCache{
+				client:  fakeClient,
+				options: defaultOpts(),
+			}
+			c.options.pollInterval = time.Millisecond
+			c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
+
+			if tt.getRetval.Machine.Name != nil {
+				c.machines.Store(lo.FromPtr(tt.getRetval.Machine.Name), &tt.getRetval.Machine)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+
+			provisioningErr, err := c.PollUntilDone(ctx, "machine")
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tt.expectPollingErr {
+				g.Expect(provisioningErr).ToNot(BeNil())
+			} else {
+				g.Expect(provisioningErr).To(BeNil())
+			}
+		})
 	}
 }
 
