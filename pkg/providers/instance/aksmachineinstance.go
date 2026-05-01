@@ -372,15 +372,6 @@ func (p *DefaultAKSMachineProvider) GetMachinesPoolLocation() string {
 	return p.aksMachinesPoolLocation
 }
 
-func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerservice.Machine) {
-	// This needs to be rehydrated per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
-	// An example use of this down the codepath is  to construct a NodeClaim representation (BuildNodeClaimFromAKSMachine).
-	// Suggestion: rework/research more on this pattern RP-side?
-	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
-		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
-	}
-}
-
 func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachineName string) error {
 	log.FromContext(ctx).V(1).Info("deleting AKS machine", "aksMachineName", aksMachineName)
 
