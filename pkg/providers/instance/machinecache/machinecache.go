@@ -126,6 +126,21 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 	return c.getAndStore(ctx, machineName)
 }
 
+// getFromCache retrieves a machine from the cache by name.
+// It returns the machine, a boolean indicating if it was found, and a boolean indicating if the cache is fresh.
+func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Machine, bool, bool) {
+	if !c.isFresh() {
+		c.requestUpdate()
+		return nil, false, false
+	}
+	value, ok := c.machines.Load(machineName)
+	if !ok {
+		return nil, false, true
+	}
+
+	return value.(*armcontainerservice.Machine), true, true
+}
+
 // getAndStore fetches a machine from the AKS API and stores it in the cache.
 func (c *MachineCache) getAndStore(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
 	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
@@ -138,6 +153,62 @@ func (c *MachineCache) getAndStore(ctx context.Context, machineName string) (*ar
 		c.machines.Store(machineName, machine)
 	}
 	return machine, nil
+}
+
+// ListWithFallback lists all machines in the AKS machines pool.
+// If useCache is true and the cache is fresh, it will attempt to return the list from the cache.
+// If the cache is stale or disabled, it will fall back to calling the AKS API directly.
+func (c *MachineCache) ListWithFallback(ctx context.Context, useCache bool) ([]*armcontainerservice.Machine, error) {
+	if useCache && !c.options.disabled {
+		if machines, fresh := c.listFromCache(ctx); fresh {
+			return machines, nil
+		}
+	}
+
+	var machines []*armcontainerservice.Machine
+	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
+	if pager == nil {
+		return nil, fmt.Errorf("failed to list AKS machines: created pager is nil")
+	}
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			if machine.IsAKSMachineOrMachinesPoolNotFound(err) {
+				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
+				break
+			}
+
+			return nil, fmt.Errorf("failed to list AKS machines: %w", err)
+		}
+
+		for _, aksMachine := range page.Value {
+			// Filter to only include machines created by Karpenter
+			// Check if the AKS machine has the Karpenter nodepool tag
+			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
+				if _, hasKarpenterTag := aksMachine.Properties.Tags[launchtemplate.NodePoolTagKey]; hasKarpenterTag {
+					c.rehydrateMachine(aksMachine)
+					machines = append(machines, aksMachine)
+				}
+			}
+		}
+	}
+	return machines, nil
+}
+
+// listFromCache returns the list of machines from the cache if the cache is fresh and a boolean indicating whether the cache was fresh.
+func (c *MachineCache) listFromCache(ctx context.Context) ([]*armcontainerservice.Machine, bool) {
+	if !c.isFresh() {
+		c.requestUpdate()
+		return nil, false
+	}
+	var machines []*armcontainerservice.Machine
+	c.machines.Range(func(key, value any) bool {
+		if m, ok := value.(*armcontainerservice.Machine); ok {
+			machines = append(machines, m)
+		}
+		return true
+	})
+	return machines, true
 }
 
 // Invalidate removes a specific machine from the cache by name.
@@ -181,21 +252,6 @@ func (c *MachineCache) checkMachineExists(ctx context.Context, name string) erro
 		c.machines.Store(name, machine)
 	}
 	return err
-}
-
-// getFromCache retrieves a machine from the cache by name.
-// It returns the machine, a boolean indicating if it was found, and a boolean indicating if the cache is fresh.
-func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Machine, bool, bool) {
-	if !c.isFresh() {
-		c.requestUpdate()
-		return nil, false, false
-	}
-	value, ok := c.machines.Load(machineName)
-	if !ok {
-		return nil, false, true
-	}
-
-	return value.(*armcontainerservice.Machine), true, true
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
@@ -307,4 +363,13 @@ func isValid(ctx context.Context, properties *armcontainerservice.MachinePropert
 	}
 
 	return true
+}
+
+func (c *MachineCache) rehydrateMachine(aksMachine *armcontainerservice.Machine) {
+	// This needs to be rehydrated per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
+	// An example use of this down the codepath is  to construct a NodeClaim representation (BuildNodeClaimFromAKSMachine).
+	// Suggestion: rework/research more on this pattern RP-side?
+	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
+		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+	}
 }
