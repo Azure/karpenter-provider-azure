@@ -279,14 +279,92 @@ func TestListWithFallback(t *testing.T) {
 		lastUpdated      time.Time
 		cachedMachines   []*armcontainerservice.Machine
 		listErr          error
-		listRetval       armcontainerservice.MachinesClientListResponse
+		returnedMachines []*armcontainerservice.Machine
+		expectErr        bool
 		expectedMachines []*armcontainerservice.Machine
 	}{
-		{name: "success - returns list from cache"},
-		{name: "success - falls back to API when cache is stale"},
-		{name: "failure - API returns error"},
+		{
+			name:        "success - returns list from cache",
+			lastUpdated: time.Now(),
+			cachedMachines: []*armcontainerservice.Machine{
+				{Name: to.Ptr("machine1")},
+				{Name: to.Ptr("machine2")},
+			},
+			expectErr: false,
+			expectedMachines: []*armcontainerservice.Machine{
+				{Name: to.Ptr("machine1")},
+				{Name: to.Ptr("machine2")},
+			},
+		},
+		{
+			name:        "success - falls back to API when cache is stale",
+			lastUpdated: time.Now().Add(-60 * time.Second),
+			returnedMachines: []*armcontainerservice.Machine{
+				{
+					Name: to.Ptr("machine3"),
+					Properties: &armcontainerservice.MachineProperties{
+						Tags: map[string]*string{
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+			},
+			expectErr: false,
+			expectedMachines: []*armcontainerservice.Machine{
+				{
+					Name: to.Ptr("machine3"),
+					Properties: &armcontainerservice.MachineProperties{
+						Tags: map[string]*string{
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:        "failure - API returns error",
+			lastUpdated: time.Now().Add(-60 * time.Second),
+			listErr:     errors.New("API error"),
+			expectErr:   true,
+		},
 	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			fakeClient := &fakeAKSMachineClienter{
+				listErr:    tt.listErr,
+				listRetval: tt.returnedMachines,
+			}
+
+			c := MachineCache{
+				client:               fakeClient,
+				clusterResourceGroup: "test-rg",
+				clusterName:          "test-cluster",
+				aksMachinesPoolName:  "test-pool",
+				options:              defaultOpts(),
+			}
+
+			for _, m := range tt.cachedMachines {
+				c.machines.Store(lo.FromPtr(m.Name), m)
+			}
+			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
+
+			machines, err := c.ListWithFallback(context.Background(), true)
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(machines).To(HaveLen(len(tt.expectedMachines)))
+				for i, expected := range tt.expectedMachines {
+					g.Expect(lo.FromPtr(machines[i].Name)).To(Equal(lo.FromPtr(expected.Name)))
+				}
+			}
+		})
+	}
 }
 
 func TestIsFresh(t *testing.T) {
