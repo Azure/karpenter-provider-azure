@@ -90,6 +90,7 @@ type Environment struct {
 	AKSDataStorage *fake.AKSDataStorage
 
 	// Cache
+	AKSMachineCache           *machinecache.MachineCache
 	KubernetesVersionCache    *cache.Cache
 	NodeImagesCache           *cache.Cache
 	InstanceTypeCache         *cache.Cache
@@ -266,8 +267,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.NodeResourceGroup,
 		clusterName,
 		testOptions.AKSMachinesPoolName,
-		machinecache.WithTTL(0),
-		machinecache.WithCacheDisabled(),
+		machinecache.WithTTL(1*time.Second),
+		machinecache.WithPollInterval(1*time.Millisecond),
 	)
 
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
@@ -312,6 +313,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 		AKSDataStorage: aksDataStorage,
 
+		AKSMachineCache:           aksMachineCache,
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
 		InstanceTypeCache:         instanceTypeCache,
