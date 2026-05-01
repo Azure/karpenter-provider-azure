@@ -204,16 +204,20 @@ func (p *Poller) pollOnce(ctx context.Context, retryAttemptsLeft *int, currentRe
 		return errDetails, pollerErr, true
 	}
 
-	shouldRetry := false
-	var retryErr error
 	if errDetails == nil && pollerErr == nil {
-		shouldRetry, retryErr = p.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
-		if retryErr != nil {
-			return nil, retryErr, true
-		}
+		p.resetRetryState(retryAttemptsLeft, currentRetryDelay)
+		return nil, nil, false
 	}
 
-	return errDetails, pollerErr, shouldRetry
+	shouldRetry, backoffErr := p.retryWithBackoff(ctx, retryAttemptsLeft, currentRetryDelay)
+	if backoffErr != nil {
+		return nil, backoffErr, true
+	}
+	if shouldRetry {
+		return nil, nil, false
+	}
+
+	return errDetails, pollerErr, false
 }
 
 // handleGetError processes errors from the GET call during polling.

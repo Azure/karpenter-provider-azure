@@ -112,14 +112,14 @@ func TestHandleProvisioningState(t *testing.T) {
 			name:                 "Unknown state",
 			provisioningState:    "UnknownState",
 			expectedErrorDetails: nil,
-			expectedPollingErr:   false,
+			expectedPollingErr:   true,
 			expectedDone:         false,
 		},
 		{
 			name:                 "Empty state",
 			provisioningState:    "",
 			expectedErrorDetails: nil,
-			expectedPollingErr:   false,
+			expectedPollingErr:   true,
 			expectedDone:         false,
 		},
 	}

@@ -60,7 +60,7 @@ func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservic
 			"aksMachineID", aksMachine.ID,
 			"provisioningState", provisioningState,
 		)
-		return nil, nil, false
+		return nil, fmt.Errorf("AKS machine %q sees unrecognized provisioning state %s", lo.FromPtr(aksMachine.Name), provisioningState), false
 	}
 }
 
