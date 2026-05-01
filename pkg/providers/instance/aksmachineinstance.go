@@ -378,34 +378,6 @@ func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerser
 	}
 }
 
-/*
-func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string, useCache bool) (*armcontainerservice.Machine, error) {
-	if useCache && p.machineCache != nil {
-		aksMachine, err := p.machineCache.Get(ctx, aksMachineName, true)
-		if err == nil && aksMachine != nil {
-			p.rehydrateMachine(aksMachine)
-			return aksMachine, nil
-		}
-		if err != nil && !errors.Is(err, machinecache.ErrCacheStale) {
-			log.FromContext(ctx).V(1).Info("cache error while getting AKS machine, falling back to direct API call", "aksMachineName", aksMachineName, "error", err)
-		}
-	}
-
-	resp, err := p.azClient.AKSMachinesClient().Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AKS machine %q: %w", aksMachineName, err)
-	}
-	aksMachine := lo.ToPtr(resp.Machine)
-	p.rehydrateMachine(aksMachine)
-
-		if useCache && p.machineCache != nil {
-			p.machineCache.Add(aksMachine)
-		}
-
-	return aksMachine, nil
-}
-*/
-
 func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcontainerservice.Machine, error) {
 	var machines []*armcontainerservice.Machine
 	pager := p.azClient.AKSMachinesClient().NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
