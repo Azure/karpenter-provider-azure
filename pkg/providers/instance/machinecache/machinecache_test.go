@@ -17,6 +17,7 @@ package machinecache
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -359,6 +360,16 @@ func TestListWithFallback(t *testing.T) {
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(machines).To(HaveLen(len(tt.expectedMachines)))
+
+				// Sort both slices by name for deterministic comparison
+				sortMachinesByName := func(m []*armcontainerservice.Machine) {
+					sort.Slice(m, func(i, j int) bool {
+						return lo.FromPtr(m[i].Name) < lo.FromPtr(m[j].Name)
+					})
+				}
+				sortMachinesByName(machines)
+				sortMachinesByName(tt.expectedMachines)
+
 				for i, expected := range tt.expectedMachines {
 					g.Expect(lo.FromPtr(machines[i].Name)).To(Equal(lo.FromPtr(expected.Name)))
 				}
