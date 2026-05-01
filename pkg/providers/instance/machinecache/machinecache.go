@@ -123,7 +123,16 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 		// It also ensures that the returned error for a missing machine is consistent.
 	}
 
-	return c.getAndStore(ctx, machineName)
+	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AKS machine %q: %w", machineName, err)
+	}
+
+	machine := lo.ToPtr(resp.Machine)
+	if !c.options.disabled {
+		c.machines.Store(machineName, machine)
+	}
+	return machine, nil
 }
 
 // getFromCache retrieves a machine from the cache by name.
@@ -139,20 +148,6 @@ func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Ma
 	}
 
 	return value.(*armcontainerservice.Machine), true, true
-}
-
-// getAndStore fetches a machine from the AKS API and stores it in the cache.
-func (c *MachineCache) getAndStore(ctx context.Context, machineName string) (*armcontainerservice.Machine, error) {
-	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AKS machine %q: %w", machineName, err)
-	}
-
-	machine := lo.ToPtr(resp.Machine)
-	if !c.options.disabled {
-		c.machines.Store(machineName, machine)
-	}
-	return machine, nil
 }
 
 // ListWithFallback lists all machines in the AKS machines pool.
