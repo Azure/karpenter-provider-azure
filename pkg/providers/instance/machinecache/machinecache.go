@@ -68,7 +68,7 @@ func WithCacheDisabled() Option {
 	return func(o opts) opts { o.disabled = true; return o }
 }
 
-// MachineCache caches AKS machine resources with TTL-based expiration and on-demand refresh.
+// MachineCache caches AKS machine resources with TTL-based expiration.
 type MachineCache struct {
 	machines             sync.Map
 	lastUpdatedUnixNanos atomic.Int64
@@ -84,7 +84,7 @@ type MachineCache struct {
 	options opts
 }
 
-// NewMachineCache creates a new cache instance with a background worker for on-demand updates.
+// NewMachineCache creates a new cache instance with a background worker for updates.
 // Updates to the cache are triggered when a stale cache is accessed.
 func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
 	cache := &MachineCache{
@@ -154,7 +154,6 @@ func (c *MachineCache) Invalidate(machineName string) {
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).V(2).Info("starting cache poller for AKS machine", "aksMachineName", name)
 
-	// First check if the machine exists before starting to poll
 	if err := c.checkMachineExists(ctx, name); err != nil {
 		return nil, err
 	}
