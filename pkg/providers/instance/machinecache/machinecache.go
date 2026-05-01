@@ -180,13 +180,9 @@ func (c *MachineCache) ListWithFallback(ctx context.Context, useCache bool) ([]*
 		}
 
 		for _, aksMachine := range page.Value {
-			// Filter to only include machines created by Karpenter
-			// Check if the AKS machine has the Karpenter nodepool tag
-			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
-				if _, hasKarpenterTag := aksMachine.Properties.Tags[launchtemplate.NodePoolTagKey]; hasKarpenterTag {
-					c.rehydrateMachine(aksMachine)
-					machines = append(machines, aksMachine)
-				}
+			if isValid(ctx, aksMachine.Properties, lo.FromPtr(aksMachine.Name)) {
+				c.rehydrateMachine(aksMachine)
+				machines = append(machines, aksMachine)
 			}
 		}
 	}
