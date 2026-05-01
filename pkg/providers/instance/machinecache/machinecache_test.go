@@ -504,10 +504,6 @@ func TestPollUntilDone(t *testing.T) {
 			c.options.pollInterval = time.Millisecond
 			c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 
-			if tt.getRetval.Name != nil {
-				c.machines.Store(lo.FromPtr(tt.getRetval.Name), &tt.getRetval.Machine)
-			}
-
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 
