@@ -261,7 +261,7 @@ func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.
 		return "", nil
 	}
 
-	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName, instance.WithUseCache())
 	if err != nil {
 		return "", err
 	}
