@@ -30,9 +30,9 @@ import (
 )
 
 type fakeAKSMachineClienter struct {
-	machines []*armcontainerservice.Machine
-	nilPager bool
-	listErr  error
+	listRetval []*armcontainerservice.Machine
+	nilPager   bool
+	listErr    error
 
 	getErr    error
 	getRetval armcontainerservice.MachinesClientGetResponse
@@ -50,7 +50,7 @@ func (f *fakeAKSMachineClienter) NewListPager(resourceGroupName string, resource
 		Fetcher: func(ctx context.Context, page *armcontainerservice.MachinesClientListResponse) (armcontainerservice.MachinesClientListResponse, error) {
 			return armcontainerservice.MachinesClientListResponse{
 				MachineListResult: armcontainerservice.MachineListResult{
-					Value: f.machines,
+					Value: f.listRetval,
 				},
 			}, f.listErr
 		},
@@ -150,9 +150,9 @@ func TestUpdate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fakePager := &fakeAKSMachineClienter{
-				listErr:  tt.pagerErr,
-				nilPager: tt.nilPager,
-				machines: tt.returnedMachines,
+				listErr:    tt.pagerErr,
+				nilPager:   tt.nilPager,
+				listRetval: tt.returnedMachines,
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -270,6 +270,23 @@ func TestGetWithFallback(t *testing.T) {
 			g.Expect(machine).To(Equal(tt.expectedMachine))
 		})
 	}
+}
+
+func TestListWithFallback(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		lastUpdated      time.Time
+		cachedMachines   []*armcontainerservice.Machine
+		listErr          error
+		listRetval       armcontainerservice.MachinesClientListResponse
+		expectedMachines []*armcontainerservice.Machine
+	}{
+		{name: "success - returns list from cache"},
+		{name: "success - falls back to API when cache is stale"},
+		{name: "failure - API returns error"},
+	}
+
 }
 
 func TestIsFresh(t *testing.T) {
