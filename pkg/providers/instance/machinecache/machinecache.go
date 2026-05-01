@@ -231,6 +231,15 @@ func (c *MachineCache) Invalidate(machineName string) {
 	c.machines.Delete(machineName)
 }
 
+// InvalidateAll clears the entire cache, forcing the next access to fall through to the API.
+func (c *MachineCache) InvalidateAll() {
+	c.machines.Range(func(key, _ any) bool {
+		c.machines.Delete(key)
+		return true
+	})
+	c.lastUpdatedUnixNanos.Store(0)
+}
+
 // PollUntilDone polls for AKS machine provisioning completion using the cache.
 // This polls indefinitely until the machine reaches a terminal state (Succeeded, Failed, or Deleting) or the context is canceled.
 // If at any point the machine is not found, PollUntilDone will return an error.

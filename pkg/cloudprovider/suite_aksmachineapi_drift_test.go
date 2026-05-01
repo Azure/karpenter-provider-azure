@@ -44,10 +44,10 @@ import (
 )
 
 var _ = Describe("CloudProvider", func() {
-	Context("ProvisionMode = AKSMachineAPI", func() {
+	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:        lo.ToPtr(true),
 			})
 

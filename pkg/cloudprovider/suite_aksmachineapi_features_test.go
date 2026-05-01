@@ -46,10 +46,10 @@ import (
 )
 
 var _ = Describe("CloudProvider", func() {
-	Context("ProvisionMode = AKSMachineAPI", func() {
+	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:        lo.ToPtr(true),
 			})
 
@@ -307,7 +307,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should add additional tags to the AKS machine", func() {
 				// Set up test context with additional tags
 				aksTestOptions := test.Options(test.OptionsFields{
-					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 					UseSIG:        lo.ToPtr(true),
 					AdditionalTags: map[string]string{
 						"karpenter.azure.com/test-tag": "test-value",
@@ -485,7 +485,7 @@ var _ = Describe("CloudProvider", func() {
 				// This allows testing custom subnet configuration (managed VNet doesn't allow custom subnets)
 				byoClusterSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"
 				byoOpts := test.Options(test.OptionsFields{
-					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 					UseSIG:        lo.ToPtr(true),
 					SubnetID:      lo.ToPtr(byoClusterSubnetID),
 				})
