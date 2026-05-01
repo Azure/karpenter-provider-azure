@@ -42,7 +42,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
@@ -285,11 +284,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		batchCreationEnabled,
 		aksMachineCache,
 	)
-
-	// Use instant poller for batch mode tests to minimize async polling time.
-	if batchCreationEnabled {
-		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
-	}
 
 	store := nodeoverlay.NewInstanceTypeStore()
 

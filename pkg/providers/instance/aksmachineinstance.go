@@ -37,7 +37,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -150,22 +149,21 @@ type AKSMachineProvider interface {
 var _ AKSMachineProvider = (*DefaultAKSMachineProvider)(nil)
 
 type DefaultAKSMachineProvider struct {
-	azClient                        *azclient.AZClient
-	instanceTypeProvider            instancetype.Provider
-	allocationStrategyProvider      allocationstrategy.Provider
-	imageResolver                   imagefamily.Resolver
-	subscriptionID                  string
-	clusterResourceGroup            string
-	clusterName                     string
-	aksMachinesPoolName             string // Only support one AKS machine pool at a time, for now.
-	aksMachinesPoolLocation         string
-	batchCreationEnabled            bool
-	provisioningErrorHandling       *offerings.ErrorDetailHandler
-	beginCreateErrorHandling        *offerings.AKSMachineBeginCreateErrorHandler
-	deletingMachines                sets.Set[string] // tracks in-flight delete operations by machine name
-	deletingMachinesMu              sync.RWMutex
-	fallbackAKSMachinePollerOptions aksmachinepoller.Options // GET-based poller options (fallback when SDK poller is nil); configurable for testing
-	machineCache                    *machinecache.MachineCache
+	azClient                   *azclient.AZClient
+	instanceTypeProvider       instancetype.Provider
+	allocationStrategyProvider allocationstrategy.Provider
+	imageResolver              imagefamily.Resolver
+	subscriptionID             string
+	clusterResourceGroup       string
+	clusterName                string
+	aksMachinesPoolName        string // Only support one AKS machine pool at a time, for now.
+	aksMachinesPoolLocation    string
+	batchCreationEnabled       bool
+	provisioningErrorHandling  *offerings.ErrorDetailHandler
+	beginCreateErrorHandling   *offerings.AKSMachineBeginCreateErrorHandler
+	deletingMachines           sets.Set[string] // tracks in-flight delete operations by machine name
+	deletingMachinesMu         sync.RWMutex
+	machineCache               *machinecache.MachineCache
 }
 
 func NewAKSMachineProvider(
@@ -183,30 +181,23 @@ func NewAKSMachineProvider(
 	machineCache *machinecache.MachineCache,
 ) *DefaultAKSMachineProvider {
 	provider := &DefaultAKSMachineProvider{
-		azClient:                        azClient,
-		instanceTypeProvider:            instanceTypeProvider,
-		allocationStrategyProvider:      allocationStrategyProvider,
-		imageResolver:                   imageResolver,
-		subscriptionID:                  subscriptionID,
-		clusterResourceGroup:            clusterResourceGroup,
-		clusterName:                     clusterName,
-		aksMachinesPoolName:             aksMachinesPoolName,
-		aksMachinesPoolLocation:         aksMachinesPoolLocation,
-		batchCreationEnabled:            batchCreationEnabled,
-		provisioningErrorHandling:       offerings.NewErrorDetailHandler(offeringsCache),
-		beginCreateErrorHandling:        offerings.NewAKSMachineBeginCreateErrorHandler(offeringsCache),
-		deletingMachines:                sets.New[string](),
-		fallbackAKSMachinePollerOptions: aksmachinepoller.DefaultOptions(),
-		machineCache:                    machineCache,
+		azClient:                   azClient,
+		instanceTypeProvider:       instanceTypeProvider,
+		allocationStrategyProvider: allocationStrategyProvider,
+		imageResolver:              imageResolver,
+		subscriptionID:             subscriptionID,
+		clusterResourceGroup:       clusterResourceGroup,
+		clusterName:                clusterName,
+		aksMachinesPoolName:        aksMachinesPoolName,
+		aksMachinesPoolLocation:    aksMachinesPoolLocation,
+		batchCreationEnabled:       batchCreationEnabled,
+		provisioningErrorHandling:  offerings.NewErrorDetailHandler(offeringsCache),
+		beginCreateErrorHandling:   offerings.NewAKSMachineBeginCreateErrorHandler(offeringsCache),
+		deletingMachines:           sets.New[string](),
+		machineCache:               machineCache,
 	}
 
 	return provider
-}
-
-// SetFallbackAKSMachinePollerOptions overrides the default GET-based poller options (used in tests to avoid real polling delays).
-// "Fallback" because the GET poller is used when the SDK poller is nil (batch code path).
-func (p *DefaultAKSMachineProvider) SetFallbackAKSMachinePollerOptions(opts aksmachinepoller.Options) {
-	p.fallbackAKSMachinePollerOptions = opts
 }
 
 // BeginCreate creates an instance given the constraints.
