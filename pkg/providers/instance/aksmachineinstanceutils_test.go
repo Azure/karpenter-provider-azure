@@ -102,7 +102,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					},
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
-						NodePoolTagKey: lo.ToPtr("test-nodepool"),
+						launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
 						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 					},
 				},

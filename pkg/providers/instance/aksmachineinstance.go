@@ -19,7 +19,6 @@ package instance
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -43,10 +42,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/machine"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
-)
-
-var (
-	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
 // Notes on terminology:

@@ -97,7 +97,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 		labels[corev1.LabelTopologyZone] = *zone
 	}
 	labels[karpv1.CapacityTypeLabelKey] = capacityType
-	if tag, ok := aksMachineTemplate.Properties.Tags[NodePoolTagKey]; ok {
+	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]; ok {
