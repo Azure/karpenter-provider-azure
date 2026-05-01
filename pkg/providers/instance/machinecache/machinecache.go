@@ -39,7 +39,6 @@ type AKSMachineClienter interface {
 type opts struct {
 	ttl          time.Duration
 	pollInterval time.Duration
-	disabled     bool
 	pollTimeout  time.Duration
 }
 
@@ -62,12 +61,6 @@ func WithTTL(d time.Duration) Option {
 // WithPollInterval sets the interval for polling machine provisioning state.
 func WithPollInterval(d time.Duration) Option {
 	return func(o opts) opts { o.pollInterval = d; return o }
-}
-
-// WithCacheDisabled disables the cache entirely. All Get/List calls will return ErrCacheStale,
-// forcing callers to fall through to direct API calls. No background goroutine is spawned.
-func WithCacheDisabled() Option {
-	return func(o opts) opts { o.disabled = true; return o }
 }
 
 // WithPollTimeout sets the maximum duration to wait for a machine to reach a terminal provisioning state
@@ -108,10 +101,8 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 		cache.options = opt(cache.options)
 	}
 
-	if !cache.options.disabled {
-		cache.wg.Add(1)
-		go cache.run(ctx)
-	}
+	cache.wg.Add(1)
+	go cache.run(ctx)
 
 	return cache
 }
@@ -120,7 +111,7 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 // If useCache is true and the cache is fresh, it will attempt to return the machine from the cache.
 // If the cache is stale or disabled, or if the machine is not found in the cache, it will fall back to calling the AKS API directly.
 func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
-	if useCache && !c.options.disabled {
+	if useCache {
 		machine, found, fresh := c.getFromCache(machineName)
 		if fresh && found {
 			c.rehydrateMachine(machine)
@@ -143,9 +134,8 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 
 	machine := lo.ToPtr(resp.Machine)
 	c.rehydrateMachine(machine)
-	if !c.options.disabled {
-		c.machines.Store(machineName, machine)
-	}
+	c.machines.Store(machineName, machine)
+
 	return machine, nil
 }
 
@@ -170,7 +160,7 @@ func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Ma
 // If useCache is true and the cache is fresh, it will attempt to return the list from the cache.
 // If the cache is stale or disabled, it will fall back to calling the AKS API directly.
 func (c *MachineCache) ListWithFallback(ctx context.Context, useCache bool) ([]*armcontainerservice.Machine, error) {
-	if useCache && !c.options.disabled {
+	if useCache {
 		if machines, fresh := c.listFromCache(); fresh {
 			return machines, nil
 		}
@@ -223,9 +213,6 @@ func (c *MachineCache) listFromCache() ([]*armcontainerservice.Machine, bool) {
 
 // Invalidate removes a specific machine from the cache by name.
 func (c *MachineCache) Invalidate(machineName string) {
-	if c.options.disabled {
-		return
-	}
 	// We remove invalidated machines from the cache.
 	// This is safe because any subsequent GetWithFallback call for this machine will fall back to an API call.
 	c.machines.Delete(machineName)

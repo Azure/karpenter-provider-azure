@@ -137,18 +137,13 @@ func TestUpdate(t *testing.T) {
 				listRetval: tt.returnedMachines,
 			}
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			cache := NewMachineCache(
-				ctx,
-				fakePager,
-				"test-rg",
-				"test-cluster",
-				"test-pool",
-				WithTTL(30*time.Second),
-				WithCacheDisabled(),
-			)
+			cache := &MachineCache{
+				client:               fakePager,
+				clusterResourceGroup: "test-rg",
+				clusterName:          "test-cluster",
+				aksMachinesPoolName:  "test-pool",
+				options:              defaultOpts(),
+			}
 
 			for _, m := range tt.existingCache {
 				cache.machines.Store(lo.FromPtr(m.Name), m)
@@ -428,18 +423,13 @@ func TestIsFresh(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			c := NewMachineCache(
-				ctx,
-				&fakeAKSMachineClienter{},
-				"test-rg",
-				"test-cluster",
-				"test-pool",
-				WithTTL(30*time.Second),
-				WithCacheDisabled(),
-			)
+			c := &MachineCache{
+				client:               &fakeAKSMachineClienter{},
+				clusterResourceGroup: "test-rg",
+				clusterName:          "test-cluster",
+				aksMachinesPoolName:  "test-pool",
+				options:              defaultOpts(),
+			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 			if got := c.isFresh(); got != tt.expected {
 				t.Errorf("isFresh() = %v, want %v", got, tt.expected)
