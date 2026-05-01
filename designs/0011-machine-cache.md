@@ -39,24 +39,14 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
 
 - **Drift Detection** (`pkg/cloudprovider/drift.go`): Uses cache (`WithUseCache()`)
   - Drift checks occur frequently and benefit from cached data
-  - Line 264: `aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName, instance.WithUseCache())`
 
 - **Pre-Create Checks** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
-  - Line 440: `existingAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, true)`
   - Checks if machine already exists before creating (handles restart scenarios)
 
-- **Post-Create Validation** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
-  - Line 498: `gotAKSMachine, err := p.getCreatedMachineAndHandleEarlyProvisioningError(...)`
-  - Line 729: `gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, true)`
-  - Fetches machine properties immediately after creation
-
 - **Polling** (`pkg/providers/instance/machinecache/machinecache.go`): Uses cache
-  - Line 246: `machine, err := c.GetWithFallback(ctx, name, true)`
   - Polls cache for provisioning state changes during machine creation
-  - Line 254: `aksMachine, found, fresh := c.getFromCache(aksMachineName)`
 
 - **CloudProvider Get** (`pkg/cloudprovider/cloudprovider.go`): No cache
-  - Line 425: `aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)`
   - Direct API call without cache option (always fresh data)
 
 ### List Operations
@@ -71,7 +61,6 @@ The cache provides `ListWithFallback(ctx, useCache)` which:
 **Cache Usage in List**:
 
 - **CloudProvider List** (`pkg/cloudprovider/cloudprovider.go`): Uses cache
-  - Line 456 (AKS machines): `aksMachineInstances, err := c.aksMachineInstanceProvider.List(ctx, instance.WithUseCache())`
   - List operations are expensive; cache significantly reduces API load
 
 - **Currently**: List always uses cache when available (no opt-out path in production)
@@ -91,7 +80,7 @@ The cache provides `ListWithFallback(ctx, useCache)` which:
 
 ### Update Implementation
 
-The `update()` method (lines 296-337):
+The `update()` method:
 - Fetches all machines via paged API calls
 - Validates machines (filters by Karpenter nodepool tag)
 - Updates `sync.Map` with new/updated machines

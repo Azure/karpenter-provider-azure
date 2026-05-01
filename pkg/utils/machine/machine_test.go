@@ -1,3 +1,18 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 package machine
 
 import (
@@ -18,35 +33,35 @@ import (
 func TestHandleProvisioningState(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name                    string
-		provisioningState       string
-		provisioningError       *armcontainerservice.ErrorDetail
-		status                  *armcontainerservice.MachineStatus
-		expectedErrorDetails    *armcontainerservice.ErrorDetail
-		expectedPollingErr      bool
-		expectedPollingErrMsg   string
-		expectedDone            bool
+		name                  string
+		provisioningState     string
+		provisioningError     *armcontainerservice.ErrorDetail
+		status                *armcontainerservice.MachineStatus
+		expectedErrorDetails  *armcontainerservice.ErrorDetail
+		expectedPollingErr    bool
+		expectedPollingErrMsg string
+		expectedDone          bool
 	}{
 		{
-			name:                  "Creating state - non-terminal",
-			provisioningState:     consts.ProvisioningStateCreating,
-			expectedErrorDetails:  nil,
-			expectedPollingErr:    false,
-			expectedDone:          false,
+			name:                 "Creating state - non-terminal",
+			provisioningState:    consts.ProvisioningStateCreating,
+			expectedErrorDetails: nil,
+			expectedPollingErr:   false,
+			expectedDone:         false,
 		},
 		{
-			name:                  "Updating state - non-terminal",
-			provisioningState:     consts.ProvisioningStateUpdating,
-			expectedErrorDetails:  nil,
-			expectedPollingErr:    false,
-			expectedDone:          false,
+			name:                 "Updating state - non-terminal",
+			provisioningState:    consts.ProvisioningStateUpdating,
+			expectedErrorDetails: nil,
+			expectedPollingErr:   false,
+			expectedDone:         false,
 		},
 		{
-			name:                  "Succeeded state - terminal success",
-			provisioningState:     consts.ProvisioningStateSucceeded,
-			expectedErrorDetails:  nil,
-			expectedPollingErr:    false,
-			expectedDone:          true,
+			name:                 "Succeeded state - terminal success",
+			provisioningState:    consts.ProvisioningStateSucceeded,
+			expectedErrorDetails: nil,
+			expectedPollingErr:   false,
+			expectedDone:         true,
 		},
 		{
 			name:                  "Deleting state - terminal canceled",
@@ -93,18 +108,18 @@ func TestHandleProvisioningState(t *testing.T) {
 			expectedDone:          true,
 		},
 		{
-			name:                  "Unknown state",
-			provisioningState:     "UnknownState",
-			expectedErrorDetails:  nil,
-			expectedPollingErr:    false,
-			expectedDone:          false,
+			name:                 "Unknown state",
+			provisioningState:    "UnknownState",
+			expectedErrorDetails: nil,
+			expectedPollingErr:   false,
+			expectedDone:         false,
 		},
 		{
-			name:                  "Empty state",
-			provisioningState:     "",
-			expectedErrorDetails:  nil,
-			expectedPollingErr:    false,
-			expectedDone:          false,
+			name:                 "Empty state",
+			provisioningState:    "",
+			expectedErrorDetails: nil,
+			expectedPollingErr:   false,
+			expectedDone:         false,
 		},
 	}
 
