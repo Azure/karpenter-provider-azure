@@ -40,12 +40,14 @@ type opts struct {
 	ttl          time.Duration
 	pollInterval time.Duration
 	disabled     bool
+	pollTimeout  time.Duration
 }
 
 func defaultOpts() opts {
 	return opts{
 		ttl:          30 * time.Second,
 		pollInterval: 5 * time.Second,
+		pollTimeout:  15 * time.Minute,
 	}
 }
 
@@ -66,6 +68,12 @@ func WithPollInterval(d time.Duration) Option {
 // forcing callers to fall through to direct API calls. No background goroutine is spawned.
 func WithCacheDisabled() Option {
 	return func(o opts) opts { o.disabled = true; return o }
+}
+
+// WithPollTimeout sets the maximum duration to wait for a machine to reach a terminal provisioning state
+// before considering the poll to have timed out.
+func WithPollTimeout(d time.Duration) Option {
+	return func(o opts) opts { o.pollTimeout = d; return o }
 }
 
 // MachineCache caches AKS machine resources with TTL-based expiration.
@@ -111,7 +119,6 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 // GetWithFallback gets a machine.
 // If useCache is true and the cache is fresh, it will attempt to return the machine from the cache.
 // If the cache is stale or disabled, or if the machine is not found in the cache, it will fall back to calling the AKS API directly.
-// Note: We do not block waiting for the background cache update to complete because doing so would introduce substantial latency.
 func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, useCache bool) (*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
 		machine, found, fresh := c.getFromCache(machineName)
@@ -123,8 +130,12 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 		// Even if the cache is fresh but the machine is not found, we fall through to call the AKS API directly.
 		// This ensures that an out-of-date but fresh cache does not prevent us from retrieving a machine.
 		// It also ensures that the returned error for a missing machine is consistent.
+		// Multiple functions in this package also rely on the assumption that we have a fallback to the API
+		// in cases where the cache is stale or the machine is not found in the cache.
 	}
 
+	// In terms of performance, calling the AKS API directly here is tolerable.
+	// The bulk of Get calls come from polling, and it's rare for a call to fall through to direct API calls during polling.
 	resp, err := c.client.Get(ctx, c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, machineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q: %w", machineName, err)
@@ -142,6 +153,8 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 // It returns the machine, a boolean indicating if it was found, and a boolean indicating if the cache is fresh.
 func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Machine, bool, bool) {
 	if !c.isFresh() {
+		// Note: We do not block waiting for the background cache update to complete because doing so would introduce substantial latency.
+		// Performance-wise, it's preferable to tolerate a few Gets than to block provisioning until the cache populates.
 		c.requestUpdate()
 		return nil, false, false
 	}
@@ -180,7 +193,7 @@ func (c *MachineCache) ListWithFallback(ctx context.Context, useCache bool) ([]*
 		}
 
 		for _, aksMachine := range page.Value {
-			if isValid(ctx, aksMachine.Properties, lo.FromPtr(aksMachine.Name)) {
+			if isValid(aksMachine.Properties) {
 				c.rehydrateMachine(aksMachine)
 				machines = append(machines, aksMachine)
 			}
@@ -198,7 +211,10 @@ func (c *MachineCache) listFromCache() ([]*armcontainerservice.Machine, bool) {
 	var machines []*armcontainerservice.Machine
 	c.machines.Range(func(key, value any) bool {
 		if m, ok := value.(*armcontainerservice.Machine); ok {
-			machines = append(machines, m)
+			if isValid(m.Properties) {
+				c.rehydrateMachine(m)
+				machines = append(machines, m)
+			}
 		}
 		return true
 	})
@@ -210,6 +226,8 @@ func (c *MachineCache) Invalidate(machineName string) {
 	if c.options.disabled {
 		return
 	}
+	// We remove invalidated machines from the cache.
+	// This is safe because any subsequent GetWithFallback call for this machine will fall back to an API call.
 	c.machines.Delete(machineName)
 }
 
@@ -219,12 +237,14 @@ func (c *MachineCache) Invalidate(machineName string) {
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).V(2).Info("starting cache poller for AKS machine", "aksMachineName", name)
 
-	if err := c.checkMachineExists(ctx, name); err != nil {
-		return nil, err
+	if !c.checkMachineExists(ctx, name) {
+		return nil, fmt.Errorf("AKS machine %q does not exist", name)
 	}
 
 	ticker := time.NewTicker(c.options.pollInterval)
 	defer ticker.Stop()
+
+	timeout := time.After(c.options.pollTimeout)
 
 	for {
 		select {
@@ -236,16 +256,15 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 			if done {
 				return provisioningErr, pollerErr
 			}
+		case <-timeout:
+			return nil, fmt.Errorf("timed out while polling for AKS machine %q after %s", name, c.options.pollTimeout)
 		}
 	}
 }
 
-func (c *MachineCache) checkMachineExists(ctx context.Context, name string) error {
+func (c *MachineCache) checkMachineExists(ctx context.Context, name string) bool {
 	machine, err := c.GetWithFallback(ctx, name, true)
-	if machine != nil && err == nil {
-		c.machines.Store(name, machine)
-	}
-	return err
+	return machine != nil && err == nil
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
@@ -310,10 +329,8 @@ func (c *MachineCache) update(ctx context.Context) error {
 		}
 
 		for _, aksMachine := range page.Value {
-			if isValid(ctx, aksMachine.Properties, lo.FromPtr(aksMachine.Name)) {
-				c.machines.Store(lo.FromPtr(aksMachine.Name), aksMachine)
-				fetchedMachineNames[lo.FromPtr(aksMachine.Name)] = struct{}{}
-			}
+			c.machines.Store(lo.FromPtr(aksMachine.Name), aksMachine)
+			fetchedMachineNames[lo.FromPtr(aksMachine.Name)] = struct{}{}
 		}
 	}
 
@@ -346,13 +363,11 @@ func (c *MachineCache) requestUpdate() {
 	}
 }
 
-func isValid(ctx context.Context, properties *armcontainerservice.MachineProperties, machineName string) bool {
+func isValid(properties *armcontainerservice.MachineProperties) bool {
 	if properties == nil || properties.Tags == nil {
-		log.FromContext(ctx).Info("skipping AKS machine with nil properties or tags", "aksMachineName", machineName)
 		return false
 	}
 	if _, hasTags := properties.Tags[launchtemplate.NodePoolTagKey]; !hasTags {
-		log.FromContext(ctx).Info("skipping AKS machine without Karpenter nodepool tag", "aksMachineName", machineName)
 		return false
 	}
 

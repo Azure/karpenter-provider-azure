@@ -92,25 +92,19 @@ func TestUpdate(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "cache update with valid and invalid machines",
+			name:        "cache update - some machines removed",
 			lastUpdated: time.Now().Add(-60 * time.Second),
 			existingCache: []*armcontainerservice.Machine{
 				{
 					Name: to.Ptr("machine1"),
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateCreating),
-						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
-						},
 					},
 				},
 				{
 					Name: to.Ptr("machine2"),
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateCreating),
-						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
-						},
 					},
 				},
 			},
@@ -119,16 +113,6 @@ func TestUpdate(t *testing.T) {
 					Name: to.Ptr("machine1"),
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
-						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
-						},
-					},
-				},
-				{
-					Name: to.Ptr("machine3"),
-					Properties: &armcontainerservice.MachineProperties{
-						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
-						Tags:              nil,
 					},
 				},
 			},
@@ -137,9 +121,6 @@ func TestUpdate(t *testing.T) {
 					Name: to.Ptr("machine1"),
 					Properties: &armcontainerservice.MachineProperties{
 						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
-						Tags: map[string]*string{
-							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
-						},
 					},
 				},
 			},
@@ -288,13 +269,45 @@ func TestListWithFallback(t *testing.T) {
 			name:        "success - returns list from cache",
 			lastUpdated: time.Now(),
 			cachedMachines: []*armcontainerservice.Machine{
-				{Name: to.Ptr("machine1")},
-				{Name: to.Ptr("machine2")},
+				{
+					Name: to.Ptr("machine1"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
+						Tags: map[string]*string{
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+				{
+					Name: to.Ptr("machine2"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
+						Tags: map[string]*string{
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
 			},
 			expectErr: false,
 			expectedMachines: []*armcontainerservice.Machine{
-				{Name: to.Ptr("machine1")},
-				{Name: to.Ptr("machine2")},
+				{
+					Name: to.Ptr("machine1"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
+						Tags: map[string]*string{
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
+				{
+					Name: to.Ptr("machine2"),
+					Properties: &armcontainerservice.MachineProperties{
+						ProvisioningState: to.Ptr(consts.ProvisioningStateSucceeded),
+						Tags: map[string]*string{
+							launchtemplate.NodePoolTagKey: to.Ptr("test-pool"),
+						},
+					},
+				},
 			},
 		},
 		{
@@ -610,7 +623,7 @@ func TestPollOnce(t *testing.T) {
 
 func TestIsValid(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+
 	tests := []struct {
 		name       string
 		properties *armcontainerservice.MachineProperties
@@ -649,7 +662,7 @@ func TestIsValid(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := isValid(ctx, tt.properties, "test-nodepool"); got != tt.expected {
+			if got := isValid(tt.properties); got != tt.expected {
 				t.Errorf("isValid() = %v, want %v", got, tt.expected)
 			}
 		})

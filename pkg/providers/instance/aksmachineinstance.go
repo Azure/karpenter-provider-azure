@@ -40,7 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/machine"
+	machineUtils "github.com/Azure/karpenter-provider-azure/pkg/utils/machine"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
@@ -214,7 +214,7 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	if err != nil {
 		// Clean up if creation fails.
 		if err := p.deleteMachine(ctx, aksMachineName); err != nil {
-			if !machine.IsAKSMachineOrMachinesPoolNotFound(err) {
+			if !machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
 				log.FromContext(ctx).Error(err, "failed to delete AKS machine after failed creation", "aksMachineName", aksMachineName)
 			}
 			// We don't return the cleanup error here, as we want to return the original error from beginCreateMachine
@@ -249,7 +249,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 	}
 	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
-		if machine.IsAKSMachineOrMachinesPoolNotFound(err) {
+		if machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
 			// Can only be AKS machines pool not found.
 			// Suggestion: separate the util function to not cover more than needed?
 			return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to begin update AKS machine %q: %w", aksMachineName, err))
@@ -285,7 +285,7 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 
 	aksMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, options.useCache)
 	if err != nil {
-		if machine.IsAKSMachineOrMachinesPoolNotFound(err) {
+		if machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, err
@@ -347,7 +347,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 
 	err = p.deleteMachine(ctx, aksMachineName)
 	if err != nil {
-		if machine.IsAKSMachineOrMachinesPoolNotFound(err) {
+		if machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
 			return corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return err
@@ -419,11 +419,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// If we attempted to recreate with different properties, the API would reject the request due to property
 	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
 	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
-	existingAKSMachine, err := p.Get(ctx, aksMachineName, WithUseCache())
+	existingAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, true)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClaim, instanceTypes, existingAKSMachine)
-	} else if !machine.IsAKSMachineOrMachinesPoolNotFound(err) {
+	} else if !machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
 	}
@@ -494,10 +494,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 				}
 			}()
 
-			pollCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
-			defer cancel()
-
-			provisioningErr, pollerErr := p.machineCache.PollUntilDone(pollCtx, aksMachineName)
+			provisioningErr, pollerErr := p.machineCache.PollUntilDone(ctx, aksMachineName)
 			if pollerErr != nil {
 				pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (GET poller), poller error: %w", aksMachineName, pollerErr)
 				return
@@ -565,7 +562,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 				// Could be quota error; will be handled with custom logic below
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-				failedAKSMachine, _ := p.Get(ctx, aksMachineName)
+				failedAKSMachine, _ := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
 				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 					return
@@ -704,7 +701,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 }
 
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string) (*armcontainerservice.Machine, error) {
-	gotAKSMachine, err := p.Get(ctx, aksMachineName)
+	gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
