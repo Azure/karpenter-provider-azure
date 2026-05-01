@@ -38,22 +38,29 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
 **Cache Usage in Get**:
 
 - **Drift Detection** (`pkg/cloudprovider/drift.go`): Uses cache (`WithUseCache()`)
-  - Drift checks occur frequently and benefit from cached data
+  - Gets machine to check if cluster-level provisioning config has drifted server-side (reflected in DriftAction field)
+  - Core drift controller calls IsDrifted on pod events, generating high API call volume
+  - Current mitigation: Karpenter restarts on config changes, triggering IsDrifted at startup to catch drift
+  - Cache is acceptable because: (1) reduces API load significantly, (2) drift detection is eventually consistent (caught on next pod event), (3) Karpenter restarts ensure fresh data on config changes
 
 - **Pre-Create Checks** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
-  - Checks if machine already exists before creating (handles restart scenarios)
+  - Checks if machine already exists before creating (handles restart scenarios).
+  - Safe to use cache because we fall back on a direct API call on cache misses. This check also just needs to verify the existance of a machine.
 
 - **Post-Create Validation** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
   - Gets machine immediately after creation to retrieve VMResourceID and check for early provisioning errors
+  - Safe to use cache because we fall back on a direct API call on cache miss. This check is needed to fill out the nodeclaim.
 
 - **In-Place Update** (`pkg/controllers/nodeclaim/inplaceupdate/controller.go`): No cache
   - Direct API call without cache option to ensure fresh data for update operations
 
 - **Polling** (`pkg/providers/instance/machinecache/machinecache.go`): Uses cache
   - Polls cache for provisioning state changes during machine creation
+  - Safe because the cache periodically refreshes after TTL expires (by default 30s).
 
 - **CloudProvider Get** (`pkg/cloudprovider/cloudprovider.go`): No cache
   - Direct API call without cache option (always fresh data)
+  - Not safe to use cache because Karpenter Core could change the way cloudprovider Get is used.
 
 ### List Operations
 
@@ -66,11 +73,9 @@ The cache provides `ListWithFallback(ctx, useCache)` which:
 
 **Cache Usage in List**:
 
-- **CloudProvider List** (`pkg/cloudprovider/cloudprovider.go`): Uses cache
-  - List operations are expensive; cache significantly reduces API load
-
-- **Currently**: List always uses cache when available (no opt-out path in production)
-- **Design**: The `useCache` parameter provides flexibility to bypass cache if needed
+- **CloudProvider List** (`pkg/cloudprovider/cloudprovider.go`): No cache
+  - List operations always fall directly to API calls currently, though the Option to use the cache does exist.
+  - No need to use the cache because List calls are not overly frequent and we haven't found a need to optimize it with cache.
 
 ## Cache Update Mechanism
 
