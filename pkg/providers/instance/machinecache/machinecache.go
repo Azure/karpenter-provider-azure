@@ -116,6 +116,7 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 	if useCache && !c.options.disabled {
 		machine, found, fresh := c.getFromCache(machineName)
 		if fresh && found {
+			c.rehydrateMachine(machine)
 			return machine, nil
 		}
 
@@ -130,6 +131,7 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 	}
 
 	machine := lo.ToPtr(resp.Machine)
+	c.rehydrateMachine(machine)
 	if !c.options.disabled {
 		c.machines.Store(machineName, machine)
 	}
