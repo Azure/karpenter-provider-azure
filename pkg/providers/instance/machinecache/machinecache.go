@@ -275,6 +275,11 @@ func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*ar
 
 	// Terminate early. This indicates the machine was not found in the cache and there is no point in continuing to poll
 	if !found || aksMachine == nil {
+		// Double check the cache to ensure the machine truly does not exist before returning a terminal error
+		machine, err := c.GetWithFallback(ctx, aksMachineName, true)
+		if machine != nil && err == nil {
+			return nil, nil, false
+		}
 		return nil, fmt.Errorf("AKS machine %q not found in cache", aksMachineName), true
 	}
 

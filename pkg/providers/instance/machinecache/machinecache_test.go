@@ -543,6 +543,7 @@ func TestPollOnce(t *testing.T) {
 		name                    string
 		machine                 *armcontainerservice.Machine
 		lastUpdated             time.Time
+		getErr                  error
 		expectedProvisioningErr *armcontainerservice.ErrorDetail
 		expectedPollerErr       bool
 		expectedDone            bool
@@ -561,6 +562,7 @@ func TestPollOnce(t *testing.T) {
 			name:                    "machine not found in cache - returns error and done",
 			lastUpdated:             time.Now(),
 			machine:                 nil,
+			getErr:                  errors.New("Machine not found"),
 			expectedProvisioningErr: nil,
 			expectedPollerErr:       true,
 			expectedDone:            true,
@@ -600,6 +602,9 @@ func TestPollOnce(t *testing.T) {
 
 			c := MachineCache{
 				options: defaultOpts(),
+				client: &fakeAKSMachineClienter{
+					getErr: tt.getErr,
+				},
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 
