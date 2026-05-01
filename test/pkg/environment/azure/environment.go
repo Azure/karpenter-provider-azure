@@ -146,6 +146,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloudEnv.Cloud,
 		},
+		TenantID: os.Getenv("AZURE_TENANT_ID"),
 	}
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(credOptions))
 	azureEnv.defaultCredential = cred
