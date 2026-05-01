@@ -43,6 +43,12 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
 - **Pre-Create Checks** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
   - Checks if machine already exists before creating (handles restart scenarios)
 
+- **Post-Create Validation** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
+  - Gets machine immediately after creation to retrieve VMResourceID and check for early provisioning errors
+
+- **In-Place Update** (`pkg/controllers/nodeclaim/inplaceupdate/controller.go`): No cache
+  - Direct API call without cache option to ensure fresh data for update operations
+
 - **Polling** (`pkg/providers/instance/machinecache/machinecache.go`): Uses cache
   - Polls cache for provisioning state changes during machine creation
 
