@@ -160,7 +160,7 @@ func (c *MachineCache) getAndStore(ctx context.Context, machineName string) (*ar
 // If the cache is stale or disabled, it will fall back to calling the AKS API directly.
 func (c *MachineCache) ListWithFallback(ctx context.Context, useCache bool) ([]*armcontainerservice.Machine, error) {
 	if useCache && !c.options.disabled {
-		if machines, fresh := c.listFromCache(ctx); fresh {
+		if machines, fresh := c.listFromCache(); fresh {
 			return machines, nil
 		}
 	}
@@ -196,7 +196,7 @@ func (c *MachineCache) ListWithFallback(ctx context.Context, useCache bool) ([]*
 }
 
 // listFromCache returns the list of machines from the cache if the cache is fresh and a boolean indicating whether the cache was fresh.
-func (c *MachineCache) listFromCache(ctx context.Context) ([]*armcontainerservice.Machine, bool) {
+func (c *MachineCache) listFromCache() ([]*armcontainerservice.Machine, bool) {
 	if !c.isFresh() {
 		c.requestUpdate()
 		return nil, false
