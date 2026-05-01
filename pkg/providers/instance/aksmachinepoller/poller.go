@@ -217,7 +217,7 @@ func (p *Poller) pollOnce(ctx context.Context, retryAttemptsLeft *int, currentRe
 		return nil, nil, false
 	}
 
-	return errDetails, pollerErr, false
+	return errDetails, pollerErr, true
 }
 
 // handleGetError processes errors from the GET call during polling.
