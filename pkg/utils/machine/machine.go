@@ -21,6 +21,10 @@ func HandleProvisioningState(ctx context.Context, aksMachine *armcontainerservic
 	provisioningState := lo.FromPtr(aksMachine.Properties.ProvisioningState)
 	switch provisioningState {
 	case consts.ProvisioningStateCreating, consts.ProvisioningStateUpdating:
+		log.FromContext(ctx).V(2).Info("Provisioning ongoing",
+			"aksMachineID", aksMachine.ID,
+			"provisioningState", provisioningState,
+		)
 		return nil, nil, false
 
 	case consts.ProvisioningStateDeleting:

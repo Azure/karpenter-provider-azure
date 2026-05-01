@@ -50,18 +50,6 @@ var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
-type opt struct {
-	useCache bool
-}
-
-type Option func(*opt)
-
-func WithUseCache() Option {
-	return func(o *opt) {
-		o.useCache = true
-	}
-}
-
 // Notes on terminology:
 // An "instance" is a remote object, created by the API based on the template.
 // A "template" is a local struct, populated from Karpenter-provided parameters with the logic further below.
@@ -124,6 +112,21 @@ func (p *AKSMachinePromise) Wait() error {
 }
 func (p *AKSMachinePromise) GetInstanceName() string {
 	return p.AKSMachineName
+}
+
+type opt struct {
+	useCache bool
+}
+
+// Option defines a functional option for configuring AKSMachineProvider methods that accept optional behavior.
+type Option func(*opt)
+
+// WithUseCache is an Option that tells the AKSMachineProvider to first use the machine cache
+// when attempting to retrieve an AKS machine before falling back to calling the Azure API.
+func WithUseCache() Option {
+	return func(o *opt) {
+		o.useCache = true
+	}
 }
 
 type AKSMachineProvider interface {
