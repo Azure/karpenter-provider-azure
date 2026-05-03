@@ -36,25 +36,25 @@ This document assumes regional Azure VM offerings are represented with the AKS r
 
 ### TL;DR
 
-When a pod doesn't narrow the topology domains it participates in[^narrow], Karpenter spreads[^spreads] it across every value derived[^derived] for that key in the current provisioning cycle[^cycle] — pooled from all NodePools, not just the one the pod will land on.
-
-So two things follow:
+When a pod doesn't _narrow_ the topology domains it participates in, Karpenter _spreads_ it across every value _derived_ for that key in the current provisioning _cycle_ — pooled from all NodePools, not just the one the pod will land on. So two things follow:
 
 1. A NodePool the pod can't even use can still add domain values that affect the pod's spread math.
 
-2. If any NodePool leaves the topology key unconstrained, values derived[^derived] for that key from its instance types can enter the universe. On Azure zones, that can include zonal values plus the regional value `"0"`.
+2. If any NodePool leaves the topology key unconstrained, values _derived_ for that key from its instance types can enter the universe. On Azure zones, that can include zonal values plus the regional value `"0"`.
 
-Selecting a NodePool by some other label (like a custom `pool=primary`) doesn't fix this by itself. To control the spread universe, either narrow[^narrow] the domains on the workload itself, or constrain the topology key on every considered NodePool.
+Selecting a NodePool by some other label (like a custom `pool=primary`) doesn't fix this by itself. To control the spread universe, either _narrow_ the domains on the workload itself, or constrain the topology key on every considered NodePool.
 
 This describes the current shared-domain behavior. Upstream has already attempted to make topology domains more NodePool-aware, so this area may change if a replacement for that work relands; see [Related Issues and PRs](#related-issues-and-prs).
 
-[^narrow]: On the workload side, topology domains can be narrowed in two different ways. A required pod-level constraint on the topology key, typically `requiredDuringSchedulingIgnoredDuringExecution` node affinity with an `In` match on the key or a `nodeSelector` on it, narrows the pod's supported domain set. Separately, `nodeTaintsPolicy: Honor` can filter out domains contributed only by NodePools whose taints the pod does not tolerate. `preferredDuringSchedulingIgnoredDuringExecution` and the topology spread constraint's `topologyKey` alone do not narrow the pod's supported domain set. See [Workload-Level Zone Filtering](#workload-level-zone-filtering) for an example.
+Notes:
 
-[^spreads]: Here, "spreads" means Karpenter evaluates topology-spread skew against those values during provisioning simulation. It does not mean every value is guaranteed to be a valid final placement target; candidate node domains, NodePool compatibility, offerings, resources, and kube-scheduler still apply.
+* _narrow_: On the workload side, topology domains can be narrowed in two different ways. A required pod-level constraint on the topology key, typically `requiredDuringSchedulingIgnoredDuringExecution` node affinity with an `In` match on the key or a `nodeSelector` on it, narrows the pod's supported domain set. Separately, `nodeTaintsPolicy: Honor` can filter out domains contributed only by NodePools whose taints the pod does not tolerate. `preferredDuringSchedulingIgnoredDuringExecution` and the topology spread constraint's `topologyKey` alone do not narrow the pod's supported domain set. See [Workload-Level Zone Filtering](#workload-level-zone-filtering) for an example.
 
-[^derived]: The values come from each NodePool's requirements/template labels and from the requirements of the instance types the provider returns for that NodePool's NodeClass — which include offering-derived values like zones. That instance type list is the broad provider-returned set for the NodeClass, not pre-filtered by the NodePool's other constraints. "Derived" here does not require an actual Node: a zone (or the regional `"0"`) can land in the universe purely because some instance type advertises it, even if no Node currently exists there. Values from real Nodes can also be picked up at the topology-group level later in scheduling — see [Where Actual Nodes Come In](#where-actual-nodes-come-in).
+* _spreads_: Here, "spreads" means Karpenter evaluates topology-spread skew against those values during provisioning simulation. It does not mean every value is guaranteed to be a valid final placement target; candidate node domains, NodePool compatibility, offerings, resources, and kube-scheduler still apply.
 
-[^cycle]: "Current provisioning cycle" means the ready, dynamic, non-deleting NodePools that resolved to instance types this round (under normal circumstances, this is effectively all active NodePools in the cluster). This is about Karpenter's provisioning simulation, not kube-scheduler's final binding. Exact instance type, resource, and offering compatibility is rechecked later during scheduling.
+* _derived_: The values come from each NodePool's requirements/template labels and from the requirements of the instance types the provider returns for that NodePool's NodeClass — which include offering-derived values like zones. That instance type list is the broad provider-returned set for the NodeClass, not pre-filtered by the NodePool's other constraints. "Derived" here does not require an actual Node: a zone (or the regional `"0"`) can land in the universe purely because some instance type advertises it, even if no Node currently exists there. Values from real Nodes can also be picked up at the topology-group level later in scheduling — see [Where Actual Nodes Come In](#where-actual-nodes-come-in).
+
+* _cycle_: "Current provisioning cycle" means the ready, dynamic, non-deleting NodePools that resolved to instance types this round (under normal circumstances, this is effectively all active NodePools in the cluster). This is about Karpenter's provisioning simulation, not kube-scheduler's final binding. Exact instance type, resource, and offering compatibility is rechecked later during scheduling.
 
 ### Short Summary
 
