@@ -701,7 +701,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 }
 
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string) (*armcontainerservice.Machine, error) {
-	gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, true)
+	gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
