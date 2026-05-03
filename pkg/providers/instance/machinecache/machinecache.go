@@ -166,6 +166,9 @@ func (c *MachineCache) ListWithFallback(ctx context.Context, useCache bool) ([]*
 		}
 	}
 
+	// We fall back to calling the AKS API directly when the cache is stale or disabled.
+	// There will be duplicate List calls from time to time, but List calls are infrequent enough
+	// that the performance impact is acceptable.
 	var machines []*armcontainerservice.Machine
 	pager := c.client.NewListPager(c.clusterResourceGroup, c.clusterName, c.aksMachinesPoolName, nil)
 	if pager == nil {
