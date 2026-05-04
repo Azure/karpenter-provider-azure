@@ -23,8 +23,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/samber/lo"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -89,7 +87,7 @@ func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(
 
 	return c.VirtualMachineExtensionsCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineExtensionCreateOrUpdateInput) (*armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse, error) {
 		result := input.VirtualMachineExtension
-		result.ID = lo.ToPtr(MakeVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
+		result.ID = new(MakeVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
 		c.Extensions.Store(input.VirtualMachineExtensionName, result) // only store latest, but could be improved
 		return &armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse{
 			VirtualMachineExtension: result,

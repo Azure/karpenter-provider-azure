@@ -23,7 +23,6 @@ import (
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -59,7 +58,7 @@ var _ = Describe("CEL/Validation", func() {
 			Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 			ForwardDestination: forwardDest,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-			MaxConcurrent:      lo.ToPtr(int32(100)),
+			MaxConcurrent:      new(int32(100)),
 			CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 			ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -473,12 +472,12 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid: 0 (minimum)", lo.ToPtr(int32(0)), ""),
-			Entry("valid: 1", lo.ToPtr(int32(1)), ""),
-			Entry("valid: 100", lo.ToPtr(int32(100)), ""),
-			Entry("valid: 1000", lo.ToPtr(int32(1000)), ""),
-			Entry("invalid: -1 (below minimum)", lo.ToPtr(int32(-1)), "maxConcurrent"),
-			Entry("invalid: -100 (below minimum)", lo.ToPtr(int32(-100)), "maxConcurrent"),
+			Entry("valid: 0 (minimum)", new(int32(0)), ""),
+			Entry("valid: 1", new(int32(1)), ""),
+			Entry("valid: 100", new(int32(100)), ""),
+			Entry("valid: 1000", new(int32(1000)), ""),
+			Entry("invalid: -1 (below minimum)", new(int32(-1)), "maxConcurrent"),
+			Entry("invalid: -100 (below minimum)", new(int32(-100)), "maxConcurrent"),
 		)
 
 		It("should reject duplicate zones in VnetDNSOverrides due to listType=map", func() {
@@ -664,14 +663,14 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid minimum size (30 GB)", lo.ToPtr(int32(30)), true),
-			Entry("valid default size (128 GB)", lo.ToPtr(int32(128)), true),
-			Entry("valid large size (1024 GB)", lo.ToPtr(int32(1024)), true),
-			Entry("valid maximum size (2048 GB)", lo.ToPtr(int32(2048)), true),
+			Entry("valid minimum size (30 GB)", new(int32(30)), true),
+			Entry("valid default size (128 GB)", new(int32(128)), true),
+			Entry("valid large size (1024 GB)", new(int32(1024)), true),
+			Entry("valid maximum size (2048 GB)", new(int32(2048)), true),
 			Entry("nil value (uses default)", nil, true),
-			Entry("below minimum (29 GB)", lo.ToPtr(int32(29)), false),
-			Entry("above maximum (2049 GB)", lo.ToPtr(int32(2049)), false),
-			Entry("well above maximum (4096 GB)", lo.ToPtr(int32(4096)), false),
+			Entry("below minimum (29 GB)", new(int32(29)), false),
+			Entry("above maximum (2049 GB)", new(int32(2049)), false),
+			Entry("well above maximum (4096 GB)", new(int32(4096)), false),
 		)
 	})
 
@@ -923,8 +922,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetCoreRmemDefault: lo.ToPtr(int32(1048576)),
-							NetCoreRmemMax:     lo.ToPtr(int32(212992)),
+							NetCoreRmemDefault: new(int32(1048576)),
+							NetCoreRmemMax:     new(int32(212992)),
 						},
 					},
 				},
@@ -937,8 +936,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetCoreRmemDefault: lo.ToPtr(int32(212992)),
-							NetCoreRmemMax:     lo.ToPtr(int32(1048576)),
+							NetCoreRmemDefault: new(int32(212992)),
+							NetCoreRmemMax:     new(int32(1048576)),
 						},
 					},
 				},
@@ -951,8 +950,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetCoreWmemDefault: lo.ToPtr(int32(1048576)),
-							NetCoreWmemMax:     lo.ToPtr(int32(212992)),
+							NetCoreWmemDefault: new(int32(1048576)),
+							NetCoreWmemMax:     new(int32(212992)),
 						},
 					},
 				},
@@ -965,8 +964,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetCoreWmemDefault: lo.ToPtr(int32(212992)),
-							NetCoreWmemMax:     lo.ToPtr(int32(1048576)),
+							NetCoreWmemDefault: new(int32(212992)),
+							NetCoreWmemMax:     new(int32(1048576)),
 						},
 					},
 				},
@@ -979,7 +978,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetCoreRmemDefault: lo.ToPtr(int32(1048576)),
+							NetCoreRmemDefault: new(int32(1048576)),
 						},
 					},
 				},
@@ -994,7 +993,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4IPLocalPortRange: lo.ToPtr("32768 60999"),
+							NetIPv4IPLocalPortRange: new("32768 60999"),
 						},
 					},
 				},
@@ -1007,7 +1006,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4IPLocalPortRange: lo.ToPtr("1024 32768"),
+							NetIPv4IPLocalPortRange: new("1024 32768"),
 						},
 					},
 				},
@@ -1020,7 +1019,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4IPLocalPortRange: lo.ToPtr("500 65535"),
+							NetIPv4IPLocalPortRange: new("500 65535"),
 						},
 					},
 				},
@@ -1033,7 +1032,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4IPLocalPortRange: lo.ToPtr("1024 70000"),
+							NetIPv4IPLocalPortRange: new("1024 70000"),
 						},
 					},
 				},
@@ -1046,7 +1045,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4IPLocalPortRange: lo.ToPtr("61000 65535"),
+							NetIPv4IPLocalPortRange: new("61000 65535"),
 						},
 					},
 				},
@@ -1059,7 +1058,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4IPLocalPortRange: lo.ToPtr("1024 30000"),
+							NetIPv4IPLocalPortRange: new("1024 30000"),
 						},
 					},
 				},
@@ -1072,7 +1071,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4IPLocalPortRange: lo.ToPtr("60000 32768"),
+							NetIPv4IPLocalPortRange: new("60000 32768"),
 						},
 					},
 				},
@@ -1085,7 +1084,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetCoreSomaxconn: lo.ToPtr(int32(8192)),
+							NetCoreSomaxconn: new(int32(8192)),
 						},
 					},
 				},
@@ -1100,8 +1099,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
-							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
+							NetIPv4NeighDefaultGcThresh1: new(int32(80000)),
+							NetIPv4NeighDefaultGcThresh2: new(int32(512)),
 						},
 					},
 				},
@@ -1114,8 +1113,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(90000)),
-							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh2: new(int32(90000)),
+							NetIPv4NeighDefaultGcThresh3: new(int32(1024)),
 						},
 					},
 				},
@@ -1128,9 +1127,9 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(128)),
-							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
-							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh1: new(int32(128)),
+							NetIPv4NeighDefaultGcThresh2: new(int32(512)),
+							NetIPv4NeighDefaultGcThresh3: new(int32(1024)),
 						},
 					},
 				},
@@ -1143,7 +1142,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
+							NetIPv4NeighDefaultGcThresh1: new(int32(80000)),
 						},
 					},
 				},
@@ -1156,9 +1155,9 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(1024)),
-							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(1024)),
-							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh1: new(int32(1024)),
+							NetIPv4NeighDefaultGcThresh2: new(int32(1024)),
+							NetIPv4NeighDefaultGcThresh3: new(int32(1024)),
 						},
 					},
 				},
@@ -1172,7 +1171,7 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
-						SwapFileSize: lo.ToPtr("1500Mi"),
+						SwapFileSize: new("1500Mi"),
 					},
 				},
 			}
@@ -1183,10 +1182,10 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					Kubelet: &v1beta1.KubeletConfiguration{
-						FailSwapOn: lo.ToPtr(true),
+						FailSwapOn: new(true),
 					},
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
-						SwapFileSize: lo.ToPtr("1500Mi"),
+						SwapFileSize: new("1500Mi"),
 					},
 				},
 			}
@@ -1197,10 +1196,10 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					Kubelet: &v1beta1.KubeletConfiguration{
-						FailSwapOn: lo.ToPtr(false),
+						FailSwapOn: new(false),
 					},
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
-						SwapFileSize: lo.ToPtr("1500Mi"),
+						SwapFileSize: new("1500Mi"),
 					},
 				},
 			}
@@ -1212,7 +1211,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
 						Sysctls: &v1beta1.SysctlConfiguration{
-							NetCoreSomaxconn: lo.ToPtr(int32(8192)),
+							NetCoreSomaxconn: new(int32(8192)),
 						},
 					},
 				},
@@ -1224,7 +1223,7 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					Kubelet: &v1beta1.KubeletConfiguration{
-						FailSwapOn: lo.ToPtr(false),
+						FailSwapOn: new(false),
 					},
 				},
 			}

@@ -569,8 +569,8 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				UseSIG:                    lo.ToPtr(true),
-				ManageExistingAKSMachines: lo.ToPtr(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
+				UseSIG:                    new(true),
+				ManageExistingAKSMachines: new(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -608,8 +608,8 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				UseSIG:                    lo.ToPtr(true),
-				ManageExistingAKSMachines: lo.ToPtr(true), // should not have any effect
+				UseSIG:                    new(true),
+				ManageExistingAKSMachines: new(true), // should not have any effect
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -650,8 +650,8 @@ var _ = Describe("CloudProvider", func() {
 			BeforeEach(func() {
 				testOptions = test.Options(test.OptionsFields{
 					ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless), // Switch to VM mode
-					UseSIG:                    lo.ToPtr(true),
-					ManageExistingAKSMachines: lo.ToPtr(false), // Disable AKS machines management
+					UseSIG:                    new(true),
+					ManageExistingAKSMachines: new(false), // Disable AKS machines management
 				})
 
 				ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -781,8 +781,8 @@ var _ = Describe("CloudProvider", func() {
 			BeforeEach(func() {
 				testOptions = test.Options(test.OptionsFields{
 					ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless), // Switch to VM mode
-					UseSIG:                    lo.ToPtr(true),
-					ManageExistingAKSMachines: lo.ToPtr(true), // Enable AKS machines management
+					UseSIG:                    new(true),
+					ManageExistingAKSMachines: new(true), // Enable AKS machines management
 				})
 
 				ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -996,7 +996,7 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				UseSIG:        lo.ToPtr(true),
+				UseSIG:        new(true),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())

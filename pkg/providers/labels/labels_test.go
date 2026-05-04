@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -334,7 +333,7 @@ func TestLocalDNSLabels(t *testing.T) {
 					LocalDNS: tc.localDNS,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
+					KubernetesVersion: new(tc.kubernetesVersion),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -364,7 +363,7 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 			Name: "test-nodeclass",
 		},
 		Status: v1beta1.AKSNodeClassStatus{
-			KubernetesVersion: lo.ToPtr("1.35.0"),
+			KubernetesVersion: new("1.35.0"),
 			Conditions: []status.Condition{
 				{
 					Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -497,7 +496,7 @@ func TestLabelsGet(t *testing.T) {
 			imageFamily:       v1beta1.UbuntuImageFamily,
 			kubernetesVersion: "1.35.0",
 			arch:              "amd64",
-			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: new(true)},
 			expectedLabels: map[string]string{
 				labels.AKSArtifactStreamingEnabledLabelKey: "true",
 			},
@@ -507,7 +506,7 @@ func TestLabelsGet(t *testing.T) {
 			imageFamily:       v1beta1.UbuntuImageFamily,
 			kubernetesVersion: "1.35.0",
 			arch:              "arm64",
-			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: new(true)},
 			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
 		},
 		{
@@ -515,7 +514,7 @@ func TestLabelsGet(t *testing.T) {
 			imageFamily:       v1beta1.UbuntuImageFamily,
 			kubernetesVersion: "1.35.0",
 			arch:              "amd64",
-			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: new(false)},
 			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
 		},
 		{
@@ -523,7 +522,7 @@ func TestLabelsGet(t *testing.T) {
 			imageFamily:       v1beta1.UbuntuImageFamily,
 			kubernetesVersion: "1.35.0",
 			arch:              "arm64",
-			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			artifactStreaming: &v1beta1.ArtifactStreaming{Enabled: new(false)},
 			unexpectedLabels:  []string{labels.AKSArtifactStreamingEnabledLabelKey},
 		},
 	}
@@ -547,7 +546,7 @@ func TestLabelsGet(t *testing.T) {
 					ArtifactStreaming: tc.artifactStreaming,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
+					KubernetesVersion: new(tc.kubernetesVersion),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,

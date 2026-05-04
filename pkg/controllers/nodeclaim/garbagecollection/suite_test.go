@@ -155,7 +155,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			It("should not delete an instance if it was not launched by a NodeClaim", func() {
 				// Remove the "karpenter.sh/managed-by" tag (this isn't launched by a NodeClaim)
 				vm.Properties = &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+					TimeCreated: new(time.Now().Add(-time.Minute * 10)),
 				}
 				vm.Tags = lo.OmitBy(vm.Tags, func(key string, value *string) bool {
 					return key == launchtemplate.NodePoolTagKey
@@ -170,7 +170,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				// Generate 100 instances that have different vmIDs
 				var ids []string
 				var vmName string
-				for i := 0; i < 100; i++ {
+				for range 100 {
 					pod := coretest.UnschedulablePod()
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
@@ -183,7 +183,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 							Name:         vmName,
 							NodepoolName: "default",
 							Properties: &armcompute.VirtualMachineProperties{
-								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+								TimeCreated: new(time.Now().Add(-time.Minute * 10)),
 							},
 						})
 						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
@@ -211,7 +211,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				var ids []string
 				var nodeClaims []*karpv1.NodeClaim
 				var vmName string
-				for i := 0; i < 100; i++ {
+				for range 100 {
 					pod := coretest.UnschedulablePod()
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
@@ -224,7 +224,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 							Name:         vmName,
 							NodepoolName: "default",
 							Properties: &armcompute.VirtualMachineProperties{
-								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+								TimeCreated: new(time.Now().Add(-time.Minute * 10)),
 							},
 						})
 						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
@@ -259,7 +259,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			})
 			It("should not delete an instance if it is within the nodeClaim resolution window (5m)", func() {
 				// Launch time just happened
-				vm.Properties.TimeCreated = lo.ToPtr(time.Now())
+				vm.Properties.TimeCreated = new(time.Now())
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 				ExpectSingletonReconciled(ctx, InstanceGCController)
@@ -268,7 +268,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			})
 			It("should not delete the instance or node if it already has a nodeClaim that matches it", func() {
 				// Launch time was 10m ago
-				vm.Properties.TimeCreated = lo.ToPtr(time.Now().Add(-time.Minute * 10))
+				vm.Properties.TimeCreated = new(time.Now().Add(-time.Minute * 10))
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
@@ -296,7 +296,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			It("should delete an instance if there is no NodeClaim owner", func() {
 				// Launch happened 10m ago
 				vm.Properties = &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+					TimeCreated: new(time.Now().Add(-time.Minute * 10)),
 				}
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
@@ -308,7 +308,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			It("should delete an instance along with the node if there is no NodeClaim owner (to quicken scheduling)", func() {
 				// Launch happened 10m ago
 				vm.Properties = &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+					TimeCreated: new(time.Now().Add(-time.Minute * 10)),
 				}
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 				node := coretest.Node(coretest.NodeOptions{
@@ -399,7 +399,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 				Name:         lo.FromPtr(managedNic.Name),
 				NodepoolName: nodePool.Name,
 				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 16)), // Needs to be older than the nodeclaim registration ttl
+					TimeCreated: new(time.Now().Add(-time.Minute * 16)), // Needs to be older than the nodeclaim registration ttl
 				},
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)

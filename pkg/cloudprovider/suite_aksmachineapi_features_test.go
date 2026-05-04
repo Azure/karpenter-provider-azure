@@ -50,7 +50,7 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-				UseSIG:        lo.ToPtr(true),
+				UseSIG:        new(true),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -112,7 +112,7 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test DescribeTable: "should select the right Shared Image Gallery image for a given instance type"
 			DescribeTable("should select the right Shared Image Gallery NodeImageVersion for a given instance type",
 				func(instanceType string, imageFamily string, expectedImageDefinition string) {
-					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+					nodeClass.Spec.ImageFamily = new(imageFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
@@ -146,7 +146,7 @@ var _ = Describe("CloudProvider", func() {
 				expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
 				expectedImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ImageDefinition, imagefamily.AzureLinuxGen2ImageDefinition)
 
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				nodeClass.Spec.ImageFamily = new(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -175,7 +175,7 @@ var _ = Describe("CloudProvider", func() {
 				expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
 				expectedImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen1ImageDefinition, imagefamily.AzureLinuxGen1ImageDefinition)
 
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				nodeClass.Spec.ImageFamily = new(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -204,7 +204,7 @@ var _ = Describe("CloudProvider", func() {
 				expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
 				expectedImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
 
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				nodeClass.Spec.ImageFamily = new(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -308,7 +308,7 @@ var _ = Describe("CloudProvider", func() {
 				// Set up test context with additional tags
 				aksTestOptions := test.Options(test.OptionsFields{
 					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-					UseSIG:        lo.ToPtr(true),
+					UseSIG:        new(true),
 					AdditionalTags: map[string]string{
 						"karpenter.azure.com/test-tag": "test-value",
 					},
@@ -418,7 +418,7 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class"
 			It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
 				// Configure specific OS disk size in NodeClass
-				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr(int32(256))
+				nodeClass.Spec.OSDiskSizeGB = new(int32(256))
 
 				// Select an instance type that supports the disk size
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
@@ -473,11 +473,11 @@ var _ = Describe("CloudProvider", func() {
 			It("should handle configured NodeClass", func() {
 				// Configure comprehensive NodeClass settings
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					FailSwapOn:                  lo.ToPtr(false),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
+					ImageGCHighThresholdPercent: new(int32(85)),
+					ImageGCLowThresholdPercent:  new(int32(80)),
+					FailSwapOn:                  new(false),
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
@@ -486,8 +486,8 @@ var _ = Describe("CloudProvider", func() {
 				byoClusterSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"
 				byoOpts := test.Options(test.OptionsFields{
 					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
-					UseSIG:        lo.ToPtr(true),
-					SubnetID:      lo.ToPtr(byoClusterSubnetID),
+					UseSIG:        new(true),
+					SubnetID:      new(byoClusterSubnetID),
 				})
 				byoCtx := options.ToContext(ctx, byoOpts)
 
@@ -496,13 +496,13 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).ToNot(HaveOccurred())
 				testSubnetID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/nodeclass-subnet",
 					clusterSubnetComponents.SubscriptionID, clusterSubnetComponents.ResourceGroupName, clusterSubnetComponents.VNetName)
-				nodeClass.Spec.VNETSubnetID = lo.ToPtr(testSubnetID)
+				nodeClass.Spec.VNETSubnetID = new(testSubnetID)
 				nodeClass.Spec.Tags = map[string]string{
 					"custom-tag":  "custom-value",
 					"environment": "test",
 					"team":        "platform",
 				}
-				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr(int32(100))
+				nodeClass.Spec.OSDiskSizeGB = new(int32(100))
 
 				// Configure GPU workload to test GPU node selection
 				pod := coretest.UnschedulablePod(coretest.PodOptions{
@@ -593,8 +593,8 @@ var _ = Describe("CloudProvider", func() {
 
 				// Check that taints are configured
 				// Currently, we will use "nodeInitializationTaints" field for all taints. More details in the relevant code (aksmachineinstancehelpers.go).
-				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(lo.ToPtr("test-taint=test-value:NoSchedule")))
-				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(lo.ToPtr("startup-taint=startup-value:NoExecute")))
+				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(new("test-taint=test-value:NoSchedule")))
+				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(new("startup-taint=startup-value:NoExecute")))
 			})
 
 			It("should not allow the user to override Karpenter-managed tags", func() {
@@ -631,7 +631,7 @@ var _ = Describe("CloudProvider", func() {
 				if nodeClass.Spec.Security == nil {
 					nodeClass.Spec.Security = &v1beta1.Security{}
 				}
-				nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+				nodeClass.Spec.Security.EncryptionAtHost = new(true)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
@@ -652,7 +652,7 @@ var _ = Describe("CloudProvider", func() {
 				if nodeClass.Spec.Security == nil {
 					nodeClass.Spec.Security = &v1beta1.Security{}
 				}
-				nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(false)
+				nodeClass.Spec.Security.EncryptionAtHost = new(false)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
@@ -712,7 +712,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(aksMachine.Properties.Kubernetes).ToNot(BeNil())
 
 				if expectedInNodeLabels {
-					Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(HaveKeyWithValue(label, lo.ToPtr("custom-value")))
+					Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(HaveKeyWithValue(label, new("custom-value")))
 				} else {
 					Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKey(label))
 				}
@@ -725,41 +725,41 @@ var _ = Describe("CloudProvider", func() {
 		Context("Create - LinuxOSConfig", func() {
 			It("should create AKS machine with full LinuxOSConfig when specified in AKSNodeClass", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					FailSwapOn: lo.ToPtr(false),
+					FailSwapOn: new(false),
 				}
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-					SwapFileSize:               lo.ToPtr("1500Mi"),
+					SwapFileSize:               new("1500Mi"),
 					TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragMadvise),
 					TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledAlways),
 					Sysctls: &v1beta1.SysctlConfiguration{
-						FsAioMaxNr:                     lo.ToPtr(int32(65536)),
-						FsFileMax:                      lo.ToPtr(int32(12000)),
-						FsInotifyMaxUserWatches:        lo.ToPtr(int32(781250)),
-						FsNrOpen:                       lo.ToPtr(int32(8192)),
-						KernelThreadsMax:               lo.ToPtr(int32(30000)),
-						NetCoreNetdevMaxBacklog:        lo.ToPtr(int32(1000)),
-						NetCoreOptmemMax:               lo.ToPtr(int32(20480)),
-						NetCoreRmemDefault:             lo.ToPtr(int32(212992)),
-						NetCoreRmemMax:                 lo.ToPtr(int32(212992)),
-						NetCoreSomaxconn:               lo.ToPtr(int32(4096)),
-						NetCoreWmemDefault:             lo.ToPtr(int32(212992)),
-						NetCoreWmemMax:                 lo.ToPtr(int32(212992)),
-						NetIPv4IPLocalPortRange:        lo.ToPtr("32768 60999"),
-						NetIPv4NeighDefaultGcThresh1:   lo.ToPtr(int32(128)),
-						NetIPv4NeighDefaultGcThresh2:   lo.ToPtr(int32(512)),
-						NetIPv4NeighDefaultGcThresh3:   lo.ToPtr(int32(1024)),
-						NetIPv4TCPFinTimeout:           lo.ToPtr(int32(60)),
-						NetIPv4TCPKeepaliveProbes:      lo.ToPtr(int32(9)),
-						NetIPv4TCPKeepaliveTime:        lo.ToPtr(int32(7200)),
-						NetIPv4TCPMaxSynBacklog:        lo.ToPtr(int32(128)),
-						NetIPv4TCPMaxTwBuckets:         lo.ToPtr(int32(8000)),
-						NetIPv4TCPTwReuse:              lo.ToPtr(true),
-						NetIPv4TCPKeepaliveIntvl:       lo.ToPtr(int32(75)),
-						NetNetfilterNfConntrackBuckets: lo.ToPtr(int32(65536)),
-						NetNetfilterNfConntrackMax:     lo.ToPtr(int32(131072)),
-						VMMaxMapCount:                  lo.ToPtr(int32(65530)),
-						VMSwappiness:                   lo.ToPtr(int32(60)),
-						VMVfsCachePressure:             lo.ToPtr(int32(100)),
+						FsAioMaxNr:                     new(int32(65536)),
+						FsFileMax:                      new(int32(12000)),
+						FsInotifyMaxUserWatches:        new(int32(781250)),
+						FsNrOpen:                       new(int32(8192)),
+						KernelThreadsMax:               new(int32(30000)),
+						NetCoreNetdevMaxBacklog:        new(int32(1000)),
+						NetCoreOptmemMax:               new(int32(20480)),
+						NetCoreRmemDefault:             new(int32(212992)),
+						NetCoreRmemMax:                 new(int32(212992)),
+						NetCoreSomaxconn:               new(int32(4096)),
+						NetCoreWmemDefault:             new(int32(212992)),
+						NetCoreWmemMax:                 new(int32(212992)),
+						NetIPv4IPLocalPortRange:        new("32768 60999"),
+						NetIPv4NeighDefaultGcThresh1:   new(int32(128)),
+						NetIPv4NeighDefaultGcThresh2:   new(int32(512)),
+						NetIPv4NeighDefaultGcThresh3:   new(int32(1024)),
+						NetIPv4TCPFinTimeout:           new(int32(60)),
+						NetIPv4TCPKeepaliveProbes:      new(int32(9)),
+						NetIPv4TCPKeepaliveTime:        new(int32(7200)),
+						NetIPv4TCPMaxSynBacklog:        new(int32(128)),
+						NetIPv4TCPMaxTwBuckets:         new(int32(8000)),
+						NetIPv4TCPTwReuse:              new(true),
+						NetIPv4TCPKeepaliveIntvl:       new(int32(75)),
+						NetNetfilterNfConntrackBuckets: new(int32(65536)),
+						NetNetfilterNfConntrackMax:     new(int32(131072)),
+						VMMaxMapCount:                  new(int32(65530)),
+						VMSwappiness:                   new(int32(60)),
+						VMVfsCachePressure:             new(int32(100)),
 					},
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -822,8 +822,8 @@ var _ = Describe("CloudProvider", func() {
 			It("should create AKS machine with only sysctls when only sysctls are specified", func() {
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
 					Sysctls: &v1beta1.SysctlConfiguration{
-						VMMaxMapCount: lo.ToPtr(int32(262144)),
-						VMSwappiness:  lo.ToPtr(int32(10)),
+						VMMaxMapCount: new(int32(262144)),
+						VMSwappiness:  new(int32(10)),
 					},
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -883,10 +883,10 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should create AKS machine with only SwapFileSize when only swap is specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					FailSwapOn: lo.ToPtr(false),
+					FailSwapOn: new(false),
 				}
 				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-					SwapFileSize: lo.ToPtr("2Gi"),
+					SwapFileSize: new("2Gi"),
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -930,7 +930,7 @@ var _ = Describe("CloudProvider", func() {
 		Context("Create - ArtifactStreaming", func() {
 			It("should set ArtifactStreamingProfile when explicitly enabled", func() {
 				nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
-					Enabled: lo.ToPtr(true),
+					Enabled: new(true),
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -967,7 +967,7 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should not set ArtifactStreamingProfile when explicitly disabled", func() {
 				nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
-					Enabled: lo.ToPtr(false),
+					Enabled: new(false),
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -986,7 +986,7 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should not set ArtifactStreamingProfile for ARM64 instance types even when enabled", func() {
 				nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{
-					Enabled: lo.ToPtr(true),
+					Enabled: new(true),
 				}
 				// ARM64 does not support artifact streaming; IsArtifactStreamingEnabled returns false for arm64.
 				// Verify through the NodeClass API directly since the test environment may not have ARM64 instance types.
@@ -1045,7 +1045,7 @@ var _ = Describe("CloudProvider", func() {
 							QueryLogging:       v1beta1.LocalDNSQueryLoggingLog,
 							Protocol:           v1beta1.LocalDNSProtocolForceTCP,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicyRoundRobin,
-							MaxConcurrent:      lo.ToPtr(int32(50)),
+							MaxConcurrent:      new(int32(50)),
 							CacheDuration:      karpv1.MustParseNillableDuration("30s"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("60s"),
 							ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
@@ -1056,7 +1056,7 @@ var _ = Describe("CloudProvider", func() {
 							QueryLogging:       v1beta1.LocalDNSQueryLoggingLog,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(10)),
+							MaxConcurrent:      new(int32(10)),
 							CacheDuration:      karpv1.MustParseNillableDuration("10s"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("5s"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -1142,7 +1142,7 @@ var _ = Describe("CloudProvider", func() {
 							QueryLogging:       v1beta1.LocalDNSQueryLoggingLog,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(25)),
+							MaxConcurrent:      new(int32(25)),
 							CacheDuration:      karpv1.MustParseNillableDuration("15s"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("45s"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -1195,7 +1195,7 @@ func validLocalDNSZoneOverride(zone string, forwardDest v1beta1.LocalDNSForwardD
 		QueryLogging:       v1beta1.LocalDNSQueryLoggingLog,
 		Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 		ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-		MaxConcurrent:      lo.ToPtr(int32(10)),
+		MaxConcurrent:      new(int32(10)),
 		CacheDuration:      karpv1.MustParseNillableDuration("30s"),
 		ServeStaleDuration: karpv1.MustParseNillableDuration("30s"),
 		ServeStale:         v1beta1.LocalDNSServeStaleDisable,

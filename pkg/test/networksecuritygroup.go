@@ -19,7 +19,6 @@ package test
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/samber/lo"
 )
 
 func MakeNetworkSecurityGroup(resourceGroup string, name string) armnetwork.SecurityGroup {
@@ -31,7 +30,7 @@ func MakeNetworkSecurityGroup(resourceGroup string, name string) armnetwork.Secu
 		Properties: &armnetwork.SecurityGroupPropertiesFormat{
 			SecurityRules: []*armnetwork.SecurityRule{
 				{
-					Name: lo.ToPtr("k8s-azure-lb_allow_IPv4_0000"),
+					Name: new("k8s-azure-lb_allow_IPv4_0000"),
 					// TODO: Not filling this in now, can later if we need it
 				},
 			},

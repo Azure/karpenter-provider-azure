@@ -342,7 +342,7 @@ func (p *Poller) getAKSMachine(ctx context.Context) (*armcontainerservice.Machin
 	if err != nil {
 		return nil, err
 	}
-	return lo.ToPtr(resp.Machine), nil
+	return new(resp.Machine), nil
 }
 
 // retryWithBackoff applies exponential backoff and returns true if retry should continue, false if exhausted.

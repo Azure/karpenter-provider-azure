@@ -171,7 +171,7 @@ func (a *AtomicPtrStack[T]) Pop() *T {
 func (a *AtomicPtrStack[T]) All() iter.Seq[*T] {
 	return func(yield func(*T) bool) {
 		len := a.Len()
-		for i := 0; i < len; i++ {
+		for range len {
 			v := a.Pop()
 			if !yield(v) {
 				return

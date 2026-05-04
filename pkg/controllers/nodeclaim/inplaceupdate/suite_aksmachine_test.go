@@ -49,7 +49,7 @@ var _ = Describe("In Place Update Controller", func() {
 		BeforeEach(func() {
 			// Enable AKS machines management for these tests
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
-				ManageExistingAKSMachines: lo.ToPtr(true),
+				ManageExistingAKSMachines: new(true),
 			}))
 
 			nodeClaimName := test.RandomName("nodeclaim")
@@ -58,9 +58,9 @@ var _ = Describe("In Place Update Controller", func() {
 				MachinesPoolName: opts.AKSMachinesPoolName,
 				Properties: &armcontainerservice.MachineProperties{
 					Tags: map[string]*string{
-						"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
-						"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaimName),
-						"compute.aks.billing":                      lo.ToPtr("linux"),
+						"karpenter.azure.com_cluster":              new(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim": new(nodeClaimName),
+						"compute.aks.billing":                      new("linux"),
 					},
 				},
 			})
@@ -181,7 +181,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ctx,
 				test.Options(
 					test.OptionsFields{
-						ManageExistingAKSMachines: lo.ToPtr(true),
+						ManageExistingAKSMachines: new(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -203,10 +203,10 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
 
-			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
-			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(lo.ToPtr(nodeClaim.Name)))
-			Expect(updatedAKSMachine.Properties.Tags["nodeclass-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
-			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(new(opts.ClusterName)))
+			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(new(nodeClaim.Name)))
+			Expect(updatedAKSMachine.Properties.Tags["nodeclass-tag"]).To(Equal(new("nodeclass-value")))
+			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(new("my-tag")))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
@@ -214,15 +214,15 @@ var _ = Describe("In Place Update Controller", func() {
 		})
 
 		It("should not call Azure if the expected tags already exist on the AKS machine", func() {
-			aksMachine.Properties.Tags["test-tag"] = lo.ToPtr("my-tag")
-			aksMachine.Properties.Tags["nodeclass-tag"] = lo.ToPtr("nodeclass-value")
+			aksMachine.Properties.Tags["test-tag"] = new("my-tag")
+			aksMachine.Properties.Tags["nodeclass-tag"] = new("nodeclass-value")
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ctx = options.ToContext(
 				ctx,
 				test.Options(
 					test.OptionsFields{
-						ManageExistingAKSMachines: lo.ToPtr(true),
+						ManageExistingAKSMachines: new(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -243,10 +243,10 @@ var _ = Describe("In Place Update Controller", func() {
 
 		It("should clear existing tags on AKS machine", func() {
 			aksMachine.Properties.Tags = map[string]*string{
-				"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
-				"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
-				"test-tag":      lo.ToPtr("my-tag"),
-				"nodeclass-tag": lo.ToPtr("nodeclass-value"),
+				"karpenter.azure.com_cluster":              new(opts.ClusterName),
+				"karpenter.azure.com_aksmachine_nodeclaim": new(nodeClaim.Name),
+				"test-tag":      new("my-tag"),
+				"nodeclass-tag": new("nodeclass-value"),
 			}
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
@@ -266,9 +266,9 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
 			Expect(updatedAKSMachine.Properties.Tags).ToNot(HaveKey("test-tag")) // should be removed
 
-			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
-			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(lo.ToPtr(nodeClaim.Name)))
-			Expect(updatedAKSMachine.Properties.Tags["nodeclass-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
+			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(new(opts.ClusterName)))
+			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(new(nodeClaim.Name)))
+			Expect(updatedAKSMachine.Properties.Tags["nodeclass-tag"]).To(Equal(new("nodeclass-value")))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
@@ -308,21 +308,21 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
 
-			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
-			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(lo.ToPtr(nodeClaim.Name)))
-			Expect(updatedAKSMachine.Properties.Tags["nodeclass-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
+			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(new(opts.ClusterName)))
+			Expect(updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(new(nodeClaim.Name)))
+			Expect(updatedAKSMachine.Properties.Tags["nodeclass-tag"]).To(Equal(new("nodeclass-value")))
 		})
 
 		It("should handle ETag mismatch during AKS machine update", func() {
 			// Setup machine with ETag
-			aksMachine.Properties.ETag = lo.ToPtr(`"initial-etag"`)
+			aksMachine.Properties.ETag = new(`"initial-etag"`)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ctx = options.ToContext(
 				ctx,
 				test.Options(
 					test.OptionsFields{
-						ManageExistingAKSMachines: lo.ToPtr(true),
+						ManageExistingAKSMachines: new(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -356,7 +356,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// Verify tags were applied
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
-			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(new("my-tag")))
 
 			// Verify ETag was updated after successful operation (changed from original "initial-etag")
 			Expect(updatedAKSMachine.Properties.ETag).ToNot(BeNil())
@@ -368,14 +368,14 @@ var _ = Describe("In Place Update Controller", func() {
 
 		It("should successfully update AKS machine with correct ETag", func() {
 			// Setup machine with ETag
-			aksMachine.Properties.ETag = lo.ToPtr(`"valid-etag"`)
+			aksMachine.Properties.ETag = new(`"valid-etag"`)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ctx = options.ToContext(
 				ctx,
 				test.Options(
 					test.OptionsFields{
-						ManageExistingAKSMachines: lo.ToPtr(true),
+						ManageExistingAKSMachines: new(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -390,7 +390,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// Verify tags were applied
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
-			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(new("my-tag")))
 
 			// Verify ETag was updated after successful operation (changed from original "valid-etag")
 			Expect(updatedAKSMachine.Properties.ETag).ToNot(BeNil())
@@ -409,7 +409,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ctx,
 				test.Options(
 					test.OptionsFields{
-						ManageExistingAKSMachines: lo.ToPtr(true),
+						ManageExistingAKSMachines: new(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -424,7 +424,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// Verify tags were applied
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
-			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(new("my-tag")))
 
 			// Verify API was called
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))

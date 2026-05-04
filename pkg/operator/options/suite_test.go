@@ -28,7 +28,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -134,30 +133,30 @@ var _ = Describe("Options", func() {
 			err := opts.Parse(fs)
 			Expect(err).ToNot(HaveOccurred())
 			expectedOpts := test.Options(test.OptionsFields{
-				ClusterName:                    lo.ToPtr("env-cluster"),
-				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
-				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
-				ClusterID:                      lo.ToPtr("46593302"),
-				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
-				LinuxAdminUsername:             lo.ToPtr("customadminusername"),
-				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
-				NetworkPlugin:                  lo.ToPtr("none"),
-				NetworkPluginMode:              lo.ToPtr(""),
-				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
-				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
+				ClusterName:                    new("env-cluster"),
+				ClusterEndpoint:                new("https://environment-cluster-id-value-for-testing"),
+				VMMemoryOverheadPercent:        new(0.3),
+				ClusterID:                      new("46593302"),
+				KubeletClientTLSBootstrapToken: new("env-bootstrap-token"),
+				LinuxAdminUsername:             new("customadminusername"),
+				SSHPublicKey:                   new("env-ssh-public-key"),
+				NetworkPlugin:                  new("none"),
+				NetworkPluginMode:              new(""),
+				NetworkPolicy:                  new("env-network-policy"),
+				SubnetID:                       new("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
-				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
-				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
-				VnetGUID:                       lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
-				UseSIG:                         lo.ToPtr(true),
-				SIGAccessTokenServerURL:        lo.ToPtr("http://valid-server.com"),
-				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
-				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
-				KubeletIdentityClientID:        lo.ToPtr("12345678-1234-1234-1234-123456789012"),
+				ProvisionMode:                  new("bootstrappingclient"),
+				NodeBootstrappingServerURL:     new("https://nodebootstrapping-server-url"),
+				VnetGUID:                       new("a519e60a-cac0-40b2-b883-084477fe6f5c"),
+				UseSIG:                         new(true),
+				SIGAccessTokenServerURL:        new("http://valid-server.com"),
+				SIGSubscriptionID:              new("my-subscription-id"),
+				NodeResourceGroup:              new("my-node-rg"),
+				KubeletIdentityClientID:        new("12345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
-				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
-				ManageExistingAKSMachines:      lo.ToPtr(true),
-				AKSMachinesPoolName:            lo.ToPtr("testmpool"),
+				ClusterDNSServiceIP:            new("10.244.0.1"),
+				ManageExistingAKSMachines:      new(true),
+				AKSMachinesPoolName:            new("testmpool"),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
 		})
@@ -706,11 +705,11 @@ var _ = Describe("Options", func() {
 	Context("String verification", func() {
 		It("should have a JSON tag for each expected field", func() {
 			// Use reflection to get the type information of the Options struct
-			optionsType := reflect.TypeOf(*opts)
+			optionsType := reflect.TypeFor[options.Options]()
 
 			// Iterate through all fields in the struct
-			for i := 0; i < optionsType.NumField(); i++ {
-				field := optionsType.Field(i)
+			for field := range optionsType.Fields() {
+
 				fieldName := field.Name
 
 				// Skip unexported fields (those starting with lowercase)

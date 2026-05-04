@@ -33,13 +33,13 @@ func TestCreateNICFromQueryResponseData(t *testing.T) {
 
 	tc := []struct {
 		testName      string
-		data          map[string]interface{}
+		data          map[string]any
 		expectedError string
 		expectedNIC   *armnetwork.Interface
 	}{
 		{
 			testName: "missing id",
-			data: map[string]interface{}{
+			data: map[string]any{
 				"name": name,
 			},
 			expectedError: "network interface is missing id",
@@ -47,7 +47,7 @@ func TestCreateNICFromQueryResponseData(t *testing.T) {
 		},
 		{
 			testName: "missing name",
-			data: map[string]interface{}{
+			data: map[string]any{
 				"id": id,
 			},
 			expectedError: "network interface is missing name",
@@ -55,10 +55,10 @@ func TestCreateNICFromQueryResponseData(t *testing.T) {
 		},
 		{
 			testName: "happy case",
-			data: map[string]interface{}{
+			data: map[string]any{
 				"id":   id,
 				"name": name,
-				"tags": map[string]interface{}{tag: val},
+				"tags": map[string]any{tag: val},
 			},
 			expectedNIC: &armnetwork.Interface{
 				ID:   &id,
@@ -100,13 +100,13 @@ func TestCreateVMFromQueryResponseData(t *testing.T) {
 
 	tc := []struct {
 		testName      string
-		data          map[string]interface{}
+		data          map[string]any
 		expectedError string
 		expectedVM    *armcompute.VirtualMachine
 	}{
 		{
 			testName: "missing id",
-			data: map[string]interface{}{
+			data: map[string]any{
 				"name": name,
 			},
 			expectedError: "virtual machine is missing id",
@@ -114,7 +114,7 @@ func TestCreateVMFromQueryResponseData(t *testing.T) {
 		},
 		{
 			testName: "missing name",
-			data: map[string]interface{}{
+			data: map[string]any{
 				"id": id,
 			},
 			expectedError: "virtual machine is missing name",
@@ -122,11 +122,11 @@ func TestCreateVMFromQueryResponseData(t *testing.T) {
 		},
 		{
 			testName: "happy case",
-			data: map[string]interface{}{
+			data: map[string]any{
 				"id":    id,
 				"name":  name,
-				"tags":  map[string]interface{}{tag: val},
-				"zones": []interface{}{zone},
+				"tags":  map[string]any{tag: val},
+				"zones": []any{zone},
 			},
 			expectedVM: &armcompute.VirtualMachine{
 				ID:    &id,

@@ -67,7 +67,7 @@ func (n *NodeBootstrappingAPI) Get(ctx context.Context, params *models.Provision
 
 		return types.NodeBootstrapping{
 			CSEDehydratable:               fmt.Sprintf("CORRECT_CSE_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *input.Params),
-			CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CORRECT_CUSTOM_DATA_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *input.Params))),
+			CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "CORRECT_CUSTOM_DATA_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *input.Params)),
 		}, nil
 	})
 }

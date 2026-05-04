@@ -284,7 +284,7 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("discovering caBundle, loading TLS config, %w", err)
 	}
-	return lo.ToPtr(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
+	return new(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
 func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {

@@ -184,7 +184,7 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
-				ManageExistingAKSMachines: lo.ToPtr(false),
+				ManageExistingAKSMachines: new(false),
 			})
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -298,7 +298,7 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
-				ManageExistingAKSMachines: lo.ToPtr(true),
+				ManageExistingAKSMachines: new(true),
 			})
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)

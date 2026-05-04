@@ -154,13 +154,12 @@ func (c *AKSAgentPoolsAPI) BeginDeleteMachines(
 
 		// Collect all existing machines in the agent pool for error message
 		if c.aksDataStorage != nil && c.aksDataStorage.AKSMachines != nil {
-			c.aksDataStorage.AKSMachines.Range(func(key, value interface{}) bool {
+			c.aksDataStorage.AKSMachines.Range(func(key, value any) bool {
 				machineID := key.(string)
 				// Check if this machine belongs to the same agent pool
 				expectedPrefix := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.ContainerService/managedClusters/%s/agentPools/%s/machines/",
 					input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
-				if strings.HasPrefix(machineID, expectedPrefix) {
-					machineName := strings.TrimPrefix(machineID, expectedPrefix)
+				if machineName, ok := strings.CutPrefix(machineID, expectedPrefix); ok {
 					allValidMachinesInPool = append(allValidMachinesInPool, machineName)
 				}
 				return true

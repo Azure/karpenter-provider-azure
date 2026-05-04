@@ -31,7 +31,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
-	"github.com/samber/lo"
 )
 
 type VirtualMachineCreateOrUpdateInput struct {
@@ -128,7 +127,7 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGr
 		// TODO: subscription ID?
 		vm := input.VM
 		id := MkVMID(input.ResourceGroupName, input.VMName)
-		vm.ID = lo.ToPtr(id)
+		vm.ID = new(id)
 
 		// Check store for existing vm by name
 		existingVM, ok := c.Instances.Load(id)
@@ -162,12 +161,12 @@ ERROR CODE: PropertyChangeNotAllowed
 			return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: existingVM.(armcompute.VirtualMachine)}, nil
 		}
 
-		vm.Name = lo.ToPtr(input.VMName)
+		vm.Name = new(input.VMName)
 		if vm.Properties == nil {
 			vm.Properties = &armcompute.VirtualMachineProperties{}
 		}
 		if vm.Properties.TimeCreated == nil {
-			vm.Properties.TimeCreated = lo.ToPtr(time.Now()) // TODO: use simulated time?
+			vm.Properties.TimeCreated = new(time.Now()) // TODO: use simulated time?
 		}
 		c.Instances.Store(id, vm)
 		return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: vm}, nil
@@ -211,9 +210,7 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 				if vm.Identity.UserAssignedIdentities == nil {
 					vm.Identity.UserAssignedIdentities = make(map[string]*armcompute.UserAssignedIdentitiesValue)
 				}
-				for id, val := range updates.Identity.UserAssignedIdentities {
-					vm.Identity.UserAssignedIdentities[id] = val
-				}
+				maps.Copy(vm.Identity.UserAssignedIdentities, updates.Identity.UserAssignedIdentities)
 			}
 		}
 
@@ -260,7 +257,7 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 }
 
 func CreateSDKErrorBody(code, message string) io.ReadCloser {
-	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
+	return io.NopCloser(bytes.NewReader(fmt.Appendf(nil, `{"error":{"code": "%s", "message": "%s"}}`, code, message)))
 }
 
 func MkVMID(resourceGroupName string, vmName string) string {

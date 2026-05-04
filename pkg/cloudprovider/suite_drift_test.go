@@ -97,7 +97,7 @@ var _ = Describe("CloudProvider", func() {
 				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
 				// Context must have same kubelet client id
 				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
-					KubeletIdentityClientID: lo.ToPtr(node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]),
+					KubeletIdentityClientID: new(node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]),
 				}))
 
 				ExpectApplied(ctx, env.Client, node)
@@ -204,7 +204,7 @@ var _ = Describe("CloudProvider", func() {
 				// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 				It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					nodeClass.Status.KubernetesVersion = lo.ToPtr("")
+					nodeClass.Status.KubernetesVersion = new("")
 					ExpectApplied(ctx, env.Client, nodeClass)
 					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
@@ -249,7 +249,7 @@ var _ = Describe("CloudProvider", func() {
 
 					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(*nodeClass.Status.KubernetesVersion))
 					semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
-					nodeClass.Status.KubernetesVersion = lo.ToPtr(semverCurrentK8sVersion.String())
+					nodeClass.Status.KubernetesVersion = new(semverCurrentK8sVersion.String())
 
 					ExpectApplied(ctx, env.Client, nodeClass)
 
@@ -270,7 +270,7 @@ var _ = Describe("CloudProvider", func() {
 
 				It("should trigger drift if node kubelet client ID doesn't match options", func() {
 					ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
-						KubeletIdentityClientID: lo.ToPtr("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
+						KubeletIdentityClientID: new("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
 					}))
 
 					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
@@ -288,7 +288,7 @@ var _ = Describe("CloudProvider", func() {
 
 				It("should trigger drift if NodeClass subnet changed", func() {
 					testSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/my-subnet"
-					nodeClass.Spec.VNETSubnetID = lo.ToPtr(testSubnetID)
+					nodeClass.Spec.VNETSubnetID = new(testSubnetID)
 					ExpectApplied(ctx, env.Client, nodeClass)
 					ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
 

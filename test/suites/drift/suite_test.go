@@ -322,7 +322,7 @@ var _ = Describe("Drift", func() {
 			windowStart := time.Now().Add(-time.Minute * 15).UTC()
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes:    "0",
-				Schedule: lo.ToPtr(fmt.Sprintf("%d %d * * *", windowStart.Minute(), windowStart.Hour())),
+				Schedule: new(fmt.Sprintf("%d %d * * *", windowStart.Minute(), windowStart.Hour())),
 				Duration: &metav1.Duration{Duration: time.Minute * 30},
 			}}
 
@@ -462,7 +462,7 @@ var _ = Describe("Drift", func() {
 		// VNETSubnetID tested separately
 		Entry("OSDiskSizeGB", v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr[int32](100)}),
 		// ImageID TBD
-		Entry("ImageFamily", v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}),
+		Entry("ImageFamily", v1beta1.AKSNodeClassSpec{ImageFamily: new("AzureLinux")}),
 		Entry("KubeletConfiguration", v1beta1.AKSNodeClassSpec{
 			Kubelet: &v1beta1.KubeletConfiguration{
 				ImageGCLowThresholdPercent:  lo.ToPtr[int32](10),
@@ -509,17 +509,17 @@ var _ = Describe("Drift", func() {
 				},
 				v1beta1.AKSNodeClassSpec{
 					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
-					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+					FIPSMode:    new(v1beta1.FIPSModeFIPS),
 				},
 			),
 			Entry("FIPSMode: FIPS -> Disabled",
 				v1beta1.AKSNodeClassSpec{
 					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
-					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+					FIPSMode:    new(v1beta1.FIPSModeFIPS),
 				},
 				v1beta1.AKSNodeClassSpec{
 					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
-					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeDisabled),
+					FIPSMode:    new(v1beta1.FIPSModeDisabled),
 				},
 			),
 		)

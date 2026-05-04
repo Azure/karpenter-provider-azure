@@ -354,18 +354,18 @@ func createKeyVaultDESResources(ctx SpecContext, env *azure.Environment, keyVaul
 // createKeyVault creates an Azure Key Vault
 func createKeyVault(ctx SpecContext, env *azure.Environment, keyVaultName, clusterTenant string) (*armkeyvault.Vault, error) {
 	keyVault := armkeyvault.Vault{
-		Location: lo.ToPtr(env.Region),
+		Location: new(env.Region),
 		Properties: &armkeyvault.VaultProperties{
-			TenantID: lo.ToPtr(clusterTenant),
+			TenantID: new(clusterTenant),
 			SKU: &armkeyvault.SKU{
 				Family: lo.ToPtr(armkeyvault.SKUFamilyA),
 				Name:   lo.ToPtr(armkeyvault.SKUNameStandard),
 			},
-			EnableRbacAuthorization:   lo.ToPtr(true),
+			EnableRbacAuthorization:   new(true),
 			AccessPolicies:            []*armkeyvault.AccessPolicyEntry{},
-			EnabledForDiskEncryption:  lo.ToPtr(true),
-			EnablePurgeProtection:     lo.ToPtr(true),
-			SoftDeleteRetentionInDays: lo.ToPtr(int32(7)),
+			EnabledForDiskEncryption:  new(true),
+			EnablePurgeProtection:     new(true),
+			SoftDeleteRetentionInDays: new(int32(7)),
 		},
 	}
 
@@ -429,7 +429,7 @@ func createKeyVaultKey(ctx SpecContext, keyVaultName, keyName string, cred azcor
 
 	keyResp, err := keyClient.CreateKey(ctx, keyName, azkeys.CreateKeyParameters{
 		Kty:     lo.ToPtr(azkeys.KeyTypeRSA),
-		KeySize: lo.ToPtr(int32(2048)),
+		KeySize: new(int32(2048)),
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -441,13 +441,13 @@ func createKeyVaultKey(ctx SpecContext, keyVaultName, keyName string, cred azcor
 // createDiskEncryptionSet creates a Disk Encryption Set
 func createDiskEncryptionSet(ctx SpecContext, env *azure.Environment, desName string, keyVault *armkeyvault.Vault, key *azkeys.KeyBundle) (*armcompute.DiskEncryptionSet, error) {
 	des := armcompute.DiskEncryptionSet{
-		Location: lo.ToPtr(env.Region),
+		Location: new(env.Region),
 		Identity: &armcompute.EncryptionSetIdentity{
 			Type: lo.ToPtr(armcompute.DiskEncryptionSetIdentityTypeSystemAssigned),
 		},
 		Properties: &armcompute.EncryptionSetProperties{
 			ActiveKey: &armcompute.KeyForDiskEncryptionSet{
-				KeyURL: lo.ToPtr(string(*key.Key.KID)),
+				KeyURL: new(string(*key.Key.KID)),
 				SourceVault: &armcompute.SourceVault{
 					ID: keyVault.ID,
 				},

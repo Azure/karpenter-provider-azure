@@ -38,25 +38,25 @@ var _ = Describe("Hash", func() {
 		nodeClass = &v1alpha2.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1alpha2.AKSNodeClassSpec{
-				VNETSubnetID: lo.ToPtr("subnet-id"),
-				OSDiskSizeGB: lo.ToPtr(int32(30)),
-				ImageFamily:  lo.ToPtr("Ubuntu2204"),
+				VNETSubnetID: new("subnet-id"),
+				OSDiskSizeGB: new(int32(30)),
+				ImageFamily:  new("Ubuntu2204"),
 				Tags: map[string]string{
 					"keyTag-1": "valueTag-1",
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1alpha2.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
+					CPUManagerPolicy:            new("static"),
+					CPUCFSQuota:                 new(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
-					TopologyManagerPolicy:       lo.ToPtr("none"),
+					ImageGCHighThresholdPercent: new(int32(85)),
+					ImageGCLowThresholdPercent:  new(int32(80)),
+					TopologyManagerPolicy:       new("none"),
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         lo.ToPtr("10Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+					ContainerLogMaxSize:         new("10Mi"),
+					ContainerLogMaxFiles:        new(int32(10)),
 				},
-				MaxPods: lo.ToPtr(int32(100)),
+				MaxPods: new(int32(100)),
 			},
 		}
 	})
@@ -69,17 +69,17 @@ var _ = Describe("Hash", func() {
 		Entry("Base AKSNodeClass", staticHash, v1alpha2.AKSNodeClass{}),
 
 		// Static fields, expect changed hash from base
-		Entry("VNETSubnetID", "13971920214979852468", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
-		Entry("OSDiskSizeGB", "7816855636861645563", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
-		Entry("ImageFamily", "15616969746300892810", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
-		Entry("Kubelet", "33638514539106194", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
-		Entry("MaxPods", "15508761509963240710", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("VNETSubnetID", "13971920214979852468", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: new("subnet-id-2")}}),
+		Entry("OSDiskSizeGB", "7816855636861645563", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: new(int32(40))}}),
+		Entry("ImageFamily", "15616969746300892810", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: new("AzureLinux")}}),
+		Entry("Kubelet", "33638514539106194", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: new("none")}}}),
+		Entry("MaxPods", "15508761509963240710", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: new(int32(200))}}),
 		Entry("LocalDNS.Mode", "17805442572569734619", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{Mode: v1alpha2.LocalDNSModeRequired}}}),
 		Entry("LocalDNS.VnetDNSOverrides", "14608914734386108436", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1alpha2.LocalDNSQueryLoggingLog}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", "4529827108104295737", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{KubeDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1alpha2.LocalDNSProtocolForceTCP}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11008649797056761238", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "4895720480850206885", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
-		Entry("ArtifactStreaming.Enabled", "15355387647114481444", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("ArtifactStreaming.Enabled", "15355387647114481444", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: new(true)}}}),
 	)
 	It("should match static hash when reordering tags", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
@@ -91,17 +91,17 @@ var _ = Describe("Hash", func() {
 		updatedHash := nodeClass.Hash()
 		Expect(hash).ToNot(Equal(updatedHash))
 	},
-		Entry("VNETSubnetID", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
-		Entry("OSDiskSizeGB", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
-		Entry("ImageFamily", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
-		Entry("Kubelet", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
-		Entry("MaxPods", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("VNETSubnetID", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: new("subnet-id-2")}}),
+		Entry("OSDiskSizeGB", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: new(int32(40))}}),
+		Entry("ImageFamily", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: new("AzureLinux")}}),
+		Entry("Kubelet", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: new("none")}}}),
+		Entry("MaxPods", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: new(int32(200))}}),
 		Entry("LocalDNS.Mode", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{Mode: v1alpha2.LocalDNSModeRequired}}}),
 		Entry("LocalDNS.VnetDNSOverrides", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1alpha2.LocalDNSQueryLoggingLog}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{KubeDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1alpha2.LocalDNSProtocolForceTCP}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
-		Entry("ArtifactStreaming.Enabled", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("ArtifactStreaming.Enabled", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ArtifactStreaming: &v1alpha2.ArtifactStreaming{Enabled: new(true)}}}),
 	)
 	It("should not change hash when tags are changed", func() {
 		hash := nodeClass.Hash()

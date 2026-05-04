@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/samber/lo"
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -49,13 +48,13 @@ var _ = Describe("Dynamic PVC", func() {
 			}
 		}
 
-		storageClassName := lo.ToPtr("azuredisk-sc-test")
+		storageClassName := new("azuredisk-sc-test")
 		bindMode := storagev1.VolumeBindingWaitForFirstConsumer
 		sc := test.StorageClass(test.StorageClassOptions{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: *storageClassName,
 			},
-			Provisioner:       lo.ToPtr("disk.csi.azure.com"),
+			Provisioner:       new("disk.csi.azure.com"),
 			VolumeBindingMode: &bindMode,
 		})
 
@@ -80,13 +79,13 @@ var _ = Describe("Dynamic PVC", func() {
 
 var _ = Describe("Static PVC", func() {
 	It("should run a pod with a static persistent volume using Azure File", Label("runner"), func() {
-		storageClassName := lo.ToPtr("azurefile-test")
+		storageClassName := new("azurefile-test")
 		bindMode := storagev1.VolumeBindingImmediate
 		sc := test.StorageClass(test.StorageClassOptions{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: *storageClassName,
 			},
-			Provisioner:       lo.ToPtr("file.csi.azure.com"),
+			Provisioner:       new("file.csi.azure.com"),
 			VolumeBindingMode: &bindMode,
 		})
 

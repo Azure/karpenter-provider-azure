@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,7 +48,7 @@ var (
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			MaxConcurrent:      new(int32(1000)),
 			Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 			QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -60,7 +59,7 @@ var (
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			MaxConcurrent:      new(int32(1000)),
 			Protocol:           v1beta1.LocalDNSProtocolForceTCP,
 			QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 			ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
@@ -75,7 +74,7 @@ var (
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			MaxConcurrent:      new(int32(1000)),
 			Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 			QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -86,7 +85,7 @@ var (
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			MaxConcurrent:      new(int32(1000)),
 			Protocol:           v1beta1.LocalDNSProtocolForceTCP,
 			QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 			ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
@@ -349,7 +348,7 @@ func getDNSResultFromNode(node *corev1.Node) DNSTestResult {
 // Server:    169.254.10.11
 // Address:   169.254.10.11:53
 func parseDNSServerIP(logs string) string {
-	for _, line := range strings.Split(logs, "\n") {
+	for line := range strings.SplitSeq(logs, "\n") {
 		line = strings.TrimSpace(line)
 		// Look for "Server:" line first (most reliable)
 		if strings.HasPrefix(line, "Server:") {
@@ -364,8 +363,8 @@ func parseDNSServerIP(logs string) string {
 			if len(fields) >= 2 {
 				// Remove port if present (e.g., "10.0.0.10#53" -> "10.0.0.10")
 				ipPort := fields[1]
-				if idx := strings.Index(ipPort, "#"); idx != -1 {
-					return ipPort[:idx]
+				if before, _, ok := strings.Cut(ipPort, "#"); ok {
+					return before
 				}
 				return ipPort
 			}

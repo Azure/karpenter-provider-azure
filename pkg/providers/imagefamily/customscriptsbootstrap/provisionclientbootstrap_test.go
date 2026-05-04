@@ -30,7 +30,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,7 +46,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 	}{
 		{
 			name: "Success with valid parameters",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101 - test data, not real credentials
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -74,7 +73,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 		},
 		{
 			name: "Error with nil NodeBootstrapping provider",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101 - test data, not real credentials
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -101,7 +100,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 		},
 		{
 			name: "Error with Windows OS",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101 - test data, not real credentials
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -127,7 +126,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 		},
 		{
 			name: "NodeBootstrapping returns error",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101 - test data, not real credentials
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -609,17 +608,17 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubeletConfig: &bootstrap.KubeletConfiguration{
 					MaxPods: int32(110),
 					KubeletConfiguration: v1beta1.KubeletConfiguration{
-						CPUManagerPolicy:            lo.ToPtr("static"),
-						CPUCFSQuota:                 lo.ToPtr(true),
+						CPUManagerPolicy:            new("static"),
+						CPUCFSQuota:                 new(true),
 						CPUCFSQuotaPeriod:           metav1.Duration{Duration: 100 * time.Millisecond},
-						TopologyManagerPolicy:       lo.ToPtr("single-numa-node"),
-						ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
-						ImageGCLowThresholdPercent:  lo.ToPtr(int32(75)),
-						ContainerLogMaxSize:         lo.ToPtr("100Mi"),
-						ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
-						PodPidsLimit:                lo.ToPtr(int64(1024)),
+						TopologyManagerPolicy:       new("single-numa-node"),
+						ImageGCHighThresholdPercent: new(int32(85)),
+						ImageGCLowThresholdPercent:  new(int32(75)),
+						ContainerLogMaxSize:         new("100Mi"),
+						ContainerLogMaxFiles:        new(int32(10)),
+						PodPidsLimit:                new(int64(1024)),
 						AllowedUnsafeSysctls:        []string{"kernel.msg*", "net.ipv4.route.min_pmtu"},
-						FailSwapOn:                  lo.ToPtr(false),
+						FailSwapOn:                  new(false),
 					},
 				},
 				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -705,7 +704,7 @@ func TestConstructProvisionValues(t *testing.T) {
 }
 
 func TestArtifactStreamingEnablement(t *testing.T) {
-	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101 - test data, not real credentials
 		ClusterName:                    "test-cluster",
 		KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 		SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -769,7 +768,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
-			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: new(true)},
 			expectedArtifactStreamingEnabled: true,
 		},
 		{
@@ -778,7 +777,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
-			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: new(false)},
 			expectedArtifactStreamingEnabled: false,
 		},
 		{
@@ -787,7 +786,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-arm64-containerd-22.04-gen2",
-			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
+			artifactStreaming:                &v1beta1.ArtifactStreaming{Enabled: new(true)},
 			expectedArtifactStreamingEnabled: false,
 		},
 	}
@@ -832,7 +831,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 }
 
 func TestFIPSEnablement(t *testing.T) {
-	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101 - test data, not real credentials
 		ClusterName:                    "test-cluster",
 		KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 		SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -968,7 +967,7 @@ func TestFIPSEnablement(t *testing.T) {
 			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
 			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
 
-			g.Expect(values.ProvisionProfile.EnableFIPS).To(Equal(lo.ToPtr(tt.expectedEnableFIPS)),
+			g.Expect(values.ProvisionProfile.EnableFIPS).To(Equal(new(tt.expectedEnableFIPS)),
 				"FIPS enablement mismatch: %s. Expected: %t, Actual: %t",
 				tt.description, tt.expectedEnableFIPS, *values.ProvisionProfile.EnableFIPS)
 		})

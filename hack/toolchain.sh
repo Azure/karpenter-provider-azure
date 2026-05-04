@@ -83,7 +83,7 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
+    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
 
     # Install our custom modules in golangci-lint
     if ! should-skip "golangci-lint-custom"; then

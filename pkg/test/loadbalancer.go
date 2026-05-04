@@ -32,7 +32,7 @@ func MakeStandardLoadBalancer(resourceGroup string, lbName string, includeOutbou
 		Properties: &armnetwork.LoadBalancerPropertiesFormat{
 			BackendAddressPools: []*armnetwork.BackendAddressPool{
 				{
-					ID:         lo.ToPtr(fake.MakeBackendAddressPoolID(resourceGroup, lbName, loadbalancer.SLBInboundBackendPoolName)),
+					ID:         new(fake.MakeBackendAddressPoolID(resourceGroup, lbName, loadbalancer.SLBInboundBackendPoolName)),
 					Name:       lo.ToPtr(loadbalancer.SLBInboundBackendPoolName),
 					Properties: &armnetwork.BackendAddressPoolPropertiesFormat{},
 				},
@@ -42,7 +42,7 @@ func MakeStandardLoadBalancer(resourceGroup string, lbName string, includeOutbou
 
 	if includeOutbound {
 		result.Properties.BackendAddressPools = append(result.Properties.BackendAddressPools, &armnetwork.BackendAddressPool{
-			ID:         lo.ToPtr(fake.MakeBackendAddressPoolID(resourceGroup, lbName, loadbalancer.SLBOutboundBackendPoolName)),
+			ID:         new(fake.MakeBackendAddressPoolID(resourceGroup, lbName, loadbalancer.SLBOutboundBackendPoolName)),
 			Name:       lo.ToPtr(loadbalancer.SLBOutboundBackendPoolName),
 			Properties: &armnetwork.BackendAddressPoolPropertiesFormat{},
 		})

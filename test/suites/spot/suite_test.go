@@ -86,7 +86,7 @@ var _ = Describe("Spot", func() {
 						Effect:   corev1.TaintEffectNoSchedule,
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(0)),
+				TerminationGracePeriodSeconds: new(int64(0)),
 			},
 		})
 
@@ -147,7 +147,7 @@ var _ = Describe("Spot (nonstandard node pool)", func() {
 						Effect:   corev1.TaintEffectNoSchedule,
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(0)),
+				TerminationGracePeriodSeconds: new(int64(0)),
 			},
 		})
 

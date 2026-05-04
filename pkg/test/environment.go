@@ -178,7 +178,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		ctx,
 		imageFamilyResolver,
 		imageFamilyProvider,
-		lo.ToPtr("ca-bundle"),
+		new("ca-bundle"),
 		testOptions.ClusterEndpoint,
 		"test-tenant",
 		subscription,
@@ -250,7 +250,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		aksDataStorage.AgentPools.Store(
 			fake.MkAgentPoolID(testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName),
 			armcontainerservice.AgentPool{
-				Name: lo.ToPtr(testOptions.AKSMachinesPoolName),
+				Name: new(testOptions.AKSMachinesPoolName),
 				Properties: &armcontainerservice.ManagedClusterAgentPoolProfileProperties{
 					Mode: lo.ToPtr(armcontainerservice.AgentPoolModeMachines),
 				},

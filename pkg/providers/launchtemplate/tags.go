@@ -65,5 +65,5 @@ func Tags(
 }
 
 func mapTags(key string, value string) (string, *string) {
-	return strings.ReplaceAll(key, "/", "_"), lo.ToPtr(value)
+	return strings.ReplaceAll(key, "/", "_"), new(value)
 }

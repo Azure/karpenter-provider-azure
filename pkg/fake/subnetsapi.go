@@ -21,7 +21,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
-	"github.com/samber/lo"
 )
 
 type SubnetsAPI struct {
@@ -37,7 +36,7 @@ func (s *SubnetsAPI) Get(ctx context.Context, resourceGroupName string, virtualN
 	return armnetwork.SubnetsClientGetResponse{
 		Subnet: armnetwork.Subnet{
 			Properties: &armnetwork.SubnetPropertiesFormat{
-				AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+				AddressPrefix: new("10.0.0.0/16"),
 			},
 		},
 	}, nil

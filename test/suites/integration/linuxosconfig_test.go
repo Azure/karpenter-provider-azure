@@ -88,7 +88,7 @@ var _ = Describe("LinuxOSConfig", func() {
 				NetCoreSomaxconn:               lo.ToPtr[int32](8192),
 				NetCoreWmemDefault:             lo.ToPtr[int32](262144),
 				NetCoreWmemMax:                 lo.ToPtr[int32](134217728),
-				NetIPv4IPLocalPortRange:        lo.ToPtr("1024 65535"),
+				NetIPv4IPLocalPortRange:        new("1024 65535"),
 				NetIPv4NeighDefaultGcThresh1:   lo.ToPtr[int32](512),
 				NetIPv4NeighDefaultGcThresh2:   lo.ToPtr[int32](2048),
 				NetIPv4NeighDefaultGcThresh3:   lo.ToPtr[int32](4096),
@@ -98,7 +98,7 @@ var _ = Describe("LinuxOSConfig", func() {
 				NetIPv4TCPKeepaliveProbes:      lo.ToPtr[int32](8),
 				NetIPv4TCPMaxSynBacklog:        lo.ToPtr[int32](8192),
 				NetIPv4TCPMaxTwBuckets:         lo.ToPtr[int32](32000),
-				NetIPv4TCPTwReuse:              lo.ToPtr(true),
+				NetIPv4TCPTwReuse:              new(true),
 				NetNetfilterNfConntrackMax:     lo.ToPtr[int32](524288),
 				NetNetfilterNfConntrackBuckets: lo.ToPtr[int32](131072),
 				VMMaxMapCount:                  lo.ToPtr[int32](128000),
@@ -211,10 +211,10 @@ var _ = Describe("LinuxOSConfig", func() {
 
 	It("should provision a node with swap file size configured", func() {
 		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-			FailSwapOn: lo.ToPtr(false),
+			FailSwapOn: new(false),
 		}
 		nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{
-			SwapFileSize: lo.ToPtr("1500Mi"),
+			SwapFileSize: new("1500Mi"),
 		}
 
 		pod := coretest.UnschedulablePod()
@@ -278,7 +278,7 @@ func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod 
 	pod.Spec.HostPID = true
 	pod.Spec.HostNetwork = true
 	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
-		Privileged: lo.ToPtr(true),
+		Privileged: new(true),
 	}
 	return pod
 }
@@ -306,7 +306,7 @@ func createTransparentHugePageVerificationPod(nodeName string) *corev1.Pod {
 	})
 	pod.Spec.HostPID = true
 	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
-		Privileged: lo.ToPtr(true),
+		Privileged: new(true),
 	}
 	return pod
 }
@@ -331,7 +331,7 @@ func createSwapVerificationPod(nodeName string) *corev1.Pod {
 	})
 	pod.Spec.HostPID = true
 	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
-		Privileged: lo.ToPtr(true),
+		Privileged: new(true),
 	}
 	return pod
 }

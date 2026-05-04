@@ -27,7 +27,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -49,7 +48,7 @@ func createZoneOverride(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZone
 		Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 		ForwardDestination: forwardDest,
 		ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-		MaxConcurrent:      lo.ToPtr(int32(100)),
+		MaxConcurrent:      new(int32(100)),
 		CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 		ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 		ServeStale:         v1beta1.LocalDNSServeStaleVerify,
@@ -130,8 +129,8 @@ var _ = Describe("Validation Reconciler", func() {
 			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
 				return armcompute.DiskEncryptionSetsClientGetResponse{
 					DiskEncryptionSet: armcompute.DiskEncryptionSet{
-						Name:     lo.ToPtr("test-des"),
-						Location: lo.ToPtr("eastus"),
+						Name:     new("test-des"),
+						Location: new("eastus"),
 					},
 				}, nil
 			}
@@ -211,8 +210,8 @@ var _ = Describe("Validation Reconciler", func() {
 				}
 				return armcompute.DiskEncryptionSetsClientGetResponse{
 					DiskEncryptionSet: armcompute.DiskEncryptionSet{
-						Name:     lo.ToPtr("test-des"),
-						Location: lo.ToPtr("eastus"),
+						Name:     new("test-des"),
+						Location: new("eastus"),
 					},
 				}, nil
 			}

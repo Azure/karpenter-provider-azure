@@ -81,10 +81,10 @@ func testOptions() Options {
 
 func machineWithState(state string) *armcontainerservice.Machine {
 	return &armcontainerservice.Machine{
-		ID:   lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines/machine"),
-		Name: lo.ToPtr("machine"),
+		ID:   new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines/machine"),
+		Name: new("machine"),
 		Properties: &armcontainerservice.MachineProperties{
-			ProvisioningState: lo.ToPtr(state),
+			ProvisioningState: new(state),
 		},
 	}
 }
@@ -93,8 +93,8 @@ func machineWithFailedState(errorCode, errorMsg string) *armcontainerservice.Mac
 	m := machineWithState(consts.ProvisioningStateFailed)
 	m.Properties.Status = &armcontainerservice.MachineStatus{
 		ProvisioningError: &armcontainerservice.ErrorDetail{
-			Code:    lo.ToPtr(errorCode),
-			Message: lo.ToPtr(errorMsg),
+			Code:    new(errorCode),
+			Message: new(errorMsg),
 		},
 	}
 	return m
@@ -287,8 +287,8 @@ func TestPollUntilDone_ExhaustedRetries(t *testing.T) {
 
 func TestPollUntilDone_NilProvisioningStateRetry(t *testing.T) {
 	machineWithNilState := &armcontainerservice.Machine{
-		ID:   lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/..."),
-		Name: lo.ToPtr("machine"),
+		ID:   new("/subscriptions/sub/resourceGroups/rg/providers/..."),
+		Name: new("machine"),
 		Properties: &armcontainerservice.MachineProperties{
 			ProvisioningState: nil, // nil state
 		},

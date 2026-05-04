@@ -44,13 +44,13 @@ func GetResourceData(ctx context.Context, client azapi.AzureResourceGraphAPI, re
 		if err != nil {
 			return nil, err
 		}
-		interfaceArray, ok := resp.Data.([]interface{})
+		interfaceArray, ok := resp.Data.([]any)
 		if !ok {
 			return nil, fmt.Errorf("type casting query response as interface array failed")
 		}
 		for i := range interfaceArray {
 			switch resource := interfaceArray[i].(type) {
-			case map[string]interface{}:
+			case map[string]any:
 				data = append(data, resource)
 			}
 		}

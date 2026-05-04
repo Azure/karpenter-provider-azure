@@ -61,9 +61,9 @@ var _ = Describe("Subnets", func() {
 
 		subnetName := "test-subnet"
 		subnet := &armnetwork.Subnet{
-			Name: lo.ToPtr(subnetName),
+			Name: new(subnetName),
 			Properties: &armnetwork.SubnetPropertiesFormat{
-				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
+				AddressPrefix: new("10.225.0.0/16"),
 			},
 		}
 

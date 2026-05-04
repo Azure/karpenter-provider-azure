@@ -72,7 +72,7 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
-	nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+	nodeClass.Status.KubernetesVersion = new(testK8sVersion)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)

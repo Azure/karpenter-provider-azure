@@ -83,12 +83,12 @@ func main() {
 	switch args.Format {
 	case "testfakes":
 		pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{
-			Filter: lo.ToPtr(fmt.Sprintf("location eq '%s'", args.Location)),
+			Filter: new(fmt.Sprintf("location eq '%s'", args.Location)),
 		})
 		var targetSkus map[string]struct{}
 		if args.Sizes != "" {
 			targetSkus = map[string]struct{}{}
-			for _, s := range strings.Split(args.Sizes, ",") {
+			for s := range strings.SplitSeq(args.Sizes, ",") {
 				targetSkus[s] = struct{}{}
 			}
 		}
@@ -164,7 +164,7 @@ func parseIgnoreFamilies(raw string) map[string]time.Time {
 	if raw == "" {
 		return result
 	}
-	for _, pair := range strings.Split(raw, ",") {
+	for pair := range strings.SplitSeq(raw, ",") {
 		parts := strings.SplitN(pair, ":", 2)
 		if len(parts) != 2 {
 			panic(fmt.Sprintf("invalid --ignore-families entry %q: expected family:date", pair))
@@ -221,7 +221,6 @@ func writeTestFakes(ResourceSkus []*armcompute.ResourceSKU, location, path strin
 	fmt.Fprintln(src, string(license))
 	fmt.Fprintln(src, "package fake")
 	fmt.Fprintln(src, "import (")
-	fmt.Fprintln(src, `	"github.com/samber/lo"`)
 	fmt.Fprintln(src, `	//nolint:staticcheck // deprecated package`)
 	fmt.Fprintln(src, `	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"`)
 	fmt.Fprintln(src, ")")
@@ -232,27 +231,27 @@ func writeTestFakes(ResourceSkus []*armcompute.ResourceSKU, location, path strin
 	fmt.Fprintf(src, "ResourceSkus[%q] = []compute.ResourceSku{\n", location)
 	for _, sku := range ResourceSkus {
 		fmt.Fprintln(src, "	{")
-		fmt.Fprintf(src, "		Name:         lo.ToPtr(%q),\n", lo.FromPtrOr(sku.Name, ""))
-		fmt.Fprintf(src, "		Tier:         lo.ToPtr(%q),\n", lo.FromPtrOr(sku.Tier, ""))
-		fmt.Fprintf(src, "		Kind:         lo.ToPtr(%q),\n", lo.FromPtrOr(sku.Kind, ""))
-		fmt.Fprintf(src, "		Size:         lo.ToPtr(%q),\n", lo.FromPtrOr(sku.Size, ""))
-		fmt.Fprintf(src, "		Family:       lo.ToPtr(%q),\n", lo.FromPtrOr(sku.Family, ""))
-		fmt.Fprintf(src, "		ResourceType: lo.ToPtr(%q),\n", lo.FromPtrOr(sku.ResourceType, ""))
+		fmt.Fprintf(src, "		Name:         new(%q),\n", lo.FromPtrOr(sku.Name, ""))
+		fmt.Fprintf(src, "		Tier:         new(%q),\n", lo.FromPtrOr(sku.Tier, ""))
+		fmt.Fprintf(src, "		Kind:         new(%q),\n", lo.FromPtrOr(sku.Kind, ""))
+		fmt.Fprintf(src, "		Size:         new(%q),\n", lo.FromPtrOr(sku.Size, ""))
+		fmt.Fprintf(src, "		Family:       new(%q),\n", lo.FromPtrOr(sku.Family, ""))
+		fmt.Fprintf(src, "		ResourceType: new(%q),\n", lo.FromPtrOr(sku.ResourceType, ""))
 		fmt.Fprintln(src, "		APIVersions: &[]string{")
 		for _, apiVersion := range sku.APIVersions {
-			fmt.Fprintf(src, "			lo.ToPtr(%q),\n", lo.FromPtrOr(apiVersion, ""))
+			fmt.Fprintf(src, "			new(%q),\n", lo.FromPtrOr(apiVersion, ""))
 		}
 		fmt.Fprintln(src, "		},")
 		if sku.Capacity != nil {
 			fmt.Fprintln(src, "		Capacity: compute.ResourceSkuCapacity{")
-			fmt.Fprintf(src, "			Minimum: lo.ToPtr(%d),\n", lo.FromPtrOr(sku.Capacity.Minimum, 0))
-			fmt.Fprintf(src, "			Maximum: lo.ToPtr(%d),\n", lo.FromPtrOr(sku.Capacity.Maximum, 0))
-			fmt.Fprintf(src, "			Default: lo.ToPtr(%d),\n", lo.FromPtrOr(sku.Capacity.Default, 0))
+			fmt.Fprintf(src, "			Minimum: new(%d),\n", lo.FromPtrOr(sku.Capacity.Minimum, 0))
+			fmt.Fprintf(src, "			Maximum: new(%d),\n", lo.FromPtrOr(sku.Capacity.Maximum, 0))
+			fmt.Fprintf(src, "			Default: new(%d),\n", lo.FromPtrOr(sku.Capacity.Default, 0))
 			fmt.Fprintf(src, "		},")
 		}
 		fmt.Fprintf(src, "		Costs: &[]compute.ResourceSkuCosts{")
 		for _, cost := range sku.Costs {
-			fmt.Fprintf(src, "			{MeterID: lo.ToPtr(%q), Quantity: lo.ToPtr(%q), ExtendedUnit: lo.ToPtr(%q)},", lo.FromPtrOr(cost.MeterID, ""), lo.FromPtrOr(cost.Quantity, 0.0), lo.FromPtrOr(cost.ExtendedUnit, ""))
+			fmt.Fprintf(src, "			{MeterID: new(%q), Quantity: new(%d), ExtendedUnit: new(%q)},", lo.FromPtrOr(cost.MeterID, ""), lo.FromPtrOr(cost.Quantity, 0), lo.FromPtrOr(cost.ExtendedUnit, ""))
 		}
 		fmt.Fprintln(src, "		},")
 		fmt.Fprintln(src, "		Restrictions: &[]compute.ResourceSkuRestrictions{")
@@ -281,13 +280,13 @@ func writeTestFakes(ResourceSkus []*armcompute.ResourceSKU, location, path strin
 		fmt.Fprintln(src, "		},")
 		fmt.Fprintln(src, "		Capabilities: &[]compute.ResourceSkuCapabilities{")
 		for _, capability := range sku.Capabilities {
-			fmt.Fprintf(src, "			{Name: lo.ToPtr(%q), Value: lo.ToPtr(%q)},\n", *capability.Name, *capability.Value)
+			fmt.Fprintf(src, "			{Name: new(%q), Value: new(%q)},\n", *capability.Name, *capability.Value)
 		}
 		fmt.Fprintln(src, "		},")
 		fmt.Fprintf(src, "		Locations: &[]string{%q},\n", location)
 		fmt.Fprintf(src, "		LocationInfo: &[]compute.ResourceSkuLocationInfo{")
 		for _, locationInfo := range sku.LocationInfo {
-			fmt.Fprintf(src, "			{Location: lo.ToPtr(%q),", location)
+			fmt.Fprintf(src, "			{Location: new(%q),", location)
 			fmt.Fprintln(src, "			Zones: &[]string{")
 			sort.Slice(locationInfo.Zones, func(i, j int) bool {
 				return *locationInfo.Zones[i] < *locationInfo.Zones[j]

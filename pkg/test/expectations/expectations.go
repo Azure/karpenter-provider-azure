@@ -120,7 +120,7 @@ func ExpectCleanUp(ctx context.Context, c client.Client) {
 				defer wg.Done()
 				defer GinkgoRecover()
 				Expect(c.DeleteAllOf(ctx, object, client.InNamespace(namespace),
-					&client.DeleteAllOfOptions{DeleteOptions: client.DeleteOptions{GracePeriodSeconds: lo.ToPtr(int64(0))}})).ToNot(HaveOccurred())
+					&client.DeleteAllOfOptions{DeleteOptions: client.DeleteOptions{GracePeriodSeconds: new(int64(0))}})).ToNot(HaveOccurred())
 			}(object, namespace.Name)
 		}
 	}
@@ -146,7 +146,7 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 	// The extensions should be updated -- Note that we expect only 1 Extension update here because we're simulating scriptless
 	// mode which doesn't have a CSE extension.
 	Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-	for i := 0; i < 1; i++ {
+	for range 1 {
 		extUpdate := azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.CalledWithInput.Pop().VirtualMachineExtensionUpdate
 		Expect(extUpdate).ToNot(BeNil())
 		Expect(extUpdate.Tags).ToNot(BeNil())

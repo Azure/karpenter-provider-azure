@@ -20,7 +20,6 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,10 +64,10 @@ var _ = Describe("Termination", func() {
 						"app":        "daemonset",
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(60)),
+				TerminationGracePeriodSeconds: new(int64(60)),
 				Image:                         "alpine:3.20.2",
 				Command:                       []string{"/bin/sh", "-c", "sleep 1000"},
-				PreStopSleep:                  lo.ToPtr(int64(60)),
+				PreStopSleep:                  new(int64(60)),
 				ResourceRequirements:          corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 			},
 		})
@@ -81,10 +80,10 @@ var _ = Describe("Termination", func() {
 						"app":        "node-critical-daemonset",
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(10)), // shorter terminationGracePeriod since it's the last pod
+				TerminationGracePeriodSeconds: new(int64(10)), // shorter terminationGracePeriod since it's the last pod
 				Image:                         "alpine:3.20.2",
 				Command:                       []string{"/bin/sh", "-c", "sleep 1000"},
-				PreStopSleep:                  lo.ToPtr(int64(10)), // shorter preStopSleep since it's the last pod
+				PreStopSleep:                  new(int64(10)), // shorter preStopSleep since it's the last pod
 				PriorityClassName:             "system-node-critical",
 				ResourceRequirements:          corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 			},
@@ -98,10 +97,10 @@ var _ = Describe("Termination", func() {
 						"app":        "cluster-critical-daemonset",
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(10)), // shorter terminationGracePeriod since it's the last pod
+				TerminationGracePeriodSeconds: new(int64(10)), // shorter terminationGracePeriod since it's the last pod
 				Image:                         "alpine:3.20.2",
 				Command:                       []string{"/bin/sh", "-c", "sleep 1000"},
-				PreStopSleep:                  lo.ToPtr(int64(10)), // shorter preStopSleep since it's the last pod
+				PreStopSleep:                  new(int64(10)), // shorter preStopSleep since it's the last pod
 				PriorityClassName:             "system-cluster-critical",
 				ResourceRequirements:          corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 			},
@@ -115,10 +114,10 @@ var _ = Describe("Termination", func() {
 						"app":        "deployment",
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(60)),
+				TerminationGracePeriodSeconds: new(int64(60)),
 				Image:                         "alpine:3.20.2",
 				Command:                       []string{"/bin/sh", "-c", "sleep 1000"},
-				PreStopSleep:                  lo.ToPtr(int64(60)),
+				PreStopSleep:                  new(int64(60)),
 				ResourceRequirements:          corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 			},
 		})
@@ -131,10 +130,10 @@ var _ = Describe("Termination", func() {
 						"app":        "node-critical-deployment",
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(60)),
+				TerminationGracePeriodSeconds: new(int64(60)),
 				Image:                         "alpine:3.20.2",
 				Command:                       []string{"/bin/sh", "-c", "sleep 1000"},
-				PreStopSleep:                  lo.ToPtr(int64(60)),
+				PreStopSleep:                  new(int64(60)),
 				PriorityClassName:             "system-node-critical",
 				ResourceRequirements:          corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 			},
@@ -148,10 +147,10 @@ var _ = Describe("Termination", func() {
 						"app":        "cluster-critical-deployment",
 					},
 				},
-				TerminationGracePeriodSeconds: lo.ToPtr(int64(60)),
+				TerminationGracePeriodSeconds: new(int64(60)),
 				Image:                         "alpine:3.20.2",
 				Command:                       []string{"/bin/sh", "-c", "sleep 1000"},
-				PreStopSleep:                  lo.ToPtr(int64(60)),
+				PreStopSleep:                  new(int64(60)),
 				PriorityClassName:             "system-cluster-critical",
 				ResourceRequirements:          corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 			},

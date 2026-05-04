@@ -69,22 +69,22 @@ func TestConvertContainerLogMaxSizeToMB(t *testing.T) {
 		{
 			name:                "Default",
 			containerLogMaxSize: "50Mi",
-			expected:            lo.ToPtr(int32(50)),
+			expected:            new(int32(50)),
 		},
 		{
 			name:                "Valid size in Mi",
 			containerLogMaxSize: "1024Mi",
-			expected:            lo.ToPtr(int32(1024)),
+			expected:            new(int32(1024)),
 		},
 		{
 			name:                "Valid size in Gi",
 			containerLogMaxSize: "1Gi",
-			expected:            lo.ToPtr(int32(1024)),
+			expected:            new(int32(1024)),
 		},
 		{
 			name:                "Valid size in Ki",
 			containerLogMaxSize: "1048576Ki",
-			expected:            lo.ToPtr(int32(1024)),
+			expected:            new(int32(1024)),
 		},
 		{
 			name:                "Invalid size",
@@ -120,8 +120,8 @@ func TestConvertPodMaxPids(t *testing.T) {
 	}{
 		{
 			name:         "Valid PIDs limit within int32 range",
-			podPidsLimit: lo.ToPtr(int64(1000)),
-			expected:     lo.ToPtr(int32(1000)),
+			podPidsLimit: new(int64(1000)),
+			expected:     new(int32(1000)),
 		},
 		{
 			name:         "PIDs limit exceeding int32 range",
@@ -230,7 +230,7 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 				Mode: v1beta1.LocalDNSModeRequired,
 			},
 			expected: &models.LocalDNSProfile{
-				Mode: lo.ToPtr("Required"),
+				Mode: new("Required"),
 			},
 		},
 		{
@@ -246,11 +246,11 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 				},
 			},
 			expected: &models.LocalDNSProfile{
-				Mode: lo.ToPtr("Preferred"),
+				Mode: new("Preferred"),
 				VnetDNSOverrides: models.LocalDNSOverrides{
 					"example.com": models.LocalDNSOverride{
-						QueryLogging: lo.ToPtr("Log"),
-						Protocol:     lo.ToPtr("ForceTCP"),
+						QueryLogging: new("Log"),
+						Protocol:     new("ForceTCP"),
 					},
 				},
 			},
@@ -262,15 +262,15 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 					{
 						Zone:               "cluster.local",
 						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-						MaxConcurrent:      lo.ToPtr(int32(100)),
+						MaxConcurrent:      new(int32(100)),
 					},
 				},
 			},
 			expected: &models.LocalDNSProfile{
 				KubeDNSOverrides: models.LocalDNSOverrides{
 					"cluster.local": models.LocalDNSOverride{
-						ForwardDestination: lo.ToPtr("ClusterCoreDNS"),
-						MaxConcurrent:      lo.ToPtr(int32(100)),
+						ForwardDestination: new("ClusterCoreDNS"),
+						MaxConcurrent:      new(int32(100)),
 					},
 				},
 			},
@@ -293,15 +293,15 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 				},
 			},
 			expected: &models.LocalDNSProfile{
-				Mode: lo.ToPtr("Disabled"),
+				Mode: new("Disabled"),
 				VnetDNSOverrides: models.LocalDNSOverrides{
 					"vnet.domain": models.LocalDNSOverride{
-						Protocol: lo.ToPtr("PreferUDP"),
+						Protocol: new("PreferUDP"),
 					},
 				},
 				KubeDNSOverrides: models.LocalDNSOverrides{
 					"kube.domain": models.LocalDNSOverride{
-						ForwardPolicy: lo.ToPtr("RoundRobin"),
+						ForwardPolicy: new("RoundRobin"),
 					},
 				},
 			},
@@ -336,20 +336,20 @@ func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 				Protocol:           v1beta1.LocalDNSProtocolForceTCP,
 				ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 				ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-				MaxConcurrent:      lo.ToPtr(int32(50)),
+				MaxConcurrent:      new(int32(50)),
 				CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 				ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 				ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 			},
 			expected: &models.LocalDNSOverride{
-				QueryLogging:                lo.ToPtr("Error"),
-				Protocol:                    lo.ToPtr("ForceTCP"),
-				ForwardDestination:          lo.ToPtr("VnetDNS"),
-				ForwardPolicy:               lo.ToPtr("Sequential"),
-				MaxConcurrent:               lo.ToPtr(int32(50)),
-				CacheDurationInSeconds:      lo.ToPtr(int32(3600)), // 1 hour = 3600 seconds
-				ServeStaleDurationInSeconds: lo.ToPtr(int32(1800)), // 30 minutes = 1800 seconds
-				ServeStale:                  lo.ToPtr("Verify"),
+				QueryLogging:                new("Error"),
+				Protocol:                    new("ForceTCP"),
+				ForwardDestination:          new("VnetDNS"),
+				ForwardPolicy:               new("Sequential"),
+				MaxConcurrent:               new(int32(50)),
+				CacheDurationInSeconds:      new(int32(3600)), // 1 hour = 3600 seconds
+				ServeStaleDurationInSeconds: new(int32(1800)), // 30 minutes = 1800 seconds
+				ServeStale:                  new("Verify"),
 			},
 		},
 		{
@@ -360,8 +360,8 @@ func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 				ServeStaleDuration: karpv1.MustParseNillableDuration("45m"),
 			},
 			expected: &models.LocalDNSOverride{
-				CacheDurationInSeconds:      lo.ToPtr(int32(9000)), // 2.5 hours = 9000 seconds
-				ServeStaleDurationInSeconds: lo.ToPtr(int32(2700)), // 45 minutes = 2700 seconds
+				CacheDurationInSeconds:      new(int32(9000)), // 2.5 hours = 9000 seconds
+				ServeStaleDurationInSeconds: new(int32(2700)), // 45 minutes = 2700 seconds
 			},
 		},
 		{
@@ -372,8 +372,8 @@ func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 				ServeStaleDuration: karpv1.MustParseNillableDuration("15m30s"),
 			},
 			expected: &models.LocalDNSOverride{
-				CacheDurationInSeconds:      lo.ToPtr(int32(5445)), // 1h30m45s = 5445 seconds
-				ServeStaleDurationInSeconds: lo.ToPtr(int32(930)),  // 15m30s = 930 seconds
+				CacheDurationInSeconds:      new(int32(5445)), // 1h30m45s = 5445 seconds
+				ServeStaleDurationInSeconds: new(int32(930)),  // 15m30s = 930 seconds
 			},
 		},
 		{
@@ -396,21 +396,21 @@ func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 				ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
 			},
 			expected: &models.LocalDNSOverride{
-				QueryLogging:       lo.ToPtr("Log"),
-				Protocol:           lo.ToPtr("PreferUDP"),
-				ForwardDestination: lo.ToPtr("ClusterCoreDNS"),
-				ForwardPolicy:      lo.ToPtr("Random"),
-				ServeStale:         lo.ToPtr("Immediate"),
+				QueryLogging:       new("Log"),
+				Protocol:           new("PreferUDP"),
+				ForwardDestination: new("ClusterCoreDNS"),
+				ForwardPolicy:      new("Random"),
+				ServeStale:         new("Immediate"),
 			},
 		},
 		{
 			name: "Override with MaxConcurrent only",
 			override: &v1beta1.LocalDNSZoneOverride{
 				Zone:          "example.com",
-				MaxConcurrent: lo.ToPtr(int32(200)),
+				MaxConcurrent: new(int32(200)),
 			},
 			expected: &models.LocalDNSOverride{
-				MaxConcurrent: lo.ToPtr(int32(200)),
+				MaxConcurrent: new(int32(200)),
 			},
 		},
 	}

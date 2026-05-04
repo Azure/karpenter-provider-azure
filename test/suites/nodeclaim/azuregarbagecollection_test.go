@@ -27,15 +27,15 @@ import (
 var _ = Describe("gc", func() {
 	It("should garbage collect network interfaces created by karpenter", func() {
 		env.ExpectCreatedInterface(armnetwork.Interface{
-			Name:     lo.ToPtr("orphan-nic"),
-			Location: lo.ToPtr(env.Region),
+			Name:     new("orphan-nic"),
+			Location: new(env.Region),
 			Tags:     azkarptest.ManagedTags("default"),
 			Properties: &armnetwork.InterfacePropertiesFormat{
 				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 					{
-						Name: lo.ToPtr("ip-config"),
+						Name: new("ip-config"),
 						Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-							Primary:                   lo.ToPtr(true),
+							Primary:                   new(true),
 							Subnet:                    env.GetClusterSubnet(),
 							PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 						},

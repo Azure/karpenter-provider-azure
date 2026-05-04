@@ -77,7 +77,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		options.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
 	}
 	if options.Zones == nil {
-		options.Zones = []*string{lo.ToPtr("1")}
+		options.Zones = []*string{new("1")}
 	}
 	if options.Properties == nil {
 		options.Properties = &armcontainerservice.MachineProperties{}
@@ -86,7 +86,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	// Set default properties if not provided - matching setDefaultMachineValues pattern
 	if options.Properties.Hardware == nil {
 		options.Properties.Hardware = &armcontainerservice.MachineHardwareProfile{
-			VMSize: lo.ToPtr(options.VMSize),
+			VMSize: new(options.VMSize),
 		}
 	}
 	if options.Properties.Network == nil {
@@ -99,7 +99,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	}
 	if options.Properties.Kubernetes == nil {
 		options.Properties.Kubernetes = &armcontainerservice.MachineKubernetesProfile{
-			OrchestratorVersion: lo.ToPtr("1.28.0"),
+			OrchestratorVersion: new("1.28.0"),
 		}
 	}
 	if options.Properties.ProvisioningState == nil {
@@ -116,7 +116,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		options.Properties.Status = &armcontainerservice.MachineStatus{}
 	}
 	if options.Properties.Status.CreationTimestamp == nil {
-		options.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now())
+		options.Properties.Status.CreationTimestamp = new(time.Now())
 	}
 
 	// Set ResourceID (required field) - simulates VM resource ID following AKS naming convention
@@ -125,13 +125,13 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		// Generate a VM name following AKS convention: aks-{agentPoolName}-{machineName}-{randomId}-vm{id}
 		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm", options.MachinesPoolName, options.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", "test-subscription", options.ClusterResourceGroup, vmName)
-		options.Properties.ResourceID = lo.ToPtr(vmResourceID)
+		options.Properties.ResourceID = new(vmResourceID)
 	}
 
 	// Set NodeImageVersion - matching setDefaultMachineValues default
 	if options.Properties.NodeImageVersion == nil {
 		// Default node image version if none provided
-		options.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+		options.Properties.NodeImageVersion = new("AKSUbuntu-2204gen2containerd-2023.11.15")
 	}
 
 	if options.NodepoolName == "" {
@@ -144,8 +144,8 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	// Construct the AKS Machine
 	machineID := fake.MkMachineID(options.ClusterResourceGroup, options.ClusterName, options.MachinesPoolName, options.Name)
 	machine := &armcontainerservice.Machine{
-		ID:         lo.ToPtr(machineID),
-		Name:       lo.ToPtr(options.Name),
+		ID:         new(machineID),
+		Name:       new(options.Name),
 		Zones:      options.Zones,
 		Properties: options.Properties,
 	}

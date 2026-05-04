@@ -39,7 +39,7 @@ var _ = Describe("TerminationGracePeriod", func() {
 	It("should delete pod with do-not-disrupt when it reaches its terminationGracePeriodSeconds", func() {
 		pod := coretest.UnschedulablePod(coretest.PodOptions{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
 			karpv1.DoNotDisruptAnnotationKey: "true",
-		}}, TerminationGracePeriodSeconds: lo.ToPtr(int64(30))})
+		}}, TerminationGracePeriodSeconds: new(int64(30))})
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
 		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
@@ -70,8 +70,8 @@ var _ = Describe("TerminationGracePeriod", func() {
 	})
 	It("should delete pod that has a pre-stop hook after termination grace period seconds", func() {
 		pod := coretest.UnschedulablePod(coretest.PodOptions{
-			PreStopSleep:                  lo.ToPtr(int64(300)),
-			TerminationGracePeriodSeconds: lo.ToPtr(int64(30)),
+			PreStopSleep:                  new(int64(300)),
+			TerminationGracePeriodSeconds: new(int64(30)),
 			Image:                         "alpine:3.20.2",
 			Command:                       []string{"/bin/sh", "-c", "sleep 30"}})
 		env.ExpectCreated(nodeClass, nodePool, pod)

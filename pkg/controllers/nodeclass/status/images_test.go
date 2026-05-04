@@ -26,8 +26,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
-	"github.com/samber/lo"
-
 	opstatus "github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -175,7 +173,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	Context("NodeImageReconciler direct tests", func() {
 		BeforeEach(func() {
 			// Setup NodeClass
-			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+			nodeClass.Status.KubernetesVersion = new(testK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
@@ -194,7 +192,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			It("images ready status should be false if FIPS is enabled but UseSIG is false", func() {
 				// set up test options with UseSIG disabled (false)
 				options := test.Options(test.OptionsFields{
-					UseSIG: lo.ToPtr(false),
+					UseSIG: new(false),
 				})
 				ctx = options.ToContext(ctx)
 

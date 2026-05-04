@@ -125,7 +125,7 @@ func isAKSIdentifyingExtensionEnabled(env *auth.Environment) bool {
 	return aksIdentifyingExtensionEnvs.Has(env.Environment.Name)
 }
 
-type Resource = map[string]interface{}
+type Resource = map[string]any
 
 type VirtualMachinePromise struct {
 	VM       *armcompute.VirtualMachine
@@ -469,13 +469,13 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 	}
 
 	nic := armnetwork.Interface{
-		Location: lo.ToPtr(p.location),
+		Location: new(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
 					Name: &opts.NICName,
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(true),
+						Primary:                   new(true),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 
 						LoadBalancerBackendAddressPools: ipv4BackendPools,
@@ -483,8 +483,8 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 				},
 			},
 			NetworkSecurityGroup:        nsgRef,
-			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
-			EnableIPForwarding:          lo.ToPtr(false),
+			EnableAcceleratedNetworking: new(enableAcceleratedNetworking),
+			EnableIPForwarding:          new(false),
 		},
 	}
 	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
@@ -494,9 +494,9 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
 				&armnetwork.InterfaceIPConfiguration{
-					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i)),
+					Name: new(fmt.Sprintf("ipconfig%d", i)),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(false),
+						Primary:                   new(false),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 					},
 				},
@@ -560,17 +560,17 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	}
 
 	vm := &armcompute.VirtualMachine{
-		Name:     lo.ToPtr(opts.VMName), // TODO: I think it's safe to set this, even though it's read only
-		Location: lo.ToPtr(opts.Location),
+		Name:     new(opts.VMName), // TODO: I think it's safe to set this, even though it's read only
+		Location: new(opts.Location),
 		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
+				VMSize: new(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
 			},
 
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
-					Name:         lo.ToPtr(opts.VMName),
+					Name:         new(opts.VMName),
 					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
@@ -582,7 +582,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 					{
 						ID: &opts.NicReference,
 						Properties: &armcompute.NetworkInterfaceReferenceProperties{
-							Primary:      lo.ToPtr(true),
+							Primary:      new(true),
 							DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
 						},
 					},
@@ -590,21 +590,21 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 
 			OSProfile: &armcompute.OSProfile{
-				AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
+				AdminUsername: new(opts.LinuxAdminUsername),
 				ComputerName:  &opts.VMName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
-					DisablePasswordAuthentication: lo.ToPtr(true),
+					DisablePasswordAuthentication: new(true),
 					SSH: &armcompute.SSHConfiguration{
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
-								KeyData: lo.ToPtr(opts.SSHPublicKey),
-								Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
+								KeyData: new(opts.SSHPublicKey),
+								Path:    new("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
 							},
 						},
 					},
 				},
 			},
-			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
+			Priority: new(KarpCapacityTypeToVMPriority[opts.CapacityType]),
 		},
 		Zones: zones.MakeARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
@@ -616,9 +616,9 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
+		vm.Properties.OSProfile.CustomData = new(opts.LaunchTemplate.CustomScriptsCustomData)
 	} else {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.ScriptlessCustomData)
+		vm.Properties.OSProfile.CustomData = new(opts.LaunchTemplate.ScriptlessCustomData)
 	}
 
 	return vm
@@ -629,7 +629,7 @@ func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties
 	if launchTemplate.StorageProfileIsEphemeral {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
 			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
-			Placement: lo.ToPtr(placement),
+			Placement: new(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}
@@ -641,7 +641,7 @@ func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProp
 			vmProperties.StorageProfile.OSDisk.ManagedDisk = &armcompute.ManagedDiskParameters{}
 		}
 		vmProperties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet = &armcompute.DiskEncryptionSetParameters{
-			ID: lo.ToPtr(diskEncryptionSetID),
+			ID: new(diskEncryptionSetID),
 		}
 	}
 }
@@ -650,12 +650,12 @@ func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProp
 func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageID string, useSIG bool) {
 	if useSIG {
 		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
-			ID: lo.ToPtr(imageID),
+			ID: new(imageID),
 		}
 		return
 	}
 	vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
-		CommunityGalleryImageID: lo.ToPtr(imageID),
+		CommunityGalleryImageID: new(imageID),
 	}
 }
 
@@ -664,7 +664,7 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	if capacityType == karpv1.CapacityTypeSpot {
 		vmProperties.EvictionPolicy = lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
-			MaxPrice: lo.ToPtr(float64(-1)),
+			MaxPrice: new(float64(-1)),
 		}
 	}
 }
@@ -837,8 +837,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// This is a bit of a hack that saves us doing a GET now.
 	// The reason to avoid a GET is that it can fail, and if it does the future above will be lost,
 	// which we don't want.
-	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
-	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
+	result.VM.ID = new(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+	result.VM.Properties.TimeCreated = new(time.Now())
 
 	return &VirtualMachinePromise{
 		providerRef: p,
@@ -990,7 +990,7 @@ func (p *DefaultVMProvider) deleteVirtualMachine(ctx context.Context, vmName str
 		ctx,
 		p.resourceGroup,
 		vmName,
-		&armcompute.VirtualMachinesClientBeginDeleteOptions{ForceDeletion: lo.ToPtr(true)},
+		&armcompute.VirtualMachinesClientBeginDeleteOptions{ForceDeletion: new(true)},
 	)
 	if err != nil {
 		return err
@@ -1016,13 +1016,13 @@ func (p *DefaultVMProvider) getAKSIdentifyingExtension(tags map[string]*string) 
 	)
 
 	vmExtension := &armcompute.VirtualMachineExtension{
-		Location: lo.ToPtr(p.location),
-		Name:     lo.ToPtr(aksIdentifyingExtensionName),
+		Location: new(p.location),
+		Name:     new(aksIdentifyingExtensionName),
 		Properties: &armcompute.VirtualMachineExtensionProperties{
 			Publisher:               lo.ToPtr(aksIdentifyingExtensionPublisher),
-			TypeHandlerVersion:      lo.ToPtr("1.0"),
-			AutoUpgradeMinorVersion: lo.ToPtr(true),
-			Settings:                &map[string]interface{}{},
+			TypeHandlerVersion:      new("1.0"),
+			AutoUpgradeMinorVersion: new(true),
+			Settings:                &map[string]any{},
 			Type:                    lo.ToPtr(aksIdentifyingExtensionTypeLinux),
 		},
 		Type: lo.ToPtr(vmExtensionType),
@@ -1044,16 +1044,16 @@ func (p *DefaultVMProvider) getCSExtension(cse string, isWindows bool, tags map[
 	)
 
 	return &armcompute.VirtualMachineExtension{
-		Location: lo.ToPtr(p.location),
-		Name:     lo.ToPtr(lo.Ternary(isWindows, cseNameWindows, cseNameLinux)),
+		Location: new(p.location),
+		Name:     new(lo.Ternary(isWindows, cseNameWindows, cseNameLinux)),
 		Type:     lo.ToPtr(vmExtensionType),
 		Properties: &armcompute.VirtualMachineExtensionProperties{
-			AutoUpgradeMinorVersion: lo.ToPtr(true),
-			Type:                    lo.ToPtr(lo.Ternary(isWindows, cseTypeWindows, cseTypeLinux)),
-			Publisher:               lo.ToPtr(lo.Ternary(isWindows, csePublisherWindows, csePublisherLinux)),
-			TypeHandlerVersion:      lo.ToPtr(lo.Ternary(isWindows, cseVersionWindows, cseVersionLinux)),
-			Settings:                &map[string]interface{}{},
-			ProtectedSettings: &map[string]interface{}{
+			AutoUpgradeMinorVersion: new(true),
+			Type:                    new(lo.Ternary(isWindows, cseTypeWindows, cseTypeLinux)),
+			Publisher:               new(lo.Ternary(isWindows, csePublisherWindows, csePublisherLinux)),
+			TypeHandlerVersion:      new(lo.Ternary(isWindows, cseVersionWindows, cseVersionLinux)),
+			Settings:                &map[string]any{},
+			ProtectedSettings: &map[string]any{
 				"commandToExecute": cse,
 			},
 		},
