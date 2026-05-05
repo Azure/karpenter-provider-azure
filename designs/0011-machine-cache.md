@@ -41,7 +41,7 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
   - Gets machine to check if cluster-level provisioning config has drifted server-side (reflected in DriftAction field)
   - Core drift controller calls IsDrifted on pod events, generating high API call volume
   - Current mitigation: Karpenter restarts on config changes, triggering IsDrifted at startup to catch drift
-  - Cache is acceptable because: (1) reduces API load significantly, (2) drift detection is eventually consistent (caught on next pod event), (3) Karpenter restarts ensure fresh data on config changes
+  - Cache is acceptable because: (1) reduces API load significantly, (2) drift detection is eventually consistent (caught on next pod event and IsDrifted calls in core have a 5m requeue), (3) Karpenter restarts ensure fresh data on config changes
 
 - **Pre-Create Checks** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
   - Checks if machine already exists before creating (handles restart scenarios).
