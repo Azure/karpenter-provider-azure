@@ -116,3 +116,9 @@ The cache provides a specialized `PollUntilDone(ctx, name)` method for waiting o
 5. **Non-Terminal**: Continue polling on Creating/Updating states
 
 This allows instance creation to wait for provisioning completion without repeated API calls.
+
+## Benefits
+
+- **Reduced GET Throttling**: Cache significantly reduces AKS Machine API GET calls for high-frequency operations like drift detection, polling, and pre-create checks
+- **Correctness via Fallback**: Cache misses and stale cache entries automatically fall back to direct API calls, ensuring correctness without significant performance impact
+
