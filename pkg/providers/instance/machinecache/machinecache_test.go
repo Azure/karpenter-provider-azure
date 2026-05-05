@@ -143,10 +143,11 @@ func TestUpdate(t *testing.T) {
 				clusterName:          "test-cluster",
 				aksMachinesPoolName:  "test-pool",
 				options:              defaultOpts(),
+				machines:             make(map[string]*armcontainerservice.Machine),
 			}
 
 			for _, m := range tt.existingCache {
-				cache.machines.Store(lo.FromPtr(m.Name), m)
+				cache.machines[lo.FromPtr(m.Name)] = m
 			}
 
 			cache.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
@@ -156,12 +157,10 @@ func TestUpdate(t *testing.T) {
 			}
 
 			if tt.expectedCache != nil {
-				var actualMachines []*armcontainerservice.Machine
-				cache.machines.Range(func(key, value any) bool {
-					actualMachines = append(actualMachines, value.(*armcontainerservice.Machine))
-					return true
-				})
-
+				actualMachines := make([]*armcontainerservice.Machine, 0, len(cache.machines))
+				for _, m := range cache.machines {
+					actualMachines = append(actualMachines, m)
+				}
 				compareWithExpected(t, actualMachines, tt.expectedCache, "Update()")
 			}
 		})
@@ -231,10 +230,11 @@ func TestGetWithFallback(t *testing.T) {
 				clusterName:          "test-cluster",
 				aksMachinesPoolName:  "test-pool",
 				options:              defaultOpts(),
+				machines:             make(map[string]*armcontainerservice.Machine),
 			}
 
 			for _, m := range tt.cachedMachines {
-				c.machines.Store(lo.FromPtr(m.Name), m)
+				c.machines[lo.FromPtr(m.Name)] = m
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 
@@ -354,10 +354,11 @@ func TestListWithFallback(t *testing.T) {
 				clusterName:          "test-cluster",
 				aksMachinesPoolName:  "test-pool",
 				options:              defaultOpts(),
+				machines:             make(map[string]*armcontainerservice.Machine),
 			}
 
 			for _, m := range tt.cachedMachines {
-				c.machines.Store(lo.FromPtr(m.Name), m)
+				c.machines[lo.FromPtr(m.Name)] = m
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 
@@ -501,8 +502,9 @@ func TestPollUntilDone(t *testing.T) {
 			}
 
 			c := MachineCache{
-				client:  fakeClient,
-				options: defaultOpts(),
+				client:   fakeClient,
+				options:  defaultOpts(),
+				machines: make(map[string]*armcontainerservice.Machine),
 			}
 			c.options.pollInterval = time.Millisecond
 			c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
@@ -595,11 +597,12 @@ func TestPollOnce(t *testing.T) {
 				client: &fakeAKSMachineClienter{
 					getErr: tt.getErr,
 				},
+				machines: make(map[string]*armcontainerservice.Machine),
 			}
 			c.lastUpdatedUnixNanos.Store(tt.lastUpdated.UnixNano())
 
 			if tt.machine != nil {
-				c.machines.Store(lo.FromPtr(tt.machine.Name), tt.machine)
+				c.machines[lo.FromPtr(tt.machine.Name)] = tt.machine
 			}
 
 			machineName := "machine"

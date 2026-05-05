@@ -78,7 +78,8 @@ func WithPollTimeout(d time.Duration) Option {
 
 // MachineCache caches AKS machine resources with TTL-based expiration.
 type MachineCache struct {
-	machines             sync.Map
+	machines             map[string]*armcontainerservice.Machine
+	mu                   sync.RWMutex
 	lastUpdatedUnixNanos atomic.Int64
 	client               AKSMachineClienter
 
@@ -101,6 +102,7 @@ func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterReso
 		clusterName:          clusterName,
 		aksMachinesPoolName:  aksMachinesPoolName,
 		updateRequests:       make(chan struct{}, 1),
+		machines:             make(map[string]*armcontainerservice.Machine),
 		options:              defaultOpts(),
 	}
 
@@ -141,7 +143,9 @@ func (c *MachineCache) GetWithFallback(ctx context.Context, machineName string, 
 
 	machine := lo.ToPtr(resp.Machine)
 	c.rehydrateMachine(machine)
-	c.machines.Store(machineName, machine)
+	c.mu.Lock()
+	c.machines[machineName] = machine
+	c.mu.Unlock()
 
 	return machine, nil
 }
@@ -155,12 +159,14 @@ func (c *MachineCache) getFromCache(machineName string) (*armcontainerservice.Ma
 		c.requestUpdate()
 		return nil, false, false
 	}
-	value, ok := c.machines.Load(machineName)
+	c.mu.RLock()
+	machine, ok := c.machines[machineName]
+	c.mu.RUnlock()
 	if !ok {
 		return nil, false, true
 	}
 
-	return value.(*armcontainerservice.Machine), true, true
+	return machine, true, true
 }
 
 // ListWithFallback lists all machines in the AKS machines pool.
@@ -209,15 +215,14 @@ func (c *MachineCache) listFromCache() ([]*armcontainerservice.Machine, bool) {
 		return nil, false
 	}
 	var machines []*armcontainerservice.Machine
-	c.machines.Range(func(key, value any) bool {
-		if m, ok := value.(*armcontainerservice.Machine); ok {
-			if isValid(m.Properties) {
-				c.rehydrateMachine(m)
-				machines = append(machines, m)
-			}
+	c.mu.RLock()
+	for _, m := range c.machines {
+		if isValid(m.Properties) {
+			c.rehydrateMachine(m)
+			machines = append(machines, m)
 		}
-		return true
-	})
+	}
+	c.mu.RUnlock()
 	return machines, true
 }
 
@@ -225,15 +230,16 @@ func (c *MachineCache) listFromCache() ([]*armcontainerservice.Machine, bool) {
 func (c *MachineCache) Invalidate(machineName string) {
 	// We remove invalidated machines from the cache.
 	// This is safe because any subsequent GetWithFallback call for this machine will fall back to an API call.
-	c.machines.Delete(machineName)
+	c.mu.Lock()
+	delete(c.machines, machineName)
+	c.mu.Unlock()
 }
 
 // InvalidateAll clears the entire cache, forcing the next access to fall through to the API.
 func (c *MachineCache) InvalidateAll() {
-	c.machines.Range(func(key, _ any) bool {
-		c.machines.Delete(key)
-		return true
-	})
+	c.mu.Lock()
+	c.machines = make(map[string]*armcontainerservice.Machine)
+	c.mu.Unlock()
 	c.lastUpdatedUnixNanos.Store(0)
 }
 
@@ -328,7 +334,7 @@ func (c *MachineCache) update(ctx context.Context) error {
 		return fmt.Errorf("failed to list AKS machines: created pager is nil")
 	}
 
-	fetchedMachineNames := make(map[string]struct{})
+	fetchedMachines := make(map[string]*armcontainerservice.Machine)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -340,20 +346,15 @@ func (c *MachineCache) update(ctx context.Context) error {
 		}
 
 		for _, aksMachine := range page.Value {
-			c.machines.Store(lo.FromPtr(aksMachine.Name), aksMachine)
-			fetchedMachineNames[lo.FromPtr(aksMachine.Name)] = struct{}{}
+			fetchedMachines[lo.FromPtr(aksMachine.Name)] = aksMachine
 		}
 	}
 
-	c.machines.Range(func(key, value any) bool {
-		machineName := key.(string)
-		if _, exists := fetchedMachineNames[machineName]; !exists {
-			c.machines.Delete(machineName)
-		}
-		return true
-	})
+	c.mu.Lock()
+	c.machines = fetchedMachines
+	c.mu.Unlock()
 
-	log.FromContext(ctx).Info("machine list cache updated", "total", len(fetchedMachineNames))
+	log.FromContext(ctx).Info("machine list cache updated", "total", len(fetchedMachines))
 	c.lastUpdatedUnixNanos.Store(time.Now().UnixNano())
 	return nil
 }
