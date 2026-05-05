@@ -37,7 +37,7 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
 
 **Cache Usage in Get**:
 
-- **Drift Detection** (`pkg/cloudprovider/drift.go`): Uses cache (`UseCache()`)
+- **Drift Detection** (`pkg/cloudprovider/drift.go`): Uses cache (`WithCache()`)
   - Gets machine to check if cluster-level provisioning config has drifted server-side (reflected in DriftAction field)
   - Core drift controller calls IsDrifted on pod events, generating high API call volume
   - Current mitigation: Karpenter restarts on config changes, triggering IsDrifted at startup to catch drift
