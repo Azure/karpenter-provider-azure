@@ -65,7 +65,7 @@ func WithTTL(d time.Duration) Option {
 	return func(o opts) opts { o.ttl = d; return o }
 }
 
-// WithPollInterval sets the interval for polling machine provisioning state.
+// WithPollInterval sets the interval for polling machine provisioning state when using the PollUntilDone helper.
 func WithPollInterval(d time.Duration) Option {
 	return func(o opts) opts { o.pollInterval = d; return o }
 }
