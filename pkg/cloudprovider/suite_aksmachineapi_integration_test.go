@@ -385,7 +385,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Verify the AKS machine was reused successfully
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			// With cache enabled, the GET may be served from cache rather than hitting the API directly.
+			// With cache enabled, the GET is served from cache rather than hitting the API directly.
 			if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
 				// With cache enabled, the pre-create GET is served from cache — no API call recorded
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(0))
