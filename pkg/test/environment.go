@@ -365,6 +365,7 @@ func (env *Environment) Reset() {
 	env.NodeImagesCache.Flush()
 	env.InstanceTypeCache.Flush()
 	env.UnavailableOfferingsCache.Flush()
+	env.AKSMachineCache.InvalidateAll()
 	env.LoadBalancerCache.Flush()
 }
 
