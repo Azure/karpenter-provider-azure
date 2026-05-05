@@ -115,9 +115,9 @@ type opt struct {
 // Option defines a functional option for configuring AKSMachineProvider methods that accept optional behavior.
 type Option func(*opt)
 
-// WithUseCache is an Option that tells the AKSMachineProvider to first use the machine cache
+// UseCache is an Option that tells the AKSMachineProvider to first use the machine cache
 // when attempting to retrieve an AKS machine before falling back to calling the Azure API.
-func WithUseCache() Option {
+func UseCache() Option {
 	return func(o *opt) {
 		o.useCache = true
 	}
