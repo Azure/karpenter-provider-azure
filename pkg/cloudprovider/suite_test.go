@@ -28,11 +28,15 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -176,6 +180,101 @@ func validateVMNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool)
 	Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 }
 
+func reconcileCapacityOverlay(customResource v1.ResourceName, overlayCapacity resource.Quantity) {
+	GinkgoHelper()
+	nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
+		Spec: karpv1alpha1.NodeOverlaySpec{
+			Requirements: []karpv1alpha1.NodeSelectorRequirement{{
+				Key:      karpv1.NodePoolLabelKey,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{nodePool.Name},
+			}},
+			Capacity: v1.ResourceList{customResource: overlayCapacity},
+		},
+	})
+	ExpectApplied(ctx, env.Client, nodeOverlay)
+	nodeOverlayController := nodeoverlay.NewController(env.Client, cloudProvider, azureEnv.InstanceTypeStore, cluster)
+	ExpectReconcileSucceeded(ctx, nodeOverlayController, client.ObjectKeyFromObject(nodeOverlay))
+}
+
+type nodeOverlayCapacityTestOptions struct {
+	validateNodeClaim func(*karpv1.NodeClaim)
+	resetCreateCalls  func()
+	expectCreateCalls func()
+}
+
+func runNodeOverlayCapacityTests(testOptions nodeOverlayCapacityTestOptions) {
+	Context("NodeOverlay", func() {
+		It("should launch a NodeClaim that requests capacity added by a NodeOverlay", func() {
+			ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates: coretest.FeatureGates{NodeOverlay: lo.ToPtr(true)},
+			}))
+			customResource := v1.ResourceName("example.com/dongle")
+			overlayCapacity := resource.MustParse("100")
+			nodeClaim.Spec.Resources.Requests = v1.ResourceList{customResource: resource.MustParse("1")}
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+			reconcileCapacityOverlay(customResource, overlayCapacity)
+
+			if testOptions.resetCreateCalls != nil {
+				testOptions.resetCreateCalls()
+			}
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cloudProviderMachine).ToNot(BeNil())
+			if testOptions.validateNodeClaim != nil {
+				testOptions.validateNodeClaim(cloudProviderMachine)
+			}
+			if testOptions.expectCreateCalls != nil {
+				testOptions.expectCreateCalls()
+			}
+			capacity, ok := cloudProviderMachine.Status.Capacity[customResource]
+			Expect(ok).To(BeTrue())
+			Expect(capacity.Cmp(overlayCapacity)).To(Equal(0))
+			allocatable, ok := cloudProviderMachine.Status.Allocatable[customResource]
+			Expect(ok).To(BeTrue())
+			Expect(allocatable.Cmp(overlayCapacity)).To(Equal(0))
+		})
+
+		It("should not use overlaid capacity when NodeOverlay is disabled", func() {
+			// Explicitly disable the NodeOverlay feature gate so this test does not
+			// depend on ordering with the previous It block that enables it.
+			ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
+				FeatureGates: coretest.FeatureGates{NodeOverlay: lo.ToPtr(false)},
+			}))
+			customResource := v1.ResourceName("example.com/dongle")
+			overlayCapacity := resource.MustParse("100")
+			nodeClaim.Spec.Resources.Requests = v1.ResourceList{customResource: resource.MustParse("1")}
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+			reconcileCapacityOverlay(customResource, overlayCapacity)
+
+			if testOptions.resetCreateCalls != nil {
+				testOptions.resetCreateCalls()
+			}
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+			Expect(cloudProviderMachine).To(BeNil())
+		})
+	})
+}
+
+func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
+	return nodeOverlayCapacityTestOptions{
+		validateNodeClaim: func(nodeClaim *karpv1.NodeClaim) {
+			validateVMNodeClaim(nodeClaim, nodePool)
+		},
+		resetCreateCalls: func() {
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+		},
+		expectCreateCalls: func() {
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
+	}
+}
+
 var _ = Describe("CloudProvider", func() {
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
@@ -261,6 +360,8 @@ var _ = Describe("CloudProvider", func() {
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
 		})
+
+		runNodeOverlayCapacityTests(vmNodeOverlayCapacityTestOptions())
 
 		Context("AKS Machine API integration", func() {
 			It("should not call writes to AKS Machine API", func() {
@@ -350,6 +451,8 @@ var _ = Describe("CloudProvider", func() {
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
 		})
+
+		runNodeOverlayCapacityTests(vmNodeOverlayCapacityTestOptions())
 
 		Context("AKS Machine API integration", func() {
 			It("should not call writes to AKS Machine API", func() {
