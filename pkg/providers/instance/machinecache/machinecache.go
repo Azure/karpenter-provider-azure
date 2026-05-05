@@ -44,9 +44,16 @@ type opts struct {
 
 func defaultOpts() opts {
 	return opts{
-		ttl:          30 * time.Second,
+		// ttl is the duration for which a cached machine is considered fresh before it is considered stale.
+		// It defaults to 30 seconds, which is consistent with the max retry delay of the original GET poller.
+		ttl: 30 * time.Second,
+		// pollInterval is the duration between successive polls when waiting for a machine to reach a terminal provisioning state.
+		// It defaults to 5 seconds, which is consistent with the polling interval used by the original GET poller.
 		pollInterval: 5 * time.Second,
-		pollTimeout:  15 * time.Minute,
+		// pollTimeout is the maximum duration to wait for a machine to reach a terminal provisioning state
+		// before considering the poll to have timed out. It defaults to 15 minutes, which is the maximum
+		// time a NodeClaim has to register in Karpenter core before it is considered failed and deleted.
+		pollTimeout: 15 * time.Minute,
 	}
 }
 
