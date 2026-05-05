@@ -4,7 +4,7 @@
 
 ## Overview
 
-The AKS Machine Cache is a TTL-based caching layer that sits between Karpenter and the AKS Machine API. It reduces API call load by maintaining a local cache of AKS machine instances with automatic background refresh and fallback mechanisms.
+The AKS Machine Cache is a TTL-based caching layer that sits between Karpenter and the AKS Machine API. It reduces API call load by maintaining a cache of AKS machine instances.
 
 ## Architecture
 
@@ -12,8 +12,9 @@ The AKS Machine Cache is a TTL-based caching layer that sits between Karpenter a
 
 The cache is implemented in `pkg/providers/instance/machinecache/` with the following key components:
 
-- **Storage**: Thread-safe `sync.Map` for storing machine instances by name
+- **Storage**: `map[string]*armcontainerservice.Machine` for storing machine instances by name
 - **TTL Management**: Atomic timestamp tracking with configurable TTL (default 30 seconds)
+- **Thread Safety**: `sync.RWMutex` for concurrent read/write access
 - **Background Worker**: Goroutine that processes update requests asynchronously
 - **Update Channel**: Buffered channel (size 1) for coalescing update requests
 
@@ -22,7 +23,7 @@ The cache is implemented in `pkg/providers/instance/machinecache/` with the foll
 1. **Initialization**: Cache created with `New()` at provider startup
 2. **Background Worker**: Goroutine launched to handle cache updates
 3. **Stale Detection**: Cache freshness checked via TTL comparison on each access
-4. **Automatic Refresh**: Stale cache triggers background update via non-blocking channel
+4. **Refresh on Stale**: Stale cache triggers background update via non-blocking channel
 5. **API Fallback**: Stale or missing entries fall back to direct API calls
 
 ## Core Operations
@@ -47,9 +48,9 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
   - Checks if machine already exists before creating (handles restart scenarios).
   - Safe to use cache because we fall back on a direct API call on cache misses. This check also just needs to verify the existance of a machine.
 
-- **Post-Create Validation** (`pkg/providers/instance/aksmachineinstance.go`): Uses cache
+- **Post-Create Validation** (`pkg/providers/instance/aksmachineinstance.go`): No cache
   - Gets machine immediately after creation to retrieve VMResourceID and check for early provisioning errors
-  - Safe to use cache because we fall back on a direct API call on cache miss. This check is needed to fill out the nodeclaim.
+  - Direct API call ensures correctness and is unlikely to hit cache anyway since the machine was just created
 
 - **In-Place Update** (`pkg/controllers/nodeclaim/inplaceupdate/controller.go`): No cache
   - Direct API call without cache option to ensure fresh data for update operations
@@ -60,7 +61,7 @@ The cache provides `GetWithFallback(ctx, machineName, useCache)` which:
 
 - **CloudProvider Get** (`pkg/cloudprovider/cloudprovider.go`): No cache
   - Direct API call without cache option (always fresh data)
-  - Not safe to use cache because Karpenter Core could change the way cloudprovider Get is used.
+  - Karpenter Core could change the way cloudprovider Get is used so we prioritize correctness.
 
 ### List Operations
 
@@ -69,34 +70,14 @@ The cache provides `ListWithFallback(ctx, useCache)` which:
 1. **Cache Hit (Fresh)**: Returns all cached machines
 2. **Cache Stale**: Falls back to direct AKS Machine API LIST
 3. **Filtering**: Automatically filters to Karpenter-managed machines (via nodepool tag)
-4. **Order**: Results are unordered (due to `sync.Map.Range()` non-determinism)
+
+Currently, all calls to List set useCache=false, but the option to use the cache exists for consistency with Get and in case we decide to use it in the future.
 
 **Cache Usage in List**:
 
 - **CloudProvider List** (`pkg/cloudprovider/cloudprovider.go`): No cache
   - List operations always fall directly to API calls currently, though the Option to use the cache does exist.
   - No need to use the cache because List calls are not overly frequent and we haven't found a need to optimize it with cache.
-
-## Cache Update Mechanism
-
-### Update Flow
-
-1. **Trigger**: Stale cache detected during Get/List operation
-2. **Request**: Non-blocking send to `updateRequests` channel
-3. **Coalescing**: Buffered channel (size 1) prevents duplicate updates
-4. **Background**: Worker goroutine processes update request
-5. **Refresh**: Fetch latest machines from API and update cache
-6. **Pruning**: Remove machines no longer returned by API
-7. **Timestamp**: Update last-modified timestamp on completion
-
-### Update Implementation
-
-The `update()` method:
-- Fetches all machines via paged API calls
-- Validates machines (filters by Karpenter nodepool tag)
-- Updates `sync.Map` with new/updated machines
-- Prunes machines no longer in API response
-- Updates freshness timestamp
 
 ## Configuration
 
@@ -107,22 +88,22 @@ The `update()` method:
 opts := opts{
     ttl:          30 * time.Second,  // Cache freshness duration
     pollInterval: 5 * time.Second,   // Polling check interval
-    disabled:     false,             // Cache enabled
+    pollTimeout:  15 * time.Minute,  // Maximum polling duration
 }
 
 // Customization
 WithTTL(duration)           // Override TTL
 WithPollInterval(duration)  // Override poll interval
-WithCacheDisabled()         // Disable cache entirely
+WithPollTimeout(duration)   // Override poll timeout
 ```
 
-### Cache Disabled Mode
+### Initialization
 
-When disabled:
-- No background worker spawned
-- All Get/List operations fall back to API
-- Zero memory overhead
-- Used in testing scenarios
+```go
+cache := New(ctx, client, resourceGroup, clusterName, poolName, opts...)
+```
+
+The cache automatically spawns a background worker goroutine to handle refresh requests.
 
 ## Polling Integration
 
@@ -135,41 +116,3 @@ The cache provides a specialized `PollUntilDone(ctx, name)` method for waiting o
 5. **Non-Terminal**: Continue polling on Creating/Updating states
 
 This allows instance creation to wait for provisioning completion without repeated API calls.
-
-## Benefits
-
-### API Load Reduction
-
-- **Drift Checks**: High-frequency drift detection uses cached data
-- **List Operations**: Expensive list calls served from cache (TTL: 30s)
-- **Polling**: Provisioning state checks use cache instead of repeated GETs
-
-### Performance
-
-- **Sub-millisecond Cache Hits**: In-memory `sync.Map` access
-- **Background Updates**: Non-blocking refresh doesn't delay operations
-- **Request Coalescing**: Multiple stale detections trigger single update
-
-### Reliability
-
-- **Fallback**: Stale/missing data falls back to API automatically
-- **Consistency**: Background updates ensure cache freshness
-- **Thread-Safe**: `sync.Map` and atomic operations prevent races
-
-## Testing
-
-The cache includes comprehensive test coverage in `machinecache_test.go`:
-
-- `TestUpdate`: Cache update scenarios (fresh cache, nil pager, errors, pruning)
-- `TestGetWithFallback`: Cache hit, cache miss, stale cache, API errors
-- `TestListWithFallback`: List from cache, fallback to API, error handling
-- `TestIsFresh`: TTL-based freshness detection
-- `TestPollUntilDone`: Polling for provisioning completion
-- `TestPollOnce`: Single poll iteration logic
-
-## Future Enhancements
-
-- **Metrics**: Cache hit/miss rates, API call reduction
-- **Adaptive TTL**: Adjust TTL based on cache churn rate
-- **Selective Invalidation**: Invalidate specific machines on known updates
-- **Cache Warming**: Pre-populate cache on provider initialization
