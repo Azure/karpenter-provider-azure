@@ -19,7 +19,7 @@ The cache is implemented in `pkg/providers/instance/machinecache/` with the foll
 
 ### Cache Lifecycle
 
-1. **Initialization**: Cache created with `NewMachineCache()` at provider startup
+1. **Initialization**: Cache created with `New()` at provider startup
 2. **Background Worker**: Goroutine launched to handle cache updates
 3. **Stale Detection**: Cache freshness checked via TTL comparison on each access
 4. **Automatic Refresh**: Stale cache triggers background update via non-blocking channel

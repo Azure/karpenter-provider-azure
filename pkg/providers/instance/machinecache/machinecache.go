@@ -93,9 +93,9 @@ type MachineCache struct {
 	options opts
 }
 
-// NewMachineCache creates a new cache instance with a background worker for updates.
+// New creates a new cache instance with a background worker for updates.
 // Updates to the cache are triggered when a stale cache is accessed.
-func NewMachineCache(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
+func New(ctx context.Context, client AKSMachineClienter, clusterResourceGroup, clusterName, aksMachinesPoolName string, opts ...Option) *MachineCache {
 	cache := &MachineCache{
 		client:               client,
 		clusterResourceGroup: clusterResourceGroup,

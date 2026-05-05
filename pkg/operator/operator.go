@@ -234,7 +234,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		env,
 	)
 
-	aksMachineCache := machinecache.NewMachineCache(
+	aksMachineCache := machinecache.New(
 		ctx,
 		azClient.AKSMachinesClient(),
 		azConfig.ResourceGroup,

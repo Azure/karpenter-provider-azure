@@ -261,7 +261,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	batchCreationEnabled := testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 
-	aksMachineCache := machinecache.NewMachineCache(
+	aksMachineCache := machinecache.New(
 		ctx,
 		azClient.AKSMachinesClient(),
 		testOptions.NodeResourceGroup,
