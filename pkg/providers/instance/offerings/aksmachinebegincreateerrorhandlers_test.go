@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -92,25 +93,33 @@ func newTestAKSMachineBeginCreateErrorHandler() *AKSMachineBeginCreateErrorHandl
 func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTestCase {
 	return []aksMachineBeginCreateErrorTestCase{
 		newAKSMachineBeginCreateErrorTestCase("VMSizeNotSupported").
-			withInstanceType(zone2OnDemand, zone3Spot).
+			withInstanceType(zone2OnDemand, zone3Spot, regionalOnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("VMSizeNotSupported", "hello").
 			expectError(fmt.Errorf(errMsgSKUNotAvailableForSubscriptionFmt, testInstanceName)).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
 			).
 			build(),
 
 		newAKSMachineBeginCreateErrorTestCase("BadRequest - VM size not supported for subscription").
-			withInstanceType(zone2OnDemand, zone3Spot).
+			withInstanceType(zone2OnDemand, zone3Spot, regionalSpot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withHandlableError("BadRequest",
 				fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription sub-123 in location 'westus'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location 'westus'.", testInstanceName)).
 			expectError(fmt.Errorf(errMsgSKUNotAvailableForSubscriptionFmt, testInstanceName)).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
 			).
 			build(),
 

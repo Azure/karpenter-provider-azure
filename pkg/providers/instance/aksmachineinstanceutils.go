@@ -105,6 +105,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	}
 	if zone != nil {
 		labels[corev1.LabelTopologyZone] = *zone
+		labels[v1beta1.LabelPlacementScope] = zones.PlacementScopeForZone(*zone)
 	}
 	labels[karpv1.CapacityTypeLabelKey] = capacityType
 	labels[v1beta1.AKSLabelScaleSetPriority] = KarpCapacityTypeToScaleSetPriorityLabel[capacityType]
