@@ -20,14 +20,10 @@ on:
         description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
         default: "Standard_D4ds_v5"  # We have more quota for this VM size so force it to avoid quota errors
     secrets:
-      E2E_CLIENT_ID:
-        required: true
-      E2E_SUBSCRIPTION_ID:
-        required: true
       E2E_CLIENT_ID_TEST:
-        required: false
+        required: true
       E2E_SUBSCRIPTION_ID_TEST:
-        required: false
+        required: true
 
 permissions:
   contents: read
@@ -67,7 +63,5 @@ jobs:
       k8s_version: ${{ inputs.k8s_version }}
       azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
-      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
-      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
       E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}

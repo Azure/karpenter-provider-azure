@@ -56,7 +56,5 @@ jobs:
       k8s_version: ${{ inputs.k8s_version }}
       azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:
-      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
-      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
       E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}

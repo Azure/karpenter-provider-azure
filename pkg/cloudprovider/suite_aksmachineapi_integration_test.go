@@ -137,6 +137,20 @@ func runSharedAKSMachineAPITests() {
 		Expect(nodeClaim).To(BeNil())
 	})
 
+	runNodeOverlayCapacityTests(nodeOverlayCapacityTestOptions{
+		validateNodeClaim: func(nodeClaim *karpv1.NodeClaim) {
+			validateAKSMachineNodeClaim(nodeClaim, nodePool)
+		},
+		resetCreateCalls: func() {
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+		},
+		expectCreateCalls: func() {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
+	})
+
 	// XPMT: TODO(comtalyst): deep inspection test on simulating all of these?
 	Context("Unexpected API Failures", func() {
 		It("should handle AKS machine create failures - unrecognized error during sync/initial", func() {
