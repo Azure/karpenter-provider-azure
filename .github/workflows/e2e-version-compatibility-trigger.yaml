@@ -42,7 +42,5 @@ jobs:
       location: ${{ inputs.location || 'westus3' }}
       k8s_version: ${{ matrix.k8s_version }}
     secrets:
-      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
-      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
       E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}
