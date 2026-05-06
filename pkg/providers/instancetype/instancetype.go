@@ -166,6 +166,9 @@ func computeRequirements(
 		})...),
 
 		// Well Known to Azure
+		scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o *cloudprovider.Offering, _ int) string {
+			return o.Requirements.Get(v1beta1.LabelPlacementScope).Any()
+		})...),
 		scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
 		scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
 		scheduling.NewRequirement(v1beta1.AKSLabelCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),      // AKS domain.

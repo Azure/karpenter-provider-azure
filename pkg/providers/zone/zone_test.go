@@ -70,7 +70,7 @@ func TestProvider_SupportsZones_NonZonalRegions(t *testing.T) {
 	g.Expect(provider.SupportsZones(ctx, "unknownregion")).To(BeFalse())
 }
 
-func TestProvider_SupportsZones_FallbackToHardcodedListOnError(t *testing.T) {
+func TestProvider_SupportsZones_DoesNotFallbackOnAPIError(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 	ctx := context.Background()
@@ -82,12 +82,9 @@ func TestProvider_SupportsZones_FallbackToHardcodedListOnError(t *testing.T) {
 	// Create provider
 	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
-	// Test regions that are in the hardcoded fallback list
-	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
-	g.Expect(provider.SupportsZones(ctx, "westus2")).To(BeTrue())
-	g.Expect(provider.SupportsZones(ctx, "northeurope")).To(BeTrue())
-
-	// Test region not in hardcoded list
+	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
+	g.Expect(provider.SupportsZones(ctx, "westus2")).To(BeFalse())
+	g.Expect(provider.SupportsZones(ctx, "northeurope")).To(BeFalse())
 	g.Expect(provider.SupportsZones(ctx, "unknownregion")).To(BeFalse())
 }
 
@@ -106,7 +103,7 @@ func TestProvider_SupportsZones_StopsLoadingAfterMaxFailuresAndStartsAgainAfterW
 
 	// Test that failures don't keep being tried
 	for i := 0; i < 20; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(10))
 
@@ -115,7 +112,7 @@ func TestProvider_SupportsZones_StopsLoadingAfterMaxFailuresAndStartsAgainAfterW
 
 	// Try some more
 	for i := 0; i < 20; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(20))
 }
@@ -135,7 +132,7 @@ func TestProvider_SupportsZones_ResetsFailuresAfterWindow(t *testing.T) {
 
 	// Test that failures don't keep being tried
 	for i := 0; i < 5; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(5))
 
@@ -144,7 +141,7 @@ func TestProvider_SupportsZones_ResetsFailuresAfterWindow(t *testing.T) {
 
 	// Try some more
 	for i := 0; i < 20; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(15))
 }
@@ -220,4 +217,91 @@ func createZonalLocation(name string, zones []string) armsubscriptions.Location 
 		Name:                     lo.ToPtr(name),
 		AvailabilityZoneMappings: zoneMappings,
 	}
+}
+
+func TestProvider_GetAvailableZones_ReturnsZones(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.Locations.Store("eastus", createZonalLocation("eastus", []string{"1", "2", "3"}))
+	fakeAPI.Locations.Store("westus2", createZonalLocation("westus2", []string{"1", "2"}))
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// Test zonal regions return their zones
+	zones := provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(ConsistOf("1", "2", "3"))
+
+	zones = provider.GetAvailableZones(ctx, "westus2")
+	g.Expect(zones).To(ConsistOf("1", "2"))
+}
+
+func TestProvider_GetAvailableZones_ReturnsNilForNonZonalRegion(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API with a non-zonal region
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.Locations.Store("canadaeast", armsubscriptions.Location{
+		Name:                     lo.ToPtr("canadaeast"),
+		AvailabilityZoneMappings: nil,
+	})
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// Test non-zonal region returns nil
+	zones := provider.GetAvailableZones(ctx, "canadaeast")
+	g.Expect(zones).To(BeNil())
+
+	// Test unknown region returns nil
+	zones = provider.GetAvailableZones(ctx, "unknownregion")
+	g.Expect(zones).To(BeNil())
+}
+
+func TestProvider_GetAvailableZones_ReturnsNilOnAPIError(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API with error
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.NewListLocationsPagerBehavior.Error.Set(errors.New("API error"))
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// Test that API error results in nil zones
+	zones := provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(BeNil())
+
+	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
+}
+
+func TestProvider_GetAvailableZones_Caching(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.Locations.Store("eastus", createZonalLocation("eastus", []string{"1", "2", "3"}))
+
+	// Create provider
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
+
+	// First call should trigger API call
+	zones := provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(ConsistOf("1", "2", "3"))
+	g.Expect(fakeAPI.NewListLocationsPagerBehavior.Calls()).To(Equal(1))
+
+	// Second call should use cached data
+	zones = provider.GetAvailableZones(ctx, "eastus")
+	g.Expect(zones).To(ConsistOf("1", "2", "3"))
+	g.Expect(fakeAPI.NewListLocationsPagerBehavior.Calls()).To(Equal(1))
 }

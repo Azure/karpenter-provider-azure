@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -313,12 +314,175 @@ func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testi
 	}
 }
 
+func TestFilterInstanceOfferings_ZonalOfferingsBeforeRegionalAtSamePriceAndCapacityType(t *testing.T) {
+	g := NewWithT(t)
+	provider := allocationstrategy.NewProvider()
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
+	)
+
+	instanceTypes := []*corecloudprovider.InstanceType{
+		{
+			Name: "Standard_D2s_v3",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, zones.Regional),
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1"),
+			},
+		},
+	}
+
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	g.Expect(filtered).To(HaveLen(1))
+	g.Expect(filtered[0].Offerings).To(HaveLen(2))
+	g.Expect(filtered[0].Offerings[0].Requirements.Get(corev1.LabelTopologyZone).Any()).To(Equal("westus-1"))
+}
+
+func TestFilterInstanceOfferings_SpotRegionalOfferingBeforeOnDemandZonalAtSamePrice(t *testing.T) {
+	g := NewWithT(t)
+	provider := allocationstrategy.NewProvider()
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
+	)
+
+	instanceTypes := []*corecloudprovider.InstanceType{
+		{
+			Name: "Standard_D2s_v3",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1"),
+				newOfferingWithZone(0.1, karpv1.CapacityTypeSpot, zones.Regional),
+			},
+		},
+	}
+
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	g.Expect(filtered).To(HaveLen(1))
+	g.Expect(filtered[0].Offerings).To(HaveLen(2))
+	g.Expect(filtered[0].Offerings[0].Requirements.Get(karpv1.CapacityTypeLabelKey).Any()).To(Equal(karpv1.CapacityTypeSpot))
+	g.Expect(filtered[0].Offerings[0].Requirements.Get(corev1.LabelTopologyZone).Any()).To(Equal(zones.Regional))
+}
+
+func TestFilterInstanceOfferings_ZonalInstanceTypeBeforeRegionalAtSamePriceAndCapacityType(t *testing.T) {
+	g := NewWithT(t)
+	provider := allocationstrategy.NewProvider()
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
+	)
+
+	instanceTypes := []*corecloudprovider.InstanceType{
+		{
+			Name: "Standard_Regional",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, zones.Regional),
+			},
+		},
+		{
+			Name: "Standard_Zonal",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1"),
+			},
+		},
+	}
+
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	g.Expect(filtered).To(HaveLen(2))
+	g.Expect(filtered[0].InstanceType.Name).To(Equal("Standard_Zonal"))
+}
+
+// TestFilterInstanceOfferings_ZoneTiesAreShuffled verifies that offerings tied
+// on every comparison dimension except zone do not always pick the same zone.
+// The test runs many iterations and asserts that every eligible zone shows up
+// at index 0 at least once. With a uniform shuffle the probability of any zone
+// being missed across 200 trials is vanishingly small.
+// TODO: Consider a property-based test helper if we add more randomized ranker checks.
+func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
+	g := NewWithT(t)
+	provider := allocationstrategy.NewProvider()
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
+	)
+
+	seen := map[string]int{}
+	for i := 0; i < 200; i++ {
+		instanceTypes := []*corecloudprovider.InstanceType{
+			{
+				Name: "Standard_D2s_v3",
+				Offerings: corecloudprovider.Offerings{
+					newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1"),
+					newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-2"),
+					newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-3"),
+				},
+			},
+		}
+		filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+		g.Expect(filtered).To(HaveLen(1))
+		g.Expect(filtered[0].Offerings).NotTo(BeEmpty())
+		seen[filtered[0].Offerings[0].Requirements.Get(corev1.LabelTopologyZone).Any()]++
+	}
+	g.Expect(seen).To(HaveLen(3), "expected all three zones to appear at index 0 across 200 trials, got %v", seen)
+}
+
+func TestAllocate(t *testing.T) {
+	g := NewWithT(t)
+	provider := allocationstrategy.NewProvider()
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
+	)
+
+	instanceTypes := []*corecloudprovider.InstanceType{
+		{
+			Name: "Standard_Regional",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, zones.Regional),
+			},
+		},
+		{
+			Name: "Standard_Zonal",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1"),
+			},
+		},
+	}
+
+	selection := provider.Allocate(context.Background(), instanceTypes, requirements)
+	g.Expect(selection).ToNot(BeNil())
+	g.Expect(selection.InstanceType.Name).To(Equal("Standard_Zonal"))
+	g.Expect(selection.CapacityType()).To(Equal(karpv1.CapacityTypeOnDemand))
+	g.Expect(selection.Zone()).To(Equal("westus-1"))
+	g.Expect(selection.PlacementScope()).To(Equal(v1beta1.PlacementScopeZonal))
+}
+
+func TestAllocate_NoCompatibleOfferings(t *testing.T) {
+	g := NewWithT(t)
+	provider := allocationstrategy.NewProvider()
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+	)
+
+	instanceTypes := []*corecloudprovider.InstanceType{
+		{
+			Name: "Standard_D2s_v3",
+			Offerings: corecloudprovider.Offerings{
+				newOffering(0.1, true, karpv1.CapacityTypeOnDemand),
+			},
+		},
+	}
+
+	selection := provider.Allocate(context.Background(), instanceTypes, requirements)
+	g.Expect(selection).To(BeNil())
+}
+
 func newOfferingWithZone(price float64, capacityType string, zone string) *corecloudprovider.Offering {
 	return &corecloudprovider.Offering{
 		Price: price,
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, capacityType),
 			scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
+			scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, zones.PlacementScopeForZone(zone)),
 		),
 		Available: true,
 	}
@@ -330,6 +494,7 @@ func newOffering(price float64, available bool, capacityType string) *corecloudp
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, capacityType),
 			scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+			scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, v1beta1.PlacementScopeZonal),
 		),
 		Available: available,
 	}

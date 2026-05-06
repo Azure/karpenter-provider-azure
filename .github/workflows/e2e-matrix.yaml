@@ -48,6 +48,7 @@ jobs:
           - NodeClaim
           - Scheduling
           - Spot
+          - Storage
           - Subnet
           - Utilization
     permissions:

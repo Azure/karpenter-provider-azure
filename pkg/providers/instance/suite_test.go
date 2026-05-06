@@ -341,6 +341,10 @@ var _ = Describe("VMInstanceProvider", func() {
 				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
 				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
 			}
+			if azEnv == azureEnv {
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeOnDemand)
+			}
 			instanceTypes, err := cp.GetInstanceTypes(ctx, nodePool)
 			Expect(err).ToNot(HaveOccurred())
 

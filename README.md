@@ -258,6 +258,11 @@ spec:
         - key: karpenter.azure.com/sku-family
           operator: In
           values: [D]
+        # Optional: constrain Azure placement to zonal capacity.
+        # Use "regional" instead to request non-zonal capacity, labeled with topology.kubernetes.io/zone=0.
+        # - key: karpenter.azure.com/placement-scope
+        #   operator: In
+        #   values: ["zonal"]
       expireAfter: Never
   limits:
     cpu: 100
@@ -276,6 +281,8 @@ spec:
 EOF
 ```
 Karpenter is now active and ready to begin provisioning nodes.
+
+By default, Azure NodePools can use both zonal and regional VM placement when the selected SKU supports it. Add a `karpenter.azure.com/placement-scope` requirement with `zonal` or `regional` to choose one explicitly; regional nodes are represented with `topology.kubernetes.io/zone=0`.
 
 ### Scale up deployment
 

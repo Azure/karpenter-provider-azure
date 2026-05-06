@@ -17,6 +17,7 @@ limitations under the License.
 package azure
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -37,9 +38,11 @@ import (
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -81,6 +84,7 @@ type Environment struct {
 	managedClusterClient *containerservice.ManagedClustersClient
 	agentPoolClient      *containerservice.AgentPoolsClient
 	machinesClient       *containerservice.MachinesClient
+	zoneProvider         *zone.Provider
 
 	// Public Clients
 	KeyVaultClient          *armkeyvault.VaultsClient
@@ -167,6 +171,8 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
+	subscriptionsClient := lo.Must(armsubscriptions.NewClient(cred, nil))
+	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, realClock{}, azureEnv.SubscriptionID)
 	// If ProvisionMode wasn't set, default to scriptless, though note that this is
 	// actually defaulted dynamically based on the value of a toggle in AKS which means
 	// assuming we're always in ProvisionMode Scriptless here is incorrect at times, though OK
@@ -186,8 +192,23 @@ func NewEnvironment(t *testing.T) *Environment {
 	return azureEnv
 }
 
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
 func (env *Environment) GetDefaultCredential() azcore.TokenCredential {
 	return env.defaultCredential
+}
+
+// SupportsZones returns true if the region supports availability zones
+func (env *Environment) SupportsZones() bool {
+	return env.zoneProvider.SupportsZones(context.Background(), env.Region)
+}
+
+// GetAvailableZones returns the list of available zones for the current region.
+// Returns nil if the region doesn't support zones.
+func (env *Environment) GetAvailableZones() []string {
+	return env.zoneProvider.GetAvailableZones(context.Background(), env.Region)
 }
 
 // Retry options for BYOK-related clients that may encounter RBAC propagation delays
