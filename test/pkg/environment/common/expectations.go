@@ -791,6 +791,21 @@ func (env *Environment) EventuallyExpectCreatedNodeCount(comparator string, coun
 	return createdNodes
 }
 
+func (env *Environment) EventuallyExpectCreatedNodeCountWithSelector(comparator string, count int, selector labels.Selector) []*corev1.Node {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for created nodes with selector %v to be %s to %d", selector, comparator, count))
+	var createdNodes []*corev1.Node
+	Eventually(func(g Gomega) {
+		createdNodes = env.Monitor.CreatedNodes()
+		createdNodes = lo.Filter(createdNodes, func(n *corev1.Node, _ int) bool {
+			return selector.Matches(labels.Set(n.Labels))
+		})
+		g.Expect(len(createdNodes)).To(BeNumerically(comparator, count),
+			fmt.Sprintf("expected %d created nodes, had %d (%v)", count, len(createdNodes), NodeNames(createdNodes)))
+	}).Should(Succeed())
+	return createdNodes
+}
+
 func (env *Environment) EventuallyExpectDeletedNodeCount(comparator string, count int) []*corev1.Node {
 	GinkgoHelper()
 	By(fmt.Sprintf("waiting for deleted nodes to be %s to %d", comparator, count))
