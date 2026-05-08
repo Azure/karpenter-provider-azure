@@ -93,14 +93,14 @@ const (
 // condition; the Karpenter core provisioner defers scheduling NodeClaims
 // against NodePools whose NodeClass is not Ready.
 type LocalDNSReconciler struct {
-	kubeClient        kubernetes.Interface
-	dynamicClient     dynamic.Interface
-	networkPolicy     string
-	networkPlugin     string
-	versionThreshold  semver.Version
-	maxFailures       int32
-	failureBackoff    time.Duration
-	resolveTimeout    time.Duration
+	kubeClient       kubernetes.Interface
+	dynamicClient    dynamic.Interface
+	networkPolicy    string
+	networkPlugin    string
+	versionThreshold semver.Version
+	maxFailures      int32
+	failureBackoff   time.Duration
+	resolveTimeout   time.Duration
 }
 
 // NewLocalDNSReconciler constructs a LocalDNSReconciler.
