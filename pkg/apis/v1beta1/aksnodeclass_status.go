@@ -31,10 +31,14 @@ const (
 	ConditionTypeLocalDNSReady          = "LocalDNSReady"
 )
 
+// LocalDNSState is the resolved enable/disable decision for LocalDNS, written to status.
+// +kubebuilder:validation:Enum:={Enabled,Disabled}
+type LocalDNSState string
+
 // LocalDNSState values stored in AKSNodeClassStatus.LocalDNSState.
 const (
-	LocalDNSStateEnabled  = "Enabled"
-	LocalDNSStateDisabled = "Disabled"
+	LocalDNSStateEnabled  LocalDNSState = "Enabled"
+	LocalDNSStateDisabled LocalDNSState = "Disabled"
 )
 
 // NodeImage contains resolved image selector values utilized for node launch
@@ -68,9 +72,8 @@ type AKSNodeClassStatus struct {
 	// Kubernetes version changes, taking into account cluster network policy and
 	// upstream node-local-dns presence. Once "Enabled" under Preferred mode it
 	// stays Enabled (sticky) — users can opt out by setting Spec.LocalDNS.Mode=Disabled.
-	// +kubebuilder:validation:Enum=Enabled;Disabled
 	// +optional
-	LocalDNSState *string `json:"localDNSState,omitempty"`
+	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 	// localDNSStateObservedGeneration is the spec generation that LocalDNSState was resolved against.
 	// +optional
 	LocalDNSStateObservedGeneration int64 `json:"localDNSStateObservedGeneration,omitempty"`

@@ -264,7 +264,7 @@ func (r *LocalDNSReconciler) shortCircuitPreferred(nc *v1beta1.AKSNodeClass, kv 
 // to commit. It returns a non-nil error only for transient kube-API failures;
 // definitive "no policies present" outcomes return (Enabled, nil) and
 // definitive "should be disabled" outcomes return (Disabled, nil).
-func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, k8sVersion string) (string, error) {
+func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, k8sVersion string) (v1beta1.LocalDNSState, error) {
 	// Check 1: k8s version >= threshold.
 	parsed, err := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
 	if err != nil {

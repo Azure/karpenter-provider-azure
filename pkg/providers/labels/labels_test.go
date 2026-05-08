@@ -250,6 +250,7 @@ func TestLocalDNSLabels(t *testing.T) {
 	testCases := []struct {
 		name              string
 		localDNS          *v1beta1.LocalDNS
+		localDNSState     *v1beta1.LocalDNSState
 		kubernetesVersion string
 		expectedLabel     string
 	}{
@@ -258,6 +259,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeRequired,
 			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateEnabled),
 			kubernetesVersion: "1.35.0",
 			expectedLabel:     "enabled",
 		},
@@ -266,6 +268,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeDisabled,
 			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateDisabled),
 			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
 		},
@@ -274,6 +277,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateEnabled),
 			kubernetesVersion: "1.35.0",
 			expectedLabel:     "enabled",
 		},
@@ -282,6 +286,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateEnabled),
 			kubernetesVersion: "1.36.0",
 			expectedLabel:     "enabled",
 		},
@@ -290,6 +295,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateDisabled),
 			kubernetesVersion: "1.34.0",
 			expectedLabel:     "disabled",
 		},
@@ -298,6 +304,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateDisabled),
 			kubernetesVersion: "1.34.9",
 			expectedLabel:     "disabled",
 		},
@@ -335,6 +342,7 @@ func TestLocalDNSLabels(t *testing.T) {
 				},
 				Status: v1beta1.AKSNodeClassStatus{
 					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
+					LocalDNSState:     tc.localDNSState,
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,

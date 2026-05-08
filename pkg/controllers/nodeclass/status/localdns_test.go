@@ -70,7 +70,7 @@ func mustReconcile(t *testing.T, r *LocalDNSReconciler, nc *v1beta1.AKSNodeClass
 	}
 }
 
-func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want string) {
+func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want v1beta1.LocalDNSState) {
 	t.Helper()
 	if nc.Status.LocalDNSState == nil {
 		t.Fatalf("expected LocalDNSState=%q, got nil", want)

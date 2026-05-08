@@ -184,7 +184,7 @@ func (in *AKSNodeClassStatus) DeepCopyInto(out *AKSNodeClassStatus) {
 	}
 	if in.LocalDNSState != nil {
 		in, out := &in.LocalDNSState, &out.LocalDNSState
-		*out = new(string)
+		*out = new(LocalDNSState)
 		**out = **in
 	}
 	if in.Conditions != nil {

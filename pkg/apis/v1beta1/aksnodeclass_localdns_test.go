@@ -33,13 +33,13 @@ var _ = Describe("IsLocalDNSEnabled", func() {
 	})
 
 	DescribeTable("reads from Status.LocalDNSState",
-		func(state *string, expected bool) {
+		func(state *v1beta1.LocalDNSState, expected bool) {
 			nodeClass.Status.LocalDNSState = state
 			Expect(nodeClass.IsLocalDNSEnabled()).To(Equal(expected))
 		},
-		Entry("nil state", (*string)(nil), false),
+		Entry("nil state", (*v1beta1.LocalDNSState)(nil), false),
 		Entry("Enabled state", lo.ToPtr(v1beta1.LocalDNSStateEnabled), true),
 		Entry("Disabled state", lo.ToPtr(v1beta1.LocalDNSStateDisabled), false),
-		Entry("unknown value", lo.ToPtr("Bogus"), false),
+		Entry("unknown value", lo.ToPtr(v1beta1.LocalDNSState("Bogus")), false),
 	)
 })
