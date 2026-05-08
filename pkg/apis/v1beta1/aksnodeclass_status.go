@@ -76,13 +76,16 @@ type AKSNodeClassStatus struct {
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 	// localDNSStateObservedGeneration is the spec generation that LocalDNSState was resolved against.
 	// +optional
+	//nolint:kubeapilinter // optionalfields: zero value is meaningful (unresolved)
 	LocalDNSStateObservedGeneration int64 `json:"localDNSStateObservedGeneration,omitempty"`
 	// localDNSStateObservedKubernetesVersion is the Kubernetes version that LocalDNSState was resolved against.
 	// +optional
+	//nolint:kubeapilinter // optionalfields: zero value is meaningful (unresolved)
 	LocalDNSStateObservedKubernetesVersion string `json:"localDNSStateObservedKubernetesVersion,omitempty"`
 	// localDNSResolveFailures tracks consecutive transient failures during Preferred-mode resolution.
 	// After a fail-safe budget is exhausted, the reconciler commits LocalDNSState=Disabled and unblocks provisioning.
 	// +optional
+	//nolint:kubeapilinter // optionalfields: zero value is meaningful (no failures)
 	LocalDNSResolveFailures int32 `json:"localDNSResolveFailures,omitempty"`
 	// conditions contains signals for health and readiness
 	// +optional
