@@ -135,8 +135,8 @@ func (r *LocalDNSReconciler) Register(_ context.Context, m manager.Manager) erro
 func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(localDNSReconcilerName))
 
-	if done, res, err := r.handleSimpleModes(nc); done {
-		return res, err
+	if r.handleSimpleModes(nc) {
+		return reconcile.Result{}, nil
 	}
 
 	// Mode=Preferred from here. Need Status.KubernetesVersion to make a decision.
@@ -200,7 +200,7 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 // handleSimpleModes covers the cases that don't require evaluating cluster
 // state: Mode unset, Required, Disabled, or unknown/invalid. Returns done=true
 // when the caller should return the supplied result.
-func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) (bool, reconcile.Result, error) {
+func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) bool {
 	// Mode unset → no LocalDNS configuration; clear status fields and mark Ready.
 	if nc.Spec.LocalDNS == nil || nc.Spec.LocalDNS.Mode == "" {
 		nc.Status.LocalDNSState = nil
@@ -208,7 +208,7 @@ func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) (bool, 
 		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
 		nc.Status.LocalDNSResolveFailures = 0
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return true, reconcile.Result{}, nil
+		return true
 	}
 
 	switch nc.Spec.LocalDNS.Mode {
@@ -219,7 +219,7 @@ func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) (bool, 
 		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
 		nc.Status.LocalDNSResolveFailures = 0
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return true, reconcile.Result{}, nil
+		return true
 	case v1beta1.LocalDNSModeDisabled:
 		s := v1beta1.LocalDNSStateDisabled
 		nc.Status.LocalDNSState = &s
@@ -227,14 +227,14 @@ func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) (bool, 
 		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
 		nc.Status.LocalDNSResolveFailures = 0
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return true, reconcile.Result{}, nil
+		return true
 	case v1beta1.LocalDNSModePreferred:
-		return false, reconcile.Result{}, nil
+		return false
 	default:
 		// Unknown/invalid mode: leave state untouched but don't block provisioning.
 		// Validation logic on the spec catches this elsewhere.
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return true, reconcile.Result{}, nil
+		return true
 	}
 }
 
