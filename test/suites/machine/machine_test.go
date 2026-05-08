@@ -172,6 +172,10 @@ var _ = Describe("Machine Tests", func() {
 
 			By("updating the kubelet identity on the managed cluster")
 			poller := env.ExpectUpdatedManagedClusterKubeletIdentityAsync(env.Context, newIdentity)
+			defer func() {
+				// Ensure the cluster operation completes even if the test fails partway through
+				_, _ = poller.PollUntilDone(env.Context, nil)
+			}()
 
 			By("verifying the kubelet identity was updated")
 			updatedKubeletIdentity := env.GetKubeletIdentity(env.Context)
@@ -199,13 +203,12 @@ var _ = Describe("Machine Tests", func() {
 			env.EventuallyExpectNotFound(lo.Map(nodes, func(n *corev1.Node, _ int) client.Object { return n })...)
 			env.EventuallyExpectNotFound(lo.Map(nodeClaims, func(n *karpv1.NodeClaim, _ int) client.Object { return n })...)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
-			env.EventuallyExpectCreatedNodeCount("==", 3)
+			// Focus created nodes on only those with "test-name": "karpenter-machine-test", as there are some cases where updating cluster can result in
+			// AKS RP rolling system nodes which could make other nodes appear in the list of created nodes, which we don't want to count.
+			env.EventuallyExpectCreatedNodeCountWithSelector("==", 3,
+				labels.SelectorFromSet(map[string]string{"test-name": "karpenter-machine-test"}))
 			env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
 			env.EventuallyExpectCreatedMachineCount("==", 3)
-
-			// Make sure to wait til cluster is done updating before proceeding to next test
-			_, err := poller.PollUntilDone(env.Context, nil)
-			Expect(err).ToNot(HaveOccurred())
 		})
 
 		It("should be able to scale machines during an ongoing managed cluster operation", func() {

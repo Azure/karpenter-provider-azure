@@ -38,8 +38,8 @@ func TestMachine(t *testing.T) {
 	// Using t.Skip() instead of Ginkgo's Skip() because in Ginkgo if you skip all tests in the suite it
 	// counts it as a failure
 	provisionMode := os.Getenv("PROVISION_MODE")
-	if provisionMode != consts.ProvisionModeAKSMachineAPI {
-		t.Skipf("Skipping machine suite: provision mode %q is not %s", provisionMode, consts.ProvisionModeAKSMachineAPI)
+	if provisionMode != consts.ProvisionModeAKSMachineAPI && provisionMode != consts.ProvisionModeAKSMachineAPIHeaderBatch {
+		t.Skipf("Skipping machine suite: provision mode %q is not %s or %s", provisionMode, consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch)
 	}
 
 	RegisterFailHandler(Fail)
