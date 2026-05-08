@@ -722,6 +722,20 @@ var _ = Describe("InstanceType Provider", func() {
 				if k8sVersion != "" {
 					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
 				}
+				// Mirror what the localdns sub-reconciler would do: populate Status.LocalDNSState
+				// based on Spec.LocalDNS.Mode and the k8s version threshold (1.36).
+				switch localDNSMode {
+				case v1beta1.LocalDNSModeRequired:
+					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+				case v1beta1.LocalDNSModeDisabled:
+					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
+				case v1beta1.LocalDNSModePreferred:
+					if k8sVersion >= "1.36" {
+						nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+					} else {
+						nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
+					}
+				}
 				ExpectApplied(ctx, env.Client, nodeClass)
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
@@ -744,10 +758,10 @@ var _ = Describe("InstanceType Provider", func() {
 			},
 			Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
 				v1beta1.LocalDNSModeRequired, "", false, true),
-			Entry("when LocalDNS is preferred with k8s >= 1.35 - filters to 4+ vCPUs and 244+ MiB",
-				v1beta1.LocalDNSModePreferred, "1.35.0", false, true),
-			Entry("when LocalDNS is preferred with k8s < 1.35 - includes all SKUs",
-				v1beta1.LocalDNSModePreferred, "1.34.0", true, true),
+			Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
+				v1beta1.LocalDNSModePreferred, "1.36.0", false, true),
+			Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
+				v1beta1.LocalDNSModePreferred, "1.35.0", true, true),
 			Entry("when LocalDNS is disabled - includes all SKUs",
 				v1beta1.LocalDNSModeDisabled, "", true, true),
 			Entry("when LocalDNS is not set - includes all SKUs",
@@ -809,6 +823,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
+				nodeClassDisabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 				ExpectApplied(ctx, env.Client, nodeClassDisabled)
 				instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
 				Expect(err).ToNot(HaveOccurred())
@@ -866,6 +881,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
+				nodeClassEnabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 				ExpectApplied(ctx, env.Client, nodeClassEnabled)
 				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
 				Expect(err).ToNot(HaveOccurred())
