@@ -28,6 +28,13 @@ const (
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
 	ConditionTypeSubnetsReady           = "SubnetsReady"
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
+	ConditionTypeLocalDNSReady          = "LocalDNSReady"
+)
+
+// LocalDNSState values stored in AKSNodeClassStatus.LocalDNSState.
+const (
+	LocalDNSStateEnabled  = "Enabled"
+	LocalDNSStateDisabled = "Disabled"
 )
 
 // NodeImage contains resolved image selector values utilized for node launch
@@ -55,6 +62,25 @@ type AKSNodeClassStatus struct {
 	// used for nodes provisioned for the NodeClass
 	// +optional
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+	// localDNSState is the resolved enable/disable decision for LocalDNS.
+	// For Mode=Required this is always "Enabled"; for Mode=Disabled this is "Disabled";
+	// for Mode=Preferred this is resolved at NodeClass create/update and on observed
+	// Kubernetes version changes, taking into account cluster network policy and
+	// upstream node-local-dns presence. Once "Enabled" under Preferred mode it
+	// stays Enabled (sticky) — users can opt out by setting Spec.LocalDNS.Mode=Disabled.
+	// +kubebuilder:validation:Enum=Enabled;Disabled
+	// +optional
+	LocalDNSState *string `json:"localDNSState,omitempty"`
+	// localDNSStateObservedGeneration is the spec generation that LocalDNSState was resolved against.
+	// +optional
+	LocalDNSStateObservedGeneration int64 `json:"localDNSStateObservedGeneration,omitempty"`
+	// localDNSStateObservedKubernetesVersion is the Kubernetes version that LocalDNSState was resolved against.
+	// +optional
+	LocalDNSStateObservedKubernetesVersion string `json:"localDNSStateObservedKubernetesVersion,omitempty"`
+	// localDNSResolveFailures tracks consecutive transient failures during Preferred-mode resolution.
+	// After a fail-safe budget is exhausted, the reconciler commits LocalDNSState=Disabled and unblocks provisioning.
+	// +optional
+	LocalDNSResolveFailures int32 `json:"localDNSResolveFailures,omitempty"`
 	// conditions contains signals for health and readiness
 	// +optional
 	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility
@@ -67,6 +93,7 @@ func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
 		ConditionTypeKubernetesVersionReady,
 		ConditionTypeSubnetsReady,
 		ConditionTypeValidationSucceeded,
+		ConditionTypeLocalDNSReady,
 	}
 	return status.NewReadyConditions(conds...).For(in)
 }

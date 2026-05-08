@@ -18,9 +18,7 @@ package v1beta1
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/blang/semver/v4"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -738,35 +736,24 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
-// Returns true for Required mode, false for Disabled mode, and for Preferred mode,
-// returns true only if the Kubernetes version is >= 1.35.
+// The decision is sourced from Status.LocalDNSState, which is resolved by the
+// nodeclass.localdns status sub-reconciler. For Mode=Required this is always
+// "Enabled"; for Mode=Disabled this is "Disabled"; for Mode=Preferred this is
+// resolved against cluster conditions (Kubernetes version, network policy,
+// upstream node-local-dns DaemonSet, BYO CNI) at create/update time and on
+// observed Kubernetes version changes. Once Enabled under Preferred mode the
+// state is sticky and never auto-flips back to Disabled.
+//
+// If Status.LocalDNSState has not yet been written (e.g. the reconciler has
+// not run), this returns false as a safe default. Karpenter core gates
+// provisioning on the AKSNodeClass aggregate Ready condition (which now
+// includes LocalDNSReady), so consumers in the provisioning path will not
+// observe the unresolved state.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
-	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
+	if in.Status.LocalDNSState == nil {
 		return false
 	}
-
-	switch in.Spec.LocalDNS.Mode {
-	case LocalDNSModeRequired:
-		return true
-	case LocalDNSModeDisabled:
-		return false
-	case LocalDNSModePreferred:
-		// For Preferred mode, check if K8s version >= 1.35
-		kubernetesVersion, err := in.GetKubernetesVersion()
-		if err != nil {
-			return false // If we can't get version, don't enable
-		}
-
-		// Parse version
-		parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
-		if err != nil {
-			return false
-		}
-
-		return parsedVersion.GE(semver.Version{Major: 1, Minor: 35})
-	default:
-		return false
-	}
+	return *in.Status.LocalDNSState == LocalDNSStateEnabled
 }
 
 // GetGPUMode returns the effective GPU mode.

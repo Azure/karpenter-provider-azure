@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -83,6 +84,10 @@ type Operator struct {
 	// of the cluster where the Karpenter pod is running. This is usually the same as operator.KubernetesInterface,
 	// but may be different if Karpenter is running in a different cluster than the one it manages.
 	InClusterKubernetesInterface kubernetes.Interface
+	// InClusterDynamicInterface is a dynamic client over the same in-cluster config as
+	// InClusterKubernetesInterface. Used by the LocalDNS status reconciler to inspect
+	// Cilium / Calico CRD-based network policies.
+	InClusterDynamicInterface dynamic.Interface
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
@@ -141,6 +146,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
+	inClusterDynamicClient := dynamic.NewForConfigOrDie(inClusterConfig)
 
 	if options.FromContext(ctx).DNSServiceIP == "" {
 		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
@@ -260,6 +266,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	return ctx, &Operator{
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
+		InClusterDynamicInterface:    inClusterDynamicClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,
