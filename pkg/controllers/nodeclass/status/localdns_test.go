@@ -82,7 +82,7 @@ func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want string) {
 
 func TestModeUnsetClearsState(t *testing.T) {
 	nc := newNC()
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	if nc.Status.LocalDNSState != nil {
 		t.Fatalf("expected nil state, got %v", *nc.Status.LocalDNSState)
@@ -95,7 +95,7 @@ func TestModeUnsetClearsState(t *testing.T) {
 func TestModeRequired(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -103,7 +103,7 @@ func TestModeRequired(t *testing.T) {
 func TestModeDisabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -111,7 +111,7 @@ func TestModeDisabled(t *testing.T) {
 func TestPreferred_K8sVersionMissing_WaitsUnknown(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	if nc.Status.LocalDNSState != nil {
 		t.Fatalf("expected nil state when KV unresolved")
@@ -125,7 +125,7 @@ func TestPreferred_K8sBelowThreshold_Disabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, loK8s)
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -134,7 +134,7 @@ func TestPreferred_BYOCNI_Disabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", consts.NetworkPluginNone)
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", consts.NetworkPluginNone)
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -143,7 +143,7 @@ func TestPreferred_NoConflicts_Enabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "cilium", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -152,7 +152,7 @@ func TestPreferred_NodeLocalDNSPresent_Disabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, hiK8s)
-	k8sFake := fake.NewSimpleClientset(&appsv1.DaemonSet{
+	k8sFake := fake.NewClientset(&appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-local-dns", Namespace: "kube-system"},
 	})
 	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
@@ -164,7 +164,7 @@ func TestPreferred_NetworkPolicyPresent_Disabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, hiK8s)
-	k8sFake := fake.NewSimpleClientset(&networkingv1.NetworkPolicy{
+	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
 	})
 	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
@@ -176,7 +176,7 @@ func TestPreferred_KonnectivityAgentIgnored(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, hiK8s)
-	k8sFake := fake.NewSimpleClientset(&networkingv1.NetworkPolicy{
+	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "konnectivity-agent", Namespace: "kube-system"},
 	})
 	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
@@ -192,7 +192,7 @@ func TestPreferred_StickyEnabled_DoesNotFlipOnNewConflict(t *testing.T) {
 	nc.Status.LocalDNSStateObservedGeneration = nc.Generation
 	nc.Status.LocalDNSStateObservedKubernetesVersion = hiK8s
 
-	k8sFake := fake.NewSimpleClientset(&networkingv1.NetworkPolicy{
+	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
 	})
 	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
@@ -207,7 +207,7 @@ func TestPreferred_K8sVersionBumpReevaluates(t *testing.T) {
 	nc.Status.LocalDNSStateObservedGeneration = nc.Generation
 	nc.Status.LocalDNSStateObservedKubernetesVersion = loK8s
 	setReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 	if nc.Status.LocalDNSStateObservedKubernetesVersion != hiK8s {
@@ -222,7 +222,7 @@ func TestPreferred_NoOpOnSameTuple(t *testing.T) {
 	nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 	nc.Status.LocalDNSStateObservedGeneration = nc.Generation
 	nc.Status.LocalDNSStateObservedKubernetesVersion = hiK8s
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -231,7 +231,7 @@ func TestPreferred_TransientErrorRetriesThenFailSafe(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, hiK8s)
-	k8sFake := fake.NewSimpleClientset()
+	k8sFake := fake.NewClientset()
 	k8sFake.PrependReactor("list", "networkpolicies", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("transient")
 	})
@@ -281,7 +281,7 @@ func TestPreferred_TransientCounterResetsOnGenerationChange(t *testing.T) {
 	// Bump generation, then mark KV-Ready at the new generation.
 	nc.Generation = 2
 	setReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewSimpleClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	if _, err := r.Reconcile(context.Background(), nc); err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestPreferred_DaemonSetGetNotFoundIsHandled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setReady(nc, hiK8s)
-	k8sFake := fake.NewSimpleClientset()
+	k8sFake := fake.NewClientset()
 	k8sFake.PrependReactor("get", "daemonsets", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, k8serrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, "node-local-dns")
 	})

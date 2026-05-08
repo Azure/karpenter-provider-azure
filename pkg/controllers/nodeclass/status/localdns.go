@@ -135,45 +135,9 @@ func (r *LocalDNSReconciler) Register(_ context.Context, m manager.Manager) erro
 func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(localDNSReconcilerName))
 
-	// Mode unset → no LocalDNS configuration; clear status fields and mark Ready.
-	if nc.Spec.LocalDNS == nil || nc.Spec.LocalDNS.Mode == "" {
-		nc.Status.LocalDNSState = nil
-		nc.Status.LocalDNSStateObservedGeneration = 0
-		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
-		nc.Status.LocalDNSResolveFailures = 0
-		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return reconcile.Result{}, nil
+	if done, res, err := r.handleSimpleModes(nc); done {
+		return res, err
 	}
-
-	switch nc.Spec.LocalDNS.Mode {
-	case v1beta1.LocalDNSModeRequired:
-		s := v1beta1.LocalDNSStateEnabled
-		nc.Status.LocalDNSState = &s
-		nc.Status.LocalDNSStateObservedGeneration = nc.Generation
-		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
-		nc.Status.LocalDNSResolveFailures = 0
-		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return reconcile.Result{}, nil
-
-	case v1beta1.LocalDNSModeDisabled:
-		s := v1beta1.LocalDNSStateDisabled
-		nc.Status.LocalDNSState = &s
-		nc.Status.LocalDNSStateObservedGeneration = nc.Generation
-		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
-		nc.Status.LocalDNSResolveFailures = 0
-		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return reconcile.Result{}, nil
-
-	case v1beta1.LocalDNSModePreferred:
-		// fall through to evaluation below
-	default:
-		// Unknown/invalid mode: leave state untouched but don't block provisioning.
-		// Validation logic on the spec catches this elsewhere.
-		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return reconcile.Result{}, nil
-	}
-
-	logger := log.FromContext(ctx)
 
 	// Mode=Preferred from here. Need Status.KubernetesVersion to make a decision.
 	kv, err := nc.GetKubernetesVersion()
@@ -198,19 +162,8 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 	}
 
 	// Sticky-Enabled: once Enabled under Preferred, never auto-flip to Disabled.
-	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
-		nc.Status.LocalDNSStateObservedGeneration = nc.Generation
-		nc.Status.LocalDNSStateObservedKubernetesVersion = kv
-		nc.Status.LocalDNSResolveFailures = 0
-		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return reconcile.Result{}, nil
-	}
-
-	// No-op if already evaluated for this (spec gen, k8s version) tuple.
-	if nc.Status.LocalDNSState != nil &&
-		nc.Status.LocalDNSStateObservedGeneration == nc.Generation &&
-		nc.Status.LocalDNSStateObservedKubernetesVersion == kv {
-		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+	// Also no-op if already evaluated for this (spec gen, k8s version) tuple.
+	if r.shortCircuitPreferred(nc, kv) {
 		return reconcile.Result{}, nil
 	}
 
@@ -230,7 +183,7 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 			return reconcile.Result{RequeueAfter: r.failureBackoff}, nil
 		}
 		// Budget exhausted — fail-safe to Disabled and unblock provisioning.
-		logger.Info("localdns resolve failed too many times, defaulting to Disabled",
+		log.FromContext(ctx).Info("localdns resolve failed too many times, defaulting to Disabled",
 			"failures", nc.Status.LocalDNSResolveFailures, "error", transientErr.Error())
 		state = v1beta1.LocalDNSStateDisabled
 		// fall through to commit
@@ -244,6 +197,69 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 	return reconcile.Result{}, nil
 }
 
+// handleSimpleModes covers the cases that don't require evaluating cluster
+// state: Mode unset, Required, Disabled, or unknown/invalid. Returns done=true
+// when the caller should return the supplied result.
+func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) (bool, reconcile.Result, error) {
+	// Mode unset → no LocalDNS configuration; clear status fields and mark Ready.
+	if nc.Spec.LocalDNS == nil || nc.Spec.LocalDNS.Mode == "" {
+		nc.Status.LocalDNSState = nil
+		nc.Status.LocalDNSStateObservedGeneration = 0
+		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
+		nc.Status.LocalDNSResolveFailures = 0
+		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		return true, reconcile.Result{}, nil
+	}
+
+	switch nc.Spec.LocalDNS.Mode {
+	case v1beta1.LocalDNSModeRequired:
+		s := v1beta1.LocalDNSStateEnabled
+		nc.Status.LocalDNSState = &s
+		nc.Status.LocalDNSStateObservedGeneration = nc.Generation
+		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
+		nc.Status.LocalDNSResolveFailures = 0
+		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		return true, reconcile.Result{}, nil
+	case v1beta1.LocalDNSModeDisabled:
+		s := v1beta1.LocalDNSStateDisabled
+		nc.Status.LocalDNSState = &s
+		nc.Status.LocalDNSStateObservedGeneration = nc.Generation
+		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
+		nc.Status.LocalDNSResolveFailures = 0
+		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		return true, reconcile.Result{}, nil
+	case v1beta1.LocalDNSModePreferred:
+		return false, reconcile.Result{}, nil
+	default:
+		// Unknown/invalid mode: leave state untouched but don't block provisioning.
+		// Validation logic on the spec catches this elsewhere.
+		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		return true, reconcile.Result{}, nil
+	}
+}
+
+// shortCircuitPreferred handles the two early-exit cases under Preferred mode:
+// sticky Enabled, and same-tuple no-op. Returns true when the caller should
+// stop reconciling.
+func (r *LocalDNSReconciler) shortCircuitPreferred(nc *v1beta1.AKSNodeClass, kv string) bool {
+	// Sticky-Enabled: once Enabled under Preferred, never auto-flip to Disabled.
+	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
+		nc.Status.LocalDNSStateObservedGeneration = nc.Generation
+		nc.Status.LocalDNSStateObservedKubernetesVersion = kv
+		nc.Status.LocalDNSResolveFailures = 0
+		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		return true
+	}
+	// No-op if already evaluated for this (spec gen, k8s version) tuple.
+	if nc.Status.LocalDNSState != nil &&
+		nc.Status.LocalDNSStateObservedGeneration == nc.Generation &&
+		nc.Status.LocalDNSStateObservedKubernetesVersion == kv {
+		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		return true
+	}
+	return false
+}
+
 // resolvePreferred runs the Preferred-mode safety checks and returns the state
 // to commit. It returns a non-nil error only for transient kube-API failures;
 // definitive "no policies present" outcomes return (Enabled, nil) and
@@ -253,7 +269,7 @@ func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, k8sVersion st
 	parsed, err := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
 	if err != nil {
 		// Cannot parse status k8s version — treat as not-yet-eligible (Disabled).
-		return v1beta1.LocalDNSStateDisabled, nil
+		return v1beta1.LocalDNSStateDisabled, nil //nolint:nilerr // intentional: malformed version is treated as not-eligible
 	}
 	if parsed.LT(r.versionThreshold) {
 		return v1beta1.LocalDNSStateDisabled, nil
@@ -312,6 +328,13 @@ func (r *LocalDNSReconciler) hasConflictingNetworkPolicies(ctx context.Context, 
 	if r.kubeClient == nil {
 		return false, nil
 	}
+	if conflict, err := r.hasConflictingK8sNetworkPolicies(ctx); err != nil || conflict {
+		return conflict, err
+	}
+	return r.hasConflictingCRDNetworkPolicies(ctx, networkPolicyType)
+}
+
+func (r *LocalDNSReconciler) hasConflictingK8sNetworkPolicies(ctx context.Context) (bool, error) {
 	netPolList, err := r.kubeClient.NetworkingV1().NetworkPolicies("").List(ctx, metav1.ListOptions{Limit: 2})
 	if err != nil {
 		return false, fmt.Errorf("listing K8s NetworkPolicies: %w", err)
@@ -322,7 +345,10 @@ func (r *LocalDNSReconciler) hasConflictingNetworkPolicies(ctx context.Context, 
 		}
 		return true, nil
 	}
+	return false, nil
+}
 
+func (r *LocalDNSReconciler) hasConflictingCRDNetworkPolicies(ctx context.Context, networkPolicyType string) (bool, error) {
 	if r.dynamicClient == nil {
 		// No dynamic client wired (test scenarios); treat as no CRD policies.
 		return false, nil
