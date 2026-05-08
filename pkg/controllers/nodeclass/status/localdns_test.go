@@ -339,7 +339,7 @@ func TestPreferred_CiliumClusterwideNetworkPolicyPresent_Disabled(t *testing.T) 
 	setReady(nc, hiK8s)
 	gvr := schema.GroupVersionResource{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}
 	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:              "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}: "CiliumNetworkPolicyList",
 		gvr: "CiliumClusterwideNetworkPolicyList",
 		{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}:       "NetworkPolicyList",
 		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
@@ -355,8 +355,8 @@ func TestPreferred_CalicoNetworkPolicyPresent_Disabled(t *testing.T) {
 	setReady(nc, hiK8s)
 	gvr := schema.GroupVersionResource{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}
 	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:             "CiliumNetworkPolicyList",
-		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}:  "CiliumClusterwideNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:            "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}: "CiliumClusterwideNetworkPolicyList",
 		gvr: "NetworkPolicyList",
 		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
 	}, unstructuredPolicy(gvr, "block", "default", "NetworkPolicy"))
