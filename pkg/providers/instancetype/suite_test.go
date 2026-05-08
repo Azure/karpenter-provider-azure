@@ -730,7 +730,9 @@ var _ = Describe("InstanceType Provider", func() {
 				case v1beta1.LocalDNSModeDisabled:
 					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 				case v1beta1.LocalDNSModePreferred:
-					if k8sVersion >= "1.36" {
+					threshold := semver.MustParse("1.36.0")
+					parsed, perr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
+					if perr == nil && parsed.GTE(threshold) {
 						nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 					} else {
 						nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)

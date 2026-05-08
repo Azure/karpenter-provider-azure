@@ -172,21 +172,31 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 	state, transientErr := r.resolvePreferred(resolveCtx, kv)
 
 	if transientErr != nil {
-		nc.Status.LocalDNSResolveFailures++
-		if nc.Status.LocalDNSResolveFailures < r.maxFailures {
-			// Don't commit state; stay False with a clear reason and retry.
-			nc.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeLocalDNSReady,
-				"ResolveTransientError",
-				fmt.Sprintf("attempt %d/%d: %s", nc.Status.LocalDNSResolveFailures, r.maxFailures, transientErr),
-			)
-			return reconcile.Result{RequeueAfter: r.failureBackoff}, nil
+		// Forbidden is not transient — RBAC won't fix itself on retry. Fail-safe
+		// to Disabled immediately so we don't burn the budget and delay
+		// provisioning by maxFailures*backoff.
+		if k8serrors.IsForbidden(transientErr) {
+			log.FromContext(ctx).Info("localdns resolve denied by RBAC, defaulting to Disabled",
+				"error", transientErr.Error())
+			state = v1beta1.LocalDNSStateDisabled
+			// fall through to commit
+		} else {
+			nc.Status.LocalDNSResolveFailures++
+			if nc.Status.LocalDNSResolveFailures < r.maxFailures {
+				// Don't commit state; stay False with a clear reason and retry.
+				nc.StatusConditions().SetFalse(
+					v1beta1.ConditionTypeLocalDNSReady,
+					"ResolveTransientError",
+					fmt.Sprintf("attempt %d/%d: %s", nc.Status.LocalDNSResolveFailures, r.maxFailures, transientErr),
+				)
+				return reconcile.Result{RequeueAfter: r.failureBackoff}, nil
+			}
+			// Budget exhausted — fail-safe to Disabled and unblock provisioning.
+			log.FromContext(ctx).Info("localdns resolve failed too many times, defaulting to Disabled",
+				"failures", nc.Status.LocalDNSResolveFailures, "error", transientErr.Error())
+			state = v1beta1.LocalDNSStateDisabled
+			// fall through to commit
 		}
-		// Budget exhausted — fail-safe to Disabled and unblock provisioning.
-		log.FromContext(ctx).Info("localdns resolve failed too many times, defaulting to Disabled",
-			"failures", nc.Status.LocalDNSResolveFailures, "error", transientErr.Error())
-		state = v1beta1.LocalDNSStateDisabled
-		// fall through to commit
 	}
 
 	nc.Status.LocalDNSState = lo.ToPtr(state)
@@ -231,8 +241,13 @@ func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) bool {
 	case v1beta1.LocalDNSModePreferred:
 		return false
 	default:
-		// Unknown/invalid mode: leave state untouched but don't block provisioning.
-		// Validation logic on the spec catches this elsewhere.
+		// Unknown/invalid mode: clear any prior state so consumers don't act on
+		// stale Enabled/Disabled values, but don't block provisioning. Validation
+		// logic on the spec catches the invalid mode elsewhere.
+		nc.Status.LocalDNSState = nil
+		nc.Status.LocalDNSStateObservedGeneration = 0
+		nc.Status.LocalDNSStateObservedKubernetesVersion = ""
+		nc.Status.LocalDNSResolveFailures = 0
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return true
 	}
@@ -242,8 +257,15 @@ func (r *LocalDNSReconciler) handleSimpleModes(nc *v1beta1.AKSNodeClass) bool {
 // sticky Enabled, and same-tuple no-op. Returns true when the caller should
 // stop reconciling.
 func (r *LocalDNSReconciler) shortCircuitPreferred(nc *v1beta1.AKSNodeClass, kv string) bool {
-	// Sticky-Enabled: once Enabled under Preferred, never auto-flip to Disabled.
+	// Sticky-Enabled: once the resolved state is Enabled, never auto-flip to
+	// Disabled. Skip the status write when we've already observed this
+	// (gen, kv) tuple so we don't churn the API server on every reconcile.
 	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
+		if nc.Status.LocalDNSStateObservedGeneration == nc.Generation &&
+			nc.Status.LocalDNSStateObservedKubernetesVersion == kv {
+			nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+			return true
+		}
 		nc.Status.LocalDNSStateObservedGeneration = nc.Generation
 		nc.Status.LocalDNSStateObservedKubernetesVersion = kv
 		nc.Status.LocalDNSResolveFailures = 0
@@ -372,7 +394,10 @@ func (r *LocalDNSReconciler) hasConflictingCRDNetworkPolicies(ctx context.Contex
 		list, err := r.dynamicClient.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{Limit: 1})
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
-				// CRD itself not installed on this cluster → no policies of this kind.
+				// Dynamic client returns NotFound when the CRD itself is not
+				// installed on the cluster. (For a list call against a registered
+				// CRD with zero items the server returns an empty list, not
+				// NotFound, so this branch reliably means "kind unknown".)
 				continue
 			}
 			return false, fmt.Errorf("listing %s: %w", gvr.Resource, err)

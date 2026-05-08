@@ -28,6 +28,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -304,4 +305,111 @@ func TestPreferred_DaemonSetGetNotFoundIsHandled(t *testing.T) {
 	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+func unstructuredPolicy(gvr schema.GroupVersionResource, name, namespace, kind string) *unstructured.Unstructured {
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
+	u.SetName(name)
+	if namespace != "" {
+		u.SetNamespace(namespace)
+	}
+	return u
+}
+
+func TestPreferred_CiliumNetworkPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setReady(nc, hiK8s)
+	gvr := schema.GroupVersionResource{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		gvr: "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}:  "CiliumClusterwideNetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}:       "NetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
+	}, unstructuredPolicy(gvr, "block-egress", "default", "CiliumNetworkPolicy"))
+	r := NewLocalDNSReconciler(fake.NewClientset(), dyn, "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_CiliumClusterwideNetworkPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setReady(nc, hiK8s)
+	gvr := schema.GroupVersionResource{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:              "CiliumNetworkPolicyList",
+		gvr: "CiliumClusterwideNetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}:       "NetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
+	}, unstructuredPolicy(gvr, "deny-cluster", "", "CiliumClusterwideNetworkPolicy"))
+	r := NewLocalDNSReconciler(fake.NewClientset(), dyn, "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_CalicoNetworkPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setReady(nc, hiK8s)
+	gvr := schema.GroupVersionResource{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:             "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}:  "CiliumClusterwideNetworkPolicyList",
+		gvr: "NetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
+	}, unstructuredPolicy(gvr, "block", "default", "NetworkPolicy"))
+	r := NewLocalDNSReconciler(fake.NewClientset(), dyn, "calico", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_CalicoGlobalNetworkPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setReady(nc, hiK8s)
+	gvr := schema.GroupVersionResource{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:            "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}: "CiliumClusterwideNetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}:      "NetworkPolicyList",
+		gvr: "GlobalNetworkPolicyList",
+	}, unstructuredPolicy(gvr, "deny-global", "", "GlobalNetworkPolicy"))
+	r := NewLocalDNSReconciler(fake.NewClientset(), dyn, "calico", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_Forbidden_FailsSafeImmediately(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setReady(nc, hiK8s)
+	k8sFake := fake.NewClientset()
+	k8sFake.PrependReactor("list", "networkpolicies", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, k8serrors.NewForbidden(schema.GroupResource{Group: "networking.k8s.io", Resource: "networkpolicies"}, "", errors.New("rbac"))
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	res, err := r.Reconcile(context.Background(), nc)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if res.RequeueAfter != 0 {
+		t.Fatalf("expected no requeue on Forbidden fail-safe")
+	}
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+	if nc.Status.LocalDNSResolveFailures != 0 {
+		t.Fatalf("expected no failure counter increment, got %d", nc.Status.LocalDNSResolveFailures)
+	}
+}
+
+func TestInvalidMode_ClearsState(t *testing.T) {
+	nc := newNC()
+	nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSMode("Bogus")}
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	if nc.Status.LocalDNSState != nil {
+		t.Fatalf("expected nil state for invalid mode, got %v", *nc.Status.LocalDNSState)
+	}
 }
