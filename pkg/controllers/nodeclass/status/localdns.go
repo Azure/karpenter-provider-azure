@@ -287,6 +287,36 @@ func (r *LocalDNSReconciler) shortCircuitPreferred(nc *v1beta1.AKSNodeClass, kv 
 // to commit. It returns a non-nil error only for transient kube-API failures;
 // definitive "no policies present" outcomes return (Enabled, nil) and
 // definitive "should be disabled" outcomes return (Disabled, nil).
+//
+// SYNC: LocalDNS Preferred-mode resolution lives in three places that must stay
+// aligned. If any gate changes, update the others in lockstep:
+//  1. RP validator (source of truth):
+//     resourceprovider/.../validation/localdns/localdnsvalidator.go
+//     resolvePreferredState — full gate set: toggle, K8s ver, SKU CPU/mem,
+//     IsLocalDNSSupported (Windows / Ubuntu2004 / AvailabilitySets / CustomImage),
+//     BYO CNI, NetworkPolicy, node-local-dns DaemonSet.
+//  2. Nodeprovisioner: nodeprovisioner/server/models/convertto.go
+//     resolvePreferredState — mirrors per-AP gates for the getNodeBootstrapping
+//     path. No kube client; cluster-wide checks deferred to the RP validator.
+//  3. This function — sets Status.LocalDNSState for instance-type filtering /
+//     cache key / node label.
+//
+// This function intentionally does NOT replicate every gate; the gaps are
+// handled in different places:
+//   - K8s ver: policy-locked (release-noted, immutable). Check 1 below is a
+//     local optimization to avoid noisy reconciles below the threshold.
+//   - SKU CPU/mem: handled at NodeClaim time — when LocalDNS is Enabled on the
+//     NodeClass, only supported VM SKUs/sizes are selected, so the reconciler
+//     does not need to gate on SKU here.
+//   - IsLocalDNSSupported: only IsUbuntu2004 is reachable in NAP; the other
+//     sub-checks (Windows, AvailabilitySets, CustomImage) are N/A in NAP.
+//     Covered by Check 3 via the ResolvesToUbuntu2004 helper.
+//   - BYO CNI / NetworkPolicy / node-local-dns DS: covered by Checks 2/4/5.
+//
+// Both karpenter provisioning paths land at the RP validator: getNodeBootstrapping
+// → nodeprovisioner → CRP → RP validator; AKS Machine API
+// (MachinesClient.BeginCreateOrUpdate) → validation/impl.go → localdns.NewValidator
+// → RP validator. Karpenter sends only Mode+overrides on both wires.
 func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass, k8sVersion string) (v1beta1.LocalDNSState, error) {
 	// Check 1: k8s version >= threshold.
 	parsed, err := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
