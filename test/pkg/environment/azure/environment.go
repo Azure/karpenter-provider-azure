@@ -161,17 +161,44 @@ func NewEnvironment(t *testing.T) *Environment {
 		},
 	}
 	byokRetryOptions := azureEnv.ClientOptionsForRBACPropagation()
+
+	// Check for RP_URL override (for standalone: ContainerService resources are virtual)
+	rpURL := os.Getenv("RP_URL")
+	rpClientOptions := clientOptions // same as default unless RP_URL is set
+	if rpURL != "" {
+		rpCloud := cloud.Configuration{
+			ActiveDirectoryAuthorityHost: cloudEnv.Cloud.ActiveDirectoryAuthorityHost,
+			Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+				cloud.ResourceManager: {
+					Endpoint: rpURL,
+					Audience: "https://management.azure.com/",
+				},
+			},
+		}
+		rpClientOptions = &arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Cloud:                           rpCloud,
+				InsecureAllowCredentialWithHTTP: true,
+			},
+		}
+		// CloudConfig uses RP proxy for any code that reads it for ContainerService calls
+		azureEnv.CloudConfig = rpCloud
+	}
+
+	// Real ARM clients (compute, network, keyvault, etc.) — these resources exist in real ARM
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, clientOptions))
-	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, clientOptions))
-	azureEnv.agentPoolClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, clientOptions))
-	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
 	subscriptionsClient := lo.Must(armsubscriptions.NewClient(cred, nil))
+
+	// ContainerService clients — virtual on standalone, routed through RP proxy
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, rpClientOptions))
+	azureEnv.agentPoolClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, rpClientOptions))
+	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, rpClientOptions))
 	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, realClock{}, azureEnv.SubscriptionID)
 	// If ProvisionMode wasn't set, default to scriptless, though note that this is
 	// actually defaulted dynamically based on the value of a toggle in AKS which means
