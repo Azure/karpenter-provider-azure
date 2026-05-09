@@ -18,6 +18,7 @@ package azure
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -179,6 +180,13 @@ func NewEnvironment(t *testing.T) *Environment {
 			ClientOptions: policy.ClientOptions{
 				Cloud:                           rpCloud,
 				InsecureAllowCredentialWithHTTP: true,
+				Transport: &http.Client{
+					Transport: &http.Transport{
+						TLSClientConfig: &tls.Config{
+							InsecureSkipVerify: true, //nolint:gosec // E2E only: proxy uses self-signed cert
+						},
+					},
+				},
 			},
 		}
 		// CloudConfig uses RP proxy for any code that reads it for ContainerService calls
