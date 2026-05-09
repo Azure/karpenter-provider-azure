@@ -38,6 +38,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 )
 
 const (
@@ -169,7 +170,7 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 
 	resolveCtx, cancel := context.WithTimeout(ctx, r.resolveTimeout)
 	defer cancel()
-	state, transientErr := r.resolvePreferred(resolveCtx, kv)
+	state, transientErr := r.resolvePreferred(resolveCtx, nc, kv)
 
 	if transientErr != nil {
 		// Forbidden is not transient — RBAC won't fix itself on retry. Fail-safe
@@ -286,7 +287,7 @@ func (r *LocalDNSReconciler) shortCircuitPreferred(nc *v1beta1.AKSNodeClass, kv 
 // to commit. It returns a non-nil error only for transient kube-API failures;
 // definitive "no policies present" outcomes return (Enabled, nil) and
 // definitive "should be disabled" outcomes return (Disabled, nil).
-func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, k8sVersion string) (v1beta1.LocalDNSState, error) {
+func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass, k8sVersion string) (v1beta1.LocalDNSState, error) {
 	// Check 1: k8s version >= threshold.
 	parsed, err := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
 	if err != nil {
@@ -302,7 +303,19 @@ func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, k8sVersion st
 		return v1beta1.LocalDNSStateDisabled, nil
 	}
 
-	// Check 3: cilium/calico network policy → must have no conflicting policies.
+	// Check 3: image-family must support LocalDNS. LocalDNS is unsupported on
+	// Ubuntu 20.04, which the resolver picks for the legacy/unset Ubuntu family
+	// when FIPS mode is enabled (see imagefamily.defaultUbuntu). Mirror the
+	// per-AP gate that nodeprovisioner runs server-side
+	// (resourceprovider/sharedlib/containerservice/localdns/localdnshelper.go
+	// IsLocalDNSSupported → IsUbuntu2004) so that the NodeClass status agrees
+	// with the bootstrap-time decision and we don't reserve LocalDNS SKU
+	// headroom / mislabel nodes for a NodeClass that will never get LocalDNS.
+	if imagefamily.ResolvesToUbuntu2004(nc.Spec.ImageFamily, nc.Spec.FIPSMode) {
+		return v1beta1.LocalDNSStateDisabled, nil
+	}
+
+	// Check 4: cilium/calico network policy → must have no conflicting policies.
 	if strings.EqualFold(r.networkPolicy, networkPolicyCilium) || strings.EqualFold(r.networkPolicy, networkPolicyCalico) {
 		conflict, err := r.hasConflictingNetworkPolicies(ctx, r.networkPolicy)
 		if err != nil {
@@ -313,7 +326,7 @@ func (r *LocalDNSReconciler) resolvePreferred(ctx context.Context, k8sVersion st
 		}
 	}
 
-	// Check 4: upstream node-local-dns DaemonSet must not be present.
+	// Check 5: upstream node-local-dns DaemonSet must not be present.
 	has, err := r.hasUpstreamNodeLocalDNS(ctx)
 	if err != nil {
 		return "", err
