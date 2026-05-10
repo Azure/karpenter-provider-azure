@@ -62,7 +62,8 @@ func NewController(
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
-	inClusterDynamicInterface dynamic.Interface,
+	workloadKubernetesInterface kubernetes.Interface,
+	workloadDynamicInterface dynamic.Interface,
 	subnetClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
@@ -77,7 +78,7 @@ func NewController(
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:            NewSubnetReconciler(subnetClient),
 		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-		localDNS:          NewLocalDNSReconciler(inClusterKubernetesInterface, inClusterDynamicInterface, networkPolicy, networkPlugin),
+		localDNS:          NewLocalDNSReconciler(workloadKubernetesInterface, workloadDynamicInterface, networkPolicy, networkPlugin),
 	}
 }
 

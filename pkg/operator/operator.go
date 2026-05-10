@@ -85,9 +85,13 @@ type Operator struct {
 	// but may be different if Karpenter is running in a different cluster than the one it manages.
 	InClusterKubernetesInterface kubernetes.Interface
 	// InClusterDynamicInterface is a dynamic client over the same in-cluster config as
-	// InClusterKubernetesInterface. Used by the LocalDNS status reconciler to inspect
-	// Cilium / Calico CRD-based network policies.
+	// InClusterKubernetesInterface.
 	InClusterDynamicInterface dynamic.Interface
+	// DynamicInterface is a dynamic client against the workload cluster apiserver
+	// (the cluster Karpenter is managing). Pair with operator.KubernetesInterface.
+	// Used by the LocalDNS status reconciler to inspect Cilium / Calico CRD-based
+	// network policies and the upstream node-local-dns DaemonSet on the workload cluster.
+	DynamicInterface dynamic.Interface
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
@@ -147,6 +151,10 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 	inClusterDynamicClient := dynamic.NewForConfigOrDie(inClusterConfig)
+
+	// Dynamic client against the workload cluster apiserver (the cluster Karpenter manages).
+	// This is the same apiserver as operator.KubernetesInterface and operator.GetClient().
+	workloadDynamicClient := dynamic.NewForConfigOrDie(operator.GetConfig())
 
 	if options.FromContext(ctx).DNSServiceIP == "" {
 		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
@@ -267,6 +275,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
 		InClusterDynamicInterface:    inClusterDynamicClient,
+		DynamicInterface:             workloadDynamicClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,
