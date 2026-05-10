@@ -768,9 +768,22 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("Requirements", func() {
+		knownValueRequirementLabels := sets.New(
+			karpv1.NodePoolLabelKey,
+			karpv1.CapacityTypeLabelKey,
+			v1beta1.LabelSKUAcceleratedNetworking,
+			v1beta1.LabelSKUStoragePremiumCapable,
+			v1beta1.LabelSKUGPUManufacturer,
+			v1beta1.LabelPlacementScope,
+			v1beta1.AKSLabelMode,
+			v1beta1.AKSLabelScaleSetPriority,
+			v1beta1.AKSLabelPriority,
+			v1beta1.AKSLabelFIPSEnabled,
+		)
+
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey, karpv1.CapacityTypeLabelKey)) {
+			for label := range karpv1.WellKnownLabels.Difference(knownValueRequirementLabels) {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
 				}
@@ -780,18 +793,21 @@ var _ = Describe("CEL/Validation", func() {
 				nodePool = oldNodePool.DeepCopy()
 			}
 		})
-		It("should fail validation with only invalid capacity types", func() {
+		DescribeTable("should fail validation with only unsupported capacity types", func(capacityType string) {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      karpv1.CapacityTypeLabelKey,
 				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{"xspot"}, // Invalid value,
+				Values:   []string{capacityType},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
-		})
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
 		It("should pass validation with valid capacity types", func() {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -804,18 +820,73 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		})
-		It("should fail open if invalid and valid capacity types are present", func() {
+		DescribeTable("should fail open if unsupported and valid capacity types are present", func(capacityType string) {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      karpv1.CapacityTypeLabelKey,
 				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{karpv1.CapacityTypeOnDemand, "xspot"}, // Valid and invalid value,
+				Values:   []string{karpv1.CapacityTypeOnDemand, capacityType},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
-		})
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
+		DescribeTable("should validate Azure known requirement values", func(key, validValue, invalidValue string) {
+			oldNodePool := nodePool.DeepCopy()
+
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue, invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{strings.ToUpper(validValue)},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		},
+			Entry("SKU accelerated networking", v1beta1.LabelSKUAcceleratedNetworking, "true", "maybe"),
+			Entry("SKU premium storage", v1beta1.LabelSKUStoragePremiumCapable, "true", "maybe"),
+			Entry("SKU GPU manufacturer", v1beta1.LabelSKUGPUManufacturer, v1beta1.ManufacturerNvidia, "intel"),
+			Entry("placement scope", v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal, "global"),
+			Entry("AKS mode", v1beta1.AKSLabelMode, v1beta1.ModeSystem, "control-plane"),
+			Entry("AKS scale set priority", v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular, "low"),
+			Entry("AKS priority", v1beta1.AKSLabelPriority, v1beta1.PriorityRegular, "low"),
+			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
+		)
 		It("should not allow internal labels", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for label := range v1beta1.RestrictedLabels {
