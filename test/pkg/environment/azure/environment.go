@@ -176,15 +176,26 @@ func NewEnvironment(t *testing.T) *Environment {
 				},
 			},
 		}
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // E2E only: RP ingress uses custom cert
+		}
+		// Load client cert for mutual TLS with RP ingress (if provided)
+		if certPath := os.Getenv("RP_CLIENT_CERT_PATH"); certPath != "" {
+			certData, err := os.ReadFile(certPath)
+			if err == nil {
+				cert, err := tls.X509KeyPair(certData, certData) // PEM contains both cert and key
+				if err == nil {
+					tlsConfig.Certificates = []tls.Certificate{cert}
+				}
+			}
+		}
 		rpClientOptions = &arm.ClientOptions{
 			ClientOptions: policy.ClientOptions{
 				Cloud:                           rpCloud,
 				InsecureAllowCredentialWithHTTP: true,
 				Transport: &http.Client{
 					Transport: &http.Transport{
-						TLSClientConfig: &tls.Config{
-							InsecureSkipVerify: true, //nolint:gosec // E2E only: proxy uses self-signed cert
-						},
+						TLSClientConfig: tlsConfig,
 					},
 				},
 			},
