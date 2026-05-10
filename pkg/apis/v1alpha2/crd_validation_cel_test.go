@@ -778,6 +778,7 @@ var _ = Describe("CEL/Validation", func() {
 			v1beta1.AKSLabelMode,
 			v1beta1.AKSLabelScaleSetPriority,
 			v1beta1.AKSLabelPriority,
+			v1beta1.AKSLabelOSSKU,
 			v1beta1.AKSLabelFIPSEnabled,
 		)
 
@@ -885,6 +886,8 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("AKS mode", v1beta1.AKSLabelMode, v1beta1.ModeSystem, "control-plane"),
 			Entry("AKS scale set priority", v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular, "low"),
 			Entry("AKS priority", v1beta1.AKSLabelPriority, v1beta1.PriorityRegular, "low"),
+			Entry("AKS OS SKU Ubuntu", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu, v1beta1.Ubuntu2204ImageFamily),
+			Entry("AKS OS SKU AzureLinux", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureLinux, "AzureLinux3"),
 			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
 		)
 	})
