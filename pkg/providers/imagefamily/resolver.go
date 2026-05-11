@@ -171,7 +171,7 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
-			nodeClass.Spec.LocalDNS,
+			resolvedLocalDNSForWire(nodeClass),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
 		),
@@ -283,4 +283,27 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 		}
 	}
 	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
+}
+
+// resolvedLocalDNSForWire rewrites Spec.LocalDNS.Mode to align with the resolved
+// Status.LocalDNSState before sending to nodeprovisioner. This prevents the
+// downstream resolver (which only checks K8s version) from independently flipping
+// Preferred -> Enabled when Karpenter's resolver has decided Disabled (e.g. due to
+// NetworkPolicy/DaemonSet conflicts). When Status.LocalDNSState is unset we fall
+// back to the raw spec so we don't change behavior outside the resolved path.
+func resolvedLocalDNSForWire(nodeClass *v1beta1.AKSNodeClass) *v1beta1.LocalDNS {
+	if nodeClass.Spec.LocalDNS == nil {
+		return nil
+	}
+	if nodeClass.Status.LocalDNSState == nil {
+		return nodeClass.Spec.LocalDNS
+	}
+	out := nodeClass.Spec.LocalDNS.DeepCopy()
+	switch *nodeClass.Status.LocalDNSState {
+	case v1beta1.LocalDNSStateEnabled:
+		out.Mode = v1beta1.LocalDNSModeRequired
+	case v1beta1.LocalDNSStateDisabled:
+		out.Mode = v1beta1.LocalDNSModeDisabled
+	}
+	return out
 }
