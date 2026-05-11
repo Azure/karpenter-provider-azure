@@ -198,7 +198,12 @@ func NewEnvironment(t *testing.T) *Environment {
 						TLSClientConfig: tlsConfig,
 					},
 				},
+				PerCallPolicies: []policy.Policy{},
 			},
+		}
+		// Inject Host header for RP ingress routing (nginx routes based on Host header)
+		if rpHost := os.Getenv("RP_HOST"); rpHost != "" {
+			rpClientOptions.PerCallPolicies = append(rpClientOptions.PerCallPolicies, &injectHostPolicy{host: rpHost})
 		}
 		// CloudConfig uses RP proxy for any code that reads it for ContainerService calls
 		azureEnv.CloudConfig = rpCloud
@@ -298,4 +303,15 @@ func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()
 	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
+}
+
+// injectHostPolicy sets the Host header on outgoing requests.
+// Used to route requests through the RP ingress which uses Host-based routing.
+type injectHostPolicy struct {
+	host string
+}
+
+func (p *injectHostPolicy) Do(req *policy.Request) (*http.Response, error) {
+	req.Raw().Host = p.host
+	return req.Next()
 }
