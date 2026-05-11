@@ -22,8 +22,11 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -121,6 +124,47 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 				// When TimeCreated is available, should use the exact time from VM
 				g.Expect(nodeClaim.CreationTimestamp.Time).To(Equal(*tt.expectExactTime))
 			}
+		})
+	}
+}
+
+func TestVmInstanceToNodeClaim_PlacementScope(t *testing.T) {
+	tests := []struct {
+		name                   string
+		zones                  []*string
+		expectedZone           string
+		expectedPlacementScope string
+	}{
+		{
+			name:                   "zonal VM",
+			zones:                  []*string{lo.ToPtr("1")},
+			expectedZone:           "eastus-1",
+			expectedPlacementScope: v1beta1.PlacementScopeZonal,
+		},
+		{
+			name:                   "regional VM",
+			zones:                  nil,
+			expectedZone:           zones.Regional,
+			expectedPlacementScope: v1beta1.PlacementScopeRegional,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cp := &CloudProvider{}
+			vm := &armcompute.VirtualMachine{
+				Name:     lo.ToPtr("aks-test-vm"),
+				ID:       lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
+				Location: lo.ToPtr("eastus"),
+				Zones:    tt.zones,
+			}
+
+			nodeClaim, err := cp.vmInstanceToNodeClaim(context.Background(), vm, nil)
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(nodeClaim.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, tt.expectedZone))
+			g.Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, tt.expectedPlacementScope))
 		})
 	}
 }

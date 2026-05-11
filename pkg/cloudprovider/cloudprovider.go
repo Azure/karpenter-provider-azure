@@ -164,14 +164,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
-	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
-		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
-			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
-			if err != nil {
-				return nil, fmt.Errorf("creating instance, %w", err)
-			}
-		}
-	}
 
 	// Choose provider based on provision mode
 	if options.FromContext(ctx).IsAKSMachineAPIMode() {
@@ -573,6 +565,14 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 	if err != nil {
 		return nil, fmt.Errorf("getting instance types, %w", err)
 	}
+	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
+			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
+			if err != nil {
+				return nil, fmt.Errorf("applying instance type overlays, %w", err)
+			}
+		}
+	}
 
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
@@ -639,6 +639,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 		log.FromContext(ctx).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
+		labels[v1beta1.LabelPlacementScope] = zones.PlacementScopeForZone(zone)
 	}
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityTypeFromVM(vm)

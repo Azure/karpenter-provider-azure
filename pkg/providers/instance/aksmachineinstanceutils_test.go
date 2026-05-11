@@ -18,13 +18,8 @@ package instance
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -44,18 +39,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-// createAzureResponseError creates a proper Azure SDK error with the given error code and message
-func createAzureResponseError(errorCode, errorMessage string, statusCode int) error {
-	errorBody := fmt.Sprintf(`{"error": {"code": "%s", "message": "%s"}}`, errorCode, errorMessage)
-	return &azcore.ResponseError{
-		ErrorCode:  errorCode,
-		StatusCode: statusCode,
-		RawResponse: &http.Response{
-			Body: io.NopCloser(strings.NewReader(errorBody)),
-		},
-	}
-}
 
 var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
@@ -119,7 +102,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					},
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
-						NodePoolTagKey: lo.ToPtr("test-nodepool"),
+						launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
 						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 					},
 				},
@@ -140,6 +123,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
 			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
 			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
@@ -160,6 +144,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
 			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
 			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
@@ -637,67 +622,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(zone).To(Equal(tc.expected))
 			}
-		})
-	})
-
-	Context("IsAKSMachineOrMachinesPoolNotFound", func() {
-		It("should return false for nil error", func() {
-			result := IsAKSMachineOrMachinesPoolNotFound(nil)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return true for HTTP 404 status code", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "lol",
-				StatusCode:  404,
-				RawResponse: nil,
-			}
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeTrue())
-		})
-
-		It("should return true for InvalidParameter error with 'Cannot find any valid machines' message", func() {
-			// Create the exact error message from your example
-			errorMessage := "Cannot find any valid machines to delete. Please check your input machine names. The valid machines to delete in agent pool 'testmpool' are: testmachine."
-			azureError := createAzureResponseError("InvalidParameter", errorMessage, 400)
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeTrue())
-		})
-
-		It("should return false for HTTP 400 with InvalidParameter but different message", func() {
-			// Create an InvalidParameter error with a different message that shouldn't match
-			differentMessage := "InvalidParameter: Some other validation error"
-			azureError := createAzureResponseError("InvalidParameter", differentMessage, 400)
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return false for other HTTP status codes", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "Unauthorized",
-				StatusCode:  401,
-				RawResponse: nil,
-			}
-
-			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-
-			azureError = &azcore.ResponseError{
-				ErrorCode:   "InternalOperationError",
-				StatusCode:  500,
-				RawResponse: nil,
-			}
-
-			result = IsAKSMachineOrMachinesPoolNotFound(azureError)
-			Expect(result).To(BeFalse())
-		})
-
-		It("should return false for non-Azure SDK errors", func() {
-			result := IsAKSMachineOrMachinesPoolNotFound(fmt.Errorf("some generic error"))
-			Expect(result).To(BeFalse())
 		})
 	})
 

@@ -42,7 +42,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -90,6 +90,7 @@ type Environment struct {
 	AKSDataStorage *fake.AKSDataStorage
 
 	// Cache
+	AKSMachineCache           *machinecache.MachineCache
 	KubernetesVersionCache    *cache.Cache
 	NodeImagesCache           *cache.Cache
 	InstanceTypeCache         *cache.Cache
@@ -260,6 +261,16 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	batchCreationEnabled := testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 
+	aksMachineCache := machinecache.New(
+		ctx,
+		azClient.AKSMachinesClient(),
+		testOptions.NodeResourceGroup,
+		clusterName,
+		testOptions.AKSMachinesPoolName,
+		machinecache.WithTTL(1*time.Second),
+		machinecache.WithPollInterval(1*time.Millisecond),
+	)
+
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,
 		instanceTypesProvider,
@@ -272,12 +283,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.AKSMachinesPoolName,
 		region,
 		batchCreationEnabled,
+		aksMachineCache,
 	)
-
-	// Use instant poller for batch mode tests to minimize async polling time.
-	if batchCreationEnabled {
-		aksMachineInstanceProvider.SetFallbackAKSMachinePollerOptions(aksmachinepoller.InstantOptions())
-	}
 
 	store := nodeoverlay.NewInstanceTypeStore()
 
@@ -306,6 +313,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 		AKSDataStorage: aksDataStorage,
 
+		AKSMachineCache:           aksMachineCache,
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
 		InstanceTypeCache:         instanceTypeCache,
@@ -357,6 +365,7 @@ func (env *Environment) Reset() {
 	env.NodeImagesCache.Flush()
 	env.InstanceTypeCache.Flush()
 	env.UnavailableOfferingsCache.Flush()
+	env.AKSMachineCache.InvalidateAll()
 	env.LoadBalancerCache.Flush()
 }
 

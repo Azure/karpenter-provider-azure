@@ -104,7 +104,7 @@ func handleSKUNotAvailableForSubscriptionError(
 	errorCode,
 	errorMessage string,
 ) error {
-	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, SKUNotAvailableReason, SKUNotAvailableOnDemandTTL)
+	markAllPlacementsUnavailableForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, SKUNotAvailableReason, SKUNotAvailableOnDemandTTL)
 
 	return fmt.Errorf(
 		"VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector",

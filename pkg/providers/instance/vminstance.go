@@ -742,17 +742,19 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
-	instanceOfferings := p.allocationStrategyProvider.FilterInstanceOfferings(
+	selection := p.allocationStrategyProvider.Allocate(
 		ctx,
-		allocationstrategy.NewInstanceOfferings(instanceTypes),
+		instanceTypes,
 		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
-
-	instanceType, capacityType, zone := offerings.PickSkuSizePriorityAndZone(ctx, instanceOfferings)
-	if instanceType == nil {
+	if selection == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
-	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType)
+	instanceType := selection.InstanceType
+	capacityType := selection.CapacityType()
+	zone := selection.Zone()
+	placementScope := selection.PlacementScope()
+	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope)
 	if err != nil {
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
@@ -911,6 +913,7 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
+	placementScope string,
 ) (*launchtemplate.Template, error) {
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
@@ -923,7 +926,10 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	additionalLabels := lo.Assign(
 		claimLabels,
 		labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
-		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
+		map[string]string{
+			karpv1.CapacityTypeLabelKey: capacityType,
+			v1beta1.LabelPlacementScope: placementScope,
+		},
 	)
 
 	launchTemplate, err := p.launchTemplateProvider.GetTemplate(ctx, nodeClass, nodeClaim, instanceType, additionalLabels)

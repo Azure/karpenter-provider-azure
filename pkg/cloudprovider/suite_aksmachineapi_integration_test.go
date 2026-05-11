@@ -137,6 +137,20 @@ func runSharedAKSMachineAPITests() {
 		Expect(nodeClaim).To(BeNil())
 	})
 
+	runNodeOverlayCapacityTests(nodeOverlayCapacityTestOptions{
+		validateNodeClaim: func(nodeClaim *karpv1.NodeClaim) {
+			validateAKSMachineNodeClaim(nodeClaim, nodePool)
+		},
+		resetCreateCalls: func() {
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+		},
+		expectCreateCalls: func() {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
+	})
+
 	// XPMT: TODO(comtalyst): deep inspection test on simulating all of these?
 	Context("Unexpected API Failures", func() {
 		It("should handle AKS machine create failures - unrecognized error during sync/initial", func() {
@@ -267,6 +281,12 @@ func runSharedAKSMachineAPITests() {
 		})
 
 		It("should handle AKS machine list failures - unrecognized error", func() {
+			if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				// Under batch, List must work for PollUntilDone (provisioning) to complete.
+				// Testing "List fails" requires a batch-specific test that expects provisioning failure,
+				// not this test which assumes provisioning succeeds then List fails afterward.
+				Skip("Batch provisioning depends on List to work")
+			}
 			// Set up error to occur during the NextPage call
 			azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.Error.Set(fake.AKSMachineAPIErrorAny)
 
@@ -379,11 +399,16 @@ func runSharedAKSMachineAPITests() {
 
 			// Verify the AKS machine was reused successfully
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+			// With cache enabled, the GET is served from cache rather than hitting the API directly.
+			if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				// With cache enabled, the pre-create GET is served from cache — no API call recorded
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(0))
+			} else {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+			}
 
-			// Since no new machine was created, get the machine that was retrieved via Get
-			getInput := azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Pop()
-			aksMachineName := getInput.AKSMachineName
+			// Since no new machine was created, verify the machine in the fake store matches original config.
+			aksMachineName := firstNodeClaim.Name
 
 			// Get the actual machine from the fake store
 			machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, aksMachineName)
@@ -445,6 +470,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Simulate Get being faulty (or the previous machine comes into exist between get and create)
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(fake.AKSMachineAPIErrorFromAKSMachineNotFound)
+			azureEnv.AKSMachineCache.InvalidateAll() // Ensure the cache doesn't serve stale data
 
 			// Call cloudProvider.Create directly with the unconflicted nodeclaim to trigger empty create
 			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
@@ -524,6 +550,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Simulate Get being faulty (or the previous machine comes into exist between get and create)
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(fake.AKSMachineAPIErrorFromAKSMachineNotFound)
+			azureEnv.AKSMachineCache.InvalidateAll() // Ensure the cache doesn't serve stale data
 
 			// Call cloudProvider.Create directly with the conflicted nodeclaim to trigger the race condition
 			// This targets the same machine name but should fail due to configuration conflict and trigger cleanup
@@ -565,10 +592,10 @@ func runSharedAKSMachineAPITests() {
 }
 
 var _ = Describe("CloudProvider", func() {
-	Context("ProvisionMode = AKSMachineAPI, ManageExistingAKSMachines = false", func() {
+	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = false", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
 			})
@@ -604,10 +631,10 @@ var _ = Describe("CloudProvider", func() {
 		runSharedAKSMachineAPITests()
 	})
 
-	Context("ProvisionMode = AKSMachineAPI, ManageExistingAKSMachines = true", func() {
+	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = true", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(true), // should not have any effect
 			})
@@ -643,7 +670,7 @@ var _ = Describe("CloudProvider", func() {
 		runSharedAKSMachineAPITests()
 	})
 
-	Context("Mixed Environment - Migration from ProvisionMode = AKSMachineAPI to VM mode", func() {
+	Context("Mixed Environment - Migration from ProvisionMode = AKSMachineAPIHeaderBatch to VM mode", func() {
 		Context("ManageExistingAKSMachines = false", func() {
 			var existingAKSMachine *armcontainerservice.Machine
 
@@ -990,12 +1017,12 @@ var _ = Describe("CloudProvider", func() {
 		})
 	})
 
-	Context("Mixed Environment - Migration to ProvisionMode = AKSMachineAPI", func() {
+	Context("Mixed Environment - Migration to ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		var existingVM *armcompute.VirtualMachine
 
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:        lo.ToPtr(true),
 			})
 
