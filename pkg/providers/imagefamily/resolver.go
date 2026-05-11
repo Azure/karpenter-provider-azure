@@ -319,6 +319,16 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 // the LocalDNSProfile swagger so resolved State travels alongside (rather
 // than overloading) user-intent Mode.
 //
+// Scope: this only affects the getNodeBootstrapping / custom-scripts
+// (VMSS) path. The AKS Machine API path
+// (pkg/providers/instance/aksmachineinstancehelpers.go::configureLocalDNSProfile)
+// is not affected — and does not need to be. On that path the RP
+// validator (resourceprovider/.../validation/localdns) runs the full
+// kube-aware resolution (NetworkPolicies, node-local-dns DaemonSet), so
+// Karpenter and the server agree without help. The discrepancy this hack
+// works around disappears entirely once NAP fully migrates to the AKS
+// Machine API path and the getNodeBootstrapping path is retired.
+//
 // Back-compat: when Status.LocalDNSState is nil (resolver hasn't observed
 // the NodeClass yet) we pass the raw spec through unchanged. The aggregate
 // Ready condition includes LocalDNSReady, so Karpenter core won't schedule
