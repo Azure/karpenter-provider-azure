@@ -179,6 +179,11 @@ func NewEnvironment(t *testing.T) *Environment {
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: true, //nolint:gosec // E2E only: RP ingress uses custom cert
 		}
+		// Set TLS ServerName to match the Host header for SNI consistency.
+		// Without this, nginx returns 400 Bad Request due to SNI/Host mismatch.
+		if rpHost := os.Getenv("RP_HOST"); rpHost != "" {
+			tlsConfig.ServerName = rpHost
+		}
 		// Load client cert for mutual TLS with RP ingress (if provided)
 		if certPath := os.Getenv("RP_CLIENT_CERT_PATH"); certPath != "" {
 			certData, err := os.ReadFile(certPath)
