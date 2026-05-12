@@ -783,6 +783,12 @@ var _ = Describe("CEL/Validation", func() {
 			v1beta1.AKSLabelOSSKU,
 			v1beta1.AKSLabelFIPSEnabled,
 		)
+		expectKnownValueValidationError := func(err error, key string) {
+			Expect(err).To(MatchError(And(
+				ContainSubstring("no valid values found"),
+				ContainSubstring(key),
+			)))
+		}
 
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
@@ -804,7 +810,7 @@ var _ = Describe("CEL/Validation", func() {
 				Values:   []string{capacityType},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), karpv1.CapacityTypeLabelKey)
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		},
@@ -848,7 +854,7 @@ var _ = Describe("CEL/Validation", func() {
 				Values:   []string{invalidValue},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 
 			By("accepting a requirement with only valid values")
@@ -882,7 +888,7 @@ var _ = Describe("CEL/Validation", func() {
 				Values:   []string{upperValue},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		},
