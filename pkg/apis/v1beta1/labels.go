@@ -32,6 +32,17 @@ func init() {
 	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
 	// Karpenter core expects that WellKnownLabels are mapped to requirements.
 	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Union(AzureWellKnownLabels)
+	// Register exact, stable Azure-supported value domains for Karpenter core runtime requirement validation.
+	karpv1.WellKnownValuesForRequirements[karpv1.CapacityTypeLabelKey] = sets.New(karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot)
+	karpv1.WellKnownValuesForRequirements[LabelSKUAcceleratedNetworking] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelSKUStoragePremiumCapable] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelSKUGPUManufacturer] = sets.New(ManufacturerNvidia, ManufacturerAMD)
+	karpv1.WellKnownValuesForRequirements[LabelPlacementScope] = sets.New(PlacementScopeZonal, PlacementScopeRegional)
+	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
+	karpv1.WellKnownValuesForRequirements[AKSLabelScaleSetPriority] = sets.New(ScaleSetPriorityRegular, ScaleSetPrioritySpot)
+	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
+	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux)
+	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
 }
 
 var (
@@ -162,6 +173,11 @@ const (
 )
 
 const (
+	OSSKUUbuntu     = "Ubuntu"
+	OSSKUAzureLinux = "AzureLinux"
+)
+
+const (
 	ScaleSetPriorityRegular = "regular"
 	ScaleSetPrioritySpot    = "spot"
 )
@@ -180,10 +196,10 @@ var UbuntuFamilies = sets.New(
 // imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
 // These values match what AKS writes for kubernetes.azure.com/os-sku.
 var imageFamilyToOSSKU = map[string]string{
-	UbuntuImageFamily:     "Ubuntu",
-	Ubuntu2204ImageFamily: "Ubuntu",
-	Ubuntu2404ImageFamily: "Ubuntu",
-	AzureLinuxImageFamily: "AzureLinux",
+	UbuntuImageFamily:     OSSKUUbuntu,
+	Ubuntu2204ImageFamily: OSSKUUbuntu,
+	Ubuntu2404ImageFamily: OSSKUUbuntu,
+	AzureLinuxImageFamily: OSSKUAzureLinux,
 }
 
 // GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
