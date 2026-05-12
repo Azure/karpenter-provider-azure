@@ -768,6 +768,8 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("Requirements", func() {
+		// Labels with registered WellKnownValuesForRequirements reject arbitrary In values.
+		// Exclude them from the generic well-known label test below, which uses "test" as a placeholder value.
 		knownValueRequirementLabels := sets.New(
 			karpv1.NodePoolLabelKey,
 			karpv1.CapacityTypeLabelKey,
@@ -839,6 +841,7 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate Azure known requirement values", func(key, validValue, invalidValue string) {
 			oldNodePool := nodePool.DeepCopy()
 
+			By("rejecting a requirement with only invalid values")
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      key,
 				Operator: corev1.NodeSelectorOpIn,
@@ -848,6 +851,7 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 
+			By("accepting a requirement with only valid values")
 			nodePool = oldNodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      key,
@@ -858,6 +862,7 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 
+			By("failing open when valid and invalid values are both present")
 			nodePool = oldNodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      key,
@@ -868,11 +873,13 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 
+			By("rejecting values that differ only by case")
+			upperValue := strings.ToUpper(validValue)
 			nodePool = oldNodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      key,
 				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{strings.ToUpper(validValue)},
+				Values:   []string{upperValue},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
