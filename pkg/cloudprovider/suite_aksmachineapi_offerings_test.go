@@ -401,11 +401,48 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
-				ExpectScheduled(ctx, env.Client, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
 
 				Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				aksMachine := azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
 				Expect(aksMachine.Zones).To(BeEmpty())
+			})
+
+			It("should support regional placement scope in non-zonal regions", func() {
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1beta1.LabelPlacementScope,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{v1beta1.PlacementScopeRegional},
+				})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
+
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
+
+				Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Zones).To(BeEmpty())
+			})
+
+			It("should not provision in non-zonal regions when placement scope requires zonal", func() {
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1beta1.LabelPlacementScope,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{v1beta1.PlacementScopeZonal},
+				})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
+
+				ExpectNotScheduled(ctx, env.Client, pod)
+				Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 			})
 
 			// Ported from VM test: "should support provisioning non-zonal instance types in zonal regions"
