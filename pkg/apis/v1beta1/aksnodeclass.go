@@ -789,6 +789,43 @@ func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNS
 	}
 }
 
+// ResolvedLocalDNSForWire returns the LocalDNS payload to send on either wire
+// path (getNodeBootstrapping/VMSS or AKS Machine API), with Spec.LocalDNS.Mode
+// rewritten to the terminal value implied by the sticky-Enabled annotation
+// AnnotationLocalDNSState.
+//
+// Karpenter is the authoritative resolver for Mode=Preferred (kube-aware: K8s
+// version, image family, BYO CNI, K8s/Cilium/Calico NetworkPolicies, upstream
+// node-local-dns DaemonSet) and persists Enabled stickily on the NodeClass.
+// Both downstream resolvers — nodeprovisioner.convertLocalDNSProfile and the
+// RP-side LocalDNS validator on the AKS Machine API path — are version-only,
+// cannot see NetworkPolicies/DaemonSets, and would re-resolve per machine,
+// producing a non-deterministic fleet and ignoring sticky-Enabled. Rewriting
+// Mode to Required/Disabled makes both short-circuit on the terminal value
+// and inherit Karpenter's decision.
+//
+// Back-compat: if the annotation is unset (resolver hasn't observed this
+// NodeClass yet) the raw spec is returned unchanged. Callers drive resolution
+// via IsLocalDNSEnabled before the wire send, so by provisioning time the
+// annotation is set for Preferred-mode NodeClasses.
+func (in *AKSNodeClass) ResolvedLocalDNSForWire() *LocalDNS {
+	if in.Spec.LocalDNS == nil {
+		return nil
+	}
+	annotationVal, hasAnnotation := in.Annotations[AnnotationLocalDNSState]
+	if !hasAnnotation {
+		return in.Spec.LocalDNS
+	}
+	out := in.Spec.LocalDNS.DeepCopy()
+	switch LocalDNSState(annotationVal) {
+	case LocalDNSStateEnabled:
+		out.Mode = LocalDNSModeRequired
+	case LocalDNSStateDisabled:
+		out.Mode = LocalDNSModeDisabled
+	}
+	return out
+}
+
 // GetGPUMode returns the effective GPU mode.
 // Defaults to Driver if gpu or gpu.mode is nil, ensuring
 // backward compatibility (existing users always got drivers installed).

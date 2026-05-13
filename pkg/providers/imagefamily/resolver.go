@@ -171,7 +171,7 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
-			resolvedLocalDNSForWire(nodeClass),
+			nodeClass.ResolvedLocalDNSForWire(),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
 		),
@@ -285,73 +285,7 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
 }
 
-// resolvedLocalDNSForWire produces the LocalDNS payload sent to nodeprovisioner,
-// rewriting Spec.LocalDNS.Mode to reflect Karpenter's already-resolved
-// LocalDNS decision (recorded in the AnnotationLocalDNSState annotation).
-//
-// Why this is needed:
-//
-// Two resolvers exist on the NAP getNodeBootstrapping path:
-//  1. This controller (kube-aware): checks K8s version, image family, BYO CNI,
-//     NetworkPolicies (K8s + Cilium + CCNP), and the upstream
-//     kube-system/node-local-dns DaemonSet. On Enabled, persists
-//     AnnotationLocalDNSState=Enabled (sticky).
-//  2. nodeprovisioner's convertLocalDNSProfile — version-only: it has no
-//     kube client, so for Mode=Preferred it resolves State purely from the
-//     orchestrator version. NetworkPolicies and the DaemonSet are invisible
-//     to it.
-//
-// If we sent Mode=Preferred over the wire, nodeprovisioner would re-resolve
-// independently and could land on Enabled while we've already decided
-// Disabled (e.g. because the cluster has a conflicting NetworkPolicy). The
-// VM would then boot with the localdns systemd unit + corefile baked into
-// CSE, while the node label kubernetes.azure.com/localdns-state=disabled
-// would lie about runtime state. Pods on that node would bypass the
-// user's NetworkPolicy via the node-local listener at 169.254.10.10.
-//
-// The fix: rewrite Mode to the terminal value matching our resolution.
-// nodeprovisioner short-circuits on Required (→Enabled) and Disabled
-// (→Disabled) without invoking its own Preferred resolver, so it inherits
-// our decision instead of recomputing.
-//
-// Scope: this only affects the getNodeBootstrapping / custom-scripts
-// (VMSS) path. The AKS Machine API path
-// (pkg/providers/instance/aksmachineinstancehelpers.go::configureLocalDNSProfile)
-// is not affected — and does not need to be. On that path the RP
-// validator (resourceprovider/.../validation/localdns) runs the full
-// kube-aware resolution (NetworkPolicies, node-local-dns DaemonSet), so
-// Karpenter and the server agree without help. The discrepancy this hack
-// works around disappears entirely once NAP fully migrates to the AKS
-// Machine API path and the getNodeBootstrapping path is retired.
-//
-// Back-compat: when the annotation is unset (resolver hasn't observed
-// the NodeClass yet) we pass the raw spec through unchanged. Callers
-// (labels, instancetype) drive resolution via IsLocalDNSEnabled before
-// reaching this codepath; by provisioning time the annotation is typically
-// set for Preferred-mode NodeClasses.
-func resolvedLocalDNSForWire(nodeClass *v1beta1.AKSNodeClass) *v1beta1.LocalDNS {
-	if nodeClass.Spec.LocalDNS == nil {
-		// LocalDNS not configured by the user — nothing to send.
-		return nil
-	}
-	annotationVal, hasAnnotation := nodeClass.Annotations[v1beta1.AnnotationLocalDNSState]
-	if !hasAnnotation {
-		// Not resolved yet. Fall back to raw spec.
-		return nodeClass.Spec.LocalDNS
-	}
-	// DeepCopy: don't mutate the live Spec cached in the informer.
-	out := nodeClass.Spec.LocalDNS.DeepCopy()
-	switch v1beta1.LocalDNSState(annotationVal) {
-	case v1beta1.LocalDNSStateEnabled:
-		// Force Required so nodeprovisioner unconditionally enables localdns
-		// regardless of its own version check (which we've already done, plus
-		// additional gates it can't see).
-		out.Mode = v1beta1.LocalDNSModeRequired
-	case v1beta1.LocalDNSStateDisabled:
-		// Force Disabled so nodeprovisioner doesn't bake the localdns
-		// systemd unit + corefile into CSE, even on K8s ≥ 1.36 where its
-		// version-only resolver would otherwise default to enabled.
-		out.Mode = v1beta1.LocalDNSModeDisabled
-	}
-	return out
-}
+// LocalDNS wire-Mode rewrite moved to (*AKSNodeClass).ResolvedLocalDNSForWire
+// in pkg/apis/v1beta1 — shared by both the getNodeBootstrapping/VMSS path
+// (here) and the AKS Machine API path
+// (pkg/providers/instance/aksmachineinstancehelpers.go::configureLocalDNSProfile).
