@@ -98,37 +98,40 @@ func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interfac
 //  5. No upstream kube-system/node-local-dns DaemonSet
 //
 // Transient kube-API errors (including RBAC Forbidden) fail-safe to Disabled.
-// On Enabled, the resolver patches AnnotationLocalDNSState=Enabled on the
-// NodeClass for sticky-Enabled semantics. On Disabled, no annotation is
-// written, so a future evaluation can re-run the gates.
+// The resolved state is always persisted to AnnotationLocalDNSState — Enabled
+// for sticky-Enabled semantics, Disabled so the wire-payload rewrite
+// (AKSNodeClass.ResolvedLocalDNSForWire) sees a concrete decision and doesn't
+// let nodeprovisioner / the RP-side validator re-resolve to a different
+// answer per machine. Disabled is NOT sticky at the read side: IsLocalDNSEnabled
+// only short-circuits on the Enabled annotation, so a Disabled outcome is
+// re-evaluated on the next call and the annotation gets overwritten if gates
+// pass.
 func (r *Resolver) ResolvePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
-	if !r.passesStaticGates(nc) {
-		return v1beta1.LocalDNSStateDisabled
+	state := v1beta1.LocalDNSStateEnabled
+	if !r.passesStaticGates(nc) || !r.passesClusterGates(ctx) {
+		state = v1beta1.LocalDNSStateDisabled
 	}
-	if !r.passesClusterGates(ctx) {
-		return v1beta1.LocalDNSStateDisabled
-	}
-	r.persistEnabled(ctx, nc)
-	return v1beta1.LocalDNSStateEnabled
+	r.persistState(ctx, nc, state)
+	return state
 }
 
-// persistEnabled patches the NodeClass to set AnnotationLocalDNSState=Enabled
-// for sticky-Enabled semantics. Best-effort: failure is logged and ignored —
-// the next resolution will retry.
-func (r *Resolver) persistEnabled(ctx context.Context, nc *v1beta1.AKSNodeClass) {
+// persistState patches the NodeClass to set AnnotationLocalDNSState to the
+// resolved state. Best-effort: failure is logged and ignored — the next
+// resolution will retry.
+func (r *Resolver) persistState(ctx context.Context, nc *v1beta1.AKSNodeClass, state v1beta1.LocalDNSState) {
 	if r.crClient == nil {
 		return
 	}
-	if nc.Annotations[v1beta1.AnnotationLocalDNSState] == string(v1beta1.LocalDNSStateEnabled) {
+	if nc.Annotations[v1beta1.AnnotationLocalDNSState] == string(state) {
 		return
 	}
 	stored := nc.DeepCopy()
 	if nc.Annotations == nil {
 		nc.Annotations = map[string]string{}
 	}
-	nc.Annotations[v1beta1.AnnotationLocalDNSState] = string(v1beta1.LocalDNSStateEnabled)
+	nc.Annotations[v1beta1.AnnotationLocalDNSState] = string(state)
 	if err := r.crClient.Patch(ctx, nc, client.MergeFrom(stored)); err != nil {
-		log.FromContext(ctx).V(1).Info("localdns resolve: failed to persist Enabled annotation (will retry on next provisioning)", "error", err.Error())
+		log.FromContext(ctx).V(1).Info("localdns resolve: failed to persist state annotation (will retry on next provisioning)", "state", string(state), "error", err.Error())
 	}
 }
 
