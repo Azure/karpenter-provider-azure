@@ -830,6 +830,13 @@ func (in *AKSNodeClass) ResolvedLocalDNSForWire() *LocalDNS {
 	if in.Spec.LocalDNS == nil {
 		return nil
 	}
+	// The annotation only governs the Preferred-mode decision. For Required
+	// and Disabled, the user's spec is authoritative — the sticky-Enabled
+	// annotation must NOT override an explicit user Mode change (e.g.
+	// Preferred->Disabled after we annotated Enabled).
+	if in.Spec.LocalDNS.Mode != LocalDNSModePreferred {
+		return in.Spec.LocalDNS
+	}
 	annotationVal, hasAnnotation := in.Annotations[AnnotationLocalDNSState]
 	if !hasAnnotation {
 		return in.Spec.LocalDNS
