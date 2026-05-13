@@ -351,9 +351,7 @@ func TestLocalDNSLabels(t *testing.T) {
 				},
 			}
 			if tc.localDNSState != nil && *tc.localDNSState == v1beta1.LocalDNSStateEnabled {
-				nodeClass.Annotations = map[string]string{
-					v1beta1.AnnotationLocalDNSState: string(v1beta1.LocalDNSStateEnabled),
-				}
+				nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 			}
 
 			labelMap, err := labels.Get(ctx, nodeClass, "amd64", nil)

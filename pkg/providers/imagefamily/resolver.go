@@ -287,7 +287,7 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 
 // LocalDNS wire-Mode rewrite lives in (*AKSNodeClass).ResolvedLocalDNSForWire
 // in pkg/apis/v1beta1. This is a permanent part of the LocalDNS contract,
-// applied to both wire paths (getNodeBootstrapping/VMSS here, and the AKS
+// applied to both wire paths (bootstrappingclient here, and the AKS
 // Machine API path in pkg/providers/instance/aksmachineinstancehelpers.go::
 // configureLocalDNSProfile) to guarantee sticky-Enabled and a deterministic
 // per-NodeClass decision. See the method-level doc-comment for the full

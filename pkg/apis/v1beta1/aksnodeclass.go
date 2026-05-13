@@ -736,63 +736,41 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 		*in.Spec.ArtifactStreaming.Enabled
 }
 
-// LocalDNSResolver computes Preferred-mode LocalDNS resolution based on cluster
-// state (kube API, network policy, image family, etc.). Implemented by
-// pkg/providers/localdns.Resolver. Declared as an interface here so the apis
-// package doesn't have to import the resolver and its client-go dependencies.
+// LocalDNSResolver computes the resolved LocalDNS state for a NodeClass and
+// persists it to Status.LocalDNSState. For Mode=Required → Enabled; for
+// Mode=Disabled → Disabled; for Mode=Preferred → cluster-gate evaluation with
+// sticky-Enabled semantics. Implemented by pkg/providers/localdns.Resolver.
+// Declared as an interface here so the apis package doesn't have to import
+// the resolver and its client-go dependencies.
 // +kubebuilder:object:generate=false
 type LocalDNSResolver interface {
-	ResolvePreferred(ctx context.Context, nc *AKSNodeClass) LocalDNSState
+	Resolve(ctx context.Context, nc *AKSNodeClass) LocalDNSState
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 //
 // Behavior:
 //   - Spec.LocalDNS nil or Mode unset → false.
-//   - Mode=Required → true.
-//   - Mode=Disabled → false.
-//   - Mode=Preferred → resolver evaluates the five Preferred-mode gates
-//     (K8s ≥ 1.36, BYO CNI excluded, image family supports LocalDNS, no
-//     conflicting NetworkPolicies, no upstream node-local-dns DaemonSet).
-//     The resolver persists "Enabled" to the AnnotationLocalDNSState
-//     annotation on the NodeClass via a kube-API patch. Sticky-Enabled
-//     semantics: once the annotation reads "Enabled", future calls
-//     short-circuit and stay Enabled even if a later gate-flip would have
-//     evaluated to Disabled. Disabled is NOT sticky — no annotation is
-//     written for the Disabled outcome, so a transient Disabled (e.g. brief
-//     kube API blip → fail-safe) can flip back to Enabled on the next
-//     provisioning.
+//   - Otherwise, delegate to the resolver, which sets Status.LocalDNSState
+//     and returns the terminal state. Status is a pure mirror:
+//     Required → Enabled, Disabled → Disabled, Preferred → gate-resolved
+//     with sticky-Enabled (once Enabled, stays Enabled while Mode=Preferred).
 //
-// If the resolver is nil (test paths only), Preferred mode honors only the
-// annotation if pre-set, otherwise returns false.
+// If resolver is nil (test paths), fall back to reading Status.LocalDNSState
+// directly: returns true iff Status==Enabled.
 func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNSResolver) bool {
 	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
 		return false
 	}
-	switch in.Spec.LocalDNS.Mode {
-	case LocalDNSModeRequired:
-		return true
-	case LocalDNSModeDisabled:
-		return false
-	case LocalDNSModePreferred:
-		// Sticky-Enabled fast path: once Enabled annotation is set, stay Enabled.
-		if in.Annotations[AnnotationLocalDNSState] == string(LocalDNSStateEnabled) {
-			return true
-		}
-		if resolver == nil {
-			return false
-		}
-		state := resolver.ResolvePreferred(ctx, in)
-		return state == LocalDNSStateEnabled
-	default:
-		return false
+	if resolver == nil {
+		return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
 	}
+	return resolver.Resolve(ctx, in) == LocalDNSStateEnabled
 }
 
 // ResolvedLocalDNSForWire returns the LocalDNS payload to send on either wire
-// path (getNodeBootstrapping/VMSS or AKS Machine API), with Spec.LocalDNS.Mode
-// rewritten to the terminal value implied by the sticky-Enabled annotation
-// AnnotationLocalDNSState.
+// path (bootstrappingclient or AKS Machine API), with Spec.LocalDNS.Mode
+// rewritten to the terminal value implied by Status.LocalDNSState.
 //
 // This rewrite is a permanent part of the LocalDNS contract — not a transient
 // workaround. It exists to guarantee two properties that cannot be provided by
@@ -800,7 +778,7 @@ func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNS
 //
 //  1. Sticky-Enabled. Once a NodeClass with Mode=Preferred resolves to Enabled,
 //     it stays Enabled for the lifetime of the NodeClass (until the user
-//     explicitly changes Mode). The annotation on the AKSNodeClass is the
+//     explicitly changes Mode). Status.LocalDNSState on the AKSNodeClass is the
 //     single source of truth for this stickiness, and only Karpenter writes it.
 //     Sending Mode=Preferred over the wire would let the downstream resolver
 //     re-evaluate per machine and flip Enabled->Disabled the moment an upstream
@@ -814,38 +792,35 @@ func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNS
 //
 // Karpenter is the authoritative kube-aware resolver: K8s version, image
 // family, BYO CNI, K8s/Cilium/Calico NetworkPolicies, upstream
-// kube-system/node-local-dns DaemonSet. It records the resolved state on the
-// AKSNodeClass annotation. The two downstream resolvers —
-// nodeprovisioner.convertLocalDNSProfile (getNodeBootstrapping/VMSS path) and
+// kube-system/node-local-dns DaemonSet. It records the resolved state on
+// Status.LocalDNSState. The two downstream resolvers —
+// nodeprovisioner.convertLocalDNSProfile (bootstrappingclient path) and
 // the RP-side LocalDNS validator (AKS Machine API path) — are version-only
 // and cannot see NetworkPolicies/DaemonSets. By rewriting Mode to
 // Required/Disabled, we make both short-circuit on the terminal value and
 // inherit Karpenter's decision instead of recomputing.
 //
-// Back-compat: if the annotation is unset (resolver hasn't observed this
-// NodeClass yet) the raw spec is returned unchanged. Callers drive resolution
-// via IsLocalDNSEnabled before the wire send, so by provisioning time the
-// annotation is set for Preferred-mode NodeClasses.
+// Rules:
+//   - Mode != Preferred (Required/Disabled): return Spec as-is. The user's
+//     explicit mode is authoritative.
+//   - Mode == Preferred + Status.LocalDNSState == Enabled: rewrite Mode=Required.
+//   - Mode == Preferred + Status.LocalDNSState == Disabled or unset: rewrite
+//     Mode=Disabled. We never pass Mode=Preferred downstream, because the
+//     downstream resolver cannot see cluster gates and would re-decide
+//     incorrectly. Callers drive resolution via IsLocalDNSEnabled before the
+//     wire send, so Status is set by provisioning time on the normal path;
+//     the unset-fallback is a defense-in-depth Disabled.
 func (in *AKSNodeClass) ResolvedLocalDNSForWire() *LocalDNS {
 	if in.Spec.LocalDNS == nil {
 		return nil
 	}
-	// The annotation only governs the Preferred-mode decision. For Required
-	// and Disabled, the user's spec is authoritative — the sticky-Enabled
-	// annotation must NOT override an explicit user Mode change (e.g.
-	// Preferred->Disabled after we annotated Enabled).
 	if in.Spec.LocalDNS.Mode != LocalDNSModePreferred {
 		return in.Spec.LocalDNS
 	}
-	annotationVal, hasAnnotation := in.Annotations[AnnotationLocalDNSState]
-	if !hasAnnotation {
-		return in.Spec.LocalDNS
-	}
 	out := in.Spec.LocalDNS.DeepCopy()
-	switch LocalDNSState(annotationVal) {
-	case LocalDNSStateEnabled:
+	if in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled {
 		out.Mode = LocalDNSModeRequired
-	case LocalDNSStateDisabled:
+	} else {
 		out.Mode = LocalDNSModeDisabled
 	}
 	return out

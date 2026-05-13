@@ -19,6 +19,8 @@ package v1beta1_test
 import (
 	"context"
 
+	"github.com/samber/lo"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
@@ -26,22 +28,20 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// fakeLocalDNSResolver mimics the real resolver by writing Status.LocalDNSState
+// onto the in-memory NodeClass when invoked. Tests verify sticky semantics
+// surface through Status.LocalDNSState.
 type fakeLocalDNSResolver struct {
-	state v1beta1.LocalDNSState `json:"-"`
-	// persistOnEnabled mimics the real resolver by writing the annotation
-	// onto the in-memory NodeClass when it resolves Enabled. The real resolver
-	// patches the apiserver; tests just need to verify the sticky semantics
-	// surface through the annotation.
-	persistOnEnabled bool `json:"-"`
+	state v1beta1.LocalDNSState
 }
 
-func (f *fakeLocalDNSResolver) ResolvePreferred(_ context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
-	if f.persistOnEnabled && f.state == v1beta1.LocalDNSStateEnabled {
-		if nc.Annotations == nil {
-			nc.Annotations = map[string]string{}
-		}
-		nc.Annotations[v1beta1.AnnotationLocalDNSState] = string(v1beta1.LocalDNSStateEnabled)
+func (f *fakeLocalDNSResolver) Resolve(_ context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
+	// Sticky-Enabled mirror of the real resolver: never flip off if Status is Enabled.
+	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled &&
+		nc.Spec.LocalDNS != nil && nc.Spec.LocalDNS.Mode == v1beta1.LocalDNSModePreferred {
+		return v1beta1.LocalDNSStateEnabled
 	}
+	nc.Status.LocalDNSState = lo.ToPtr(f.state)
 	return f.state
 }
 
@@ -57,14 +57,18 @@ var _ = Describe("IsLocalDNSEnabled", func() {
 		Expect(nodeClass.IsLocalDNSEnabled(context.Background(), nil)).To(BeFalse())
 	})
 
-	It("returns true for Required mode", func() {
+	It("returns true for Required mode via resolver", func() {
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}
-		Expect(nodeClass.IsLocalDNSEnabled(context.Background(), nil)).To(BeTrue())
+		r := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateEnabled}
+		Expect(nodeClass.IsLocalDNSEnabled(context.Background(), r)).To(BeTrue())
+		Expect(*nodeClass.Status.LocalDNSState).To(Equal(v1beta1.LocalDNSStateEnabled))
 	})
 
-	It("returns false for Disabled mode", func() {
+	It("returns false for Disabled mode via resolver", func() {
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
-		Expect(nodeClass.IsLocalDNSEnabled(context.Background(), nil)).To(BeFalse())
+		r := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateDisabled}
+		Expect(nodeClass.IsLocalDNSEnabled(context.Background(), r)).To(BeFalse())
+		Expect(*nodeClass.Status.LocalDNSState).To(Equal(v1beta1.LocalDNSStateDisabled))
 	})
 
 	Context("Preferred mode", func() {
@@ -72,35 +76,34 @@ var _ = Describe("IsLocalDNSEnabled", func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 		})
 
-		It("returns true via sticky annotation (no resolver call)", func() {
-			nodeClass.Annotations = map[string]string{v1beta1.AnnotationLocalDNSState: string(v1beta1.LocalDNSStateEnabled)}
-			Expect(nodeClass.IsLocalDNSEnabled(context.Background(), nil)).To(BeTrue())
-		})
-
-		It("returns Enabled from resolver and the resolver records the annotation", func() {
-			r := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateEnabled, persistOnEnabled: true}
+		It("returns true via sticky Status (resolver short-circuits)", func() {
+			nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+			r := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateDisabled} // would-be flip
 			Expect(nodeClass.IsLocalDNSEnabled(context.Background(), r)).To(BeTrue())
-			Expect(nodeClass.Annotations[v1beta1.AnnotationLocalDNSState]).To(Equal(string(v1beta1.LocalDNSStateEnabled)))
+			Expect(*nodeClass.Status.LocalDNSState).To(Equal(v1beta1.LocalDNSStateEnabled))
 		})
 
-		It("returns Disabled from resolver without setting annotation (Disabled is not sticky)", func() {
+		It("returns Enabled from resolver and the resolver records Status", func() {
+			r := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateEnabled}
+			Expect(nodeClass.IsLocalDNSEnabled(context.Background(), r)).To(BeTrue())
+			Expect(*nodeClass.Status.LocalDNSState).To(Equal(v1beta1.LocalDNSStateEnabled))
+		})
+
+		It("returns Disabled from resolver and records Status=Disabled", func() {
 			r := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateDisabled}
 			Expect(nodeClass.IsLocalDNSEnabled(context.Background(), r)).To(BeFalse())
-			_, hasAnnotation := nodeClass.Annotations[v1beta1.AnnotationLocalDNSState]
-			Expect(hasAnnotation).To(BeFalse())
+			Expect(*nodeClass.Status.LocalDNSState).To(Equal(v1beta1.LocalDNSStateDisabled))
 		})
 
-		It("allows transition from no-annotation to Enabled on later evaluation", func() {
-			// first resolution: Disabled, no annotation written
+		It("allows transition from Disabled to Enabled on later evaluation", func() {
 			rDisabled := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateDisabled}
 			Expect(nodeClass.IsLocalDNSEnabled(context.Background(), rDisabled)).To(BeFalse())
-			// second resolution: Enabled, annotation gets written
-			rEnabled := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateEnabled, persistOnEnabled: true}
+			rEnabled := &fakeLocalDNSResolver{state: v1beta1.LocalDNSStateEnabled}
 			Expect(nodeClass.IsLocalDNSEnabled(context.Background(), rEnabled)).To(BeTrue())
-			Expect(nodeClass.Annotations[v1beta1.AnnotationLocalDNSState]).To(Equal(string(v1beta1.LocalDNSStateEnabled)))
+			Expect(*nodeClass.Status.LocalDNSState).To(Equal(v1beta1.LocalDNSStateEnabled))
 		})
 
-		It("returns false when resolver is nil and no sticky annotation present", func() {
+		It("returns false when resolver is nil and Status unset", func() {
 			Expect(nodeClass.IsLocalDNSEnabled(context.Background(), nil)).To(BeFalse())
 		})
 	})

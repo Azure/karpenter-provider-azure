@@ -722,26 +722,23 @@ var _ = Describe("InstanceType Provider", func() {
 				if k8sVersion != "" {
 					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
 				}
-				// Mirror what the resolver would do: set the sticky-Enabled annotation
+				// Mirror what the resolver would do: set Status.LocalDNSState=Enabled
 				// when the resolution would land on Enabled. The test instance-type
-				// provider uses a nil resolver, so the annotation is the only path
-				// to surface Enabled.
-				setEnabledAnnotation := func() {
-					if nodeClass.Annotations == nil {
-						nodeClass.Annotations = map[string]string{}
-					}
-					nodeClass.Annotations[v1beta1.AnnotationLocalDNSState] = string(v1beta1.LocalDNSStateEnabled)
+				// provider uses a nil resolver, so Status is the only path to
+				// surface Enabled.
+				setEnabledStatus := func() {
+					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 				}
 				switch localDNSMode {
 				case v1beta1.LocalDNSModeRequired:
-					setEnabledAnnotation()
+					setEnabledStatus()
 				case v1beta1.LocalDNSModeDisabled:
-					// no annotation needed; Disabled mode short-circuits
+					// no status needed; Disabled mode → false
 				case v1beta1.LocalDNSModePreferred:
 					threshold := semver.MustParse("1.36.0")
 					parsed, perr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
 					if perr == nil && parsed.GTE(threshold) {
-						setEnabledAnnotation()
+						setEnabledStatus()
 					}
 				}
 				ExpectApplied(ctx, env.Client, nodeClass)
@@ -831,7 +828,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
-				nodeClassDisabled.Annotations = map[string]string{v1beta1.AnnotationLocalDNSState: string(v1beta1.LocalDNSStateDisabled)}
+				nodeClassDisabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 				instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -888,7 +885,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
-				nodeClassEnabled.Annotations = map[string]string{v1beta1.AnnotationLocalDNSState: string(v1beta1.LocalDNSStateEnabled)}
+				nodeClassEnabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 				ExpectApplied(ctx, env.Client, nodeClassEnabled)
 				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
 				Expect(err).ToNot(HaveOccurred())

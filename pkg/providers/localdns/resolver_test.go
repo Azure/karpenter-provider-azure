@@ -90,181 +90,181 @@ func unstructuredItem(apiVersion, kind, ns, name string) *unstructured.Unstructu
 
 // ---- Static gates ---------------------------------------------------------
 
-func TestResolvePreferred_StaticGate_OldK8s_Disabled(t *testing.T) {
+func TestResolve_StaticGate_OldK8s_Disabled(t *testing.T) {
 	nc := newNodeClass("1.35.0")
 	r := localdns.NewResolver(kubefake.NewClientset(), dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled for K8s 1.35, got %s", got)
 	}
 }
 
-func TestResolvePreferred_StaticGate_BYOCNI_Disabled(t *testing.T) {
+func TestResolve_StaticGate_BYOCNI_Disabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	r := localdns.NewResolver(kubefake.NewClientset(), dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "none")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled for BYO CNI, got %s", got)
 	}
 }
 
-func TestResolvePreferred_AllGatesPass_Enabled(t *testing.T) {
+func TestResolve_AllGatesPass_Enabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	r := localdns.NewResolver(kubefake.NewClientset(), dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
 		t.Fatalf("expected Enabled, got %s", got)
 	}
-	if nc.Annotations[v1beta1.AnnotationLocalDNSState] != string(v1beta1.LocalDNSStateEnabled) {
-		t.Fatalf("expected Enabled annotation written, got %q", nc.Annotations[v1beta1.AnnotationLocalDNSState])
+	if nc.Status.LocalDNSState == nil || *nc.Status.LocalDNSState != v1beta1.LocalDNSStateEnabled {
+		t.Fatalf("expected Enabled status written, got %v", nc.Status.LocalDNSState)
 	}
 }
 
 // ---- Cluster gates: K8s typed NetworkPolicy --------------------------------
 
-func TestResolvePreferred_K8sNetworkPolicy_OnlyKonnectivity_Enabled(t *testing.T) {
+func TestResolve_K8sNetworkPolicy_OnlyKonnectivity_Enabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	kc := kubefake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "konnectivity-agent", Namespace: "kube-system"},
 	})
 	r := localdns.NewResolver(kc, dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
 		t.Fatalf("expected Enabled (konnectivity excluded), got %s", got)
 	}
 }
 
-func TestResolvePreferred_K8sNetworkPolicy_Conflict_Disabled(t *testing.T) {
+func TestResolve_K8sNetworkPolicy_Conflict_Disabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	kc := kubefake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
 	})
 	r := localdns.NewResolver(kc, dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled (user NP conflict), got %s", got)
 	}
 }
 
-func TestResolvePreferred_K8sNetworkPolicy_NPM_Bypassed_Enabled(t *testing.T) {
+func TestResolve_K8sNetworkPolicy_NPM_Bypassed_Enabled(t *testing.T) {
 	// On NPM clusters the K8s typed NP gate is intentionally skipped.
 	nc := newNodeClass("1.36.0")
 	kc := kubefake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
 	})
 	r := localdns.NewResolver(kc, dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "azure", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
 		t.Fatalf("expected Enabled (NPM bypass), got %s", got)
 	}
 }
 
 // ---- Cluster gates: CRD NetworkPolicies -----------------------------------
 
-func TestResolvePreferred_CiliumNetworkPolicy_Conflict_Disabled(t *testing.T) {
+func TestResolve_CiliumNetworkPolicy_Conflict_Disabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	dc := dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs(),
 		unstructuredItem("cilium.io/v2", "CiliumNetworkPolicy", "default", "my-cnp"))
 	r := localdns.NewResolver(kubefake.NewClientset(), dc, newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled (cilium CNP), got %s", got)
 	}
 }
 
-func TestResolvePreferred_CiliumClusterwideNetworkPolicy_Conflict_Disabled(t *testing.T) {
+func TestResolve_CiliumClusterwideNetworkPolicy_Conflict_Disabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	dc := dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs(),
 		unstructuredItem("cilium.io/v2", "CiliumClusterwideNetworkPolicy", "", "my-ccnp"))
 	r := localdns.NewResolver(kubefake.NewClientset(), dc, newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled (cilium CCNP), got %s", got)
 	}
 }
 
-func TestResolvePreferred_CalicoNetworkPolicy_Conflict_Disabled(t *testing.T) {
+func TestResolve_CalicoNetworkPolicy_Conflict_Disabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	dc := dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs(),
 		unstructuredItem("crd.projectcalico.org/v1", "NetworkPolicy", "default", "my-calico-np"))
 	r := localdns.NewResolver(kubefake.NewClientset(), dc, newCRClient(nc), "calico", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled (calico NP), got %s", got)
 	}
 }
 
-func TestResolvePreferred_CalicoGlobalNetworkPolicy_Conflict_Disabled(t *testing.T) {
+func TestResolve_CalicoGlobalNetworkPolicy_Conflict_Disabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	dc := dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs(),
 		unstructuredItem("crd.projectcalico.org/v1", "GlobalNetworkPolicy", "", "my-calico-gnp"))
 	r := localdns.NewResolver(kubefake.NewClientset(), dc, newCRClient(nc), "calico", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled (calico GNP), got %s", got)
 	}
 }
 
 // ---- Cluster gates: node-local-dns DaemonSet ------------------------------
 
-func TestResolvePreferred_NodeLocalDNSDaemonSetPresent_Disabled(t *testing.T) {
+func TestResolve_NodeLocalDNSDaemonSetPresent_Disabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	kc := kubefake.NewClientset(&appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-local-dns", Namespace: "kube-system"},
 	})
 	r := localdns.NewResolver(kc, dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled (node-local-dns DS), got %s", got)
 	}
 }
 
 // ---- Fail-safe on transient kube-API errors -------------------------------
 
-func TestResolvePreferred_NetworkPolicyListError_FailSafeDisabled(t *testing.T) {
+func TestResolve_NetworkPolicyListError_FailSafeDisabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	kc := kubefake.NewClientset()
 	kc.PrependReactor("list", "networkpolicies", func(_ clientgotesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("kube API blip")
 	})
 	r := localdns.NewResolver(kc, dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled on NetworkPolicy list error, got %s", got)
 	}
 }
 
-func TestResolvePreferred_DaemonSetGetError_FailSafeDisabled(t *testing.T) {
+func TestResolve_DaemonSetGetError_FailSafeDisabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	kc := kubefake.NewClientset()
 	kc.PrependReactor("get", "daemonsets", func(_ clientgotesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("kube API blip")
 	})
 	r := localdns.NewResolver(kc, dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled on DaemonSet get error, got %s", got)
 	}
 }
 
-func TestResolvePreferred_DaemonSetForbidden_FailSafeDisabled(t *testing.T) {
+func TestResolve_DaemonSetForbidden_FailSafeDisabled(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	kc := kubefake.NewClientset()
 	kc.PrependReactor("get", "daemonsets", func(_ clientgotesting.Action) (bool, runtime.Object, error) {
 		return true, nil, k8serrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, "node-local-dns", errors.New("no perm"))
 	})
 	r := localdns.NewResolver(kc, dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateDisabled {
 		t.Fatalf("expected Disabled on DaemonSet Forbidden, got %s", got)
 	}
 }
 
 // ---- Persistence: Enabled and Disabled both written -----------------------
 
-func TestResolvePreferred_PersistsDisabledAnnotation(t *testing.T) {
+func TestResolve_PersistsDisabledStatus(t *testing.T) {
 	nc := newNodeClass("1.35.0") // static gate fails
 	r := localdns.NewResolver(kubefake.NewClientset(), dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), newCRClient(nc), "cilium", "azure")
-	r.ResolvePreferred(context.Background(), nc)
-	if nc.Annotations[v1beta1.AnnotationLocalDNSState] != string(v1beta1.LocalDNSStateDisabled) {
-		t.Fatalf("expected Disabled annotation written, got %q", nc.Annotations[v1beta1.AnnotationLocalDNSState])
+	r.Resolve(context.Background(), nc)
+	if nc.Status.LocalDNSState == nil || *nc.Status.LocalDNSState != v1beta1.LocalDNSStateDisabled {
+		t.Fatalf("expected Disabled status written, got %v", nc.Status.LocalDNSState)
 	}
 }
 
-func TestResolvePreferred_NilCRClient_NoPanic(t *testing.T) {
+func TestResolve_NilCRClient_NoPanic(t *testing.T) {
 	nc := newNodeClass("1.36.0")
 	r := localdns.NewResolver(kubefake.NewClientset(), dynamicfake.NewSimpleDynamicClient(dynamicSchemeWithCRDs()), nil, "cilium", "azure")
-	if got := r.ResolvePreferred(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
+	if got := r.Resolve(context.Background(), nc); got != v1beta1.LocalDNSStateEnabled {
 		t.Fatalf("expected Enabled, got %s", got)
 	}
-	// No annotation persistence attempted; map should be nil/empty.
-	if v, ok := nc.Annotations[v1beta1.AnnotationLocalDNSState]; ok {
-		t.Fatalf("expected no annotation written when crClient is nil, got %q", v)
+	// No status persistence attempted; field should remain nil.
+	if nc.Status.LocalDNSState != nil {
+		t.Fatalf("expected no status written when crClient is nil, got %v", *nc.Status.LocalDNSState)
 	}
 }

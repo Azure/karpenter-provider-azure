@@ -61,10 +61,10 @@ const (
 //     IsLocalDNSSupported (Windows / Ubuntu2004 / AvailabilitySets / CustomImage),
 //     BYO CNI, NetworkPolicy, node-local-dns DaemonSet.
 //  2. Nodeprovisioner: nodeprovisioner/server/models/convertto.go
-//     resolvePreferredState — mirrors per-AP gates for the getNodeBootstrapping
+//     resolvePreferredState — mirrors per-AP gates for the bootstrappingclient
 //     path. No kube client; cluster-wide checks deferred to the RP validator.
 //  3. This resolver — drives Karpenter's instance-type filtering, cache key,
-//     node label, and the AnnotationLocalDNSState annotation on the NodeClass.
+//     node label, and Status.LocalDNSState on the NodeClass.
 type Resolver struct {
 	kubeClient       kubernetes.Interface
 	dynamicClient    dynamic.Interface
@@ -76,7 +76,7 @@ type Resolver struct {
 
 // NewResolver constructs a Resolver. dynamicClient may be nil in tests that don't
 // exercise the Cilium / Calico CRD path. crClient is used to patch the
-// AnnotationLocalDNSState annotation when the resolver lands on Enabled.
+// Status.LocalDNSState on the NodeClass.
 func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface, crClient client.Client, networkPolicy, networkPlugin string) *Resolver {
 	return &Resolver{
 		kubeClient:       kubeClient,
@@ -88,50 +88,67 @@ func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interfac
 	}
 }
 
-// ResolvePreferred returns the resolved LocalDNS state for a NodeClass whose
-// Spec.LocalDNS.Mode is Preferred. It evaluates the same five gates the RP
-// validator runs:
-//  1. k8s version >= PreferredK8sVersionThreshold
-//  2. BYO CNI excluded
-//  3. ResolvesToUbuntu2004 excluded
-//  4. No conflicting NetworkPolicies (typed + Cilium/Calico CRDs)
-//  5. No upstream kube-system/node-local-dns DaemonSet
+// Resolve returns the resolved LocalDNS state for a NodeClass and persists it
+// to Status.LocalDNSState. Status.LocalDNSState is a pure mirror of current
+// enablement:
+//   - Mode=Required → Enabled
+//   - Mode=Disabled → Disabled
+//   - Mode=Preferred → evaluate the five gates the RP validator runs:
+//     1. k8s version >= PreferredK8sVersionThreshold
+//     2. BYO CNI excluded
+//     3. ResolvesToUbuntu2004 excluded
+//     4. No conflicting NetworkPolicies (typed + Cilium/Calico CRDs)
+//     5. No upstream kube-system/node-local-dns DaemonSet
+//
+// Sticky-Enabled: for Preferred, if Status.LocalDNSState is already Enabled,
+// stay Enabled without re-evaluating gates. The user can only opt out by
+// changing Mode away from Preferred. A Disabled outcome is NOT sticky and is
+// re-evaluated on the next call.
 //
 // Transient kube-API errors (including RBAC Forbidden) fail-safe to Disabled.
-// The resolved state is always persisted to AnnotationLocalDNSState — Enabled
-// for sticky-Enabled semantics, Disabled so the wire-payload rewrite
-// (AKSNodeClass.ResolvedLocalDNSForWire) sees a concrete decision and doesn't
-// let nodeprovisioner / the RP-side validator re-resolve to a different
-// answer per machine. Disabled is NOT sticky at the read side: IsLocalDNSEnabled
-// only short-circuits on the Enabled annotation, so a Disabled outcome is
-// re-evaluated on the next call and the annotation gets overwritten if gates
-// pass.
-func (r *Resolver) ResolvePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
-	state := v1beta1.LocalDNSStateEnabled
-	if !r.passesStaticGates(nc) || !r.passesClusterGates(ctx) {
+// The resolved state is always persisted to Status.LocalDNSState so the
+// wire-payload rewrite (AKSNodeClass.ResolvedLocalDNSForWire) sees a concrete
+// decision on both wire paths (bootstrappingclient and AKS Machine API) and
+// doesn't let downstream resolvers re-resolve to a different answer per machine.
+func (r *Resolver) Resolve(ctx context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
+	var state v1beta1.LocalDNSState
+	switch {
+	case nc.Spec.LocalDNS == nil:
+		return v1beta1.LocalDNSStateDisabled
+	case nc.Spec.LocalDNS.Mode == v1beta1.LocalDNSModeRequired:
+		state = v1beta1.LocalDNSStateEnabled
+	case nc.Spec.LocalDNS.Mode == v1beta1.LocalDNSModeDisabled:
 		state = v1beta1.LocalDNSStateDisabled
+	case nc.Spec.LocalDNS.Mode == v1beta1.LocalDNSModePreferred:
+		// Sticky-Enabled: never flip back unless user changes Mode.
+		if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
+			return v1beta1.LocalDNSStateEnabled
+		}
+		if r.passesStaticGates(nc) && r.passesClusterGates(ctx) {
+			state = v1beta1.LocalDNSStateEnabled
+		} else {
+			state = v1beta1.LocalDNSStateDisabled
+		}
+	default:
+		return v1beta1.LocalDNSStateDisabled
 	}
 	r.persistState(ctx, nc, state)
 	return state
 }
 
-// persistState patches the NodeClass to set AnnotationLocalDNSState to the
-// resolved state. Best-effort: failure is logged and ignored — the next
-// resolution will retry.
+// persistState patches Status.LocalDNSState to the resolved state. Best-effort:
+// failure is logged and ignored — the next resolution will retry.
 func (r *Resolver) persistState(ctx context.Context, nc *v1beta1.AKSNodeClass, state v1beta1.LocalDNSState) {
 	if r.crClient == nil {
 		return
 	}
-	if nc.Annotations[v1beta1.AnnotationLocalDNSState] == string(state) {
+	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == state {
 		return
 	}
 	stored := nc.DeepCopy()
-	if nc.Annotations == nil {
-		nc.Annotations = map[string]string{}
-	}
-	nc.Annotations[v1beta1.AnnotationLocalDNSState] = string(state)
-	if err := r.crClient.Patch(ctx, nc, client.MergeFrom(stored)); err != nil {
-		log.FromContext(ctx).V(1).Info("localdns resolve: failed to persist state annotation (will retry on next provisioning)", "state", string(state), "error", err.Error())
+	nc.Status.LocalDNSState = lo.ToPtr(state)
+	if err := r.crClient.Status().Patch(ctx, nc, client.MergeFrom(stored)); err != nil {
+		log.FromContext(ctx).V(1).Info("localdns resolve: failed to persist Status.LocalDNSState (will retry on next provisioning)", "state", string(state), "error", err.Error())
 	}
 }
 
