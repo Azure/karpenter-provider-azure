@@ -28,7 +28,6 @@ const (
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
 	ConditionTypeSubnetsReady           = "SubnetsReady"
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
-	ConditionTypeLocalDNSReady          = "LocalDNSReady"
 )
 
 // LocalDNSState is the resolved enable/disable decision for LocalDNS, written to status.
@@ -66,27 +65,18 @@ type AKSNodeClassStatus struct {
 	// used for nodes provisioned for the NodeClass
 	// +optional
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
-	// localDNSState is the resolved enable/disable decision for LocalDNS.
-	// For Mode=Required this is always "Enabled"; for Mode=Disabled this is "Disabled";
-	// for Mode=Preferred this is resolved at NodeClass create/update and on observed
-	// Kubernetes version changes, taking into account cluster network policy and
-	// upstream node-local-dns presence. Once "Enabled" under Preferred mode it
-	// stays Enabled (sticky) — users can opt out by setting Spec.LocalDNS.Mode=Disabled.
+	// localDNSState is the resolved enable/disable decision for LocalDNS, recorded
+	// at provisioning time by IsLocalDNSEnabled. For Mode=Required this is always
+	// "Enabled"; for Mode=Disabled this is "Disabled"; for Mode=Preferred this is
+	// computed against cluster conditions (Kubernetes version, network policy,
+	// upstream node-local-dns DaemonSet, BYO CNI, Ubuntu2004) and re-evaluated on
+	// each provisioning. Once "Enabled" under Preferred mode the state is sticky
+	// and never auto-flips back to Disabled — users opt out via Spec.LocalDNS.Mode.
+	// Note: a Preferred-mode NodeClass that has not yet been used for provisioning
+	// will leave this unset; consumers MUST go through IsLocalDNSEnabled, not read
+	// this field directly.
 	// +optional
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
-	// localDNSStateObservedGeneration is the spec generation that LocalDNSState was resolved against.
-	// +optional
-	//nolint:kubeapilinter // optionalfields: zero value is meaningful (unresolved)
-	LocalDNSStateObservedGeneration int64 `json:"localDNSStateObservedGeneration,omitempty"`
-	// localDNSStateObservedKubernetesVersion is the Kubernetes version that LocalDNSState was resolved against.
-	// +optional
-	//nolint:kubeapilinter // optionalfields: zero value is meaningful (unresolved)
-	LocalDNSStateObservedKubernetesVersion string `json:"localDNSStateObservedKubernetesVersion,omitempty"`
-	// localDNSResolveFailures tracks consecutive transient failures during Preferred-mode resolution.
-	// After a fail-safe budget is exhausted, the reconciler commits LocalDNSState=Disabled and unblocks provisioning.
-	// +optional
-	//nolint:kubeapilinter // optionalfields: zero value is meaningful (no failures)
-	LocalDNSResolveFailures int32 `json:"localDNSResolveFailures,omitempty"`
 	// conditions contains signals for health and readiness
 	// +optional
 	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility
@@ -99,7 +89,6 @@ func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
 		ConditionTypeKubernetesVersionReady,
 		ConditionTypeSubnetsReady,
 		ConditionTypeValidationSucceeded,
-		ConditionTypeLocalDNSReady,
 	}
 	return status.NewReadyConditions(conds...).For(in)
 }

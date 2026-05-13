@@ -64,6 +64,7 @@ type Provider struct {
 	clusterResourceGroup    string
 	location                string
 	provisionMode           string
+	localDNSResolver        v1beta1.LocalDNSResolver
 }
 
 // TODO: add caching of launch templates
@@ -83,6 +84,7 @@ func NewProvider(
 	resourceGroup,
 	location,
 	provisionMode string,
+	localDNSResolver v1beta1.LocalDNSResolver,
 ) *Provider {
 	return &Provider{
 		imageFamily:             imageFamily,
@@ -96,6 +98,7 @@ func NewProvider(
 		clusterResourceGroup:    clusterResourceGroup,
 		location:                location,
 		provisionMode:           provisionMode,
+		localDNSResolver:        localDNSResolver,
 	}
 }
 
@@ -147,7 +150,7 @@ func (p *Provider) getStaticParameters(
 	}
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-	baseLabels, err := karplabels.Get(ctx, nodeClass, arch)
+	baseLabels, err := karplabels.Get(ctx, nodeClass, arch, p.localDNSResolver)
 	if err != nil {
 		return nil, err
 	}

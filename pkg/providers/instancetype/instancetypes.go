@@ -77,6 +77,7 @@ type DefaultProvider struct {
 	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
+	localDNSResolver     v1beta1.LocalDNSResolver
 
 	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
 	// Fully initialized Instance Types are also cached based on the set of all instance types,
@@ -97,6 +98,7 @@ func NewDefaultProvider(
 	skuClient skewer.ResourceClient,
 	pricingProvider *pricing.Provider,
 	offeringsCache *kcache.UnavailableOfferings,
+	localDNSResolver v1beta1.LocalDNSResolver,
 ) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
@@ -107,6 +109,7 @@ func NewDefaultProvider(
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
 		instanceTypesSeqNum:  0,
+		localDNSResolver:     localDNSResolver,
 	}
 }
 
@@ -134,7 +137,7 @@ func (p *DefaultProvider) List(
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
-		nodeClass.IsLocalDNSEnabled(),
+		nodeClass.IsLocalDNSEnabled(ctx, p.localDNSResolver),
 		string(nodeClass.GetGPUMode()),
 		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 	)
@@ -168,7 +171,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 
-		if !p.isInstanceTypeSupportedByFilters(sku, architecture, nodeClass) {
+		if !p.isInstanceTypeSupportedByFilters(ctx, sku, architecture, nodeClass) {
 			continue
 		}
 
@@ -280,10 +283,10 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 
 // isInstanceTypeSupportedByFilters consolidates all per-NodeClass instance type
 // filters into a single call to keep the List() method's cyclomatic complexity low.
-func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
+func (p *DefaultProvider) isInstanceTypeSupportedByFilters(ctx context.Context, sku *skewer.SKU, architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
 	return p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) &&
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) &&
-		p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) &&
+		p.isInstanceTypeSupportedByLocalDNS(ctx, sku, nodeClass) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, nodeClass) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, nodeClass)
 }
@@ -322,9 +325,9 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 	return strings.EqualFold(value, "True")
 }
 
-func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 	// If LocalDNS won't be enabled, all instance types are supported
-	if !nodeClass.IsLocalDNSEnabled() {
+	if !nodeClass.IsLocalDNSEnabled(ctx, p.localDNSResolver) {
 		return true
 	}
 

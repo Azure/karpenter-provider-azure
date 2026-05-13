@@ -77,7 +77,6 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 
 	conditions := []opstatus.Condition{}
 	for _, condition := range nodeClass.GetConditions() {

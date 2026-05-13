@@ -21,7 +21,6 @@ import (
 
 	"github.com/awslabs/operatorpkg/controller"
 	"github.com/awslabs/operatorpkg/status"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -58,18 +57,13 @@ func NewControllers(
 	nodeImageProvider imagefamily.NodeImageProvider,
 	instanceTypesProvider instancetypeprovider.Provider,
 	inClusterKubernetesInterface kubernetes.Interface,
-	inClusterDynamicInterface dynamic.Interface,
-	workloadKubernetesInterface kubernetes.Interface,
-	workloadDynamicInterface dynamic.Interface,
 	subnetsClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
-	networkPolicy string,
-	networkPlugin string,
 ) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, workloadKubernetesInterface, workloadDynamicInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID, networkPolicy, networkPlugin),
+		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),

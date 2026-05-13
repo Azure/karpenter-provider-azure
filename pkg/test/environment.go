@@ -173,7 +173,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		instanceTypeCache,
 		skusAPI,
 		pricingProvider,
-		unavailableOfferingsCache)
+		unavailableOfferingsCache,
+		nil)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -188,6 +189,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.NodeResourceGroup,
 		region,
 		testOptions.ProvisionMode,
+		nil,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,

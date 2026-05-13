@@ -67,6 +67,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -87,11 +88,6 @@ type Operator struct {
 	// InClusterDynamicInterface is a dynamic client over the same in-cluster config as
 	// InClusterKubernetesInterface.
 	InClusterDynamicInterface dynamic.Interface
-	// DynamicInterface is a dynamic client against the workload cluster apiserver
-	// (the cluster Karpenter is managing). Pair with operator.KubernetesInterface.
-	// Used by the LocalDNS status reconciler to inspect Cilium / Calico CRD-based
-	// network policies and the upstream node-local-dns DaemonSet on the workload cluster.
-	DynamicInterface dynamic.Interface
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
@@ -156,6 +152,13 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	// This is the same apiserver as operator.KubernetesInterface and operator.GetClient().
 	workloadDynamicClient := dynamic.NewForConfigOrDie(operator.GetConfig())
 
+	localDNSResolver := localdns.NewResolver(
+		operator.KubernetesInterface,
+		workloadDynamicClient,
+		options.FromContext(ctx).NetworkPolicy,
+		options.FromContext(ctx).NetworkPlugin,
+	)
+
 	if options.FromContext(ctx).DNSServiceIP == "" {
 		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
 		if err != nil { // fall back to default
@@ -195,6 +198,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.SKUClient,
 		pricingProvider,
 		unavailableOfferingsCache,
+		localDNSResolver,
 	)
 
 	// Ensure we're able to hydrate instance types before starting any controllers
@@ -221,6 +225,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.Location,
 		options.FromContext(ctx).ProvisionMode,
+		localDNSResolver,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
@@ -275,7 +280,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
 		InClusterDynamicInterface:    inClusterDynamicClient,
-		DynamicInterface:             workloadDynamicClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,

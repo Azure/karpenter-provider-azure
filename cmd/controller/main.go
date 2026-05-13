@@ -92,14 +92,9 @@ func main() {
 			op.ImageProvider,
 			op.InstanceTypesProvider,
 			op.InClusterKubernetesInterface,
-			op.InClusterDynamicInterface,
-			op.KubernetesInterface,
-			op.DynamicInterface,
 			op.AZClient.SubnetsClient(),
 			op.AZClient.DiskEncryptionSetsClient(),
 			options.FromContext(ctx).ParsedDiskEncryptionSetID,
-			options.FromContext(ctx).NetworkPolicy,
-			options.FromContext(ctx).NetworkPlugin,
 		)...).
 		Start(ctx)
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/mitchellh/hashstructure/v2"
@@ -735,25 +736,56 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 		*in.Spec.ArtifactStreaming.Enabled
 }
 
+// LocalDNSResolver computes Preferred-mode LocalDNS resolution based on cluster
+// state (kube API, network policy, image family, etc.). Implemented by
+// pkg/providers/localdns.Resolver. Declared as an interface here so the apis
+// package doesn't have to import the resolver and its client-go dependencies.
+type LocalDNSResolver interface {
+	ResolvePreferred(ctx context.Context, nc *AKSNodeClass) LocalDNSState
+}
+
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
-// The decision is sourced from Status.LocalDNSState, which is resolved by the
-// nodeclass.localdns status sub-reconciler. For Mode=Required this is always
-// "Enabled"; for Mode=Disabled this is "Disabled"; for Mode=Preferred this is
-// resolved against cluster conditions (Kubernetes version, network policy,
-// upstream node-local-dns DaemonSet, BYO CNI) at create/update time and on
-// observed Kubernetes version changes. Once Enabled under Preferred mode the
-// state is sticky and never auto-flips back to Disabled.
 //
-// If Status.LocalDNSState has not yet been written (e.g. the reconciler has
-// not run), this returns false as a safe default. Karpenter core gates
-// provisioning on the AKSNodeClass aggregate Ready condition (which now
-// includes LocalDNSReady), so consumers in the provisioning path will not
-// observe the unresolved state.
-func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
-	if in.Status.LocalDNSState == nil {
+// Behavior:
+//   - Spec.LocalDNS nil or Mode unset → false.
+//   - Mode=Required → true.
+//   - Mode=Disabled → false.
+//   - Mode=Preferred → resolver evaluates the five Preferred-mode gates
+//     (K8s ≥ 1.36, BYO CNI excluded, image family supports LocalDNS, no
+//     conflicting NetworkPolicies, no upstream node-local-dns DaemonSet). The
+//     resolved state is recorded to Status.LocalDNSState. Sticky-Enabled
+//     semantics: once Enabled, future calls observe the sticky state from
+//     Status and stay Enabled even if a later gate-flip would have evaluated
+//     to Disabled. Disabled is NOT sticky — a fresh evaluation runs every
+//     call so a transient Disabled (e.g. brief kube API blip → fail-safe)
+//     can flip back to Enabled on the next provisioning.
+//
+// If the resolver is nil (test paths only), Preferred mode falls back to the
+// recorded Status.LocalDNSState if set, otherwise false.
+func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNSResolver) bool {
+	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
 		return false
 	}
-	return *in.Status.LocalDNSState == LocalDNSStateEnabled
+	switch in.Spec.LocalDNS.Mode {
+	case LocalDNSModeRequired:
+		return true
+	case LocalDNSModeDisabled:
+		return false
+	case LocalDNSModePreferred:
+		// Sticky-Enabled fast path: once Enabled, stay Enabled.
+		if in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled {
+			return true
+		}
+		if resolver == nil {
+			// Test fallback: honor whatever was pre-set on Status.
+			return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
+		}
+		state := resolver.ResolvePreferred(ctx, in)
+		in.Status.LocalDNSState = &state
+		return state == LocalDNSStateEnabled
+	default:
+		return false
+	}
 }
 
 // GetGPUMode returns the effective GPU mode.
