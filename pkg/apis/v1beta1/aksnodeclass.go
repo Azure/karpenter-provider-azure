@@ -794,15 +794,33 @@ func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNS
 // rewritten to the terminal value implied by the sticky-Enabled annotation
 // AnnotationLocalDNSState.
 //
-// Karpenter is the authoritative resolver for Mode=Preferred (kube-aware: K8s
-// version, image family, BYO CNI, K8s/Cilium/Calico NetworkPolicies, upstream
-// node-local-dns DaemonSet) and persists Enabled stickily on the NodeClass.
-// Both downstream resolvers — nodeprovisioner.convertLocalDNSProfile and the
-// RP-side LocalDNS validator on the AKS Machine API path — are version-only,
-// cannot see NetworkPolicies/DaemonSets, and would re-resolve per machine,
-// producing a non-deterministic fleet and ignoring sticky-Enabled. Rewriting
-// Mode to Required/Disabled makes both short-circuit on the terminal value
-// and inherit Karpenter's decision.
+// This rewrite is a permanent part of the LocalDNS contract — not a transient
+// workaround. It exists to guarantee two properties that cannot be provided by
+// the downstream wire-side resolvers:
+//
+//  1. Sticky-Enabled. Once a NodeClass with Mode=Preferred resolves to Enabled,
+//     it stays Enabled for the lifetime of the NodeClass (until the user
+//     explicitly changes Mode). The annotation on the AKSNodeClass is the
+//     single source of truth for this stickiness, and only Karpenter writes it.
+//     Sending Mode=Preferred over the wire would let the downstream resolver
+//     re-evaluate per machine and flip Enabled->Disabled the moment an upstream
+//     conflict (e.g. a new NetworkPolicy) appears, silently breaking the
+//     contract.
+//
+//  2. Deterministic decision across a NodeClass. Every Machine spawned from
+//     the same NodeClass must agree on LocalDNS state. Per-machine resolution
+//     on the downstream side would otherwise produce a heterogeneous fleet
+//     under one NodeClass if cluster state changes between creates.
+//
+// Karpenter is the authoritative kube-aware resolver: K8s version, image
+// family, BYO CNI, K8s/Cilium/Calico NetworkPolicies, upstream
+// kube-system/node-local-dns DaemonSet. It records the resolved state on the
+// AKSNodeClass annotation. The two downstream resolvers —
+// nodeprovisioner.convertLocalDNSProfile (getNodeBootstrapping/VMSS path) and
+// the RP-side LocalDNS validator (AKS Machine API path) — are version-only
+// and cannot see NetworkPolicies/DaemonSets. By rewriting Mode to
+// Required/Disabled, we make both short-circuit on the terminal value and
+// inherit Karpenter's decision instead of recomputing.
 //
 // Back-compat: if the annotation is unset (resolver hasn't observed this
 // NodeClass yet) the raw spec is returned unchanged. Callers drive resolution

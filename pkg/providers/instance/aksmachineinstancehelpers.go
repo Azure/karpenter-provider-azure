@@ -204,10 +204,15 @@ func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instance
 }
 
 func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LocalDNSProfile {
-	// Use the wire-resolved spec so Karpenter's kube-aware decision (recorded
-	// in AnnotationLocalDNSState) overrides what the RP-side validator would
-	// otherwise re-resolve per machine. See AKSNodeClass.ResolvedLocalDNSForWire
-	// for the full rationale (non-determinism + sticky-Enabled).
+	// Use the wire-resolved spec so Karpenter's kube-aware Preferred-mode
+	// decision (recorded on the AKSNodeClass via AnnotationLocalDNSState) is
+	// honored end-to-end on the AKS Machine API path. This guarantees
+	// sticky-Enabled and a deterministic LocalDNS decision across every
+	// Machine spawned from the NodeClass — the RP-side validator is
+	// version-only and would otherwise re-resolve per machine, producing a
+	// non-deterministic fleet and silently bypassing the sticky-Enabled
+	// contract. See AKSNodeClass.ResolvedLocalDNSForWire for the full
+	// rationale.
 	spec := nodeClass.ResolvedLocalDNSForWire()
 	if spec == nil {
 		return nil
