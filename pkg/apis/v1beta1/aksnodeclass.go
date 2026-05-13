@@ -740,6 +740,7 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 // state (kube API, network policy, image family, etc.). Implemented by
 // pkg/providers/localdns.Resolver. Declared as an interface here so the apis
 // package doesn't have to import the resolver and its client-go dependencies.
+// +kubebuilder:object:generate=false
 type LocalDNSResolver interface {
 	ResolvePreferred(ctx context.Context, nc *AKSNodeClass) LocalDNSState
 }
