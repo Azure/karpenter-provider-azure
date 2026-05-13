@@ -28,7 +28,7 @@ import (
 )
 
 type fakeLocalDNSResolver struct {
-	state v1beta1.LocalDNSState
+	state v1beta1.LocalDNSState `json:"-"`
 }
 
 func (f *fakeLocalDNSResolver) ResolvePreferred(_ context.Context, _ *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {

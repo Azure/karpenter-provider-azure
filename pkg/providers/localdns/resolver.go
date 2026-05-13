@@ -96,43 +96,55 @@ func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interfac
 // Transient kube-API errors (including RBAC Forbidden) fail-safe to Disabled.
 // Sticky-Enabled is the caller's responsibility (see aksnodeclass.go IsLocalDNSEnabled).
 func (r *Resolver) ResolvePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
+	if !r.passesStaticGates(nc) {
+		return v1beta1.LocalDNSStateDisabled
+	}
+	if !r.passesClusterGates(ctx) {
+		return v1beta1.LocalDNSStateDisabled
+	}
+	return v1beta1.LocalDNSStateEnabled
+}
+
+// passesStaticGates runs the gates that need no kube-API access: K8s version,
+// BYO CNI, image family.
+func (r *Resolver) passesStaticGates(nc *v1beta1.AKSNodeClass) bool {
 	k8sVersion, err := nc.GetKubernetesVersion()
 	if err != nil || k8sVersion == "" {
-		return v1beta1.LocalDNSStateDisabled
+		return false
 	}
 	parsed, err := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
 	if err != nil || parsed.LT(r.versionThreshold) {
-		return v1beta1.LocalDNSStateDisabled
+		return false
 	}
-	// Check 2: BYO CNI.
 	if strings.EqualFold(r.networkPlugin, consts.NetworkPluginNone) {
-		return v1beta1.LocalDNSStateDisabled
+		return false
 	}
-	// Check 3: image family must support LocalDNS (excludes FIPS-on-legacy-Ubuntu → 20.04).
 	if imagefamily.ResolvesToUbuntu2004(nc.Spec.ImageFamily, nc.Spec.FIPSMode) {
-		return v1beta1.LocalDNSStateDisabled
+		return false
 	}
-	// Check 4: cilium/calico network policy → must have no conflicting policies.
+	return true
+}
+
+// passesClusterGates runs the kube-API-dependent gates: conflicting
+// NetworkPolicies and upstream node-local-dns DaemonSet. Transient errors
+// fail-safe to Disabled (returns false).
+func (r *Resolver) passesClusterGates(ctx context.Context) bool {
 	if strings.EqualFold(r.networkPolicy, networkPolicyCilium) || strings.EqualFold(r.networkPolicy, networkPolicyCalico) {
 		conflict, err := r.hasConflictingNetworkPolicies(ctx, r.networkPolicy)
 		if err != nil {
 			log.FromContext(ctx).V(1).Info("localdns resolve: network policy check failed, defaulting to Disabled", "error", err.Error())
-			return v1beta1.LocalDNSStateDisabled
+			return false
 		}
 		if conflict {
-			return v1beta1.LocalDNSStateDisabled
+			return false
 		}
 	}
-	// Check 5: upstream node-local-dns DaemonSet must not be present.
 	has, err := r.hasUpstreamNodeLocalDNS(ctx)
 	if err != nil {
 		log.FromContext(ctx).V(1).Info("localdns resolve: node-local-dns DS check failed, defaulting to Disabled", "error", err.Error())
-		return v1beta1.LocalDNSStateDisabled
+		return false
 	}
-	if has {
-		return v1beta1.LocalDNSStateDisabled
-	}
-	return v1beta1.LocalDNSStateEnabled
+	return !has
 }
 
 func (r *Resolver) hasUpstreamNodeLocalDNS(ctx context.Context) (bool, error) {
