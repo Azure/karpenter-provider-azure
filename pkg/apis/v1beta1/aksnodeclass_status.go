@@ -30,11 +30,12 @@ const (
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
 )
 
-// LocalDNSState is the resolved enable/disable decision for LocalDNS, written to status.
-// +kubebuilder:validation:Enum:={Enabled,Disabled}
+// LocalDNSState is the resolved enable/disable decision for LocalDNS.
+// Recorded as the value of AnnotationLocalDNSState on the NodeClass when
+// Preferred-mode resolution lands on Enabled.
 type LocalDNSState string
 
-// LocalDNSState values stored in AKSNodeClassStatus.LocalDNSState.
+// LocalDNSState values stored in the AnnotationLocalDNSState annotation.
 const (
 	LocalDNSStateEnabled  LocalDNSState = "Enabled"
 	LocalDNSStateDisabled LocalDNSState = "Disabled"
@@ -65,18 +66,6 @@ type AKSNodeClassStatus struct {
 	// used for nodes provisioned for the NodeClass
 	// +optional
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
-	// localDNSState is the resolved enable/disable decision for LocalDNS, recorded
-	// at provisioning time by IsLocalDNSEnabled. For Mode=Required this is always
-	// "Enabled"; for Mode=Disabled this is "Disabled"; for Mode=Preferred this is
-	// computed against cluster conditions (Kubernetes version, network policy,
-	// upstream node-local-dns DaemonSet, BYO CNI, Ubuntu2004) and re-evaluated on
-	// each provisioning. Once "Enabled" under Preferred mode the state is sticky
-	// and never auto-flips back to Disabled — users opt out via Spec.LocalDNS.Mode.
-	// Note: a Preferred-mode NodeClass that has not yet been used for provisioning
-	// will leave this unset; consumers MUST go through IsLocalDNSEnabled, not read
-	// this field directly.
-	// +optional
-	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 	// conditions contains signals for health and readiness
 	// +optional
 	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility

@@ -753,16 +753,18 @@ type LocalDNSResolver interface {
 //   - Mode=Disabled → false.
 //   - Mode=Preferred → resolver evaluates the five Preferred-mode gates
 //     (K8s ≥ 1.36, BYO CNI excluded, image family supports LocalDNS, no
-//     conflicting NetworkPolicies, no upstream node-local-dns DaemonSet). The
-//     resolved state is recorded to Status.LocalDNSState. Sticky-Enabled
-//     semantics: once Enabled, future calls observe the sticky state from
-//     Status and stay Enabled even if a later gate-flip would have evaluated
-//     to Disabled. Disabled is NOT sticky — a fresh evaluation runs every
-//     call so a transient Disabled (e.g. brief kube API blip → fail-safe)
-//     can flip back to Enabled on the next provisioning.
+//     conflicting NetworkPolicies, no upstream node-local-dns DaemonSet).
+//     The resolver persists "Enabled" to the AnnotationLocalDNSState
+//     annotation on the NodeClass via a kube-API patch. Sticky-Enabled
+//     semantics: once the annotation reads "Enabled", future calls
+//     short-circuit and stay Enabled even if a later gate-flip would have
+//     evaluated to Disabled. Disabled is NOT sticky — no annotation is
+//     written for the Disabled outcome, so a transient Disabled (e.g. brief
+//     kube API blip → fail-safe) can flip back to Enabled on the next
+//     provisioning.
 //
-// If the resolver is nil (test paths only), Preferred mode falls back to the
-// recorded Status.LocalDNSState if set, otherwise false.
+// If the resolver is nil (test paths only), Preferred mode honors only the
+// annotation if pre-set, otherwise returns false.
 func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNSResolver) bool {
 	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
 		return false
@@ -773,16 +775,14 @@ func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNS
 	case LocalDNSModeDisabled:
 		return false
 	case LocalDNSModePreferred:
-		// Sticky-Enabled fast path: once Enabled, stay Enabled.
-		if in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled {
+		// Sticky-Enabled fast path: once Enabled annotation is set, stay Enabled.
+		if in.Annotations[AnnotationLocalDNSState] == string(LocalDNSStateEnabled) {
 			return true
 		}
 		if resolver == nil {
-			// Test fallback: honor whatever was pre-set on Status.
-			return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
+			return false
 		}
 		state := resolver.ResolvePreferred(ctx, in)
-		in.Status.LocalDNSState = &state
 		return state == LocalDNSStateEnabled
 	default:
 		return false

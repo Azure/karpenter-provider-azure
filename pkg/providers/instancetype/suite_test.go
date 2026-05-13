@@ -722,20 +722,26 @@ var _ = Describe("InstanceType Provider", func() {
 				if k8sVersion != "" {
 					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
 				}
-				// Mirror what the localdns sub-reconciler would do: populate Status.LocalDNSState
-				// based on Spec.LocalDNS.Mode and the k8s version threshold (1.36).
+				// Mirror what the resolver would do: set the sticky-Enabled annotation
+				// when the resolution would land on Enabled. The test instance-type
+				// provider uses a nil resolver, so the annotation is the only path
+				// to surface Enabled.
+				setEnabledAnnotation := func() {
+					if nodeClass.Annotations == nil {
+						nodeClass.Annotations = map[string]string{}
+					}
+					nodeClass.Annotations[v1beta1.AnnotationLocalDNSState] = string(v1beta1.LocalDNSStateEnabled)
+				}
 				switch localDNSMode {
 				case v1beta1.LocalDNSModeRequired:
-					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+					setEnabledAnnotation()
 				case v1beta1.LocalDNSModeDisabled:
-					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
+					// no annotation needed; Disabled mode short-circuits
 				case v1beta1.LocalDNSModePreferred:
 					threshold := semver.MustParse("1.36.0")
 					parsed, perr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
 					if perr == nil && parsed.GTE(threshold) {
-						nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
-					} else {
-						nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
+						setEnabledAnnotation()
 					}
 				}
 				ExpectApplied(ctx, env.Client, nodeClass)
@@ -825,8 +831,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
-				nodeClassDisabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
-				ExpectApplied(ctx, env.Client, nodeClassDisabled)
+				nodeClassDisabled.Annotations = map[string]string{v1beta1.AnnotationLocalDNSState: string(v1beta1.LocalDNSStateDisabled)}
 				instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -883,7 +888,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
-				nodeClassEnabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+				nodeClassEnabled.Annotations = map[string]string{v1beta1.AnnotationLocalDNSState: string(v1beta1.LocalDNSStateEnabled)}
 				ExpectApplied(ctx, env.Client, nodeClassEnabled)
 				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
 				Expect(err).ToNot(HaveOccurred())

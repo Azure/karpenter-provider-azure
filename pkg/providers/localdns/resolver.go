@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -63,21 +64,24 @@ const (
 //     resolvePreferredState — mirrors per-AP gates for the getNodeBootstrapping
 //     path. No kube client; cluster-wide checks deferred to the RP validator.
 //  3. This resolver — drives Karpenter's instance-type filtering, cache key,
-//     node label, and Status.LocalDNSState.
+//     node label, and the AnnotationLocalDNSState annotation on the NodeClass.
 type Resolver struct {
 	kubeClient       kubernetes.Interface
 	dynamicClient    dynamic.Interface
+	crClient         client.Client
 	networkPolicy    string
 	networkPlugin    string
 	versionThreshold semver.Version
 }
 
 // NewResolver constructs a Resolver. dynamicClient may be nil in tests that don't
-// exercise the Cilium / Calico CRD path.
-func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface, networkPolicy, networkPlugin string) *Resolver {
+// exercise the Cilium / Calico CRD path. crClient is used to patch the
+// AnnotationLocalDNSState annotation when the resolver lands on Enabled.
+func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface, crClient client.Client, networkPolicy, networkPlugin string) *Resolver {
 	return &Resolver{
 		kubeClient:       kubeClient,
 		dynamicClient:    dynamicClient,
+		crClient:         crClient,
 		networkPolicy:    networkPolicy,
 		networkPlugin:    networkPlugin,
 		versionThreshold: lo.Must(semver.ParseTolerant(PreferredK8sVersionThreshold)),
@@ -94,7 +98,9 @@ func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interfac
 //  5. No upstream kube-system/node-local-dns DaemonSet
 //
 // Transient kube-API errors (including RBAC Forbidden) fail-safe to Disabled.
-// Sticky-Enabled is the caller's responsibility (see aksnodeclass.go IsLocalDNSEnabled).
+// On Enabled, the resolver patches AnnotationLocalDNSState=Enabled on the
+// NodeClass for sticky-Enabled semantics. On Disabled, no annotation is
+// written, so a future evaluation can re-run the gates.
 func (r *Resolver) ResolvePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
 	if !r.passesStaticGates(nc) {
 		return v1beta1.LocalDNSStateDisabled
@@ -102,7 +108,28 @@ func (r *Resolver) ResolvePreferred(ctx context.Context, nc *v1beta1.AKSNodeClas
 	if !r.passesClusterGates(ctx) {
 		return v1beta1.LocalDNSStateDisabled
 	}
+	r.persistEnabled(ctx, nc)
 	return v1beta1.LocalDNSStateEnabled
+}
+
+// persistEnabled patches the NodeClass to set AnnotationLocalDNSState=Enabled
+// for sticky-Enabled semantics. Best-effort: failure is logged and ignored —
+// the next resolution will retry.
+func (r *Resolver) persistEnabled(ctx context.Context, nc *v1beta1.AKSNodeClass) {
+	if r.crClient == nil {
+		return
+	}
+	if nc.Annotations[v1beta1.AnnotationLocalDNSState] == string(v1beta1.LocalDNSStateEnabled) {
+		return
+	}
+	stored := nc.DeepCopy()
+	if nc.Annotations == nil {
+		nc.Annotations = map[string]string{}
+	}
+	nc.Annotations[v1beta1.AnnotationLocalDNSState] = string(v1beta1.LocalDNSStateEnabled)
+	if err := r.crClient.Patch(ctx, nc, client.MergeFrom(stored)); err != nil {
+		log.FromContext(ctx).V(1).Info("localdns resolve: failed to persist Enabled annotation (will retry on next provisioning)", "error", err.Error())
+	}
 }
 
 // passesStaticGates runs the gates that need no kube-API access: K8s version,

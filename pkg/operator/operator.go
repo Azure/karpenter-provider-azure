@@ -155,6 +155,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	localDNSResolver := localdns.NewResolver(
 		operator.KubernetesInterface,
 		workloadDynamicClient,
+		operator.GetClient(),
 		options.FromContext(ctx).NetworkPolicy,
 		options.FromContext(ctx).NetworkPlugin,
 	)

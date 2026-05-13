@@ -342,7 +342,6 @@ func TestLocalDNSLabels(t *testing.T) {
 				},
 				Status: v1beta1.AKSNodeClassStatus{
 					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
-					LocalDNSState:     tc.localDNSState,
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -350,6 +349,11 @@ func TestLocalDNSLabels(t *testing.T) {
 						},
 					},
 				},
+			}
+			if tc.localDNSState != nil && *tc.localDNSState == v1beta1.LocalDNSStateEnabled {
+				nodeClass.Annotations = map[string]string{
+					v1beta1.AnnotationLocalDNSState: string(v1beta1.LocalDNSStateEnabled),
+				}
 			}
 
 			labelMap, err := labels.Get(ctx, nodeClass, "amd64", nil)

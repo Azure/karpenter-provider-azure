@@ -158,6 +158,16 @@ var (
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
 	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
+	// AnnotationLocalDNSState records the resolved enable/disable decision for
+	// LocalDNS at provisioning time. Values: "Enabled" or "Disabled". Only set
+	// when Spec.LocalDNS.Mode=Preferred; used to provide sticky-Enabled semantics
+	// (once Enabled, future provisioning observes the sticky value and stays
+	// Enabled even if a later gate-flip would have evaluated to Disabled).
+	// This is a Karpenter-internal annotation intended for the getNodeBootstrapping
+	// (VMSS) path only. The AKS Machine API path uses RP-side resolution and
+	// does not consult this annotation; it can be removed entirely once NAP
+	// fully migrates to the Machine API path.
+	AnnotationLocalDNSState = apis.Group + "/localdns-state"
 )
 
 const (

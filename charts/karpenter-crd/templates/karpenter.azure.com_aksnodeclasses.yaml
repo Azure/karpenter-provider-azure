@@ -1786,22 +1786,6 @@ spec:
                   kubernetesVersion contains the current kubernetes version which should be
                   used for nodes provisioned for the NodeClass
                 type: string
-              localDNSState:
-                description: |-
-                  localDNSState is the resolved enable/disable decision for LocalDNS, recorded
-                  at provisioning time by IsLocalDNSEnabled. For Mode=Required this is always
-                  "Enabled"; for Mode=Disabled this is "Disabled"; for Mode=Preferred this is
-                  computed against cluster conditions (Kubernetes version, network policy,
-                  upstream node-local-dns DaemonSet, BYO CNI, Ubuntu2004) and re-evaluated on
-                  each provisioning. Once "Enabled" under Preferred mode the state is sticky
-                  and never auto-flips back to Disabled — users opt out via Spec.LocalDNS.Mode.
-                  Note: a Preferred-mode NodeClass that has not yet been used for provisioning
-                  will leave this unset; consumers MUST go through IsLocalDNSEnabled, not read
-                  this field directly.
-                enum:
-                - Enabled
-                - Disabled
-                type: string
             type: object
         type: object
     served: true

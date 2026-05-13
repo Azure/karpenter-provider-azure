@@ -287,15 +287,15 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 
 // resolvedLocalDNSForWire produces the LocalDNS payload sent to nodeprovisioner,
 // rewriting Spec.LocalDNS.Mode to reflect Karpenter's already-resolved
-// Status.LocalDNSState.
+// LocalDNS decision (recorded in the AnnotationLocalDNSState annotation).
 //
 // Why this is needed:
 //
 // Two resolvers exist on the NAP getNodeBootstrapping path:
-//  1. This controller (LocalDNSReconciler) — kube-aware: checks K8s version,
-//     image family, BYO CNI, NetworkPolicies (K8s + Cilium + CCNP), and the
-//     upstream kube-system/node-local-dns DaemonSet. Result lands in
-//     Status.LocalDNSState (Enabled|Disabled).
+//  1. This controller (kube-aware): checks K8s version, image family, BYO CNI,
+//     NetworkPolicies (K8s + Cilium + CCNP), and the upstream
+//     kube-system/node-local-dns DaemonSet. On Enabled, persists
+//     AnnotationLocalDNSState=Enabled (sticky).
 //  2. nodeprovisioner's convertLocalDNSProfile — version-only: it has no
 //     kube client, so for Mode=Preferred it resolves State purely from the
 //     orchestrator version. NetworkPolicies and the DaemonSet are invisible
@@ -314,11 +314,6 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 // (→Disabled) without invoking its own Preferred resolver, so it inherits
 // our decision instead of recomputing.
 //
-// This is a tactical fix that reuses the existing Mode contract on the
-// wire. The cleaner long-term fix is to add an explicit `state` field to
-// the LocalDNSProfile swagger so resolved State travels alongside (rather
-// than overloading) user-intent Mode.
-//
 // Scope: this only affects the getNodeBootstrapping / custom-scripts
 // (VMSS) path. The AKS Machine API path
 // (pkg/providers/instance/aksmachineinstancehelpers.go::configureLocalDNSProfile)
@@ -329,24 +324,24 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 // works around disappears entirely once NAP fully migrates to the AKS
 // Machine API path and the getNodeBootstrapping path is retired.
 //
-// Back-compat: when Status.LocalDNSState is nil (resolver hasn't observed
-// the NodeClass yet) we pass the raw spec through unchanged. The aggregate
-// Ready condition includes LocalDNSReady, so Karpenter core won't schedule
-// off an unresolved NodeClass — this branch should be rare.
+// Back-compat: when the annotation is unset (resolver hasn't observed
+// the NodeClass yet) we pass the raw spec through unchanged. Callers
+// (labels, instancetype) drive resolution via IsLocalDNSEnabled before
+// reaching this codepath; by provisioning time the annotation is typically
+// set for Preferred-mode NodeClasses.
 func resolvedLocalDNSForWire(nodeClass *v1beta1.AKSNodeClass) *v1beta1.LocalDNS {
 	if nodeClass.Spec.LocalDNS == nil {
 		// LocalDNS not configured by the user — nothing to send.
 		return nil
 	}
-	if nodeClass.Status.LocalDNSState == nil {
-		// Not resolved yet. Fall back to raw spec so we don't regress the
-		// pre-PR-1676 behavior on the boundary; Karpenter core gates
-		// scheduling on the aggregate Ready condition anyway.
+	annotationVal, hasAnnotation := nodeClass.Annotations[v1beta1.AnnotationLocalDNSState]
+	if !hasAnnotation {
+		// Not resolved yet. Fall back to raw spec.
 		return nodeClass.Spec.LocalDNS
 	}
 	// DeepCopy: don't mutate the live Spec cached in the informer.
 	out := nodeClass.Spec.LocalDNS.DeepCopy()
-	switch *nodeClass.Status.LocalDNSState {
+	switch v1beta1.LocalDNSState(annotationVal) {
 	case v1beta1.LocalDNSStateEnabled:
 		// Force Required so nodeprovisioner unconditionally enables localdns
 		// regardless of its own version check (which we've already done, plus
