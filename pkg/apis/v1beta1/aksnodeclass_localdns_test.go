@@ -32,7 +32,7 @@ import (
 // onto the in-memory NodeClass when invoked. Tests verify sticky semantics
 // surface through Status.LocalDNSState.
 type fakeLocalDNSResolver struct {
-	state v1beta1.LocalDNSState
+	state v1beta1.LocalDNSState `json:"-"`
 }
 
 func (f *fakeLocalDNSResolver) Resolve(_ context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
