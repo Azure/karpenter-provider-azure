@@ -326,8 +326,17 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// Read the resolved state from Status.LocalDNSState to avoid re-running
+	// the resolver (potentially kube-API calls) once per SKU. List() resolves
+	// once up-front for the cache key, so Status is already populated for the
+	// per-SKU loop. If Status is unset (defensive -- e.g. the resolver hadn't
+	// run for some reason), resolve once now so subsequent SKUs short-circuit
+	// through Status.
+	if nodeClass.Status.LocalDNSState == nil {
+		_ = nodeClass.IsLocalDNSEnabled(ctx, p.localDNSResolver)
+	}
 	// If LocalDNS won't be enabled, all instance types are supported
-	if !nodeClass.IsLocalDNSEnabled(ctx, p.localDNSResolver) {
+	if nodeClass.Status.LocalDNSState == nil || *nodeClass.Status.LocalDNSState != v1beta1.LocalDNSStateEnabled {
 		return true
 	}
 
