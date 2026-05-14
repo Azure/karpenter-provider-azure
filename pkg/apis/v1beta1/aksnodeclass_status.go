@@ -80,8 +80,7 @@ type AKSNodeClassStatus struct {
 	Conditions []status.Condition `json:"conditions,omitempty"`
 	// localDNSState records the resolved enable/disable decision for LocalDNS.
 	// It is the source of truth for whether LocalDNS is enabled on Machines
-	// spawned from this NodeClass, on both the bootstrappingclient path
-	// and the AKS Machine API path. For Mode=Required this is always Enabled;
+	// spawned from this NodeClass. For Mode=Required this is always Enabled;
 	// for Mode=Disabled this is always Disabled; for Mode=Preferred this is
 	// resolved from cluster gates with sticky-Enabled semantics.
 	// +optional
