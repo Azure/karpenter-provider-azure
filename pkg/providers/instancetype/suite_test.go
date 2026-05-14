@@ -733,7 +733,7 @@ var _ = Describe("InstanceType Provider", func() {
 				case v1beta1.LocalDNSModeRequired:
 					setEnabledStatus()
 				case v1beta1.LocalDNSModeDisabled:
-					// no status needed; Disabled mode → false
+					// no status needed; Disabled mode -> false
 				case v1beta1.LocalDNSModePreferred:
 					threshold := semver.MustParse("1.36.0")
 					parsed, perr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
@@ -2372,7 +2372,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Context("when driverInstallation is Install (default)", func() {
 				BeforeEach(func() {
-					// Default nodeClass has no GPU config → defaults to Install mode
+					// Default nodeClass has no GPU config -> defaults to Install mode
 					nodeClassDefault := test.AKSNodeClass()
 					ExpectApplied(ctx, env.Client, nodeClassDefault)
 					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassDefault)

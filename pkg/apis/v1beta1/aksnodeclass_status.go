@@ -33,9 +33,9 @@ const (
 // LocalDNSState is the resolved enable/disable decision for LocalDNS on the
 // NodeClass. It mirrors the current LocalDNS enablement state regardless of
 // Spec.LocalDNS.Mode:
-//   - Mode=Required → Enabled
-//   - Mode=Disabled → Disabled
-//   - Mode=Preferred → resolved by gate evaluation, with sticky-Enabled
+//   - Mode=Required -> Enabled
+//   - Mode=Disabled -> Disabled
+//   - Mode=Preferred -> resolved by gate evaluation, with sticky-Enabled
 //     semantics (once Enabled, stays Enabled until the user changes Mode).
 //
 // The value is consulted by AKSNodeClass.ResolvedLocalDNSForWire on both wire

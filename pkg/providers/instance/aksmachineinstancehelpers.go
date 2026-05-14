@@ -181,7 +181,7 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 		return nil
 	}
 	// GPU SKUs: pass through the driver setting from nodeClass.
-	// "Driver" mode → Install, "None" mode → None (treat as non-GPU).
+	// "Driver" mode -> Install, "None" mode -> None (treat as non-GPU).
 	// Upstream instance type filtering already ensures invalid SKU+mode combinations
 	// (e.g., AMD GPU with Driver mode) are excluded before reaching here.
 	driverSetting := armcontainerservice.GPUDriverNone

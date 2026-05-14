@@ -91,9 +91,9 @@ func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interfac
 // Resolve returns the resolved LocalDNS state for a NodeClass and persists it
 // to Status.LocalDNSState. Status.LocalDNSState is a pure mirror of current
 // enablement:
-//   - Mode=Required → Enabled
-//   - Mode=Disabled → Disabled
-//   - Mode=Preferred → evaluate the five gates the RP validator runs:
+//   - Mode=Required -> Enabled
+//   - Mode=Disabled -> Disabled
+//   - Mode=Preferred -> evaluate the five gates the RP validator runs:
 //     1. k8s version >= PreferredK8sVersionThreshold
 //     2. BYO CNI excluded
 //     3. ResolvesToUbuntu2004 excluded

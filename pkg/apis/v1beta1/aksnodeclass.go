@@ -737,8 +737,8 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 }
 
 // LocalDNSResolver computes the resolved LocalDNS state for a NodeClass and
-// persists it to Status.LocalDNSState. For Mode=Required → Enabled; for
-// Mode=Disabled → Disabled; for Mode=Preferred → cluster-gate evaluation with
+// persists it to Status.LocalDNSState. For Mode=Required -> Enabled; for
+// Mode=Disabled -> Disabled; for Mode=Preferred -> cluster-gate evaluation with
 // sticky-Enabled semantics. Implemented by pkg/providers/localdns.Resolver.
 // Declared as an interface here so the apis package doesn't have to import
 // the resolver and its client-go dependencies.
@@ -750,10 +750,10 @@ type LocalDNSResolver interface {
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 //
 // Behavior:
-//   - Spec.LocalDNS nil or Mode unset → false.
+//   - Spec.LocalDNS nil or Mode unset -> false.
 //   - Otherwise, delegate to the resolver, which sets Status.LocalDNSState
 //     and returns the terminal state. Status is a pure mirror:
-//     Required → Enabled, Disabled → Disabled, Preferred → gate-resolved
+//     Required -> Enabled, Disabled -> Disabled, Preferred -> gate-resolved
 //     with sticky-Enabled (once Enabled, stays Enabled while Mode=Preferred).
 //
 // If resolver is nil (test paths), fall back to reading Status.LocalDNSState
