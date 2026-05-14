@@ -108,26 +108,30 @@ func NewResolver(kubeClient kubernetes.Interface, dynamicClient dynamic.Interfac
 // decision on both wire paths (bootstrappingclient and AKS Machine API) and
 // doesn't let downstream resolvers re-resolve to a different answer per machine.
 func (r *Resolver) Resolve(ctx context.Context, nc *v1beta1.AKSNodeClass) v1beta1.LocalDNSState {
+	// state == "" means "clear Status.LocalDNSState" (no LocalDNS configured /
+	// unknown Mode). All branches fall through to a single persistState call so
+	// there is exactly one Status writer and no early-return paths that can
+	// leave stale Status behind.
 	var state v1beta1.LocalDNSState
 	switch {
 	case nc.Spec.LocalDNS == nil:
-		return v1beta1.LocalDNSStateDisabled
+		// state stays "" -> clear any stale Status.LocalDNSState.
 	case nc.Spec.LocalDNS.Mode == v1beta1.LocalDNSModeRequired:
 		state = v1beta1.LocalDNSStateEnabled
 	case nc.Spec.LocalDNS.Mode == v1beta1.LocalDNSModeDisabled:
 		state = v1beta1.LocalDNSStateDisabled
 	case nc.Spec.LocalDNS.Mode == v1beta1.LocalDNSModePreferred:
-		// Sticky-Enabled: never flip back unless user changes Mode.
+		// Sticky-Enabled: never flip back unless user changes Mode. persistState
+		// no-ops via its equality short-circuit when Status is already Enabled.
 		if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
-			return v1beta1.LocalDNSStateEnabled
-		}
-		if r.passesStaticGates(nc) && r.passesClusterGates(ctx) {
+			state = v1beta1.LocalDNSStateEnabled
+		} else if r.passesStaticGates(nc) && r.passesClusterGates(ctx) {
 			state = v1beta1.LocalDNSStateEnabled
 		} else {
 			state = v1beta1.LocalDNSStateDisabled
 		}
 	default:
-		return v1beta1.LocalDNSStateDisabled
+		// Unknown / empty Mode -> clear Status.
 	}
 	r.persistState(ctx, nc, state)
 	return state
@@ -135,15 +139,27 @@ func (r *Resolver) Resolve(ctx context.Context, nc *v1beta1.AKSNodeClass) v1beta
 
 // persistState patches Status.LocalDNSState to the resolved state. Best-effort:
 // failure is logged and ignored — the next resolution will retry.
+//
+// state == "" means "clear Status.LocalDNSState" (patch the field to nil).
 func (r *Resolver) persistState(ctx context.Context, nc *v1beta1.AKSNodeClass, state v1beta1.LocalDNSState) {
 	if r.crClient == nil {
 		return
 	}
-	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == state {
+	// Idempotency short-circuits: both target=set with same value, and
+	// target=clear with already-nil Status, are no-ops.
+	if state == "" {
+		if nc.Status.LocalDNSState == nil {
+			return
+		}
+	} else if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == state {
 		return
 	}
 	stored := nc.DeepCopy()
-	nc.Status.LocalDNSState = lo.ToPtr(state)
+	if state == "" {
+		nc.Status.LocalDNSState = nil
+	} else {
+		nc.Status.LocalDNSState = lo.ToPtr(state)
+	}
 	if err := r.crClient.Status().Patch(ctx, nc, client.MergeFrom(stored)); err != nil {
 		log.FromContext(ctx).V(1).Info("localdns resolve: failed to persist Status.LocalDNSState (will retry on next provisioning)", "state", string(state), "error", err.Error())
 	}

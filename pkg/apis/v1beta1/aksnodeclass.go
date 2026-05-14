@@ -749,22 +749,24 @@ type LocalDNSResolver interface {
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 //
-// Behavior:
-//   - Spec.LocalDNS nil or Mode unset -> false.
-//   - Otherwise, delegate to the resolver, which sets Status.LocalDNSState
-//     and returns the terminal state. Status is a pure mirror:
-//     Required -> Enabled, Disabled -> Disabled, Preferred -> gate-resolved
-//     with sticky-Enabled (once Enabled, stays Enabled while Mode=Preferred).
+// Always delegates to the resolver, which owns Status.LocalDNSState writes:
+//   - Spec.LocalDNS nil or Mode unset -> clear Status, return false.
+//   - Mode=Required -> Status=Enabled, return true.
+//   - Mode=Disabled -> Status=Disabled, return false.
+//   - Mode=Preferred -> gate-resolved with sticky-Enabled (once Enabled, stays
+//     Enabled while Mode=Preferred); Disabled is re-evaluated each call.
 //
 // If resolver is nil (test paths), fall back to reading Status.LocalDNSState
 // directly: returns true iff Status==Enabled.
 func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNSResolver) bool {
-	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
-		return false
-	}
 	if resolver == nil {
+		// Test-only fallback: no resolver wired in, just read Status. Also
+		// covers the spec-nil / empty-Mode case (Status is unset -> false).
 		return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
 	}
+	// Always delegate to the resolver — including Spec.LocalDNS == nil and
+	// empty Mode — so it owns Status.LocalDNSState writes (including clearing
+	// stale state when the user removes the spec).
 	return resolver.Resolve(ctx, in) == LocalDNSStateEnabled
 }
 
