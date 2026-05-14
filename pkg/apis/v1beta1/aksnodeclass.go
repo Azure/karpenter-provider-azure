@@ -768,48 +768,15 @@ func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNS
 	return resolver.Resolve(ctx, in) == LocalDNSStateEnabled
 }
 
-// ResolvedLocalDNSForWire returns the LocalDNS payload to send on either wire
-// path (bootstrappingclient or AKS Machine API), with Spec.LocalDNS.Mode
-// rewritten to the terminal value implied by Status.LocalDNSState.
-//
-// This rewrite is a permanent part of the LocalDNS contract — not a transient
-// workaround. It exists to guarantee two properties that cannot be provided by
-// the downstream wire-side resolvers:
-//
-//  1. Sticky-Enabled. Once a NodeClass with Mode=Preferred resolves to Enabled,
-//     it stays Enabled for the lifetime of the NodeClass (until the user
-//     explicitly changes Mode). Status.LocalDNSState on the AKSNodeClass is the
-//     single source of truth for this stickiness, and only Karpenter writes it.
-//     Sending Mode=Preferred over the wire would let the downstream resolver
-//     re-evaluate per machine and flip Enabled->Disabled the moment an upstream
-//     conflict (e.g. a new NetworkPolicy) appears, silently breaking the
-//     contract.
-//
-//  2. Deterministic decision across a NodeClass. Every Machine spawned from
-//     the same NodeClass must agree on LocalDNS state. Per-machine resolution
-//     on the downstream side would otherwise produce a heterogeneous fleet
-//     under one NodeClass if cluster state changes between creates.
-//
-// Karpenter is the authoritative kube-aware resolver: K8s version, image
-// family, BYO CNI, K8s/Cilium/Calico NetworkPolicies, upstream
-// kube-system/node-local-dns DaemonSet. It records the resolved state on
-// Status.LocalDNSState. The two downstream resolvers —
-// nodeprovisioner.convertLocalDNSProfile (bootstrappingclient path) and
-// the RP-side LocalDNS validator (AKS Machine API path) — are version-only
-// and cannot see NetworkPolicies/DaemonSets. By rewriting Mode to
-// Required/Disabled, we make both short-circuit on the terminal value and
-// inherit Karpenter's decision instead of recomputing.
+// ResolvedLocalDNSForWire translates Status.LocalDNSState (the source of
+// truth, written by Karpenter) into a deterministic Mode to send downstream.
+// LocalDNS state is read-only in the aks-rp API contract, so Preferred is
+// never sent over the wire -- downstream would otherwise re-interpret it.
 //
 // Rules:
-//   - Mode != Preferred (Required/Disabled): return Spec as-is. The user's
-//     explicit mode is authoritative.
-//   - Mode == Preferred + Status.LocalDNSState == Enabled: rewrite Mode=Required.
-//   - Mode == Preferred + Status.LocalDNSState == Disabled or unset: rewrite
-//     Mode=Disabled. We never pass Mode=Preferred downstream, because the
-//     downstream resolver cannot see cluster gates and would re-decide
-//     incorrectly. Callers drive resolution via IsLocalDNSEnabled before the
-//     wire send, so Status is set by provisioning time on the normal path;
-//     the unset-fallback is a defense-in-depth Disabled.
+//   - Mode != Preferred: return Spec as-is.
+//   - Mode == Preferred + Status.LocalDNSState == Enabled: Mode=Required.
+//   - Mode == Preferred + Status.LocalDNSState == Disabled or unset: Mode=Disabled.
 func (in *AKSNodeClass) ResolvedLocalDNSForWire() *LocalDNS {
 	if in.Spec.LocalDNS == nil {
 		return nil
