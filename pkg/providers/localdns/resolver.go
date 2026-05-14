@@ -53,17 +53,14 @@ const (
 
 // Resolver computes the resolved LocalDNS state for a NodeClass in Preferred mode.
 //
-// SYNC: LocalDNS Preferred-mode resolution lives in three places that must stay
-// aligned. If any gate changes, update the others in lockstep:
+// SYNC: LocalDNS Preferred-mode resolution lives in two places that must stay
+// aligned. If any gate changes, update the other in lockstep:
 //  1. RP validator (source of truth):
 //     resourceprovider/.../validation/localdns/localdnsvalidator.go
-//     resolvePreferredState — full gate set: toggle, K8s ver, SKU CPU/mem,
+//     resolvePreferredState -- full gate set: toggle, K8s ver, SKU CPU/mem,
 //     IsLocalDNSSupported (Windows / Ubuntu2004 / AvailabilitySets / CustomImage),
 //     BYO CNI, NetworkPolicy, node-local-dns DaemonSet.
-//  2. Nodeprovisioner: nodeprovisioner/server/models/convertto.go
-//     resolvePreferredState — mirrors per-AP gates for the bootstrappingclient
-//     path. No kube client; cluster-wide checks deferred to the RP validator.
-//  3. This resolver — drives Karpenter's instance-type filtering, cache key,
+//  2. This resolver -- drives Karpenter's instance-type filtering, cache key,
 //     node label, and Status.LocalDNSState on the NodeClass.
 type Resolver struct {
 	kubeClient       kubernetes.Interface

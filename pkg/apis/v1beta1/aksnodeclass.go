@@ -770,8 +770,10 @@ func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNS
 
 // ResolvedLocalDNSForWire translates Status.LocalDNSState (the source of
 // truth, written by Karpenter) into a deterministic Mode to send downstream.
-// LocalDNS state is read-only in the aks-rp API contract, so Preferred is
-// never sent over the wire -- downstream would otherwise re-interpret it.
+// In the aks-rp API contract, LocalDNS state is read-only; only Mode is
+// accepted as input. Preferred must therefore never be sent over the wire --
+// downstream would otherwise re-interpret it and could resolve to a different
+// value than our source of truth.
 //
 // Rules:
 //   - Mode != Preferred: return Spec as-is.

@@ -31,17 +31,16 @@ const (
 )
 
 // LocalDNSState is the resolved enable/disable decision for LocalDNS on the
-// NodeClass. It mirrors the current LocalDNS enablement state regardless of
-// Spec.LocalDNS.Mode:
+// NodeClass. It represents the current LocalDNS enablement state at the
+// moment, derived from Spec.LocalDNS.Mode and cluster conditions:
 //   - Mode=Required -> Enabled
 //   - Mode=Disabled -> Disabled
 //   - Mode=Preferred -> resolved by gate evaluation, with sticky-Enabled
 //     semantics (once Enabled, stays Enabled until the user changes Mode).
 //
-// The value is consulted by AKSNodeClass.ResolvedLocalDNSForWire on both wire
-// paths (bootstrappingclient and the AKS Machine API), so every Machine
-// spawned from the same NodeClass agrees on LocalDNS state regardless of when
-// cluster-side conditions changed.
+// Any new Machine spawned from this NodeClass uses this value as the source
+// of truth for LocalDNS enablement, regardless of when cluster-side
+// conditions changed.
 type LocalDNSState string
 
 const (
