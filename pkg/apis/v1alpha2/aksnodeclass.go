@@ -18,9 +18,7 @@ package v1alpha2
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/blang/semver/v4"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -705,35 +703,17 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
-// Returns true for Required mode, false for Disabled mode, and for Preferred mode,
-// returns true only if the Kubernetes version is >= 1.35.
+// The decision is sourced from Status.LocalDNSState, which is resolved by the
+// nodeclass.localdns status sub-reconciler:
+//   - Mode=Required  -> Status=Enabled
+//   - Mode=Disabled  -> Status=Disabled
+//   - Mode=Preferred -> resolved against cluster gates. Once Mode=Preferred
+//     resolves to Enabled, it remains Enabled while Mode stays Preferred.
+//
+// If Status.LocalDNSState has not yet been written, this returns false as a
+// safe default.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
-	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
-		return false
-	}
-
-	switch in.Spec.LocalDNS.Mode {
-	case LocalDNSModeRequired:
-		return true
-	case LocalDNSModeDisabled:
-		return false
-	case LocalDNSModePreferred:
-		// For Preferred mode, check if K8s version >= 1.35
-		kubernetesVersion, err := in.GetKubernetesVersion()
-		if err != nil {
-			return false // If we can't get version, don't enable
-		}
-
-		// Parse version
-		parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
-		if err != nil {
-			return false
-		}
-
-		return parsedVersion.GE(semver.Version{Major: 1, Minor: 35})
-	default:
-		return false
-	}
+	return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
 }
 
 // GetGPUMode returns the effective GPU mode.

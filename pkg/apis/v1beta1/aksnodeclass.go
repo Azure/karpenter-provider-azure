@@ -770,7 +770,7 @@ func (in *AKSNodeClass) ResolvedLocalDNSForWire() *LocalDNS {
 		return in.Spec.LocalDNS
 	}
 	out := in.Spec.LocalDNS.DeepCopy()
-	if in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled {
+	if lo.FromPtr(in.Status.LocalDNSState) == LocalDNSStateEnabled {
 		out.Mode = LocalDNSModeRequired
 	} else {
 		out.Mode = LocalDNSModeDisabled

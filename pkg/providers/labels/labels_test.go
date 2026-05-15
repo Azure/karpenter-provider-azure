@@ -291,7 +291,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			expectedLabel:     "enabled",
 		},
 		{
-			name: "LocalDNS mode is Preferred with k8s < 1.35",
+			name: "LocalDNS mode is Preferred with k8s < 1.36",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},

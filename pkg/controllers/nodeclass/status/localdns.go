@@ -37,18 +37,8 @@ import (
 )
 
 const (
-	// localDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
-	// required to auto-enable LocalDNS when Mode=Preferred.
-	localDNSPreferredK8sVersionThreshold = "1.36.0"
-
 	networkPolicyCalico = "calico"
 	networkPolicyCilium = "cilium"
-
-	konnectivityAgentPolicyName      = "konnectivity-agent"
-	konnectivityAgentPolicyNamespace = "kube-system"
-
-	nodeLocalDNSDaemonSetName      = "node-local-dns"
-	nodeLocalDNSDaemonSetNamespace = "kube-system"
 )
 
 // LocalDNSReconciler resolves the effective LocalDNS state on an AKSNodeClass
@@ -83,7 +73,7 @@ func NewLocalDNSReconciler(kubeClient kubernetes.Interface, dynamicClient dynami
 		dynamicClient:    dynamicClient,
 		networkPolicy:    networkPolicy,
 		networkPlugin:    networkPlugin,
-		versionThreshold: lo.Must(semver.ParseTolerant(localDNSPreferredK8sVersionThreshold)),
+		versionThreshold: lo.Must(semver.ParseTolerant(consts.LocalDNSPreferredK8sVersionThreshold)),
 	}
 }
 
@@ -192,7 +182,7 @@ func (r *LocalDNSReconciler) hasUpstreamNodeLocalDNS(ctx context.Context) (bool,
 	if r.kubeClient == nil {
 		return false, nil
 	}
-	_, err := r.kubeClient.AppsV1().DaemonSets(nodeLocalDNSDaemonSetNamespace).Get(ctx, nodeLocalDNSDaemonSetName, metav1.GetOptions{})
+	_, err := r.kubeClient.AppsV1().DaemonSets(consts.NodeLocalDNSDaemonSetNamespace).Get(ctx, consts.NodeLocalDNSDaemonSetName, metav1.GetOptions{})
 	if err == nil {
 		return true, nil
 	}
@@ -218,7 +208,7 @@ func (r *LocalDNSReconciler) hasConflictingK8sNetworkPolicies(ctx context.Contex
 		return false, fmt.Errorf("listing K8s NetworkPolicies: %w", err)
 	}
 	for _, np := range netPolList.Items {
-		if np.Name == konnectivityAgentPolicyName && np.Namespace == konnectivityAgentPolicyNamespace {
+		if np.Name == consts.KonnectivityAgentPolicyName && np.Namespace == consts.KonnectivityAgentPolicyNamespace {
 			continue
 		}
 		return true, nil

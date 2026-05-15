@@ -27,6 +27,27 @@ const (
 	ConditionTypeImagesReady            = "ImagesReady"
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
 	ConditionTypeSubnetsReady           = "SubnetsReady"
+	ConditionTypeLocalDNSReady          = "LocalDNSReady"
+)
+
+// LocalDNSState is the resolved enable/disable decision for LocalDNS on the
+// NodeClass. It represents the current LocalDNS enablement state at the
+// moment, derived from Spec.LocalDNS.Mode and cluster conditions:
+//   - Mode=Required -> Enabled
+//   - Mode=Disabled -> Disabled
+//   - Mode=Preferred -> resolved by gate evaluation. Once Mode=Preferred
+//     resolves to Enabled, it remains Enabled while Mode stays Preferred;
+//     it does not flip back to Disabled if cluster-side conflicts later
+//     appear. The user can opt out by changing Mode to Disabled.
+//
+// Any new node spawned from this NodeClass uses this value as the source
+// of truth for LocalDNS enablement, regardless of when cluster-side
+// conditions changed.
+type LocalDNSState string
+
+const (
+	LocalDNSStateEnabled  LocalDNSState = "Enabled"
+	LocalDNSStateDisabled LocalDNSState = "Disabled"
 )
 
 // NodeImage contains resolved image selector values utilized for node launch
@@ -58,6 +79,17 @@ type AKSNodeClassStatus struct {
 	// +optional
 	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility
 	Conditions []status.Condition `json:"conditions,omitempty"`
+	// localDNSState records the resolved enable/disable decision for LocalDNS.
+	// It is the source of truth for whether LocalDNS is enabled on nodes
+	// spawned from this NodeClass. For Mode=Required this is always Enabled;
+	// for Mode=Disabled this is always Disabled; for Mode=Preferred this is
+	// resolved from cluster gates. Once Mode=Preferred resolves to Enabled,
+	// it remains Enabled while Mode stays Preferred; it does not flip back
+	// to Disabled if cluster-side conflicts later appear. The user can opt
+	// out by changing Mode to Disabled.
+	// +optional
+	// +kubebuilder:validation:Enum:=Enabled;Disabled
+	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 }
 
 func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
@@ -65,6 +97,7 @@ func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
 		ConditionTypeImagesReady,
 		ConditionTypeKubernetesVersionReady,
 		ConditionTypeSubnetsReady,
+		ConditionTypeLocalDNSReady,
 	}
 	return status.NewReadyConditions(conds...).For(in)
 }

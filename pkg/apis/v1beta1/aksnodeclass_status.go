@@ -36,10 +36,12 @@ const (
 // moment, derived from Spec.LocalDNS.Mode and cluster conditions:
 //   - Mode=Required -> Enabled
 //   - Mode=Disabled -> Disabled
-//   - Mode=Preferred -> resolved by gate evaluation, with sticky-Enabled
-//     semantics (once Enabled, stays Enabled until the user changes Mode).
+//   - Mode=Preferred -> resolved by gate evaluation. Once Mode=Preferred
+//     resolves to Enabled, it remains Enabled while Mode stays Preferred;
+//     it does not flip back to Disabled if cluster-side conflicts later
+//     appear. The user can opt out by changing Mode to Disabled.
 //
-// Any new Machine spawned from this NodeClass uses this value as the source
+// Any new node spawned from this NodeClass uses this value as the source
 // of truth for LocalDNS enablement, regardless of when cluster-side
 // conditions changed.
 type LocalDNSState string
@@ -79,11 +81,15 @@ type AKSNodeClassStatus struct {
 	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility
 	Conditions []status.Condition `json:"conditions,omitempty"`
 	// localDNSState records the resolved enable/disable decision for LocalDNS.
-	// It is the source of truth for whether LocalDNS is enabled on Machines
+	// It is the source of truth for whether LocalDNS is enabled on nodes
 	// spawned from this NodeClass. For Mode=Required this is always Enabled;
 	// for Mode=Disabled this is always Disabled; for Mode=Preferred this is
-	// resolved from cluster gates with sticky-Enabled semantics.
+	// resolved from cluster gates. Once Mode=Preferred resolves to Enabled,
+	// it remains Enabled while Mode stays Preferred; it does not flip back
+	// to Disabled if cluster-side conflicts later appear. The user can opt
+	// out by changing Mode to Disabled.
 	// +optional
+	// +kubebuilder:validation:Enum:=Enabled;Disabled
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 }
 
