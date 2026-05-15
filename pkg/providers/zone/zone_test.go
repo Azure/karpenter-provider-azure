@@ -70,7 +70,7 @@ func TestProvider_SupportsZones_NonZonalRegions(t *testing.T) {
 	g.Expect(provider.SupportsZones(ctx, "unknownregion")).To(BeFalse())
 }
 
-func TestProvider_SupportsZones_FallbackToHardcodedListOnError(t *testing.T) {
+func TestProvider_SupportsZones_DoesNotFallbackOnAPIError(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 	ctx := context.Background()
@@ -82,12 +82,9 @@ func TestProvider_SupportsZones_FallbackToHardcodedListOnError(t *testing.T) {
 	// Create provider
 	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
-	// Test regions that are in the hardcoded fallback list
-	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
-	g.Expect(provider.SupportsZones(ctx, "westus2")).To(BeTrue())
-	g.Expect(provider.SupportsZones(ctx, "northeurope")).To(BeTrue())
-
-	// Test region not in hardcoded list
+	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
+	g.Expect(provider.SupportsZones(ctx, "westus2")).To(BeFalse())
+	g.Expect(provider.SupportsZones(ctx, "northeurope")).To(BeFalse())
 	g.Expect(provider.SupportsZones(ctx, "unknownregion")).To(BeFalse())
 }
 
@@ -106,7 +103,7 @@ func TestProvider_SupportsZones_StopsLoadingAfterMaxFailuresAndStartsAgainAfterW
 
 	// Test that failures don't keep being tried
 	for i := 0; i < 20; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(10))
 
@@ -115,7 +112,7 @@ func TestProvider_SupportsZones_StopsLoadingAfterMaxFailuresAndStartsAgainAfterW
 
 	// Try some more
 	for i := 0; i < 20; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(20))
 }
@@ -135,7 +132,7 @@ func TestProvider_SupportsZones_ResetsFailuresAfterWindow(t *testing.T) {
 
 	// Test that failures don't keep being tried
 	for i := 0; i < 5; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(5))
 
@@ -144,7 +141,7 @@ func TestProvider_SupportsZones_ResetsFailuresAfterWindow(t *testing.T) {
 
 	// Try some more
 	for i := 0; i < 20; i++ {
-		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 	}
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(15))
 }
@@ -279,12 +276,11 @@ func TestProvider_GetAvailableZones_ReturnsNilOnAPIError(t *testing.T) {
 	// Create provider
 	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
-	// Test that API error results in nil zones (no fallback for zone list)
+	// Test that API error results in nil zones
 	zones := provider.GetAvailableZones(ctx, "eastus")
 	g.Expect(zones).To(BeNil())
 
-	// But SupportsZones still works with fallback
-	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeFalse())
 }
 
 func TestProvider_GetAvailableZones_Caching(t *testing.T) {

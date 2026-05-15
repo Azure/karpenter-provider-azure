@@ -22,6 +22,8 @@ controller:
       value: ${NETWORK_PLUGIN_MODE}
     - name: NETWORK_POLICY
       value: ${NETWORK_POLICY}
+    - name: NETWORK_DATAPLANE
+      value: ${NETWORK_DATAPLANE}
     - name: VNET_SUBNET_ID
       value: ${VNET_SUBNET_ID}
     - name: VNET_GUID
@@ -30,7 +32,7 @@ controller:
       value: ${NODE_IDENTITIES}
 
     # Azure client settings
-    - name: ARM_SUBSCRIPTION_ID
+    - name: AZURE_SUBSCRIPTION_ID
       value: ${AZURE_SUBSCRIPTION_ID}
     - name: LOCATION
       value: ${AZURE_LOCATION}
@@ -43,13 +45,19 @@ controller:
 
     # managed karpenter settings
     - name: USE_SIG
-      value: "false"
+      value: "${USE_SIG}"
     - name: SIG_ACCESS_TOKEN_SERVER_URL
       value: ""
     - name: SIG_ACCESS_TOKEN_SCOPE
       value: ""
     - name: SIG_SUBSCRIPTION_ID
-      value: ""
+      value: "${AZURE_SIG_SUBSCRIPTION_ID}"
+    - name: PROVISION_MODE
+      value: "${PROVISION_MODE:-aksscriptless}"
+    - name: AKS_MACHINES_POOL_NAME
+      value: "${AKS_MACHINES_POOL_NAME}"
+    - name: ARM_RESOURCE_GROUP
+      value: "${AZURE_RESOURCE_GROUP}"
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
@@ -57,3 +65,6 @@ serviceAccount:
 podLabels:
   azure.workload.identity/use: "true"
 logLevel: ${LOG_LEVEL}
+settings:
+  featureGates:
+    staticCapacity: true

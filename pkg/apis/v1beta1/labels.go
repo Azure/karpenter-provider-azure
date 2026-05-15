@@ -17,6 +17,8 @@ limitations under the License.
 package v1beta1
 
 import (
+	"strings"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -30,6 +32,17 @@ func init() {
 	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
 	// Karpenter core expects that WellKnownLabels are mapped to requirements.
 	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Union(AzureWellKnownLabels)
+	// Register exact, stable Azure-supported value domains for Karpenter core runtime requirement validation.
+	karpv1.WellKnownValuesForRequirements[karpv1.CapacityTypeLabelKey] = sets.New(karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot)
+	karpv1.WellKnownValuesForRequirements[LabelSKUAcceleratedNetworking] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelSKUStoragePremiumCapable] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelSKUGPUManufacturer] = sets.New(ManufacturerNvidia, ManufacturerAMD)
+	karpv1.WellKnownValuesForRequirements[LabelPlacementScope] = sets.New(PlacementScopeZonal, PlacementScopeRegional)
+	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
+	karpv1.WellKnownValuesForRequirements[AKSLabelScaleSetPriority] = sets.New(ScaleSetPriorityRegular, ScaleSetPrioritySpot)
+	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
+	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux)
+	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
 }
 
 var (
@@ -62,9 +75,14 @@ var (
 		LabelSKUGPUName,
 		LabelSKUGPUManufacturer,
 		LabelSKUGPUCount,
+		LabelPlacementScope,
 
 		AKSLabelCluster,
 		AKSLabelMode,
+		AKSLabelScaleSetPriority,
+		AKSLabelPriority,
+		AKSLabelOSSKU,
+		AKSLabelFIPSEnabled,
 	)
 
 	RestrictedLabels = sets.New(
@@ -75,9 +93,12 @@ var (
 		options.AllowUndefined = karpv1.WellKnownLabels.Union(RestrictedLabels)
 	}
 
-	HyperVGenerationV1 = "1"
-	HyperVGenerationV2 = "2"
-	ManufacturerNvidia = "nvidia"
+	HyperVGenerationV1     = "1"
+	HyperVGenerationV2     = "2"
+	ManufacturerNvidia     = "nvidia"
+	ManufacturerAMD        = "amd"
+	PlacementScopeZonal    = "zonal"
+	PlacementScopeRegional = "regional"
 
 	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
 	LabelSKUFamily  = Group + "/sku-family"  // D
@@ -101,6 +122,8 @@ var (
 	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
 	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
 
+	LabelPlacementScope = Group + "/placement-scope"
+
 	// Internal/restricted labels
 	LabelSKUHyperVGeneration = Group + "/sku-hyperv-generation" // sku.HyperVGenerations
 
@@ -109,10 +132,32 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
-	AKSLabelMode                    = AKSLabelDomain + "/mode" // "system" or "user"
+	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelPriority                = AKSLabelDomain + "/priority"         // "spot" or "regular".
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
+	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
+
+	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
+	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
+
+	// Legacy labels
+	AKSLabelLegacyAgentPool      = "agentpool"
+	AKSLabelLegacyStorageProfile = "storageprofile"
+	AKSLabelLegacyStorageTier    = "storagetier"
+	AKSLabelLegacyAccelerator    = "accelerator"
+
+	// aksLegacyLabels is the set of well-known AKS labels that are not members of the kubernetes.azure.com label namespace.
+	aksLegacyLabels = sets.NewString(
+		AKSLabelLegacyAgentPool,
+		AKSLabelLegacyStorageProfile,
+		AKSLabelLegacyStorageTier,
+		AKSLabelLegacyAccelerator,
+	)
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
 )
 
 const (
@@ -127,8 +172,49 @@ const (
 	AzureLinuxImageFamily = "AzureLinux"
 )
 
+const (
+	OSSKUUbuntu     = "Ubuntu"
+	OSSKUAzureLinux = "AzureLinux"
+)
+
+const (
+	ScaleSetPriorityRegular = "regular"
+	ScaleSetPrioritySpot    = "spot"
+)
+
+const (
+	PriorityRegular = "regular"
+	PrioritySpot    = "spot"
+)
+
 var UbuntuFamilies = sets.New(
 	UbuntuImageFamily,
 	Ubuntu2204ImageFamily,
 	Ubuntu2404ImageFamily,
 )
+
+// imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
+// These values match what AKS writes for kubernetes.azure.com/os-sku.
+var imageFamilyToOSSKU = map[string]string{
+	UbuntuImageFamily:     OSSKUUbuntu,
+	Ubuntu2204ImageFamily: OSSKUUbuntu,
+	Ubuntu2404ImageFamily: OSSKUUbuntu,
+	AzureLinuxImageFamily: OSSKUAzureLinux,
+}
+
+// GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
+// If imageFamily is empty, it defaults to Ubuntu.
+// If the imageFamily is not recognized, it returns the imageFamily as-is.
+func GetOSSKUFromImageFamily(imageFamily string) string {
+	if imageFamily == "" {
+		imageFamily = UbuntuImageFamily
+	}
+	if osSKU, ok := imageFamilyToOSSKU[imageFamily]; ok {
+		return osSKU
+	}
+	return imageFamily // fallback for unknown image families
+}
+
+func IsAKSLabel(label string) bool {
+	return strings.HasPrefix(label, AKSLabelDomain+"/") || aksLegacyLabels.Has(label)
+}

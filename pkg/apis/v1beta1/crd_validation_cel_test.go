@@ -46,7 +46,8 @@ var _ = Describe("CEL/Validation", func() {
 	var nodePool *karpv1.NodePool
 
 	// Helper function to create a complete LocalDNSZoneOverride with all required fields
-	// Use forwardToVnetDNS=true for root zone "." in vnetDNSOverrides
+	// Use forwardToVnetDNS=true for root zone "." in vnetDNSOverrides and for external domains
+	// Use forwardToVnetDNS=false only for cluster.local zone
 	createCompleteLocalDNSZoneOverride := func(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZoneOverride {
 		forwardDest := v1beta1.LocalDNSForwardDestinationClusterCoreDNS
 		if forwardToVnetDNS {
@@ -81,10 +82,8 @@ var _ = Describe("CEL/Validation", func() {
 						},
 						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 							{
-								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      karpv1.CapacityTypeLabelKey,
-									Operator: corev1.NodeSelectorOpExists,
-								},
+								Key:      karpv1.CapacityTypeLabelKey,
+								Operator: corev1.NodeSelectorOpExists,
 							},
 						},
 					},
@@ -152,6 +151,44 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("ArtifactStreaming", func() {
+		It("should accept when ArtifactStreaming is completely omitted", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// ArtifactStreaming is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled true", func() {
+			enabled := true
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{
+						Enabled: &enabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled false", func() {
+			disabled := false
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{
+						Enabled: &disabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
 	Context("LocalDNS", func() {
 		It("should accept when LocalDNS is completely omitted", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
@@ -210,7 +247,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging v1beta1.LocalDNSQueryLogging, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.QueryLogging = queryLogging
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -244,7 +281,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSProtocol", func(protocol v1beta1.LocalDNSProtocol, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.Protocol = protocol
 			// When using ForceTCP, we can't use ServeStaleVerify, so use Immediate instead
 			if protocol == v1beta1.LocalDNSProtocolForceTCP {
@@ -275,7 +312,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination v1beta1.LocalDNSForwardDestination, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ForwardDestination = forwardDestination
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -295,14 +332,14 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid forward destination: ClusterCoreDNS", v1beta1.LocalDNSForwardDestinationClusterCoreDNS, ""),
+			Entry("invalid forward destination: ClusterCoreDNS for external domain", v1beta1.LocalDNSForwardDestinationClusterCoreDNS, "external domains cannot be forwarded to ClusterCoreDNS"),
 			Entry("valid forward destination: VnetDNS", v1beta1.LocalDNSForwardDestinationVnetDNS, ""),
 			Entry("invalid forward destination: invalid-string", v1beta1.LocalDNSForwardDestination("invalid-string"), "forwardDestination"),
 			Entry("invalid forward destination: empty", v1beta1.LocalDNSForwardDestination(""), "forwardDestination"),
 		)
 
 		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy v1beta1.LocalDNSForwardPolicy, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ForwardPolicy = forwardPolicy
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -330,7 +367,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSServeStale", func(serveStale v1beta1.LocalDNSServeStale, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ServeStale = serveStale
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -359,7 +396,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate CacheDuration", func(durationStr string, expectedErr string) {
 			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.CacheDuration = cacheDuration
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -388,7 +425,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expectedErr string) {
 			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ServeStaleDuration = serveStaleDuration
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -416,7 +453,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate MaxConcurrent", func(maxConcurrent *int32, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.MaxConcurrent = maxConcurrent
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -578,7 +615,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate protocol and serveStale combinations",
 			func(protocol v1beta1.LocalDNSProtocol, serveStale v1beta1.LocalDNSServeStale, shouldSucceed bool) {
-				override := createCompleteLocalDNSZoneOverride("example.com", false)
+				override := createCompleteLocalDNSZoneOverride("example.com", true)
 				override.Protocol = protocol
 				override.ServeStale = serveStale
 				nodeClass := &v1beta1.AKSNodeClass{
@@ -675,24 +712,89 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
-	Context("Requirements", func() {
-		It("should allow restricted domains exceptions", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.LabelDomainExceptions {
-				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label + "/test", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
+	Context("GPU", func() {
+		It("should accept gpu.mode set to Driver", func() {
+			gpuMode := v1beta1.GPUModeDriver
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode: &gpuMode,
+					},
+				},
 			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
+		It("should accept gpu.mode set to None", func() {
+			gpuMode := v1beta1.GPUModeNone
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode: &gpuMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject invalid gpu.mode value", func() {
+			invalidMode := v1beta1.GPUMode("Invalid")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{
+						Mode: &invalidMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept when gpu field is omitted entirely", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu set with mode omitted", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					GPU: &v1beta1.GPU{},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
+	Context("Requirements", func() {
+		// Labels with registered WellKnownValuesForRequirements reject arbitrary In values.
+		// Exclude them from the generic well-known label test below, which uses "test" as a placeholder value.
+		knownValueRequirementLabels := sets.New(
+			karpv1.NodePoolLabelKey,
+			karpv1.CapacityTypeLabelKey,
+			v1beta1.LabelSKUAcceleratedNetworking,
+			v1beta1.LabelSKUStoragePremiumCapable,
+			v1beta1.LabelSKUGPUManufacturer,
+			v1beta1.LabelPlacementScope,
+			v1beta1.AKSLabelMode,
+			v1beta1.AKSLabelScaleSetPriority,
+			v1beta1.AKSLabelPriority,
+			v1beta1.AKSLabelOSSKU,
+			v1beta1.AKSLabelFIPSEnabled,
+		)
+		expectKnownValueValidationError := func(err error, key string) {
+			Expect(err).To(MatchError(And(
+				ContainSubstring("no valid values found"),
+				ContainSubstring(key),
+			)))
+		}
+
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey, karpv1.CapacityTypeLabelKey)) {
+			for label := range karpv1.WellKnownLabels.Difference(knownValueRequirementLabels) {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
 				}
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
@@ -700,53 +802,112 @@ var _ = Describe("CEL/Validation", func() {
 				nodePool = oldNodePool.DeepCopy()
 			}
 		})
-		It("should fail validation with only invalid capacity types", func() {
+		DescribeTable("should fail validation with only unsupported capacity types", func(capacityType string) {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"xspot"}, // Invalid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{capacityType},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), karpv1.CapacityTypeLabelKey)
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
-		})
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
 		It("should pass validation with valid capacity types", func() {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand}, // Valid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand}, // Valid value,
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		})
-		It("should fail open if invalid and valid capacity types are present", func() {
+		DescribeTable("should fail open if unsupported and valid capacity types are present", func(capacityType string) {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand, "xspot"}, // Valid and invalid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand, capacityType},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
-		})
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
+		DescribeTable("should validate Azure known requirement values", func(key, validValue, invalidValue string) {
+			oldNodePool := nodePool.DeepCopy()
+
+			By("rejecting a requirement with only invalid values")
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("accepting a requirement with only valid values")
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("failing open when valid and invalid values are both present")
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue, invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("rejecting values that differ only by case")
+			upperValue := strings.ToUpper(validValue)
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{upperValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		},
+			Entry("SKU accelerated networking", v1beta1.LabelSKUAcceleratedNetworking, "true", "maybe"),
+			Entry("SKU premium storage", v1beta1.LabelSKUStoragePremiumCapable, "true", "maybe"),
+			Entry("SKU GPU manufacturer", v1beta1.LabelSKUGPUManufacturer, v1beta1.ManufacturerNvidia, "intel"),
+			Entry("placement scope", v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal, "global"),
+			Entry("AKS mode", v1beta1.AKSLabelMode, v1beta1.ModeSystem, "control-plane"),
+			Entry("AKS scale set priority", v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular, "low"),
+			Entry("AKS priority", v1beta1.AKSLabelPriority, v1beta1.PriorityRegular, "low"),
+			Entry("AKS OS SKU Ubuntu", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu, v1beta1.Ubuntu2204ImageFamily),
+			Entry("AKS OS SKU AzureLinux", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureLinux, "AzureLinux3"),
+			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
+		)
 		It("should not allow internal labels", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for label := range v1beta1.RestrictedLabels {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
 				}
 				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 				nodePool = oldNodePool.DeepCopy()
@@ -754,18 +915,6 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 	Context("Labels", func() {
-		It("should allow restricted domains exceptions", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.LabelDomainExceptions {
-				nodePool.Spec.Template.Labels = map[string]string{
-					label: "test",
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
-			}
-		})
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey)) {
@@ -848,6 +997,321 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					Tags: map[string]string{
 						strings.Repeat("a", 512): strings.Repeat("b", 256),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("LinuxOSConfig sysctl cross-field validation", func() {
+		It("should reject rmemDefault > rmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreRmemDefault: lo.ToPtr(int32(1048576)),
+							NetCoreRmemMax:     lo.ToPtr(int32(212992)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept rmemDefault <= rmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreRmemDefault: lo.ToPtr(int32(212992)),
+							NetCoreRmemMax:     lo.ToPtr(int32(1048576)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject wmemDefault > wmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreWmemDefault: lo.ToPtr(int32(1048576)),
+							NetCoreWmemMax:     lo.ToPtr(int32(212992)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept wmemDefault <= wmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreWmemDefault: lo.ToPtr(int32(212992)),
+							NetCoreWmemMax:     lo.ToPtr(int32(1048576)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept rmemDefault set without rmemMax", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreRmemDefault: lo.ToPtr(int32(1048576)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("LinuxOSConfig netIPv4IPLocalPortRange CEL validation", func() {
+		It("should accept valid port range", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("32768 60999"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept minimum valid port range", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 32768"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject first port below 1024", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("500 65535"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject last port above 65535", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 70000"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject first port above 60999", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("61000 65535"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject last port below 32768", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("1024 30000"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject first port > last port", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4IPLocalPortRange: lo.ToPtr("60000 32768"),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept when port range is not set", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreSomaxconn: lo.ToPtr(int32(8192)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("LinuxOSConfig gcThresh cross-field validation", func() {
+		It("should reject gcThresh1 > gcThresh2", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject gcThresh2 > gcThresh3", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(90000)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept gcThresh1 <= gcThresh2 <= gcThresh3", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(128)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(512)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gcThresh1 set without gcThresh2", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(80000)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept equal gcThresh values", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetIPv4NeighDefaultGcThresh1: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh2: lo.ToPtr(int32(1024)),
+							NetIPv4NeighDefaultGcThresh3: lo.ToPtr(int32(1024)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+	Context("failSwapOn cross-validation with swapFileSize", func() {
+		It("should reject swapFileSize when failSwapOn is not set", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						SwapFileSize: lo.ToPtr("1500Mi"),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should reject swapFileSize when failSwapOn is true", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{
+						FailSwapOn: lo.ToPtr(true),
+					},
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						SwapFileSize: lo.ToPtr("1500Mi"),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept swapFileSize when failSwapOn is false", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{
+						FailSwapOn: lo.ToPtr(false),
+					},
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						SwapFileSize: lo.ToPtr("1500Mi"),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept linuxOSConfig without swapFileSize regardless of failSwapOn", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LinuxOSConfig: &v1beta1.LinuxOSConfiguration{
+						Sysctls: &v1beta1.SysctlConfiguration{
+							NetCoreSomaxconn: lo.ToPtr(int32(8192)),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept failSwapOn=false without linuxOSConfig", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{
+						FailSwapOn: lo.ToPtr(false),
 					},
 				},
 			}

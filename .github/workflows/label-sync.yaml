@@ -1,0 +1,51 @@
+name: Label Sync
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly on Sunday at midnight UTC
+  workflow_dispatch: {}  # Allow manual trigger
+
+permissions:
+  issues: write
+
+jobs:
+  label-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            aquasecurity.github.io:443
+            azure.archive.ubuntu.com:80
+            esm.ubuntu.com:443
+            github.com:443
+            packages.microsoft.com:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            azure.archive.ubuntu.com:80
+            packages.microsoft.com:443
+            esm.ubuntu.com:443
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/install-deps
+
+      # Note that this does not delete labels, it only adds/updates them. If labels need to be deleted
+      # they must be added to the configuration file with a deleteAfter set.
+      - name: Sync labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          go install k8s.io/test-infra/label_sync@latest
+          echo "${GITHUB_TOKEN}" > /tmp/github-token
+          label_sync \
+            --config .github/karpenter-provider-azure-labels.yaml \
+            --github-token-path /tmp/github-token \
+            --orgs "" \
+            --only ${{ github.repository }} \
+            --confirm
+          rm /tmp/github-token

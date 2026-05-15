@@ -17,15 +17,12 @@ limitations under the License.
 package cloudprovider
 
 import (
-	"fmt"
-
-	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
@@ -38,7 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 )
 
 var _ = Describe("CloudProvider", func() {
@@ -55,13 +52,15 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 		})
@@ -78,19 +77,23 @@ var _ = Describe("CloudProvider", func() {
 				ctx = options.ToContext(ctx, testOptions)
 				azureEnv = test.NewEnvironment(ctx, env)
 				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 				cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 				coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
 
 				instanceType := "Standard_D2_v2"
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
 				pod = coretest.UnschedulablePod(coretest.PodOptions{
 					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node = ExpectScheduled(ctx, env.Client, pod)
 				// KubeletVersion must be applied to the node to satisfy k8s drift
-				node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
+				if nodeClass.Status.KubernetesVersion != nil {
+					node.Status.NodeInfo.KubeletVersion = "v" + *nodeClass.Status.KubernetesVersion
+				}
+
 				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
 				// Context must have same kubelet client id
 				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
@@ -101,33 +104,15 @@ var _ = Describe("CloudProvider", func() {
 				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				rg := input.ResourceGroupName
-				vmName := input.VMName
+
 				// Corresponding NodeClaim
-				driftNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
-					Status: karpv1.NodeClaimStatus{
-						NodeName: node.Name,
-						// TODO (charliedmcb): switch back to use MkVMID, and update the test subscription usage to all use the same sub const 12345678-1234-1234-1234-123456789012
-						//     We currently need this work around for the List nodes call to work in Drift, since the VM ID is overridden here (which uses the sub id in the instance provider):
-						//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/providers/instance/instance.go#L604
-						//     which has the sub const 12345678-1234-1234-1234-123456789012 passed in here:
-						//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/test/environment.go#L152
-						ProviderID: utils.VMResourceIDToProviderID(ctx, fmt.Sprintf("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", rg, vmName)),
-					},
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							karpv1.NodePoolLabelKey:    nodePool.Name,
-							v1.LabelInstanceTypeStable: instanceType,
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-							Name:  nodeClass.Name,
-						},
-					},
-				})
+				nodeClaimName := GetNodeClaimNameFromVMName(input.VMName)
+				driftNodeClaim = &karpv1.NodeClaim{}
+				Expect(env.Client.Get(ctx, types.NamespacedName{Name: nodeClaimName}, driftNodeClaim)).To(Succeed())
+				// ExpectProvisioned doesn't set Status.NodeName -- can be removed once https://github.com/kubernetes-sigs/karpenter/pull/2877 merges
+				// and we've updated to depend on a version that includes that change (1.9.x?)
+				driftNodeClaim.Status.NodeName = node.Name
+				ExpectApplied(ctx, env.Client, driftNodeClaim)
 			})
 
 			It("should not fail if nodeClass does not exist", func() {
@@ -219,7 +204,7 @@ var _ = Describe("CloudProvider", func() {
 				// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 				It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-					nodeClass.Status.KubernetesVersion = ""
+					nodeClass.Status.KubernetesVersion = lo.ToPtr("")
 					ExpectApplied(ctx, env.Client, nodeClass)
 					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
@@ -262,9 +247,9 @@ var _ = Describe("CloudProvider", func() {
 				It("should succeed with drift true when KubernetesVersion is new", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(nodeClass.Status.KubernetesVersion))
+					semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(*nodeClass.Status.KubernetesVersion))
 					semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
-					nodeClass.Status.KubernetesVersion = semverCurrentK8sVersion.String()
+					nodeClass.Status.KubernetesVersion = lo.ToPtr(semverCurrentK8sVersion.String())
 
 					ExpectApplied(ctx, env.Client, nodeClass)
 
@@ -291,6 +276,35 @@ var _ = Describe("CloudProvider", func() {
 					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(KubeletIdentityDrift))
+				})
+			})
+
+			Context("Static fields", func() {
+				It("should not trigger drift if NodeClass hasn't changed", func() {
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(BeEmpty())
+				})
+
+				It("should trigger drift if NodeClass subnet changed", func() {
+					testSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/my-subnet"
+					nodeClass.Spec.VNETSubnetID = lo.ToPtr(testSubnetID)
+					ExpectApplied(ctx, env.Client, nodeClass)
+					ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NodeClassDrift))
+				})
+
+				It("should trigger drift if ImageFamily changed", func() {
+					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+					ExpectApplied(ctx, env.Client, nodeClass)
+					ExpectNodeClassHashUpdated(ctx, env.Client, nodeClass)
+
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NodeClassDrift))
 				})
 			})
 

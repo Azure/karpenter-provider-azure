@@ -94,11 +94,9 @@ var _ = Describe("Drift", func() {
 		It("should respect budgets for empty drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"8"},
 				},
 			)
 			// We're expecting to create 3 nodes, so normally one would expect to see 2 nodes deleting at one time.
@@ -156,11 +154,9 @@ var _ = Describe("Drift", func() {
 		It("should respect budgets for non-empty delete drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"8"},
 				},
 			)
 			// We're expecting to create 3 nodes, so we'll expect to see at most 2 nodes deleting at one time.
@@ -438,8 +434,8 @@ var _ = Describe("Drift", func() {
 			Spec: karpv1.NodeClaimTemplateSpec{
 				// since this will overwrite the default requirements, add SKU family selector back into requirements
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}}},
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}}},
+					{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}},
+					{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}},
 				},
 			},
 		}),
@@ -478,8 +474,8 @@ var _ = Describe("Drift", func() {
 
 	Context("FIPS Drift", func() {
 		BeforeEach(func() {
-			if env.InClusterController {
-				Skip("FIPS drift tests require SIG access - skipping in self-hosted mode")
+			if !env.UsesSharedImageGallery() {
+				Skip("FIPS drift tests require SIG access")
 			}
 		})
 
@@ -557,7 +553,7 @@ var _ = Describe("Drift", func() {
 		nodePool.Spec.Template.Annotations = lo.Assign(nodePool.Spec.Template.Annotations, map[string]string{
 			"test-key": "test-value",
 		})
-		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
+		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
 			karpv1.NodePoolHashAnnotationKey:        "test-hash-2",
 			karpv1.NodePoolHashVersionAnnotationKey: "test-hash-version-2",
 		})
@@ -606,7 +602,7 @@ var _ = Describe("Drift", func() {
 		// nodeclass. However, the aksnodeclass-hash-version does not match the controller hash version, so we will see that
 		// none of the nodeclaims will be drifted and all nodeclaims will have an updated `aksnodeclass-hash` and `aksnodeclass-hash-version` annotation
 		nodeClass.Spec.MaxPods = lo.ToPtr[int32](10)
-		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
+		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
 			v1beta1.AnnotationAKSNodeClassHash:        "test-hash-2",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test-hash-version-2",
 		})

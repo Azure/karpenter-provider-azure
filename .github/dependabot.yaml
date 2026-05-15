@@ -5,6 +5,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    labels:
+      - "area/dependency"
     groups:
       # Group updates together, so that they are all applied in a single PR.
       # Grouped updates are currently in beta and is subject to change.
@@ -34,18 +36,26 @@ updates:
           - "*"
     schedule:
       interval: "weekly"
+    labels:
+      - "area/dependency"
   - package-ecosystem: docker
     directory: /hack/go-helper-image
     schedule:
       interval: "weekly"
+    labels:
+      - "area/dependency"
   - package-ecosystem: devcontainers
     directory: "/"
     schedule:
       interval: "weekly"
+    labels:
+      - "area/dependency"
   - package-ecosystem: github-actions
     directory: / # covers .github/workflows
     schedule:
       interval: "weekly"
+    labels:
+      - "area/dependency"
     groups:
       # Group updates together, so that they are all applied in a single PR.
       # Grouped updates are currently in beta and is subject to change.
@@ -62,6 +72,8 @@ updates:
     directory: .github/actions/commit-status/end
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -70,6 +82,8 @@ updates:
     directory: .github/actions/commit-status/start
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -78,6 +92,8 @@ updates:
     directory: .github/actions/download-artifact
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -86,6 +102,8 @@ updates:
     directory: .github/actions/e2e/cleanup
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -94,6 +112,8 @@ updates:
     directory: .github/actions/e2e/create-acr
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -102,6 +122,8 @@ updates:
     directory: .github/actions/e2e/create-cluster
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -110,6 +132,8 @@ updates:
     directory: .github/actions/e2e/dump-logs
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -118,6 +142,8 @@ updates:
     directory: .github/actions/e2e/install-helm
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -126,6 +152,8 @@ updates:
     directory: .github/actions/e2e/install-karpenter
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:
@@ -134,6 +162,8 @@ updates:
     directory: .github/actions/install-deps
     schedule:
       interval: weekly
+    labels:
+      - area/dependency
     groups:
       action-deps:
         patterns:

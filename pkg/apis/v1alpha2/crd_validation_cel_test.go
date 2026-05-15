@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -81,10 +82,8 @@ var _ = Describe("CEL/Validation", func() {
 						},
 						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 							{
-								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      karpv1.CapacityTypeLabelKey,
-									Operator: corev1.NodeSelectorOpExists,
-								},
+								Key:      karpv1.CapacityTypeLabelKey,
+								Operator: corev1.NodeSelectorOpExists,
 							},
 						},
 					},
@@ -152,6 +151,44 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("ArtifactStreaming", func() {
+		It("should accept when ArtifactStreaming is completely omitted", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1alpha2.AKSNodeClassSpec{
+					// ArtifactStreaming is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled true", func() {
+			enabled := true
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{
+						Enabled: &enabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept ArtifactStreaming with enabled false", func() {
+			disabled := false
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ArtifactStreaming: &v1alpha2.ArtifactStreaming{
+						Enabled: &disabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
 	Context("LocalDNS", func() {
 		It("should accept when LocalDNS is completely omitted", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
@@ -210,7 +247,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging v1alpha2.LocalDNSQueryLogging, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.QueryLogging = queryLogging
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -244,7 +281,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSProtocol", func(protocol v1alpha2.LocalDNSProtocol, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.Protocol = protocol
 			// When using ForceTCP, we can't use ServeStaleVerify, so use Immediate instead
 			if protocol == v1alpha2.LocalDNSProtocolForceTCP {
@@ -275,7 +312,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination v1alpha2.LocalDNSForwardDestination, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ForwardDestination = forwardDestination
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -295,14 +332,14 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid forward destination: ClusterCoreDNS", v1alpha2.LocalDNSForwardDestinationClusterCoreDNS, ""),
+			Entry("invalid forward destination: ClusterCoreDNS for external domain", v1alpha2.LocalDNSForwardDestinationClusterCoreDNS, "external domains cannot be forwarded to ClusterCoreDNS"),
 			Entry("valid forward destination: VnetDNS", v1alpha2.LocalDNSForwardDestinationVnetDNS, ""),
 			Entry("invalid forward destination: invalid-string", v1alpha2.LocalDNSForwardDestination("invalid-string"), "forwardDestination"),
 			Entry("invalid forward destination: empty", v1alpha2.LocalDNSForwardDestination(""), "forwardDestination"),
 		)
 
 		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy v1alpha2.LocalDNSForwardPolicy, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ForwardPolicy = forwardPolicy
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -330,7 +367,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSServeStale", func(serveStale v1alpha2.LocalDNSServeStale, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ServeStale = serveStale
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -359,7 +396,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate CacheDuration", func(durationStr string, expectedErr string) {
 			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.CacheDuration = cacheDuration
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -388,7 +425,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expectedErr string) {
 			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ServeStaleDuration = serveStaleDuration
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -416,7 +453,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate MaxConcurrent", func(maxConcurrent *int32, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.MaxConcurrent = maxConcurrent
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -455,8 +492,8 @@ var _ = Describe("CEL/Validation", func() {
 						VnetDNSOverrides: []v1alpha2.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", true),
 							createCompleteLocalDNSZoneOverride("cluster.local", false),
-							createCompleteLocalDNSZoneOverride("example.com", false),
-							createCompleteLocalDNSZoneOverride("example.com", false), // Duplicate zone
+							createCompleteLocalDNSZoneOverride("example.com", true),
+							createCompleteLocalDNSZoneOverride("example.com", true), // Duplicate zone
 						},
 						KubeDNSOverrides: []v1alpha2.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", false),
@@ -578,7 +615,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate protocol and serveStale combinations",
 			func(protocol v1alpha2.LocalDNSProtocol, serveStale v1alpha2.LocalDNSServeStale, shouldSucceed bool) {
-				override := createCompleteLocalDNSZoneOverride("example.com", false)
+				override := createCompleteLocalDNSZoneOverride("example.com", true)
 				override.Protocol = protocol
 				override.ServeStale = serveStale
 				nodeClass := &v1alpha2.AKSNodeClass{
@@ -675,24 +712,89 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
-	Context("Requirements", func() {
-		It("should allow restricted domains exceptions", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.LabelDomainExceptions {
-				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label + "/test", Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
+	Context("GPU", func() {
+		It("should accept gpu.mode set to Driver", func() {
+			gpuMode := v1alpha2.GPUModeDriver
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{
+						Mode: &gpuMode,
+					},
+				},
 			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
+		It("should accept gpu.mode set to None", func() {
+			gpuMode := v1alpha2.GPUModeNone
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{
+						Mode: &gpuMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject invalid gpu.mode value", func() {
+			invalidMode := v1alpha2.GPUMode("Invalid")
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{
+						Mode: &invalidMode,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+		It("should accept when gpu field is omitted entirely", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1alpha2.AKSNodeClassSpec{},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should accept gpu set with mode omitted", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					GPU: &v1alpha2.GPU{},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
+	Context("Requirements", func() {
+		// Labels with registered WellKnownValuesForRequirements reject arbitrary In values.
+		// Exclude them from the generic well-known label test below, which uses "test" as a placeholder value.
+		knownValueRequirementLabels := sets.New(
+			karpv1.NodePoolLabelKey,
+			karpv1.CapacityTypeLabelKey,
+			v1beta1.LabelSKUAcceleratedNetworking,
+			v1beta1.LabelSKUStoragePremiumCapable,
+			v1beta1.LabelSKUGPUManufacturer,
+			v1beta1.LabelPlacementScope,
+			v1beta1.AKSLabelMode,
+			v1beta1.AKSLabelScaleSetPriority,
+			v1beta1.AKSLabelPriority,
+			v1beta1.AKSLabelOSSKU,
+			v1beta1.AKSLabelFIPSEnabled,
+		)
+		expectKnownValueValidationError := func(err error, key string) {
+			Expect(err).To(MatchError(And(
+				ContainSubstring("no valid values found"),
+				ContainSubstring(key),
+			)))
+		}
+
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey, karpv1.CapacityTypeLabelKey)) {
+			for label := range karpv1.WellKnownLabels.Difference(knownValueRequirementLabels) {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
+					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
 				}
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
@@ -700,62 +802,109 @@ var _ = Describe("CEL/Validation", func() {
 				nodePool = oldNodePool.DeepCopy()
 			}
 		})
-		It("should fail validation with only invalid capacity types", func() {
+		DescribeTable("should fail validation with only unsupported capacity types", func(capacityType string) {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"xspot"}, // Invalid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{capacityType},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-			Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), karpv1.CapacityTypeLabelKey)
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
-		})
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
 		It("should pass validation with valid capacity types", func() {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand}, // Valid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand}, // Valid value,
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		})
-		It("should fail open if invalid and valid capacity types are present", func() {
+		DescribeTable("should fail open if unsupported and valid capacity types are present", func(capacityType string) {
 			oldNodePool := nodePool.DeepCopy()
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand, "xspot"}, // Valid and invalid value
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand, capacityType},
 			})
 			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
-		})
+		},
+			Entry("unknown capacity type", "xspot"),
+			Entry("reserved capacity type", karpv1.CapacityTypeReserved),
+		)
+		DescribeTable("should validate Azure known requirement values", func(key, validValue, invalidValue string) {
+			oldNodePool := nodePool.DeepCopy()
+
+			By("rejecting a requirement with only invalid values")
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("accepting a requirement with only valid values")
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("failing open when valid and invalid values are both present")
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{validValue, invalidValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+
+			By("rejecting values that differ only by case")
+			upperValue := strings.ToUpper(validValue)
+			nodePool = oldNodePool.DeepCopy()
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{upperValue},
+			})
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			expectKnownValueValidationError(nodePool.RuntimeValidate(ctx), key)
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		},
+			Entry("SKU accelerated networking", v1beta1.LabelSKUAcceleratedNetworking, "true", "maybe"),
+			Entry("SKU premium storage", v1beta1.LabelSKUStoragePremiumCapable, "true", "maybe"),
+			Entry("SKU GPU manufacturer", v1beta1.LabelSKUGPUManufacturer, v1beta1.ManufacturerNvidia, "intel"),
+			Entry("placement scope", v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal, "global"),
+			Entry("AKS mode", v1beta1.AKSLabelMode, v1beta1.ModeSystem, "control-plane"),
+			Entry("AKS scale set priority", v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular, "low"),
+			Entry("AKS priority", v1beta1.AKSLabelPriority, v1beta1.PriorityRegular, "low"),
+			Entry("AKS OS SKU Ubuntu", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu, v1beta1.Ubuntu2204ImageFamily),
+			Entry("AKS OS SKU AzureLinux", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureLinux, "AzureLinux3"),
+			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
+		)
 	})
 	Context("Labels", func() {
-		It("should allow restricted domains exceptions", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.LabelDomainExceptions {
-				nodePool.Spec.Template.Labels = map[string]string{
-					label: "test",
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
-			}
-		})
 		It("should allow well known label exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey)) {

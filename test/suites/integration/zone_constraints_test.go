@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,7 +34,7 @@ import (
 func findNodeSelectorRequirementByKey(requirements []karpv1.NodeSelectorRequirementWithMinValues, key string) *corev1.NodeSelectorRequirement {
 	for _, req := range requirements {
 		if req.Key == key {
-			return &req.NodeSelectorRequirement
+			return &corev1.NodeSelectorRequirement{Key: req.Key, Operator: req.Operator, Values: req.Values}
 		}
 	}
 	return nil
@@ -43,11 +44,9 @@ var _ = Describe("Zone Constraints", func() {
 	BeforeEach(func() {
 		// Create a node pool with zone constraints
 		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelTopologyZone,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{env.Region + "-2"},
-			},
+			Key:      corev1.LabelTopologyZone,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{env.Region + "-2"},
 		})
 		env.ExpectCreated(nodePool, nodeClass)
 	})
@@ -160,5 +159,36 @@ var _ = Describe("Zone Constraints", func() {
 
 		// Delete the deployment to clean up
 		env.ExpectDeleted(unsatisfiableDep)
+	})
+})
+
+var _ = Describe("Regional VM Provisioning", func() {
+	BeforeEach(func() {
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelPlacementScope,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{v1beta1.PlacementScopeRegional},
+		})
+		env.ExpectCreated(nodePool, nodeClass)
+	})
+
+	It("should create nodes with regional placement scope", func() {
+		podLabels := map[string]string{"test": "regional-placement"}
+		deployment := test.Deployment(test.DeploymentOptions{
+			Replicas: 1,
+			PodOptions: test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: podLabels,
+				},
+			},
+		})
+		env.ExpectCreated(deployment)
+
+		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), 1)
+		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
+		Expect(nodes[0].Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
+		Expect(nodes[0].Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, "0"))
+
+		env.ExpectDeleted(deployment)
 	})
 })

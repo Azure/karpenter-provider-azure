@@ -70,21 +70,44 @@ buildAndPublish() {
     exit 1
   fi
 
+  # Set KO_GO_PATH to our go-crossbuild wrapper script, which sets CC for CGO cross-compilation.
+  # This allows us to build multi-arch images with CGO_ENABLED=1
+  export KO_GO_PATH=hack/go-crossbuild.sh
+
+  local tarball tarball_nap
+  tarball="$(mktemp -d)/controller.tar"
+  tarball_nap="$(mktemp -d)/controller-aks.tar"
+
+  # Build single-platform images to tarballs for trivy scanning.
+  # We only scan linux/amd64 since vulnerabilities are in base image/dependencies, not platform-specific.
+  # The actual multi-arch publish happens after scanning passes.
+  GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}" \
+    SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
+    ko build -B --sbom none --tarball="${tarball}" --platform=linux/amd64 --push=false ./cmd/controller
+  GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}-aks -tags=ccp" \
+    SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
+    ko build -B --sbom none --tarball="${tarball_nap}" --platform=linux/amd64 --push=false ./cmd/controller
+
+  # Run trivy scans on local tarballs BEFORE pushing
+  if ! trivy image --input "${tarball}" --ignore-unfixed --exit-code 1; then
+    echo "Trivy scan failed for controller image. Aborting."
+    rm -f "${tarball}" "${tarball_nap}"
+    exit 1
+  fi
+  if ! trivy image --input "${tarball_nap}" --ignore-unfixed --exit-code 1; then
+    echo "Trivy scan failed for controller-aks image. Aborting."
+    rm -f "${tarball}" "${tarball_nap}"
+    exit 1
+  fi
+  rm -f "${tarball}" "${tarball_nap}"
+
+  # Publish multi-arch images only after trivy passes
   img="$(GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"     ./cmd/controller)"
   img_nap="$(GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}-aks -tags=ccp" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"-aks ./cmd/controller)"
-
-  if ! trivy image --ignore-unfixed --exit-code 1 "${img}"; then
-    echo "Trivy scan failed for ${img}. Aborting."
-    exit 1
-  fi
-  if ! trivy image --ignore-unfixed --exit-code 1 "${img_nap}"; then
-    echo "Trivy scan failed for ${img_nap}. Aborting."
-    exit 1
-  fi
 
   # img format is "repo:tag@digest"
   img_repo="$(echo "${img}" | cut -d "@" -f 1 | cut -d ":" -f 1)"

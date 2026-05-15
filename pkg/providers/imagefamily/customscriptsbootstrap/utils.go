@@ -141,12 +141,12 @@ func convertLocalDNSZoneOverrideToModel(override *v1beta1.LocalDNSZoneOverride) 
 	}
 
 	if override.CacheDuration.Duration != nil {
-		seconds := int32(override.CacheDuration.Duration.Seconds())
+		seconds := int32(override.CacheDuration.Seconds())
 		modelOverride.CacheDurationInSeconds = &seconds
 	}
 
 	if override.ServeStaleDuration.Duration != nil {
-		seconds := int32(override.ServeStaleDuration.Duration.Seconds())
+		seconds := int32(override.ServeStaleDuration.Seconds())
 		modelOverride.ServeStaleDurationInSeconds = &seconds
 	}
 
@@ -156,4 +156,63 @@ func convertLocalDNSZoneOverrideToModel(override *v1beta1.LocalDNSZoneOverride) 
 	}
 
 	return modelOverride
+}
+
+// convertLinuxOSConfigToModel converts v1beta1.LinuxOSConfiguration to models.CustomLinuxOSConfig
+func convertLinuxOSConfigToModel(linuxOSConfig *v1beta1.LinuxOSConfiguration) *models.CustomLinuxOSConfig {
+	if linuxOSConfig == nil {
+		return nil
+	}
+
+	result := &models.CustomLinuxOSConfig{
+		Sysctls: convertSysctlConfigToModel(linuxOSConfig.Sysctls),
+	}
+	if linuxOSConfig.SwapFileSize != nil && *linuxOSConfig.SwapFileSize != "" {
+		result.SwapFileSizeMB = ConvertContainerLogMaxSizeToMB(*linuxOSConfig.SwapFileSize)
+	}
+	if linuxOSConfig.TransparentHugePageDefrag != nil {
+		result.TransparentHugePageDefrag = lo.ToPtr(string(*linuxOSConfig.TransparentHugePageDefrag))
+	}
+	if linuxOSConfig.TransparentHugePageEnabled != nil {
+		result.TransparentHugePageEnabled = lo.ToPtr(string(*linuxOSConfig.TransparentHugePageEnabled))
+	}
+	return result
+}
+
+// convertSysctlConfigToModel converts v1beta1.SysctlConfiguration to models.SysctlConfig
+func convertSysctlConfigToModel(sysctls *v1beta1.SysctlConfiguration) *models.SysctlConfig {
+	if sysctls == nil {
+		return nil
+	}
+
+	return &models.SysctlConfig{
+		FsAioMaxNr:                     sysctls.FsAioMaxNr,
+		FsFileMax:                      sysctls.FsFileMax,
+		FsInotifyMaxUserWatches:        sysctls.FsInotifyMaxUserWatches,
+		FsNrOpen:                       sysctls.FsNrOpen,
+		KernelThreadsMax:               sysctls.KernelThreadsMax,
+		NetCoreNetdevMaxBacklog:        sysctls.NetCoreNetdevMaxBacklog,
+		NetCoreOptmemMax:               sysctls.NetCoreOptmemMax,
+		NetCoreRmemDefault:             sysctls.NetCoreRmemDefault,
+		NetCoreRmemMax:                 sysctls.NetCoreRmemMax,
+		NetCoreSomaxconn:               sysctls.NetCoreSomaxconn,
+		NetCoreWmemDefault:             sysctls.NetCoreWmemDefault,
+		NetCoreWmemMax:                 sysctls.NetCoreWmemMax,
+		NetIPV4IPLocalPortRange:        sysctls.NetIPv4IPLocalPortRange,
+		NetIPV4NeighDefaultGcThresh1:   sysctls.NetIPv4NeighDefaultGcThresh1,
+		NetIPV4NeighDefaultGcThresh2:   sysctls.NetIPv4NeighDefaultGcThresh2,
+		NetIPV4NeighDefaultGcThresh3:   sysctls.NetIPv4NeighDefaultGcThresh3,
+		NetIPV4TCPFinTimeout:           sysctls.NetIPv4TCPFinTimeout,
+		NetIPV4TCPKeepaliveProbes:      sysctls.NetIPv4TCPKeepaliveProbes,
+		NetIPV4TCPKeepaliveTime:        sysctls.NetIPv4TCPKeepaliveTime,
+		NetIPV4TCPMaxSynBacklog:        sysctls.NetIPv4TCPMaxSynBacklog,
+		NetIPV4TCPMaxTwBuckets:         sysctls.NetIPv4TCPMaxTwBuckets,
+		NetIPV4TCPTwReuse:              sysctls.NetIPv4TCPTwReuse,
+		NetIPV4TcpkeepaliveIntvl:       sysctls.NetIPv4TCPKeepaliveIntvl,
+		NetNetfilterNfConntrackBuckets: sysctls.NetNetfilterNfConntrackBuckets,
+		NetNetfilterNfConntrackMax:     sysctls.NetNetfilterNfConntrackMax,
+		VMMaxMapCount:                  sysctls.VMMaxMapCount,
+		VMSwappiness:                   sysctls.VMSwappiness,
+		VMVfsCachePressure:             sysctls.VMVfsCachePressure,
+	}
 }

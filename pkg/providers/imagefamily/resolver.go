@@ -86,6 +86,8 @@ type ImageFamily interface {
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
 		fipsMode *v1beta1.FIPSMode,
 		localDNS *v1beta1.LocalDNS,
+		artifactStreaming *v1beta1.ArtifactStreaming,
+		linuxOSConfig *v1beta1.LinuxOSConfiguration,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -140,20 +142,8 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	generalTaints := nodeClaim.Spec.Taints
-	startupTaints := nodeClaim.Spec.StartupTaints
-	allTaints := lo.Flatten([][]corev1.Taint{
-		generalTaints,
-		startupTaints,
-	})
-
-	// Ensure UnregisteredNoExecuteTaint is present
-	if _, found := lo.Find(allTaints, func(t corev1.Taint) bool { // Allow UnregisteredNoExecuteTaint to be in non-startup taints(?)
-		return t.MatchTaint(&karpv1.UnregisteredNoExecuteTaint)
-	}); !found {
-		startupTaints = append(startupTaints, karpv1.UnregisteredNoExecuteTaint)
-		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
-	}
+	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
+	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
 
 	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
 	if err != nil {
@@ -182,6 +172,8 @@ func (r *defaultResolver) Resolve(
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
 			nodeClass.Spec.LocalDNS,
+			nodeClass.Spec.ArtifactStreaming,
+			nodeClass.Spec.LinuxOSConfig,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
@@ -198,7 +190,7 @@ func (r *defaultResolver) Resolve(
 }
 
 func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, err error) {
-	sku, err := r.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	sku, err := r.instanceTypeProvider.Get(ctx, instanceType.Name)
 	if err != nil {
 		return "", nil, err
 	}

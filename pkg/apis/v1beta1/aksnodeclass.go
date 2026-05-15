@@ -34,45 +34,74 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+// ArtifactStreaming configures artifact streaming for provisioned nodes.
+// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+type ArtifactStreaming struct {
+	// enabled controls the artifact streaming mode. Artifact streaming speeds up the cold-start of containers on a node through on-demand image loading. To use this feature, container images must also enable artifact streaming on ACR.
+	// If not specified, defaults to false.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// IsEnabled returns whether artifact streaming should be enabled for the given architecture.
+// ARM64 does not support artifact streaming and always returns false.
+//
+// NOTE: There is no admission-time validation to reject artifactStreaming.enabled=true for ARM64
+// workloads. AKSNodeClass does not know the target architecture — that comes from NodePool
+// requirements, a separate resource. CEL validation on AKSNodeClass cannot cross-reference NodePool
+// fields (CEL only has access to self). A validating webhook could enforce this but does not exist
+// today. As a result, enabling artifact streaming on an AKSNodeClass used by ARM64 NodePools will
+// silently not take effect. The instance type provider compensates by excluding ARM64 SKUs when
+// artifact streaming is enabled.
+func (a *ArtifactStreaming) IsEnabled(arch string) bool {
+	if arch == karpv1.ArchitectureArm64 {
+		return false
+	}
+	return a != nil && a.Enabled != nil && *a.Enabled
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
+// +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
-	// VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
+	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
-	// +kubebuilder:default=128
+	// osDiskSizeGB is the size of the OS disk in GB.
+	// +default=128
 	// +kubebuilder:validation:Minimum=30
 	// +kubebuilder:validation:Maximum=2048
-	// osDiskSizeGB is the size of the OS disk in GB.
+	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
-	// ImageFamily is the image family that instances use.
-	// +kubebuilder:default=Ubuntu
+	// imageFamily is the image family that instances use.
+	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
-	// FIPSMode controls FIPS compliance for the provisioned nodes
+	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
-	// Tags to be applied on Azure resources like instances.
+	// tags to be applied on Azure resources like instances.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
 	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
-	// Kubelet defines args to be used when configuring kubelet on provisioned nodes.
+	// kubelet defines args to be used when configuring kubelet on provisioned nodes.
 	// They are a subset of the upstream types, recognizing not all options may be supported.
 	// Wherever possible, the types and names should reflect the upstream kubelet types.
 	// +kubebuilder:validation:XValidation:message="imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent",rule="has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent) ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  : true"
 	// +optional
 	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
-	// MaxPods is an override for the maximum number of pods that can run on a worker node instance.
+	// maxPods is an override for the maximum number of pods that can run on a worker node instance.
 	// See minimum + maximum pods per node documentation: https://learn.microsoft.com/en-us/azure/aks/concepts-network-ip-address-planning#maximum-pods-per-node
 	// Default behavior if this is not specified depends on the network plugin:
 	//   - If Network Plugin is Azure with "" (v1 or NodeSubnet), the default is 30.
@@ -85,18 +114,32 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
-	// Collection of security related karpenter fields
+	// security is a collection of security related karpenter fields
+	// +optional
 	Security *Security `json:"security,omitempty"`
-	// LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+	// localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 	// LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// gpu contains configuration for GPU-enabled nodes.
+	// +optional
+	GPU *GPU `json:"gpu,omitempty"`
+	// artifactStreaming configures artifact streaming for provisioned nodes.
+	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
+	// +optional
+	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
+	// linuxOSConfig specifies OS settings for Linux agent nodes.
+	// These map to the AKS Custom Linux OS Configuration feature.
+	// For more information, see:
+	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+	// +optional
+	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
 type Security struct {
-	// EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+	// encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
 	// For more information, see:
 	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
@@ -120,18 +163,19 @@ const (
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
 type LocalDNS struct {
-	// Mode of enablement for localDNS.
+	// mode of enablement for localDNS.
 	// +required
 	Mode LocalDNSMode `json:"mode,omitempty"`
-	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+	// vnetDNSOverrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
 	// +required
 	// +listType=map
 	// +listMapKey=zone
 	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="['.', 'cluster.local'].all(z, self.exists(x, x.zone == z))"
 	// +kubebuilder:validation:XValidation:message="root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides",rule="!self.exists(x, x.zone == '.' && x.forwardDestination == 'ClusterCoreDNS')"
+	// +kubebuilder:validation:XValidation:message="external domains cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides",rule="!self.exists(x, x.zone != '.' && !x.zone.endsWith('cluster.local') && x.forwardDestination == 'ClusterCoreDNS')"
 	// +kubebuilder:validation:MaxItems=100
 	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides,omitempty"`
-	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+	// kubeDNSOverrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
 	// +required
 	// +listType=map
 	// +listMapKey=zone
@@ -144,25 +188,25 @@ type LocalDNS struct {
 // +kubebuilder:validation:XValidation:message="'cluster.local' cannot be forwarded to VnetDNS",rule="!(self.zone.endsWith('cluster.local') && self.forwardDestination == 'VnetDNS')"
 // +kubebuilder:validation:XValidation:message="serveStale Verify cannot be used with protocol ForceTCP",rule="!(self.serveStale == 'Verify' && self.protocol == 'ForceTCP')"
 type LocalDNSZoneOverride struct {
-	// Zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
+	// zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=254
 	// +kubebuilder:validation:Pattern=`^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$`
 	Zone string `json:"zone,omitempty"`
-	// Log level for DNS queries in localDNS.
+	// queryLogging is the log level for DNS queries in localDNS.
 	// +required
 	QueryLogging LocalDNSQueryLogging `json:"queryLogging,omitempty"`
-	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
+	// protocol enforces TCP or prefers UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
 	Protocol LocalDNSProtocol `json:"protocol,omitempty"`
-	// Destination server for DNS queries to be forwarded from localDNS.
+	// forwardDestination is the destination server for DNS queries to be forwarded from localDNS.
 	// +required
 	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
-	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// forwardPolicy is the forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
 	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
-	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// maxConcurrent is the maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
@@ -178,7 +222,7 @@ type LocalDNSZoneOverride struct {
 	// +kubebuilder:validation:Schemaless
 	// +required
 	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
-	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// serveStale is the policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
 	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
 }
@@ -186,19 +230,19 @@ type LocalDNSZoneOverride struct {
 // LocalDNSOverrides specifies DNS override configuration
 // Deprecated: Use LocalDNSZoneOverride instead
 type LocalDNSOverrides struct {
-	// Log level for DNS queries in localDNS.
+	// queryLogging is the log level for DNS queries in localDNS.
 	// +required
 	QueryLogging LocalDNSQueryLogging `json:"queryLogging,omitempty"`
-	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
+	// protocol enforces TCP or prefers UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
 	Protocol LocalDNSProtocol `json:"protocol,omitempty"`
-	// Destination server for DNS queries to be forwarded from localDNS.
+	// forwardDestination is the destination server for DNS queries to be forwarded from localDNS.
 	// +required
 	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
-	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// forwardPolicy is the forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
 	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
-	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// maxConcurrent is the maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
@@ -214,7 +258,7 @@ type LocalDNSOverrides struct {
 	// +kubebuilder:validation:Schemaless
 	// +required
 	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
-	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// serveStale is the policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
 	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
 }
@@ -273,6 +317,36 @@ const (
 	LocalDNSServeStaleDisable LocalDNSServeStale = "Disable"
 )
 
+// +kubebuilder:validation:Enum:={Driver,None}
+type GPUMode string
+
+const (
+	// GPUModeDriver installs GPU drivers via AKS. Only GPU SKUs with driver
+	// installation support (currently NVIDIA) are schedulable. If no supported
+	// SKU is available, scheduling will fail rather than placing the workload
+	// on a GPU without drivers. This is the default behavior.
+	GPUModeDriver GPUMode = "Driver"
+	// GPUModeNone skips GPU driver installation. All GPU SKUs are available
+	// for scheduling. Use this when running a GPU Operator or managing drivers
+	// outside of AKS.
+	GPUModeNone GPUMode = "None"
+)
+
+// GPU contains configuration for GPU-enabled nodes.
+type GPU struct {
+	// mode controls GPU driver management on GPU-enabled nodes.
+	// When set to Driver (or not specified), GPU drivers are installed by AKS
+	// and only GPU SKUs with managed driver installation support are considered for scheduling.
+	// Currently, only NVIDIA GPUs support managed driver installation.
+	// When set to None, GPU driver installation is skipped — use this when
+	// managing GPU drivers via a GPU Operator or other external mechanism.
+	// All GPU SKUs are available for scheduling in this mode.
+	// This field is ignored for non-GPU VM sizes.
+	// +default="Driver"
+	// +optional
+	Mode *GPUMode `json:"mode,omitempty"`
+}
+
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
 // They are a subset of the upstream types, recognizing not all options may be supported.
 // Wherever possible, the types and names should reflect the upstream kubelet types.
@@ -284,22 +358,22 @@ const (
 type KubeletConfiguration struct {
 	// cpuManagerPolicy is the name of the policy to use.
 	// +kubebuilder:validation:Enum:={none,static}
-	// +kubebuilder:default="none"
+	// +default="none"
 	// +optional
-	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
-	// CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+	CPUManagerPolicy *string `json:"cpuManagerPolicy,omitempty"`
+	// cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
-	// +kubebuilder:default=true
+	// +default=true
 	// +optional
 	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
-	// cpuCfsQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
+	// cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
 	// The value must be between 1 ms and 1 second, inclusive.
-	// Default: "100ms"
 	// +optional
-	// +kubebuilder:default="100ms"
+	// +default="100ms"
 	// TODO: validation
+	//nolint:kubeapilinter // nodurations: using Duration for compatibility with upstream kubelet types
 	CPUCFSQuotaPeriod metav1.Duration `json:"cpuCFSQuotaPeriod,omitempty"`
-	// ImageGCHighThresholdPercent is the percent of disk usage after which image
+	// imageGCHighThresholdPercent is the percent of disk usage after which image
 	// garbage collection is always run. The percent is calculated by dividing this
 	// field value by 100, so this field must be between 0 and 100, inclusive.
 	// When specified, the value must be greater than ImageGCLowThresholdPercent.
@@ -308,7 +382,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
 	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent,omitempty"`
-	// ImageGCLowThresholdPercent is the percent of disk usage before which image
+	// imageGCLowThresholdPercent is the percent of disk usage before which image
 	// garbage collection is never run. Lowest disk usage to garbage collect to.
 	// The percent is calculated by dividing this field value by 100,
 	// so the field value must be between 0 and 100, inclusive.
@@ -328,28 +402,26 @@ type KubeletConfiguration struct {
 	//   of CPU and device resources.
 	//
 	// +kubebuilder:validation:Enum:={restricted,best-effort,none,single-numa-node}
-	// +kubebuilder:default="none"
+	// +default="none"
 	// +optional
-	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
-	// A comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+	TopologyManagerPolicy *string `json:"topologyManagerPolicy,omitempty"`
+	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
 	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
-	// Default: []
 	// TODO: validation
 	// +optional
+	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
 	// containerLogMaxSize is a quantity defining the maximum size of the container log
 	// file before it is rotated. For example: "5Mi" or "256Ki".
-	// Default: "10Mi"
 	// AKS CustomKubeletConfig has containerLogMaxSizeMB (with units), defaults to 50
 	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
-	// +kubebuilder:default="50Mi"
+	// +default="50Mi"
 	// +optional
-	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
+	ContainerLogMaxSize *string `json:"containerLogMaxSize,omitempty"`
 	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
-	// Default: 5
 	// +kubebuilder:validation:Minimum:=2
-	// +kubebuilder:default=5
+	// +default=5
 	// +optional
 	ContainerLogMaxFiles *int32 `json:"containerLogMaxFiles,omitempty"`
 	// podPidsLimit is the maximum number of PIDs in any pod.
@@ -357,6 +429,240 @@ type KubeletConfiguration struct {
 	// Default: -1
 	// +optional
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
+	// failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
+	// Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
+	// +optional
+	FailSwapOn *bool `json:"failSwapOn,omitempty"`
+}
+
+// +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}
+type TransparentHugePageDefrag string
+
+const (
+	// TransparentHugePageDefragAlways sets defrag to always.
+	TransparentHugePageDefragAlways TransparentHugePageDefrag = "always"
+	// TransparentHugePageDefragDefer sets defrag to defer.
+	TransparentHugePageDefragDefer TransparentHugePageDefrag = "defer"
+	// TransparentHugePageDefragDeferMadvise sets defrag to defer+madvise.
+	TransparentHugePageDefragDeferMadvise TransparentHugePageDefrag = "defer+madvise"
+	// TransparentHugePageDefragMadvise sets defrag to madvise.
+	TransparentHugePageDefragMadvise TransparentHugePageDefrag = "madvise"
+	// TransparentHugePageDefragNever sets defrag to never.
+	TransparentHugePageDefragNever TransparentHugePageDefrag = "never"
+)
+
+// +kubebuilder:validation:Enum:={always,madvise,never}
+type TransparentHugePageEnabled string
+
+const (
+	// TransparentHugePageEnabledAlways enables transparent huge pages always.
+	TransparentHugePageEnabledAlways TransparentHugePageEnabled = "always"
+	// TransparentHugePageEnabledMadvise enables transparent huge pages for madvise regions.
+	TransparentHugePageEnabledMadvise TransparentHugePageEnabled = "madvise"
+	// TransparentHugePageEnabledNever disables transparent huge pages.
+	TransparentHugePageEnabledNever TransparentHugePageEnabled = "never"
+)
+
+// LinuxOSConfiguration defines the Custom Linux OS Configuration for nodes.
+// These settings are applied at node provisioning time and map to AKS Custom Linux OS Configuration.
+// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+type LinuxOSConfiguration struct {
+	// swapFileSize specifies the size of a swap file that will be created on each node.
+	// For example: "1500Mi" or "2Gi".
+	// The value will be rounded to the nearest megabyte due to system limitations.
+	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
+	// +optional
+	SwapFileSize *string `json:"swapFileSize,omitempty"`
+	// sysctls specifies sysctl settings for Linux agent nodes.
+	// +optional
+	Sysctls *SysctlConfiguration `json:"sysctls,omitempty"`
+	// transparentHugePageDefrag sets the kernel's transparent_hugepage/defrag behavior.
+	// Maps to /sys/kernel/mm/transparent_hugepage/defrag.
+	// +optional
+	TransparentHugePageDefrag *TransparentHugePageDefrag `json:"transparentHugePageDefrag,omitempty"`
+	// transparentHugePageEnabled sets the kernel's transparent_hugepage/enabled behavior.
+	// Maps to /sys/kernel/mm/transparent_hugepage/enabled.
+	// +optional
+	TransparentHugePageEnabled *TransparentHugePageEnabled `json:"transparentHugePageEnabled,omitempty"`
+}
+
+// SysctlConfiguration defines sysctl settings for Linux agent nodes.
+// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
+// +kubebuilder:validation:XValidation:message="netCoreRmemDefault must be <= netCoreRmemMax",rule="has(self.netCoreRmemDefault) && has(self.netCoreRmemMax) ? self.netCoreRmemDefault <= self.netCoreRmemMax : true"
+// +kubebuilder:validation:XValidation:message="netCoreWmemDefault must be <= netCoreWmemMax",rule="has(self.netCoreWmemDefault) && has(self.netCoreWmemMax) ? self.netCoreWmemDefault <= self.netCoreWmemMax : true"
+// +kubebuilder:validation:XValidation:message="netIPv4NeighDefaultGcThresh1 must be <= netIPv4NeighDefaultGcThresh2",rule="has(self.netIPv4NeighDefaultGcThresh1) && has(self.netIPv4NeighDefaultGcThresh2) ? self.netIPv4NeighDefaultGcThresh1 <= self.netIPv4NeighDefaultGcThresh2 : true"
+// +kubebuilder:validation:XValidation:message="netIPv4NeighDefaultGcThresh2 must be <= netIPv4NeighDefaultGcThresh3",rule="has(self.netIPv4NeighDefaultGcThresh2) && has(self.netIPv4NeighDefaultGcThresh3) ? self.netIPv4NeighDefaultGcThresh2 <= self.netIPv4NeighDefaultGcThresh3 : true"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange first port must be in [1024, 60999]",rule="!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(' ')[0]) >= 1024 && int(self.netIPv4IPLocalPortRange.split(' ')[0]) <= 60999)"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange last port must be in [32768, 65535]",rule="!has(self.netIPv4IPLocalPortRange) || (int(self.netIPv4IPLocalPortRange.split(' ')[1]) >= 32768 && int(self.netIPv4IPLocalPortRange.split(' ')[1]) <= 65535)"
+// +kubebuilder:validation:XValidation:message="netIPv4IPLocalPortRange first port must be <= last port",rule="!has(self.netIPv4IPLocalPortRange) || int(self.netIPv4IPLocalPortRange.split(' ')[0]) <= int(self.netIPv4IPLocalPortRange.split(' ')[1])"
+type SysctlConfiguration struct {
+	// fsAioMaxNr specifies the maximum number of AIO (Asynchronous I/O) requests.
+	// Maps to fs.aio-max-nr.
+	// +kubebuilder:validation:Minimum=65536
+	// +kubebuilder:validation:Maximum=6553500
+	// +optional
+	FsAioMaxNr *int32 `json:"fsAioMaxNr,omitempty"`
+	// fsFileMax specifies the maximum number of file handles the kernel will allocate.
+	// Maps to fs.file-max.
+	// +kubebuilder:validation:Minimum=8192
+	// +kubebuilder:validation:Maximum=12000500
+	// +optional
+	FsFileMax *int32 `json:"fsFileMax,omitempty"`
+	// fsInotifyMaxUserWatches specifies the maximum number of inotify watches per user.
+	// Maps to fs.inotify.max_user_watches.
+	// +kubebuilder:validation:Minimum=781250
+	// +kubebuilder:validation:Maximum=2097152
+	// +optional
+	FsInotifyMaxUserWatches *int32 `json:"fsInotifyMaxUserWatches,omitempty"`
+	// fsNrOpen specifies the maximum number of file handles that can be allocated.
+	// Maps to fs.nr_open.
+	// +kubebuilder:validation:Minimum=8192
+	// +kubebuilder:validation:Maximum=20000500
+	// +optional
+	FsNrOpen *int32 `json:"fsNrOpen,omitempty"`
+	// kernelThreadsMax specifies the maximum number of threads that can be created.
+	// Maps to kernel.threads-max.
+	// +kubebuilder:validation:Minimum=20
+	// +kubebuilder:validation:Maximum=513785
+	// +optional
+	KernelThreadsMax *int32 `json:"kernelThreadsMax,omitempty"`
+	// netCoreNetdevMaxBacklog specifies the maximum number of packets queued on the INPUT side.
+	// Maps to net.core.netdev_max_backlog.
+	// +kubebuilder:validation:Minimum=1000
+	// +kubebuilder:validation:Maximum=3240000
+	// +optional
+	NetCoreNetdevMaxBacklog *int32 `json:"netCoreNetdevMaxBacklog,omitempty"`
+	// netCoreOptmemMax specifies the maximum ancillary buffer size (option memory buffer) allowed per socket.
+	// Maps to net.core.optmem_max.
+	// +kubebuilder:validation:Minimum=20480
+	// +kubebuilder:validation:Maximum=4194304
+	// +optional
+	NetCoreOptmemMax *int32 `json:"netCoreOptmemMax,omitempty"`
+	// netCoreRmemDefault specifies the default receive socket buffer size in bytes.
+	// Maps to net.core.rmem_default.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreRmemDefault *int32 `json:"netCoreRmemDefault,omitempty"`
+	// netCoreRmemMax specifies the maximum receive socket buffer size in bytes.
+	// Maps to net.core.rmem_max.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreRmemMax *int32 `json:"netCoreRmemMax,omitempty"`
+	// netCoreSomaxconn specifies the maximum number of connection requests that can be queued for any given listening socket.
+	// Maps to net.core.somaxconn.
+	// +kubebuilder:validation:Minimum=4096
+	// +kubebuilder:validation:Maximum=3240000
+	// +optional
+	NetCoreSomaxconn *int32 `json:"netCoreSomaxconn,omitempty"`
+	// netCoreWmemDefault specifies the default send socket buffer size in bytes.
+	// Maps to net.core.wmem_default.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreWmemDefault *int32 `json:"netCoreWmemDefault,omitempty"`
+	// netCoreWmemMax specifies the maximum send socket buffer size in bytes.
+	// Maps to net.core.wmem_max.
+	// +kubebuilder:validation:Minimum=212992
+	// +kubebuilder:validation:Maximum=134217728
+	// +optional
+	NetCoreWmemMax *int32 `json:"netCoreWmemMax,omitempty"`
+	// netIPv4IPLocalPortRange specifies the local port range that is used by TCP and UDP traffic.
+	// Must be in the format "first last", where first is in the range 1024-60999 and last is in the range 32768-65535.
+	// Maps to net.ipv4.ip_local_port_range.
+	// +kubebuilder:validation:Pattern=`^\d+ \d+$`
+	// +optional
+	NetIPv4IPLocalPortRange *string `json:"netIPv4IPLocalPortRange,omitempty"`
+	// netIPv4NeighDefaultGcThresh1 specifies the minimum number of entries that may be in the ARP cache.
+	// Maps to net.ipv4.neigh.default.gc_thresh1.
+	// +kubebuilder:validation:Minimum=128
+	// +kubebuilder:validation:Maximum=80000
+	// +optional
+	NetIPv4NeighDefaultGcThresh1 *int32 `json:"netIPv4NeighDefaultGcThresh1,omitempty"`
+	// netIPv4NeighDefaultGcThresh2 specifies the soft maximum number of entries that may be in the ARP cache.
+	// Maps to net.ipv4.neigh.default.gc_thresh2.
+	// +kubebuilder:validation:Minimum=512
+	// +kubebuilder:validation:Maximum=90000
+	// +optional
+	NetIPv4NeighDefaultGcThresh2 *int32 `json:"netIPv4NeighDefaultGcThresh2,omitempty"`
+	// netIPv4NeighDefaultGcThresh3 specifies the hard maximum number of entries in the ARP cache.
+	// Maps to net.ipv4.neigh.default.gc_thresh3.
+	// +kubebuilder:validation:Minimum=1024
+	// +kubebuilder:validation:Maximum=100000
+	// +optional
+	NetIPv4NeighDefaultGcThresh3 *int32 `json:"netIPv4NeighDefaultGcThresh3,omitempty"`
+	// netIPv4TCPFinTimeout specifies the length of time an orphaned connection will remain in the FIN_WAIT_2 state before being aborted.
+	// Maps to net.ipv4.tcp_fin_timeout.
+	// +kubebuilder:validation:Minimum=5
+	// +kubebuilder:validation:Maximum=120
+	// +optional
+	NetIPv4TCPFinTimeout *int32 `json:"netIPv4TCPFinTimeout,omitempty"`
+	// netIPv4TCPKeepaliveProbes specifies the number of keepalive probes TCP sends out until it decides a connection is broken.
+	// Maps to net.ipv4.tcp_keepalive_probes.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=15
+	// +optional
+	NetIPv4TCPKeepaliveProbes *int32 `json:"netIPv4TCPKeepaliveProbes,omitempty"`
+	// netIPv4TCPKeepaliveTime specifies the rate at which TCP sends keepalive probes. Measured in seconds.
+	// Maps to net.ipv4.tcp_keepalive_time.
+	// +kubebuilder:validation:Minimum=30
+	// +kubebuilder:validation:Maximum=432000
+	// +optional
+	NetIPv4TCPKeepaliveTime *int32 `json:"netIPv4TCPKeepaliveTime,omitempty"`
+	// netIPv4TCPMaxSynBacklog specifies the maximum number of queued connection requests that have still not received
+	// an acknowledgment from the connecting client. If this number is exceeded, the kernel will begin dropping requests.
+	// Maps to net.ipv4.tcp_max_syn_backlog.
+	// +kubebuilder:validation:Minimum=128
+	// +kubebuilder:validation:Maximum=3240000
+	// +optional
+	NetIPv4TCPMaxSynBacklog *int32 `json:"netIPv4TCPMaxSynBacklog,omitempty"`
+	// netIPv4TCPMaxTwBuckets specifies the maximum number of sockets in TIME_WAIT state.
+	// Maps to net.ipv4.tcp_max_tw_buckets.
+	// +kubebuilder:validation:Minimum=8000
+	// +kubebuilder:validation:Maximum=1440000
+	// +optional
+	NetIPv4TCPMaxTwBuckets *int32 `json:"netIPv4TCPMaxTwBuckets,omitempty"`
+	// netIPv4TCPTwReuse enables/disables reuse of TIME_WAIT sockets for new connections.
+	// Maps to net.ipv4.tcp_tw_reuse.
+	// +optional
+	NetIPv4TCPTwReuse *bool `json:"netIPv4TCPTwReuse,omitempty"`
+	// netIPv4TCPKeepaliveIntvl specifies the frequency of the probes sent out. Measured in seconds.
+	// Maps to net.ipv4.tcp_keepalive_intvl.
+	// +kubebuilder:validation:Minimum=10
+	// +kubebuilder:validation:Maximum=90
+	// +optional
+	NetIPv4TCPKeepaliveIntvl *int32 `json:"netIPv4TCPKeepaliveIntvl,omitempty"`
+	// netNetfilterNfConntrackBuckets specifies the size of the hash table used by nf_conntrack module.
+	// Maps to net.netfilter.nf_conntrack_buckets.
+	// +kubebuilder:validation:Minimum=65536
+	// +kubebuilder:validation:Maximum=524288
+	// +optional
+	NetNetfilterNfConntrackBuckets *int32 `json:"netNetfilterNfConntrackBuckets,omitempty"`
+	// netNetfilterNfConntrackMax specifies the maximum number of connections tracked by the nf_conntrack module.
+	// Maps to net.netfilter.nf_conntrack_max.
+	// +kubebuilder:validation:Minimum=131072
+	// +kubebuilder:validation:Maximum=2097152
+	// +optional
+	NetNetfilterNfConntrackMax *int32 `json:"netNetfilterNfConntrackMax,omitempty"`
+	// vmMaxMapCount specifies the maximum number of memory map areas a process may have.
+	// Maps to vm.max_map_count.
+	// +kubebuilder:validation:Minimum=65530
+	// +kubebuilder:validation:Maximum=262144
+	// +optional
+	VMMaxMapCount *int32 `json:"vmMaxMapCount,omitempty"`
+	// vmSwappiness specifies the kernel's tendency to swap memory pages. Higher values increase aggressiveness, lower values decrease it.
+	// Maps to vm.swappiness.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	VMSwappiness *int32 `json:"vmSwappiness,omitempty"`
+	// vmVfsCachePressure specifies the tendency of the kernel to reclaim the memory which is used for caching of directory and inode objects.
+	// Maps to vm.vfs_cache_pressure.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	VMVfsCachePressure *int32 `json:"vmVfsCachePressure,omitempty"`
 }
 
 // AKSNodeClass is the Schema for the AKSNodeClass API
@@ -368,10 +674,19 @@ type KubeletConfiguration struct {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 type AKSNodeClass struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// metadata is standard object metadata.
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   AKSNodeClassSpec   `json:"spec,omitempty"`
+	// spec is the top level specification for the AKS Karpenter Provider.
+	// This will contain configuration necessary to launch instances in AKS.
+	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
+	Spec AKSNodeClassSpec `json:"spec,omitempty"`
+	// status contains the resolved state of the AKSNodeClass.
+	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	Status AKSNodeClassStatus `json:"status,omitempty"`
 }
 
@@ -406,9 +721,25 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 	return false
 }
 
+// IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.
+// Delegates to ArtifactStreaming.IsEnabled which handles ARM64 and nil checks.
+func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
+	return in.Spec.ArtifactStreaming.IsEnabled(arch)
+}
+
+// IsArtifactStreamingExplicitlyEnabled returns true only when the user has explicitly
+// set artifact streaming to enabled (true) in the NodeClass spec. Returns false when
+// artifact streaming is not set (nil/default) or explicitly disabled.
+// Unlike IsArtifactStreamingEnabled, this is architecture-independent.
+func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
+	return in.Spec.ArtifactStreaming != nil &&
+		in.Spec.ArtifactStreaming.Enabled != nil &&
+		*in.Spec.ArtifactStreaming.Enabled
+}
+
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // Returns true for Required mode, false for Disabled mode, and for Preferred mode,
-// returns true only if the Kubernetes version is >= 1.36.
+// returns true only if the Kubernetes version is >= 1.35.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
 		return false
@@ -420,7 +751,7 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	case LocalDNSModeDisabled:
 		return false
 	case LocalDNSModePreferred:
-		// For Preferred mode, check if K8s version >= 1.36
+		// For Preferred mode, check if K8s version >= 1.35
 		kubernetesVersion, err := in.GetKubernetesVersion()
 		if err != nil {
 			return false // If we can't get version, don't enable
@@ -432,8 +763,26 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 			return false
 		}
 
-		return parsedVersion.GE(semver.Version{Major: 1, Minor: 36})
+		return parsedVersion.GE(semver.Version{Major: 1, Minor: 35})
 	default:
 		return false
 	}
+}
+
+// GetGPUMode returns the effective GPU mode.
+// Defaults to Driver if gpu or gpu.mode is nil, ensuring
+// backward compatibility (existing users always got drivers installed).
+func (in *AKSNodeClass) GetGPUMode() GPUMode {
+	if in.Spec.GPU == nil || in.Spec.GPU.Mode == nil {
+		return GPUModeDriver
+	}
+	return *in.Spec.GPU.Mode
+}
+
+// IsGPUDriverInstallationEnabled returns whether GPU driver installation
+// is enabled. Returns true when gpu is nil, gpu.mode is nil,
+// or mode is "Driver". Returns false only when explicitly
+// set to "None".
+func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
+	return in.GetGPUMode() != GPUModeNone
 }

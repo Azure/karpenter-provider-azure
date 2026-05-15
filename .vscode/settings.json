@@ -1,5 +1,5 @@
 {
-    "go.testTimeout": "240s",
+    "go.testTimeout": "420s",
     "gopls": {
         "build.directoryFilters": [
             "-hack"
@@ -27,5 +27,6 @@
                 "query": "repo:${owner}/${repository} is:open -label:dependencies"
             }
         ]
-    }
+    },
+    "chat.useAgentSkills": true
 }

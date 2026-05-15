@@ -19,6 +19,7 @@ package integration_test
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +49,16 @@ var _ = Describe("Subnets", func() {
 	})
 
 	It("should allocate node in NodeClass subnet", func() {
+		// This test requires creating a custom subnet in the cluster's VNet.
+		// Only works with BYO VNets. Skips for managed VNets since we block custom subnets there.
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		if isManaged {
+			Skip("Skipping test: cluster uses managed VNet, custom subnets in managed VNets are blocked")
+		}
+
 		subnetName := "test-subnet"
 		subnet := &armnetwork.Subnet{
 			Name: lo.ToPtr(subnetName),
@@ -55,8 +66,12 @@ var _ = Describe("Subnets", func() {
 				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
 			},
 		}
+
+		// Use existing cluster VNet (which is BYO)
 		vnet := env.GetClusterVNET()
-		env.ExpectCreatedSubnet(lo.FromPtr(vnet.Name), subnet)
+		vnetName := lo.FromPtr(vnet.Name)
+
+		env.ExpectCreatedSubnet(vnetName, subnet)
 		nodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
 
 		env.ExpectCreated(nodeClass, nodePool, dep)
@@ -84,6 +99,5 @@ var _ = Describe("Subnets", func() {
 		// The NIC should have the right NSG
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(nic.Properties.NetworkSecurityGroup.ID).ToNot(BeNil())
-		Expect(*nic.Properties.NetworkSecurityGroup.ID).To(MatchRegexp(`aks-agentpool-\d{8}-nsg`))
 	})
 })

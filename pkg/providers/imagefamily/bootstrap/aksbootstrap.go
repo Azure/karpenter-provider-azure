@@ -108,7 +108,7 @@ type NodeBootstrapVariables struct {
 	SubscriptionID                          string   // a   can be derived from environment/imds
 	ResourceGroup                           string   // a   can be derived from environment/imds
 	Location                                string   // a   can be derived from environment/imds
-	VMType                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "vmss" for now]
+	VMType                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM
 	Subnet                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "aks-subnet for now]
 	NetworkSecurityGroup                    string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-nsg" for now]
 	VirtualNetwork                          string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-vnet-<clusterid>" for now]
@@ -300,12 +300,19 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
 	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
-	if a.GPUNode {
+	if a.GPUNode && a.GPUDriverInstallationEnabled {
 		nbv.GPUNode = true
 		nbv.ConfigGPUDriverIfNeeded = true
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUDriverType = a.GPUDriverType
 		nbv.GPUImageSHA = a.GPUImageSHA
+	} else {
+		// For non-GPU nodes or GPU nodes with mode: None,
+		// GPUNode is set to false and ConfigGPUDriverIfNeeded is false.
+		// AgentBaker requires GPU_NODE=false to skip NVIDIA driver installation,
+		// fabric manager setup, and to use runc instead of nvidia-container-runtime.
+		// (which won't be installed without GPU driver setup).
+		nbv.ConfigGPUDriverIfNeeded = false
 	}
 
 	// merge and stringify labels
@@ -327,7 +334,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
 	}
 	if minorVersion >= 34 {
-		delete(kubeletFlagsBase, "--cloud-config") // removed in 1.34
+		delete(kubeletFlagsBase, "--cloud-config")
+	}
+	if minorVersion >= 35 {
+		delete(kubeletFlagsBase, "--pod-infra-container-image")
 	}
 
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
@@ -373,7 +383,7 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 	return buffer.String(), nil
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
@@ -401,14 +411,14 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
 	}
-	if kubeletConfig.CPUManagerPolicy != "" {
-		args["--cpu-manager-policy"] = kubeletConfig.CPUManagerPolicy
+	if kubeletConfig.CPUManagerPolicy != nil && *kubeletConfig.CPUManagerPolicy != "" {
+		args["--cpu-manager-policy"] = *kubeletConfig.CPUManagerPolicy
 	}
-	if kubeletConfig.TopologyManagerPolicy != "" {
-		args["--topology-manager-policy"] = kubeletConfig.TopologyManagerPolicy
+	if kubeletConfig.TopologyManagerPolicy != nil && *kubeletConfig.TopologyManagerPolicy != "" {
+		args["--topology-manager-policy"] = *kubeletConfig.TopologyManagerPolicy
 	}
-	if kubeletConfig.ContainerLogMaxSize != "" {
-		args["--container-log-max-size"] = kubeletConfig.ContainerLogMaxSize
+	if kubeletConfig.ContainerLogMaxSize != nil && *kubeletConfig.ContainerLogMaxSize != "" {
+		args["--container-log-max-size"] = *kubeletConfig.ContainerLogMaxSize
 	}
 	if kubeletConfig.ContainerLogMaxFiles != nil {
 		args["--container-log-max-files"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ContainerLogMaxFiles))

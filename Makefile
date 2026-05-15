@@ -16,6 +16,8 @@ KARPENTER_CORE_DIR = $(shell go list -m -f '{{ .Dir }}' sigs.k8s.io/karpenter)
 # TEST_SUITE enables you to select a specific test suite directory to run "make e2etests" or "make test" against
 TEST_SUITE ?= "..."
 TEST_TIMEOUT ?= "3h"
+# LABEL_FILTER enables filtering tests by Ginkgo labels (e.g., LABEL_FILTER="runner" or LABEL_FILTER="!runner")
+LABEL_FILTER ?=
 
 help: ## Display help
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -51,24 +53,25 @@ e2etests: ## Run the e2e suite against your local cluster
 	# -count 1: prevents caching
 	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
 	# -v: verbose output
-	cd test && AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} go test \
+	cd test && AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} VNET_RESOURCE_GROUP=${VNET_RESOURCE_GROUP} PROVISION_MODE=${PROVISION_MODE} go test \
 		-p 1 \
 		-count 1 \
 		-timeout ${TEST_TIMEOUT} \
 		-v \
 		./suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
 		--ginkgo.focus="${FOCUS}" \
+		$(if $(LABEL_FILTER),--ginkgo.label-filter="${LABEL_FILTER}",) \
 		--ginkgo.timeout=${TEST_TIMEOUT} \
 		--ginkgo.grace-period=3m \
 		--ginkgo.vv
 
-upstream-e2etests:
-	AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} \
-	go test \
+upstream-e2etests: tidy download
+	AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} VNET_RESOURCE_GROUP=${VNET_RESOURCE_GROUP} \
+	cd $(KARPENTER_CORE_DIR) && go test \
 		-count 1 \
 		-timeout 1h \
 		-v \
-		$(KARPENTER_CORE_DIR)/test/suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
+		./test/suites/... \
 		--ginkgo.focus="${FOCUS}" \
 		--ginkgo.timeout=1h \
 		--ginkgo.grace-period=5m \
@@ -82,7 +85,8 @@ benchmark:
 coverage:
 	go tool cover -html coverage.out -o coverage.html
 
-verify: toolchain tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+verify: tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+	SKIP_INSTALLED=true make toolchain
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
@@ -93,7 +97,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	hack/mutation/kubectl_get_ux.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
 	hack/github/dependabot.sh
-	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
+	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint-custom run $(newline))
 	@git diff --quiet ||\
 		{ echo "New file modification detected in the Git working tree. Please check in before commit."; git --no-pager diff --name-only | uniq | awk '{print "  - " $$0}'; \
 		if [ "${CI}" = true ]; then\
@@ -109,10 +113,23 @@ vulncheck: ## Verify code vulnerabilities
 	@trivy filesystem --ignore-unfixed --scanners vuln --exit-code 1 go.mod
 
 licenses: download ## Verifies dependency licenses
-	! go-licenses csv ./... | grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0'
+	LICENSEFILE=$$(mktemp /tmp/licenses-XXXXXX.csv) && \
+	go-licenses csv ./... > $$LICENSEFILE && \
+	! grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0' $$LICENSEFILE
 
-codegen: ## Auto generate files based on Azure API responses
-	./hack/codegen.sh
+codegen: codegen-pricing codegen-locations codegen-skugen codegen-allazureskus ## Auto generate files based on Azure API responses
+
+codegen-pricing: ## Generate pricing data
+	./hack/codegen.sh pricing
+
+codegen-locations: ## Generate locations data
+	./hack/codegen.sh locations
+
+codegen-skugen: ## Generate SKU test fakes
+	./hack/codegen.sh skugen
+
+codegen-allazureskus: ## Generate all Azure VM SKU names
+	./hack/codegen.sh allazureskus
 
 snapshot: az-login ## Builds and publishes snapshot release
 	./hack/release/snapshot.sh
@@ -129,7 +146,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
+.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen codegen-pricing codegen-locations codegen-skugen codegen-allazureskus snapshot release toolchain tidy download
 
 define newline
 

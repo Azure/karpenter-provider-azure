@@ -1,0 +1,353 @@
+# patterned after (and expected to be compatible with) https://github.com/kubernetes/test-infra/tree/master/label_sync
+# starting with https://github.com/kubernetes/test-infra/blob/master/label_sync/labels.yaml
+# pares down the default section, adds proposed azure/karpenter-provider-aks labels, and removed some
+# of the default labels that don't apply to us or felt duplicate.
+# ---
+#
+# default: global configuration to be applied to all repos
+# repos: list of repos with specific configuration to be applied in addition to default
+#   labels: list of labels - keys for each item: color, description, name, target, deleteAfter, previously
+#     deleteAfter: 2006-01-02T15:04:05Z (rfc3339)
+#     previously: list of previous labels (color name deleteAfter, previously)
+#     target: one of issues, prs, or both (also TBD)
+#     addedBy: human? prow plugin? other?
+---
+default:
+  labels:
+    - color: 0052cc
+      description: Issues or PRs related to the APIs
+      name: area/api
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to bootstrap
+      name: area/bootstrap
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to ci
+      name: area/ci
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to consolidation
+      name: area/consolidation
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to dependency changes
+      name: area/dependency
+      target: both
+      addedBy: anyone
+      previously:
+        - name: dependencies
+    - color: 0052cc
+      description: Issues or PRs related to devtools
+      name: area/devtools
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to documentation
+      name: area/documentation
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to drift
+      name: area/drift
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to GPUs
+      name: area/gpu
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to testing
+      name: area/test
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to metrics
+      name: area/metrics
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to networking
+      name: area/networking
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to performance
+      name: area/performance
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to pricing provider
+      name: area/pricing
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to provisioning (instance provider)
+      name: area/provisioning
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to scheduling
+      name: area/scheduling
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to storage
+      name: area/storage
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to spot
+      name: area/spot
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to security
+      name: area/security
+      target: both
+      addedBy: anyone
+    - color: 0052cc
+      description: Issues or PRs related to Kubernetes or image upgrades
+      name: area/upgrade
+      target: both
+      addedBy: anyone
+    - color: 7057ff
+      description: Denotes an issue ready for a new contributor.
+      name: 'good first issue'
+      target: issues
+      addedBy: anyone
+    - color: 006b75
+      description: Denotes an issue that needs help from a contributor.
+      name: 'help wanted'
+      target: issues
+      addedBy: anyone
+    - color: e11d21
+      description: Categorizes issue or PR as related to a bug.
+      name: kind/bug
+      target: both
+      addedBy: anyone
+    - color: c7def8
+      description: Categorizes issue or PR as related to a new feature.
+      name: kind/feature
+      target: both
+      addedBy: anyone
+    - color: c7def8
+      description: Issues or PRs related to proposals.
+      name: kind/proposal
+      target: both
+      addedBy: anyone
+    - color: 8fc951
+      description: Indicates that an issue or PR is actively being worked on by a contributor.
+      name: lifecycle/active
+      target: both
+      addedBy: anyone
+    - color: d3e2f0
+      description: Indicates that an issue or PR should not be auto-closed due to staleness.
+      name: lifecycle/frozen
+      target: both
+      addedBy: anyone
+    - color: "604460"
+      description: Denotes an issue or PR that has aged beyond stale and will be auto-closed.
+      name: lifecycle/rotten
+      target: both
+      addedBy: anyone
+    - color: "795548"
+      description: Denotes an issue or PR has remained open with no activity and has become stale.
+      name: lifecycle/stale
+      target: both
+      addedBy: anyone
+    - color: e11d21
+      description: Highest priority. Must be actively worked on as someone's top priority right now.
+      name: priority/0
+      target: both
+      addedBy: anyone
+    - color: eb6420
+      description: Must be staffed and worked on either currently, or very soon, ideally in time for the next release.
+      name: priority/1
+      target: both
+      addedBy: anyone
+    - color: eb6420
+      description: Important over the long term, but may not be staffed and/or may need multiple releases to complete.
+      name: priority/2
+      target: both
+      addedBy: anyone
+    - color: fbca04
+      description: There is an agreement this would be good to have, but not prioritized yet.
+      name: priority/3
+      target: both
+      addedBy: anyone
+    - color: ee9900
+      description: Denotes a PR that changes 100-499 lines, ignoring generated files.
+      name: size/L
+      target: prs
+      addedBy: automation
+    - color: eebb00
+      description: Denotes a PR that changes 30-99 lines, ignoring generated files.
+      name: size/M
+      target: prs
+      addedBy: automation
+    - color: 77bb00
+      description: Denotes a PR that changes 10-29 lines, ignoring generated files.
+      name: size/S
+      target: prs
+      addedBy: automation
+    - color: ee5500
+      description: Denotes a PR that changes 500-999 lines, ignoring generated files.
+      name: size/XL
+      target: prs
+      addedBy: automation
+    - color: "009900"
+      description: Denotes a PR that changes 0-9 lines, ignoring generated files.
+      name: size/XS
+      target: prs
+      addedBy: automation
+    - color: ee0000
+      description: Denotes a PR that changes 1000+ lines, ignoring generated files.
+      name: size/XXL
+      target: prs
+      addedBy: automation
+    - color: 8fc951
+      description: Indicates an issue or PR is ready to be actively worked on.
+      name: triage/accepted
+      target: both
+      addedBy: org members
+    - color: d455d0
+      description: Indicates an issue is a duplicate of other open issue.
+      name: triage/duplicate
+      target: both
+      addedBy: anyone
+    - color: d455d0
+      description: Indicates an issue needs more information in order to work on it.
+      name: triage/needs-information
+      target: both
+      addedBy: anyone
+    - color: d455d0
+      description: Indicates an issue can not be reproduced as described.
+      name: triage/not-reproducible
+      target: both
+      addedBy: anyone
+    - color: d455d0
+      description: Indicates an issue that can not or will not be resolved.
+      name: triage/unresolved
+      target: both
+      addedBy: anyone
+
+    # Deprecated labels - scheduled for deletion
+    # TODO: Can probably remove this at some point in the future.
+    - name: api-review
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/api-change
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/cleanup
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/deprecation
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/documentation
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/failing-test
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/experiment
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/flake
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/regression
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/support
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: lgtm
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: needs-kind
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: needs-ok-to-test
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: needs-triage
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: ok-to-test
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: priority/awaiting-more-evidence
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: priority/backlog
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: priority/critical-urgent
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: priority/important-longterm
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: priority/important-soon
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: release-note
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: release-note-action-required
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: release-note-none
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/design
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/vm-images
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/systempool
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/aksnodeclass
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/availability-zones
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/global-config
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/retries
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/nap
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/kaito
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/appmode
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/instance-types
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/deprovisioning
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/cost-optimization
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/nodeclaim
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/code-organization
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/developer-guide
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/e2e-test-framework
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/github-management
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/artifacts
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/release
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/testing
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/e2e-testing
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/logging
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/api-validation
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/selfhosted
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/unavailable-offerings
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/error-handling
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: needs-priority
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: go
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: github_actions
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: devcontainers_package_manager
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: docker
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: dependencies
+      deleteAfter: 2026-01-01T00:00:00Z

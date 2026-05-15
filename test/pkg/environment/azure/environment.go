@@ -31,14 +31,17 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
@@ -64,7 +67,10 @@ type Environment struct {
 	VNETResourceGroup    string
 	ACRName              string
 	ClusterName          string
+	MachineAgentPoolName string
 	ClusterResourceGroup string
+	CloudConfig          cloud.Configuration
+	ProvisionMode        string
 
 	tracker *azure.Tracker
 
@@ -76,7 +82,7 @@ type Environment struct {
 	subnetClient         *armnetwork.SubnetsClient
 	interfacesClient     *armnetwork.InterfacesClient
 	managedClusterClient *containerservice.ManagedClustersClient
-	agentpoolsClient     *containerservice.AgentPoolsClient
+	agentPoolClient      *containerservice.AgentPoolsClient
 	machinesClient       *containerservice.MachinesClient
 	zoneProvider         *zone.Provider
 
@@ -89,7 +95,7 @@ type Environment struct {
 	RBACManager *RBACManager
 }
 
-func readEnv(name string) string {
+func readEnvRequired(name string) string {
 	value, exists := os.LookupEnv(name)
 	if !exists {
 		panic(fmt.Sprintf("Environment variable %s is not set", name))
@@ -100,14 +106,39 @@ func readEnv(name string) string {
 	return value
 }
 
+func readEnvOptional(name string) string {
+	value, exists := os.LookupEnv(name)
+	if !exists {
+		return ""
+	}
+	return value
+}
+
+func getCloudEnvironment() *auth.Environment {
+	cfg := auth.Config{}
+	lo.Must0(cfg.Build(), "Failed to build cloud environment")
+	lo.Must0(cfg.Default(), "Failed to set default cloud environment")
+	// This is a hack so we can re-use the same validate, even though in this test context we don't need a real subscription ID
+	cfg.SubscriptionID = "1234"
+	lo.Must0(cfg.Validate(), "Failed to validate cloud environment")
+
+	env, err := auth.ResolveCloudEnvironment(&cfg)
+	lo.Must0(err, "Failed to resolve cloud environment")
+	return env
+}
+
 func NewEnvironment(t *testing.T) *Environment {
+	cloudEnv := getCloudEnvironment()
+
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
-		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID"),
-		ClusterName:          readEnv("AZURE_CLUSTER_NAME"),
-		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP"),
-		ACRName:              readEnv("AZURE_ACR_NAME"),
+		SubscriptionID:       readEnvRequired("AZURE_SUBSCRIPTION_ID"),
+		ClusterName:          readEnvRequired("AZURE_CLUSTER_NAME"),
+		ClusterResourceGroup: readEnvRequired("AZURE_RESOURCE_GROUP"),
+		ACRName:              readEnvRequired("AZURE_ACR_NAME"),
+		ProvisionMode:        readEnvOptional("PROVISION_MODE"),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
+		CloudConfig:          cloudEnv.Cloud,
 		tracker:              azure.NewTracker(),
 	}
 
@@ -115,21 +146,49 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
-	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	credOptions := &azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloudEnv.Cloud,
+		},
+		TenantID: os.Getenv("AZURE_TENANT_ID"),
+	}
+	cred := lo.Must(azidentity.NewDefaultAzureCredential(credOptions))
 	azureEnv.defaultCredential = cred
+
+	clientOptions := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: azureEnv.CloudConfig,
+		},
+	}
 	byokRetryOptions := azureEnv.ClientOptionsForRBACPropagation()
-	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.agentpoolsClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.agentPoolClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
 	subscriptionsClient := lo.Must(armsubscriptions.NewClient(cred, nil))
 	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, realClock{}, azureEnv.SubscriptionID)
+	// If ProvisionMode wasn't set, default to scriptless, though note that this is
+	// actually defaulted dynamically based on the value of a toggle in AKS which means
+	// assuming we're always in ProvisionMode Scriptless here is incorrect at times, though OK
+	// for our current usage.
+	if azureEnv.ProvisionMode == "" {
+		azureEnv.ProvisionMode = consts.ProvisionModeAKSScriptless
+	}
+	// Default to reserved managed machine agentpool name for NAP
+	azureEnv.MachineAgentPoolName = "aksmanagedap"
+	if azureEnv.InClusterController {
+		azureEnv.MachineAgentPoolName = "testmpool"
+	}
+	// Confirm we have a machine pool
+	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
+		azureEnv.ExpectMachinesAgentPoolExists()
+	}
 	return azureEnv
 }
 
@@ -158,6 +217,7 @@ func (env *Environment) GetAvailableZones() []string {
 func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 	return &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
+			Cloud: env.CloudConfig,
 			Retry: policy.RetryOptions{
 				MaxRetries: 15,
 				RetryDelay: time.Second * 5,
@@ -167,6 +227,20 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 			},
 		},
 	}
+}
+
+func (env *Environment) IsAKSMachineAPIMode() bool {
+	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI || env.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
+func (env *Environment) IsMachineModeOrNPS() bool {
+	// Assumption is if we're not in the cluster, we're in NPS mode. Ideally we would just check this via ProvisionMode, but
+	// we can't do that right now as depending on context we may not set provision mode for the tests
+	return env.IsAKSMachineAPIMode() || !env.InClusterController
+}
+
+func (env *Environment) UsesSharedImageGallery() bool {
+	return env.IsMachineModeOrNPS()
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {

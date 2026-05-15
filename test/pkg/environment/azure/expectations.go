@@ -27,9 +27,11 @@ import (
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
+	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
@@ -62,7 +64,7 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 	Expect(err).ToNot(HaveOccurred())
 	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
-	env.tracker.Add(lo.FromPtr(resp.Interface.ID), func() error {
+	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
 		deletePoller, err := env.interfacesClient.BeginDelete(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), nil)
 		if err != nil {
 			return fmt.Errorf("failed to delete network interface %s: %w", lo.FromPtr(networkInterface.Name), err)
@@ -75,29 +77,52 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 	})
 }
 
+func (env *Environment) ExpectGetManagedCluster() *containerservice.ManagedCluster {
+	GinkgoHelper()
+	managedClusterResponse, err := env.managedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	return &managedClusterResponse.ManagedCluster
+}
+
+// ExpectClusterProvisioningState checks that the cluster's provisioning state matches the expected state,
+// and fails the test if it does not.
+func (env *Environment) ExpectClusterProvisioningState(expectedProvisioningState string) *containerservice.ManagedCluster {
+	GinkgoHelper()
+	managedCluster := env.ExpectGetManagedCluster()
+	Expect(managedCluster.Properties).ToNot(BeNil())
+	Expect(managedCluster.Properties.ProvisioningState).ToNot(BeNil())
+	Expect(*managedCluster.Properties.ProvisioningState).To(Equal(expectedProvisioningState),
+		fmt.Sprintf("expected cluster provisioning state '%s', got '%s'", expectedProvisioningState, *managedCluster.Properties.ProvisioningState))
+	return managedCluster
+}
+
 func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster() []*containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem {
 	GinkgoHelper()
 	upgradeProfile, err := env.managedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
 	Expect(err).ToNot(HaveOccurred())
-	return upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades
+	return upgradeProfile.Properties.ControlPlaneProfile.Upgrades
 }
 
-func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) containerservice.ManagedCluster {
+func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) *containerservice.ManagedCluster {
 	GinkgoHelper()
-	managedClusterResponse, err := env.managedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
+	poller := env.ExpectUpgradeOfManagedCluster(kubernetesUpgradeVersion)
+	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
-	managedCluster := managedClusterResponse.ManagedCluster
+	return &resp.ManagedCluster
+}
+
+func (env *Environment) ExpectUpgradeOfManagedCluster(kubernetesUpgradeVersion string) *runtime.Poller[containerservice.ManagedClustersClientCreateOrUpdateResponse] {
+	GinkgoHelper()
+	managedCluster := env.ExpectGetManagedCluster()
 
 	// See documentation for KubernetesVersion (client specified) and CurrentKubernetesVersion (version under use):
 	// https://learn.microsoft.com/en-us/rest/api/aks/managed-clusters/get?view=rest-aks-2025-01-01&tabs=HTTP
 	By(fmt.Sprintf("upgrading from kubernetes version %s to kubernetes version %s", *managedCluster.Properties.CurrentKubernetesVersion, kubernetesUpgradeVersion))
 	managedCluster.Properties.KubernetesVersion = &kubernetesUpgradeVersion
 	// Note that this is an update not a create so we don't need to add it to the tracker
-	poller, err := env.managedClusterClient.BeginCreateOrUpdate(env.Context, env.ClusterResourceGroup, env.ClusterName, managedCluster, nil)
+	poller, err := env.managedClusterClient.BeginCreateOrUpdate(env.Context, env.ClusterResourceGroup, env.ClusterName, *managedCluster, nil)
 	Expect(err).ToNot(HaveOccurred())
-	res, err := poller.PollUntilDone(env.Context, nil)
-	Expect(err).ToNot(HaveOccurred())
-	return res.ManagedCluster
+	return poller
 }
 
 func (env *Environment) ExpectParsedProviderID(providerID string) string {
@@ -109,13 +134,13 @@ func (env *Environment) ExpectParsedProviderID(providerID string) string {
 
 func (env *Environment) ExpectCreatedSubnet(vnetName string, subnet *armnetwork.Subnet) {
 	GinkgoHelper()
-	poller, err := env.subnetClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), *subnet, nil)
+	poller, err := env.subnetClient.BeginCreateOrUpdate(env.Context, env.VNETResourceGroup, vnetName, lo.FromPtr(subnet.Name), *subnet, nil)
 	Expect(err).ToNot(HaveOccurred())
 	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
 	*subnet = resp.Subnet
 	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
-		deletePoller, err := env.subnetClient.BeginDelete(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), nil)
+		deletePoller, err := env.subnetClient.BeginDelete(env.Context, env.VNETResourceGroup, vnetName, lo.FromPtr(subnet.Name), nil)
 		if err != nil {
 			return fmt.Errorf("failed to delete subnet %s: %w", lo.FromPtr(subnet.Name), err)
 		}
@@ -249,6 +274,7 @@ func (env *Environment) EventuallyExpectAzureResources(
 		// VMs
 		managedExtensionNames := instance.GetManagedExtensionNames(
 			lo.Ternary(env.InClusterController, consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient),
+			lo.Must(auth.EnvironmentFromName("AzurePublicCloud")),
 		)
 		vmPager := env.vmClient.NewListPager(env.NodeResourceGroup, nil)
 		for vmPager.More() {

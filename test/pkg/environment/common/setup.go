@@ -34,14 +34,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/pod"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 
-	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
-	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 const TestingFinalizer = "testing/finalizer"
@@ -62,10 +63,10 @@ var (
 		&corev1.Node{},
 		&karpv1.NodeClaim{},
 		&v1beta1.AKSNodeClass{},
+		&v1alpha1.NodeOverlay{},
 	}
 )
 
-// nolint:gocyclo
 func (env *Environment) BeforeEach() {
 	debug.BeforeEach(env.Context, env.Config, env.Client)
 

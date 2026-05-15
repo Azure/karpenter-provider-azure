@@ -23,8 +23,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -134,14 +134,14 @@ func TestGetCredentialProviderURL(t *testing.T) {
 func TestKubeletConfigMap(t *testing.T) {
 	kubeletConfiguration := KubeletConfiguration{
 		KubeletConfiguration: v1beta1.KubeletConfiguration{
-			CPUManagerPolicy:            "static",
+			CPUManagerPolicy:            lo.ToPtr("static"),
 			CPUCFSQuota:                 lo.ToPtr(true),
 			CPUCFSQuotaPeriod:           metav1.Duration{},
 			ImageGCHighThresholdPercent: lo.ToPtr[int32](42),
 			ImageGCLowThresholdPercent:  lo.ToPtr[int32](24),
-			TopologyManagerPolicy:       "best-effort",
+			TopologyManagerPolicy:       lo.ToPtr("best-effort"),
 			AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-			ContainerLogMaxSize:         "42Mi",
+			ContainerLogMaxSize:         lo.ToPtr("42Mi"),
 			ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 			PodPidsLimit:                lo.ToPtr[int64](99),
 		},
@@ -186,7 +186,8 @@ func TestKubeletConfigMap(t *testing.T) {
 	}
 	actualKubeletConfig := kubeletConfigToMap(&kubeletConfiguration)
 
+	g := NewWithT(t)
 	for k, v := range expectedKubeletConfigs {
-		assert.Equal(t, v, actualKubeletConfig[k], fmt.Sprintf("parameter mismatch for %s", k))
+		g.Expect(actualKubeletConfig[k]).To(Equal(v), fmt.Sprintf("parameter mismatch for %s", k))
 	}
 }

@@ -72,8 +72,18 @@ func (cfg *Config) Build() error {
 	cfg.Cloud = strings.TrimSpace(os.Getenv("ARM_CLOUD"))
 	cfg.Location = strings.TrimSpace(os.Getenv("LOCATION"))
 	cfg.ResourceGroup = strings.TrimSpace(os.Getenv("ARM_RESOURCE_GROUP"))
-	cfg.TenantID = strings.TrimSpace(os.Getenv("ARM_TENANT_ID"))
-	cfg.SubscriptionID = strings.TrimSpace(os.Getenv("ARM_SUBSCRIPTION_ID"))
+	// TODO: We probably can remove both of these "ARM_" fallbacks in mid 2026. We also don't currently
+	// use the TENANT_ID anyway so possibly could remove that too.
+	// Read both ARM_TENANT_ID and AZURE_TENANT_ID env vars, preferring AZURE_ when both are set
+	cfg.TenantID = strings.TrimSpace(os.Getenv("AZURE_TENANT_ID"))
+	if cfg.TenantID == "" {
+		cfg.TenantID = strings.TrimSpace(os.Getenv("ARM_TENANT_ID"))
+	}
+	// Read both ARM_SUBSCRIPTION_ID and AZURE_SUBSCRIPTION_ID env vars, preferring AZURE_ when both are set
+	cfg.SubscriptionID = strings.TrimSpace(os.Getenv("AZURE_SUBSCRIPTION_ID"))
+	if cfg.SubscriptionID == "" {
+		cfg.SubscriptionID = strings.TrimSpace(os.Getenv("ARM_SUBSCRIPTION_ID"))
+	}
 	cfg.AzureEnvironmentFilepath = strings.TrimSpace(os.Getenv("AZURE_ENVIRONMENT_FILEPATH"))
 
 	return nil
