@@ -228,8 +228,8 @@ var _ = Describe("Persistent Volumes", func() {
 		// on nodes in specific zones, even when PV is accessible in multiple zones.
 		It("should schedule a pod with ZRS PV when pod targets a specific zone", func() {
 			availableZones := env.GetAvailableZones()
-			if len(availableZones) == 0 {
-				Skip(fmt.Sprintf("skipping ZRS test because region %s does not support availability zones", env.Region))
+			if len(availableZones) < 2 {
+				Skip(fmt.Sprintf("skipping ZRS test because region %s does not support multiple availability zones", env.Region))
 			}
 
 			// Create ZRS storage class with Immediate binding
@@ -243,7 +243,7 @@ var _ = Describe("Persistent Volumes", func() {
 			}
 
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
-				StorageClassName: lo.ToPtr(zrsStorageClass.Name),
+				StorageClassName: new(zrsStorageClass.Name),
 			})
 
 			env.ExpectCreated(nodeClass, nodePool, zrsStorageClass, pvc)
