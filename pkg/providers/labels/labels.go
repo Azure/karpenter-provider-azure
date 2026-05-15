@@ -88,7 +88,6 @@ func Get(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	arch string,
-	localDNSResolver v1beta1.LocalDNSResolver,
 ) (map[string]string, error) {
 	labels := map[string]string{}
 	opts := options.FromContext(ctx)
@@ -154,7 +153,7 @@ func Get(
 		labels[AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
 	}
 
-	if nodeClass.IsLocalDNSEnabled(ctx, localDNSResolver) {
+	if nodeClass.IsLocalDNSEnabled() {
 		labels[AKSLocalDNSStateLabelKey] = "enabled"
 	} else {
 		labels[AKSLocalDNSStateLabelKey] = "disabled"

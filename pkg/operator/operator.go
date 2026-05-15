@@ -67,7 +67,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -148,18 +147,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 	inClusterDynamicClient := dynamic.NewForConfigOrDie(inClusterConfig)
 
-	// Dynamic client against the workload cluster apiserver (the cluster Karpenter manages).
-	// This is the same apiserver as operator.KubernetesInterface and operator.GetClient().
-	workloadDynamicClient := dynamic.NewForConfigOrDie(operator.GetConfig())
-
-	localDNSResolver := localdns.NewResolver(
-		operator.KubernetesInterface,
-		workloadDynamicClient,
-		operator.GetClient(),
-		options.FromContext(ctx).NetworkPolicy,
-		options.FromContext(ctx).NetworkPlugin,
-	)
-
 	if options.FromContext(ctx).DNSServiceIP == "" {
 		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
 		if err != nil { // fall back to default
@@ -199,7 +186,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.SKUClient,
 		pricingProvider,
 		unavailableOfferingsCache,
-		localDNSResolver,
 	)
 
 	// Ensure we're able to hydrate instance types before starting any controllers
@@ -226,7 +212,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.Location,
 		options.FromContext(ctx).ProvisionMode,
-		localDNSResolver,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,

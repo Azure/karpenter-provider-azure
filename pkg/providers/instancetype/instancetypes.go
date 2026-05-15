@@ -77,7 +77,6 @@ type DefaultProvider struct {
 	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
-	localDNSResolver     v1beta1.LocalDNSResolver
 
 	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
 	// Fully initialized Instance Types are also cached based on the set of all instance types,
@@ -98,7 +97,6 @@ func NewDefaultProvider(
 	skuClient skewer.ResourceClient,
 	pricingProvider *pricing.Provider,
 	offeringsCache *kcache.UnavailableOfferings,
-	localDNSResolver v1beta1.LocalDNSResolver,
 ) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
@@ -109,7 +107,6 @@ func NewDefaultProvider(
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
 		instanceTypesSeqNum:  0,
-		localDNSResolver:     localDNSResolver,
 	}
 }
 
@@ -137,7 +134,7 @@ func (p *DefaultProvider) List(
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
-		nodeClass.IsLocalDNSEnabled(ctx, p.localDNSResolver),
+		nodeClass.IsLocalDNSEnabled(),
 		string(nodeClass.GetGPUMode()),
 		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 	)
@@ -326,17 +323,10 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	// Read the resolved state from Status.LocalDNSState to avoid re-running
-	// the resolver (potentially kube-API calls) once per SKU. List() resolves
-	// once up-front for the cache key, so Status is already populated for the
-	// per-SKU loop. If Status is unset (defensive -- e.g. the resolver hadn't
-	// run for some reason), resolve once now so subsequent SKUs short-circuit
-	// through Status.
-	if nodeClass.Status.LocalDNSState == nil {
-		_ = nodeClass.IsLocalDNSEnabled(ctx, p.localDNSResolver)
-	}
+	// Read the resolved state from Status.LocalDNSState. The
+	// nodeclass.localdns sub-reconciler is the sole writer.
 	// If LocalDNS won't be enabled, all instance types are supported
-	if nodeClass.Status.LocalDNSState == nil || *nodeClass.Status.LocalDNSState != v1beta1.LocalDNSStateEnabled {
+	if !nodeClass.IsLocalDNSEnabled() {
 		return true
 	}
 

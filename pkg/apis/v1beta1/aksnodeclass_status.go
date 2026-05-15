@@ -28,6 +28,7 @@ const (
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
 	ConditionTypeSubnetsReady           = "SubnetsReady"
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
+	ConditionTypeLocalDNSReady          = "LocalDNSReady"
 )
 
 // LocalDNSState is the resolved enable/disable decision for LocalDNS on the
@@ -92,6 +93,7 @@ func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
 		ConditionTypeKubernetesVersionReady,
 		ConditionTypeSubnetsReady,
 		ConditionTypeValidationSucceeded,
+		ConditionTypeLocalDNSReady,
 	}
 	return status.NewReadyConditions(conds...).For(in)
 }

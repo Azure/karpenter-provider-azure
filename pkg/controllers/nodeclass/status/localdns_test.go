@@ -1,0 +1,292 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package status
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/samber/lo"
+	appsv1 "k8s.io/api/apps/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+)
+
+const (
+	hiK8s = "1.36.0"
+	loK8s = "1.35.0"
+)
+
+func newDynFake() *dynamicfake.FakeDynamicClient {
+	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:             "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}:  "CiliumClusterwideNetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}:       "NetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
+	})
+}
+
+func newNC() *v1beta1.AKSNodeClass {
+	nc := &v1beta1.AKSNodeClass{}
+	nc.Name = "test"
+	nc.Generation = 1
+	return nc
+}
+
+func setKVReady(nc *v1beta1.AKSNodeClass, k8sVer string) {
+	nc.Status.KubernetesVersion = lo.ToPtr(k8sVer)
+	nc.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+}
+
+func mustReconcile(t *testing.T, r *LocalDNSReconciler, nc *v1beta1.AKSNodeClass) {
+	t.Helper()
+	if _, err := r.Reconcile(context.Background(), nc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want v1beta1.LocalDNSState) {
+	t.Helper()
+	if nc.Status.LocalDNSState == nil {
+		t.Fatalf("expected LocalDNSState=%q, got nil", want)
+	}
+	if *nc.Status.LocalDNSState != want {
+		t.Fatalf("expected LocalDNSState=%q, got %q", want, *nc.Status.LocalDNSState)
+	}
+}
+
+func TestModeUnsetClearsState(t *testing.T) {
+	nc := newNC()
+	nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled) // stale
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	if nc.Status.LocalDNSState != nil {
+		t.Fatalf("expected nil state, got %v", *nc.Status.LocalDNSState)
+	}
+	if !nc.StatusConditions().IsTrue(v1beta1.ConditionTypeLocalDNSReady) {
+		t.Fatalf("expected LocalDNSReady=True")
+	}
+}
+
+func TestModeRequired(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+func TestModeDisabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_K8sBelowThreshold_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, loK8s)
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_BYOCNI_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", consts.NetworkPluginNone)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_Ubuntu2004_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	nc.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+	nc.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+	setKVReady(nc, hiK8s)
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_NoConflicts_Enabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+func TestPreferred_NodeLocalDNSPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	k8sFake := fake.NewClientset(&appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-local-dns", Namespace: "kube-system"},
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_NetworkPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_KonnectivityAgentIgnored(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "konnectivity-agent", Namespace: "kube-system"},
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+func TestPreferred_StickyEnabled_DoesNotFlipOnNewConflict(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+func TestPreferred_TransientError_RequeuesViaError(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	k8sFake := fake.NewClientset()
+	k8sFake.PrependReactor("list", "networkpolicies", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("transient")
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	_, err := r.Reconcile(context.Background(), nc)
+	if err == nil {
+		t.Fatalf("expected error on transient failure")
+	}
+	if nc.Status.LocalDNSState != nil {
+		t.Fatalf("state should not be committed on transient error, got %v", *nc.Status.LocalDNSState)
+	}
+	if nc.StatusConditions().IsTrue(v1beta1.ConditionTypeLocalDNSReady) {
+		t.Fatalf("LocalDNSReady should not be True on transient error")
+	}
+}
+
+func TestPreferred_DaemonSetGetError_Requeues(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	k8sFake := fake.NewClientset()
+	k8sFake.PrependReactor("get", "daemonsets", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("rbac forbidden")
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	_, err := r.Reconcile(context.Background(), nc)
+	if err == nil {
+		t.Fatalf("expected error on DS get failure")
+	}
+}
+
+func TestPreferred_DaemonSetGetNotFound_Enabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	k8sFake := fake.NewClientset()
+	k8sFake.PrependReactor("get", "daemonsets", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, k8serrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, "node-local-dns")
+	})
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+func TestPreferred_CiliumCRDPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	scheme := runtime.NewScheme()
+	dc := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:            "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}: "CiliumClusterwideNetworkPolicyList",
+	},
+		unstructuredObj("cilium.io/v2", "CiliumNetworkPolicy", "default", "deny"),
+	)
+	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_CalicoCRDPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	scheme := runtime.NewScheme()
+	dc := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}:       "NetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
+	},
+		unstructuredObj("crd.projectcalico.org/v1", "GlobalNetworkPolicy", "", "deny-all"),
+	)
+	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "calico", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+// unstructuredObj builds an *unstructured.Unstructured for the fake dynamic client.
+func unstructuredObj(apiVersion, kind, namespace, name string) *unstructured.Unstructured {
+	u := &unstructured.Unstructured{}
+	u.SetAPIVersion(apiVersion)
+	u.SetKind(kind)
+	if namespace != "" {
+		u.SetNamespace(namespace)
+	}
+	u.SetName(name)
+	return u
+}
+
+type unstructuredItem = unstructured.Unstructured

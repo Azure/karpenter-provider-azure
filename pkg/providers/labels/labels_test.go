@@ -354,7 +354,7 @@ func TestLocalDNSLabels(t *testing.T) {
 				nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass, "amd64", nil)
+			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(labelMap[labels.AKSLocalDNSStateLabelKey]).To(Equal(tc.expectedLabel))
 		})
@@ -384,7 +384,7 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 		},
 	}
 
-	labelMap, err := labels.Get(ctx, nodeClass, "amd64", nil)
+	labelMap, err := labels.Get(ctx, nodeClass, "amd64")
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
 }
@@ -567,7 +567,7 @@ func TestLabelsGet(t *testing.T) {
 				},
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass, tc.arch, nil)
+			labelMap, err := labels.Get(ctx, nodeClass, tc.arch)
 			g.Expect(err).ToNot(HaveOccurred())
 			for key, expectedValue := range tc.expectedLabels {
 				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)

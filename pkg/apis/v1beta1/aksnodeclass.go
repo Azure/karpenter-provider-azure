@@ -17,7 +17,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/mitchellh/hashstructure/v2"
@@ -736,38 +735,20 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 		*in.Spec.ArtifactStreaming.Enabled
 }
 
-// LocalDNSResolver computes the resolved LocalDNS state for a NodeClass and
-// persists it to Status.LocalDNSState. For Mode=Required -> Enabled; for
-// Mode=Disabled -> Disabled; for Mode=Preferred -> cluster-gate evaluation with
-// sticky-Enabled semantics. Implemented by pkg/providers/localdns.Resolver.
-// Declared as an interface here so the apis package doesn't have to import
-// the resolver and its client-go dependencies.
-// +kubebuilder:object:generate=false
-type LocalDNSResolver interface {
-	Resolve(ctx context.Context, nc *AKSNodeClass) LocalDNSState
-}
-
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
+// The decision is sourced from Status.LocalDNSState, which is resolved by the
+// nodeclass.localdns status sub-reconciler:
+//   - Mode=Required  -> Status=Enabled
+//   - Mode=Disabled  -> Status=Disabled
+//   - Mode=Preferred -> resolved against cluster gates with sticky-Enabled
+//     (once Enabled, stays Enabled while Mode=Preferred).
 //
-// Always delegates to the resolver, which owns Status.LocalDNSState writes:
-//   - Spec.LocalDNS nil or Mode unset -> clear Status, return false.
-//   - Mode=Required -> Status=Enabled, return true.
-//   - Mode=Disabled -> Status=Disabled, return false.
-//   - Mode=Preferred -> gate-resolved with sticky-Enabled (once Enabled, stays
-//     Enabled while Mode=Preferred); Disabled is re-evaluated each call.
-//
-// If resolver is nil (test paths), fall back to reading Status.LocalDNSState
-// directly: returns true iff Status==Enabled.
-func (in *AKSNodeClass) IsLocalDNSEnabled(ctx context.Context, resolver LocalDNSResolver) bool {
-	if resolver == nil {
-		// Test-only fallback: no resolver wired in, just read Status. Also
-		// covers the spec-nil / empty-Mode case (Status is unset -> false).
-		return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
-	}
-	// Always delegate to the resolver — including Spec.LocalDNS == nil and
-	// empty Mode — so it owns Status.LocalDNSState writes (including clearing
-	// stale state when the user removes the spec).
-	return resolver.Resolve(ctx, in) == LocalDNSStateEnabled
+// If Status.LocalDNSState has not yet been written, this returns false as a
+// safe default. Karpenter core gates provisioning on the AKSNodeClass
+// aggregate Ready condition (which includes LocalDNSReady), so callers in
+// the provisioning path will not observe the unresolved state.
+func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
+	return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
 }
 
 // ResolvedLocalDNSForWire translates Status.LocalDNSState (the source of
