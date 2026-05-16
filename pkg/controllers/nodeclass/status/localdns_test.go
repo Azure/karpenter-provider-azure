@@ -25,6 +25,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -275,6 +276,48 @@ func TestPreferred_CalicoCRDPolicyPresent_Disabled(t *testing.T) {
 	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "calico", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+// TestPreferred_CiliumCRDNotInstalled_Enabled covers the case where the
+// Cilium CRDs are not registered in the dynamic client at all (cluster does
+// not have Cilium CRDs installed). The gate must treat this as "no
+// conflicting policies" and let LocalDNS resolve to Enabled, not surface the
+// discovery error and flip to Disabled.
+func TestPreferred_CiliumCRDNotInstalled_Enabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	dc := newDynFake()
+	dc.PrependReactor("list", "ciliumnetworkpolicies", noKindMatchReactor("cilium.io", "CiliumNetworkPolicy"))
+	dc.PrependReactor("list", "ciliumclusterwidenetworkpolicies", noKindMatchReactor("cilium.io", "CiliumClusterwideNetworkPolicy"))
+	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+// TestPreferred_CalicoCRDNotInstalled_Enabled is the Calico counterpart of
+// TestPreferred_CiliumCRDNotInstalled_Enabled.
+func TestPreferred_CalicoCRDNotInstalled_Enabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	dc := newDynFake()
+	dc.PrependReactor("list", "networkpolicies", noKindMatchReactor("crd.projectcalico.org", "NetworkPolicy"))
+	dc.PrependReactor("list", "globalnetworkpolicies", noKindMatchReactor("crd.projectcalico.org", "GlobalNetworkPolicy"))
+	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "calico", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+// noKindMatchReactor returns a reactor that simulates the API server reporting
+// that a CRD's Kind is not registered -- i.e., the CRD is not installed.
+func noKindMatchReactor(group, kind string) clienttesting.ReactionFunc {
+	return func(_ clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, &meta.NoKindMatchError{
+			GroupKind:        schema.GroupKind{Group: group, Kind: kind},
+			SearchedVersions: []string{"v1", "v2"},
+		}
+	}
 }
 
 // unstructuredObj builds an *unstructured.Unstructured for the fake dynamic client.

@@ -24,6 +24,7 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -43,6 +44,16 @@ const (
 
 // LocalDNSReconciler resolves the effective LocalDNS state on an AKSNodeClass
 // and stores it on Status.LocalDNSState.
+//
+// IMPORTANT: the Preferred-mode gate logic in this file must stay in sync with
+// the aks-rp validator at
+// resourceprovider/.../validation/localdns/localdnsvalidator.go (source of
+// truth). If you add, remove, or reorder a gate here, mirror the change there
+// (and update the e2e matrix in the PR description). The wire contract
+// guarantees Karpenter resolves Preferred to a terminal value before sending,
+// so the nodeprovisioner never re-runs gates -- divergence between this file
+// and the RP validator would produce silently inconsistent decisions across
+// node-class types.
 //
 // Behavior:
 //   - Mode unset/nil  -> clear Status, LocalDNSReady=True.
@@ -236,7 +247,9 @@ func (r *LocalDNSReconciler) hasConflictingCRDNetworkPolicies(ctx context.Contex
 	for _, gvr := range crdResources {
 		list, err := r.dynamicClient.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{Limit: 1})
 		if err != nil {
-			if k8serrors.IsNotFound(err) {
+			// CRD not installed on the cluster -- treat as no conflicting
+			// policies of this type rather than surfacing as a transient error.
+			if k8serrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 				continue
 			}
 			return false, fmt.Errorf("listing %s: %w", gvr.Resource, err)
