@@ -71,12 +71,18 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Persistent Volumes", func() {
 	Context("Static", func() {
+		// Avoid test.PersistentVolume's fake CSI driver in real clusters; no attacher removes those VolumeAttachments.
+		staticPersistentVolume := func(options test.PersistentVolumeOptions) *corev1.PersistentVolume {
+			options.UseHostPath = true
+			return test.PersistentVolume(options)
+		}
+
 		It("should run a pod with a pre-bound persistent volume (empty storage class)", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				VolumeName:       "test-volume",
 				StorageClassName: lo.ToPtr(""),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
 				},
@@ -94,7 +100,7 @@ var _ = Describe("Persistent Volumes", func() {
 				VolumeName:       "test-volume",
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
 				},
@@ -118,7 +124,7 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 				Zones:            []string{zone},
 			})
@@ -133,7 +139,7 @@ var _ = Describe("Persistent Volumes", func() {
 			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 			})
 			pod := test.Pod(test.PodOptions{
