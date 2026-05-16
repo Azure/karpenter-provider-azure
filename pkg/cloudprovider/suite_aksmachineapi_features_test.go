@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -1146,6 +1147,15 @@ var _ = Describe("CloudProvider", func() {
 				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				// The status sub-reconciler resolves Preferred to Enabled in this
+				// test env (no cluster conflicts). Wipe LocalDNSState back to nil
+				// via a status Patch to drive the "Status not yet resolved"
+				// branch of ResolvedLocalDNSForWire. Re-fetch first because the
+				// reconcile bumped the resource version.
+				Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+				stored := nodeClass.DeepCopy()
+				nodeClass.Status.LocalDNSState = nil
+				Expect(env.Client.Status().Patch(ctx, nodeClass, client.MergeFrom(stored))).To(Succeed())
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)

@@ -168,7 +168,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 
-		if !p.isInstanceTypeSupportedByFilters(ctx, sku, architecture, nodeClass) {
+		if !p.isInstanceTypeSupportedByFilters(sku, architecture, nodeClass) {
 			continue
 		}
 
@@ -280,10 +280,10 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 
 // isInstanceTypeSupportedByFilters consolidates all per-NodeClass instance type
 // filters into a single call to keep the List() method's cyclomatic complexity low.
-func (p *DefaultProvider) isInstanceTypeSupportedByFilters(ctx context.Context, sku *skewer.SKU, architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
+func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, nodeClass *v1beta1.AKSNodeClass) bool {
 	return p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) &&
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) &&
-		p.isInstanceTypeSupportedByLocalDNS(ctx, sku, nodeClass) &&
+		p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, nodeClass) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, nodeClass)
 }
@@ -322,7 +322,7 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 	return strings.EqualFold(value, "True")
 }
 
-func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 	// Read the resolved state from Status.LocalDNSState. The
 	// nodeclass.localdns sub-reconciler is the sole writer.
 	// If LocalDNS won't be enabled, all instance types are supported

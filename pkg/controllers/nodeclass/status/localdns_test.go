@@ -288,5 +288,3 @@ func unstructuredObj(apiVersion, kind, namespace, name string) *unstructured.Uns
 	u.SetName(name)
 	return u
 }
-
-type unstructuredItem = unstructured.Unstructured
