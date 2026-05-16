@@ -214,6 +214,11 @@ func (r *LocalDNSReconciler) hasConflictingNetworkPolicies(ctx context.Context, 
 }
 
 func (r *LocalDNSReconciler) hasConflictingK8sNetworkPolicies(ctx context.Context) (bool, error) {
+	// Limit:2 is sufficient: konnectivity-agent is uniquely named, so any
+	// response with 2 items guarantees at least one non-allow-listed policy
+	// (i.e. a real conflict). A response with 1 item that is konnectivity is
+	// proof there are no conflicting policies; 0 items is obviously clean.
+	// No pagination needed.
 	netPolList, err := r.kubeClient.NetworkingV1().NetworkPolicies("").List(ctx, metav1.ListOptions{Limit: 2})
 	if err != nil {
 		return false, fmt.Errorf("listing K8s NetworkPolicies: %w", err)

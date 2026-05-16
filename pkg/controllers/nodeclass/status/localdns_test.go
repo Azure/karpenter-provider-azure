@@ -172,6 +172,55 @@ func TestPreferred_NetworkPolicyPresent_Disabled(t *testing.T) {
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
 
+func TestPreferred_CiliumClusterwidePolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	scheme := runtime.NewScheme()
+	dc := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}:            "CiliumNetworkPolicyList",
+		{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"}: "CiliumClusterwideNetworkPolicyList",
+	},
+		unstructuredObj("cilium.io/v2", "CiliumClusterwideNetworkPolicy", "", "deny-cluster"),
+	)
+	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "cilium", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_CalicoNamespacedPolicyPresent_Disabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	scheme := runtime.NewScheme()
+	dc := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}:       "NetworkPolicyList",
+		{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}: "GlobalNetworkPolicyList",
+	},
+		unstructuredObj("crd.projectcalico.org/v1", "NetworkPolicy", "default", "deny-ns"),
+	)
+	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "calico", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+// TestPreferred_NPM_K8sNetworkPolicyPresent_Enabled asserts that when the
+// cluster's network policy mode is not Cilium/Calico (e.g. Azure NPM, or
+// empty), built-in K8s NetworkPolicies are NOT consulted and a conflicting
+// policy does not flip Preferred to Disabled.
+func TestPreferred_NPM_K8sNetworkPolicyPresent_Enabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
+	})
+	// networkPolicy="" simulates NPM / no recognized CRD-based engine.
+	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
 func TestPreferred_KonnectivityAgentIgnored(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
