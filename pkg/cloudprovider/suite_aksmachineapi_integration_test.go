@@ -623,8 +623,8 @@ var _ = Describe("CloudProvider", func() {
 			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
-			azureEnvNonZonal.Reset()
+			azureEnv.Reset(ctx)
+			azureEnvNonZonal.Reset(ctx)
 		})
 
 		// Run shared AKS Machine API tests
@@ -662,8 +662,8 @@ var _ = Describe("CloudProvider", func() {
 			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
-			azureEnvNonZonal.Reset()
+			azureEnv.Reset(ctx)
+			azureEnvNonZonal.Reset(ctx)
 		})
 
 		// Run shared AKS Machine API tests
@@ -719,7 +719,7 @@ var _ = Describe("CloudProvider", func() {
 				// Wait for any async polling goroutines to complete before resetting
 				cloudProvider.WaitForInstancePromises()
 				cluster.Reset()
-				azureEnv.Reset()
+				azureEnv.Reset(ctx)
 			})
 
 			It("should handle basic operations - new nodes use VMs, existing AKS machines are still visible", func() {
@@ -851,7 +851,7 @@ var _ = Describe("CloudProvider", func() {
 				// Wait for any async polling goroutines to complete before resetting
 				cloudProvider.WaitForInstancePromises()
 				cluster.Reset()
-				azureEnv.Reset()
+				azureEnv.Reset(ctx)
 			})
 
 			It("should handle basic operations - new nodes use VMs, existing AKS machines are still visible", func() {
@@ -1052,7 +1052,7 @@ var _ = Describe("CloudProvider", func() {
 			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 		})
 
 		It("should be able to handle basic operations", func() {

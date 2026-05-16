@@ -28,7 +28,6 @@ import (
 type OptionsFields struct {
 	ClusterName                    *string
 	ClusterEndpoint                *string
-	ClusterID                      *string
 	KubeletClientTLSBootstrapToken *string
 	LinuxAdminUsername             *string
 	SSHPublicKey                   *string
@@ -70,7 +69,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 	return &azoptions.Options{
 		ClusterName:                    lo.FromPtrOr(options.ClusterName, "test-cluster"),
 		ClusterEndpoint:                lo.FromPtrOr(options.ClusterEndpoint, "https://test-cluster"),
-		ClusterID:                      lo.FromPtrOr(options.ClusterID, "00000000"),
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
 		KubeletIdentityClientID:        lo.FromPtrOr(options.KubeletIdentityClientID, "61f71907-753f-4802-a901-47361c3664f2"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
