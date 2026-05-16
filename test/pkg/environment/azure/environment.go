@@ -56,6 +56,8 @@ func init() {
 const (
 	CiliumAgentNotReadyTaint    = "node.cilium.io/agent-not-ready"
 	EphemeralInitContainerImage = "alpine"
+
+	ciliumStartupTaintTolerationSeconds int64 = 120
 )
 
 type Environment struct {
@@ -252,4 +254,18 @@ func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()
 	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
+}
+
+// Pod wraps coretest.Pod for Azure E2E tests; use it instead of coretest.Pod when the test should apply Azure environment defaults.
+func (env *Environment) Pod(options coretest.PodOptions) *v1.Pod {
+	// Keep pod-based tests resilient to the Cilium startup-taint race while bounding how long the pod can tolerate it.
+	if env.IsCilium() {
+		options.Tolerations = append(options.Tolerations, v1.Toleration{
+			Key:               CiliumAgentNotReadyTaint,
+			Operator:          v1.TolerationOpExists,
+			Effect:            v1.TaintEffectNoExecute,
+			TolerationSeconds: new(ciliumStartupTaintTolerationSeconds),
+		})
+	}
+	return coretest.Pod(options)
 }

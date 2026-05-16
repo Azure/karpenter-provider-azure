@@ -85,14 +85,13 @@ var _ = Describe("Persistent Volumes", func() {
 			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
-				},
-			})
-			pod := test.Pod(test.PodOptions{
+				}})
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume (non-existent storage class)", func() {
@@ -106,11 +105,11 @@ var _ = Describe("Persistent Volumes", func() {
 				},
 				StorageClassName: "non-existent-storage-class",
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			}})
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume while respecting topology constraints", func() {
@@ -128,11 +127,11 @@ var _ = Describe("Persistent Volumes", func() {
 				StorageClassName: "non-existent-storage-class",
 				Zones:            []string{zone},
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			}})
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			nodes := env.ExpectCreatedNodeCount("==", 1)
 
 			// Verify the node is in the correct zone
@@ -142,7 +141,7 @@ var _ = Describe("Persistent Volumes", func() {
 			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 			})
-			pod := test.Pod(test.PodOptions{
+			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: lo.ToPtr("non-existent-storage-class"),
 				}},
@@ -182,12 +181,12 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: &storageClass.Name,
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a dynamic persistent volume while respecting allowed topologies", Label("runner"), func() {
@@ -208,19 +207,19 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: &storageClass.Name,
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			nodes := env.ExpectCreatedNodeCount("==", 1)
 
 			// Verify the node is in the correct zone
 			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
-			pod := test.Pod(test.PodOptions{
+			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: &storageClass.Name,
 				}},
@@ -261,13 +260,13 @@ var _ = Describe("Persistent Volumes", func() {
 			// because the scheduler only looked at the first zone.
 			zone2 := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[1])
 
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
 				NodeSelector:           map[string]string{corev1.LabelTopologyZone: zone2},
-			})
+			}})
 
-			env.ExpectCreated(pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			nodes := env.ExpectCreatedNodeCount("==", 1)
 			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone2))
 		})
@@ -408,7 +407,7 @@ var _ = Describe("Stateful workloads", func() {
 
 var _ = Describe("Ephemeral Storage", func() {
 	It("should run a pod with ephemeral storage that uses emptyDir", func() {
-		pod := test.Pod(test.PodOptions{
+		pod := env.Pod(test.PodOptions{
 			ResourceRequirements: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
@@ -432,7 +431,7 @@ var _ = Describe("Ephemeral Storage", func() {
 		env.ExpectCreatedNodeCount("==", 1)
 	})
 	It("should run a pod with ephemeral storage that uses memory-backed emptyDir", func() {
-		pod := test.Pod(test.PodOptions{})
+		pod := env.Pod(test.PodOptions{})
 		// Add a memory-backed emptyDir volume to the pod
 		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 			Name: "emptydir-memory-volume",
