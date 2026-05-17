@@ -431,7 +431,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
 			env.EventuallyExpectCreatedNodeClaimCount("==", 5)
-			env.EventuallyExpectCreatedNodeCount("==", 5)
+			nodes := env.EventuallyExpectCreatedNodeCount("==", 5)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			dep.Spec.Replicas = lo.ToPtr[int32](1)
@@ -439,7 +439,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			// Update the deployment to only contain 1 replica.
 			env.ExpectUpdated(dep)
 
-			env.ConsistentlyExpectNoDisruptions(5, time.Minute)
+			env.ConsistentlyExpectNodesNotDisrupted(nodes, time.Minute)
 		})
 		It("should not allow consolidation if the budget is fully blocking during a scheduled time", func() {
 			// We're going to define a budget that doesn't allow any drift to happen
@@ -467,7 +467,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
 			env.EventuallyExpectCreatedNodeClaimCount("==", 5)
-			env.EventuallyExpectCreatedNodeCount("==", 5)
+			nodes := env.EventuallyExpectCreatedNodeCount("==", 5)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			dep.Spec.Replicas = lo.ToPtr[int32](1)
@@ -475,7 +475,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			// Update the deployment to only contain 1 replica.
 			env.ExpectUpdated(dep)
 
-			env.ConsistentlyExpectNoDisruptions(5, time.Minute)
+			env.ConsistentlyExpectNodesNotDisrupted(nodes, time.Minute)
 		})
 	})
 	DescribeTable("should consolidate nodes (delete)", Label(debug.NoWatch), Label(debug.NoEvents),
