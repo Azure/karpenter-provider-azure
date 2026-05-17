@@ -204,6 +204,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				karpv1.NodePoolLabelKey:     nodePool.Name,
 				corev1.LabelTopologyRegion:  env.Region,
 				corev1.LabelTopologyZone:    fmt.Sprintf("%s-1", env.Region),
+				v1beta1.LabelPlacementScope: v1beta1.PlacementScopeZonal,
 				corev1.LabelOSStable:        "linux",
 				corev1.LabelArchStable:      "amd64",
 				karpv1.CapacityTypeLabelKey: karpv1.CapacityTypeOnDemand,
