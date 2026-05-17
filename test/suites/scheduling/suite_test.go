@@ -84,8 +84,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			v1beta1.LabelSKUGPUName,
 		)
 
-		if env.IsMachineModeOrNPS() {
-			// Can't test FIPS on self-hosted Karpenter
+		if !env.UsesSharedImageGallery() {
+			// Can't test FIPS if not using SIG
 			selectors.Insert(v1beta1.AKSLabelFIPSEnabled)
 		}
 
@@ -243,7 +243,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 
 		It("should support FIPS label for instance type selection", func() {
 			if !env.UsesSharedImageGallery() {
-				Skip("FIPS tests require SIG access - skipping in self-hosted mode")
+				Skip("FIPS tests require SIG access")
 			}
 
 			nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
