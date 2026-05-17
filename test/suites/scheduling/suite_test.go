@@ -109,11 +109,12 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			"foo":                            "bar",
 			karpv1.DoNotDisruptAnnotationKey: "true",
 		}
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 		env.ExpectCreatedNodeCount("==", 1)
-		Expect(env.GetNode(pod.Spec.NodeName).Annotations).To(And(HaveKeyWithValue("foo", "bar"), HaveKeyWithValue(karpv1.DoNotDisruptAnnotationKey, "true")))
+		node := env.GetNode(pods[0].Spec.NodeName)
+		Expect(node.Annotations).To(And(HaveKeyWithValue("foo", "bar"), HaveKeyWithValue(karpv1.DoNotDisruptAnnotationKey, "true")))
 	})
 
 	Context("Labels", func() {
@@ -150,7 +151,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should support well-known deprecated labels -- beta.kubernetes.io/instance-type", func() {
@@ -171,7 +172,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 
 		})
@@ -194,7 +195,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should support well-known labels for topology and architecture", func() {
@@ -217,7 +218,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
@@ -236,7 +237,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 
@@ -265,7 +266,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 
@@ -291,8 +292,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodeRequirements: requirements,
 			}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-			node := env.ExpectCreatedNodeCount("==", 1)[0]
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			node := env.GetNode(pods[0].Spec.NodeName)
 			// Ensure that the requirements/labels specified above are propagated onto the node
 			for k, v := range nodeSelector {
 				Expect(node.Labels).To(HaveKeyWithValue(k, v))
@@ -305,7 +307,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 
 	Context("Provisioning", func() {
 		It("should provision a node for naked pods", func() {
-			pod := test.Pod()
+			// Use a direct pod because this is explicit naked-pod provisioning coverage.
+			pod := env.Pod(test.PodOptions{})
 
 			env.ExpectCreated(nodeClass, nodePool, pod)
 			env.EventuallyExpectHealthy(pod)
@@ -314,7 +317,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		It("should provision a node for a deployment", Label(debug.NoWatch), Label(debug.NoEvents), func() {
 			deployment := test.Deployment(test.DeploymentOptions{Replicas: 50})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("<=", 2) // should probably all land on a single node, but at worst two depending on batching
 		})
 		It("should provision a node for a self-affinity deployment", func() {
@@ -336,7 +339,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			})
 
 			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), 2)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should provision three nodes for a zonal topology spread", func() {
@@ -425,12 +428,13 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			nodePoolLowPri = env.AdaptToClusterConfig(nodePoolLowPri)
 			nodePoolHighPri = env.AdaptToClusterConfig(nodePoolHighPri)
 
-			pod := test.Pod()
-			env.ExpectCreated(pod, nodeClass, nodePoolLowPri, nodePoolHighPri)
-			env.EventuallyExpectHealthy(pod)
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+			env.ExpectCreated(deployment, nodeClass, nodePoolLowPri, nodePoolHighPri)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
-			Expect(env.GetVMSKU(pod.Spec.NodeName)).To(Equal("Standard_D4s_v5"))
-			Expect(env.GetNode(pod.Spec.NodeName).Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePoolHighPri.Name))
+			node := env.GetNode(pods[0].Spec.NodeName)
+			Expect(env.GetVMSKU(node.Name)).To(Equal("Standard_D4s_v5"))
+			Expect(node.Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePoolHighPri.Name))
 		})
 
 		DescribeTable(
@@ -440,16 +444,18 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					Skip("native sidecar containers are only enabled on AKS 1.29+")
 				}
 
-				labels := map[string]string{"test": test.RandomName()}
+				affinityLabels := map[string]string{"test": test.RandomName()}
+				dsBufferLabels := lo.Assign(map[string]string{"app": test.RandomName()}, affinityLabels)
+				podLabels := lo.Assign(map[string]string{"app": test.RandomName()}, affinityLabels)
 				// Create a buffer pod to even out the total resource requests regardless of the daemonsets on the cluster. Assumes
 				// CPU is the resource in contention and that total daemonset CPU requests <= 3.
-				dsBufferPod := test.Pod(test.PodOptions{
+				dsBufferDeployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels: labels,
+						Labels: dsBufferLabels,
 					},
 					PodRequirements: []corev1.PodAffinityTerm{{
 						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: labels,
+							MatchLabels: affinityLabels,
 						},
 						TopologyKey: corev1.LabelHostname,
 					}},
@@ -463,7 +469,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							}(),
 						},
 					},
-				})
+				}})
 
 				test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1beta1.LabelSKUCPU,
@@ -476,22 +482,24 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					// remove some cheap burstable types so we have more control over what gets provisioned
 					Values: []string{"B"},
 				})
-				pod := test.Pod(test.PodOptions{
+				deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels: labels,
+						Labels: podLabels,
 					},
 					PodRequirements: []corev1.PodAffinityTerm{{
 						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: labels,
+							MatchLabels: affinityLabels,
 						},
 						TopologyKey: corev1.LabelHostname,
 					}},
 					InitContainers:       initContainers,
 					ResourceRequirements: containerRequirements,
-				})
-				env.ExpectCreated(nodePool, nodeClass, dsBufferPod, pod)
-				env.EventuallyExpectHealthy(pod)
-				node := env.ExpectCreatedNodeCount("==", 1)[0]
+				}})
+				env.ExpectCreated(nodePool, nodeClass, dsBufferDeployment, deployment)
+				env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(dsBufferDeployment.Spec.Selector.MatchLabels), int(*dsBufferDeployment.Spec.Replicas))
+				pods := env.EventuallyExpectHealthyDeployment(deployment)
+				env.ExpectCreatedNodeCount("==", 1)
+				node := env.GetNode(pods[0].Spec.NodeName)
 				Expect(node.ObjectMeta.GetLabels()[v1beta1.LabelSKUCPU]).To(Equal(expectedNodeCPU))
 			},
 			Entry("sidecar requirements + later init requirements do exceed container requirements", "8", corev1.ResourceRequirements{
@@ -538,7 +546,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			if env.K8sMinorVersion() < 29 {
 				Skip("native sidecar containers are only enabled on AKS 1.29+")
 			}
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				InitContainers: []corev1.Container{
 					{
 						RestartPolicy: lo.ToPtr(corev1.ContainerRestartPolicyAlways),
@@ -556,9 +564,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					corev1.ResourceCPU:    resource.MustParse("100m"),
 					corev1.ResourceMemory: resource.MustParse("128Mi"),
 				}},
-			})
-			env.ExpectCreated(nodePool, nodeClass, pod)
-			env.EventuallyExpectHealthy(pod)
+			}})
+			env.ExpectCreated(nodePool, nodeClass, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 		})
 	})
 
@@ -585,7 +593,7 @@ var _ = Describe("Node Overlay", func() {
 
 	It("should provision the instance that is the cheapest based on a price adjustment node overlay applied", func() {
 		overlaidInstanceType := "Standard_D8s_v5"
-		pod := test.Pod()
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
@@ -598,18 +606,19 @@ var _ = Describe("Node Overlay", func() {
 				},
 			},
 		})
-		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
-		env.EventuallyExpectHealthy(pod)
-		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 
-		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		instanceType, foundInstanceType := node.Labels[corev1.LabelInstanceTypeStable]
 		Expect(foundInstanceType).To(BeTrue())
 		Expect(instanceType).To(Equal(overlaidInstanceType))
 	})
 
 	It("should provision the instance that is the cheapest based on a price override node overlay applied", func() {
 		overlaidInstanceType := "Standard_D8s_v5"
-		pod := test.Pod()
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				Price: lo.ToPtr("0.0000000232"),
@@ -622,11 +631,12 @@ var _ = Describe("Node Overlay", func() {
 				},
 			},
 		})
-		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
-		env.EventuallyExpectHealthy(pod)
-		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 
-		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		instanceType, foundInstanceType := node.Labels[corev1.LabelInstanceTypeStable]
 		Expect(foundInstanceType).To(BeTrue())
 		Expect(instanceType).To(Equal(overlaidInstanceType))
 	})

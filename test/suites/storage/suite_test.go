@@ -1,6 +1,5 @@
 /*
 Portions Copyright (c) Microsoft Corporation.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -71,22 +70,28 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Persistent Volumes", func() {
 	Context("Static", func() {
+		// Avoid test.PersistentVolume's fake CSI driver in real clusters; no attacher removes those VolumeAttachments.
+		staticPersistentVolume := func(options test.PersistentVolumeOptions) *corev1.PersistentVolume {
+			options.UseHostPath = true
+			return test.PersistentVolume(options)
+		}
+
 		It("should run a pod with a pre-bound persistent volume (empty storage class)", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				VolumeName:       "test-volume",
 				StorageClassName: lo.ToPtr(""),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
 				},
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume (non-existent storage class)", func() {
@@ -94,17 +99,17 @@ var _ = Describe("Persistent Volumes", func() {
 				VolumeName:       "test-volume",
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
 				},
 				StorageClassName: "non-existent-storage-class",
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			}})
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume while respecting topology constraints", func() {
@@ -118,25 +123,26 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 				Zones:            []string{zone},
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
-			nodes := env.ExpectCreatedNodeCount("==", 1)
+			}})
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
 
 			// Verify the node is in the correct zone
-			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 			})
-			pod := test.Pod(test.PodOptions{
+			// Use a direct pod because the test exercises the pod's inline ephemeral volume template.
+			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: lo.ToPtr("non-existent-storage-class"),
 				}},
@@ -176,12 +182,12 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: &storageClass.Name,
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a dynamic persistent volume while respecting allowed topologies", Label("runner"), func() {
@@ -202,19 +208,21 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: &storageClass.Name,
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
-			nodes := env.ExpectCreatedNodeCount("==", 1)
+			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			node := env.GetNode(pods[0].Spec.NodeName)
 
 			// Verify the node is in the correct zone
-			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+			Expect(node.Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
-			pod := test.Pod(test.PodOptions{
+			// Use a direct pod because the test exercises the pod's inline ephemeral volume template.
+			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: &storageClass.Name,
 				}},
@@ -361,7 +369,8 @@ var _ = Describe("Stateful workloads", func() {
 
 var _ = Describe("Ephemeral Storage", func() {
 	It("should run a pod with ephemeral storage that uses emptyDir", func() {
-		pod := test.Pod(test.PodOptions{
+		// Use a direct pod because the test exercises pod-local emptyDir storage directly.
+		pod := env.Pod(test.PodOptions{
 			ResourceRequirements: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
@@ -385,7 +394,8 @@ var _ = Describe("Ephemeral Storage", func() {
 		env.ExpectCreatedNodeCount("==", 1)
 	})
 	It("should run a pod with ephemeral storage that uses memory-backed emptyDir", func() {
-		pod := test.Pod(test.PodOptions{})
+		// Use a direct pod because the test exercises pod-local emptyDir storage directly.
+		pod := env.Pod(test.PodOptions{})
 		// Add a memory-backed emptyDir volume to the pod
 		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 			Name: "emptydir-memory-volume",

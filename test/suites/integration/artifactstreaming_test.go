@@ -54,25 +54,27 @@ var _ = Describe("ArtifactStreaming", func() {
 			Enabled: &enabled,
 		}
 
-		pod := coretest.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
-		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).To(HaveKeyWithValue(artifactStreamingEnabledLabelKey, "true"))
-		verifyArtifactStreamingOnNode(node, true)
+		verifyArtifactStreamingOnNode(&node, true)
 	})
 
 	It("should not set artifact streaming label or enable infrastructure when not specified (defaults to disabled)", func() {
 		// nodeClass.Spec.ArtifactStreaming is nil by default
 
-		pod := coretest.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
-		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).ToNot(HaveKey(artifactStreamingEnabledLabelKey))
-		verifyArtifactStreamingOnNode(node, false)
+		verifyArtifactStreamingOnNode(&node, false)
 	})
 
 	It("should not set artifact streaming label or enable infrastructure when explicitly disabled", func() {
@@ -81,13 +83,14 @@ var _ = Describe("ArtifactStreaming", func() {
 			Enabled: &disabled,
 		}
 
-		pod := coretest.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
-		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).ToNot(HaveKey(artifactStreamingEnabledLabelKey))
-		verifyArtifactStreamingOnNode(node, false)
+		verifyArtifactStreamingOnNode(&node, false)
 	})
 })
 
@@ -96,7 +99,8 @@ func verifyArtifactStreamingOnNode(node *corev1.Node, expectEnabled bool) {
 	By(fmt.Sprintf("Verifying artifact streaming infrastructure on node %s (expect enabled: %v)", node.Name, expectEnabled))
 
 	privileged := true
-	testPod := coretest.Pod(coretest.PodOptions{
+	// Use a direct pod because this one-shot privileged host inspection is pinned to the target node.
+	testPod := env.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "artifact-streaming-check-",
 			Namespace:    "default",

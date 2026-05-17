@@ -503,6 +503,16 @@ func (env *Environment) EventuallyExpectHealthyPodCount(selector labels.Selector
 	return env.EventuallyExpectHealthyPodCountWithTimeout(-1, selector, numPods)
 }
 
+func (env *Environment) EventuallyExpectHealthyDeployment(deployment *appsv1.Deployment) []*corev1.Pod {
+	GinkgoHelper()
+	return env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+}
+
+func (env *Environment) EventuallyExpectHealthyDeploymentWithTimeout(timeout time.Duration, deployment *appsv1.Deployment) []*corev1.Pod {
+	GinkgoHelper()
+	return env.EventuallyExpectHealthyPodCountWithTimeout(timeout, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+}
+
 func (env *Environment) EventuallyExpectHealthyPodCountWithTimeout(timeout time.Duration, selector labels.Selector, numPods int) []*corev1.Pod {
 	GinkgoHelper()
 	var pods []*corev1.Pod
