@@ -88,6 +88,16 @@ type Operator struct {
 	// InClusterKubernetesInterface.
 	InClusterDynamicInterface dynamic.Interface
 
+	// ManagedKubernetesInterface is a Kubernetes client that talks to the APIServer of the
+	// cluster that Karpenter is managing (the workload cluster). In CCP/NAP topology this is
+	// different from InClusterKubernetesInterface, which targets the underlay cluster where
+	// the Karpenter pod itself runs. Callers that inspect customer/workload-side resources
+	// (NetworkPolicies, upstream node-local-dns DaemonSet, etc.) MUST use this client.
+	ManagedKubernetesInterface kubernetes.Interface
+	// ManagedDynamicInterface is a dynamic client over the same managed-cluster config as
+	// ManagedKubernetesInterface.
+	ManagedDynamicInterface dynamic.Interface
+
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	KubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
@@ -146,6 +156,16 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 	inClusterDynamicClient := dynamic.NewForConfigOrDie(inClusterConfig)
+
+	// Build clients over the managed (workload) cluster config. operator.GetConfig() is the
+	// rest.Config that controller-runtime uses for the manager, which targets the workload
+	// cluster (via mounted kubeconfig in CCP, or same as in-cluster in non-CCP). LocalDNS
+	// gate evaluation and other workload-side reads use these.
+	managedConfig := rest.CopyConfig(operator.GetConfig())
+	managedConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
+	managedConfig.UserAgent = auth.GetUserAgentExtension()
+	managedClient := kubernetes.NewForConfigOrDie(managedConfig)
+	managedDynamicClient := dynamic.NewForConfigOrDie(managedConfig)
 
 	if options.FromContext(ctx).DNSServiceIP == "" {
 		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
@@ -266,6 +286,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
 		InClusterDynamicInterface:    inClusterDynamicClient,
+		ManagedKubernetesInterface:   managedClient,
+		ManagedDynamicInterface:      managedDynamicClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,
