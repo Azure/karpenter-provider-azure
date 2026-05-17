@@ -106,7 +106,8 @@ var _ = Describe("Persistent Volumes", func() {
 			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
-				}})
+				},
+			})
 			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
 			}})
