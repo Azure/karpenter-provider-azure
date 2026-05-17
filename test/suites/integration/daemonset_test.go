@@ -17,6 +17,8 @@ limitations under the License.
 package integration_test
 
 import (
+	"time"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
@@ -34,6 +36,28 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
+
+const daemonSetStateRefreshWindow = 70 * time.Second
+
+func expectLimitRangeDefaultedDaemonSetPodObserved(selector labels.Selector, expectedRequests corev1.ResourceList) {
+	GinkgoHelper()
+
+	checkDefaultedDaemonSetPod := func(g Gomega) {
+		daemonSetPods := env.Monitor.RunningPods(selector)
+		g.Expect(daemonSetPods).ToNot(BeEmpty())
+		g.Expect(daemonSetPods[0].Spec.Containers).ToNot(BeEmpty())
+		for resourceName, expected := range expectedRequests {
+			actual, ok := daemonSetPods[0].Spec.Containers[0].Resources.Requests[resourceName]
+			g.Expect(ok).To(BeTrue(), "expected %s request to be defaulted on an admitted DaemonSet pod", resourceName)
+			g.Expect(actual.Cmp(expected)).To(Equal(0), "expected %s request to be %s, got %s", resourceName, expected.String(), actual.String())
+		}
+	}
+
+	Eventually(checkDefaultedDaemonSetPod).Should(Succeed())
+	// When estimating DaemonSet overhead, Karpenter sees LimitRange-applied requests from an admitted pod;
+	// its template fallback only merges explicit limits into requests. Keep one stable long enough for state.daemonset to refresh.
+	Consistently(checkDefaultedDaemonSetPod).WithTimeout(daemonSetStateRefreshWindow).WithPolling(5 * time.Second).Should(Succeed())
+}
 
 var _ = Describe("DaemonSet", func() {
 	var limitrange *corev1.LimitRange
@@ -64,6 +88,11 @@ var _ = Describe("DaemonSet", func() {
 			PodOptions: test.PodOptions{
 				ResourceRequirements: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 				PriorityClassName:    "high-priority-daemonsets",
+				Tolerations: []corev1.Toleration{{
+					Key:      "CriticalAddonsOnly",
+					Operator: corev1.TolerationOpExists,
+					Effect:   corev1.TaintEffectNoSchedule,
+				}},
 			},
 		})
 		numPods := 1
@@ -92,7 +121,14 @@ var _ = Describe("DaemonSet", func() {
 
 		podSelector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 		daemonSetSelector := labels.SelectorFromSet(daemonset.Spec.Selector.MatchLabels)
-		env.ExpectCreated(nodeClass, nodePool, limitrange, priorityclass, daemonset, dep)
+		// Create the LimitRange and DaemonSet before the workload so Karpenter can use an admitted DaemonSet pod
+		// with namespace defaults applied, rather than the synthetic template fallback that has no LimitRange context.
+		env.ExpectCreated(limitrange, priorityclass, daemonset)
+		expectLimitRangeDefaultedDaemonSetPodObserved(daemonSetSelector, corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("2"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		})
+		env.ExpectCreated(nodeClass, nodePool, dep)
 
 		// Eventually expect a single node to exist and both the deployment pod and the daemonset pod to schedule to it
 		Eventually(func(g Gomega) {
@@ -104,10 +140,12 @@ var _ = Describe("DaemonSet", func() {
 			g.Expect(deploymentPods).To(HaveLen(1))
 
 			daemonSetPods := env.Monitor.RunningPods(daemonSetSelector)
-			g.Expect(daemonSetPods).To(HaveLen(1))
+			daemonSetPodsOnNode := lo.Filter(daemonSetPods, func(pod *corev1.Pod, _ int) bool {
+				return pod.Spec.NodeName == nodeList.Items[0].Name
+			})
+			g.Expect(daemonSetPodsOnNode).To(HaveLen(1))
 
 			g.Expect(deploymentPods[0].Spec.NodeName).To(Equal(nodeList.Items[0].Name))
-			g.Expect(daemonSetPods[0].Spec.NodeName).To(Equal(nodeList.Items[0].Name))
 		}).Should(Succeed())
 	})
 	It("should account for LimitRange DefaultRequest on daemonSet pods for resources", func() {
@@ -123,7 +161,14 @@ var _ = Describe("DaemonSet", func() {
 
 		podSelector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 		daemonSetSelector := labels.SelectorFromSet(daemonset.Spec.Selector.MatchLabels)
-		env.ExpectCreated(nodeClass, nodePool, limitrange, priorityclass, daemonset, dep)
+		// Create the LimitRange and DaemonSet before the workload so Karpenter can use an admitted DaemonSet pod
+		// with namespace defaults applied, rather than the synthetic template fallback that has no LimitRange context.
+		env.ExpectCreated(limitrange, priorityclass, daemonset)
+		expectLimitRangeDefaultedDaemonSetPodObserved(daemonSetSelector, corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("2"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		})
+		env.ExpectCreated(nodeClass, nodePool, dep)
 
 		// Eventually expect a single node to exist and both the deployment pod and the daemonset pod to schedule to it
 		Eventually(func(g Gomega) {
@@ -135,10 +180,12 @@ var _ = Describe("DaemonSet", func() {
 			g.Expect(deploymentPods).To(HaveLen(1))
 
 			daemonSetPods := env.Monitor.RunningPods(daemonSetSelector)
-			g.Expect(daemonSetPods).To(HaveLen(1))
+			daemonSetPodsOnNode := lo.Filter(daemonSetPods, func(pod *corev1.Pod, _ int) bool {
+				return pod.Spec.NodeName == nodeList.Items[0].Name
+			})
+			g.Expect(daemonSetPodsOnNode).To(HaveLen(1))
 
 			g.Expect(deploymentPods[0].Spec.NodeName).To(Equal(nodeList.Items[0].Name))
-			g.Expect(daemonSetPods[0].Spec.NodeName).To(Equal(nodeList.Items[0].Name))
 		}).Should(Succeed())
 	})
 	It("should schedule DaemonSet with matching AKS domain node affinity (small/medium/large)", func() {
