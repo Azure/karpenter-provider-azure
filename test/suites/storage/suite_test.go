@@ -33,7 +33,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/samber/lo"
-	"github.com/samber/lo/mutable"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +48,8 @@ import (
 var env *azure.Environment
 var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
+
+const defaultStorageARMZone = "1"
 
 func TestStorage(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -68,6 +69,15 @@ var _ = BeforeEach(func() {
 })
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
+
+func storageTopologyZone() string {
+	GinkgoHelper()
+	if !env.SupportsZones() {
+		Skip(fmt.Sprintf("skipping storage topology test because region %s does not support availability zones", env.Region))
+	}
+	// Azure Subscriptions zone mappings can include zones unsupported by the default Standard_LRS node OS disk.
+	return zones.MakeAKSLabelZoneFromARMZone(env.Region, defaultStorageARMZone)
+}
 
 var _ = Describe("Persistent Volumes", func() {
 	Context("Static", func() {
@@ -92,7 +102,7 @@ var _ = Describe("Persistent Volumes", func() {
 			}})
 
 			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume (non-existent storage class)", func() {
@@ -110,16 +120,11 @@ var _ = Describe("Persistent Volumes", func() {
 				PersistentVolumeClaims: []string{pvc.Name},
 			}})
 			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume while respecting topology constraints", func() {
-			availableZones := env.GetAvailableZones()
-			if len(availableZones) == 0 {
-				Skip(fmt.Sprintf("skipping topology constraint test because region %s does not support availability zones", env.Region))
-			}
-			mutable.Shuffle(availableZones)
-			zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
+			zone := storageTopologyZone()
 
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
@@ -132,11 +137,11 @@ var _ = Describe("Persistent Volumes", func() {
 				PersistentVolumeClaims: []string{pvc.Name},
 			}})
 			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-			nodes := env.ExpectCreatedNodeCount("==", 1)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
 
 			// Verify the node is in the correct zone
-			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
 			pv := staticPersistentVolume(test.PersistentVolumeOptions{
@@ -187,16 +192,11 @@ var _ = Describe("Persistent Volumes", func() {
 			}})
 
 			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a dynamic persistent volume while respecting allowed topologies", Label("runner"), func() {
-			availableZones := env.GetAvailableZones()
-			if len(availableZones) == 0 {
-				Skip(fmt.Sprintf("skipping allowed topologies test because region %s does not support availability zones", env.Region))
-			}
-			mutable.Shuffle(availableZones)
-			zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
+			zone := storageTopologyZone()
 
 			storageClass.AllowedTopologies = []corev1.TopologySelectorTerm{{
 				MatchLabelExpressions: []corev1.TopologySelectorLabelRequirement{{
@@ -213,11 +213,11 @@ var _ = Describe("Persistent Volumes", func() {
 			}})
 
 			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-			nodes := env.ExpectCreatedNodeCount("==", 1)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
 
 			// Verify the node is in the correct zone
-			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
 			pod := env.Pod(test.PodOptions{
@@ -240,10 +240,7 @@ var _ = Describe("Stateful workloads", func() {
 	var statefulSet *appsv1.StatefulSet
 	var selector labels.Selector
 	BeforeEach(func() {
-		availableZones := env.GetAvailableZones()
-		if len(availableZones) == 0 {
-			Skip(fmt.Sprintf("skipping stateful workload test because region %s does not support availability zones", env.Region))
-		}
+		zone := storageTopologyZone()
 		// Ensure that the Azure Disk driver is installed, or we can't run the test.
 		var ds appsv1.DaemonSet
 		if err := env.Client.Get(env.Context, client.ObjectKey{
@@ -258,8 +255,6 @@ var _ = Describe("Stateful workloads", func() {
 		}
 
 		numPods = 1
-		mutable.Shuffle(availableZones)
-		zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
 
 		storageClass = test.StorageClass(test.StorageClassOptions{
 			ObjectMeta: metav1.ObjectMeta{
