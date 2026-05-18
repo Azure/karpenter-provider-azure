@@ -83,7 +83,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			env.ExpectCreatedNodeCount("==", 1)
 			node := env.GetNode(pods[0].Spec.NodeName)
 
-			imageRef := expectNodeUsesFIPS(&node)
+			imageRef := expectNodeUsesFIPS(node)
 			expectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
 		})
 
@@ -97,7 +97,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			env.ExpectCreatedNodeCount("==", 1)
 			node := env.GetNode(pods[0].Spec.NodeName)
 
-			imageRef := expectNodeUsesFIPS(&node)
+			imageRef := expectNodeUsesFIPS(node)
 			expectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
 		})
 	})
@@ -118,7 +118,7 @@ var _ = Describe("FIPS", Label("runner"), func() {
 			env.ExpectCreatedNodeCount("==", 1)
 			node := env.GetNode(pods[0].Spec.NodeName)
 
-			imageRef := expectNodeDoesNotUseFIPS(&node)
+			imageRef := expectNodeDoesNotUseFIPS(node)
 			expectNodeClassHasExpectedImages(nodeClass, imageRef, false) // false = expect non-FIPS images
 		})
 	})

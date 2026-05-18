@@ -61,7 +61,7 @@ var _ = Describe("ArtifactStreaming", func() {
 		env.EventuallyExpectInitializedNodeCount("==", 1)
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).To(HaveKeyWithValue(artifactStreamingEnabledLabelKey, "true"))
-		verifyArtifactStreamingOnNode(&node, true)
+		verifyArtifactStreamingOnNode(node, true)
 	})
 
 	It("should not set artifact streaming label or enable infrastructure when not specified (defaults to disabled)", func() {
@@ -74,7 +74,7 @@ var _ = Describe("ArtifactStreaming", func() {
 		env.EventuallyExpectInitializedNodeCount("==", 1)
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).ToNot(HaveKey(artifactStreamingEnabledLabelKey))
-		verifyArtifactStreamingOnNode(&node, false)
+		verifyArtifactStreamingOnNode(node, false)
 	})
 
 	It("should not set artifact streaming label or enable infrastructure when explicitly disabled", func() {
@@ -90,7 +90,7 @@ var _ = Describe("ArtifactStreaming", func() {
 		env.EventuallyExpectInitializedNodeCount("==", 1)
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).ToNot(HaveKey(artifactStreamingEnabledLabelKey))
-		verifyArtifactStreamingOnNode(&node, false)
+		verifyArtifactStreamingOnNode(node, false)
 	})
 })
 

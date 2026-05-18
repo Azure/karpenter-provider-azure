@@ -936,10 +936,10 @@ func (env *Environment) EventuallyExpectConsolidatable(nodeClaims ...*karpv1.Nod
 	}).Should(Succeed())
 }
 
-func (env *Environment) GetNode(nodeName string) corev1.Node {
+func (env *Environment) GetNode(nodeName string) *corev1.Node {
 	GinkgoHelper()
-	var node corev1.Node
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: nodeName}, &node)).To(Succeed())
+	node := &corev1.Node{}
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: nodeName}, node)).To(Succeed())
 	return node
 }
 
