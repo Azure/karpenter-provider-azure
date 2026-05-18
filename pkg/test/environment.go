@@ -175,10 +175,15 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		pricingProvider,
 		unavailableOfferingsCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
+	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
+		networkSecurityGroupAPI,
+		testOptions.NodeResourceGroup,
+	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageFamilyResolver,
 		imageFamilyProvider,
+		networkSecurityGroupProvider,
 		lo.ToPtr("ca-bundle"),
 		testOptions.ClusterEndpoint,
 		"test-tenant",
@@ -192,10 +197,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,
 		loadBalancerCache,
-		testOptions.NodeResourceGroup,
-	)
-	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
-		networkSecurityGroupAPI,
 		testOptions.NodeResourceGroup,
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
@@ -292,6 +293,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// We can update it in individual tests as needed.
 	lo.Must0(instanceTypesProvider.UpdateInstanceTypes(ctx))
 
+	// Seed the managed NSG
+	nsg := MakeNetworkSecurityGroup(testOptions.NodeResourceGroup, "aks-agentpool-00000000-nsg")
+	networkSecurityGroupAPI.NSGs.Store(lo.FromPtr(nsg.ID), nsg)
+
 	return &Environment{
 		VirtualMachinesAPI:          virtualMachinesAPI,
 		AuxiliaryTokenServer:        auxiliaryTokenServer,
@@ -341,7 +346,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	}
 }
 
-func (env *Environment) Reset() {
+func (env *Environment) Reset(ctx context.Context) {
 	env.VirtualMachinesAPI.Reset()
 	if env.AuxiliaryTokenServer != nil {
 		env.AuxiliaryTokenServer.Reset()
@@ -367,6 +372,11 @@ func (env *Environment) Reset() {
 	env.UnavailableOfferingsCache.Flush()
 	env.AKSMachineCache.InvalidateAll()
 	env.LoadBalancerCache.Flush()
+
+	// Re-seed the managed NSG so launchtemplate provider can resolve it
+	nodeResourceGroup := options.FromContext(ctx).NodeResourceGroup
+	nsg := MakeNetworkSecurityGroup(nodeResourceGroup, "aks-agentpool-00000000-nsg")
+	env.NetworkSecurityGroupAPI.NSGs.Store(lo.FromPtr(nsg.ID), nsg)
 }
 
 func (env *Environment) Zones() []string {

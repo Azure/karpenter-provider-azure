@@ -40,7 +40,8 @@ type StaticParameters struct {
 	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
-	ClusterID                      string
+	NetworkSecurityGroupName       string
+	RouteTableName                 string
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
 	NetworkPlugin                  string
