@@ -201,6 +201,12 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 //  2. maxTimeout passes (latency SLA)
 //  3. Any batch reaches maxBatchSize (full batch)
 func (b *Batcher[RequestPayload, ResponsePayload]) waitForIdle() {
+	// Check immediately in case all requests were enqueued before we started
+	// listening on the trigger channel (their signals may have been coalesced/dropped).
+	if b.anyBatchFull() {
+		return
+	}
+
 	maxTimer := time.NewTimer(b.opts.MaxTimeout)
 	idleTimer := time.NewTimer(b.opts.IdleTimeout)
 	defer maxTimer.Stop()
