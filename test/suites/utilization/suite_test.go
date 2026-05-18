@@ -24,7 +24,6 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -79,7 +78,7 @@ var _ = Describe("Utilization", func() {
 	)
 
 	It("should provision one pod per node (AzureLinux, arm64)", func() {
-		if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.UsesSharedImageGallery() {
+		if imagefamily.UseAzureLinux3(env.K8sVersion()) && !env.UsesSharedImageGallery() {
 			Skip("AzureLinux3 ARM64 VHD is not available in CIG")
 		}
 		nc := env.AZLinuxNodeClass()
@@ -106,6 +105,6 @@ func ExpectProvisionPodPerNode(nodeClass *v1beta1.AKSNodeClass, nodePool *karpv1
 	})
 
 	env.ExpectCreated(nodePool, nodeClass, deployment)
-	env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+	env.EventuallyExpectHealthyDeployment(deployment)
 	env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas)) // One pod per node enforced by instance size
 }

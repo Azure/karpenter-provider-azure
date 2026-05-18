@@ -654,6 +654,24 @@ func (env *Environment) ConsistentlyExpectNoDisruptions(nodeCount int, duration 
 	}, duration).Should(Succeed())
 }
 
+// ConsistentlyExpectNodesNotDisrupted asserts that the captured nodes never receive the disrupted taint.
+// Use this instead of ConsistentlyExpectNoDisruptions when the test only needs to prove that a specific
+// node set was not disrupted, since ConsistentlyExpectNoDisruptions also asserts exact Node/NodeClaim counts.
+func (env *Environment) ConsistentlyExpectNodesNotDisrupted(nodes []*corev1.Node, duration time.Duration) {
+	GinkgoHelper()
+	By(fmt.Sprintf("expecting %d nodes not to be disrupted for %s", len(nodes), duration))
+	Consistently(func(g Gomega) {
+		for _, node := range nodes {
+			current := &corev1.Node{}
+			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(node), current)).To(Succeed())
+			_, disrupted := lo.Find(current.Spec.Taints, func(taint corev1.Taint) bool {
+				return taint.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
+			})
+			g.Expect(disrupted).To(BeFalse(), "expected node %s to remain undisrupted", current.Name)
+		}
+	}, duration).Should(Succeed())
+}
+
 // ConsistentlyExpectDisruptionsUntilNoneLeft consistently ensures a max on number of concurrently disrupting and non-terminating nodes.
 // This actually uses an Eventually() under the hood so that when we reach 0 tainted nodes we exit early.
 // We use the StopTrying() so that we can exit the Eventually() if we've breached an assertion on total concurrency of disruptions.
@@ -918,10 +936,10 @@ func (env *Environment) EventuallyExpectConsolidatable(nodeClaims ...*karpv1.Nod
 	}).Should(Succeed())
 }
 
-func (env *Environment) GetNode(nodeName string) corev1.Node {
+func (env *Environment) GetNode(nodeName string) *corev1.Node {
 	GinkgoHelper()
-	var node corev1.Node
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: nodeName}, &node)).To(Succeed())
+	node := &corev1.Node{}
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: nodeName}, node)).To(Succeed())
 	return node
 }
 

@@ -147,6 +147,7 @@ var _ = Describe("Persistent Volumes", func() {
 			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 			})
+			// Use a direct pod because the test exercises the pod's inline ephemeral volume template.
 			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: lo.ToPtr("non-existent-storage-class"),
@@ -220,6 +221,7 @@ var _ = Describe("Persistent Volumes", func() {
 			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
+			// Use a direct pod because the test exercises the pod's inline ephemeral volume template.
 			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: &storageClass.Name,
@@ -362,6 +364,7 @@ var _ = Describe("Stateful workloads", func() {
 
 var _ = Describe("Ephemeral Storage", func() {
 	It("should run a pod with ephemeral storage that uses emptyDir", func() {
+		// Use a direct pod because the test exercises pod-local emptyDir storage directly.
 		pod := env.Pod(test.PodOptions{
 			ResourceRequirements: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -386,6 +389,7 @@ var _ = Describe("Ephemeral Storage", func() {
 		env.ExpectCreatedNodeCount("==", 1)
 	})
 	It("should run a pod with ephemeral storage that uses memory-backed emptyDir", func() {
+		// Use a direct pod because the test exercises pod-local emptyDir storage directly.
 		pod := env.Pod(test.PodOptions{})
 		// Add a memory-backed emptyDir volume to the pod
 		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
