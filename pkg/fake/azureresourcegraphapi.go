@@ -109,18 +109,16 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 }
 
 func (c *AzureResourceGraphAPI) loadVMObjects() (vmList []armcompute.VirtualMachine) {
-	c.VirtualMachinesAPI.Instances.Range(func(k, v any) bool {
-		vm, _ := c.VirtualMachinesAPI.Instances.Load(k)
-		vmList = append(vmList, vm.(armcompute.VirtualMachine))
+	c.VirtualMachinesAPI.Instances.Range(func(k string, v armcompute.VirtualMachine) bool {
+		vmList = append(vmList, v)
 		return true
 	})
 	return vmList
 }
 
 func (c *AzureResourceGraphAPI) loadNicObjects() (nicList []armnetwork.Interface) {
-	c.NetworkInterfacesAPI.NetworkInterfaces.Range(func(k, v any) bool {
-		nic, _ := c.NetworkInterfacesAPI.NetworkInterfaces.Load(k)
-		nicList = append(nicList, nic.(armnetwork.Interface))
+	c.NetworkInterfacesAPI.NetworkInterfaces.Range(func(k string, v armnetwork.Interface) bool {
+		nicList = append(nicList, v)
 		return true
 	})
 	return nicList

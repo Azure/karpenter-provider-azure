@@ -414,7 +414,7 @@ func runSharedAKSMachineAPITests() {
 			machineID := fake.MkMachineID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName, aksMachineName)
 			existingMachine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
 			Expect(ok).To(BeTrue(), "AKS machine should exist in fake store")
-			aksMachine := existingMachine.(armcontainerservice.Machine)
+			aksMachine := existingMachine
 			Expect(aksMachine.Properties).ToNot(BeNil())
 
 			// Validate AKS machine properties match the conflicted configuration

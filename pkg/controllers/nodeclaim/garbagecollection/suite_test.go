@@ -186,7 +186,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 							},
 						})
-						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), *newVM)
 						ids = append(ids, *vm.ID)
 					}
 				}
@@ -227,7 +227,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 							},
 						})
-						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), *newVM)
 						nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 							Status: karpv1.NodeClaimStatus{
 								ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),
