@@ -244,14 +244,16 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("missing field, cluster-endpoint")))
 		})
-		It("should fail validation when kubeletClientTLSBootstrapToken not included", func() {
+		It("should succeed validation when kubeletClientTLSBootstrapToken not included", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
 			)
-			Expect(err).To(MatchError(ContainSubstring("missing field, kubelet-bootstrap-token")))
+			Expect(err).ToNot(HaveOccurred())
 		})
 		It("should fail validation when SSHPublicKey not included", func() {
 			err := opts.Parse(
