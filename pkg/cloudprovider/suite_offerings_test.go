@@ -16,6 +16,17 @@ limitations under the License.
 
 package cloudprovider
 
+// suite_offerings_test.go tests instance selection, zone behavior, and creation error handling:
+// expected creation failures (quota errors, capacity errors), zone-aware provisioning,
+// CloudProvider Create error cases, unavailable offerings cache, provider list behavior.
+//
+// Each provision mode has its own Context. Within each Context:
+//   - Shared tests (run under all modes) go at the top level or in shared functions.
+//   - Mode-specific tests go in a clearly labeled sub-Context.
+//
+// For instance configuration features (GPU, disk, tags, etc.), see suite_features_test.go.
+// For lifecycle/CRUD operations, see suite_integration_test.go.
+
 import (
 	"fmt"
 
@@ -28,13 +39,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/tools/record"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
-	"sigs.k8s.io/karpenter/pkg/controllers/state"
-	"sigs.k8s.io/karpenter/pkg/events"
-	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
@@ -42,51 +48,418 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/skewer"
 )
 
-var _ = Describe("CloudProvider", func() {
-	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
-		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
-				UseSIG:        lo.ToPtr(true),
+// runSharedUnavailableOfferingsTests tests unavailable offerings cache behavior that is
+// mode-agnostic — scheduling decisions based on cached unavailability, zone preferences,
+// smaller instance fallback, and cache expiry. Mode-specific error-handling tests
+// (ZonalAllocationFailed, SkuNotAvailable) remain in each mode's Context.
+func runSharedUnavailableOfferingsTests() {
+	Context("Create - Unavailable Offerings", func() {
+		It("should not allocate an instance in a zone marked as unavailable", func() {
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeOnDemand)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{"Standard_D2_v2"}})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
+		})
+
+		Context("Should not return unavailable offerings", func() {
+			It("should leave regional offerings available when all real zones are unavailable", func() {
+				for _, zone := range azureEnv.Zones() {
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
+				}
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				seeUnavailable := false
+				for _, instanceType := range instanceTypes {
+					if instanceType.Name == "Standard_D2_v2" {
+						seeUnavailable = true
+						// Zonal env: regional offerings should still be available
+						Expect(lo.Map(instanceType.Offerings.Available(), func(offering *corecloudprovider.Offering, _ int) string {
+							return offering.Requirements.Get(v1.LabelTopologyZone).Any()
+						})).To(ConsistOf(zones.Regional, zones.Regional))
+					} else {
+						Expect(len(instanceType.Offerings.Available())).To(Not(Equal(0)))
+					}
+				}
+				Expect(seeUnavailable).To(BeTrue())
 			})
 
-			ctx = coreoptions.ToContext(ctx, coretest.Options())
-			ctx = options.ToContext(ctx, testOptions)
+			It("should not return unavailable offerings - non-zonal", func() {
+				for _, zone := range azureEnvNonZonal.Zones() {
+					azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
+					azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
+				}
+				instanceTypes, err := azureEnvNonZonal.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
 
-			azureEnv = test.NewEnvironment(ctx, env)
-			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
-			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+				seeUnavailable := false
+				for _, instanceType := range instanceTypes {
+					if instanceType.Name == "Standard_D2_v2" {
+						seeUnavailable = true
+						// Non-zonal env: all offerings should be unavailable
+						Expect(len(instanceType.Offerings.Available())).To(Equal(0))
+					} else {
+						Expect(len(instanceType.Offerings.Available())).To(Not(Equal(0)))
+					}
+				}
+				Expect(seeUnavailable).To(BeTrue())
+			})
+		})
 
-			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+		It("should launch instances in a different zone than preferred when zone is unavailable", func() {
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeSpot)
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{
+				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
+			})
+			pod.Spec.Affinity = &v1.Affinity{
+				NodeAffinity: &v1.NodeAffinity{
+					PreferredDuringSchedulingIgnoredDuringExecution: []v1.PreferredSchedulingTerm{
+						{
+							Weight: 1,
+							Preference: v1.NodeSelectorTerm{
+								MatchExpressions: []v1.NodeSelectorRequirement{
+									{
+										Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 
-		AfterEach(func() {
-			// Wait for any async polling goroutines to complete before resetting
-			cloudProvider.WaitForInstancePromises()
-			cluster.Reset()
-			azureEnv.Reset(ctx)
-			azureEnvNonZonal.Reset(ctx)
+		It("should launch smaller instances than optimal if larger instance launch results in Insufficient Capacity Error", func() {
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_F16s_v2"), fakeZone1, karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_F16s_v2"), fakeZone1, karpv1.CapacityTypeSpot)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{"Standard_DS2_v2", "Standard_F16s_v2"}})
+			pods := []*v1.Pod{}
+			for i := 0; i < 2; i++ {
+				pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+					},
+					NodeSelector: map[string]string{
+						v1.LabelTopologyZone: fakeZone1,
+					},
+				}))
+			}
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
+
+			nodeNames := sets.New[string]()
+			for _, pod := range pods {
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_DS2_v2"))
+				nodeNames.Insert(node.Name)
+			}
+			Expect(nodeNames.Len()).To(Equal(2))
 		})
+
+		Context("ICE Cache expiry", func() {
+			It("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry - zonal", func() {
+				for _, zone := range azureEnv.Zones() {
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
+				}
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeSpot)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeOnDemand)
+
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				azureEnv.UnavailableOfferingsCache.Flush()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
+			})
+
+			It("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry - non-zonal", func() {
+				for _, zone := range azureEnvNonZonal.Zones() {
+					azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
+					azureEnvNonZonal.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
+				}
+
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				azureEnvNonZonal.UnavailableOfferingsCache.Flush()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
+			})
+		})
+	})
+}
+
+// runSharedCloudProviderCreateErrorTests tests error handling in cloudProvider.Create() that is
+// mode-agnostic — errors from NodeClass readiness, instance type resolution, and ICE. These occur
+// before any mode-specific instance creation path and are identical across provision modes.
+// Mode-specific instance creation failure tests remain in each mode's Context.
+func runSharedCloudProviderCreateErrorTests() {
+	Context("Create - CloudProvider Create Error Cases", func() {
+		It("should return an ICE error when there are no instance types to launch", func() {
+			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"doesnotexist"},
+				},
+			}
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+			Expect(cloudProviderMachine).To(BeNil())
+		})
+
+		It("should return error when NodeClass readiness is Unknown", func() {
+			nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
+			testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, testNodeClaim)
+			claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
+		})
+
+		It("should return error when instance type resolution fails", func() {
+			localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+
+			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, localStatusController, nodeClass)
+
+			// Flush the cache to simulate the controller not having run yet.
+			azureEnv.InstanceTypesProvider.Reset()
+
+			testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving instance types"))
+
+			// Reset instance types
+			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+		})
+	})
+}
+
+// runSharedZoneAwareProvisioningTests tests zone-aware provisioning behavior across provision modes.
+// Tests that check scheduling/node labels are fully shared. Tests that check the created
+// instance's zone field have IF branches for the mode-specific API assertion.
+func runSharedZoneAwareProvisioningTests() {
+	Context("Create - Zone-aware provisioning", func() {
+		It("should launch in the NodePool-requested zone", func() {
+			zone, instanceZone := fmt.Sprintf("%s-3", fake.Region), "3"
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot, karpv1.CapacityTypeOnDemand}},
+				{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}},
+			}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
+
+			if testOptions.IsAKSMachineAPIMode() {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Zones).To(ConsistOf(&instanceZone))
+			} else {
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Zones).To(ConsistOf(&instanceZone))
+			}
+		})
+
+		It("should support provisioning in non-zonal regions", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			if testOptions.IsAKSMachineAPIMode() {
+				Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Zones).To(BeEmpty())
+			} else {
+				Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Zones).To(BeEmpty())
+			}
+		})
+
+		It("should provision non-zonal instance types in zonal regions with regional zone label", func() {
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{"Standard_NC6s_v3"}, // Non-zonal instance type
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+
+			if testOptions.IsAKSMachineAPIMode() {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Zones).To(BeEmpty())
+			} else {
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Zones).To(BeEmpty())
+			}
+		})
+
+		It("should not include empty zone domain in instance type offerings", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ToNot(BeEmpty())
+
+			for _, it := range instanceTypes {
+				for _, offering := range it.Offerings {
+					zone := offering.Requirements.Get(v1.LabelTopologyZone).Any()
+					Expect(zone).ToNot(BeEmpty(),
+						fmt.Sprintf("instance type %s has an offering with empty zone, which breaks topology spread constraints", it.Name))
+				}
+			}
+		})
+
+		It("should exclude non-zonal instance types via zone NodePool requirements", func() {
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelTopologyZone,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{fakeZone1},
+				},
+			)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+		})
+
+		It("should exclude non-zonal instance types when all real zones are specified", func() {
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelTopologyZone,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   azureEnv.Zones(),
+				},
+			)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod()
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+		})
+
+		It("should schedule pods with zonal topology spread when non-zonal SKUs exist", func() {
+			podLabels := map[string]string{"app": "tsc-repro"}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pods := []*v1.Pod{}
+			for i := 0; i < 3; i++ {
+				pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
+					TopologySpreadConstraints: []v1.TopologySpreadConstraint{
+						{
+							MaxSkew:           1,
+							TopologyKey:       v1.LabelTopologyZone,
+							WhenUnsatisfiable: v1.DoNotSchedule,
+							LabelSelector:     &metav1.LabelSelector{MatchLabels: podLabels},
+						},
+					},
+				}))
+			}
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
+			for _, pod := range pods {
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+		})
+	})
+}
+
+var _ = Describe("CloudProvider", func() {
+	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
+		BeforeEach(func() { setupAKSMachineAPIMode() })
+		AfterEach(func() { teardownAKSMachineAPIMode() })
 
 		Context("Create - Expected Creation Failures", func() {
 			// Ported from VM test: "should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed"
@@ -375,84 +748,16 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
-		// Ported from VM test: "Zone-aware provisioning"
-		Context("Create - Zone-aware provisioning", func() {
-			// Ported from VM test: "should launch in the NodePool-requested zone"
-			It("should launch in the NodePool-requested zone", func() {
-				zone, aksMachineZone := fmt.Sprintf("%s-3", fake.Region), "3"
-				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot, karpv1.CapacityTypeOnDemand}},
-					{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}},
-				}
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
+		// Shared offerings tests (run under both modes)
+		runSharedZoneAwareProvisioningTests()
+		runSharedCloudProviderCreateErrorTests()
 
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
-				Expect(aksMachine).NotTo(BeNil())
-				Expect(aksMachine.Zones).To(ConsistOf(&aksMachineZone))
-			})
-
-			// Ported from VM test: "should support provisioning in non-zonal regions"
-			It("should support provisioning in non-zonal regions", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				aksMachine := azureEnvNonZonal.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
-				Expect(aksMachine.Zones).To(BeEmpty())
-			})
-
-			// Ported from VM test: "should support provisioning non-zonal instance types in zonal regions"
-			It("should support provisioning non-zonal instance types in zonal regions", func() {
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_NC6s_v3"}, // Non-zonal instance type
-				})
+		// AKSMachineAPIHeaderBatch-specific: instance creation failure via Machine API
+		Context("AKSMachineAPIHeaderBatch-specific", func() {
+			It("should return error when AKS machine creation fails", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
-				Expect(aksMachine.Zones).To(BeEmpty())
-			})
-		})
-
-		// Ported from VM test: "CloudProvider Create Error Cases"
-		Context("Create - CloudProvider Create Error Cases", func() {
-			// Ported from VM test: "should return an ICE error when there are no instance types to launch"
-			// But, from cloudprovider/suite_test.go rather than instancetype/suite_test.go
-			It("should return an ICE error when there are no instance types to launch", func() {
-				// Specify no instance types and expect to receive a capacity error
-				nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"doesnotexist"}, // will not match any instance types,
-					},
-				}
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-				cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-				Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
-				Expect(cloudProviderMachine).To(BeNil())
-			})
-
-			// Ported from VM test: "should return error when NodeClass readiness is Unknown"
-			It("should return error when NodeClass readiness is Unknown", func() {
-				nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
-				testNodeClaim2 := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -467,81 +772,9 @@ var _ = Describe("CloudProvider", func() {
 					},
 				})
 
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass, testNodeClaim2)
-				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim2)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
-				Expect(claim).To(BeNil())
-				Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
-			})
-
-			// Ported from VM test: "should return error when instance type resolution fails"
-			It("should return error when instance type resolution fails", func() {
-				// Create and set up the status controller
-				localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
-
-				// Set NodeClass to Ready
-				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				// Reconcile the NodeClass to ensure status is updated
-				ExpectObjectReconciled(ctx, env.Client, localStatusController, nodeClass)
-
-				// Flush the cache to simulate the controller not having run yet.
-				// With the instance type controller, SKU API errors happen during
-				// UpdateInstanceTypes (controller reconcile), not during List.
-				// When the cache is empty, List returns an error.
-				azureEnv.InstanceTypesProvider.Reset()
-
-				testNodeClaim3 := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							karpv1.NodePoolLabelKey: nodePool.Name,
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Name:  nodeClass.Name,
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-						},
-					},
-				})
-
-				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim3)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
-				Expect(claim).To(BeNil())
-				Expect(err.Error()).To(ContainSubstring("resolving instance types"))
-
-				// Reset instance types
-				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-			})
-
-			// Ported from VM test: "should return error when instance creation fails"
-			It("should return error when instance creation fails", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				// Create a NodeClaim with valid requirements
-				testNodeClaim4 := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							karpv1.NodePoolLabelKey: nodePool.Name,
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Name:  nodeClass.Name,
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-						},
-					},
-				})
-
-				// Set up the AKS machine provider to fail (different from VM API)
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorAny()
 
-				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim4)
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
@@ -925,5 +1158,73 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+	})
+
+	Context("ProvisionMode = AKSScriptless", func() {
+		BeforeEach(func() { setupAKSScriptlessMode() })
+		AfterEach(func() { teardownAKSScriptlessMode() })
+
+		// Shared offerings tests (run under both modes)
+		runSharedZoneAwareProvisioningTests()
+		runSharedCloudProviderCreateErrorTests()
+		runSharedUnavailableOfferingsTests()
+
+		// Remaining AKSScriptless offerings tests (VM Creation Failures, VM-specific ZonalAllocationFailed,
+		// VM-specific SkuNotAvailable) stay in instancetype/suite_test.go — they use VM SDK error injection.
+
+		// AKSScriptless-specific offerings tests
+		Context("AKSScriptless-specific", func() {
+			It("should prefer zonal placement for zone-capable instance types by default", func() {
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC24ads_A100_v4"}},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
+				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zones.Regional))
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Zones).ToNot(BeEmpty())
+			})
+
+			It("should launch zone-capable instance types regionally when placement scope requires it", func() {
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC24ads_A100_v4"}},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand}},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1beta1.LabelPlacementScope,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{v1beta1.PlacementScopeRegional}},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Zones).To(BeEmpty())
+			})
+		})
 	})
 })
