@@ -71,7 +71,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	azureEnv.Reset()
+	azureEnv.Reset(ctx)
 })
 
 var _ = AfterEach(func() {

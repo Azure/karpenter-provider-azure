@@ -33,7 +33,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/samber/lo"
-	"github.com/samber/lo/mutable"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +48,8 @@ import (
 var env *azure.Environment
 var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
+
+const defaultStorageARMZone = "1"
 
 func TestStorage(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -69,24 +70,39 @@ var _ = BeforeEach(func() {
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
+func storageTopologyZone() string {
+	GinkgoHelper()
+	if !env.SupportsZones() {
+		Skip(fmt.Sprintf("skipping storage topology test because region %s does not support availability zones", env.Region))
+	}
+	// Azure Subscriptions zone mappings can include zones unsupported by the default Standard_LRS node OS disk.
+	return zones.MakeAKSLabelZoneFromARMZone(env.Region, defaultStorageARMZone)
+}
+
 var _ = Describe("Persistent Volumes", func() {
 	Context("Static", func() {
+		// Avoid test.PersistentVolume's fake CSI driver in real clusters; no attacher removes those VolumeAttachments.
+		staticPersistentVolume := func(options test.PersistentVolumeOptions) *corev1.PersistentVolume {
+			options.UseHostPath = true
+			return test.PersistentVolume(options)
+		}
+
 		It("should run a pod with a pre-bound persistent volume (empty storage class)", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				VolumeName:       "test-volume",
 				StorageClassName: lo.ToPtr(""),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
 				},
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume (non-existent storage class)", func() {
@@ -94,49 +110,45 @@ var _ = Describe("Persistent Volumes", func() {
 				VolumeName:       "test-volume",
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: pvc.Spec.VolumeName,
 				},
 				StorageClassName: "non-existent-storage-class",
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			}})
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a pre-bound persistent volume while respecting topology constraints", func() {
-			availableZones := env.GetAvailableZones()
-			if len(availableZones) == 0 {
-				Skip(fmt.Sprintf("skipping topology constraint test because region %s does not support availability zones", env.Region))
-			}
-			mutable.Shuffle(availableZones)
-			zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
+			zone := storageTopologyZone()
 
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: lo.ToPtr("non-existent-storage-class"),
 			})
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 				Zones:            []string{zone},
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
-			env.ExpectCreated(nodeClass, nodePool, pv, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
-			nodes := env.ExpectCreatedNodeCount("==", 1)
+			}})
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc, deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
 
 			// Verify the node is in the correct zone
-			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
-			pv := test.PersistentVolume(test.PersistentVolumeOptions{
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
 				StorageClassName: "non-existent-storage-class",
 			})
-			pod := test.Pod(test.PodOptions{
+			// Use a direct pod because the test exercises the pod's inline ephemeral volume template.
+			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: lo.ToPtr("non-existent-storage-class"),
 				}},
@@ -176,21 +188,16 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: &storageClass.Name,
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should run a pod with a dynamic persistent volume while respecting allowed topologies", Label("runner"), func() {
-			availableZones := env.GetAvailableZones()
-			if len(availableZones) == 0 {
-				Skip(fmt.Sprintf("skipping allowed topologies test because region %s does not support availability zones", env.Region))
-			}
-			mutable.Shuffle(availableZones)
-			zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
+			zone := storageTopologyZone()
 
 			storageClass.AllowedTopologies = []corev1.TopologySelectorTerm{{
 				MatchLabelExpressions: []corev1.TopologySelectorLabelRequirement{{
@@ -202,19 +209,20 @@ var _ = Describe("Persistent Volumes", func() {
 			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
 				StorageClassName: &storageClass.Name,
 			})
-			pod := test.Pod(test.PodOptions{
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-			})
+			}})
 
-			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, pod)
-			env.EventuallyExpectHealthy(pod)
-			nodes := env.ExpectCreatedNodeCount("==", 1)
+			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
 
 			// Verify the node is in the correct zone
-			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone))
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
-			pod := test.Pod(test.PodOptions{
+			// Use a direct pod because the test exercises the pod's inline ephemeral volume template.
+			pod := env.Pod(test.PodOptions{
 				EphemeralVolumeTemplates: []test.EphemeralVolumeTemplateOptions{{
 					StorageClassName: &storageClass.Name,
 				}},
@@ -234,10 +242,7 @@ var _ = Describe("Stateful workloads", func() {
 	var statefulSet *appsv1.StatefulSet
 	var selector labels.Selector
 	BeforeEach(func() {
-		availableZones := env.GetAvailableZones()
-		if len(availableZones) == 0 {
-			Skip(fmt.Sprintf("skipping stateful workload test because region %s does not support availability zones", env.Region))
-		}
+		zone := storageTopologyZone()
 		// Ensure that the Azure Disk driver is installed, or we can't run the test.
 		var ds appsv1.DaemonSet
 		if err := env.Client.Get(env.Context, client.ObjectKey{
@@ -252,8 +257,6 @@ var _ = Describe("Stateful workloads", func() {
 		}
 
 		numPods = 1
-		mutable.Shuffle(availableZones)
-		zone := zones.MakeAKSLabelZoneFromARMZone(env.Region, availableZones[0])
 
 		storageClass = test.StorageClass(test.StorageClassOptions{
 			ObjectMeta: metav1.ObjectMeta{
@@ -361,7 +364,8 @@ var _ = Describe("Stateful workloads", func() {
 
 var _ = Describe("Ephemeral Storage", func() {
 	It("should run a pod with ephemeral storage that uses emptyDir", func() {
-		pod := test.Pod(test.PodOptions{
+		// Use a direct pod because the test exercises pod-local emptyDir storage directly.
+		pod := env.Pod(test.PodOptions{
 			ResourceRequirements: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
@@ -385,7 +389,8 @@ var _ = Describe("Ephemeral Storage", func() {
 		env.ExpectCreatedNodeCount("==", 1)
 	})
 	It("should run a pod with ephemeral storage that uses memory-backed emptyDir", func() {
-		pod := test.Pod(test.PodOptions{})
+		// Use a direct pod because the test exercises pod-local emptyDir storage directly.
+		pod := env.Pod(test.PodOptions{})
 		// Add a memory-backed emptyDir volume to the pod
 		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 			Name: "emptydir-memory-volume",

@@ -37,6 +37,7 @@ var _ = Describe("TerminationGracePeriod", func() {
 		nodePool.Spec.Template.Spec.TerminationGracePeriod = &metav1.Duration{Duration: time.Second * 60}
 	})
 	It("should delete pod with do-not-disrupt when it reaches its terminationGracePeriodSeconds", func() {
+		// Use a direct pod because the test asserts pod-level termination semantics.
 		pod := coretest.UnschedulablePod(coretest.PodOptions{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
 			karpv1.DoNotDisruptAnnotationKey: "true",
 		}}, TerminationGracePeriodSeconds: lo.ToPtr(int64(30))})
@@ -69,6 +70,7 @@ var _ = Describe("TerminationGracePeriod", func() {
 		env.EventuallyExpectNotFound(nodeClaim, node, pod)
 	})
 	It("should delete pod that has a pre-stop hook after termination grace period seconds", func() {
+		// Use a direct pod because the test asserts pod-level pre-stop and termination semantics.
 		pod := coretest.UnschedulablePod(coretest.PodOptions{
 			PreStopSleep:                  lo.ToPtr(int64(300)),
 			TerminationGracePeriodSeconds: lo.ToPtr(int64(30)),

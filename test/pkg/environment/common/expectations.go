@@ -503,6 +503,16 @@ func (env *Environment) EventuallyExpectHealthyPodCount(selector labels.Selector
 	return env.EventuallyExpectHealthyPodCountWithTimeout(-1, selector, numPods)
 }
 
+func (env *Environment) EventuallyExpectHealthyDeployment(deployment *appsv1.Deployment) []*corev1.Pod {
+	GinkgoHelper()
+	return env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+}
+
+func (env *Environment) EventuallyExpectHealthyDeploymentWithTimeout(timeout time.Duration, deployment *appsv1.Deployment) []*corev1.Pod {
+	GinkgoHelper()
+	return env.EventuallyExpectHealthyPodCountWithTimeout(timeout, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+}
+
 func (env *Environment) EventuallyExpectHealthyPodCountWithTimeout(timeout time.Duration, selector labels.Selector, numPods int) []*corev1.Pod {
 	GinkgoHelper()
 	var pods []*corev1.Pod
@@ -641,6 +651,24 @@ func (env *Environment) ConsistentlyExpectNoDisruptions(nodeCount int, duration 
 			return ok
 		})
 		g.Expect(nodeList.Items).To(HaveLen(0))
+	}, duration).Should(Succeed())
+}
+
+// ConsistentlyExpectNodesNotDisrupted asserts that the captured nodes never receive the disrupted taint.
+// Use this instead of ConsistentlyExpectNoDisruptions when the test only needs to prove that a specific
+// node set was not disrupted, since ConsistentlyExpectNoDisruptions also asserts exact Node/NodeClaim counts.
+func (env *Environment) ConsistentlyExpectNodesNotDisrupted(nodes []*corev1.Node, duration time.Duration) {
+	GinkgoHelper()
+	By(fmt.Sprintf("expecting %d nodes not to be disrupted for %s", len(nodes), duration))
+	Consistently(func(g Gomega) {
+		for _, node := range nodes {
+			current := &corev1.Node{}
+			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(node), current)).To(Succeed())
+			_, disrupted := lo.Find(current.Spec.Taints, func(taint corev1.Taint) bool {
+				return taint.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
+			})
+			g.Expect(disrupted).To(BeFalse(), "expected node %s to remain undisrupted", current.Name)
+		}
 	}, duration).Should(Succeed())
 }
 
@@ -908,10 +936,10 @@ func (env *Environment) EventuallyExpectConsolidatable(nodeClaims ...*karpv1.Nod
 	}).Should(Succeed())
 }
 
-func (env *Environment) GetNode(nodeName string) corev1.Node {
+func (env *Environment) GetNode(nodeName string) *corev1.Node {
 	GinkgoHelper()
-	var node corev1.Node
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: nodeName}, &node)).To(Succeed())
+	node := &corev1.Node{}
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: nodeName}, node)).To(Succeed())
 	return node
 }
 

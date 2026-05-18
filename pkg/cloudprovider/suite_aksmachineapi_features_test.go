@@ -77,8 +77,8 @@ var _ = Describe("CloudProvider", func() {
 			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
-			azureEnvNonZonal.Reset()
+			azureEnv.Reset(ctx)
+			azureEnvNonZonal.Reset(ctx)
 		})
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
@@ -104,7 +104,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clean up
 				cluster.Reset()
-				azureEnv.Reset()
+				azureEnv.Reset(ctx)
 			})
 
 			// Note: Community Images tests are not ported since Community Images are not supported for AKS Machine API
@@ -228,7 +228,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clean up
 				cluster.Reset()
-				azureEnv.Reset()
+				azureEnv.Reset(ctx)
 			})
 		})
 
@@ -345,7 +345,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// Clean up
 				aksCluster.Reset()
-				aksAzureEnv.Reset()
+				aksAzureEnv.Reset(ctx)
 			})
 		})
 
