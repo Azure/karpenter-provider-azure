@@ -230,8 +230,8 @@ var _ = Describe("VMInstanceProvider", func() {
 			},
 		})
 
-		azureEnv.Reset()
-		azureEnvNonZonal.Reset()
+		azureEnv.Reset(ctx)
+		azureEnvNonZonal.Reset(ctx)
 		cluster.Reset()
 	})
 
@@ -639,8 +639,6 @@ var _ = Describe("VMInstanceProvider", func() {
 			test.Options(test.OptionsFields{
 				SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"), // different RG
 			}))
-		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, "aks-agentpool-00000000-nsg")
-		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
 
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
@@ -653,7 +651,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		Expect(nic).ToNot(BeNil())
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, options.FromContext(ctx).ClusterID)
+		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, "00000000")
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
 	})
@@ -661,9 +659,6 @@ var _ = Describe("VMInstanceProvider", func() {
 	It("should attach nsg to nic when NodeClass VNET specified", func() {
 		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet") // different RG
 
-		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, "aks-agentpool-00000000-nsg")
-		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
-
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -675,7 +670,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		Expect(nic).ToNot(BeNil())
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, options.FromContext(ctx).ClusterID)
+		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, "00000000")
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
 	})
