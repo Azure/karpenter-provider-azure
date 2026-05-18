@@ -44,7 +44,7 @@ import (
 
 func setupBatchFake() (*AKSMachinesAPI, context.Context) {
 	storage := NewAKSDataStorage()
-	storage.AgentPools.Store(MkAgentPoolID("rg", "cluster", "pool"), struct{}{})
+	storage.AgentPools.Store(MkAgentPoolID("rg", "cluster", "pool"), armcontainerservice.AgentPool{})
 	return NewAKSMachinesAPI(storage), context.Background()
 }
 

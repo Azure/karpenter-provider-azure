@@ -150,7 +150,7 @@ var _ = Describe("CloudProvider", func() {
 					existingMachine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(aksMachineID)
 					Expect(ok).To(BeTrue(), "AKS machine should exist in fake store")
 
-					aksMachine := existingMachine.(armcontainerservice.Machine)
+					aksMachine := existingMachine
 
 					// Set DriftAction to "Recreate" to trigger drift
 					if aksMachine.Properties == nil {
