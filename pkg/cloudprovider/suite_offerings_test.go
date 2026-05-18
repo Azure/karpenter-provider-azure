@@ -28,7 +28,11 @@ package cloudprovider
 // For lifecycle/CRUD operations, see suite_integration_test.go.
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"net/http"
+	"time"
 
 	"github.com/awslabs/operatorpkg/object"
 	corestatus "github.com/awslabs/operatorpkg/status"
@@ -44,12 +48,15 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -273,7 +280,7 @@ func runSharedCloudProviderCreateErrorTests() {
 		})
 
 		It("should return error when instance type resolution fails", func() {
-			localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+			localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 
 			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -461,6 +468,7 @@ var _ = Describe("CloudProvider", func() {
 		BeforeEach(func() { setupAKSMachineAPIMode() })
 		AfterEach(func() { teardownAKSMachineAPIMode() })
 
+		// Mode-specific: error injection via Machine API provisioning errors. VM uses SDK ResponseError.
 		Context("Create - Expected Creation Failures", func() {
 			// Ported from VM test: "should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed"
 			It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
@@ -753,6 +761,7 @@ var _ = Describe("CloudProvider", func() {
 		runSharedCloudProviderCreateErrorTests()
 
 		// AKSMachineAPIHeaderBatch-specific: instance creation failure via Machine API
+		// Mode-specific: error injection via AfterPollProvisioningErrorOverride (VM uses BeginError with SDK error body).
 		Context("AKSMachineAPIHeaderBatch-specific", func() {
 			It("should return error when AKS machine creation fails", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -856,6 +865,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// Ported from VM test: "should handle ZonalAllocationFailed on creating the VM"
+			// Mode-specific: error via AfterPollProvisioningErrorOverride + zone extraction via GetAKSLabelZoneFromAKSMachine.
 			It("should handle ZonalAllocationFailed on creating the AKS machine", func() {
 				// Set up async error via BOTH Error and Output (LRO returns both)
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorZoneAllocationFailed("Standard_D2_v2", "1")
@@ -1091,6 +1101,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// Ported from VM test context: "SkuNotAvailable"
+			// Mode-specific: error via AfterPollProvisioningErrorOverride with provisioning error (VM uses BeginError with SKUNotAvailableErrorCode).
 			Context("SKUNotAvailable", func() {
 				AssertUnavailable := func(sku *skewer.SKU, capacityType string) {
 					// Simulate SKU not available error via AKS Machine API
@@ -1123,6 +1134,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// This is from AKS RP frontend errors rather then CRP
+			// Mode-specific: AKS RP frontend sync validation errors — Machine API-only two-phase error model.
 			Context("SKUNotAvailable - AKS Machine API sync phase", func() {
 				AssertUnavailableSync := func(syncErr *azcore.ResponseError, sku *skewer.SKU, capacityType string) {
 					azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(syncErr)
@@ -1174,6 +1186,7 @@ var _ = Describe("CloudProvider", func() {
 
 		// AKSScriptless-specific offerings tests
 		Context("AKSScriptless-specific", func() {
+			// Mode-specific: PlacementScope label is a VM/regional provisioning concept.
 			It("should prefer zonal placement for zone-capable instance types by default", func() {
 				coretest.ReplaceRequirements(nodePool,
 					karpv1.NodeSelectorRequirementWithMinValues{
@@ -1198,6 +1211,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(vm.Zones).ToNot(BeEmpty())
 			})
 
+			// Mode-specific: PlacementScope=Regional is a VM-specific scheduling concept.
 			It("should launch zone-capable instance types regionally when placement scope requires it", func() {
 				coretest.ReplaceRequirements(nodePool,
 					karpv1.NodeSelectorRequirementWithMinValues{
@@ -1226,5 +1240,483 @@ var _ = Describe("CloudProvider", func() {
 				Expect(vm.Zones).To(BeEmpty())
 			})
 		})
+
+		// VM Creation Failures (restored from instancetype/suite_test.go)
+		// Mode-specific: VM SDK error injection (VirtualMachinesAPI.BeginError), NIC cleanup, VM pre-existence check.
+		Context("VM Creation Failures", func() {
+			It("should not reattempt creation of a vm thats been created before", func() {
+				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
+				})
+				vmName := instance.GenerateResourceName(nodeClaim.Name)
+				vm := &armcompute.VirtualMachine{
+					Name:     lo.ToPtr(vmName),
+					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+					Location: lo.ToPtr(fake.Region),
+					Zones:    []*string{lo.ToPtr("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
+					Properties: &armcompute.VirtualMachineProperties{
+						TimeCreated: lo.ToPtr(time.Now()),
+						HardwareProfile: &armcompute.HardwareProfile{
+							VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
+						},
+					},
+				}
+				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).ToNot(HaveOccurred()) // Without the GET in instance.CreateVirtualMachine this will fail
+			})
+			It("should delete the network interface on failure to create the vm", func() {
+				ErrMsg := "test error"
+				ErrCode := fmt.Sprint(http.StatusNotFound)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: ErrCode,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(ErrCode, ErrMsg),
+						},
+					},
+				)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+
+				// We should have created a nic for the vm
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				// The nic we used in the vm create, should be cleaned up if the vm call fails
+				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+				Expect(nic).NotTo(BeNil())
+				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
+				Expect(ok).To(Equal(false))
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				pod = coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			})
+			It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
+				LowPriorityCoresQuotaErrorMessage := "Operation could not be completed as it results in exceeding approved Low Priority Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22LowPriorityCores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:32,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22LowPriorityCores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
+				// Create nodepool that has both ondemand and spot capacity types enabled
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot}})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				// Set the LowPriorityCoresQuota error to be returned when creating the vm
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.OperationNotAllowed,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, LowPriorityCoresQuotaErrorMessage),
+						},
+					},
+				)
+				// Create a pod that should fail to schedule
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				// Expect that on-demand nodes are selected if spot capacity is unavailable, and the nodepool uses both spot + on-demand
+				nodes, err := env.KubernetesInterface.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(nodes.Items)).To(Equal(1))
+				Expect(nodes.Items[0].Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+			})
+
+			It("should fail to provision when OverconstrainedZonalAllocation errors are hit, then switch zone and succeed", func() {
+				OverconstrainedZonalAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again."
+				// Create nodepool that has both ondemand and spot capacity types enabled
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot}})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				// Set the OverconstrainedZonalAllocation error to be returned when creating the vm
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.OverconstrainedZonalAllocationRequest,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.OverconstrainedZonalAllocationRequest, OverconstrainedZonalAllocationErrorMessage),
+						},
+					},
+				)
+
+				// Create a pod that should fail to schedule
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+
+				// ensure that initial zone was made unavailable
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				initialVMSize := string(*vm.Properties.HardwareProfile.VMSize)
+				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				Expect(err).ToNot(HaveOccurred())
+				ExpectUnavailable(azureEnv, fake.MakeSKU(initialVMSize), zone, karpv1.CapacityTypeSpot)
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(initialVMSize))
+				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(initialCapacityType))
+				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
+			})
+
+			It("should fail to provision when OverconstrainedAllocation errors are hit, then switch capacity type and succeed", func() {
+				OverconstrainedAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive."
+				// Create nodepool that has both ondemand and spot capacity types enabled
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1beta1.LabelPlacementScope,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{v1beta1.PlacementScopeZonal},
+					},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				// Set the OverconstrainedAllocationError error to be returned when creating the vm
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.OverconstrainedAllocationRequest,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.OverconstrainedAllocationRequest, OverconstrainedAllocationErrorMessage),
+						},
+					},
+				)
+
+				// Create a pod that should fail to schedule
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				initialVMSize := string(*vm.Properties.HardwareProfile.VMSize)
+				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
+				_, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(initialVMSize))
+				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).ToNot(Equal(initialCapacityType))
+				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
+			})
+
+			It("should fail to provision when AllocationFailure errors are hit, then switch placement and succeed", func() {
+				// Create nodepool that has both ondemand and spot capacity types enabled
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v3", "Standard_D64s_v3"}})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				// Set the AllocationFailed error to be returned when creating the vm
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.AllocationFailed,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.AllocationFailed, "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."),
+						},
+					},
+				)
+
+				// Create a pod that should fail to schedule
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+
+				// ensure that initial VM size was made unavailable
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				initialVMSize := *vm.Properties.HardwareProfile.VMSize
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				Expect(err).ToNot(HaveOccurred())
+				ExpectUnavailable(azureEnv, fake.MakeSKU(string(initialVMSize)), zone, karpv1.CapacityTypeSpot)
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(string(initialVMSize)))
+				Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
+			})
+
+			It("should fail to provision when AllocationFailure errors are hit and regional placement is unavailable", func() {
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v3"}})
+				sku := fake.MakeSKU("Standard_D2_v3")
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "RegionalUnavailable", sku, zones.Regional, karpv1.CapacityTypeSpot)
+				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "RegionalUnavailable", sku, zones.Regional, karpv1.CapacityTypeOnDemand)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.AllocationFailed,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.AllocationFailed, "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."),
+						},
+					},
+				)
+
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
+				Expect(err).ToNot(HaveOccurred())
+				ExpectUnavailable(azureEnv, sku, zone, karpv1.CapacityTypeSpot)
+				ExpectUnavailable(azureEnv, sku, zone, karpv1.CapacityTypeOnDemand)
+				ExpectUnavailable(azureEnv, sku, zones.Regional, karpv1.CapacityTypeSpot)
+				ExpectUnavailable(azureEnv, sku, zones.Regional, karpv1.CapacityTypeOnDemand)
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
+			It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
+				familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.OperationNotAllowed,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, familyVCPUQuotaExceededErrorMessage),
+						},
+					},
+				)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+
+				// We should have created a nic for the vm
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				// The nic we used in the vm create, should be cleaned up if the vm call fails
+				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+				Expect(nic).NotTo(BeNil())
+				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
+				Expect(ok).To(Equal(false))
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				pod = coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			})
+			It("should fail to provision when VM SKU family vCPU quota limit is zero, and succeed when its gone", func() {
+				familyVCPUQuotaIsZeroErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.OperationNotAllowed,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, familyVCPUQuotaIsZeroErrorMessage),
+						},
+					},
+				)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				// We should have created a nic for the vm
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				// The nic we used in the vm create, should be cleaned up if the vm call fails
+				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+				Expect(nic).NotTo(BeNil())
+				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
+				Expect(ok).To(Equal(false))
+
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+				pod = coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			})
+
+			It("should return ICE if Total Regional Cores Quota errors are hit", func() {
+				regionalVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved Total Regional Cores quota. Additional details - Deployment Model: Resource Manager, Location: uksouth, Current Limit: 100, Current Usage: 100, Additional Required: 64, (Minimum) New Limit Required: 164. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22uksouth%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22cores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:164,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22cores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/regional-quota-requests"
+				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+					&azcore.ResponseError{
+						ErrorCode: sdkerrors.OperationNotAllowed,
+						RawResponse: &http.Response{
+							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, regionalVCPUQuotaExceededErrorMessage),
+						},
+					},
+				)
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							karpv1.NodePoolLabelKey: nodePool.Name,
+						},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Name:  nodeClass.Name,
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+						},
+					},
+				})
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+				Expect(claim).To(BeNil())
+
+			})
+
+			// VM-specific CloudProvider Create Error Cases + Unavailable Offerings
+			// Mode-specific: VM instance creation failure via VirtualMachinesAPI.BeginError with SDK error body.
+			Context("CloudProvider Create Error Cases", func() {
+				// Shared error tests (ICE, NodeClass readiness, instance type resolution) moved to
+				// pkg/cloudprovider/suite_offerings_test.go (runSharedCloudProviderCreateErrorTests)
+
+				// VM-specific: instance creation failure via VM API
+				It("should return error when instance creation fails", func() {
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+					// Create a NodeClaim with valid requirements
+					nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								karpv1.NodePoolLabelKey: nodePool.Name,
+							},
+						},
+						Spec: karpv1.NodeClaimSpec{
+							NodeClassRef: &karpv1.NodeClassReference{
+								Name:  nodeClass.Name,
+								Group: object.GVK(nodeClass).Group,
+								Kind:  object.GVK(nodeClass).Kind,
+							},
+						},
+					})
+
+					// Set up the instance provider to fail
+					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+						&azcore.ResponseError{
+							ErrorCode: sdkerrors.OperationNotAllowed,
+							RawResponse: &http.Response{
+								Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, "Failed to create VM"),
+							},
+						},
+					)
+
+					claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+					Expect(claim).To(BeNil())
+					Expect(err.Error()).To(ContainSubstring("creating instance failed"))
+				})
+			})
+
+			// Mode-agnostic Unavailable Offerings tests moved to pkg/cloudprovider/suite_offerings_test.go (runSharedUnavailableOfferingsTests)
+			// VM-specific error handling tests remain here.
+			// Mode-specific: VM SDK error injection for ZonalAllocationFailed and SkuNotAvailable.
+			Context("Unavailable Offerings - VM-specific", func() {
+				It("should handle ZonalAllocationFailed on creating the VM", func() {
+					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+						&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
+					)
+					expectedUnavailableSKUs := []*skewer.SKU{
+						{
+							Name:   lo.ToPtr("Standard_D2_v2"),
+							Size:   lo.ToPtr("D2_v2"),
+							Family: lo.ToPtr("StandardDv2Family"),
+							Capabilities: &[]compute.ResourceSkuCapabilities{
+								{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
+							},
+						},
+						{
+							Name:   lo.ToPtr("Standard_D16_v2"),
+							Size:   lo.ToPtr("D16_v2"),
+							Family: lo.ToPtr("StandardDv2Family"),
+							Capabilities: &[]compute.ResourceSkuCapabilities{
+								{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("16")},
+							},
+						},
+						{
+							Name:   lo.ToPtr("Standard_D32_v2"),
+							Size:   lo.ToPtr("D32_v2"),
+							Family: lo.ToPtr("StandardDv2Family"),
+							Capabilities: &[]compute.ResourceSkuCapabilities{
+								{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("32")},
+							},
+						},
+					}
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D2_v2"}})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					pod := coretest.UnschedulablePod()
+					ExpectLaunched(ctx, env.Client, cloudProvider, coreProvisioner, pod)
+					ExpectNotScheduled(ctx, env.Client, pod)
+
+					Eventually(func() []*karpv1.NodeClaim { return ExpectNodeClaims(ctx, env.Client) }).To(HaveLen(0))
+
+					By("marking whatever zone was picked as unavailable - for both spot and on-demand")
+					zone, err := zones.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+					Expect(err).ToNot(HaveOccurred())
+					for _, skuToCheck := range expectedUnavailableSKUs {
+						Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
+						Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+					}
+
+					By("successfully scheduling in a different zone on retry")
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					node := ExpectScheduled(ctx, env.Client, pod)
+					Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
+				})
+
+				Context("SkuNotAvailable", func() {
+					AssertUnavailable := func(sku *skewer.SKU, capacityType string) {
+						azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+							&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
+						)
+						coretest.ReplaceRequirements(nodePool,
+							karpv1.NodeSelectorRequirementWithMinValues{
+								Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
+							karpv1.NodeSelectorRequirementWithMinValues{
+								Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}},
+						)
+						ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+						pod := coretest.UnschedulablePod()
+						ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+						ExpectNotScheduled(ctx, env.Client, pod)
+						for _, zoneID := range []string{"1", "2", "3"} {
+							ExpectUnavailable(azureEnv, sku, zones.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)
+						}
+					}
+
+					It("should mark SKU as unavailable in all zones for Spot", func() {
+						AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeSpot)
+					})
+
+					It("should mark SKU as unavailable in all zones for OnDemand", func() {
+						AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeOnDemand)
+					})
+				})
+			})
+		})
 	})
 })
+
+func createSDKErrorBody(code, message string) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
+}

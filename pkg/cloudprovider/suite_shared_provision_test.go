@@ -64,7 +64,7 @@ func setupAKSMachineAPIMode() {
 
 	azureEnv = test.NewEnvironment(ctx, env)
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-	statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+	statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 	cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
@@ -104,14 +104,35 @@ func setupAKSScriptlessMode() {
 func teardownAKSMachineAPIMode() {
 	cloudProvider.WaitForInstancePromises()
 	cluster.Reset()
-	azureEnv.Reset()
-	azureEnvNonZonal.Reset()
+	azureEnv.Reset(ctx)
+	azureEnvNonZonal.Reset(ctx)
 }
 
 // teardownAKSScriptlessMode cleans up after AKS Scriptless mode tests.
 func teardownAKSScriptlessMode() {
 	cloudProvider.WaitForInstancePromises()
 	cluster.Reset()
-	azureEnv.Reset()
-	azureEnvNonZonal.Reset()
+	azureEnv.Reset(ctx)
+	azureEnvNonZonal.Reset(ctx)
+}
+
+// setupBootstrappingClientMode configures the test environment for BootstrappingClient provision mode.
+func setupBootstrappingClientMode() {
+	bootstrapOpts := test.Options(test.OptionsFields{
+		ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
+	})
+	bootstrapCtx := coreoptions.ToContext(ctx, coretest.Options())
+	bootstrapCtx = options.ToContext(bootstrapCtx, bootstrapOpts)
+
+	azureEnvBootstrap = test.NewEnvironment(bootstrapCtx, env)
+	cloudProviderBootstrap = New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnvBootstrap.InstanceTypeStore)
+	clusterBootstrap = state.NewCluster(fakeClock, env.Client, cloudProviderBootstrap)
+	coreProvisionerBootstrap = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderBootstrap, clusterBootstrap, fakeClock)
+}
+
+// teardownBootstrappingClientMode cleans up after BootstrappingClient mode tests.
+func teardownBootstrappingClientMode() {
+	cloudProviderBootstrap.WaitForInstancePromises()
+	clusterBootstrap.Reset()
+	azureEnvBootstrap.Reset(ctx)
 }

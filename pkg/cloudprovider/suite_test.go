@@ -80,6 +80,12 @@ var fakeClock *clock.FakeClock
 var recorder events.Recorder
 var statusController *status.Controller
 
+// Bootstrap mode vars (used by BootstrappingClient and Basic label tests)
+var azureEnvBootstrap *test.Environment
+var cloudProviderBootstrap *CloudProvider
+var clusterBootstrap *state.Cluster
+var coreProvisionerBootstrap *provisioning.Provisioner
+
 var nodePool *karpv1.NodePool
 var nodeClass *v1beta1.AKSNodeClass
 var nodeClaim *karpv1.NodeClaim

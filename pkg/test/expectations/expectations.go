@@ -59,6 +59,47 @@ func ExpectKubeletFlags(_ *test.Environment, customData string, expectedFlags ma
 	}
 }
 
+// ExpectKubeletFlagsPassed extracts the raw KUBELET_FLAGS value from customData.
+func ExpectKubeletFlagsPassed(customData string) string {
+	GinkgoHelper()
+	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
+}
+
+// ExpectKubeletNodeLabelsPassed extracts the raw KUBELET_NODE_LABELS value from customData.
+func ExpectKubeletNodeLabelsPassed(customData string) string {
+	GinkgoHelper()
+	startIdx := strings.Index(customData, "KUBELET_NODE_LABELS=") + len("KUBELET_NODE_LABELS=")
+	endIdx := strings.Index(customData[startIdx:], "\n")
+	if endIdx == -1 {
+		return customData[startIdx:]
+	}
+	return customData[startIdx : startIdx+endIdx]
+}
+
+// ExpectKubeletNodeLabelsInCustomData checks that the VM's customData KUBELET_NODE_LABELS contains the given key=value.
+func ExpectKubeletNodeLabelsInCustomData(vm *armcompute.VirtualMachine, key string, value string) {
+	GinkgoHelper()
+	Expect(vm.Properties).ToNot(BeNil())
+	Expect(vm.Properties.OSProfile).ToNot(BeNil())
+	Expect(vm.Properties.OSProfile.CustomData).ToNot(BeNil())
+	decodedBytes, err := base64.StdEncoding.DecodeString(*vm.Properties.OSProfile.CustomData)
+	Expect(err).To(Succeed())
+	kubeletNodeLabels := ExpectKubeletNodeLabelsPassed(string(decodedBytes))
+	Expect(kubeletNodeLabels).To(ContainSubstring(fmt.Sprintf("%s=%s", key, value)))
+}
+
+// ExpectKubeletNodeLabelsNotInCustomData checks that the VM's customData KUBELET_NODE_LABELS does NOT contain the given key=value.
+func ExpectKubeletNodeLabelsNotInCustomData(vm *armcompute.VirtualMachine, key string, value string) {
+	GinkgoHelper()
+	Expect(vm.Properties).ToNot(BeNil())
+	Expect(vm.Properties.OSProfile).ToNot(BeNil())
+	Expect(vm.Properties.OSProfile.CustomData).ToNot(BeNil())
+	decodedBytes, err := base64.StdEncoding.DecodeString(*vm.Properties.OSProfile.CustomData)
+	Expect(err).To(Succeed())
+	kubeletNodeLabels := ExpectKubeletNodeLabelsPassed(string(decodedBytes))
+	Expect(kubeletNodeLabels).ToNot(ContainSubstring(fmt.Sprintf("%s=%s", key, value)))
+}
+
 func ExpectDecodedCustomData(env *test.Environment) string {
 	GinkgoHelper()
 	Expect(env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))

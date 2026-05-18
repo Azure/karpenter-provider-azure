@@ -1304,7 +1304,7 @@ var _ = Describe("CloudProvider", func() {
 		AfterEach(func() {
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 		})
 
 		It("should list nodeclaim created by the CloudProvider", func() {
@@ -1415,7 +1415,7 @@ var _ = Describe("CloudProvider", func() {
 		AfterEach(func() {
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 		})
 
 		It("should list nodeclaim created by the CloudProvider", func() {
