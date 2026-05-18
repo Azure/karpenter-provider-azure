@@ -118,7 +118,7 @@ var _ = BeforeEach(func() {
 	})
 
 	cluster.Reset()
-	azureEnv.Reset()
+	azureEnv.Reset(ctx)
 })
 
 var _ = AfterEach(func() {
