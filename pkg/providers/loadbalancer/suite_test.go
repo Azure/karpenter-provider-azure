@@ -72,9 +72,9 @@ var _ = Describe("LoadBalancer Provider", func() {
 			internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
 			otherLB := test.MakeStandardLoadBalancer(resourceGroup, "some-lb", true)
 
-			fakeLoadBalancersAPI.LoadBalancers.Store(standardLB.ID, standardLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(internalLB.ID, internalLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(otherLB.ID, otherLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(otherLB.ID), otherLB)
 
 			pools, err := loadBalancerProvider.LoadBalancerBackendPools(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -92,10 +92,10 @@ var _ = Describe("LoadBalancer Provider", func() {
 			otherLB := test.MakeStandardLoadBalancer(resourceGroup, "some-lb", true)
 			ipv6LB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBNameIPv6, true)
 
-			fakeLoadBalancersAPI.LoadBalancers.Store(standardLB.ID, standardLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(internalLB.ID, internalLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(otherLB.ID, otherLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(ipv6LB.ID, ipv6LB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(otherLB.ID), otherLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(ipv6LB.ID), ipv6LB)
 
 			pools, err := loadBalancerProvider.LoadBalancerBackendPools(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -118,8 +118,8 @@ var _ = Describe("LoadBalancer Provider", func() {
 			}
 			internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
 
-			fakeLoadBalancersAPI.LoadBalancers.Store(standardLB.ID, standardLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(internalLB.ID, internalLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
 
 			pools, err := loadBalancerProvider.LoadBalancerBackendPools(ctx)
 			Expect(err).ToNot(HaveOccurred())
