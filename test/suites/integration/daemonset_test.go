@@ -60,9 +60,9 @@ func expectLimitRangeDefaultedDaemonSetPodObserved(selector labels.Selector, exp
 }
 
 var _ = Describe("DaemonSet", func() {
-	var limitrange *corev1.LimitRange
-	var priorityclass *schedulingv1.PriorityClass
-	var daemonset *appsv1.DaemonSet
+	var limitRange *corev1.LimitRange
+	var priorityClass *schedulingv1.PriorityClass
+	var daemonSet *appsv1.DaemonSet
 	var dep *appsv1.Deployment
 
 	BeforeEach(func() {
@@ -70,7 +70,7 @@ var _ = Describe("DaemonSet", func() {
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{"testing/cluster": "test"})
 
-		priorityclass = &schedulingv1.PriorityClass{
+		priorityClass = &schedulingv1.PriorityClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "high-priority-daemonsets",
 			},
@@ -78,13 +78,13 @@ var _ = Describe("DaemonSet", func() {
 			GlobalDefault: false,
 			Description:   "This priority class should be used for daemonsets.",
 		}
-		limitrange = &corev1.LimitRange{
+		limitRange = &corev1.LimitRange{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "limitrange",
 				Namespace: "default",
 			},
 		}
-		daemonset = test.DaemonSet(test.DaemonSetOptions{
+		daemonSet = test.DaemonSet(test.DaemonSetOptions{
 			PodOptions: test.PodOptions{
 				ResourceRequirements: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
 				PriorityClassName:    "high-priority-daemonsets",
@@ -109,7 +109,7 @@ var _ = Describe("DaemonSet", func() {
 		})
 	})
 	It("should account for LimitRange Default on daemonSet pods for resources", func() {
-		limitrange.Spec.Limits = []corev1.LimitRangeItem{
+		limitRange.Spec.Limits = []corev1.LimitRangeItem{
 			{
 				Type: corev1.LimitTypeContainer,
 				Default: corev1.ResourceList{
@@ -120,10 +120,10 @@ var _ = Describe("DaemonSet", func() {
 		}
 
 		podSelector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
-		daemonSetSelector := labels.SelectorFromSet(daemonset.Spec.Selector.MatchLabels)
+		daemonSetSelector := labels.SelectorFromSet(daemonSet.Spec.Selector.MatchLabels)
 		// Create the LimitRange and DaemonSet before the workload so Karpenter can use an admitted DaemonSet pod
 		// with namespace defaults applied, rather than the synthetic template fallback that has no LimitRange context.
-		env.ExpectCreated(limitrange, priorityclass, daemonset)
+		env.ExpectCreated(limitRange, priorityClass, daemonSet)
 		expectLimitRangeDefaultedDaemonSetPodObserved(daemonSetSelector, corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("2"),
 			corev1.ResourceMemory: resource.MustParse("1Gi"),
@@ -149,7 +149,7 @@ var _ = Describe("DaemonSet", func() {
 		}).Should(Succeed())
 	})
 	It("should account for LimitRange DefaultRequest on daemonSet pods for resources", func() {
-		limitrange.Spec.Limits = []corev1.LimitRangeItem{
+		limitRange.Spec.Limits = []corev1.LimitRangeItem{
 			{
 				Type: corev1.LimitTypeContainer,
 				DefaultRequest: corev1.ResourceList{
@@ -160,10 +160,10 @@ var _ = Describe("DaemonSet", func() {
 		}
 
 		podSelector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
-		daemonSetSelector := labels.SelectorFromSet(daemonset.Spec.Selector.MatchLabels)
+		daemonSetSelector := labels.SelectorFromSet(daemonSet.Spec.Selector.MatchLabels)
 		// Create the LimitRange and DaemonSet before the workload so Karpenter can use an admitted DaemonSet pod
 		// with namespace defaults applied, rather than the synthetic template fallback that has no LimitRange context.
-		env.ExpectCreated(limitrange, priorityclass, daemonset)
+		env.ExpectCreated(limitRange, priorityClass, daemonSet)
 		expectLimitRangeDefaultedDaemonSetPodObserved(daemonSetSelector, corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("2"),
 			corev1.ResourceMemory: resource.MustParse("1Gi"),
