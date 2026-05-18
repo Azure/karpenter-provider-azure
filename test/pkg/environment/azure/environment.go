@@ -257,6 +257,8 @@ func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 }
 
 // Pod wraps coretest.Pod for Azure E2E tests; use it instead of coretest.Pod when the test should apply Azure environment defaults.
+// Currently this is any time one has to work around taint race described in https://github.com/Azure/karpenter-provider-azure/issues/1625
+// and cannot use Deployment instead.
 func (env *Environment) Pod(options coretest.PodOptions) *v1.Pod {
 	// Keep pod-based tests resilient to the Cilium startup-taint race while bounding how long the pod can tolerate it.
 	if env.IsCilium() {
