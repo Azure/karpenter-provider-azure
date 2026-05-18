@@ -194,10 +194,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		instanceTypeProvider,
 		azClient.NodeBootstrappingClient,
 	)
+	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
+		azClient.NetworkSecurityGroupsClient,
+		options.FromContext(ctx).NodeResourceGroup,
+	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageResolver,
 		imageProvider,
+		networkSecurityGroupProvider,
 		lo.Must(getCABundle(operator.GetConfig())),
 		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,
@@ -211,10 +216,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
-		options.FromContext(ctx).NodeResourceGroup,
-	)
-	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
-		azClient.NetworkSecurityGroupsClient,
 		options.FromContext(ctx).NodeResourceGroup,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()
