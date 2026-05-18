@@ -27,12 +27,12 @@ import (
 
 var _ = Describe("VMExtension", func() {
 	It("should install all valid vm extensions", func() {
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 		env.ExpectCreatedNodeCount("==", 1)
 
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 
 		// Skip validation for AKS machine VMs (managed by AKS, not Karpenter directly).
 		// The presence of "karpenter.azure.com_aksmachine_nodeclaim" tag indicates this is an AKS machine.

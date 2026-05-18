@@ -82,11 +82,11 @@ var _ = Describe("BYOK", func() {
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
-		By("Phase 3: Creating test Pod")
-		pod := test.Pod()
+		By("Phase 3: Creating test Deployment")
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 
 		By("Applying resources to Kubernetes")
-		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		By("Phase 4: Verifying AKSNodeClass status shows validation success and is Ready")
 		Eventually(func(g Gomega) {
@@ -102,11 +102,11 @@ var _ = Describe("BYOK", func() {
 		By("Phase 5: Waiting for VM to be created and node to be registered")
 		env.EventuallyExpectCreatedNodeCount("==", 1)
 
-		By("Phase 6: Verifying Pod becomes healthy")
-		env.EventuallyExpectHealthy(pod)
+		By("Phase 6: Verifying Deployment becomes healthy")
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
 		By("Phase 7: Verifying VM disk encryption configuration")
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
@@ -144,20 +144,20 @@ var _ = Describe("BYOK", func() {
 			Values:   []string{"50"}})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
 
-		By("Phase 4: Creating test Pod")
-		pod := test.Pod()
+		By("Phase 4: Creating test Deployment")
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 
 		By("Applying resources to Kubernetes")
-		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		By("Phase 5: Waiting for VM to be created and node to be registered")
 		env.EventuallyExpectCreatedNodeCount("==", 1)
 
-		By("Phase 6: Verifying Pod becomes healthy")
-		env.EventuallyExpectHealthy(pod)
+		By("Phase 6: Verifying Deployment becomes healthy")
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
 		By("Phase 7: Verifying VM disk configuration")
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())

@@ -28,7 +28,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
@@ -71,7 +70,7 @@ var _ = Describe("Acr", func() {
 			})
 
 			env.ExpectCreated(nodePool, nodeClass, deployment)
-			env.EventuallyExpectHealthyPodCountWithTimeout(time.Minute*15, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyDeploymentWithTimeout(time.Minute*15, deployment)
 		})
 	})
 })

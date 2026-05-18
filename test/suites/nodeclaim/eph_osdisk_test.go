@@ -37,13 +37,13 @@ var _ = Describe("Ephemeral OS Disk", func() {
 			Values: []string{"50"},
 		})
 
-		pod := test.Pod()
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 		env.ExpectCreatedNodeCount("==", 1)
 
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
 		// We should be specifying os disk placement now
@@ -56,11 +56,11 @@ var _ = Describe("Ephemeral OS Disk", func() {
 			Operator: corev1.NodeSelectorOpDoesNotExist,
 		})
 
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 		env.ExpectCreatedNodeCount("==", 1)
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 	})
@@ -79,11 +79,11 @@ var _ = Describe("Ephemeral OS Disk", func() {
 
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](40) // < 53GB cache disk
 
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
 		env.ExpectCreatedNodeCount("==", 1)
-		vm := env.GetVM(pod.Spec.NodeName)
+		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 	})
