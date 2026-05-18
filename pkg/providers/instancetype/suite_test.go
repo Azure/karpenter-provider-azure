@@ -166,13 +166,9 @@ var _ = Describe("InstanceType Provider", func() {
 		cluster.Reset()
 		clusterNonZonal.Reset()
 		clusterBootstrap.Reset()
-		azureEnv.Reset()
-		azureEnvNonZonal.Reset()
-		azureEnvBootstrap.Reset()
-
-		// Populate the expected cluster NSG
-		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, fmt.Sprintf("aks-agentpool-%s-nsg", options.FromContext(ctx).ClusterID))
-		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
+		azureEnv.Reset(ctx)
+		azureEnvNonZonal.Reset(ctx)
+		azureEnvBootstrap.Reset(ctx)
 	})
 
 	AfterEach(func() {
@@ -1473,7 +1469,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 					// Need to reset env since we are doing these nested tests
 					cluster.Reset()
-					azureEnv.Reset()
+					azureEnv.Reset(ctx)
 				},
 				Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
 					"Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
