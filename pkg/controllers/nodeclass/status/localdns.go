@@ -57,7 +57,7 @@ const (
 // node-class types.
 //
 // Behavior:
-//   - Mode unset/nil  -> clear Status, LocalDNSReady=True.
+//   - Mode unset/nil  -> Status=Disabled, LocalDNSReady=True.
 //   - Mode=Required   -> Status=Enabled, LocalDNSReady=True.
 //   - Mode=Disabled   -> Status=Disabled, LocalDNSReady=True.
 //   - Mode=Preferred  -> evaluate five gates (k8s>=1.36, !BYO CNI,
@@ -94,9 +94,9 @@ func NewLocalDNSReconciler(kubeClient kubernetes.Interface, dynamicClient dynami
 func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("nodeclass.localdns"))
 
-	// Mode unset -> clear Status, mark Ready.
+	// Mode unset -> Disabled, mark Ready.
 	if nc.Spec.LocalDNS == nil || nc.Spec.LocalDNS.Mode == "" {
-		nc.Status.LocalDNSState = nil
+		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return reconcile.Result{}, nil
 	}
@@ -116,9 +116,9 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 		// fall through
 
 	default:
-		// Unknown mode: clear Status and mark Ready -- spec validation surfaces
+		// Unknown mode: treat as Disabled and mark Ready -- spec validation surfaces
 		// the bad value to the user elsewhere.
-		nc.Status.LocalDNSState = nil
+		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return reconcile.Result{}, nil
 	}

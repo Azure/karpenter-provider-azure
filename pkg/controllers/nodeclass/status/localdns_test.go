@@ -81,14 +81,12 @@ func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want v1beta1.LocalDNSSt
 	}
 }
 
-func TestModeUnsetClearsState(t *testing.T) {
+func TestModeUnsetSetsDisabled(t *testing.T) {
 	nc := newNC()
 	nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled) // stale
 	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
-	if nc.Status.LocalDNSState != nil {
-		t.Fatalf("expected nil state, got %v", *nc.Status.LocalDNSState)
-	}
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 	if !nc.StatusConditions().IsTrue(v1beta1.ConditionTypeLocalDNSReady) {
 		t.Fatalf("expected LocalDNSReady=True")
 	}
