@@ -718,6 +718,25 @@ var _ = Describe("InstanceType Provider", func() {
 				if k8sVersion != "" {
 					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
 				}
+				// Mirror what the resolver would do: set Status.LocalDNSState=Enabled
+				// when the resolution would land on Enabled. The test instance-type
+				// provider uses a nil resolver, so Status is the only path to
+				// surface Enabled.
+				setEnabledStatus := func() {
+					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+				}
+				switch localDNSMode {
+				case v1beta1.LocalDNSModeRequired:
+					setEnabledStatus()
+				case v1beta1.LocalDNSModeDisabled:
+					// no status needed; Disabled mode -> false
+				case v1beta1.LocalDNSModePreferred:
+					threshold := semver.MustParse("1.36.0")
+					parsed, perr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
+					if perr == nil && parsed.GTE(threshold) {
+						setEnabledStatus()
+					}
+				}
 				ExpectApplied(ctx, env.Client, nodeClass)
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
@@ -740,10 +759,10 @@ var _ = Describe("InstanceType Provider", func() {
 			},
 			Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
 				v1beta1.LocalDNSModeRequired, "", false, true),
-			Entry("when LocalDNS is preferred with k8s >= 1.35 - filters to 4+ vCPUs and 244+ MiB",
-				v1beta1.LocalDNSModePreferred, "1.35.0", false, true),
-			Entry("when LocalDNS is preferred with k8s < 1.35 - includes all SKUs",
-				v1beta1.LocalDNSModePreferred, "1.34.0", true, true),
+			Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
+				v1beta1.LocalDNSModePreferred, "1.36.0", false, true),
+			Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
+				v1beta1.LocalDNSModePreferred, "1.35.0", true, true),
 			Entry("when LocalDNS is disabled - includes all SKUs",
 				v1beta1.LocalDNSModeDisabled, "", true, true),
 			Entry("when LocalDNS is not set - includes all SKUs",
@@ -805,7 +824,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
-				ExpectApplied(ctx, env.Client, nodeClassDisabled)
+				nodeClassDisabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 				instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -862,6 +881,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 					},
 				}
+				nodeClassEnabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 				ExpectApplied(ctx, env.Client, nodeClassEnabled)
 				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
 				Expect(err).ToNot(HaveOccurred())
@@ -1363,7 +1383,7 @@ var _ = Describe("InstanceType Provider", func() {
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicClient(), azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin)
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1412,7 +1432,7 @@ var _ = Describe("InstanceType Provider", func() {
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicClient(), azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin)
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1444,7 +1464,7 @@ var _ = Describe("InstanceType Provider", func() {
 			)
 			DescribeTable("should select the right image for a given instance type",
 				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicClient(), azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 					if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
 						Skip("AzureLinux3 ARM64 VHD is not available in CIG")
 					}
@@ -1981,7 +2001,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicClient(), azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -2348,7 +2368,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Context("when driverInstallation is Install (default)", func() {
 				BeforeEach(func() {
-					// Default nodeClass has no GPU config → defaults to Install mode
+					// Default nodeClass has no GPU config -> defaults to Install mode
 					nodeClassDefault := test.AKSNodeClass()
 					ExpectApplied(ctx, env.Client, nodeClassDefault)
 					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassDefault)
