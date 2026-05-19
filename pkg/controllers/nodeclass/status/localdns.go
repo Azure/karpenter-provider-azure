@@ -38,8 +38,9 @@ import (
 )
 
 const (
-	networkPolicyCalico = "calico"
-	networkPolicyCilium = "cilium"
+	// Internal aliases for consts.NetworkPolicyCilium / consts.NetworkPolicyCalico.
+	networkPolicyCalico = consts.NetworkPolicyCalico
+	networkPolicyCilium = consts.NetworkPolicyCilium
 )
 
 // LocalDNSReconciler resolves the effective LocalDNS state on an AKSNodeClass
