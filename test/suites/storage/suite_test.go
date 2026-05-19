@@ -49,7 +49,10 @@ var env *azure.Environment
 var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 
-const defaultStorageARMZone = "1"
+const (
+	defaultStorageARMZone   = "1"
+	secondaryStorageARMZone = "2"
+)
 
 func TestStorage(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -77,6 +80,14 @@ func storageTopologyZone() string {
 	}
 	// Azure Subscriptions zone mappings can include zones unsupported by the default Standard_LRS node OS disk.
 	return zones.MakeAKSLabelZoneFromARMZone(env.Region, defaultStorageARMZone)
+}
+
+func secondaryStorageTopologyZone() string {
+	GinkgoHelper()
+	if len(env.GetAvailableZones()) < 2 {
+		Skip(fmt.Sprintf("skipping ZRS test because region %s does not support multiple availability zones", env.Region))
+	}
+	return zones.MakeAKSLabelZoneFromARMZone(env.Region, secondaryStorageARMZone)
 }
 
 var _ = Describe("Persistent Volumes", func() {
@@ -231,6 +242,43 @@ var _ = Describe("Persistent Volumes", func() {
 			env.ExpectCreated(nodeClass, nodePool, storageClass, pod)
 			env.EventuallyExpectHealthy(pod)
 			env.ExpectCreatedNodeCount("==", 1)
+		})
+		// Validates the sigs.k8s.io/karpenter fix (PR kubernetes-sigs/karpenter#2743) to schedule pods
+		// on nodes in specific zones, even when PV is accessible in multiple zones.
+		It("should schedule a pod with ZRS PV when pod targets a specific zone", func() {
+			zone2 := secondaryStorageTopologyZone()
+
+			// Create ZRS storage class with Immediate binding
+			zrsStorageClass := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "azuredisk-sc-zrs",
+				},
+				Provisioner:       "disk.csi.azure.com",
+				Parameters:        map[string]string{"skuname": "Premium_ZRS"},
+				VolumeBindingMode: lo.ToPtr(storagev1.VolumeBindingImmediate),
+			}
+
+			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
+				StorageClassName: new(zrsStorageClass.Name),
+			})
+
+			env.ExpectCreated(nodeClass, nodePool, zrsStorageClass, pvc)
+			env.EventuallyExpectPVCBound(pvc)
+
+			// ZRS disks are available in all zones of the region. To test that Karpenter
+			// considers ALL PV node affinity terms (not just the first), we intentionally
+			// schedule the pod in zone 2. Without the sigs.k8s.io/karpenter fix, this would fail
+			// because the scheduler only looked at the first zone.
+
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
+				PersistentVolumeClaims: []string{pvc.Name},
+				NodeSelector:           map[string]string{corev1.LabelTopologyZone: zone2},
+			}})
+
+			env.ExpectCreated(deployment)
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone2))
 		})
 	})
 })
