@@ -333,7 +333,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// The nic we used in the vm create, should be cleaned up if the vm call fails
 				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 				Expect(nic).NotTo(BeNil())
-				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
 				Expect(ok).To(Equal(false))
 
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
@@ -555,7 +555,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// The nic we used in the vm create, should be cleaned up if the vm call fails
 				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 				Expect(nic).NotTo(BeNil())
-				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
 				Expect(ok).To(Equal(false))
 
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
@@ -582,7 +582,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// The nic we used in the vm create, should be cleaned up if the vm call fails
 				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 				Expect(nic).NotTo(BeNil())
-				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
 				Expect(ok).To(Equal(false))
 
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
@@ -1768,8 +1768,8 @@ var _ = Describe("InstanceType Provider", func() {
 				standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
 				internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
 
-				azureEnv.LoadBalancersAPI.LoadBalancers.Store(standardLB.ID, standardLB)
-				azureEnv.LoadBalancersAPI.LoadBalancers.Store(internalLB.ID, internalLB)
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()

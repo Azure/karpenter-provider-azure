@@ -20,16 +20,16 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/samber/lo"
 )
 
 type LoadBalancersBehavior struct {
-	LoadBalancers sync.Map
+	LoadBalancers fakesync.Map[string, armnetwork.LoadBalancer]
 }
 
 // assert that the fake implements the interface
@@ -41,10 +41,7 @@ type LoadBalancersAPI struct {
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (api *LoadBalancersAPI) Reset() {
-	api.LoadBalancers.Range(func(k, v any) bool {
-		api.LoadBalancers.Delete(k)
-		return true
-	})
+	api.LoadBalancers.Clear()
 }
 
 func (api *LoadBalancersAPI) Get(_ context.Context, resourceGroupName string, loadBalancerName string, _ *armnetwork.LoadBalancersClientGetOptions) (armnetwork.LoadBalancersClientGetResponse, error) {
@@ -54,7 +51,7 @@ func (api *LoadBalancersAPI) Get(_ context.Context, resourceGroupName string, lo
 		return armnetwork.LoadBalancersClientGetResponse{}, fmt.Errorf("not found")
 	}
 	return armnetwork.LoadBalancersClientGetResponse{
-		LoadBalancer: lb.(armnetwork.LoadBalancer),
+		LoadBalancer: lb,
 	}, nil
 }
 
@@ -67,9 +64,8 @@ func (api *LoadBalancersAPI) NewListPager(_ string, _ *armnetwork.LoadBalancersC
 			output := armnetwork.LoadBalancerListResult{
 				Value: []*armnetwork.LoadBalancer{},
 			}
-			api.LoadBalancers.Range(func(key, value any) bool {
-				cast := value.(armnetwork.LoadBalancer)
-				output.Value = append(output.Value, &cast)
+			api.LoadBalancers.Range(func(key string, value armnetwork.LoadBalancer) bool {
+				output.Value = append(output.Value, &value)
 
 				return true
 			})
