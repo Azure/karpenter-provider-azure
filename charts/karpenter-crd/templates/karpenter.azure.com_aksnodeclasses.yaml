@@ -903,12 +903,13 @@ spec:
                 type: string
               localDNSState:
                 description: |-
-                  localDNSState records the resolved enable/disable decision for LocalDNS.
+                  localDNSState is the resolved enable/disable decision for LocalDNS.
                   It is the source of truth for whether LocalDNS is enabled on nodes
-                  spawned from this NodeClass. For Mode=Required this is always Enabled;
-                  for Mode=Disabled this is always Disabled; for Mode=Preferred this is
-                  resolved from cluster gates. Once Mode=Preferred resolves to Enabled,
-                  it remains Enabled while Mode stays Preferred; it does not flip back
+                  spawned from this NodeClass. When spec.mode=Required this is always Enabled;
+                  when spec.mode=Disabled this is always Disabled; when spec.mode=Preferred this is
+                  determined based on the current Kubernetes version and other cluster configuration.
+                  Once Mode=Preferred resolves to Enabled,
+                  it remains Enabled as long as spec.mode stays Preferred; it does not flip back
                   to Disabled if cluster-side conflicts later appear. The user can opt
                   out by changing Mode to Disabled.
                 enum:
@@ -1802,12 +1803,13 @@ spec:
                 type: string
               localDNSState:
                 description: |-
-                  localDNSState records the resolved enable/disable decision for LocalDNS.
+                  localDNSState is the resolved enable/disable decision for LocalDNS.
                   It is the source of truth for whether LocalDNS is enabled on nodes
-                  spawned from this NodeClass. For Mode=Required this is always Enabled;
-                  for Mode=Disabled this is always Disabled; for Mode=Preferred this is
-                  resolved from cluster gates. Once Mode=Preferred resolves to Enabled,
-                  it remains Enabled while Mode stays Preferred; it does not flip back
+                  spawned from this NodeClass. When spec.mode=Required this is always Enabled;
+                  when spec.mode=Disabled this is always Disabled; when spec.mode=Preferred this is
+                  determined based on the current Kubernetes version and other cluster configuration.
+                  Once Mode=Preferred resolves to Enabled,
+                  it remains Enabled as long as spec.mode stays Preferred; it does not flip back
                   to Disabled if cluster-side conflicts later appear. The user can opt
                   out by changing Mode to Disabled.
                 enum:

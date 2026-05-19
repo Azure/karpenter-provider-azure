@@ -56,20 +56,4 @@ const (
 	ProvisioningStateSucceeded = "Succeeded"
 	ProvisioningStateFailed    = "Failed"
 	ProvisioningStateDeleting  = "Deleting"
-
-	// LocalDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
-	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred.
-	LocalDNSPreferredK8sVersionThreshold = "1.36.0"
-
-	// KonnectivityAgentPolicyName / KonnectivityAgentPolicyNamespace identify
-	// the AKS-managed NetworkPolicy that is allow-listed when scanning for
-	// conflicting NetworkPolicies during LocalDNS gate evaluation.
-	KonnectivityAgentPolicyName      = "konnectivity-agent"
-	KonnectivityAgentPolicyNamespace = "kube-system"
-
-	// NodeLocalDNSDaemonSetName / NodeLocalDNSDaemonSetNamespace identify the
-	// upstream node-local-dns DaemonSet whose presence disables LocalDNS in
-	// Preferred mode.
-	NodeLocalDNSDaemonSetName      = "node-local-dns"
-	NodeLocalDNSDaemonSetNamespace = "kube-system"
 )

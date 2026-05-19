@@ -713,7 +713,7 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 // If Status.LocalDNSState has not yet been written, this returns false as a
 // safe default.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
-	return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
+	return lo.FromPtr(in.Status.LocalDNSState) == LocalDNSStateEnabled
 }
 
 // GetGPUMode returns the effective GPU mode.

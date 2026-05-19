@@ -40,7 +40,25 @@ import (
 
 // localDNSPreferredVersionThreshold is the minimum Kubernetes version required
 // for LocalDNS to be enabled under Mode=Preferred.
-var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(consts.LocalDNSPreferredK8sVersionThreshold))
+var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(localDNSPreferredK8sVersionThreshold))
+
+const (
+	// localDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
+	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred.
+	localDNSPreferredK8sVersionThreshold = "1.36.0"
+
+	// konnectivityAgentPolicy{Name,Namespace} identify the AKS-managed
+	// NetworkPolicy that is allow-listed when scanning for conflicting
+	// NetworkPolicies during LocalDNS gate evaluation.
+	konnectivityAgentPolicyName      = "konnectivity-agent"
+	konnectivityAgentPolicyNamespace = "kube-system"
+
+	// nodeLocalDNSDaemonSet{Name,Namespace} identify the upstream
+	// node-local-dns DaemonSet whose presence disables LocalDNS in Preferred
+	// mode.
+	nodeLocalDNSDaemonSetName      = "node-local-dns"
+	nodeLocalDNSDaemonSetNamespace = "kube-system"
+)
 
 // localDNSPreferredRequeueAfter bounds how long the controller waits before
 // re-evaluating Preferred-mode gates when none of the inputs change. Cluster
@@ -193,7 +211,7 @@ func (r *LocalDNSReconciler) meetsClusterRequirements(ctx context.Context) (bool
 }
 
 func (r *LocalDNSReconciler) hasUpstreamNodeLocalDNS(ctx context.Context) (bool, error) {
-	_, err := r.kubeClient.AppsV1().DaemonSets(consts.NodeLocalDNSDaemonSetNamespace).Get(ctx, consts.NodeLocalDNSDaemonSetName, metav1.GetOptions{})
+	_, err := r.kubeClient.AppsV1().DaemonSets(nodeLocalDNSDaemonSetNamespace).Get(ctx, nodeLocalDNSDaemonSetName, metav1.GetOptions{})
 	if err == nil {
 		return true, nil
 	}
@@ -221,7 +239,7 @@ func (r *LocalDNSReconciler) hasConflictingK8sNetworkPolicies(ctx context.Contex
 		return false, fmt.Errorf("listing K8s NetworkPolicies: %w", err)
 	}
 	for _, np := range netPolList.Items {
-		if np.Name == consts.KonnectivityAgentPolicyName && np.Namespace == consts.KonnectivityAgentPolicyNamespace {
+		if np.Name == konnectivityAgentPolicyName && np.Namespace == konnectivityAgentPolicyNamespace {
 			continue
 		}
 		return true, nil
