@@ -124,8 +124,10 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 
 	default:
 		// Unknown mode: treat as Disabled and mark Ready -- spec validation surfaces
-		// the bad value to the user elsewhere.
-		log.FromContext(ctx).Info("unknown LocalDNS mode, defaulting to Disabled", "mode", string(nc.Spec.LocalDNS.Mode))
+		// the bad value to the user elsewhere. CRD enum validation
+		// (Required|Preferred|Disabled) should make this branch unreachable; log
+		// at Error so we notice if an out-of-band CRD/spec mismatch ever lands here.
+		log.FromContext(ctx).Error(nil, "unknown LocalDNS mode, defaulting to Disabled (unreachable: CRD enum validation should prevent this)", "mode", string(nc.Spec.LocalDNS.Mode))
 		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return reconcile.Result{}, nil
