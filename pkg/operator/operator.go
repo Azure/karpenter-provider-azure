@@ -84,9 +84,6 @@ type Operator struct {
 	// of the cluster where the Karpenter pod is running. This is usually the same as operator.KubernetesInterface,
 	// but may be different if Karpenter is running in a different cluster than the one it manages.
 	InClusterKubernetesInterface kubernetes.Interface
-	// InClusterDynamicInterface is a dynamic client over the same in-cluster config as
-	// InClusterKubernetesInterface.
-	InClusterDynamicInterface dynamic.Interface
 
 	// ManagedKubernetesInterface is a Kubernetes client that talks to the APIServer of the
 	// cluster that Karpenter is managing (the workload cluster). In CCP/NAP topology this is
@@ -155,7 +152,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
-	inClusterDynamicClient := dynamic.NewForConfigOrDie(inClusterConfig)
 
 	// Build clients over the managed (workload) cluster config. operator.GetConfig() is the
 	// rest.Config that controller-runtime uses for the manager, which targets the workload
@@ -286,7 +282,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	return ctx, &Operator{
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
-		InClusterDynamicInterface:    inClusterDynamicClient,
 		ManagedKubernetesInterface:   managedClient,
 		ManagedDynamicInterface:      managedDynamicClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,

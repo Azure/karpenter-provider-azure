@@ -67,9 +67,9 @@ func setKVReady(nc *v1beta1.AKSNodeClass, k8sVer string) {
 
 func mustReconcile(t *testing.T, r *LocalDNSReconciler, nc *v1beta1.AKSNodeClass) {
 	t.Helper()
-	if _, err := r.Reconcile(context.Background(), nc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	g := NewWithT(t)
+	_, err := r.Reconcile(context.Background(), nc)
+	g.Expect(err).ToNot(HaveOccurred())
 }
 
 func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want v1beta1.LocalDNSState) {

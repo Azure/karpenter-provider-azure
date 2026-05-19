@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
 	"github.com/patrickmn/go-cache"
+	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -390,4 +391,13 @@ func (env *Environment) Zones() []string {
 // Client returns the controller-runtime client from the underlying core test environment.
 func (env *Environment) Client() client.Client {
 	return env.coreEnv.Client
+}
+
+// DynamicClient returns a dynamic client wired to the envtest API server backing
+// the core test environment. The LocalDNS status sub-reconciler uses a dynamic
+// client to list out-of-tree NetworkPolicy CRDs (Cilium, Calico); when those
+// CRDs are not installed in envtest, list calls return meta.IsNoMatchError,
+// which the reconciler treats as "no policies present".
+func (env *Environment) DynamicClient() dynamic.Interface {
+	return dynamic.NewForConfigOrDie(env.coreEnv.Config)
 }
