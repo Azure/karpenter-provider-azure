@@ -120,7 +120,7 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 		return reconcile.Result{}, nil
 
 	case v1beta1.LocalDNSModePreferred:
-		// fall through
+		return r.reconcilePreferred(ctx, nc)
 
 	default:
 		// Unknown mode: treat as Disabled and mark Ready -- spec validation surfaces
@@ -130,7 +130,12 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return reconcile.Result{}, nil
 	}
+}
 
+// reconcilePreferred resolves Mode=Preferred against the sticky-Enabled rule
+// and the static + cluster gates. Split out of Reconcile to keep its
+// cyclomatic complexity below the lint threshold.
+func (r *LocalDNSReconciler) reconcilePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	// Sticky-Enabled: if already Enabled under Preferred, keep Enabled.
 	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
@@ -158,10 +163,10 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 		nc.StatusConditions().SetFalse(v1beta1.ConditionTypeLocalDNSReady, "CheckingClusterRequirementsFailed", err.Error())
 		return reconcile.Result{}, err
 	}
-	if !ok {
-		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
-	} else {
+	if ok {
 		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+	} else {
+		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 	}
 	nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 	return reconcile.Result{RequeueAfter: localDNSPreferredRequeueAfter}, nil
