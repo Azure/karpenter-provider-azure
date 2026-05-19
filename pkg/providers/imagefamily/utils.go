@@ -18,6 +18,9 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
+	"github.com/samber/lo"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
 // UseAzureLinux3 checks if the Kubernetes version is 1.32.0 or higher,
@@ -41,4 +44,24 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 		return false
 	}
 	return version.GE(semver.Version{Major: 1, Minor: 34})
+}
+
+// ResolvesToUbuntu2004 returns true if the given image-family + FIPS-mode
+// combination would resolve to the Ubuntu2004 ImageFamily implementation
+// in defaultUbuntu (see resolver.go).
+//
+// Today, Ubuntu2004 is reachable only when the legacy/unset Ubuntu image
+// family is selected together with FIPS mode. Callers outside of the
+// resolver use this to make decisions that depend on whether a NodeClass
+// will ultimately be backed by 20.04 (e.g. the LocalDNS state reconciler,
+// since LocalDNS is unsupported on 20.04).
+//
+// NOTE: this helper duplicates the rule that lives in defaultUbuntu — it is
+// intentionally not used from defaultUbuntu itself, to keep that function's
+// existing logic flow untouched. If the rule in defaultUbuntu ever changes,
+// update this helper to match.
+func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode) bool {
+	family := lo.FromPtr(familyName)
+	isUbuntuLegacyOrUnset := family == "" || family == v1beta1.UbuntuImageFamily
+	return isUbuntuLegacyOrUnset && lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS
 }

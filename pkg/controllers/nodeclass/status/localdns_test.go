@@ -21,6 +21,7 @@ import (
 	"errors"
 	"testing"
 
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -73,12 +74,9 @@ func mustReconcile(t *testing.T, r *LocalDNSReconciler, nc *v1beta1.AKSNodeClass
 
 func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want v1beta1.LocalDNSState) {
 	t.Helper()
-	if nc.Status.LocalDNSState == nil {
-		t.Fatalf("expected LocalDNSState=%q, got nil", want)
-	}
-	if *nc.Status.LocalDNSState != want {
-		t.Fatalf("expected LocalDNSState=%q, got %q", want, *nc.Status.LocalDNSState)
-	}
+	g := NewWithT(t)
+	g.Expect(nc.Status.LocalDNSState).ToNot(BeNil(), "expected LocalDNSState=%q, got nil", want)
+	g.Expect(*nc.Status.LocalDNSState).To(Equal(want))
 }
 
 func TestModeUnsetSetsDisabled(t *testing.T) {

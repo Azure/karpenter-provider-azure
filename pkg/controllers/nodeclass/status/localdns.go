@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -37,24 +38,19 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 )
 
-const (
-	// Internal aliases for consts.NetworkPolicyCilium / consts.NetworkPolicyCalico.
-	networkPolicyCalico = consts.NetworkPolicyCalico
-	networkPolicyCilium = consts.NetworkPolicyCilium
-)
+// localDNSPreferredVersionThreshold is the minimum Kubernetes version required
+// for LocalDNS to be enabled under Mode=Preferred.
+var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(consts.LocalDNSPreferredK8sVersionThreshold))
+
+// localDNSPreferredRequeueAfter bounds how long the controller waits before
+// re-evaluating Preferred-mode gates when none of the inputs change. Cluster
+// gate inputs (k8s NetworkPolicies, upstream node-local-dns DS) can be
+// mutated out-of-band without producing an AKSNodeClass event, so we requeue
+// periodically.
+const localDNSPreferredRequeueAfter = 5 * time.Minute
 
 // LocalDNSReconciler resolves the effective LocalDNS state on an AKSNodeClass
 // and stores it on Status.LocalDNSState.
-//
-// IMPORTANT: the Preferred-mode gate logic in this file must stay in sync with
-// the aks-rp validator at
-// resourceprovider/.../validation/localdns/localdnsvalidator.go (source of
-// truth). If you add, remove, or reorder a gate here, mirror the change there
-// (and update the e2e matrix in the PR description). The wire contract
-// guarantees Karpenter resolves Preferred to a terminal value before sending,
-// so the nodeprovisioner never re-runs gates -- divergence between this file
-// and the RP validator would produce silently inconsistent decisions across
-// node-class types.
 //
 // Behavior:
 //   - Mode unset/nil  -> Status=Disabled, LocalDNSReady=True.
@@ -65,27 +61,20 @@ const (
 //     node-local-dns DS) and commit Enabled or Disabled. Sticky: once Enabled
 //     under Preferred, stays Enabled while Mode=Preferred (read off
 //     Status.LocalDNSState directly).
-//
-// Transient kube-API errors return error so controller-runtime applies
-// exponential backoff requeue. No custom retry counter or fail-safe budget --
-// the controller keeps retrying until the cluster cooperates.
 type LocalDNSReconciler struct {
-	kubeClient       kubernetes.Interface
-	dynamicClient    dynamic.Interface
-	networkPolicy    string
-	networkPlugin    string
-	versionThreshold semver.Version
+	kubeClient    kubernetes.Interface
+	dynamicClient dynamic.Interface
+	networkPolicy string
+	networkPlugin string
 }
 
-// NewLocalDNSReconciler constructs a LocalDNSReconciler. dynamicClient may be
-// nil in tests that don't exercise the Cilium / Calico CRD path.
+// NewLocalDNSReconciler constructs a LocalDNSReconciler.
 func NewLocalDNSReconciler(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface, networkPolicy, networkPlugin string) *LocalDNSReconciler {
 	return &LocalDNSReconciler{
-		kubeClient:       kubeClient,
-		dynamicClient:    dynamicClient,
-		networkPolicy:    networkPolicy,
-		networkPlugin:    networkPlugin,
-		versionThreshold: lo.Must(semver.ParseTolerant(consts.LocalDNSPreferredK8sVersionThreshold)),
+		kubeClient:    kubeClient,
+		dynamicClient: dynamicClient,
+		networkPolicy: networkPolicy,
+		networkPlugin: networkPlugin,
 	}
 }
 
@@ -118,6 +107,7 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 	default:
 		// Unknown mode: treat as Disabled and mark Ready -- spec validation surfaces
 		// the bad value to the user elsewhere.
+		log.FromContext(ctx).Info("unknown LocalDNS mode, defaulting to Disabled", "mode", string(nc.Spec.LocalDNS.Mode))
 		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return reconcile.Result{}, nil
@@ -130,18 +120,24 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 	}
 
 	// Static gates first (no kube-API calls).
-	if !r.passesStaticGates(nc) {
+	staticOK, err := r.meetsStaticRequirements(nc)
+	if err != nil {
+		log.FromContext(ctx).V(1).Info("localdns resolve: static check error, requeuing", "error", err.Error())
+		nc.StatusConditions().SetFalse(v1beta1.ConditionTypeLocalDNSReady, "CheckingClusterRequirementsFailed", err.Error())
+		return reconcile.Result{}, err
+	}
+	if !staticOK {
 		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return reconcile.Result{}, nil
+		return reconcile.Result{RequeueAfter: localDNSPreferredRequeueAfter}, nil
 	}
 
 	// Cluster gates: any transient error -> return error so controller-runtime
 	// requeues with backoff. Don't mark Ready=True.
-	ok, err := r.passesClusterGates(ctx)
+	ok, err := r.meetsClusterRequirements(ctx)
 	if err != nil {
 		log.FromContext(ctx).V(1).Info("localdns resolve: transient error, requeuing", "error", err.Error())
-		nc.StatusConditions().SetFalse(v1beta1.ConditionTypeLocalDNSReady, "ResolveTransientError", err.Error())
+		nc.StatusConditions().SetFalse(v1beta1.ConditionTypeLocalDNSReady, "CheckingClusterRequirementsFailed", err.Error())
 		return reconcile.Result{}, err
 	}
 	if !ok {
@@ -150,31 +146,37 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 	}
 	nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-	return reconcile.Result{}, nil
+	return reconcile.Result{RequeueAfter: localDNSPreferredRequeueAfter}, nil
 }
 
-func (r *LocalDNSReconciler) passesStaticGates(nc *v1beta1.AKSNodeClass) bool {
+func (r *LocalDNSReconciler) meetsStaticRequirements(nc *v1beta1.AKSNodeClass) (bool, error) {
 	k8sVersion, err := nc.GetKubernetesVersion()
-	if err != nil || k8sVersion == "" {
-		return false
+	if err != nil {
+		return false, fmt.Errorf("getting kubernetes version: %w", err)
+	}
+	if k8sVersion == "" {
+		return false, nil
 	}
 	parsed, err := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
-	if err != nil || parsed.LT(r.versionThreshold) {
-		return false
+	if err != nil {
+		return false, fmt.Errorf("parsing kubernetes version %q: %w", k8sVersion, err)
+	}
+	if parsed.LT(localDNSPreferredVersionThreshold) {
+		return false, nil
 	}
 	if strings.EqualFold(r.networkPlugin, consts.NetworkPluginNone) {
-		return false
+		return false, nil
 	}
 	if imagefamily.ResolvesToUbuntu2004(nc.Spec.ImageFamily, nc.Spec.FIPSMode) {
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
-// passesClusterGates returns true if cluster-side checks (network policies,
+// meetsClusterRequirements returns true if cluster-side checks (network policies,
 // node-local-dns DS) all pass. Errors are propagated to the caller.
-func (r *LocalDNSReconciler) passesClusterGates(ctx context.Context) (bool, error) {
-	if strings.EqualFold(r.networkPolicy, networkPolicyCilium) || strings.EqualFold(r.networkPolicy, networkPolicyCalico) {
+func (r *LocalDNSReconciler) meetsClusterRequirements(ctx context.Context) (bool, error) {
+	if strings.EqualFold(r.networkPolicy, consts.NetworkPolicyCilium) || strings.EqualFold(r.networkPolicy, consts.NetworkPolicyCalico) {
 		conflict, err := r.hasConflictingNetworkPolicies(ctx, r.networkPolicy)
 		if err != nil {
 			return false, err
@@ -191,9 +193,6 @@ func (r *LocalDNSReconciler) passesClusterGates(ctx context.Context) (bool, erro
 }
 
 func (r *LocalDNSReconciler) hasUpstreamNodeLocalDNS(ctx context.Context) (bool, error) {
-	if r.kubeClient == nil {
-		return false, nil
-	}
 	_, err := r.kubeClient.AppsV1().DaemonSets(consts.NodeLocalDNSDaemonSetNamespace).Get(ctx, consts.NodeLocalDNSDaemonSetName, metav1.GetOptions{})
 	if err == nil {
 		return true, nil
@@ -205,9 +204,6 @@ func (r *LocalDNSReconciler) hasUpstreamNodeLocalDNS(ctx context.Context) (bool,
 }
 
 func (r *LocalDNSReconciler) hasConflictingNetworkPolicies(ctx context.Context, networkPolicyType string) (bool, error) {
-	if r.kubeClient == nil {
-		return false, nil
-	}
 	if conflict, err := r.hasConflictingK8sNetworkPolicies(ctx); err != nil || conflict {
 		return conflict, err
 	}
@@ -234,17 +230,14 @@ func (r *LocalDNSReconciler) hasConflictingK8sNetworkPolicies(ctx context.Contex
 }
 
 func (r *LocalDNSReconciler) hasConflictingCRDNetworkPolicies(ctx context.Context, networkPolicyType string) (bool, error) {
-	if r.dynamicClient == nil {
-		return false, nil
-	}
 	var crdResources []schema.GroupVersionResource
 	switch {
-	case strings.EqualFold(networkPolicyType, networkPolicyCilium):
+	case strings.EqualFold(networkPolicyType, consts.NetworkPolicyCilium):
 		crdResources = []schema.GroupVersionResource{
 			{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"},
 			{Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies"},
 		}
-	case strings.EqualFold(networkPolicyType, networkPolicyCalico):
+	case strings.EqualFold(networkPolicyType, consts.NetworkPolicyCalico):
 		crdResources = []schema.GroupVersionResource{
 			{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"},
 			{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"},

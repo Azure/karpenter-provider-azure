@@ -284,8 +284,3 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 	}
 	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
 }
-
-// LocalDNS wire-Mode rewrite lives in (*AKSNodeClass).ResolvedLocalDNSForWire
-// in pkg/apis/v1beta1. This is to guarantee a deterministic and consistent
-// per-NodeClass localdns enablement decision. See the method-level doc-comment
-// for the full rationale.
