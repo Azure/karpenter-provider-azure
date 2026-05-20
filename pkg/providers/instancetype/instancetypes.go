@@ -323,6 +323,8 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// Read the resolved state from Status.LocalDNSState. The
+	// nodeclass.localdns sub-reconciler is the sole writer.
 	// If LocalDNS won't be enabled, all instance types are supported
 	if !nodeClass.IsLocalDNSEnabled() {
 		return true
