@@ -267,7 +267,7 @@ func TestBatcherFiresWhenMaxBatchSizeReached(t *testing.T) {
 	var mu sync.Mutex
 	var batchSizes []int
 
-	b := New[testItem, struct{}](ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
+	b := New(ctx, testKeyFunc, func(ctx context.Context, batch *Batch[testItem, struct{}]) {
 		mu.Lock()
 		batchSizes = append(batchSizes, len(batch.Requests))
 		mu.Unlock()
