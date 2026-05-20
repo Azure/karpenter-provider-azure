@@ -40,7 +40,8 @@ type AKS struct {
 	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
-	ClusterID                      string
+	NetworkSecurityGroupName       string
+	RouteTableName                 string
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
 	NetworkPlugin                  string
@@ -297,8 +298,8 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
 	nbv.CNIPluginsURL = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
 	// calculated values
-	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
-	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
+	nbv.NetworkSecurityGroup = a.NetworkSecurityGroupName
+	nbv.RouteTable = a.RouteTableName
 
 	if a.GPUNode && a.GPUDriverInstallationEnabled {
 		nbv.GPUNode = true

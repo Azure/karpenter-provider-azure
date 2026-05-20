@@ -171,7 +171,7 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
-			nodeClass.Spec.LocalDNS,
+			nodeClass.ResolvedLocalDNSForWire(),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
 		),

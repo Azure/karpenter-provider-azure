@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
 	"github.com/patrickmn/go-cache"
+	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -85,6 +86,7 @@ type Environment struct {
 	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
+	DynamicInterface            dynamic.Interface
 
 	// Fake data stores for the APIs
 	AKSDataStorage *fake.AKSDataStorage
@@ -175,10 +177,15 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		pricingProvider,
 		unavailableOfferingsCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
+	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
+		networkSecurityGroupAPI,
+		testOptions.NodeResourceGroup,
+	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageFamilyResolver,
 		imageFamilyProvider,
+		networkSecurityGroupProvider,
 		lo.ToPtr("ca-bundle"),
 		testOptions.ClusterEndpoint,
 		"test-tenant",
@@ -192,10 +199,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,
 		loadBalancerCache,
-		testOptions.NodeResourceGroup,
-	)
-	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
-		networkSecurityGroupAPI,
 		testOptions.NodeResourceGroup,
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
@@ -292,6 +295,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// We can update it in individual tests as needed.
 	lo.Must0(instanceTypesProvider.UpdateInstanceTypes(ctx))
 
+	// Seed the managed NSG
+	nsg := MakeNetworkSecurityGroup(testOptions.NodeResourceGroup, "aks-agentpool-00000000-nsg")
+	networkSecurityGroupAPI.NSGs.Store(lo.FromPtr(nsg.ID), nsg)
+
 	return &Environment{
 		VirtualMachinesAPI:          virtualMachinesAPI,
 		AuxiliaryTokenServer:        auxiliaryTokenServer,
@@ -310,6 +317,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NodeBootstrappingAPI:        nodeBootstrappingAPI,
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
+		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
 
@@ -341,7 +349,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	}
 }
 
-func (env *Environment) Reset() {
+func (env *Environment) Reset(ctx context.Context) {
 	env.VirtualMachinesAPI.Reset()
 	if env.AuxiliaryTokenServer != nil {
 		env.AuxiliaryTokenServer.Reset()
@@ -367,6 +375,11 @@ func (env *Environment) Reset() {
 	env.UnavailableOfferingsCache.Flush()
 	env.AKSMachineCache.InvalidateAll()
 	env.LoadBalancerCache.Flush()
+
+	// Re-seed the managed NSG so launchtemplate provider can resolve it
+	nodeResourceGroup := options.FromContext(ctx).NodeResourceGroup
+	nsg := MakeNetworkSecurityGroup(nodeResourceGroup, "aks-agentpool-00000000-nsg")
+	env.NetworkSecurityGroupAPI.NSGs.Store(lo.FromPtr(nsg.ID), nsg)
 }
 
 func (env *Environment) Zones() []string {

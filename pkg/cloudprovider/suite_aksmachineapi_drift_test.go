@@ -56,7 +56,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
@@ -74,8 +74,8 @@ var _ = Describe("CloudProvider", func() {
 			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
-			azureEnvNonZonal.Reset()
+			azureEnv.Reset(ctx)
+			azureEnvNonZonal.Reset(ctx)
 		})
 
 		Context("Drift", func() {
@@ -150,7 +150,7 @@ var _ = Describe("CloudProvider", func() {
 					existingMachine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(aksMachineID)
 					Expect(ok).To(BeTrue(), "AKS machine should exist in fake store")
 
-					aksMachine := existingMachine.(armcontainerservice.Machine)
+					aksMachine := existingMachine
 
 					// Set DriftAction to "Recreate" to trigger drift
 					if aksMachine.Properties == nil {

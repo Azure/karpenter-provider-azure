@@ -107,6 +107,7 @@ var _ = Describe("LinuxOSConfig", func() {
 			},
 		}
 
+		// Use a direct pod as a scheduling trigger; node-level settings are verified separately.
 		pod := coretest.UnschedulablePod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
 		env.EventuallyExpectHealthy(pod)
@@ -187,6 +188,7 @@ var _ = Describe("LinuxOSConfig", func() {
 			TransparentHugePageDefrag:  lo.ToPtr(v1beta1.TransparentHugePageDefragDeferMadvise),
 		}
 
+		// Use a direct pod as a scheduling trigger; node-level settings are verified separately.
 		pod := coretest.UnschedulablePod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
 		env.EventuallyExpectHealthy(pod)
@@ -217,6 +219,7 @@ var _ = Describe("LinuxOSConfig", func() {
 			SwapFileSize: lo.ToPtr("1500Mi"),
 		}
 
+		// Use a direct pod as a scheduling trigger; node-level settings are verified separately.
 		pod := coretest.UnschedulablePod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
 		env.EventuallyExpectHealthy(pod)
@@ -260,7 +263,8 @@ const (
 // not the container's default network namespace.
 func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod {
 	sysctlArgs := strings.Join(sysctls, " ")
-	pod := coretest.Pod(coretest.PodOptions{
+	// Use a direct pod because logs are read from this exact privileged probe on the target node.
+	pod := env.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "sysctl-verify-",
 			Namespace:    "default",
@@ -288,7 +292,8 @@ func createSysctlVerificationPod(nodeName string, sysctls []string) *corev1.Pod 
 // These settings are kernel-global (not namespaced), so a privileged container can read them directly.
 // Output is tagged (transparent_hugepage_enabled=..., transparent_hugepage_defrag=...) so assertions can distinguish the two values.
 func createTransparentHugePageVerificationPod(nodeName string) *corev1.Pod {
-	pod := coretest.Pod(coretest.PodOptions{
+	// Use a direct pod because logs are read from this exact privileged probe on the target node.
+	pod := env.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "transparent-hugepage-verify-",
 			Namespace:    "default",
@@ -314,7 +319,8 @@ func createTransparentHugePageVerificationPod(nodeName string) *corev1.Pod {
 // createSwapVerificationPod creates a privileged pod on the target node that
 // checks swap configuration by reading /proc/meminfo.
 func createSwapVerificationPod(nodeName string) *corev1.Pod {
-	pod := coretest.Pod(coretest.PodOptions{
+	// Use a direct pod because logs are read from this exact privileged probe on the target node.
+	pod := env.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "swap-verify-",
 			Namespace:    "default",

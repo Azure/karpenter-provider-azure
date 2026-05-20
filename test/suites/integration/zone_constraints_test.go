@@ -184,7 +184,7 @@ var _ = Describe("Regional VM Provisioning", func() {
 		})
 		env.ExpectCreated(deployment)
 
-		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), 1)
+		env.EventuallyExpectHealthyDeployment(deployment)
 		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
 		Expect(nodes[0].Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
 		Expect(nodes[0].Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, "0"))

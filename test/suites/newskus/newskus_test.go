@@ -66,9 +66,9 @@ var _ = Describe("NewSKUs", func() {
 				},
 			}
 
-			pod := test.Pod()
-			env.ExpectCreated(nodeClass, nodePool, pod)
-			env.EventuallyExpectHealthyWithTimeout(5*time.Minute, pod)
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.EventuallyExpectHealthyDeploymentWithTimeout(5*time.Minute, deployment)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 	}

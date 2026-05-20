@@ -18,11 +18,13 @@ package launchtemplate
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	karplabels "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -55,6 +57,7 @@ type Template struct {
 type Provider struct {
 	imageFamily             imagefamily.Resolver
 	imageProvider           imagefamily.NodeImageProvider
+	nsgProvider             *networksecuritygroup.Provider
 	caBundle                *string
 	clusterEndpoint         string
 	tenantID                string
@@ -74,6 +77,7 @@ func NewProvider(
 	_ context.Context,
 	imageFamily imagefamily.Resolver,
 	imageProvider imagefamily.NodeImageProvider,
+	nsgProvider *networksecuritygroup.Provider,
 	caBundle *string,
 	clusterEndpoint string,
 	tenantID,
@@ -87,6 +91,7 @@ func NewProvider(
 	return &Provider{
 		imageFamily:             imageFamily,
 		imageProvider:           imageProvider,
+		nsgProvider:             nsgProvider,
 		caBundle:                caBundle,
 		clusterEndpoint:         clusterEndpoint,
 		tenantID:                tenantID,
@@ -160,6 +165,15 @@ func (p *Provider) getStaticParameters(
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
+
+	nsg, err := p.nsgProvider.ManagedNetworkSecurityGroup(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting managed network security group: %w", err)
+	}
+	nsgName := lo.FromPtr(nsg.Name)
+	clusterID := networksecuritygroup.GetClusterIDFromNSGName(nsgName)
+	routeTableName := fmt.Sprintf("aks-agentpool-%s-routetable", clusterID)
+
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
@@ -176,7 +190,8 @@ func (p *Provider) getStaticParameters(
 		KubeletIdentityClientID:        p.kubeletIdentityClientID,
 		ResourceGroup:                  p.resourceGroup,
 		Location:                       p.location,
-		ClusterID:                      options.FromContext(ctx).ClusterID,
+		NetworkSecurityGroupName:       nsgName,
+		RouteTableName:                 routeTableName,
 		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
 		NetworkPlugin:                  getAgentbakerNetworkPlugin(ctx),

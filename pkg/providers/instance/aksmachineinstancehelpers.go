@@ -181,7 +181,7 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 		return nil
 	}
 	// GPU SKUs: pass through the driver setting from nodeClass.
-	// "Driver" mode → Install, "None" mode → None (treat as non-GPU).
+	// "Driver" mode -> Install, "None" mode -> None (treat as non-GPU).
 	// Upstream instance type filtering already ensures invalid SKU+mode combinations
 	// (e.g., AMD GPU with Driver mode) are excluded before reaching here.
 	driverSetting := armcontainerservice.GPUDriverNone
@@ -204,18 +204,25 @@ func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instance
 }
 
 func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LocalDNSProfile {
-	if nodeClass.Spec.LocalDNS == nil {
+	// Use the wire-resolved spec so Karpenter's Preferred-mode decision
+	// (recorded on the AKSNodeClass via Status.LocalDNSState) is honored
+	// end-to-end downstream. This guarantees a deterministic and consistent
+	// LocalDNS decision across Machines spawned from the same NodeClass:
+	// Preferred is never sent downstream, so it can never be re-interpreted.
+	// See AKSNodeClass.ResolvedLocalDNSForWire for the full rationale.
+	spec := nodeClass.ResolvedLocalDNSForWire()
+	if spec == nil {
 		return nil
 	}
 	profile := &armcontainerservice.LocalDNSProfile{}
-	if nodeClass.Spec.LocalDNS.Mode != "" {
-		profile.Mode = lo.ToPtr(armcontainerservice.LocalDNSMode(nodeClass.Spec.LocalDNS.Mode))
+	if spec.Mode != "" {
+		profile.Mode = lo.ToPtr(armcontainerservice.LocalDNSMode(spec.Mode))
 	}
-	if len(nodeClass.Spec.LocalDNS.VnetDNSOverrides) > 0 {
-		profile.VnetDNSOverrides = convertLocalDNSOverrides(nodeClass.Spec.LocalDNS.VnetDNSOverrides)
+	if len(spec.VnetDNSOverrides) > 0 {
+		profile.VnetDNSOverrides = convertLocalDNSOverrides(spec.VnetDNSOverrides)
 	}
-	if len(nodeClass.Spec.LocalDNS.KubeDNSOverrides) > 0 {
-		profile.KubeDNSOverrides = convertLocalDNSOverrides(nodeClass.Spec.LocalDNS.KubeDNSOverrides)
+	if len(spec.KubeDNSOverrides) > 0 {
+		profile.KubeDNSOverrides = convertLocalDNSOverrides(spec.KubeDNSOverrides)
 	}
 	return profile
 }

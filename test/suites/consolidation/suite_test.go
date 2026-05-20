@@ -128,7 +128,8 @@ var _ = Describe("Consolidation", Ordered, func() {
 		})
 		It("should update lastPodEventTime when pods go terminal", func() {
 			podLabels := map[string]string{"app": "regular-app"}
-			pod := coretest.Pod(coretest.PodOptions{
+			// Use a pod template in a Job because the test needs the workload pod to go terminal.
+			pod := env.Pod(coretest.PodOptions{
 				// use a non-pause image so that we can have a sleep
 				Image:   "alpine:3.20.2",
 				Command: []string{"/bin/sh", "-c", "sleep 30"},
@@ -430,7 +431,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
 			env.EventuallyExpectCreatedNodeClaimCount("==", 5)
-			env.EventuallyExpectCreatedNodeCount("==", 5)
+			nodes := env.EventuallyExpectCreatedNodeCount("==", 5)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			dep.Spec.Replicas = lo.ToPtr[int32](1)
@@ -438,7 +439,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			// Update the deployment to only contain 1 replica.
 			env.ExpectUpdated(dep)
 
-			env.ConsistentlyExpectNoDisruptions(5, time.Minute)
+			env.ConsistentlyExpectNodesNotDisrupted(nodes, time.Minute)
 		})
 		It("should not allow consolidation if the budget is fully blocking during a scheduled time", func() {
 			// We're going to define a budget that doesn't allow any drift to happen
@@ -466,7 +467,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
 			env.EventuallyExpectCreatedNodeClaimCount("==", 5)
-			env.EventuallyExpectCreatedNodeCount("==", 5)
+			nodes := env.EventuallyExpectCreatedNodeCount("==", 5)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			dep.Spec.Replicas = lo.ToPtr[int32](1)
@@ -474,7 +475,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			// Update the deployment to only contain 1 replica.
 			env.ExpectUpdated(dep)
 
-			env.ConsistentlyExpectNoDisruptions(5, time.Minute)
+			env.ConsistentlyExpectNodesNotDisrupted(nodes, time.Minute)
 		})
 	})
 	DescribeTable("should consolidate nodes (delete)", Label(debug.NoWatch), Label(debug.NoEvents),
@@ -860,14 +861,14 @@ var _ = Describe("Node Overlay", func() {
 
 	It("should consolidate an instance that is the cheapest based on a price adjustment node overlay applied", func() {
 		overlaidInstanceType := "Standard_D8s_v5"
-		pod := coretest.Pod(coretest.PodOptions{
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1, PodOptions: coretest.PodOptions{
 			ResourceRequirements: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("1Gi"),
 				},
 			},
-		})
+		}})
 		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
@@ -881,11 +882,12 @@ var _ = Describe("Node Overlay", func() {
 			},
 		})
 
-		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
-		env.EventuallyExpectHealthy(pod)
-		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 
-		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		instanceType, foundInstanceType := node.Labels[corev1.LabelInstanceTypeStable]
 		Expect(foundInstanceType).To(BeTrue())
 		Expect(instanceType).To(Equal(overlaidInstanceType))
 
@@ -898,7 +900,7 @@ var _ = Describe("Node Overlay", func() {
 		})
 		env.ExpectUpdated(nodeOverlay)
 
-		nodes = env.EventuallyExpectInitializedNodeCount("==", 2)
+		nodes := env.EventuallyExpectInitializedNodeCount("==", 2)
 		nodes = lo.Filter(nodes, func(n *corev1.Node, _ int) bool {
 			_, ok := lo.Find(n.Spec.Taints, func(t corev1.Taint) bool {
 				return t.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
@@ -912,14 +914,14 @@ var _ = Describe("Node Overlay", func() {
 
 	It("should consolidate an instance that is the cheapest based on a price override node overlay applied", func() {
 		overlaidInstanceType := "Standard_D8s_v5"
-		pod := coretest.Pod(coretest.PodOptions{
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1, PodOptions: coretest.PodOptions{
 			ResourceRequirements: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("1Gi"),
 				},
 			},
-		})
+		}})
 		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				Price: lo.ToPtr("0.0000000232"),
@@ -933,11 +935,12 @@ var _ = Describe("Node Overlay", func() {
 			},
 		})
 
-		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
-		env.EventuallyExpectHealthy(pod)
-		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
 
-		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		instanceType, foundInstanceType := node.Labels[corev1.LabelInstanceTypeStable]
 		Expect(foundInstanceType).To(BeTrue())
 		Expect(instanceType).To(Equal(overlaidInstanceType))
 
@@ -950,7 +953,7 @@ var _ = Describe("Node Overlay", func() {
 		})
 		env.ExpectUpdated(nodeOverlay)
 
-		nodes = env.EventuallyExpectInitializedNodeCount("==", 2)
+		nodes := env.EventuallyExpectInitializedNodeCount("==", 2)
 		nodes = lo.Filter(nodes, func(n *corev1.Node, _ int) bool {
 			_, ok := lo.Find(n.Spec.Taints, func(t corev1.Taint) bool {
 				return t.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
