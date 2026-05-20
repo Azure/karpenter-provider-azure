@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -83,6 +84,11 @@ type Operator struct {
 	// of the cluster where the Karpenter pod is running. This is usually the same as operator.KubernetesInterface,
 	// but may be different if Karpenter is running in a different cluster than the one it manages.
 	InClusterKubernetesInterface kubernetes.Interface
+
+	// ManagedDynamicInterface is a dynamic client over the managed (workload) cluster, used
+	// by callers that need to inspect out-of-tree CRDs (e.g. Cilium / Calico NetworkPolicy)
+	// alongside the typed client on the embedded operator (operator.KubernetesInterface).
+	ManagedDynamicInterface dynamic.Interface
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
@@ -141,6 +147,16 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
+
+	// Build a dynamic client over the managed (workload) cluster config. operator.GetConfig()
+	// is the rest.Config that controller-runtime uses for the manager, which targets the
+	// workload cluster (via mounted kubeconfig in CCP, or same as in-cluster in non-CCP).
+	// LocalDNS gate evaluation reads out-of-tree CRDs (Cilium / Calico NetworkPolicy) through
+	// this; the typed client lives on the embedded operator (operator.KubernetesInterface).
+	managedConfig := rest.CopyConfig(operator.GetConfig())
+	managedConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
+	managedConfig.UserAgent = auth.GetUserAgentExtension()
+	managedDynamicClient := dynamic.NewForConfigOrDie(managedConfig)
 
 	if options.FromContext(ctx).DNSServiceIP == "" {
 		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
@@ -261,6 +277,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	return ctx, &Operator{
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
+		ManagedDynamicInterface:      managedDynamicClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,

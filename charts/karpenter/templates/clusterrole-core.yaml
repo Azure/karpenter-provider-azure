@@ -40,7 +40,18 @@ rules:
     verbs: ["get", "watch", "list"]
   - apiGroups: ["apps"]
     resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
-    verbs: ["list", "watch"]
+    verbs: ["list", "watch", "get"]
+  # LocalDNS resolver: needs to inspect node-local-dns DaemonSet and any
+  # K8s/Cilium/Calico NetworkPolicies that would conflict with auto-enabling.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["list"]
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"]
+    verbs: ["list"]
+  - apiGroups: ["crd.projectcalico.org"]
+    resources: ["networkpolicies", "globalnetworkpolicies"]
+    verbs: ["list"]
   {{- if .Values.webhook.enabled }}
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]

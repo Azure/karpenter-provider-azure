@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -58,7 +59,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
@@ -1110,12 +1111,16 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeDisabled))
 			})
 
-			It("should set LocalDNSProfile with mode Preferred", func() {
+			It("should rewrite Preferred to Required on the wire when Status.LocalDNSState=Enabled", func() {
+				// Preferred is never sent downstream — Karpenter is the only kube-aware
+				// resolver, so ResolvedLocalDNSForWire rewrites Mode to the terminal
+				// value implied by Status.LocalDNSState. Enabled => Required.
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 					Mode:             v1beta1.LocalDNSModePreferred,
 					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
 					KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
 				}
+				nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
@@ -1128,7 +1133,40 @@ var _ = Describe("CloudProvider", func() {
 				aksMachine := createInput.AKSMachine
 
 				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
-				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModePreferred))
+				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeRequired))
+			})
+
+			It("should rewrite Preferred to Disabled on the wire when Status.LocalDNSState is unset", func() {
+				// Defense-in-depth: if Status hasn't been resolved yet, never pass
+				// Preferred downstream — the downstream resolver cannot see cluster
+				// gates and would re-decide incorrectly. Fall back to Disabled.
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode:             v1beta1.LocalDNSModePreferred,
+					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+					KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				// The status sub-reconciler resolves Preferred to Enabled in this
+				// test env (no cluster conflicts). Wipe LocalDNSState back to nil
+				// via a status Patch to drive the "Status not yet resolved"
+				// branch of ResolvedLocalDNSForWire. Re-fetch first because the
+				// reconcile bumped the resource version.
+				Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+				stored := nodeClass.DeepCopy()
+				nodeClass.Status.LocalDNSState = nil
+				Expect(env.Client.Status().Patch(ctx, nodeClass, client.MergeFrom(stored))).To(Succeed())
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeDisabled))
 			})
 
 			It("should correctly convert KubeDNSOverrides field values", func() {
