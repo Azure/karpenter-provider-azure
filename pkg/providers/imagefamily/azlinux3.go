@@ -92,7 +92,7 @@ func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []ty
 		}
 	}
 	// image provider will select these images in order, first match wins
-	images := []types.DefaultImageOutput{
+	return []types.DefaultImageOutput{
 		{
 			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
 			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
@@ -115,11 +115,7 @@ func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []ty
 			),
 			Distro: "aks-azurelinux-v3",
 		},
-	}
-
-	if useSIG {
-		// AzLinux3 ARM64 VHD is not available in CIG right now
-		images = append(images, types.DefaultImageOutput{
+		{
 			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
 			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
 			GalleryName:          AKSAzureLinuxGalleryName,
@@ -129,10 +125,8 @@ func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []ty
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v3-arm64-gen2",
-		})
+		},
 	}
-
-	return images
 }
 
 // UserData returns the default userdata script for the image Family
