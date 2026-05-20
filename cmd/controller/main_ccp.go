@@ -92,7 +92,7 @@ func main() {
 			op.ImageProvider,
 			op.InstanceTypesProvider,
 			op.InClusterKubernetesInterface,
-			op.ManagedKubernetesInterface,
+			op.KubernetesInterface,
 			op.ManagedDynamicInterface,
 			op.AZClient.SubnetsClient(),
 			op.AZClient.DiskEncryptionSetsClient(),

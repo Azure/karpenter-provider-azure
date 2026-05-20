@@ -86,6 +86,7 @@ type Environment struct {
 	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
+	DynamicInterface            dynamic.Interface
 
 	// Fake data stores for the APIs
 	AKSDataStorage *fake.AKSDataStorage
@@ -316,6 +317,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NodeBootstrappingAPI:        nodeBootstrappingAPI,
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
+		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
 
@@ -393,11 +395,11 @@ func (env *Environment) Client() client.Client {
 	return env.coreEnv.Client
 }
 
-// DynamicClient returns a dynamic client wired to the envtest API server backing
-// the core test environment. The LocalDNS status sub-reconciler uses a dynamic
-// client to list out-of-tree NetworkPolicy CRDs (Cilium, Calico); when those
-// CRDs are not installed in envtest, list calls return meta.IsNoMatchError,
-// which the reconciler treats as "no policies present".
+// DynamicClient returns the dynamic client constructed once in NewRegionalEnvironment
+// against the envtest API server. The LocalDNS status sub-reconciler uses this to list
+// out-of-tree NetworkPolicy CRDs (Cilium, Calico); when those CRDs are not installed in
+// envtest, list calls return meta.IsNoMatchError, which the reconciler treats as "no
+// policies present".
 func (env *Environment) DynamicClient() dynamic.Interface {
-	return dynamic.NewForConfigOrDie(env.coreEnv.Config)
+	return env.DynamicInterface
 }
