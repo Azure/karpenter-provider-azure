@@ -366,6 +366,10 @@ spec:
                                 type: string
                                 minLength: 1
                                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                                maxLength: 316
+                                x-kubernetes-validations:
+                                  - message: taint domain "kubernetes.azure.com" is restricted
+                                    rule: '!self.startsWith("kubernetes.azure.com/") || self == "kubernetes.azure.com/scalesetpriority"'
                               timeAdded:
                                 description: TimeAdded represents the time at which the taint was added.
                                 format: date-time
@@ -378,7 +382,11 @@ spec:
                               - effect
                               - key
                             type: object
+                            x-kubernetes-validations:
+                              - message: taint "kubernetes.azure.com/scalesetpriority" must have value "spot"
+                                rule: self.key != "kubernetes.azure.com/scalesetpriority" || self.value == "spot"
                           type: array
+                          maxItems: 100
                         taints:
                           description: Taints will be applied to the NodeClaim's node.
                           items:
@@ -401,6 +409,10 @@ spec:
                                 type: string
                                 minLength: 1
                                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                                maxLength: 316
+                                x-kubernetes-validations:
+                                  - message: taint domain "kubernetes.azure.com" is restricted
+                                    rule: '!self.startsWith("kubernetes.azure.com/") || self == "kubernetes.azure.com/scalesetpriority"'
                               timeAdded:
                                 description: TimeAdded represents the time at which the taint was added.
                                 format: date-time
@@ -413,7 +425,11 @@ spec:
                               - effect
                               - key
                             type: object
+                            x-kubernetes-validations:
+                              - message: taint "kubernetes.azure.com/scalesetpriority" must have value "spot"
+                                rule: self.key != "kubernetes.azure.com/scalesetpriority" || self.value == "spot"
                           type: array
+                          maxItems: 100
                         terminationGracePeriod:
                           description: |-
                             TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
