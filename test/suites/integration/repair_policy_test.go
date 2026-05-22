@@ -95,6 +95,11 @@ var _ = Describe("Repair Policy", func() {
 			Status:             corev1.ConditionFalse,
 			LastTransitionTime: metav1.Time{Time: time.Now()},
 		}),
+		Entry("Spot Eviction Incoming", corev1.NodeCondition{
+			Type:               corev1.NodeConditionType("kubernetes.azure.com/SpotEvictionIncoming"),
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: metav1.Time{Time: time.Now()},
+		}),
 	)
 	It("should ignore disruption budgets", func() {
 		nodePool.Spec.Disruption.Budgets = []karpenterv1.Budget{

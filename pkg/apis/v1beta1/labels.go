@@ -141,6 +141,9 @@ var (
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
 	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
 
+	// AKS NodeCondition types (set by node-level health agents, consumed by Karpenter RepairPolicies)
+	AKSConditionSpotEvictionIncoming = AKSLabelDomain + "/SpotEvictionIncoming" // "True" when this Spot VM has a pending platform eviction signal
+
 	// Legacy labels
 	AKSLabelLegacyAgentPool      = "agentpool"
 	AKSLabelLegacyStorageProfile = "storageprofile"
