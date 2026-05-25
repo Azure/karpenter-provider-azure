@@ -146,6 +146,11 @@ func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
+// IsFleetMode returns true if the current provision mode uses Azure Compute Fleet for batched provisioning.
+func (o *Options) IsFleetMode() bool {
+	return o.ProvisionMode == consts.ProvisionModeFleet
+}
+
 func (o *Options) GetAPIServerName() string {
 	endpoint, _ := url.Parse(o.ClusterEndpoint) // assume to already validated
 	return endpoint.Hostname()

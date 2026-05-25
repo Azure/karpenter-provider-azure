@@ -409,6 +409,87 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("nodebootstrapping-server-url")))
 		})
+		It("should succeed when ProvisionMode is fleet with default batch options", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "fleet",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should succeed when ProvisionMode is fleet with custom batch options", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "fleet",
+				"--batch-idle-timeout-ms", "2000",
+				"--batch-max-timeout-ms", "10000",
+				"--max-batch-size", "30",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should fail when ProvisionMode is fleet but batch-idle-timeout-ms is negative", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--provision-mode", "fleet",
+				"--batch-idle-timeout-ms", "-1",
+			)
+			Expect(err).To(MatchError(ContainSubstring("batch-idle-timeout-ms")))
+		})
+		It("should fail when ProvisionMode is fleet but max-batch-size is zero", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--provision-mode", "fleet",
+				"--max-batch-size", "0",
+			)
+			Expect(err).To(MatchError(ContainSubstring("max-batch-size")))
+		})
+		It("should fail when ProvisionMode is fleet but batch-max-timeout-ms < batch-idle-timeout-ms", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--provision-mode", "fleet",
+				"--batch-idle-timeout-ms", "5000",
+				"--batch-max-timeout-ms", "3000",
+			)
+			Expect(err).To(MatchError(ContainSubstring("batch-max-timeout-ms")))
+		})
+		It("should report IsFleetMode() = true when provision-mode is fleet", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "fleet",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.IsFleetMode()).To(BeTrue())
+			Expect(opts.IsAKSMachineAPIMode()).To(BeFalse())
+		})
 		It("should fail if use-sig is enabled, but sig-access-token-server-url is not set", func() {
 			err := opts.Parse(
 				fs,

@@ -118,10 +118,9 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !o.IsAKSMachineAPIMode() {
-		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
-	}
 	switch o.ProvisionMode {
+	case consts.ProvisionModeAKSScriptless:
+		// no additional validation
 	case consts.ProvisionModeBootstrappingClient:
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
@@ -138,6 +137,12 @@ func (o *Options) validateProvisionMode() error {
 				return err
 			}
 		}
+	case consts.ProvisionModeFleet:
+		if err := o.validateBatchOptions(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	return nil
 }
