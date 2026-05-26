@@ -82,6 +82,7 @@ type CloudProvider struct {
 	instanceTypeProvider       instancetype.Provider
 	vmInstanceProvider         instance.VMProvider // Note that even when provision mode does not create with VM instance provider, it is still being used to handle existing VM instances.
 	aksMachineInstanceProvider instance.AKSMachineProvider
+	fleetProvider              instance.FleetProvider
 	kubeClient                 client.Client
 	imageProvider              imagefamily.NodeImageProvider
 	recorder                   events.Recorder
@@ -93,6 +94,7 @@ func New(
 	instanceTypeProvider instancetype.Provider,
 	vmInstanceProvider instance.VMProvider,
 	aksMachineInstanceProvider instance.AKSMachineProvider,
+	fleetProvider instance.FleetProvider,
 	recorder events.Recorder,
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
@@ -102,6 +104,7 @@ func New(
 		instanceTypeProvider:       instanceTypeProvider,
 		vmInstanceProvider:         vmInstanceProvider,
 		aksMachineInstanceProvider: aksMachineInstanceProvider,
+		fleetProvider:              fleetProvider,
 		kubeClient:                 kubeClient,
 		imageProvider:              imageProvider,
 		recorder:                   recorder,
@@ -166,6 +169,9 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 
 	// Choose provider based on provision mode
+	if options.FromContext(ctx).IsFleetMode() {
+		return c.createFleetInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	}
 	if options.FromContext(ctx).IsAKSMachineAPIMode() {
 		return c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	}
@@ -246,6 +252,15 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	}
 
 	return newNodeClaim, nil
+}
+
+func (c *CloudProvider) createFleetInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	// TODO:
+	// 1. Call c.fleetProvider.BeginCreate()
+	// 2. handleInstancePromise() for sync/async Wait()
+	// 3. Build NodeClaim from FleetMemberPromise fields (VM, InstanceType, Zone, ProviderID)
+	// 4. Propagate wellKnownLabels
+	return nil, fmt.Errorf("fleet mode not implemented")
 }
 
 // handleInstancePromise handles the instance promise, primarily deciding on sync/async provisioning.

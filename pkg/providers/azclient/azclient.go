@@ -24,6 +24,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -55,6 +56,7 @@ type AZClient struct {
 	networkInterfacesClient        azapi.NetworkInterfacesAPI
 	subnetsClient                  azapi.SubnetsAPI
 	diskEncryptionSetsClient       azapi.DiskEncryptionSetsAPI
+	fleetsClient                   *armcomputefleet.FleetsClient
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -100,6 +102,10 @@ func (c *AZClient) NetworkInterfacesClient() azapi.NetworkInterfacesAPI {
 
 func (c *AZClient) AzureResourceGraphClient() azapi.AzureResourceGraphAPI {
 	return c.azureResourceGraphClient
+}
+
+func (c *AZClient) FleetsClient() *armcomputefleet.FleetsClient {
+	return c.fleetsClient
 }
 
 func NewAZClientFromAPI(
@@ -276,7 +282,16 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		)
 	}
 
-	return NewAZClientFromAPI(
+	// Create Fleet client if fleet mode is enabled
+	var fleetsClient *armcomputefleet.FleetsClient
+	if o.IsFleetMode() {
+		fleetsClient, err = armcomputefleet.NewFleetsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	azClient := NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
 		aksMachinesClient,
@@ -293,5 +308,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		nodeBootstrappingClient,
 		skuClient,
 		subscriptionsClient,
-	), nil
+	)
+	azClient.fleetsClient = fleetsClient
+	return azClient, nil
 }

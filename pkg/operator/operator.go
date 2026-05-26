@@ -60,9 +60,11 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/fleet"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -70,6 +72,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
@@ -100,6 +103,7 @@ type Operator struct {
 	InstanceTypesProvider     instancetype.Provider
 	VMInstanceProvider        *instance.DefaultVMProvider
 	AKSMachineProvider        *instance.DefaultAKSMachineProvider
+	FleetProvider             instance.FleetProvider
 	LoadBalancerProvider      *loadbalancer.Provider
 	AZClient                  *azclient.AZClient
 }
@@ -274,6 +278,37 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		aksMachineCache,
 	)
 
+	var fleetProvider instance.FleetProvider
+	if options.FromContext(ctx).IsFleetMode() {
+		fleetErrorHandler := offerings.NewFleetErrorHandler(unavailableOfferingsCache)
+		fleetBatchClient := fleet.NewClient(
+			ctx,
+			azClient.FleetsClient(),
+			azClient.VirtualMachinesClient(),
+			fleetErrorHandler,
+			options.FromContext(ctx).ClusterName,
+			options.FromContext(ctx).NodeResourceGroup,
+			azConfig.SubscriptionID,
+			azConfig.Location,
+			batcher.Options{
+				IdleTimeout:  time.Duration(options.FromContext(ctx).BatchIdleTimeoutMS) * time.Millisecond,
+				MaxTimeout:   time.Duration(options.FromContext(ctx).BatchMaxTimeoutMS) * time.Millisecond,
+				MaxBatchSize: options.FromContext(ctx).MaxBatchSize,
+			},
+		)
+		fleetProvider = instance.NewFleetProvider(
+			fleetBatchClient,
+			launchTemplateProvider,
+			allocationStrategyProvider,
+			loadBalancerProvider,
+			networkSecurityGroupProvider,
+			azConfig.Location,
+			options.FromContext(ctx).NodeResourceGroup,
+			azConfig.SubscriptionID,
+			options.FromContext(ctx).DiskEncryptionSetID,
+		)
+	}
+
 	return ctx, &Operator{
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
@@ -287,6 +322,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		InstanceTypesProvider:        instanceTypeProvider,
 		VMInstanceProvider:           vmInstanceProvider,
 		AKSMachineProvider:           aksMachineInstanceProvider,
+		FleetProvider:                fleetProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		AZClient:                     azClient,
 	}

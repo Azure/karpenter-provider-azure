@@ -55,6 +55,7 @@ func main() {
 		op.InstanceTypesProvider,
 		op.VMInstanceProvider,
 		op.AKSMachineProvider,
+		op.FleetProvider,
 		op.EventRecorder,
 		op.GetClient(),
 		op.ImageProvider,
@@ -99,6 +100,7 @@ func main() {
 			options.FromContext(ctx).ParsedDiskEncryptionSetID,
 			options.FromContext(ctx).NetworkPolicy,
 			options.FromContext(ctx).NetworkPlugin,
+			op.AZClient.FleetsClient(),
 		)...).
 		Start(ctx)
 }

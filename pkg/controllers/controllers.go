@@ -32,6 +32,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/fleetgc"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -39,7 +40,9 @@ import (
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/fleet"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	instancetypeprovider "github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -65,6 +68,7 @@ func NewControllers(
 	parsedDiskEncryptionSetID *arm.ResourceID,
 	networkPolicy string,
 	networkPlugin string,
+	fleetClient fleet.FleetAPI,
 ) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
@@ -80,5 +84,15 @@ func NewControllers(
 
 		instancetypecontroller.NewController(instanceTypesProvider),
 	}
+
+	if options.FromContext(ctx).IsFleetMode() {
+		controllers = append(controllers, fleetgc.NewController(
+			fleetClient,
+			kubeClient,
+			options.FromContext(ctx).ClusterName,
+			options.FromContext(ctx).NodeResourceGroup,
+		))
+	}
+
 	return controllers
 }
