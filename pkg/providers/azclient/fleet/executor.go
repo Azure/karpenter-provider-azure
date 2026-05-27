@@ -51,8 +51,8 @@ func newExecutor(
 	}
 }
 
-// executeBatch is the batcher.ExecuteBatch[FleetCreateRequest, FleetBatchResponse] implementation.
-func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[FleetCreateRequest, FleetBatchResponse]) {
+// executeBatch is the batcher.ExecuteBatch[FleetVMProvisionRequest, FleetBatchResponse] implementation.
+func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[FleetVMProvisionRequest, FleetBatchResponse]) {
 	// TODO:
 	// 1. Build fleet name: "fleet-{clusterName}-{batchKeyHash8}" via fleetName()
 	// 2. Build fleet body via BuildFleetBody()

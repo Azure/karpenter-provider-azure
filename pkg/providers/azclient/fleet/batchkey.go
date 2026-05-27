@@ -46,14 +46,14 @@ type BatchKeyFields struct {
 	Zones               []string // sorted alphabetically before hashing
 }
 
-// DetermineBatchKey computes a deterministic grouping key for a FleetCreateRequest.
+// DetermineBatchKey computes a deterministic grouping key for a FleetVMProvisionRequest.
 // Two requests batch into the same Fleet iff every field on BatchKeyFields matches.
 //
 // Per-VM fields (Tags, NodeClaimName) are intentionally excluded — otherwise every
 // NodeClaim would land in its own Fleet and batching would be a no-op.
 //
-// This is the batcher.DetermineBatchKey[FleetCreateRequest] implementation.
-func DetermineBatchKey(req *FleetCreateRequest) (string, error) {
+// This is the batcher.DetermineBatchKey[FleetVMProvisionRequest] implementation.
+func DetermineBatchKey(req *FleetVMProvisionRequest) (string, error) {
 	if req == nil || req.NodeClaim == nil || req.NodeClass == nil || req.LaunchTemplate == nil {
 		return "", fmt.Errorf("nil request, nodeclaim, nodeclass, or launch template")
 	}

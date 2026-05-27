@@ -29,10 +29,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
-// mkReq builds a FleetCreateRequest with sane defaults and applies functional option mods.
-func mkReq(mods ...func(*FleetCreateRequest)) *FleetCreateRequest {
+// mkReq builds a FleetVMProvisionRequest with sane defaults and applies functional option mods.
+func mkReq(mods ...func(*FleetVMProvisionRequest)) *FleetVMProvisionRequest {
 	encrypt := false
-	req := &FleetCreateRequest{
+	req := &FleetVMProvisionRequest{
 		NodeClaimName:       "nc-default",
 		CapacityType:        karpv1.CapacityTypeOnDemand,
 		AcceptableSKUs:      []string{"Standard_D2s_v3", "Standard_D4s_v3"},
@@ -74,37 +74,37 @@ func mkReq(mods ...func(*FleetCreateRequest)) *FleetCreateRequest {
 	return req
 }
 
-func withTags(t map[string]*string) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) { r.Tags = t }
+func withTags(t map[string]*string) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) { r.Tags = t }
 }
-func withNodeClaimName(n string) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) {
+func withNodeClaimName(n string) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) {
 		r.NodeClaimName = n
 		r.NodeClaim.Name = n
 	}
 }
-func withCapacityType(c string) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) { r.CapacityType = c }
+func withCapacityType(c string) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) { r.CapacityType = c }
 }
-func withSKUs(s ...string) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) { r.AcceptableSKUs = s }
+func withSKUs(s ...string) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) { r.AcceptableSKUs = s }
 }
-func withZones(z ...string) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) { r.AcceptableZones = z }
+func withZones(z ...string) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) { r.AcceptableZones = z }
 }
-func withIdentities(ids ...string) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) { r.NodeIdentities = ids }
+func withIdentities(ids ...string) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) { r.NodeIdentities = ids }
 }
-func withImageID(id string) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) { r.LaunchTemplate.ImageID = id }
+func withImageID(id string) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) { r.LaunchTemplate.ImageID = id }
 }
-func withEncryptionAtHost(v bool) func(*FleetCreateRequest) {
-	return func(r *FleetCreateRequest) {
+func withEncryptionAtHost(v bool) func(*FleetVMProvisionRequest) {
+	return func(r *FleetVMProvisionRequest) {
 		r.NodeClass.Spec.Security.EncryptionAtHost = &v
 	}
 }
 
-func mustKey(t *testing.T, req *FleetCreateRequest) string {
+func mustKey(t *testing.T, req *FleetVMProvisionRequest) string {
 	t.Helper()
 	k, err := DetermineBatchKey(req)
 	if err != nil {

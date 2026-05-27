@@ -26,7 +26,7 @@ import (
 // Client is the Fleet batch client. It coalesces concurrent BeginCreateWithFleet calls
 // through a generic batcher, grouping by batch key hash.
 type Client struct {
-	b *batcher.Batcher[FleetCreateRequest, FleetBatchResponse]
+	b *batcher.Batcher[FleetVMProvisionRequest, FleetBatchResponse]
 }
 
 // NewClient creates a Fleet batch client and starts the batcher loop.
@@ -40,7 +40,7 @@ func NewClient(
 ) *Client {
 	exec := newExecutor(fleetClient, vmClient, errorHandler, clusterName, resourceGroup, location)
 
-	b := batcher.New[FleetCreateRequest, FleetBatchResponse](
+	b := batcher.New[FleetVMProvisionRequest, FleetBatchResponse](
 		ctx,
 		DetermineBatchKey,
 		exec.executeBatch,
@@ -53,7 +53,7 @@ func NewClient(
 
 // BeginCreateWithFleet submits a single NodeClaim request into the fleet batching system.
 // Returns when the batch fires and the caller's VM is assigned (or an error occurs).
-func (c *Client) BeginCreateWithFleet(ctx context.Context, req FleetCreateRequest) FleetBatchResponse {
+func (c *Client) BeginCreateWithFleet(ctx context.Context, req FleetVMProvisionRequest) FleetBatchResponse {
 	// TODO: enqueue into c.b, wait on response channel, return response
 	return FleetBatchResponse{}
 }

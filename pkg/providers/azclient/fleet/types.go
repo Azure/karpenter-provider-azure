@@ -44,8 +44,8 @@ type VMAPI interface {
 	BeginDelete(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientBeginDeleteOptions) (*runtime.Poller[armcompute.VirtualMachinesClientDeleteResponse], error)
 }
 
-// FleetCreateRequest represents a single NodeClaim's request to be batched into a Fleet.
-type FleetCreateRequest struct {
+// FleetVMProvisionRequest represents a single NodeClaim's request to provision a VM via the Fleet batcher.
+type FleetVMProvisionRequest struct {
 	NodeClaimName       string
 	CapacityType        string
 	AcceptableSKUs      []string

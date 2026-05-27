@@ -75,7 +75,7 @@ func NewFleetProvider(
 }
 
 // BeginCreate starts fleet-based instance creation for a NodeClaim.
-// It resolves the launch template, builds the FleetCreateRequest, and submits to the batch client.
+// It resolves the launch template, builds the FleetVMProvisionRequest, and submits to the batch client.
 func (p *DefaultFleetProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -86,7 +86,7 @@ func (p *DefaultFleetProvider) BeginCreate(
 	// 1. Resolve launch template via launchTemplateProvider
 	// 2. Get LB backend pools via loadBalancerProvider
 	// 3. Get NSG via networkSecurityGroupProvider
-	// 4. Build FleetCreateRequest with all fields
+	// 4. Build FleetVMProvisionRequest with all fields
 	// 5. Call fleetBatchClient.BeginCreateWithFleet()
 	// 6. Return FleetMemberPromise from response.SharedState
 	return nil, fmt.Errorf("not implemented")
