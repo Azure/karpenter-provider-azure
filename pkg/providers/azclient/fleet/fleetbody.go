@@ -322,24 +322,11 @@ func extensionsToProfile(exts []*armcompute.VirtualMachineExtension) *armcompute
 
 // convertToScaleSetExtension converts a single armcompute.VirtualMachineExtension to the
 // armcomputefleet.VirtualMachineScaleSetExtension format.
-//
-// TODO(fleet-poc-mh-extensions-in-body): This is a minimal placeholder. The full conversion
-// (handling Settings, ProtectedSettings map[string]any) lands with that item.
 func convertToScaleSetExtension(ext *armcompute.VirtualMachineExtension) *armcomputefleet.VirtualMachineScaleSetExtension {
 	if ext == nil || ext.Properties == nil {
 		return &armcomputefleet.VirtualMachineScaleSetExtension{}
 	}
 	props := ext.Properties
-
-	// armcompute uses `any` for Settings/ProtectedSettings; armcomputefleet requires `map[string]any`.
-	var settings map[string]any
-	if m, ok := props.Settings.(map[string]any); ok {
-		settings = m
-	}
-	var protectedSettings map[string]any
-	if m, ok := props.ProtectedSettings.(map[string]any); ok {
-		protectedSettings = m
-	}
 
 	return &armcomputefleet.VirtualMachineScaleSetExtension{
 		Name: ext.Name,
@@ -348,9 +335,31 @@ func convertToScaleSetExtension(ext *armcompute.VirtualMachineExtension) *armcom
 			Type:                    props.Type,
 			TypeHandlerVersion:      props.TypeHandlerVersion,
 			AutoUpgradeMinorVersion: props.AutoUpgradeMinorVersion,
-			Settings:                settings,
-			ProtectedSettings:       protectedSettings,
+			Settings:                toMapStringAny(props.Settings),
+			ProtectedSettings:       toMapStringAny(props.ProtectedSettings),
 		},
+	}
+}
+
+// toMapStringAny extracts a map[string]any from the armcompute Settings/ProtectedSettings field.
+// The SDK declares these as `any`; the actual runtime value may be:
+//   - map[string]any — direct JSON unmarshalling
+//   - *map[string]interface{} — the pattern used in extension constructors (getCSExtension, etc.)
+//   - nil — no settings
+func toMapStringAny(v any) map[string]any {
+	if v == nil {
+		return nil
+	}
+	switch m := v.(type) {
+	case map[string]any:
+		return m
+	case *map[string]interface{}:
+		if m == nil {
+			return nil
+		}
+		return *m
+	default:
+		return nil
 	}
 }
 

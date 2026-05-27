@@ -18,6 +18,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
@@ -52,8 +53,20 @@ func NewClient(
 }
 
 // BeginCreateWithFleet submits a single NodeClaim request into the fleet batching system.
-// Returns when the batch fires and the caller's VM is assigned (or an error occurs).
+// Blocks until the batch fires and the executor distributes a shared state (or an error occurs).
 func (c *Client) BeginCreateWithFleet(ctx context.Context, req FleetVMProvisionRequest) FleetBatchResponse {
-	// TODO: enqueue into c.b, wait on response channel, return response
-	return FleetBatchResponse{}
+	respChan, err := c.b.Enqueue(req)
+	if err != nil {
+		return FleetBatchResponse{Error: fmt.Errorf("enqueue failed: %w", err)}
+	}
+
+	select {
+	case <-ctx.Done():
+		return FleetBatchResponse{Error: ctx.Err()}
+	case resp := <-respChan:
+		if resp.Err != nil {
+			return FleetBatchResponse{Error: resp.Err}
+		}
+		return resp.Payload
+	}
 }

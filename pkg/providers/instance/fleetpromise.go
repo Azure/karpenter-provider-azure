@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -47,18 +48,43 @@ var _ Promise = (*FleetMemberPromise)(nil)
 // Wait blocks until the fleet batch completes and a VM is assigned to this NodeClaim.
 // Returns InsufficientCapacityError if no VM was assigned.
 func (p *FleetMemberPromise) Wait() error {
-	// TODO:
-	// 1. Call sharedState.waitForCompletion() (sync.Once ensures batch fires only once)
-	// 2. Look up assignment for p.nodeClaimName in sharedState.assignments
-	// 3. If assigned: populate p.VM, p.InstanceType, p.Zone, p.ProviderID
-	// 4. If not assigned: return cloudprovider.NewInsufficientCapacityError(...)
+	// TODO(fleet-poc-mh-cloudprovider-create): pass real ctx from caller
+	p.sharedState.ExecuteSharedPoll(context.TODO())
+
+	if err := p.sharedState.GetError(); err != nil {
+		return err
+	}
+
+	assignment := p.sharedState.GetAssignment(p.nodeClaimName)
+	if assignment == nil {
+		return cloudprovider.NewInsufficientCapacityError(
+			fmt.Errorf("no VM assigned for NodeClaim %s in fleet %s", p.nodeClaimName, p.fleetName))
+	}
+
+	p.VM = assignment.VM
+	p.InstanceType = assignment.InstanceType
+	p.Zone = assignment.Zone
+	if p.VM != nil && p.VM.ID != nil {
+		p.ProviderID = *p.VM.ID
+	}
 	return nil
 }
 
 // Cleanup deletes the assigned VM if one exists. No-op if Wait() wasn't called or no VM was assigned.
 func (p *FleetMemberPromise) Cleanup(ctx context.Context) error {
-	// TODO: if p.VM != nil, call vmClient.BeginDelete for the assigned VM
-	return nil
+	if p.VM == nil || p.VM.Name == nil {
+		return nil
+	}
+	vmClient := p.sharedState.GetVMClient()
+	if vmClient == nil {
+		return nil
+	}
+	poller, err := vmClient.BeginDelete(ctx, p.sharedState.GetResourceGroup(), *p.VM.Name, nil)
+	if err != nil {
+		return fmt.Errorf("cleanup VM %s: %w", *p.VM.Name, err)
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
 }
 
 // GetInstanceName returns the assigned VM name, or empty string if not yet assigned.

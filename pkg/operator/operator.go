@@ -306,7 +306,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 			options.FromContext(ctx).NodeResourceGroup,
 			azConfig.SubscriptionID,
 			options.FromContext(ctx).DiskEncryptionSetID,
-		)
+				0, // maxCandidateSKUs: 0 → uses default (10)
+			)
 	}
 
 	return ctx, &Operator{

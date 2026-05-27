@@ -437,7 +437,6 @@ func TestBuildFleetBody_NoExtensions_NoExtensionProfile(t *testing.T) {
 // This test validates the structural conversion; correctness of individual extension field
 // mapping is the responsibility of fleet-poc-mh-extensions-in-body's tests.
 func TestBuildFleetBody_WithExtensions_ConvertedAndAttached(t *testing.T) {
-	t.Skip("blocked on fleet-poc-mh-extensions-in-body — full conversion correctness tested there")
 
 	fields := defaultFields()
 	exts := []*armcompute.VirtualMachineExtension{
@@ -456,6 +455,38 @@ func TestBuildFleetBody_WithExtensions_ConvertedAndAttached(t *testing.T) {
 
 	require.NotNil(t, fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.ExtensionProfile)
 	assert.Len(t, fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.ExtensionProfile.Extensions, 1)
+}
+
+// TestBuildFleetBody_WithExtensions_PointerToMap verifies conversion of *map[string]interface{} settings
+// which is the pattern used by the real extension constructors (getCSExtension, buildCSExtensionForFleet).
+func TestBuildFleetBody_WithExtensions_PointerToMap(t *testing.T) {
+	fields := defaultFields()
+	exts := []*armcompute.VirtualMachineExtension{
+		{
+			Name: lo.ToPtr("cse-agent-karpenter"),
+			Properties: &armcompute.VirtualMachineExtensionProperties{
+				Publisher:               lo.ToPtr("Microsoft.Azure.Extensions"),
+				Type:                    lo.ToPtr("CustomScript"),
+				TypeHandlerVersion:      lo.ToPtr("2.0"),
+				AutoUpgradeMinorVersion: lo.ToPtr(true),
+				Settings:                &map[string]interface{}{},
+				ProtectedSettings: &map[string]interface{}{
+					"commandToExecute": "echo bootstrap",
+				},
+			},
+		},
+	}
+
+	f := BuildFleetBody(fields, 1, defaultTags(), nil, "eastus", nil, mkInstanceTypes("Standard_D4s_v3"), false, exts)
+
+	require.NotNil(t, f.Properties.ComputeProfile.BaseVirtualMachineProfile.ExtensionProfile)
+	ext := f.Properties.ComputeProfile.BaseVirtualMachineProfile.ExtensionProfile.Extensions[0]
+	assert.Equal(t, "cse-agent-karpenter", *ext.Name)
+	assert.Equal(t, "Microsoft.Azure.Extensions", *ext.Properties.Publisher)
+	assert.Equal(t, "CustomScript", *ext.Properties.Type)
+	// ProtectedSettings should have been unwrapped from *map to map
+	require.NotNil(t, ext.Properties.ProtectedSettings)
+	assert.Equal(t, "echo bootstrap", ext.Properties.ProtectedSettings["commandToExecute"])
 }
 
 // TestBuildFleetBody_RoundTripMarshal verifies that the generated Fleet body can be

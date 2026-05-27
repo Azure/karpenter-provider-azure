@@ -255,12 +255,26 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 }
 
 func (c *CloudProvider) createFleetInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
-	// TODO:
-	// 1. Call c.fleetProvider.BeginCreate()
-	// 2. handleInstancePromise() for sync/async Wait()
-	// 3. Build NodeClaim from FleetMemberPromise fields (VM, InstanceType, Zone, ProviderID)
-	// 4. Propagate wellKnownLabels
-	return nil, fmt.Errorf("fleet mode not implemented")
+	fleetPromise, err := c.fleetProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+	if err != nil {
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating fleet instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+	}
+
+	if err := c.handleInstancePromise(ctx, fleetPromise, nodeClaim); err != nil {
+		return nil, err
+	}
+
+	vm := fleetPromise.VM
+	newNodeClaim, err := c.vmInstanceToNodeClaim(ctx, vm, fleetPromise.InstanceType)
+	if err != nil {
+		return nil, err
+	}
+	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
+
+	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
+		return nil, err
+	}
+	return newNodeClaim, nil
 }
 
 // handleInstancePromise handles the instance promise, primarily deciding on sync/async provisioning.

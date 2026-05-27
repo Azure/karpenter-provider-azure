@@ -18,6 +18,7 @@ package fleet
 
 import (
 	"context"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -62,6 +63,7 @@ type FleetVMProvisionRequest struct {
 	NSG                 string
 	LBBackendPools      []string
 	Location            string
+	Extensions          []*armcompute.VirtualMachineExtension
 }
 
 // FleetBatchResponse is the per-request response returned from the batcher.
@@ -72,10 +74,22 @@ type FleetBatchResponse struct {
 
 // FleetSharedState is shared across all promises in the same batch.
 // It stores the assignment results after the Fleet LRO completes.
+// The executor builds this struct and hands it to all FleetMemberPromises;
+// the first Wait() call triggers ExecuteSharedPoll via sync.Once.
 type FleetSharedState struct {
-	// TODO: fields:
-	//   once        sync.Once
-	//   assignments map[string]*FleetAssignment  // nodeClaimName → assignment
-	//   err         error
-	//   vmClient    VMAPI
+	once          sync.Once
+	assignments   map[string]*FleetAssignment // nodeClaimName → assignment
+	surplus       []*armcompute.VirtualMachine
+	err           error
+
+	// Inputs set by executor before handing to promises
+	requests      []*VMAssignmentRequest
+	instanceTypes map[string]*cloudprovider.InstanceType
+	vmClient      VMAPI
+	fleetName     string
+	resourceGroup string
+
+	// For POC: VMs injected at construction time (bypasses real ARG listing).
+	// The executor item (fleet-poc-mh-executor) will replace this with real VM listing.
+	injectedVMs []*armcompute.VirtualMachine
 }
