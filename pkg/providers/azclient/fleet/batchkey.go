@@ -16,6 +16,16 @@ limitations under the License.
 
 package fleet
 
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+)
+
 // BatchKeyFields contains all fields that determine batch grouping.
 // Requests with identical BatchKeyFields land in the same Fleet.
 type BatchKeyFields struct {
@@ -36,9 +46,72 @@ type BatchKeyFields struct {
 	Zones               []string // sorted alphabetically before hashing
 }
 
-// DetermineBatchKey computes a SHA-256 hash (truncated to 8 hex chars) over BatchKeyFields.
+// DetermineBatchKey computes a deterministic grouping key for a FleetCreateRequest.
+// Two requests batch into the same Fleet iff every field on BatchKeyFields matches.
+//
+// Per-VM fields (Tags, NodeClaimName) are intentionally excluded — otherwise every
+// NodeClaim would land in its own Fleet and batching would be a no-op.
+//
 // This is the batcher.DetermineBatchKey[FleetCreateRequest] implementation.
 func DetermineBatchKey(req *FleetCreateRequest) (string, error) {
-	// TODO: extract BatchKeyFields from req, sort SKUs/zones, compute SHA-256, return first 8 hex chars
-	return "", nil
+	if req == nil || req.NodeClaim == nil || req.NodeClass == nil || req.LaunchTemplate == nil {
+		return "", fmt.Errorf("nil request, nodeclaim, nodeclass, or launch template")
+	}
+
+	fields := BatchKeyFields{
+		NodePoolName:  req.NodeClaim.Labels[karpv1.NodePoolLabelKey],
+		CapacityType:  req.CapacityType,
+		ImageID:       req.LaunchTemplate.ImageID,
+		SubnetID:      req.LaunchTemplate.SubnetID,
+		SSHPublicKey:  req.SSHPublicKey,
+		AdminUsername: req.AdminUsername,
+		CustomData:    req.LaunchTemplate.ScriptlessCustomData,
+		OSDiskSizeGB:  int(req.LaunchTemplate.StorageProfileSizeGB),
+
+		// OSDiskType is sourced from StorageProfilePlacement (the DiffDiskPlacement enum:
+		// "CacheDisk" / "ResourceDisk" / "NvmeDisk", or "" when the disk is managed).
+		//
+		// This is the field that actually lands in the Fleet body's storageProfile, so the
+		// hash directly reflects "can these requests share one Fleet?".
+		//
+		// Alternatives considered and rejected:
+		//   (A) StorageProfileIsEphemeral bool — too coarse: two requests that both resolve
+		//       to ephemeral but with different placements (e.g. CacheDisk vs NvmeDisk)
+		//       would erroneously batch together; the Fleet body can only carry one
+		//       placement, so the second request would silently get the first's choice.
+		//   (C) Hash both IsEphemeral AND Placement — redundant. The boolean is derivable
+		//       from placement ("" == managed, non-empty == ephemeral).
+		OSDiskType: string(req.LaunchTemplate.StorageProfilePlacement),
+
+		EncryptionAtHost:    req.NodeClass.GetEncryptionAtHost(),
+		DiskEncryptionSetID: req.DiskEncryptionSetID,
+		NodeIdentities:      joinSorted(req.NodeIdentities),
+		NSG:                 req.NSG,
+		CandidateSKUs:       sortedCopy(req.AcceptableSKUs),
+		Zones:               sortedCopy(req.AcceptableZones),
+	}
+
+	blob, err := json.Marshal(fields)
+	if err != nil {
+		return "", fmt.Errorf("marshal batch key: %w", err)
+	}
+
+	sum := sha256.Sum256(blob)
+
+	// Prefix with nodepool + capacityType so logs/metrics can tell batches apart at a glance,
+	// mirroring the aksmachinesheaderbatch convention.
+	return fmt.Sprintf("%s/%s/%x", fields.NodePoolName, fields.CapacityType, sum[:8]), nil
+}
+
+func sortedCopy(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}
+
+func joinSorted(in []string) string {
+	return strings.Join(sortedCopy(in), ",")
 }
