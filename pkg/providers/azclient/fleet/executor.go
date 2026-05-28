@@ -21,12 +21,19 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
+)
+
+const (
+	// FleetNameTagKey is applied to all Fleet VMs so the executor can discover them after LRO.
+	FleetNameTagKey = "karpenter.azure.com_fleet-name"
 )
 
 // executor sends batches to the Azure Fleet API.
@@ -89,11 +96,18 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[FleetV
 
 	// 3. Build fleet body from the representative request (all requests in same batch
 	//    share the same template/image/subnet per batch key guarantee).
+	//    Inject fleet-name tag so we can discover the VMs after LRO.
 	fields := extractBatchKeyFields(representative)
+	fleetTags := make(map[string]*string, len(representative.Tags)+1)
+	for k, v := range representative.Tags {
+		fleetTags[k] = v
+	}
+	fleetTags[FleetNameTagKey] = lo.ToPtr(name)
+
 	fleetBody := BuildFleetBody(
 		fields,
 		int32(len(batch.Requests)),
-		representative.Tags,
+		fleetTags,
 		nil, // spotMaxPrice: nil → default -1 (up to on-demand price)
 		e.location,
 		representative.LBBackendPools,
@@ -112,7 +126,7 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[FleetV
 	}
 
 	// 5. Poll LRO to completion.
-	resp, err := poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		logger.Error(err, "fleet LRO poll failed")
 		e.distributeError(batch, fmt.Errorf("fleet LRO: %w", err))
@@ -120,11 +134,15 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[FleetV
 	}
 	logger.Info("fleet LRO completed")
 
-	// 6. List VMs in the fleet.
-	//    TODO(fleet-poc-mh-executor): Replace with real ARG query filtered by fleet tag.
-	//    For POC, we read the VMSS instances from the fleet response.
-	//    Placeholder: the shared state's injectedVMs will be set by the executor.
-	//    For now, we create shared state and let the promise's Wait() trigger poll.
+	// 6. List VMs created by this Fleet (identified by fleet-name tag).
+	vms, err := e.listFleetVMs(ctx, name)
+	if err != nil {
+		logger.Error(err, "failed to list fleet VMs")
+		e.distributeError(batch, fmt.Errorf("list fleet VMs: %w", err))
+		return
+	}
+	logger.Info("listed fleet VMs", "count", len(vms))
+
 	sharedState := NewFleetSharedState(
 		requests,
 		mergedInstanceTypes,
@@ -132,14 +150,7 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[FleetV
 		name,
 		e.resourceGroup,
 	)
-
-	// TODO(fleet-poc-mh-executor): List VMs via ARG and inject into shared state:
-	//   vms := e.listFleetVMs(ctx, name)
-	//   sharedState.SetVMs(vms)
-	// For now, shared state will have nil VMs — the promise Wait() will return
-	// "no VMs available" error. This is acceptable for the scaffolding item;
-	// the real VM listing is wired when the executor does ARG queries.
-	_ = resp
+	sharedState.SetVMs(vms)
 
 	// 7. Distribute shared state to all requests.
 	e.distributeSharedState(batch, sharedState)
@@ -197,4 +208,26 @@ func extractBatchKeyFields(req *FleetVMProvisionRequest) BatchKeyFields {
 		CandidateSKUs:       sortedCopy(req.AcceptableSKUs),
 		Zones:               sortedCopy(req.AcceptableZones),
 	}
+}
+
+// listFleetVMs lists all VMs in the resource group that carry the fleet-name tag
+// matching the given name. This discovers VMs created by the Fleet VMSS Flex.
+func (e *executor) listFleetVMs(ctx context.Context, name string) ([]*armcompute.VirtualMachine, error) {
+	pager := e.vmClient.NewListPager(e.resourceGroup, nil)
+	var vms []*armcompute.VirtualMachine
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing VMs page: %w", err)
+		}
+		for _, vm := range page.Value {
+			if vm == nil || vm.Tags == nil {
+				continue
+			}
+			if tagVal, ok := vm.Tags[FleetNameTagKey]; ok && tagVal != nil && *tagVal == name {
+				vms = append(vms, vm)
+			}
+		}
+	}
+	return vms, nil
 }

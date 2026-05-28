@@ -256,6 +256,26 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 	})
 }
 
+func (c *VirtualMachinesAPI) NewListPager(_ string, _ *armcompute.VirtualMachinesClientListOptions) *runtime.Pager[armcompute.VirtualMachinesClientListResponse] {
+	pagingHandler := runtime.PagingHandler[armcompute.VirtualMachinesClientListResponse]{
+		More: func(_ armcompute.VirtualMachinesClientListResponse) bool {
+			return false
+		},
+		Fetcher: func(_ context.Context, _ *armcompute.VirtualMachinesClientListResponse) (armcompute.VirtualMachinesClientListResponse, error) {
+			var vms []*armcompute.VirtualMachine
+			c.Instances.Range(func(_ string, vm armcompute.VirtualMachine) bool {
+				vmCopy := vm
+				vms = append(vms, &vmCopy)
+				return true
+			})
+			return armcompute.VirtualMachinesClientListResponse{
+				VirtualMachineListResult: armcompute.VirtualMachineListResult{Value: vms},
+			}, nil
+		},
+	}
+	return runtime.NewPager(pagingHandler)
+}
+
 func CreateSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }

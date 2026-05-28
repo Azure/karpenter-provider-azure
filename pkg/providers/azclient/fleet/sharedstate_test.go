@@ -68,6 +68,11 @@ func (m *mockVMAPI) BeginDelete(_ context.Context, _ string, vmName string, _ *a
 	return nil, nil
 }
 
+func (m *mockVMAPI) NewListPager(_ string, _ *armcompute.VirtualMachinesClientListOptions) *runtime.Pager[armcompute.VirtualMachinesClientListResponse] {
+	// Not used in shared state tests; executor tests use a separate mock.
+	return nil
+}
+
 // --- Tests ---
 
 // TestFleetSharedState_ExecuteOnce verifies sync.Once ensures executePoll runs exactly once

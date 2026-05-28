@@ -39,10 +39,11 @@ type FleetAPI interface {
 	NewListByResourceGroupPager(resourceGroupName string, options *armcomputefleet.FleetsClientListByResourceGroupOptions) *runtime.Pager[armcomputefleet.FleetsClientListByResourceGroupResponse]
 }
 
-// VMAPI abstracts the VM operations needed for tagging and deleting assigned VMs.
+// VMAPI abstracts the VM operations needed for listing, tagging, and deleting assigned VMs.
 type VMAPI interface {
 	BeginUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachineUpdate, options *armcompute.VirtualMachinesClientBeginUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientUpdateResponse], error)
 	BeginDelete(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientBeginDeleteOptions) (*runtime.Poller[armcompute.VirtualMachinesClientDeleteResponse], error)
+	NewListPager(resourceGroupName string, options *armcompute.VirtualMachinesClientListOptions) *runtime.Pager[armcompute.VirtualMachinesClientListResponse]
 }
 
 // FleetVMProvisionRequest represents a single NodeClaim's request to provision a VM via the Fleet batcher.

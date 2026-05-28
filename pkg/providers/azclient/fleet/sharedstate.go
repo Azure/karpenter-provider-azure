@@ -114,6 +114,7 @@ func (s *FleetSharedState) executePoll(ctx context.Context) {
 
 // tagAssignedVMs patches each assigned VM with the nodeclaim-name tag.
 // Tag failure is non-fatal: the VM is still delivered to the promise.
+// We merge the new tag into the VM's existing tags to avoid replacing them.
 func (s *FleetSharedState) tagAssignedVMs(ctx context.Context, assignments map[string]*FleetAssignment) {
 	if s.vmClient == nil {
 		return
@@ -122,10 +123,14 @@ func (s *FleetSharedState) tagAssignedVMs(ctx context.Context, assignments map[s
 		if a == nil || a.VM == nil || a.VM.Name == nil {
 			continue
 		}
-		mergeTags := map[string]*string{
-			"karpenter.azure.com_nodeclaim-name": lo.ToPtr(ncName),
+		// Merge: start with existing VM tags (inherited from Fleet), then add nodeclaim tag.
+		mergedTags := make(map[string]*string, len(a.VM.Tags)+1)
+		for k, v := range a.VM.Tags {
+			mergedTags[k] = v
 		}
-		update := armcompute.VirtualMachineUpdate{Tags: mergeTags}
+		mergedTags["karpenter.azure.com_nodeclaim-name"] = lo.ToPtr(ncName)
+
+		update := armcompute.VirtualMachineUpdate{Tags: mergedTags}
 		poller, err := s.vmClient.BeginUpdate(ctx, s.resourceGroup, *a.VM.Name, update, nil)
 		if err != nil {
 			log.FromContext(ctx).Error(err, "failed to tag VM", "vm", *a.VM.Name, "nodeclaim", ncName)
