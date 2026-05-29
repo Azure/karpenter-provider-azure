@@ -25,7 +25,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 var env *azure.Environment
@@ -50,6 +52,19 @@ var _ = BeforeEach(func() {
 	env.BeforeEach()
 	nodeClass = env.DefaultAKSNodeClass()
 	nodePool = env.DefaultNodePool(nodeClass)
+	// Workaround: the default AKSNodeClass image (Ubuntu 22.04 gen2) is Gen2-only,
+	// but the default "D" SKU family includes Gen1-only SKUs (e.g. Standard_D2_v3).
+	// Fleet's vmSizesProfile is built from the full AcceptableSKUs list without
+	// filtering by hypervisor generation, so ARM rejects the request with 400
+	// "cannot boot Hypervisor Generation '2'". LabelSKUHyperVGeneration is in
+	// v1beta1.RestrictedLabels (set BY karpenter on offerings, not user-selectable),
+	// so we restrict by LabelSKUVersion instead: for family "D", v4+ is Gen2-only.
+	// TODO: remove once the fleet provider filters SKUs against the resolved image.
+	nodePool = test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+		Key:      v1beta1.LabelSKUVersion,
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{"4", "5", "6"},
+	})
 })
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })

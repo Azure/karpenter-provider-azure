@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 // BuildFleetBody constructs the armcomputefleet.Fleet resource body for a BeginCreateOrUpdate call.
@@ -69,15 +70,21 @@ func BuildFleetBody(
 	return fleet
 }
 
-// buildZones converts sorted zone strings to the []*string shape required by the SDK.
-// Returns nil for an empty/nil zone slice (regional Fleet — no zone pinning).
-func buildZones(zones []string) []*string {
-	if len(zones) == 0 {
+// buildZones converts AKS-label zone strings (e.g. "southcentralus-1" or Regional "0")
+// to the bare ARM zone IDs (e.g. "1") required by the Azure Compute Fleet API.
+// Regional zones are dropped. Returns nil if no zonal zones remain (regional Fleet — no zone pinning).
+func buildZones(aksLabelZones []string) []*string {
+	if len(aksLabelZones) == 0 {
 		return nil
 	}
-	return lo.Map(zones, func(z string, _ int) *string {
-		return lo.ToPtr(z)
-	})
+	armZones := make([]*string, 0, len(aksLabelZones))
+	for _, z := range aksLabelZones {
+		armZones = append(armZones, zones.MakeARMZonesFromAKSLabelZone(z)...)
+	}
+	if len(armZones) == 0 {
+		return nil
+	}
+	return armZones
 }
 
 // buildIdentity constructs the ManagedServiceIdentity from the comma-joined NodeIdentities string.
@@ -244,6 +251,10 @@ func buildStorageProfile(fields BatchKeyFields, useSIG bool) *armcomputefleet.Vi
 	// Disk encryption set
 	if fields.DiskEncryptionSetID != "" {
 		osDisk.ManagedDisk = &armcomputefleet.VirtualMachineScaleSetManagedDiskParameters{
+			// StorageAccountType is required by ARM whenever ManagedDisk is set.
+			// ARM technically defaults to Standard_LRS, but the canonical SDK example
+			// and the AzureFleet reference templates set it explicitly. Be defensive.
+			StorageAccountType: lo.ToPtr(armcomputefleet.StorageAccountTypesStandardLRS),
 			DiskEncryptionSet: &armcomputefleet.DiskEncryptionSetParameters{
 				ID: lo.ToPtr(fields.DiskEncryptionSetID),
 			},
@@ -280,6 +291,11 @@ func buildNetworkProfile(subnetID, nsgID string, lbBackendPools []string, enable
 		nicProps.NetworkSecurityGroup = &armcomputefleet.SubResource{ID: lo.ToPtr(nsgID)}
 	}
 	return &armcomputefleet.VirtualMachineScaleSetNetworkProfile{
+		// NetworkAPIVersion is required by ARM whenever NetworkInterfaceConfigurations
+		// is used (VMSS Flexible orchestration). Without it Fleet returns
+		// 400 NetworkApiVersionMustBeSpecifiedWithNetworkInterfaceConfigurations.
+		// Today the only valid value is "2020-11-01".
+		NetworkAPIVersion: lo.ToPtr(armcomputefleet.NetworkAPIVersionV20201101),
 		NetworkInterfaceConfigurations: []*armcomputefleet.VirtualMachineScaleSetNetworkConfiguration{{
 			Name:       lo.ToPtr("nic"),
 			Properties: nicProps,

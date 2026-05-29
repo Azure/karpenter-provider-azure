@@ -82,9 +82,12 @@ func TestFleetSharedState_ExecuteOnce(t *testing.T) {
 
 	var execCount atomic.Int32
 	vmSize := armcompute.VirtualMachineSizeTypes("Standard_D4s_v3")
+	// Realistic ARM payload: numeric zone + region location. The matcher must
+	// convert these to AKS-label format ("westus-1") to match the request.
 	vm := &armcompute.VirtualMachine{
-		Name:  lo.ToPtr("vm-1"),
-		Zones: []*string{lo.ToPtr("westus-1")},
+		Name:     lo.ToPtr("vm-1"),
+		Location: lo.ToPtr("westus"),
+		Zones:    []*string{lo.ToPtr("1")},
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{VMSize: &vmSize},
 		},

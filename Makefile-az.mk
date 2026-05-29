@@ -41,6 +41,10 @@ ifneq ($(filter aksmachineapi aksmachineapiheaderbatch,$(PROVISION_MODE)),)
   $(info PROVISION_MODE is $(PROVISION_MODE) (AKS Machine API mode))
   AZ_ALL_PERMS += az-perm-aksmachine az-add-aksmachinespool
 endif
+ifeq ($(PROVISION_MODE),fleet)
+  $(info PROVISION_MODE is fleet (Azure Compute Fleet mode))
+  AZ_ALL_PERMS += az-perm-fleet
+endif
 
 # ---------------------------------------------
 # Local targets (intended for local users)
@@ -308,6 +312,11 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 az-perm-aksmachine: ## Create role assignments for AKS machine API operations
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP) --role "Azure Kubernetes Service Contributor Role"
+
+az-perm-fleet: ## Create role assignments for Azure Compute Fleet (Microsoft.AzureFleet) operations
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))
+	az provider register --namespace Microsoft.AzureFleet --wait
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Compute Fleet Contributor"
 
 az-perm-sig: ## Create role assignments when testing with SIG images
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' --output tsv))

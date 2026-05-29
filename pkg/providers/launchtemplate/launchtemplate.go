@@ -230,7 +230,7 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 		}
 		template.CustomScriptsCustomData = customData
 		template.CustomScriptsCSE = cse
-	case consts.ProvisionModeAKSScriptless:
+	case consts.ProvisionModeAKSScriptless, consts.ProvisionModeFleet:
 		// render user data
 		userData, err := params.ScriptlessCustomData.Script()
 		if err != nil {

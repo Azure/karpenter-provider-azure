@@ -260,6 +260,19 @@ func (c *CloudProvider) createFleetInstance(ctx context.Context, nodeClass *v1be
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating fleet instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
+	// Bug #7: FleetMemberPromise.VM is populated lazily inside Wait() — the LRO + VM-to-NodeClaim
+	// assignment must complete first (see fleetpromise.go). Unlike VirtualMachinePromise (where
+	// .VM is pre-populated synchronously by BeginCreate), reading fleetPromise.VM before Wait()
+	// returns nil and crashes vmInstanceToNodeClaim. We therefore gate on Wait() here.
+	//
+	// The shared poll is internally guarded by sync.Once, so the async goroutine spawned by
+	// handleInstancePromise for NodePool-managed claims re-uses the cached LRO result without
+	// re-issuing the fleet PUT.
+	if waitErr := fleetPromise.Wait(); waitErr != nil {
+		c.handleInstancePromiseWaitError(ctx, fleetPromise, nodeClaim, waitErr)
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating fleet instance failed, %w", waitErr), CreateInstanceFailedReason, truncateMessage(waitErr.Error()))
+	}
+
 	if err := c.handleInstancePromise(ctx, fleetPromise, nodeClaim); err != nil {
 		return nil, err
 	}
@@ -654,6 +667,14 @@ func (c *CloudProvider) resolveNodePoolFromVMInstance(ctx context.Context, vm *a
 }
 
 func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	// Bug #7 defense-in-depth: callers MUST hand us a non-nil vm. Pre-Bug-#7,
+	// createFleetInstance read FleetMemberPromise.VM before Wait() populated it,
+	// passing nil here and crashing on *vm.Name below. Surface a clear error
+	// instead of an opaque nil-pointer panic so any future regression is obvious
+	// in the controller logs.
+	if vm == nil {
+		return nil, fmt.Errorf("vmInstanceToNodeClaim: vm is nil (caller did not wait for Promise.Wait() to populate it)")
+	}
 	nodeClaim := &karpv1.NodeClaim{}
 	labels := map[string]string{}
 	annotations := map[string]string{}

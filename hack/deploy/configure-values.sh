@@ -19,8 +19,8 @@ PROVISION_MODE=${6:-}
 AKS_MACHINES_POOL_NAME=${7:-testmpool}
 
 # Validate PROVISION_MODE
-if [[ -n "$PROVISION_MODE" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" && "$PROVISION_MODE" != "bootstrappingclient" && "$PROVISION_MODE" != "aksscriptless" ]]; then
-    echo "Error: Invalid provision-mode '$PROVISION_MODE'. Must be one of: aksmachineapi, aksmachineapiheaderbatch, bootstrappingclient, aksscriptless, or empty"
+if [[ -n "$PROVISION_MODE" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" && "$PROVISION_MODE" != "bootstrappingclient" && "$PROVISION_MODE" != "aksscriptless" && "$PROVISION_MODE" != "fleet" ]]; then
+    echo "Error: Invalid provision-mode '$PROVISION_MODE'. Must be one of: aksmachineapi, aksmachineapiheaderbatch, bootstrappingclient, aksscriptless, fleet, or empty"
     exit 1
 fi
 

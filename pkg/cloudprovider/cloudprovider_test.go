@@ -168,3 +168,32 @@ func TestVmInstanceToNodeClaim_PlacementScope(t *testing.T) {
 		})
 	}
 }
+
+// TestVmInstanceToNodeClaim_NilVM_ReturnsErrorNotPanic is the regression test for Bug #7.
+//
+// Pre-fix: createFleetInstance read FleetMemberPromise.VM before Promise.Wait() had
+// populated it (the LRO + assignment runs inside Wait), then passed the nil VM to
+// vmInstanceToNodeClaim. Inside vmInstanceToNodeClaim, the line
+// `log.FromContext(ctx).Info(..., "vmName", *vm.Name, ...)` dereferenced the nil
+// pointer, panicking the controller every 60s for every fleet-provisioned NodeClaim.
+//
+// The fix has two layers:
+//   (1) createFleetInstance now calls fleetPromise.Wait() synchronously before
+//       reading .VM (cloudprovider.go in createFleetInstance).
+//   (2) This defensive nil-check turns any future regression into a clean error
+//       (logged once per reconcile) instead of a runtime panic that floods the logs.
+//
+// This test locks down layer (2). If anyone removes the nil-check, this test fails.
+func TestVmInstanceToNodeClaim_NilVM_ReturnsErrorNotPanic(t *testing.T) {
+	g := NewWithT(t)
+	cp := &CloudProvider{}
+
+	// Must NOT panic on nil vm; must return a descriptive error.
+	g.Expect(func() {
+		nodeClaim, err := cp.vmInstanceToNodeClaim(context.Background(), nil, nil)
+		g.Expect(err).To(HaveOccurred(), "Bug #7: nil vm must yield a clean error, not panic")
+		g.Expect(err.Error()).To(ContainSubstring("vm is nil"))
+		g.Expect(err.Error()).To(ContainSubstring("Promise.Wait()"))
+		g.Expect(nodeClaim).To(BeNil())
+	}).ToNot(Panic())
+}

@@ -243,6 +243,11 @@ func TestBuildFleetBody_NetworkProfile_Basic(t *testing.T) {
 
 	np := fleet.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile
 	require.NotNil(t, np)
+	// NetworkAPIVersion must be set when NetworkInterfaceConfigurations is used —
+	// ARM rejects the request with NetworkApiVersionMustBeSpecifiedWithNetworkInterfaceConfigurations
+	// (VMSS Flexible orchestration requirement).
+	require.NotNil(t, np.NetworkAPIVersion, "NetworkAPIVersion must be set when NetworkInterfaceConfigurations is used")
+	assert.Equal(t, armcomputefleet.NetworkAPIVersionV20201101, *np.NetworkAPIVersion)
 	require.Len(t, np.NetworkInterfaceConfigurations, 1)
 	nic := np.NetworkInterfaceConfigurations[0]
 	assert.Equal(t, lo.ToPtr("nic"), nic.Name)
@@ -378,6 +383,10 @@ func TestBuildFleetBody_OSDisk_EncryptionSet(t *testing.T) {
 	require.NotNil(t, osDisk.ManagedDisk)
 	require.NotNil(t, osDisk.ManagedDisk.DiskEncryptionSet)
 	assert.Equal(t, fields.DiskEncryptionSetID, *osDisk.ManagedDisk.DiskEncryptionSet.ID)
+	// StorageAccountType must be set whenever ManagedDisk is — ARM defaults Standard_LRS
+	// but the canonical SDK example and reference templates set it explicitly. Be defensive.
+	require.NotNil(t, osDisk.ManagedDisk.StorageAccountType, "StorageAccountType must be set on ManagedDisk")
+	assert.Equal(t, armcomputefleet.StorageAccountTypesStandardLRS, *osDisk.ManagedDisk.StorageAccountType)
 }
 
 // TestBuildFleetBody_Capacity verifies that targetCapacity is correctly mapped to the
@@ -393,10 +402,12 @@ func TestBuildFleetBody_Capacity(t *testing.T) {
 }
 
 // TestBuildFleetBody_LocationAndZones verifies that Location and Zones are populated
-// correctly on the Fleet body. Zones order is preserved (already sorted by batchkey).
+// correctly on the Fleet body. Input zones are in AKS-label format ("<region>-<zone-id>")
+// and are converted to the bare ARM zone IDs ("<zone-id>") required by the Fleet API.
+// Zones order is preserved (already sorted by batchkey).
 func TestBuildFleetBody_LocationAndZones(t *testing.T) {
 	fields := defaultFields()
-	fields.Zones = []string{"1", "2", "3"}
+	fields.Zones = []string{"westus2-1", "westus2-2", "westus2-3"}
 
 	fleet := BuildFleetBody(fields, 1, defaultTags(), nil, "westus2", nil, mkInstanceTypes("Standard_D4s_v3", "Standard_D8s_v3"), true, nil)
 
@@ -405,6 +416,18 @@ func TestBuildFleetBody_LocationAndZones(t *testing.T) {
 	assert.Equal(t, "1", *fleet.Zones[0])
 	assert.Equal(t, "2", *fleet.Zones[1])
 	assert.Equal(t, "3", *fleet.Zones[2])
+}
+
+// TestBuildFleetBody_RegionalZoneIsDropped verifies that the Regional placeholder ("0")
+// is filtered out before sending zones to the Fleet API (the API rejects "0" as invalid).
+// When only Regional is present, Zones must be nil so Fleet creates a regional (non-zonal) deployment.
+func TestBuildFleetBody_RegionalZoneIsDropped(t *testing.T) {
+	fields := defaultFields()
+	fields.Zones = []string{"0"}
+
+	fleet := BuildFleetBody(fields, 1, defaultTags(), nil, "westus2", nil, mkInstanceTypes("Standard_D4s_v3", "Standard_D8s_v3"), true, nil)
+
+	assert.Nil(t, fleet.Zones, "Regional ('0') zone should be dropped, resulting in a regional Fleet")
 }
 
 // TestBuildFleetBody_UnknownCapacityType_DefaultsToRegular verifies that an unrecognized
@@ -547,7 +570,9 @@ func TestBuildFleetBody_RoundTripMarshal(t *testing.T) {
 	assert.Equal(t, true, *roundTripped.Properties.ComputeProfile.BaseVirtualMachineProfile.SecurityProfile.EncryptionAtHost)
 
 	// Network — LB pools
-	rtIPConfig := roundTripped.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile.
-		NetworkInterfaceConfigurations[0].Properties.IPConfigurations[0]
+	rtNP := roundTripped.Properties.ComputeProfile.BaseVirtualMachineProfile.NetworkProfile
+	require.NotNil(t, rtNP.NetworkAPIVersion, "NetworkAPIVersion must survive JSON round-trip")
+	assert.Equal(t, armcomputefleet.NetworkAPIVersionV20201101, *rtNP.NetworkAPIVersion)
+	rtIPConfig := rtNP.NetworkInterfaceConfigurations[0].Properties.IPConfigurations[0]
 	require.Len(t, rtIPConfig.Properties.LoadBalancerBackendAddressPools, 1)
 }

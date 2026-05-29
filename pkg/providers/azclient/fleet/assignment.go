@@ -18,10 +18,10 @@ package fleet
 
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	"github.com/samber/lo"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 // FleetAssignment represents a VM assigned to a specific NodeClaim.
@@ -126,8 +126,16 @@ func popMatch(buckets map[skuZoneKey][]*armcompute.VirtualMachine, req *VMAssign
 	return nil, "", "", false
 }
 
-// skuAndZone extracts the SKU string and zone from a Fleet-created VM.
-// Returns ok=false if any required field is missing.
+// skuAndZone extracts the SKU string and AKS-label zone from a Fleet-created VM.
+// The returned zone is in AKS-label format (e.g. "southcentralus-3" or "0" for
+// regional) so it can be compared against VMAssignmentRequest.AcceptableZones,
+// which the scheduler populates from corev1.LabelTopologyZone (also AKS-label format).
+//
+// IMPORTANT: ARM returns vm.Zones as numeric strings ("1", "2", "3") and a separate
+// vm.Location. Using vm.Zones[0] directly would never match the request's AKS-label
+// zones — every VM would be routed to surplus and deleted (see Bug #6 in the plan).
+//
+// Returns ok=false if any required field is missing or zone conversion fails.
 func skuAndZone(vm *armcompute.VirtualMachine) (string, string, bool) {
 	if vm == nil || vm.Properties == nil ||
 		vm.Properties.HardwareProfile == nil ||
@@ -135,9 +143,10 @@ func skuAndZone(vm *armcompute.VirtualMachine) (string, string, bool) {
 		return "", "", false
 	}
 	sku := string(*vm.Properties.HardwareProfile.VMSize)
-	zone := ""
-	if len(vm.Zones) > 0 {
-		zone = lo.FromPtr(vm.Zones[0])
+	zone, err := zones.MakeAKSLabelZoneFromVM(vm)
+	if err != nil {
+		// Malformed (e.g. zonal VM with no Location, or multiple zones) — treat as surplus.
+		return "", "", false
 	}
 	return sku, zone, true
 }

@@ -18,6 +18,7 @@ package fleet
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -118,6 +119,13 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[FleetV
 
 	// 4. Call Fleet API BeginCreateOrUpdate.
 	logger.Info("submitting fleet create-or-update")
+	if v := logger.V(1); v.Enabled() {
+		if data, mErr := json.Marshal(fleetBody); mErr == nil {
+			v.Info("fleet request body", "fleetName", name, "json", string(data))
+		} else {
+			v.Info("fleet request body marshal failed", "error", mErr.Error())
+		}
+	}
 	poller, err := e.fleetClient.BeginCreateOrUpdate(ctx, e.resourceGroup, name, *fleetBody, nil)
 	if err != nil {
 		logger.Error(err, "fleet BeginCreateOrUpdate failed")

@@ -1,0 +1,113 @@
+{
+  "identity": {
+    "type": "UserAssigned",
+    "userAssignedIdentities": {
+      "/sub/rg/id1": {},
+      "/sub/rg/id2": {}
+    }
+  },
+  "location": "eastus2",
+  "properties": {
+    "computeProfile": {
+      "baseVirtualMachineProfile": {
+        "networkProfile": {
+          "networkApiVersion": "2020-11-01",
+          "networkInterfaceConfigurations": [
+            {
+              "name": "nic",
+              "properties": {
+                "deleteOption": "Delete",
+                "enableAcceleratedNetworking": true,
+                "enableIPForwarding": false,
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "loadBalancerBackendAddressPools": [
+                        {
+                          "id": "/sub/rg/lb/pool1"
+                        }
+                      ],
+                      "primary": true,
+                      "subnet": {
+                        "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/sn"
+                      }
+                    }
+                  }
+                ],
+                "networkSecurityGroup": {
+                  "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg"
+                },
+                "primary": true
+              }
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "computerNamePrefix": "aks-",
+          "customData": "Y3VzdG9tZGF0YQ==",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "keyData": "ssh-rsa AAAA...",
+                  "path": "/home/azureuser/.ssh/authorized_keys"
+                }
+              ]
+            }
+          }
+        },
+        "securityProfile": {
+          "encryptionAtHost": true
+        },
+        "storageProfile": {
+          "imageReference": {
+            "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/i/versions/v"
+          },
+          "osDisk": {
+            "caching": "ReadOnly",
+            "createOption": "FromImage",
+            "diffDiskSettings": {
+              "option": "Local",
+              "placement": "CacheDisk"
+            },
+            "diskSizeGB": 128,
+            "managedDisk": {
+              "diskEncryptionSet": {
+                "id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/diskEncryptionSets/des"
+              },
+              "storageAccountType": "Standard_LRS"
+            },
+            "osType": "Linux"
+          }
+        }
+      }
+    },
+    "spotPriorityProfile": {
+      "allocationStrategy": "PriceCapacityOptimized",
+      "capacity": 5,
+      "evictionPolicy": "Delete",
+      "maintain": false,
+      "maxPricePerVM": 0.75
+    },
+    "vmSizesProfile": [
+      {
+        "name": "Standard_D4s_v3"
+      },
+      {
+        "name": "Standard_D8s_v3"
+      }
+    ]
+  },
+  "tags": {
+    "karpenter.azure.com_batch-key-hash": "abcdef0123456789",
+    "karpenter.azure.com_managed-by": "karpenter"
+  },
+  "zones": [
+    "1",
+    "2",
+    "3"
+  ]
+}

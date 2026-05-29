@@ -17,6 +17,7 @@ limitations under the License.
 package fleet
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -28,19 +29,40 @@ import (
 
 // --- Helper builders for assignment tests ---
 
-// mkVM creates a VM with the given SKU and zone for assignment testing.
-func mkVM(sku, zone string) *armcompute.VirtualMachine {
+// mkVM creates a VM with the given SKU and AKS-label zone for assignment testing.
+//
+// The function simulates a real Azure ARM VirtualMachine response: it splits the
+// AKS-label zone (e.g. "westus-1") into Location ("westus") and Zones (["1"]),
+// matching what ARM actually returns. This ensures the matcher's ARM→AKS-label
+// conversion (zones.MakeAKSLabelZoneFromVM) is exercised — without it, mocks
+// stored AKS-label format directly in vm.Zones and hid Bug #6.
+//
+// Pass "0" for a regional (non-zonal) VM (no Zones array, Location still set).
+// Pass "" to omit zones entirely (degenerate VM — used in some negative tests).
+func mkVM(sku, aksLabelZone string) *armcompute.VirtualMachine {
 	vmSize := armcompute.VirtualMachineSizeTypes(sku)
 	vm := &armcompute.VirtualMachine{
-		Name: lo.ToPtr("vm-" + sku + "-" + zone),
+		Name:     lo.ToPtr("vm-" + sku + "-" + aksLabelZone),
+		Location: lo.ToPtr("eastus"), // default; overridden below if zone encodes a region
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: &vmSize,
 			},
 		},
 	}
-	if zone != "" {
-		vm.Zones = []*string{lo.ToPtr(zone)}
+	switch {
+	case aksLabelZone == "":
+		// No zone info at all — leave Zones nil. (Negative-test scenario.)
+	case aksLabelZone == "0":
+		// Regional VM: AKS-label "0" → no Zones array. Location must still be set.
+	default:
+		// Split "westus-1" → location="westus", zoneNum="1"
+		idx := strings.LastIndex(aksLabelZone, "-")
+		if idx > 0 {
+			vm.Location = lo.ToPtr(aksLabelZone[:idx])
+			zoneNum := aksLabelZone[idx+1:]
+			vm.Zones = []*string{lo.ToPtr(zoneNum)}
+		}
 	}
 	return vm
 }
@@ -297,4 +319,69 @@ func TestAssign_VMsButNoRequests(t *testing.T) {
 	g.Expect(assigned).To(BeEmpty())
 	g.Expect(unmatched).To(BeEmpty())
 	g.Expect(surplus).To(HaveLen(2))
+}
+
+// TestAssign_ZoneFormatConversion_RawARMZoneFromAzure is the regression test for Bug #6.
+//
+// Real Azure VM list responses set vm.Zones to numeric ARM-zone strings ("1", "2", "3")
+// and vm.Location to the region (e.g. "southcentralus"). The scheduler populates
+// VMAssignmentRequest.AcceptableZones in AKS-label format ("southcentralus-3").
+//
+// Before the fix: skuAndZone returned the raw "3", which never matched the request's
+// "southcentralus-3" — every Fleet-created VM was routed to surplus and deleted by
+// karpenter's deleteSurplusVMs cleanup, causing every fleet e2e to time out.
+//
+// This test directly constructs the realistic ARM payload (bypassing mkVM) to ensure
+// no future test-helper refactor can re-hide the bug.
+func TestAssign_ZoneFormatConversion_RawARMZoneFromAzure(t *testing.T) {
+	g := NewWithT(t)
+
+	vmSize := armcompute.VirtualMachineSizeTypes("Standard_D2ls_v5")
+	// Realistic ARM response: numeric zone + region location (exactly what Azure returns).
+	armVM := &armcompute.VirtualMachine{
+		Name:     lo.ToPtr("fleet-vm-real"),
+		Location: lo.ToPtr("southcentralus"),
+		Zones:    []*string{lo.ToPtr("3")},
+		Properties: &armcompute.VirtualMachineProperties{
+			HardwareProfile: &armcompute.HardwareProfile{VMSize: &vmSize},
+		},
+	}
+	// Request uses AKS-label zone, as the scheduler always does.
+	requests := []*VMAssignmentRequest{
+		mkAssignReq("nc-1", []string{"Standard_D2ls_v5"}, []string{"southcentralus-3"}),
+	}
+
+	assigned, unmatched, surplus := AssignVMsToNodeClaims(requests, []*armcompute.VirtualMachine{armVM}, nil)
+
+	g.Expect(assigned).To(HaveLen(1), "VM must be assigned, not deleted as surplus")
+	g.Expect(assigned["nc-1"].Zone).To(Equal("southcentralus-3"))
+	g.Expect(unmatched).To(BeEmpty())
+	g.Expect(surplus).To(BeEmpty(), "Bug #6: VM was previously routed to surplus → karpenter deleted it")
+}
+
+// TestAssign_ZoneFormatConversion_RegionalVM verifies that a regional ARM VM
+// (vm.Zones empty/nil) matches a request whose AcceptableZones contains the
+// AKS Regional sentinel "0".
+func TestAssign_ZoneFormatConversion_RegionalVM(t *testing.T) {
+	g := NewWithT(t)
+
+	vmSize := armcompute.VirtualMachineSizeTypes("Standard_D2s_v3")
+	armVM := &armcompute.VirtualMachine{
+		Name:     lo.ToPtr("fleet-vm-regional"),
+		Location: lo.ToPtr("southcentralus"),
+		// Zones: nil — regional VM, no zone assignment
+		Properties: &armcompute.VirtualMachineProperties{
+			HardwareProfile: &armcompute.HardwareProfile{VMSize: &vmSize},
+		},
+	}
+	requests := []*VMAssignmentRequest{
+		mkAssignReq("nc-regional", []string{"Standard_D2s_v3"}, []string{"0"}),
+	}
+
+	assigned, unmatched, surplus := AssignVMsToNodeClaims(requests, []*armcompute.VirtualMachine{armVM}, nil)
+
+	g.Expect(assigned).To(HaveLen(1))
+	g.Expect(assigned["nc-regional"].Zone).To(Equal("0"))
+	g.Expect(unmatched).To(BeEmpty())
+	g.Expect(surplus).To(BeEmpty())
 }

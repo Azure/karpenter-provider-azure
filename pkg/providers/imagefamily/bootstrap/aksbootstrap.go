@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/blang/semver/v4"
@@ -324,9 +325,11 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.VirtualNetworkResourceGroup = subnetParts.ResourceGroupName
 	nbv.VirtualNetwork = subnetParts.VNetName
 
-	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
-		return fmt.Sprintf("%s=%s", k, v)
-	}), ",")
+	// Stringify labels deterministically. Map iteration order in Go is randomized, so MapToSlice
+	// produces a different ordering on every call; without sorting, the rendered customData
+	// (and therefore its hash) would differ between identical NodeClaims and break Fleet
+	// batching, which relies on byte-identical customData across requests.
+	nbv.KubeletNodeLabels = strings.Join(sortedKVStrings(kubeletLabels, "="), ",")
 
 	// Assign Per K8s version kubelet flags
 	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
@@ -362,10 +365,8 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nodeclaimKubeletConfig := kubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
 
-	// stringify kubelet flags (including taints)
-	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
-		return fmt.Sprintf("%s=%s", k, v)
-	}), " ")
+	// stringify kubelet flags (including taints) — sorted for determinism (see comment above on KubeletNodeLabels).
+	nbv.KubeletFlags = strings.Join(sortedKVStrings(kubeletFlags, "="), " ")
 }
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
@@ -382,6 +383,18 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 		return "", fmt.Errorf("error executing custom data template: %w", err)
 	}
 	return buffer.String(), nil
+}
+
+// sortedKVStrings serializes a string map as a deterministically-ordered list of "k<sep>v"
+// strings (sorted lexicographically). Use this whenever the rendered string is embedded into
+// content that must be byte-identical across calls — e.g. cloud-init / customData — because
+// Go map iteration order is randomized and `lo.MapToSlice` on its own is not stable.
+func sortedKVStrings(m map[string]string, sep string) []string {
+	out := lo.MapToSlice(m, func(k, v string) string {
+		return fmt.Sprintf("%s%s%s", k, sep, v)
+	})
+	sort.Strings(out)
+	return out
 }
 
 //nolint:gocyclo
@@ -437,8 +450,10 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	return args
 }
 
-// joinParameterArgsToMap joins a map of keys and values by their separator. The separator will sit between the
-// arguments in a comma-separated list i.e. arg1<sep>val1,arg2<sep>val2
+// JoinParameterArgsToMap joins a map of keys and values by their separator. The separator will sit between the
+// arguments in a comma-separated list i.e. arg1<sep>val1,arg2<sep>val2. Output is sorted lexicographically so the
+// rendered string is deterministic across calls (Go map iteration is randomized) — required for stable Fleet batch
+// keys whose hash includes ScriptlessCustomData.
 func JoinParameterArgsToMap[K comparable, V any](result map[string]string, name string, m map[K]V, separator string) {
 	var args []string
 
@@ -446,6 +461,7 @@ func JoinParameterArgsToMap[K comparable, V any](result map[string]string, name 
 		args = append(args, fmt.Sprintf("%v%s%v", k, separator, v))
 	}
 	if len(args) > 0 {
+		sort.Strings(args)
 		result[name] = strings.Join(args, ",")
 	}
 }
