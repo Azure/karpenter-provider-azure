@@ -41,6 +41,14 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+type UltraSSD struct {
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+func (u *UltraSSD) IsEnabled() bool {
+	return u != nil && u.Enabled != nil && *u.Enabled
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -116,6 +124,9 @@ type AKSNodeClassSpec struct {
 	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 	// +optional
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
+	// ultraSSD enables Ultra SSD for the provisioned nodes.
+	// +optional
+	UltraSSD *UltraSSD `json:"ultraSSD,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
