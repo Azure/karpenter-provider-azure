@@ -7,6 +7,7 @@ on:
     # Only release on supported semantic version tagging e.g. v0.0.1-rc.0
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-[0-9]+' # Patch to an old version (when we can't use v[0-9]+.[0-9]+.[0-9]+ due to next patch release already existing)
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
