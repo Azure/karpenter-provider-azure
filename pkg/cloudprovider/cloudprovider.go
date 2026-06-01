@@ -74,6 +74,7 @@ const (
 	NodeClassReadinessUnknownReason    = "NodeClassReadinessUnknown"
 	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
 	CreateInstanceFailedReason         = "CreateInstanceFailed"
+	aksConditionPreemptionScheduled    = "kubernetes.azure.com/PreemptionScheduled"
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
@@ -549,7 +550,7 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 		// is ~30s, so toleration is 0 — we want to start the replacement immediately
 		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
 		{
-			ConditionType:      corev1.NodeConditionType(v1beta1.AKSConditionSpotEvictionIncoming),
+			ConditionType:      aksConditionPreemptionScheduled,
 			ConditionStatus:    corev1.ConditionTrue,
 			TolerationDuration: 0,
 		},
