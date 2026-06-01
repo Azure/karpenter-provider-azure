@@ -768,6 +768,12 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              ultraSSD:
+                description: ultraSSD enables Ultra SSD for the provisioned nodes.
+                properties:
+                  enabled:
+                    type: boolean
+                type: object
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -1668,6 +1674,12 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              ultraSSD:
+                description: ultraSSD enables Ultra SSD for the provisioned nodes.
+                properties:
+                  enabled:
+                    type: boolean
+                type: object
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
