@@ -153,4 +153,4 @@ Update AKS machine template creation so Ultra SSD-enabled node classes set `aksM
 ## References
 
 - AKS Ultra Disks documentation: https://learn.microsoft.com/en-us/azure/aks/use-ultra-disks
-- Related label and feature-toggle guidance in [designs/0006-requirements-and-labels.md](/Users/pablotrivino/go/src/aks/karpenter-provider-azure/designs/0006-requirements-and-labels.md)
+
