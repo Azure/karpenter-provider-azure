@@ -128,7 +128,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Hardware: &armcontainerservice.MachineHardwareProfile{
 				VMSize: lo.ToPtr(instanceType.Name),
 				// GPUInstanceProfile: nil,
-				GpuProfile: gpuProfile,
+				GpuProfile:      gpuProfile,
+				UltraSsdEnabled: lo.ToPtr(nodeClass.IsUltraSSDEnabled()),
 			},
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),

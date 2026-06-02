@@ -551,6 +551,7 @@ type createVMOptions struct {
 	UseSIG              bool
 	DiskEncryptionSetID string
 	NodePoolName        string
+	UltraSsdEnabled     bool
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -605,6 +606,9 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 				},
 			},
 			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
+			AdditionalCapabilities: &armcompute.AdditionalCapabilities{
+				UltraSSDEnabled: &opts.UltraSsdEnabled,
+			},
 		},
 		Zones: zones.MakeARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
@@ -819,6 +823,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		UseSIG:              options.FromContext(ctx).UseSIG,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
+		UltraSsdEnabled:     nodeClass.IsUltraSSDEnabled(),
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
