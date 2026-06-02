@@ -126,7 +126,7 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%s-%t",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%s-%t-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -137,6 +137,7 @@ func (p *DefaultProvider) List(
 		nodeClass.IsLocalDNSEnabled(),
 		string(nodeClass.GetGPUMode()),
 		nodeClass.IsArtifactStreamingExplicitlyEnabled(),
+		nodeClass.IsUltraSSDEnabled(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -163,7 +164,7 @@ func (p *DefaultProvider) List(
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
 		// !!! Important !!!
-		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones, nodeClass.IsUltraSSDEnabled()), nodeClass, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -227,9 +228,13 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string], isUltraSSDEnabled bool) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range offeringZones {
+		if isUltraSSDEnabled && !sku.IsUltraSSDAvailableInAvailabilityZone(zone) {
+			continue
+		}
+
 		placementScope := zones.PlacementScopeForZone(zone)
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)

@@ -806,3 +806,7 @@ func (in *AKSNodeClass) GetGPUMode() GPUMode {
 func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
 	return in.GetGPUMode() != GPUModeNone
 }
+
+func (in *AKSNodeClass) IsUltraSSDEnabled() bool {
+	return in.Spec.UltraSSD != nil && *in.Spec.UltraSSD.Enabled
+}
