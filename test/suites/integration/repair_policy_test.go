@@ -96,7 +96,7 @@ var _ = Describe("Repair Policy", func() {
 			LastTransitionTime: metav1.Time{Time: time.Now()},
 		}),
 		Entry("Preemption Scheduled", corev1.NodeCondition{
-			Type:               corev1.NodeConditionType("kubernetes.azure.com/PreemptionScheduled"),
+			Type:               corev1.NodeConditionType("PreemptionScheduled"),
 			Status:             corev1.ConditionTrue,
 			LastTransitionTime: metav1.Time{Time: time.Now()},
 		}),
