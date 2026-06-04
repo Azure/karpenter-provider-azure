@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"sync"
 
 	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
@@ -50,7 +50,7 @@ type VirtualMachineExtensionUpdateInput struct {
 type VirtualMachineExtensionsBehavior struct {
 	VirtualMachineExtensionsCreateOrUpdateBehavior MockedLRO[VirtualMachineExtensionCreateOrUpdateInput, armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse]
 	VirtualMachineExtensionsUpdateBehavior         MockedLRO[VirtualMachineExtensionUpdateInput, armcompute.VirtualMachineExtensionsClientUpdateResponse]
-	Extensions                                     sync.Map
+	Extensions                                     fakesync.Map[string, armcompute.VirtualMachineExtension]
 }
 
 // assert that ComputeAPI implements ARMComputeAPI
@@ -65,10 +65,7 @@ type VirtualMachineExtensionsAPI struct {
 func (c *VirtualMachineExtensionsAPI) Reset() {
 	c.VirtualMachineExtensionsCreateOrUpdateBehavior.Reset()
 	c.VirtualMachineExtensionsUpdateBehavior.Reset()
-	c.Extensions.Range(func(k, v any) bool {
-		c.Extensions.Delete(k)
-		return true
-	})
+	c.Extensions.Clear()
 }
 
 func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(
@@ -114,22 +111,20 @@ func (c *VirtualMachineExtensionsAPI) BeginUpdate(
 	}
 
 	return c.VirtualMachineExtensionsUpdateBehavior.Invoke(input, func(input *VirtualMachineExtensionUpdateInput) (*armcompute.VirtualMachineExtensionsClientUpdateResponse, error) {
-		result := input.VirtualMachineExtensionUpdate
-
 		id := MakeVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName)
 
 		instance, ok := c.Extensions.Load(id)
 		if !ok {
 			return nil, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 		}
-		ext := instance.(armcompute.VirtualMachineExtension)
+		ext := instance
 
 		if updates.Tags != nil {
 			// VM tags are full-replace if they're specified
 			ext.Tags = maps.Clone(updates.Tags)
 		}
 
-		c.Extensions.Store(input.VirtualMachineExtensionName, result)
+		c.Extensions.Store(input.VirtualMachineExtensionName, ext)
 		return &armcompute.VirtualMachineExtensionsClientUpdateResponse{
 			VirtualMachineExtension: ext,
 		}, nil

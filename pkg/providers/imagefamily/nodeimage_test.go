@@ -165,9 +165,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureLinux3{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
-
-			// Explicitly verify ARM64 image is NOT included in CIG (Community Image Gallery)
-			Expect(foundImages).ToNot(ContainElement(HaveField("ID", ContainSubstring("V3gen2arm64"))))
+			// Explicitly verify ARM64 image is included in CIG (Community Image Gallery) - was disabled in the past
+			Expect(foundImages).To(ContainElement(HaveField("ID", ContainSubstring(imagefamily.AzureLinux3Gen2ArmImageDefinition))))
 		})
 	})
 
@@ -376,10 +375,11 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(foundImages).To(Equal(expectedImages))
 
 				if k8sVersion.GE(semver.Version{Major: 1, Minor: 32}) && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
-					// Explicitly verify ARM64 image IS included in SIG (Shared Image Gallery)
+					// Explicitly verify ARM64 image is still included in SIG (Shared Image Gallery)
+					// - it was previously disabled and re-enabled for CIG (Community Image Gallery)
 					Expect(foundImages).To(ContainElement(And(
-						HaveField("ID", ContainSubstring("V3gen2arm64")),
-						Not(HaveField("ID", ContainSubstring("V3gen2arm64fips"))),
+						HaveField("ID", ContainSubstring(imagefamily.AzureLinux3Gen2ArmImageDefinition)),
+						Not(HaveField("ID", ContainSubstring(imagefamily.AzureLinux3Gen2Arm64FIPSImageDefinition))),
 					)))
 				}
 			},

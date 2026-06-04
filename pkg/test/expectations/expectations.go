@@ -83,7 +83,7 @@ func ExpectCSEProvisioned(env *test.Environment) armcompute.VirtualMachineExtens
 		GinkgoHelper()
 		cseRaw, ok := env.VirtualMachineExtensionsAPI.Extensions.Load("cse-agent-karpenter")
 		if ok {
-			cse = cseRaw.(armcompute.VirtualMachineExtension)
+			cse = cseRaw
 			return true
 		}
 		return false

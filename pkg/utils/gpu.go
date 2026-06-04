@@ -28,12 +28,12 @@ import (
 const (
 	Nvidia470CudaDriverVersion = "470.82.01"
 
-	// https://github.com/Azure/AgentBaker/blob/c0e684e5cecebcf61554cc7d2e2d2191972d35ed/parts/common/components.json#L797-L811
-	NvidiaCudaDriverVersion = "550.144.03"
-	AKSGPUCudaVersionSuffix = "20250328201547"
+	// https://github.com/Azure/AgentBaker/blob/12d432b5fea64a6cda718df6e1ab851211b49c74/parts/common/components.json#L740-L752
+	NvidiaCudaDriverVersion = "580.126.09"
+	AKSGPUCudaVersionSuffix = "20260126030251"
 
-	NvidiaGridDriverVersion = "550.144.06"
-	AKSGPUGridVersionSuffix = "20250512225043"
+	NvidiaGridDriverVersion = "570.211.01"
+	AKSGPUGridVersionSuffix = "20260522192315"
 )
 
 type GPUSKUInfo struct {

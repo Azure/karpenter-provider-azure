@@ -62,7 +62,7 @@ var _ = AfterSuite(func() {
 })
 
 var _ = BeforeEach(func() {
-	azureEnv.Reset()
+	azureEnv.Reset(ctx)
 })
 
 var _ = AfterEach(func() {

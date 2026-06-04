@@ -182,7 +182,7 @@ func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerser
 // If total length exceeds AKS machine name limit, the exceeded part will be replaced with another deterministic hash.
 // E.g., "thisisalongnodepoolname-a1b2c" --> "thisisalongnoz9y8x7-a1b2c"
 func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) (string, error) {
-	const maxAKSMachineNameLength = 35 // Defined by AKS machine API.
+	const maxAKSMachineNameLength = 34 // Defined by AKS machine API.
 	const prefixHashLength = 6         // The length of the hashed part replacing the exceeded part of the prefix.
 	// If 6, given alphanumeric hash, there will be a total of 36^6 = 2,176,782,336 combinations.
 

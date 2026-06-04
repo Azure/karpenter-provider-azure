@@ -31,7 +31,8 @@ import (
 
 var _ = Describe("Termination", func() {
 	It("should terminate the node and the instance on deletion", func() {
-		pod := test.Pod()
+		// Use a direct pod because the test deletes the workload before the node; a controller would recreate it.
+		pod := env.Pod(test.PodOptions{})
 		env.ExpectCreated(nodeClass, nodePool, pod)
 		env.EventuallyExpectHealthy(pod)
 		env.ExpectCreatedNodeCount("==", 1)

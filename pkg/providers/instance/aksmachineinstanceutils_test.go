@@ -257,7 +257,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should return the same name when at the length limit", func() {
-			nodeClaimName := "123456789-123456789-123456789-a1b2c"
+			nodeClaimName := "123456789-123456789-12345678-a1b2c"
 			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
@@ -265,18 +265,18 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should truncate and hash when at the length limit +1", func() {
-			nodeClaimName := "123456789-123456789-1234567890-a1b2c"
+			nodeClaimName := "123456789-123456789-123456789-a1b2c"
 			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(machineName).To(HaveLen(35))
+			Expect(machineName).To(HaveLen(34))
 			Expect(machineName).To(HaveSuffix("-a1b2c"))
-			Expect(machineName).To(HavePrefix("123456789-123456789-123"))
+			Expect(machineName).To(HavePrefix("123456789-123456789-12"))
 		})
 
 		It("should truncate and hash differently when at the length limit +1", func() {
-			nodeClaimName1 := "123456789-123456789-1234567890-a1b2c"
-			nodeClaimName2 := "123456789-123456789-1234567891-a1b2c"
+			nodeClaimName1 := "123456789-123456789-123456789-a1b2c"
+			nodeClaimName2 := "123456789-123456789-12345678X-a1b2c"
 			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName1)
 			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName2)
 
@@ -290,9 +290,9 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(machineName).To(HaveLen(35))
+			Expect(machineName).To(HaveLen(34))
 			Expect(machineName).To(HaveSuffix("-a1b2c"))
-			Expect(machineName).To(HavePrefix("123456789-123456789-123"))
+			Expect(machineName).To(HavePrefix("123456789-123456789-12"))
 		})
 
 		It("should produce deterministic results for same input", func() {
@@ -314,11 +314,11 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should handle complex cases correctly", func() {
-			nodeClaimName1 := "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
+			nodeClaimName1 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
 			nodeClaimName2 := "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
 			nodeClaimName3 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
-			nodeClaimName4 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
-			nodeClaimName5 := "------------------------------a1b2c"
+			nodeClaimName4 := "-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
+			nodeClaimName5 := "-----------------------------a1b2c"
 			nodeClaimName6 := "-------------------------------a1b2c"
 			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName1)
 			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName2)
@@ -338,17 +338,17 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(machineName4).To(Equal(nodeClaimName4))
 			Expect(machineName5).To(Equal(nodeClaimName5))
 
-			Expect(machineName2).To(HaveLen(35))
+			Expect(machineName2).To(HaveLen(34))
 			Expect(machineName2).To(HaveSuffix("-a1b2c"))
-			Expect(machineName2).To(HavePrefix("a-a-a-a-a-a-a-a-a-a-a-a"))
+			Expect(machineName2).To(HavePrefix("a-a-a-a-a-a-a-a-a-a-a-"))
 
-			Expect(machineName3).To(HaveLen(35))
+			Expect(machineName3).To(HaveLen(34))
 			Expect(machineName3).To(HaveSuffix("-a1b2c"))
-			Expect(machineName3).To(HavePrefix("-a-a-a-a-a-a-a-a-a-a-a-"))
+			Expect(machineName3).To(HavePrefix("-a-a-a-a-a-a-a-a-a-a-a"))
 
-			Expect(machineName6).To(HaveLen(35))
+			Expect(machineName6).To(HaveLen(34))
 			Expect(machineName6).To(HaveSuffix("-a1b2c"))
-			Expect(machineName6).To(HavePrefix("-----------------------"))
+			Expect(machineName6).To(HavePrefix("----------------------"))
 		})
 	})
 

@@ -24,13 +24,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/samber/lo"
@@ -38,15 +38,15 @@ import (
 
 // AKSDataStorage contains the shared data stores for both AKS agent pools and machines
 type AKSDataStorage struct {
-	AgentPools  *sync.Map
-	AKSMachines *sync.Map
+	AgentPools  *fakesync.Map[string, armcontainerservice.AgentPool]
+	AKSMachines *fakesync.Map[string, armcontainerservice.Machine]
 }
 
 // NewAKSDataStorage creates a new instance of shared data stores
 func NewAKSDataStorage() *AKSDataStorage {
 	return &AKSDataStorage{
-		AgentPools:  &sync.Map{},
-		AKSMachines: &sync.Map{},
+		AgentPools:  &fakesync.Map[string, armcontainerservice.AgentPool]{},
+		AKSMachines: &fakesync.Map[string, armcontainerservice.Machine]{},
 	}
 }
 
@@ -268,10 +268,7 @@ func (c *AKSMachinesAPI) Reset() {
 	c.AKSMachineCreateOrUpdateBehavior.Reset()
 	c.AKSMachineGetBehavior.Reset()
 	c.AKSMachineNewListPagerBehavior.Reset()
-	c.aksDataStorage.AKSMachines.Range(func(k, v any) bool {
-		c.aksDataStorage.AKSMachines.Delete(k)
-		return true
-	})
+	c.aksDataStorage.AKSMachines.Clear()
 	c.AfterPollProvisioningErrorOverride = nil
 	c.BatchMachineErrorFunc = nil
 }
@@ -319,7 +316,7 @@ func (c *AKSMachinesAPI) createSingleMachine(input *AKSMachineCreateOrUpdateInpu
 	// Check if AKS machine already exists, if so, consider this an update than a create
 	existingMachine, ok := c.aksDataStorage.AKSMachines.Load(id)
 	if ok {
-		return c.updateExistingAKSMachine(input, existingMachine.(armcontainerservice.Machine), aksMachine)
+		return c.updateExistingAKSMachine(input, existingMachine, aksMachine)
 	}
 
 	// Default values + update status, for sync phase
@@ -430,8 +427,7 @@ func (c *AKSMachinesAPI) createOneBatchMachine(input *AKSMachineCreateOrUpdateIn
 	}
 
 	// Check if AKS machine already exists — if so, check for immutable property conflicts
-	if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
-		existing := existingRaw.(armcontainerservice.Machine)
+	if existing, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
 		if c.doImmutablePropertiesChanged(&existing, &machine) {
 			return armcontainerservice.Machine{}, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
 		}
@@ -598,7 +594,7 @@ func (c *AKSMachinesAPI) Get(
 		aksMachine, ok := c.aksDataStorage.AKSMachines.Load(MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName))
 		if ok {
 			return armcontainerservice.MachinesClientGetResponse{
-				Machine: aksMachine.(armcontainerservice.Machine),
+				Machine: aksMachine,
 			}, nil
 		} else {
 			return armcontainerservice.MachinesClientGetResponse{}, AKSMachineAPIErrorFromAKSMachineNotFound
@@ -634,10 +630,8 @@ func (c *AKSMachinesAPI) NewListPager(
 				var aksMachines []*armcontainerservice.Machine
 				expectedIDPrefix := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.ContainerService/managedClusters/%s/agentPools/%s/machines/",
 					input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
-				c.aksDataStorage.AKSMachines.Range(func(key, value any) bool {
-					machineID := key.(string)
+				c.aksDataStorage.AKSMachines.Range(func(machineID string, aksMachine armcontainerservice.Machine) bool {
 					if strings.HasPrefix(machineID, expectedIDPrefix) {
-						aksMachine := value.(armcontainerservice.Machine)
 						aksMachines = append(aksMachines, &aksMachine)
 					}
 					return true

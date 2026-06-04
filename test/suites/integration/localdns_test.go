@@ -236,8 +236,9 @@ func expectNodeLocalDNSLabel(node *corev1.Node, expectedValue string) {
 	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 
-// createDNSTestPod creates an unschedulable pod that continuously performs DNS lookups for a specific domain.
-// The pod is designed to trigger Karpenter to provision a new node and verify DNS configuration.
+// createDNSTestPod creates a pod that performs a DNS lookup for a specific domain.
+// Use a direct pod because the test reads logs from each exact DNS probe and may use it to trigger provisioning.
+// The pod is designed to trigger Karpenter to provision a new node when no node selector is provided and verify DNS configuration.
 // domain: the domain to query (e.g., "microsoft.com" or "kubernetes.default.svc.cluster.local")
 // nodeSelector: optional node selector to target a specific node (nil for unschedulable pod)
 func createDNSTestPod(domain string, nodeSelector map[string]string) *corev1.Pod {
@@ -305,8 +306,8 @@ func getDNSResultFromNode(node *corev1.Node) DNSTestResult {
 
 	By(fmt.Sprintf("Creating host-network pod on node %s to test DNS resolution", node.Name))
 
-	// Create a pod with hostNetwork to test DNS from the node's perspective
-	testPod := coretest.Pod(coretest.PodOptions{
+	// Use a direct pod because the test reads logs from this exact hostNetwork probe and deletes it immediately.
+	testPod := env.Pod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "dns-test-",
 			Namespace:    "default",

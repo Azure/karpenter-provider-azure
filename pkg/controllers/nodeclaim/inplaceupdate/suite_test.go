@@ -783,7 +783,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			ctx = options.ToContext(ctx, test.Options())
 
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 		})
 
 		AfterEach(func() {
