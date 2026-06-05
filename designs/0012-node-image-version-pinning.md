@@ -8,11 +8,11 @@
 
 ---
 
-## 1. Background: The 90-Day Node Image Support Window
+## 1. Background: The Node Image Support Window
 
-AKS is moving toward formalizing a **90-day support window** for node
-images. While no official policy has been published on Microsoft Learn
-yet, there are already public signals pointing in this direction:
+AKS is formalizing its **support window for node images**. While no
+official policy has been published on Microsoft Learn yet, there are
+already public signals pointing in this direction:
 
 - **AppLens** already surfaces a diagnostic insight for clusters running
   node images older than 90 days: *"We found node image versions that
@@ -54,14 +54,15 @@ This means a customer pinning to a specific version will typically have
 
 ### What This Means for Karpenter
 
-Karpenter's node image selection should be **designed with the 90-day
+Karpenter's node image selection should be **designed with a support
 window in mind**, even though the formal policy is not yet published.
 If we expose a version-pinning mechanism, it should:
 
 - Allow customers to pin within the supported window.
 - Surface image age as observable state (e.g., status conditions).
-- Warn — but not block — when a pinned image exceeds 90 days, aligning
-  with the anticipated policy direction without front-running enforcement.
+- Warn — but not block — when a pinned image exceeds 90 days, based on
+  existing AppLens diagnostics. The enforcement support window has not
+  yet been defined.
 
 ---
 
@@ -92,7 +93,7 @@ customizations baked in.
 |---|---|---|
 | **What's controlled** | Which AKS-managed VHD version is used | A custom image derived from an AKS base image, with user-specified layers |
 | **Image source** | AKS Community/Shared Image Gallery | Customer resource group (`customImage` resource) |
-| **Lifecycle** | Governed by 90-day SLA; version ages out | Customer-managed; presumably rebuilt on newer base images periodically |
+| **Lifecycle** | Governed by AKS support window; version ages out | Customer-managed; presumably rebuilt on newer base images periodically |
 | **Use case** | "Don't use the latest image, it broke my workload" | "I need containers/drivers/configs cached on the node at boot" |
 | **Karpenter integration** | Version is a filter within existing image family resolution | Entirely different image source; bypasses gallery resolution |
 
@@ -199,7 +200,7 @@ the purpose of using Karpenter.
 │                                                          │
 │  imageVersion: "202604.24.0"      ◄── P0                │
 │    • Pins within AKS-managed galleries                   │
-│    • Must be within 90-day SLA window                    │
+│    • Should be within AKS support window                 │
 │    • Applied as version filter in SIG/CIG resolution     │
 │                                                          │
 │  (future) imageRef: <resource-id>  ◄── stretch            │
@@ -225,7 +226,7 @@ the purpose of using Karpenter.
 │                                                          │
 │  conditions[]:                                           │
 │    - type: ImagesReady                                   │
-│    - type: ImageWithinSupportWindow ◄── new: 90-day SLA  │
+│    - type: ImageWithinSupportWindow ◄── new: age warning │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -246,7 +247,7 @@ type AKSNodeClassSpec struct {
     // version (e.g., "202604.24.0"). When set, Karpenter will use this
     // version instead of automatically selecting the latest available
     // image. The version must exist in the image gallery and should be
-    // within the AKS node image support window (anticipated to be 90 days).
+    // within the AKS node image support window.
     // +kubebuilder:validation:Pattern=`^\d{6}\.\d{2}\.\d+$`
     // +optional
     ImageVersion *string `json:"imageVersion,omitempty"`
@@ -303,7 +304,7 @@ type AKSNodeClassStatus struct {
 
     // imageAge is the age of the oldest image in status.images[],
     // computed from the image's published date. This reflects how
-    // close the node class is to the 90-day support window boundary.
+    // close the node class is to the support window boundary.
     // +optional
     ImageAge *metav1.Duration `json:"imageAge,omitempty"`
 }
@@ -313,12 +314,12 @@ The status reconciler computes this from the `PublishedDate` returned by
 the gallery API (available in both CIG and SIG responses). The age is
 recomputed on each reconciliation cycle.
 
-### 6.4 90-Day Support Window Warning
+### 6.4 Support Window Warning
 
-When the resolved image age exceeds 90 days, the status reconciler sets
-a warning condition. The 90-day threshold aligns with the direction AKS
-support policy is heading and matches the existing AppLens diagnostic
-insight:
+When the resolved image age exceeds the warning threshold, the status
+reconciler sets a warning condition. The initial threshold is **90 days**,
+matching the existing AppLens diagnostic insight. The enforcement support
+window has not yet been defined by AKS — 90 days is a warning only.
 
 ```yaml
 status:
@@ -327,13 +328,11 @@ status:
     - type: ImageWithinSupportWindow
       status: "False"
       reason: ImageOutsideSupportWindow
-      message: "Resolved image version 202601.13.0 is 120 days old and outside the 90-day AKS support window. Consider updating imageVersion or removing the pin to use the latest image."
+      message: "Resolved image version 202601.13.0 is 120 days old and exceeds the 90-day warning threshold. Consider updating imageVersion or removing the pin to use the latest image."
 ```
 
-**This is a warning only — scale-up is never blocked.** The anticipated
-AKS 90-day policy direction explicitly treats enforcement (blocking
-operations) as a future phase. Karpenter will continue to provision
-nodes with the pinned version regardless of age.
+**This is a warning only — scale-up is not blocked.** Karpenter will
+continue to provision nodes with the pinned version regardless of age.
 
 **Implementation via non-dependent status condition:** The operatorpkg
 `ConditionSet` only rolls conditions registered in
@@ -351,6 +350,13 @@ registers only 3 of its 10 condition types (`Launched`, `Registered`,
 `nodeClaim.StatusConditions().SetFalse(v1.ConditionTypeConsistentStateFound, ...)` in
 the [consistency controller](https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/consistency/controller.go)
 without affecting `NodeClaim` readiness.
+
+**Path to enforcement:** If AKS later formalizes an enforcement window,
+`ImageWithinSupportWindow` can be promoted to a readiness dependent by
+registering it in `NewReadyConditions(...)`. This would cause `Ready` to
+become `False` when the image is outside the window, gating provisioning.
+The warning threshold could also be made configurable (or driven by an
+AKS API response) to track the official policy without code changes.
 
 **Metrics**: Emit a gauge metric `karpenter_image_age_days` with labels
 for `nodeclass`, `image_family`, and `image_version` so that operators
@@ -573,9 +579,9 @@ These must be resolved before `imageRef` implementation begins:
    determine the distro/OS for bootstrap script selection? Does
    `imageFamily` serve as a hint, or does the prepared image resource
    expose metadata?
-3. **Lifecycle**: Are prepared images subject to the 90-day SLA, or do
-   they follow a customer-managed lifecycle? This affects whether
-   `ImageWithinSupportWindow` applies.
+3. **Lifecycle**: Are prepared images subject to the AKS support
+   window, or do they follow a customer-managed lifecycle? This affects
+   whether `ImageWithinSupportWindow` applies.
 4. **Machine API contract**: What fields does the Machine API expect
    when provisioning with a prepared image? Is it a direct image
    reference, or does it go through a different API path?
@@ -594,18 +600,28 @@ Remaining questions not covered by the design sections above:
 ### Compatibility
 1. How does `imageVersion` interact with NAP (Node Auto-Provisioning)?
    There is a proposed (not yet implemented) NAP behavior that would
-   force latest image adoption when image age exceeds 90 days, bypassing
-   maintenance windows. If this is implemented, does a Karpenter
-   `imageVersion` pin override or defer to NAP behavior?
+   force latest image adoption when image age exceeds a threshold,
+   bypassing maintenance windows. If this is implemented, does a
+   Karpenter `imageVersion` pin override or defer to NAP behavior?
 2. Does the AKS Machine API path (`ProvisionModeAKSMachineAPI`) need
    separate handling for version pinning, or does it flow through the
    same image resolution?
 
 ### Operational
 3. Should we emit Kubernetes events when a pinned version crosses the
-   90-day boundary?
+   warning threshold?
 4. What is the interaction between `imageVersion` and Karpenter's
    built-in disruption budgets / node expiry?
+
+### Support Window
+5. Should the warning threshold (currently 90 days) be configurable,
+   e.g., via a field on `AKSNodeClass.spec` or a controller flag? This
+   would allow tracking the official AKS policy without code changes
+   when the enforcement window is formalized.
+6. When AKS defines an enforcement window, should Karpenter block
+   provisioning (by promoting `ImageWithinSupportWindow` to a readiness
+   dependent) or only surface the condition and leave enforcement to
+   AKS-side controls?
 
 ---
 
