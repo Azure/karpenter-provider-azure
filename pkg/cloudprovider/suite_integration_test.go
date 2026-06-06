@@ -57,100 +57,66 @@ func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.N
 	Expect(nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
 }
 
-// runSharedAKSMachineAPITests contains the common test cases that should be run
-// for both ManageExistingAKSMachines = true and false configurations
-func runSharedAKSMachineAPITests() {
+func runSharedProvisionModeIntegrationTests(provisionMode provisionModeTestCase) {
 	It("should be able to handle basic operations", func() {
 		ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 
-		// List should return nothing
-		azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Reset()
-		azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Reset()
+		provisionMode.resetListCalls()
 		nodeClaims, err := cloudProvider.List(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(nodeClaims).To(BeEmpty())
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1)) // Expect to be called in case of existing VMs
-		Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(0))                     // No unnecessary checks
+		provisionMode.expectListCalls()
 
-		// Scale-up 1 node
-		azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
-		azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+		provisionMode.resetCreateCalls()
 		pod := coretest.UnschedulablePod()
 		ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 
-		//// Should call AKS Machine APIs instead of VM APIs
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-		createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-		Expect(createInput.AKSMachine.Properties).ToNot(BeNil())
+		provisionMode.expectCreateCalls()
+		provisionMode.expectCreatedResource()
 
-		// List should return the created nodeclaim
-		azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Reset()
-		azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Reset()
+		provisionMode.resetListCalls()
 		nodeClaims, err = cloudProvider.List(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1)) // Expect to be called in case of existing VMs
+		provisionMode.expectListCalls()
 
-		//// The returned nodeClaim should be correct
 		Expect(nodeClaims).To(HaveLen(1))
 		createdNodeClaim := nodeClaims[0]
-		validateAKSMachineNodeClaim(createdNodeClaim, nodePool)
+		provisionMode.validateNodeClaim(createdNodeClaim)
 
-		// Get should return the created nodeClaim
-		azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
-		azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
+		provisionMode.resetGetCalls()
 		retrievedNodeClaim, err := cloudProvider.Get(ctx, createdNodeClaim.Status.ProviderID)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
+		provisionMode.expectGetCalls()
 
-		//// The returned nodeClaim should be correct
-		validateAKSMachineNodeClaim(retrievedNodeClaim, nodePool)
+		provisionMode.validateNodeClaim(retrievedNodeClaim)
 
-		// Delete
-		azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Reset()
-		azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Reset()
+		provisionMode.resetDeleteCalls()
 		Expect(cloudProvider.Delete(ctx, retrievedNodeClaim)).To(Succeed())
-		Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
+		provisionMode.expectDeleteCalls()
 
-		//// List should return no nodeclaims
-		azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Reset()
-		azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Reset()
+		provisionMode.resetListCalls()
 		nodeClaims, err = cloudProvider.List(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1)) // Expect to be called
+		provisionMode.expectListCalls()
 		Expect(nodeClaims).To(BeEmpty())
 
-		//// Get should return NodeClaimNotFound error
-		azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
-		azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
+		provisionMode.resetGetCalls()
 		nodeClaim, err = cloudProvider.Get(ctx, createdNodeClaim.Status.ProviderID)
 		Expect(err).To(HaveOccurred())
 		Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-		Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
+		provisionMode.expectGetCalls()
 		Expect(nodeClaim).To(BeNil())
 	})
 
 	runNodeOverlayCapacityTests(nodeOverlayCapacityTestOptions{
-		validateNodeClaim: func(nodeClaim *karpv1.NodeClaim) {
-			validateAKSMachineNodeClaim(nodeClaim, nodePool)
-		},
-		resetCreateCalls: func() {
-			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
-			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
-		},
-		expectCreateCalls: func() {
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-		},
+		validateNodeClaim: provisionMode.validateNodeClaim,
+		resetCreateCalls:  provisionMode.resetCreateCalls,
+		expectCreateCalls: provisionMode.expectCreateCalls,
 	})
+}
 
+func runAKSMachineAPIIntegrationTests() {
 	// XPMT: TODO(comtalyst): deep inspection test on simulating all of these?
 	Context("Unexpected API Failures", func() {
 		It("should handle AKS machine create failures - unrecognized error during sync/initial", func() {
@@ -627,8 +593,9 @@ var _ = Describe("CloudProvider", func() {
 			azureEnvNonZonal.Reset(ctx)
 		})
 
-		// Run shared AKS Machine API tests
-		runSharedAKSMachineAPITests()
+		// Run shared provision-mode tests
+		runSharedProvisionModeIntegrationTests(aksMachineAPIHeaderBatchProvisionMode())
+		runAKSMachineAPIIntegrationTests()
 	})
 
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = true", func() {
@@ -666,8 +633,9 @@ var _ = Describe("CloudProvider", func() {
 			azureEnvNonZonal.Reset(ctx)
 		})
 
-		// Run shared AKS Machine API tests
-		runSharedAKSMachineAPITests()
+		// Run shared provision-mode tests
+		runSharedProvisionModeIntegrationTests(aksMachineAPIHeaderBatchProvisionMode())
+		runAKSMachineAPIIntegrationTests()
 	})
 
 	Context("Mixed Environment - Migration from ProvisionMode = AKSMachineAPIHeaderBatch to VM mode", func() {
