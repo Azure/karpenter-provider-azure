@@ -117,21 +117,20 @@ func (t TaxBrackets) Calculate(amount float64) float64 {
 	return tax
 }
 
-func NewInstanceType(
+func newInstanceType(
 	ctx context.Context,
 	sku *skewer.SKU,
 	vmsize *skewer.VMSizeType,
-	kc *v1beta1.KubeletConfiguration,
 	region string,
 	offerings cloudprovider.Offerings,
-	nodeClass *v1beta1.AKSNodeClass,
+	params *instanceTypeParameters,
 	architecture string,
 ) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
-		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, nodeClass),
+		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, params),
 		Offerings:    offerings,
-		Capacity:     computeCapacity(ctx, sku, nodeClass),
+		Capacity:     computeCapacity(ctx, sku, params),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
 			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
 			SystemReserved:    SystemReservedResources(),
@@ -147,7 +146,7 @@ func computeRequirements(
 	architecture string,
 	offerings cloudprovider.Offerings,
 	region string,
-	nodeClass *v1beta1.AKSNodeClass,
+	params *instanceTypeParameters,
 ) scheduling.Requirements {
 	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
@@ -180,7 +179,7 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.AKSLabelMode, corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser),
 		scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
 		scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular, v1beta1.PrioritySpot),
-		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))),
+		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(params.ImageFamily)),
 		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist), // AKS only sets this label if FIPS is enabled, otherwise it's expected to be empty
 
 		// composites
@@ -210,7 +209,7 @@ func computeRequirements(
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
 	setRequirementsVersion(requirements, vmsize)
-	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+	if params.FIPSMode == v1beta1.FIPSModeFIPS {
 		requirements[v1beta1.AKSLabelFIPSEnabled].Insert("true")
 	}
 
@@ -264,12 +263,12 @@ func getArchitecture(architecture string) string {
 	return architecture // unrecognized
 }
 
-func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) corev1.ResourceList {
+func computeCapacity(ctx context.Context, sku *skewer.SKU, params *instanceTypeParameters) corev1.ResourceList {
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
-		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
-		corev1.ResourcePods:                   *pods(ctx, nodeClass),
+		corev1.ResourceEphemeralStorage:       *ephemeralStorage(params),
+		corev1.ResourcePods:                   *pods(params),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 		corev1.ResourceName("amd.com/gpu"):    *gpuAMDCount(sku),
 	}
@@ -333,13 +332,12 @@ func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGi
 	return memory
 }
 
-func ephemeralStorage(nodeClass *v1beta1.AKSNodeClass) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
+func ephemeralStorage(params *instanceTypeParameters) *resource.Quantity {
+	return resource.NewScaledQuantity(int64(params.OSDiskSizeGB), resource.Giga)
 }
 
-func pods(ctx context.Context, nc *v1beta1.AKSNodeClass) *resource.Quantity {
-	networkPlugin, networkPluginMode := options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode
-	return resource.NewQuantity(int64(utils.GetMaxPods(nc, networkPlugin, networkPluginMode)), resource.DecimalSI)
+func pods(params *instanceTypeParameters) *resource.Quantity {
+	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
 func SystemReservedResources() corev1.ResourceList {
