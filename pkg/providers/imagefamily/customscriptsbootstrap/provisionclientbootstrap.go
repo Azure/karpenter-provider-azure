@@ -193,8 +193,15 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	}
 
 	if utils.IsNvidiaEnabledSKU(p.InstanceType.Name) {
+		driverType := models.DriverTypeCUDA
+		if utils.UseGridDrivers(p.InstanceType.Name) {
+			driverType = models.DriverTypeGRID
+		} else if utils.UseGridV20Drivers(p.InstanceType.Name) {
+			driverType = models.DriverTypeUnspecified
+		}
+
 		provisionProfile.GpuProfile = &models.GPUProfile{
-			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverTypeGRID, models.DriverTypeCUDA)),
+			DriverType:       lo.ToPtr(driverType),
 			InstallGPUDriver: lo.ToPtr(p.GPUDriverInstallationEnabled),
 		}
 	}

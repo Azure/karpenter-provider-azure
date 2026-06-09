@@ -474,6 +474,38 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 		},
 		{
+			name: "GRID v20 GPU instance type",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:                  "test-cluster",
+				KubeletConfig:                &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                     "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                         karpv1.ArchitectureAmd64,
+				ResourceGroup:                "test-rg",
+				KubernetesVersion:            "1.31.0",
+				ImageDistro:                  "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                    false,
+				StorageProfile:               consts.StorageProfileManagedDisks,
+				OSSKU:                        customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider:    &fake.NodeBootstrappingAPI{},
+				GPUDriverInstallationEnabled: true,
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_NC128lds_xl_RTXPRO6000BSE_v6",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("128"),
+						v1.ResourceMemory: resource.MustParse("1800Gi"),
+						"nvidia.com/gpu":  resource.MustParse("4"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile.GpuProfile).ToNot(BeNil())
+				g.Expect(*values.ProvisionProfile.GpuProfile.InstallGPUDriver).To(BeTrue())
+				g.Expect(*values.ProvisionProfile.GpuProfile.DriverType).To(Equal(models.DriverTypeUnspecified))
+			},
+		},
+		{
 			name: "ARM64 architecture",
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",

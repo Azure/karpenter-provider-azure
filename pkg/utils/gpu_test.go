@@ -30,6 +30,7 @@ func TestGetAKSGPUImageSHA(t *testing.T) {
 		gpuDriverType string
 	}{
 		{"GRID Driver - NC Series v4", "standard_nc8ads_a10_v4", AKSGPUGridVersionSuffix, "grid"},
+		{"GRID v20 Driver - RTX PRO 6000 BSE ds", "standard_nc128ds_xl_rtxpro6000bse_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
 		{"GRID v20 Driver - RTX PRO 6000 BSE", "standard_nc128lds_xl_rtxpro6000bse_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
 		{"GRID v20 Driver - RTX PRO 6000 BSE mixed case", "Standard_NC320lds_xl_RTXPRO6000BSE_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
 		{"Cuda Driver - NV Series", "standard_nv6", AKSGPUCudaVersionSuffix, "cuda"},
@@ -56,6 +57,7 @@ func TestGetGPUDriverVersion(t *testing.T) {
 		output string
 	}{
 		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", NvidiaGridDriverVersion},
+		{"GRID v20 Driver - RTX PRO 6000 BSE ds", "standard_nc128ds_xl_rtxpro6000bse_v6", NvidiaGridV20DriverVersion},
 		{"GRID v20 Driver - RTX PRO 6000 BSE", "standard_nc128lds_xl_rtxpro6000bse_v6", NvidiaGridV20DriverVersion},
 		{"GRID v20 Driver - RTX PRO 6000 BSE mixed case", "Standard_NC320lds_xl_RTXPRO6000BSE_v6", NvidiaGridV20DriverVersion},
 		{"CUDA Driver - NC Series v1", "standard_nc6s", Nvidia470CudaDriverVersion},
@@ -86,6 +88,7 @@ func TestIsNvidiaEnabledSKU(t *testing.T) {
 		{"Valid SKU - NV Series", "standard_nv6", true},
 		{"Invalid SKU", "standard_d2_v2", false},
 		{"Valid SKU - T4 Series", "standard_nc4as_t4_v3", true},
+		{"Valid SKU - RTX PRO 6000 BSE ds", "standard_nc128ds_xl_rtxpro6000bse_v6", true},
 		{"Valid SKU - RTX PRO 6000 BSE", "standard_nc128lds_xl_rtxpro6000bse_v6", true},
 		{"Valid SKU - RTX PRO 6000 BSE mixed case", "Standard_NC320lds_xl_RTXPRO6000BSE_v6", true},
 		{"Empty SKU", "", false},
@@ -180,6 +183,7 @@ func TestGetGPUManufacturer(t *testing.T) {
 	}{
 		{"NVIDIA SKU", "standard_nc6s_v3", "nvidia"},
 		{"NVIDIA SKU with Promo", "standard_nc6_promo", "nvidia"},
+		{"NVIDIA SKU - RTX PRO 6000 BSE ds", "standard_nc128ds_xl_rtxpro6000bse_v6", "nvidia"},
 		{"NVIDIA SKU - RTX PRO 6000 BSE", "standard_nc128lds_xl_rtxpro6000bse_v6", "nvidia"},
 		{"AMD SKU - V710", "standard_nv4ads_v710_v5", "amd"},
 		{"AMD SKU - MI300X", "standard_nd96isr_mi300x_v5", "amd"},
@@ -209,6 +213,7 @@ func TestIsGPUSKUSupportedOnOS(t *testing.T) {
 		{"NVIDIA Ubuntu-only on Ubuntu", "standard_nc6", "ubuntu", true},
 		{"AMD on Ubuntu", "standard_nv4ads_v710_v5", "ubuntu", true},
 		{"AMD on AzureLinux", "standard_nv4ads_v710_v5", "azurelinux", false},
+		{"RTX PRO 6000 BSE ds on Ubuntu", "standard_nc128ds_xl_rtxpro6000bse_v6", "ubuntu", true},
 		{"RTX PRO 6000 BSE on Ubuntu", "standard_nc128lds_xl_rtxpro6000bse_v6", "ubuntu", true},
 		{"RTX PRO 6000 BSE on AzureLinux", "standard_nc128lds_xl_rtxpro6000bse_v6", "azurelinux", false},
 		{"Non-GPU SKU", "standard_d2_v2", "ubuntu", false},
@@ -235,6 +240,7 @@ func TestIsDriverInstallSupported(t *testing.T) {
 		{"NVIDIA SKU with Promo - has support", "standard_nc6s_v2_promo", true},
 		{"NVIDIA T4 - has support", "standard_nc4as_t4_v3", true},
 		{"NVIDIA A10 converged - has support", "standard_nv6ads_a10_v5", true},
+		{"NVIDIA RTX PRO 6000 BSE ds - has support", "standard_nc128ds_xl_rtxpro6000bse_v6", true},
 		{"NVIDIA RTX PRO 6000 BSE - has support", "standard_nc128lds_xl_rtxpro6000bse_v6", true},
 		{"AMD SKU V710 - no support", "standard_nv4ads_v710_v5", false},
 		{"AMD SKU MI300X - no support", "standard_nd96isr_mi300x_v5", false},

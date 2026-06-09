@@ -266,10 +266,19 @@ standard_nd128isr_gb300_v6:
   os: ["ubuntu"]
 
 # StandardNCRTXPRO6000BSEv6Family:
+standard_nc128ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
 standard_nc128lds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
+standard_nc256ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
 standard_nc256lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc320ds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
 standard_nc320lds_xl_rtxpro6000bse_v6:
