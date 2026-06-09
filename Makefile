@@ -33,6 +33,7 @@ test: ## Run tests
 		-cover -coverprofile=coverage.out -output-dir=. -coverpkg=./pkg/... \
 		--focus="${FOCUS}" \
 		--randomize-all \
+		--timeout=${TEST_TIMEOUT} \
 		./pkg/...
 
 deflake: ## Run randomized, racing, code-covered tests to deflake failures

@@ -230,13 +230,13 @@ func runIntegrationTests(provisionMode provisionModeTestCase) {
 		if !provisionMode.isAKSMachineMode() {
 			// TODO: share this with Machine API mode
 			It("should not reattempt creation of a vm thats been created before", func() {
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 					},
 					Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
 				})
-				vmName := instance.GenerateResourceName(nodeClaim.Name)
+				vmName := instance.GenerateResourceName(testNodeClaim.Name)
 				vm := &armcompute.VirtualMachine{
 					Name:     lo.ToPtr(vmName),
 					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
@@ -251,7 +251,7 @@ func runIntegrationTests(provisionMode provisionModeTestCase) {
 				}
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -368,6 +368,7 @@ func runNodeOverlayCapacityTests(testOptions nodeOverlayCapacityTestOptions) {
 	})
 }
 
+//nolint:gocyclo
 func runUnhappyPathHandlingTests(provisionMode provisionModeTestCase) {
 	Context("Unexpected API Failures", func() {
 		It("should handle create failures - unrecognized error during sync/initial", func() {

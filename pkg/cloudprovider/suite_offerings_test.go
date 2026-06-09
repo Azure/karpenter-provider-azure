@@ -54,6 +54,7 @@ import (
 	"github.com/Azure/skewer"
 )
 
+//nolint:gocyclo
 func runOfferingTests(provisionMode provisionModeTestCase) {
 	Context("Create - Expected Creation Failures", func() {
 		It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {

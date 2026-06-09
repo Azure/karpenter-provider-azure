@@ -59,6 +59,7 @@ import (
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
+//nolint:gocyclo
 func runFeatureTests(provisionMode provisionModeTestCase) {
 	Context("Create - GPU Workloads + Nodes", func() {
 		It("should schedule non-GPU pod onto the cheapest non-GPU capable node", func() {
@@ -2247,7 +2248,6 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				Expect(lo.FromPtr(kubeOverride.ServeStale)).To(Equal(armcontainerservice.LocalDNSServeStaleVerify))
 			})
 		})
-
 	}
 }
 
@@ -2448,13 +2448,13 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			It("should not reattempt creation of a vm thats been created before, and also not CSE", func() {
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 					},
 					Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
 				})
-				vmName := instance.GenerateResourceName(nodeClaim.Name)
+				vmName := instance.GenerateResourceName(testNodeClaim.Name)
 				vm := &armcompute.VirtualMachine{
 					Name:     lo.ToPtr(vmName),
 					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
@@ -2469,7 +2469,7 @@ var _ = Describe("CloudProvider", func() {
 				}
 				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				_, err := cloudProvider.Create(ctx, nodeClaim)
+				_, err := cloudProvider.Create(ctx, testNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 
 				ExpectCSENotProvisioned(azureEnv)
