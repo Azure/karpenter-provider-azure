@@ -17,10 +17,8 @@ limitations under the License.
 package instancetype_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
@@ -72,10 +70,6 @@ var fakeClock *clock.FakeClock
 var coreProvisioner, coreProvisionerNonZonal, coreProvisionerBootstrap *provisioning.Provisioner
 var cluster, clusterNonZonal, clusterBootstrap *state.Cluster
 var cloudProvider, cloudProviderNonZonal, cloudProviderBootstrap *cloudprovider.CloudProvider
-
-var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
-
-var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -1331,10 +1325,6 @@ var _ = Describe("Tax Calculator", func() {
 		})
 	})
 })
-
-func createSDKErrorBody(code, message string) io.ReadCloser {
-	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
-}
 
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
