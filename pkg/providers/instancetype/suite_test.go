@@ -19,25 +19,17 @@ package instancetype_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
-	"net/http"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/awslabs/operatorpkg/object"
-	corestatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
@@ -53,15 +45,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
-	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/skewer"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
@@ -69,15 +53,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
@@ -176,2137 +155,410 @@ var _ = Describe("InstanceType Provider", func() {
 		ExpectCleanedUp(ctx, env.Client)
 	})
 
-	Context("ProvisionMode = BootstrappingClient", func() {
-		// Suggestion: ideally, we want to reuse all tests with just ProvisionMode changed to BootstrappingClient. It needs refactor to allow efficient reuse.
-		// However, not all tests are applicable. E.g., custom data tests are not useful as it is faked, unlike Scriptless.
-		It("should provision the node and CSE", func() {
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, azureEnvBootstrap, pod)
-			ExpectCSEProvisioned(azureEnvBootstrap)
-			ExpectScheduled(ctx, env.Client, pod)
-		})
-		It("should not reattempt creation of a vm thats been created before, and also not CSE", func() {
-			// This test is more like a sanity check of the current intended behavior. The design of the behavior can be changed if intended.
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
+	DescribeTable("Filtering by LocalDNS",
+		func(localDNSMode v1beta1.LocalDNSMode, k8sVersion string, shouldIncludeD2s, shouldIncludeD4s bool) {
+			if localDNSMode != "" {
+				// Create complete LocalDNS configuration with all required fields
+				// Note: VnetDNS and KubeDNS overrides must contain both "." and "cluster.local" zones
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: localDNSMode,
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+						{
+							Zone:               "cluster.local",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+					},
+					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+						{
+							Zone:               "cluster.local",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+					},
+				}
+			}
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			if k8sVersion != "" {
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
+			}
+			// Mirror what the resolver would do: set Status.LocalDNSState=Enabled
+			// when the resolution would land on Enabled. The test instance-type
+			// provider uses a nil resolver, so Status is the only path to
+			// surface Enabled.
+			setEnabledStatus := func() {
+				nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+			}
+			switch localDNSMode {
+			case v1beta1.LocalDNSModeRequired:
+				setEnabledStatus()
+			case v1beta1.LocalDNSModeDisabled:
+				// no status needed; Disabled mode -> false
+			case v1beta1.LocalDNSModePreferred:
+				threshold := semver.MustParse("1.36.0")
+				parsed, perr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
+				if perr == nil && parsed.GTE(threshold) {
+					setEnabledStatus()
+				}
+			}
+			ExpectApplied(ctx, env.Client, nodeClass)
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ShouldNot(BeEmpty())
+
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			if shouldIncludeD2s {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+					"Standard_D2s_v3 (2 vCPUs) should be included")
+			} else {
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+					"Standard_D2s_v3 (2 vCPUs) should be excluded")
+			}
+
+			if shouldIncludeD4s {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+					"Standard_D4s_v3 (4 vCPUs) should be included")
+			}
+		},
+		Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
+			v1beta1.LocalDNSModeRequired, "", false, true),
+		Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
+			v1beta1.LocalDNSModePreferred, "1.36.0", false, true),
+		Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
+			v1beta1.LocalDNSModePreferred, "1.35.0", true, true),
+		Entry("when LocalDNS is disabled - includes all SKUs",
+			v1beta1.LocalDNSModeDisabled, "", true, true),
+		Entry("when LocalDNS is not set - includes all SKUs",
+			v1beta1.LocalDNSMode(""), "", true, true),
+	)
+
+	Context("Cache invalidation with LocalDNS", func() {
+		It("should return different instance type lists when LocalDNS mode changes", func() {
+			// First, get instance types with LocalDNS disabled
+			nodeClassDisabled := test.AKSNodeClass()
+			nodeClassDisabled.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeDisabled,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
 				},
-				Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
-			})
-			vmName := instance.GenerateResourceName(nodeClaim.Name)
-			vm := &armcompute.VirtualMachine{
-				Name:     lo.ToPtr(vmName),
-				ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
-				Location: lo.ToPtr(fake.Region),
-				Zones:    []*string{lo.ToPtr("fantasy-zone")},
-				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now()),
-					HardwareProfile: &armcompute.HardwareProfile{
-						VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 					},
 				},
 			}
-			azureEnvBootstrap.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			_, err := cloudProviderBootstrap.Create(ctx, nodeClaim) // Async routine can still be ran in the background after this point
+			nodeClassDisabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
+			instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
 			Expect(err).ToNot(HaveOccurred())
 
-			ExpectCSENotProvisioned(azureEnvBootstrap)
+			// Now get instance types with LocalDNS required
+			nodeClassEnabled := test.AKSNodeClass()
+			nodeClassEnabled.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+			}
+			nodeClassEnabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+			ExpectApplied(ctx, env.Client, nodeClassEnabled)
+			instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
+			Expect(err).ToNot(HaveOccurred())
+
+			// The lists should be different sizes
+			Expect(len(instanceTypesEnabled)).To(BeNumerically("<", len(instanceTypesDisabled)),
+				"LocalDNS Required should filter out small SKUs")
+
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			// Verify that small SKUs (< 4 vCPUs) are present when disabled but absent when enabled
+			Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+				"Standard_D2s_v3 (2 vCPUs) should be included when LocalDNS is disabled")
+			Expect(instanceTypesEnabled).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+				"Standard_D2s_v3 (2 vCPUs) should be excluded when LocalDNS is required")
+
+			// Verify that large SKUs (>= 4 vCPUs) are present in both
+			Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+				"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is disabled")
+			Expect(instanceTypesEnabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+				"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is required")
 		})
 	})
 
-	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
-	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
-	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
-	//
-	// These tests specifically are added to ProvisionMode = AKSMachineAPI in cloudprovider module to reflect its end-to-end nature.
-	// Suggestion: move these tests there too(?)
-	Context("ProvisionMode = AKSScriptless", func() {
-		Context("Subnet", func() {
-			It("should use the VNET_SUBNET_ID", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-				Expect(nic).NotTo(BeNil())
-				Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"))
-			})
-			It("should produce all required azure cni labels", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				decodedString := ExpectDecodedCustomData(azureEnv)
-				Expect(decodedString).To(SatisfyAll(
-					ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
-					ContainSubstring("kubernetes.azure.com/network-subnet=aks-subnet"),
-					ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c"),
-					ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
-					ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
-				))
-			})
-			It("should include stateless CNI label for kubernetes 1.34+ set to true", func() {
-				// Set kubernetes version to 1.34.0
-				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				decodedString := ExpectDecodedCustomData(azureEnv)
-				Expect(decodedString).To(SatisfyAll(
-					ContainSubstring("kubernetes.azure.com/network-stateless-cni=true"),
-				))
-			})
-			It("should include stateless CNI label for kubernetes < 1.34 set to false", func() {
-				// Set kubernetes version to 1.33.0
-				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.33.0")
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-				decodedString := ExpectDecodedCustomData(azureEnv)
-				Expect(decodedString).To(SatisfyAll(
-					ContainSubstring("kubernetes.azure.com/network-stateless-cni=false"),
-				))
-
-			})
-			It("should use the subnet specified in the nodeclass", func() {
-				nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-				Expect(nic).NotTo(BeNil())
-				Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet"))
-			})
-		})
-		Context("VM Creation Failures", func() {
-			It("should not reattempt creation of a vm thats been created before", func() {
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
-					},
-					Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
-				})
-				vmName := instance.GenerateResourceName(nodeClaim.Name)
-				vm := &armcompute.VirtualMachine{
-					Name:     lo.ToPtr(vmName),
-					ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
-					Location: lo.ToPtr(fake.Region),
-					Zones:    []*string{lo.ToPtr("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
-					Properties: &armcompute.VirtualMachineProperties{
-						TimeCreated: lo.ToPtr(time.Now()),
-						HardwareProfile: &armcompute.HardwareProfile{
-							VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
-						},
-					},
-				}
-				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-				Expect(err).ToNot(HaveOccurred()) // Without the GET in instance.CreateVirtualMachine this will fail
-			})
-			It("should delete the network interface on failure to create the vm", func() {
-				ErrMsg := "test error"
-				ErrCode := fmt.Sprint(http.StatusNotFound)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: ErrCode,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(ErrCode, ErrMsg),
-						},
-					},
-				)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-				// We should have created a nic for the vm
-				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				// The nic we used in the vm create, should be cleaned up if the vm call fails
-				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-				Expect(nic).NotTo(BeNil())
-				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
-				Expect(ok).To(Equal(false))
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				pod = coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-			})
-			It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
-				LowPriorityCoresQuotaErrorMessage := "Operation could not be completed as it results in exceeding approved Low Priority Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22LowPriorityCores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:32,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22LowPriorityCores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
-				// Create nodepool that has both ondemand and spot capacity types enabled
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot}})
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				// Set the LowPriorityCoresQuota error to be returned when creating the vm
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.OperationNotAllowed,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, LowPriorityCoresQuotaErrorMessage),
-						},
-					},
-				)
-				// Create a pod that should fail to schedule
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				// Expect that on-demand nodes are selected if spot capacity is unavailable, and the nodepool uses both spot + on-demand
-				nodes, err := env.KubernetesInterface.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-				Expect(err).ToNot(HaveOccurred())
-				Expect(len(nodes.Items)).To(Equal(1))
-				Expect(nodes.Items[0].Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
-			})
-
-			It("should fail to provision when OverconstrainedZonalAllocation errors are hit, then switch zone and succeed", func() {
-				OverconstrainedZonalAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again."
-				// Create nodepool that has both ondemand and spot capacity types enabled
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot}})
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				// Set the OverconstrainedZonalAllocation error to be returned when creating the vm
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.OverconstrainedZonalAllocationRequest,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.OverconstrainedZonalAllocationRequest, OverconstrainedZonalAllocationErrorMessage),
-						},
-					},
-				)
-
-				// Create a pod that should fail to schedule
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-				// ensure that initial zone was made unavailable
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				initialVMSize := string(*vm.Properties.HardwareProfile.VMSize)
-				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
-				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
-				Expect(err).ToNot(HaveOccurred())
-				ExpectUnavailable(azureEnv, fake.MakeSKU(initialVMSize), zone, karpv1.CapacityTypeSpot)
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(initialVMSize))
-				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(initialCapacityType))
-				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
-			})
-
-			It("should fail to provision when OverconstrainedAllocation errors are hit, then switch capacity type and succeed", func() {
-				OverconstrainedAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive."
-				// Create nodepool that has both ondemand and spot capacity types enabled
-				coretest.ReplaceRequirements(nodePool,
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      karpv1.CapacityTypeLabelKey,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot},
-					},
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1beta1.LabelPlacementScope,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{v1beta1.PlacementScopeZonal},
-					},
-				)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				// Set the OverconstrainedAllocationError error to be returned when creating the vm
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.OverconstrainedAllocationRequest,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.OverconstrainedAllocationRequest, OverconstrainedAllocationErrorMessage),
-						},
-					},
-				)
-
-				// Create a pod that should fail to schedule
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				initialVMSize := string(*vm.Properties.HardwareProfile.VMSize)
-				initialCapacityType := instance.GetCapacityTypeFromVM(&vm)
-				_, err := zones.MakeAKSLabelZoneFromVM(&vm)
-				Expect(err).ToNot(HaveOccurred())
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(initialVMSize))
-				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).ToNot(Equal(initialCapacityType))
-				Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
-			})
-
-			It("should fail to provision when AllocationFailure errors are hit, then switch placement and succeed", func() {
-				// Create nodepool that has both ondemand and spot capacity types enabled
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D2_v3", "Standard_D64s_v3"}})
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				// Set the AllocationFailed error to be returned when creating the vm
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.AllocationFailed,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.AllocationFailed, "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."),
-						},
-					},
-				)
-
-				// Create a pod that should fail to schedule
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-				// ensure that initial VM size was made unavailable
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				initialVMSize := *vm.Properties.HardwareProfile.VMSize
-				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
-				Expect(err).ToNot(HaveOccurred())
-				ExpectUnavailable(azureEnv, fake.MakeSKU(string(initialVMSize)), zone, karpv1.CapacityTypeSpot)
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal(string(initialVMSize)))
-				Expect(node.Labels[v1.LabelTopologyZone]).To(Equal(zones.Regional))
-			})
-
-			It("should fail to provision when AllocationFailure errors are hit and regional placement is unavailable", func() {
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D2_v3"}})
-				sku := fake.MakeSKU("Standard_D2_v3")
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "RegionalUnavailable", sku, zones.Regional, karpv1.CapacityTypeSpot)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "RegionalUnavailable", sku, zones.Regional, karpv1.CapacityTypeOnDemand)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.AllocationFailed,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.AllocationFailed, "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."),
-						},
-					},
-				)
-
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				zone, err := zones.MakeAKSLabelZoneFromVM(&vm)
-				Expect(err).ToNot(HaveOccurred())
-				ExpectUnavailable(azureEnv, sku, zone, karpv1.CapacityTypeSpot)
-				ExpectUnavailable(azureEnv, sku, zone, karpv1.CapacityTypeOnDemand)
-				ExpectUnavailable(azureEnv, sku, zones.Regional, karpv1.CapacityTypeSpot)
-				ExpectUnavailable(azureEnv, sku, zones.Regional, karpv1.CapacityTypeOnDemand)
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
-
-			It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
-				familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.OperationNotAllowed,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, familyVCPUQuotaExceededErrorMessage),
-						},
-					},
-				)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-				// We should have created a nic for the vm
-				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				// The nic we used in the vm create, should be cleaned up if the vm call fails
-				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-				Expect(nic).NotTo(BeNil())
-				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
-				Expect(ok).To(Equal(false))
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				pod = coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-			})
-			It("should fail to provision when VM SKU family vCPU quota limit is zero, and succeed when its gone", func() {
-				familyVCPUQuotaIsZeroErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.OperationNotAllowed,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, familyVCPUQuotaIsZeroErrorMessage),
-						},
-					},
-				)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-				// We should have created a nic for the vm
-				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				// The nic we used in the vm create, should be cleaned up if the vm call fails
-				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-				Expect(nic).NotTo(BeNil())
-				_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(lo.FromPtr(nic.Interface.ID))
-				Expect(ok).To(Equal(false))
-
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-				pod = coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-			})
-
-			It("should return ICE if Total Regional Cores Quota errors are hit", func() {
-				regionalVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved Total Regional Cores quota. Additional details - Deployment Model: Resource Manager, Location: uksouth, Current Limit: 100, Current Usage: 100, Additional Required: 64, (Minimum) New Limit Required: 164. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22uksouth%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22cores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:164,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22cores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/regional-quota-requests"
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.OperationNotAllowed,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, regionalVCPUQuotaExceededErrorMessage),
-						},
-					},
-				)
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							karpv1.NodePoolLabelKey: nodePool.Name,
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Name:  nodeClass.Name,
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-						},
-					},
-				})
-				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-				Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
-				Expect(claim).To(BeNil())
-
-			})
-		})
-
-		Context("additional-tags", func() {
-			It("should add additional tags to the node", func() {
-				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
-					AdditionalTags: map[string]string{
-						"karpenter.azure.com/test-tag": "test-value",
-					},
-				}))
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm).NotTo(BeNil())
-				Expect(vm.Tags).To(Equal(map[string]*string{
-					"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
-					"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
-					"compute.aks.billing":          lo.ToPtr("linux"),
-					"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
-				}))
-
-				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-				Expect(nic).NotTo(BeNil())
-				Expect(nic.Interface.Tags).To(Equal(map[string]*string{
-					"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
-					"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
-					"compute.aks.billing":          lo.ToPtr("linux"),
-					"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
-				}))
-			})
-		})
-
-		DescribeTable("Filtering by LocalDNS",
-			func(localDNSMode v1beta1.LocalDNSMode, k8sVersion string, shouldIncludeD2s, shouldIncludeD4s bool) {
-				if localDNSMode != "" {
-					// Create complete LocalDNS configuration with all required fields
-					// Note: VnetDNS and KubeDNS overrides must contain both "." and "cluster.local" zones
-					nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-						Mode: localDNSMode,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-							{
-								Zone:               ".",
-								QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-								ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
-								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
-								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-							},
-							{
-								Zone:               "cluster.local",
-								QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-								ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
-								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-							},
-						},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-							{
-								Zone:               ".",
-								QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-								ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
-								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-							},
-							{
-								Zone:               "cluster.local",
-								QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-								Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-								ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-								ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-								MaxConcurrent:      lo.ToPtr(int32(100)),
-								CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-								ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-								ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-							},
-						},
-					}
-				}
-				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-				if k8sVersion != "" {
-					nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
-				}
-				// Mirror what the resolver would do: set Status.LocalDNSState=Enabled
-				// when the resolution would land on Enabled. The test instance-type
-				// provider uses a nil resolver, so Status is the only path to
-				// surface Enabled.
-				setEnabledStatus := func() {
-					nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
-				}
-				switch localDNSMode {
-				case v1beta1.LocalDNSModeRequired:
-					setEnabledStatus()
-				case v1beta1.LocalDNSModeDisabled:
-					// no status needed; Disabled mode -> false
-				case v1beta1.LocalDNSModePreferred:
-					threshold := semver.MustParse("1.36.0")
-					parsed, perr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
-					if perr == nil && parsed.GTE(threshold) {
-						setEnabledStatus()
-					}
-				}
-				ExpectApplied(ctx, env.Client, nodeClass)
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(instanceTypes).ShouldNot(BeEmpty())
-
-				getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
-
-				if shouldIncludeD2s {
-					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
-						"Standard_D2s_v3 (2 vCPUs) should be included")
-				} else {
-					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
-						"Standard_D2s_v3 (2 vCPUs) should be excluded")
-				}
-
-				if shouldIncludeD4s {
-					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
-						"Standard_D4s_v3 (4 vCPUs) should be included")
-				}
-			},
-			Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
-				v1beta1.LocalDNSModeRequired, "", false, true),
-			Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
-				v1beta1.LocalDNSModePreferred, "1.36.0", false, true),
-			Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
-				v1beta1.LocalDNSModePreferred, "1.35.0", true, true),
-			Entry("when LocalDNS is disabled - includes all SKUs",
-				v1beta1.LocalDNSModeDisabled, "", true, true),
-			Entry("when LocalDNS is not set - includes all SKUs",
-				v1beta1.LocalDNSMode(""), "", true, true),
-		)
-
-		Context("Cache invalidation with LocalDNS", func() {
-			It("should return different instance type lists when LocalDNS mode changes", func() {
-				// First, get instance types with LocalDNS disabled
-				nodeClassDisabled := test.AKSNodeClass()
-				nodeClassDisabled.Spec.LocalDNS = &v1beta1.LocalDNS{
-					Mode: v1beta1.LocalDNSModeDisabled,
-					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-						{
-							Zone:               ".",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-						{
-							Zone:               "cluster.local",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-					},
-					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-						{
-							Zone:               ".",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-						{
-							Zone:               "cluster.local",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-					},
-				}
-				nodeClassDisabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
-				instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
-				Expect(err).ToNot(HaveOccurred())
-
-				// Now get instance types with LocalDNS required
-				nodeClassEnabled := test.AKSNodeClass()
-				nodeClassEnabled.Spec.LocalDNS = &v1beta1.LocalDNS{
-					Mode: v1beta1.LocalDNSModeRequired,
-					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-						{
-							Zone:               ".",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-						{
-							Zone:               "cluster.local",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-					},
-					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-						{
-							Zone:               ".",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-						{
-							Zone:               "cluster.local",
-							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
-							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
-							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
-							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
-							MaxConcurrent:      lo.ToPtr(int32(100)),
-							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
-							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
-						},
-					},
-				}
-				nodeClassEnabled.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
-				ExpectApplied(ctx, env.Client, nodeClassEnabled)
-				instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
-				Expect(err).ToNot(HaveOccurred())
-
-				// The lists should be different sizes
-				Expect(len(instanceTypesEnabled)).To(BeNumerically("<", len(instanceTypesDisabled)),
-					"LocalDNS Required should filter out small SKUs")
-
-				getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
-
-				// Verify that small SKUs (< 4 vCPUs) are present when disabled but absent when enabled
-				Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
-					"Standard_D2s_v3 (2 vCPUs) should be included when LocalDNS is disabled")
-				Expect(instanceTypesEnabled).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
-					"Standard_D2s_v3 (2 vCPUs) should be excluded when LocalDNS is required")
-
-				// Verify that large SKUs (>= 4 vCPUs) are present in both
-				Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
-					"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is disabled")
-				Expect(instanceTypesEnabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
-					"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is required")
-			})
-		})
-
-		DescribeTable("Filtering by ArtifactStreaming",
-			func(artifactStreaming *v1beta1.ArtifactStreaming, shouldIncludeArm64 bool) {
-				nodeClass.Spec.ArtifactStreaming = artifactStreaming
-				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-				ExpectApplied(ctx, env.Client, nodeClass)
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(instanceTypes).ShouldNot(BeEmpty())
-
-				getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
-
-				if shouldIncludeArm64 {
-					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
-						"ARM64 instance type Standard_D16plds_v5 should be included")
-				} else {
-					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
-						"ARM64 instance type Standard_D16plds_v5 should be excluded")
-				}
-
-				// AMD64 instance types should always be included regardless of artifact streaming setting
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
-					"AMD64 instance type Standard_D2s_v3 should always be included")
-			},
-			Entry("when artifact streaming is not set (default) - includes ARM64",
-				nil, true),
-			Entry("when artifact streaming is explicitly enabled - excludes ARM64",
-				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}, false),
-			Entry("when artifact streaming is explicitly disabled - includes ARM64",
-				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}, true),
-		)
-
-		Context("Ephemeral Disk", func() {
-			var originalOptions *options.Options
-			BeforeEach(func() {
-				originalOptions = options.FromContext(ctx)
-				ctx = options.ToContext(
-					ctx,
-					test.Options(test.OptionsFields{
-						UseSIG: lo.ToPtr(true),
-					}))
-
-				// Repopilate instance types based on above ctx
-				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-			})
-
-			AfterEach(func() {
-				ctx = options.ToContext(ctx, originalOptions)
-				// Clean up instance types
-				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-			})
-
-			Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
-				// B20ms:
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 32212254720 -> 32.21225472 GB .. we should select this as the ephemeral disk size
-				// placement == CacheDisk
-				// MaxResourceVolumeMB == 163840 MiB -> 171.80 GB,
-				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
-				// and this is greater than 0, so we select 7559, placement == NvmeDisk
-				// Standard_D16plds_v5:
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 429496729600 -> 429.4967296, this is greater than zero, so we select this as the ephemeral disk size
-				// placement == CacheDisk and size == 429.4967296 GB
-				// MaxResourceVolumeMB == 614400 MiB
-				// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
-				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
-				// and this is greater than 0, so we select 7559, placement == NvmeDisk
-				// Standard_NC24ads_A100_v4:
-				// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
-				// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacements == NvmeDisk so we move to cache disk
-				// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
-				// MaxResourceVolumeMB == 65536 MiB
-				// Standard_D64s_v3:
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 1717986918400 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
-				// placement == CacheDisk and size == 1717 GB
-				// Standard_A0
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 0, this is zero
-				// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk
-				DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
-					func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
-						sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
-						Expect(sizeGB).To(Equal(expectedSize))
-						Expect(placement).To(Equal(expectedPlacement))
-					}, Entry("Standard_B20ms", fake.MakeSKU("Standard_B20ms"), int64(32), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_D128ds_v6", fake.MakeSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
-					Entry("Standard_D16plds_v5", fake.MakeSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_D2as_v6", fake.MakeSKU("Standard_D2as_v6"), int64(0), nil), // does not support ephemeral
-					Entry("Standard_NC24ads_A100_v4", fake.MakeSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_D64s_v3", fake.MakeSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_A0", fake.MakeSKU("Standard_A0"), int64(0), nil),       // does not support ephemeral
-					Entry("Standard_D2_v2", fake.MakeSKU("Standard_D2_v2"), int64(0), nil), // does not support ephemeral
-					// TODO: codegen
-					// Entry("Standard_D2pls_v5", fake.MakeSKU("Standard_D2pls_v5"), int64(0), nil), // does not support ephemeral
-					// Entry("Standard_D2lds_v5", fake.MakeSKU("Standard_D2lds_v5"), int64(80), armcompute.DiffDiskPlacementResourceDisk),
-					Entry("Nil SKU", nil, int64(0), nil),
-				)
-			})
-			Context("Placement", func() {
-				It("should prefer NVMe disk if supported for ephemeral", func() {
-					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_D128ds_v6"},
-					})
-
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-					Expect(vm).NotTo(BeNil())
-					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
-					Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
-				})
-				It("should not select NVMe ephemeral disk placement if the sku has an nvme disk, supports ephemeral os disk, but doesnt support NVMe placement", func() {
-					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC24ads_A100_v4"},
-					})
-
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-					Expect(vm).NotTo(BeNil())
-					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
-					Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).ToNot(Equal(armcompute.DiffDiskPlacementNvmeDisk))
-				})
-				It("should prefer cache disk placement when both cache and temp disk support ephemeral and fit the default 128GB threshold", func() {
-					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_D64s_v3"},
-					})
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-					Expect(vm).NotTo(BeNil())
-					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
-					Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
-				})
-				It("should select managed disk if cache disk is too small but temp disk supports ephemeral and fits osDiskSizeGB to have parity with the AKS Nodepool API", func() {
-					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_B20ms"},
-					})
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-					Expect(vm).NotTo(BeNil())
-					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
-				})
-			})
-			It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
-				// Create a NodePool that selects a sku that supports ephemeral
-				// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
-				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D64s_v3"}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm).NotTo(BeNil())
-				Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
-				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
-				// should have local disk attached
-				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
-				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
-			})
-			It("should fail to provision if ephemeral disk ask for is too large", func() {
-				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-					Operator: v1.NodeSelectorOpGt,
-					Values:   []string{"100000"},
-				}) // No InstanceType will match this requirement
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-			})
-			It("should select an ephemeral disk if LabelSKUStorageEphemeralOSMaxSize is set and os disk size fits", func() {
-				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-					Operator: v1.NodeSelectorOpGt,
-					Values:   []string{"0"},
-				})
-				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm).NotTo(BeNil())
-				Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
-				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(30)))
-				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
-			})
-			It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
-				// Create a Nodepool that selects a sku that supports ephemeral
-				// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
-				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
-				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D64s_v3"}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm).NotTo(BeNil())
-				Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
-				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(256)))
-				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
-			})
-			It("should not use ephemeral disk if ephemeral is supported, but we don't have enough space", func() {
-				// Create a Nodepool that selects a sku that supports ephemeral Standard_D2s_v3
-				// Standard_D2s_V3 has 53GB Of CacheDisk space,
-				// and has 16GB of Temp Disk Space.
-				// With our rule of 100GB being the minimum OSDiskSize, this VM should be created without local disk
-				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D2s_v3"}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm).NotTo(BeNil())
-				Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
-				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
-				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
-			})
-
-			It("should select NvmeDisk for v6 skus with maxNvmeDiskSize > 0", func() {
-				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D128ds_v6"}})
-				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](100)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm).NotTo(BeNil())
-
-				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
-				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
-			})
-		})
-
-		Context("Custom DNS", func() {
-			It("should support provisioning with custom DNS server from options", func() {
-				ctx = options.ToContext(
-					ctx,
-					test.Options(test.OptionsFields{
-						ClusterDNSServiceIP: lo.ToPtr("10.244.0.1"),
-					}),
-				)
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				customData := ExpectDecodedCustomData(azureEnv)
-
-				expectedFlags := map[string]string{
-					"cluster-dns": "10.244.0.1",
-				}
-
-				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-			})
-		})
-
-		Context("Nodepool with KubeletConfig", func() {
-			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
-				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
-					CPUCFSQuotaPeriod:           metav1.Duration{},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
-					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
-					PodPidsLimit:                lo.ToPtr[int64](99),
-				}
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				customData := ExpectDecodedCustomData(azureEnv)
-
-				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
-					"image-gc-high-threshold": "30",
-					"image-gc-low-threshold":  "20",
-					"cpu-cfs-quota":           "true",
-					"max-pods":                "250",
-					"topology-manager-policy": "best-effort",
-					"container-log-max-size":  "42Mi",
-					"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
-					"cpu-manager-policy":      "static",
-					"container-log-max-files": "13",
-					"pod-max-pids":            "99",
-				}
-
-				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				Expect(customData).To(SatisfyAny( // AKS default
-					ContainSubstring("--system-reserved=cpu=0,memory=0"),
-					ContainSubstring("--system-reserved=memory=0,cpu=0"),
-				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
-			})
-		})
-
-		Context("Nodepool with KubeletConfig on a kubenet Cluster", func() {
-			var originalOptions *options.Options
-
-			BeforeEach(func() {
-				originalOptions = options.FromContext(ctx)
-				ctx = options.ToContext(
-					ctx,
-					test.Options(test.OptionsFields{
-						NetworkPlugin: lo.ToPtr("kubenet"),
-					}))
-			})
-
-			AfterEach(func() {
-				ctx = options.ToContext(ctx, originalOptions)
-			})
-			It("should not include cilium or azure cni vnet labels", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				customData := ExpectDecodedCustomData(azureEnv)
-				// Since the network plugin is not "azure" it should not include the following kubeletLabels
-				Expect(customData).To(Not(SatisfyAny(
-					ContainSubstring("kubernetes.azure.com/network-subnet=aks-subnet"),
-					ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c"),
-					ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
-				)))
-			})
-			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
-				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
-					CPUCFSQuotaPeriod:           metav1.Duration{},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
-					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
-					PodPidsLimit:                lo.ToPtr[int64](99),
-				}
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				customData := ExpectDecodedCustomData(azureEnv)
-				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
-					"max-pods":                "110",
-					"image-gc-low-threshold":  "20",
-					"image-gc-high-threshold": "30",
-					"cpu-cfs-quota":           "true",
-					"topology-manager-policy": "best-effort",
-					"container-log-max-size":  "42Mi",
-					"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
-					"cpu-manager-policy":      "static",
-					"container-log-max-files": "13",
-					"pod-max-pids":            "99",
-				}
-				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				Expect(customData).To(SatisfyAny( // AKS default
-					ContainSubstring("--system-reserved=cpu=0,memory=0"),
-					ContainSubstring("--system-reserved=memory=0,cpu=0"),
-				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
-			})
-			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
-				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					CPUManagerPolicy:            lo.ToPtr("static"),
-					CPUCFSQuota:                 lo.ToPtr(true),
-					CPUCFSQuotaPeriod:           metav1.Duration{},
-					ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
-					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-					TopologyManagerPolicy:       lo.ToPtr("best-effort"),
-					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         lo.ToPtr("42Mi"),
-					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
-					PodPidsLimit:                lo.ToPtr[int64](99),
-				}
-				nodeClass.Spec.MaxPods = lo.ToPtr(int32(15))
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				customData := ExpectDecodedCustomData(azureEnv)
-				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
-					"max-pods":                "15",
-					"image-gc-low-threshold":  "20",
-					"image-gc-high-threshold": "30",
-					"cpu-cfs-quota":           "true",
-					"topology-manager-policy": "best-effort",
-					"container-log-max-size":  "42Mi",
-					"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
-					"cpu-manager-policy":      "static",
-					"container-log-max-files": "13",
-					"pod-max-pids":            "99",
-				}
-
-				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				Expect(customData).To(SatisfyAny( // AKS default
-					ContainSubstring("--system-reserved=cpu=0,memory=0"),
-					ContainSubstring("--system-reserved=memory=0,cpu=0"),
-				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
-			})
-		})
-
-		Context("ImageReference", func() {
-			It("should use shared image gallery images when options are set to UseSIG", func() {
-				options := test.Options(test.OptionsFields{
-					UseSIG: lo.ToPtr(true),
-				})
-				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin)
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				// Expect virtual machine to have a shared image gallery id set on it
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-				Expect(vm.Properties.StorageProfile.ImageReference.ID).ShouldNot(BeNil())
-				Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(BeNil())
-
-				Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(options.SIGSubscriptionID))
-				Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring("AKSUbuntu"))
-			})
-			It("should use Community Images when options are set to UseSIG=false", func() {
-				options := test.Options(test.OptionsFields{
-					UseSIG: lo.ToPtr(false),
-				})
-				ctx = options.ToContext(ctx)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(Not(BeNil()))
-
-			})
-
-		})
-
-		Context("ImageProvider + Image Family", func() {
-
-			kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
-			expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
-			azureLinuxGen2ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ImageDefinition, imagefamily.AzureLinuxGen2ImageDefinition)
-			azureLinuxGen1ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen1ImageDefinition, imagefamily.AzureLinuxGen1ImageDefinition)
-			azureLinuxGen2ArmImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
-
-			DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
-				options := test.Options(test.OptionsFields{
-					UseSIG: lo.ToPtr(true),
-				})
-				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin)
-
-				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{instanceType}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-
-				expectedPrefix := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s", options.SIGSubscriptionID, expectedGalleryRG, expectedGalleryURL, expectedImageDefinition)
-				Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(expectedPrefix))
-
-			},
-
-				Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-				Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-				Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-				Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-			)
-			DescribeTable("should select the right image for a given instance type",
-				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
-					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{instanceType}})
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-					pod := coretest.UnschedulablePod(coretest.PodOptions{})
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-					Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-					Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).ToNot(BeNil())
-					parts := strings.Split(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID, "/")
-					Expect(parts[2]).To(Equal(expectedGalleryURL))
-					Expect(parts[4]).To(Equal(expectedImageDefinition))
-
-					// Need to reset env since we are doing these nested tests
-					cluster.Reset()
-					azureEnv.Reset(ctx)
-				},
-				Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
-					"Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
-				Entry("Gen1 instance type with AKSUbuntu image family",
-					"Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
-				Entry("ARM instance type with AKSUbuntu image family",
-					"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
-				Entry("Gen2 instance type with AzureLinux image family",
-					"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
-				Entry("Gen1 instance type with AzureLinux image family",
-					"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
-				Entry("ARM instance type with AzureLinux image family",
-					"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
-			)
-		})
-
-		Context("Instance Types", func() {
-			It("should support provisioning with no labels", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-			})
-			It("should have VM identity set", func() {
-				ctx = options.ToContext(
-					ctx,
-					test.Options(test.OptionsFields{
-						NodeIdentities: []string{
-							"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
-							"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
-						},
-					}))
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Identity).ToNot(BeNil())
-
-				Expect(lo.FromPtr(vm.Identity.Type)).To(Equal(armcompute.ResourceIdentityTypeUserAssigned))
-				Expect(vm.Identity.UserAssignedIdentities).ToNot(BeNil())
-				Expect(vm.Identity.UserAssignedIdentities).To(HaveLen(2))
-				Expect(vm.Identity.UserAssignedIdentities).To(HaveKey("/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1"))
-				Expect(vm.Identity.UserAssignedIdentities).To(HaveKey("/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2"))
-			})
-			Context("VM Profile", func() {
-				It("should have OS disk and network interface set to auto-delete", func() {
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-					Expect(vm.Properties).ToNot(BeNil())
-
-					Expect(vm.Properties.StorageProfile).ToNot(BeNil())
-					Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
-					osDiskDeleteOption := vm.Properties.StorageProfile.OSDisk.DeleteOption
-					Expect(osDiskDeleteOption).ToNot(BeNil())
-					Expect(lo.FromPtr(osDiskDeleteOption)).To(Equal(armcompute.DiskDeleteOptionTypesDelete))
-
-					Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-
-					for _, nic := range vm.Properties.NetworkProfile.NetworkInterfaces {
-						nicDeleteOption := nic.Properties.DeleteOption
-						Expect(nicDeleteOption).To(Not(BeNil()))
-						Expect(lo.FromPtr(nicDeleteOption)).To(Equal(armcompute.DeleteOptionsDelete))
-					}
-				})
-				It("should not create unneeded secondary ips for azure cni with overlay", func() {
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-					Expect(vm.Properties).ToNot(BeNil())
-
-					Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-					Expect(len(vm.Properties.NetworkProfile.NetworkInterfaces)).To(Equal(1))
-					Expect(lo.FromPtr(vm.Properties.NetworkProfile.NetworkInterfaces[0].Properties.Primary)).To(BeTrue())
-
-					Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-					nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
-					Expect(nic.Properties).ToNot(BeNil())
-
-					Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
-				})
-			})
-		})
-
-		Context("GPU Workloads + Nodes", func() {
-			It("should schedule non-GPU pod onto the cheapest non-GPU capable node", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Properties).ToNot(BeNil())
-				Expect(vm.Properties.HardwareProfile).ToNot(BeNil())
-				Expect(utils.IsNvidiaEnabledSKU(string(*vm.Properties.HardwareProfile.VMSize))).To(BeFalse())
-
-				Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-count", "0"))
-			})
-
-			It("should schedule GPU pod on GPU capable node", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "samples-tf-mnist-demo",
-						Labels: map[string]string{
-							"app": "samples-tf-mnist-demo",
-						},
-					},
-					Image: "mcr.microsoft.com/azuredocs/samples-tf-mnist-demo:gpu",
-					ResourceRequirements: v1.ResourceRequirements{
-						Limits: v1.ResourceList{
-							"nvidia.com/gpu": resource.MustParse("1"),
-						},
-					},
-					RestartPolicy: v1.RestartPolicy("OnFailure"),
-					Tolerations: []v1.Toleration{
-						{
-							Key:      "sku",
-							Operator: v1.TolerationOpEqual,
-							Value:    "gpu",
-							Effect:   v1.TaintEffectNoSchedule,
-						},
-					},
-				})
-
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-
-				// the following checks assume Standard_NC16as_T4_v3 (surprisingly the cheapest GPU in the test set), so test the assumption
-				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_NC16as_T4_v3"))
-
-				// Verify GPU related settings in bootstrap (assuming one Standard_NC16as_T4_v3)
-				customData := ExpectDecodedCustomData(azureEnv)
-				Expect(customData).To(SatisfyAll(
-					ContainSubstring("GPU_NODE=true"),
-					ContainSubstring("SGX_NODE=false"),
-					ContainSubstring("MIG_NODE=false"),
-					ContainSubstring("CONFIG_GPU_DRIVER_IF_NEEDED=true"),
-					ContainSubstring("ENABLE_GPU_DEVICE_PLUGIN_IF_NEEDED=false"),
-					ContainSubstring("GPU_DRIVER_TYPE=\"cuda\""),
-					ContainSubstring(fmt.Sprintf("GPU_DRIVER_VERSION=\"%s\"", utils.NvidiaCudaDriverVersion)),
-					ContainSubstring(fmt.Sprintf("GPU_IMAGE_SHA=\"%s\"", utils.AKSGPUCudaVersionSuffix)),
-					ContainSubstring("GPU_NEEDS_FABRIC_MANAGER=\"false\""),
-					ContainSubstring("GPU_INSTANCE_PROFILE=\"\""),
-				))
-
-				// Verify that the node the pod was scheduled on has GPU resource and labels set
-				Expect(node.Status.Allocatable).To(HaveKeyWithValue(v1.ResourceName("nvidia.com/gpu"), resource.MustParse("1")))
-				Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-name", "T4"))
-				Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-manufacturer", v1beta1.ManufacturerNvidia))
-				Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-count", "1"))
-			})
-		})
-
-		Context("Bootstrap", func() {
-			var (
-				kubeletFlags          string
-				customData            string
-				minorVersion          uint64
-				credentialProviderURL string
-			)
-			BeforeEach(func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-				customData = ExpectDecodedCustomData(azureEnv)
-				kubeletFlags = ExpectKubeletFlagsPassed(customData)
-
-				k8sVersion, err := azureEnv.KubernetesVersionProvider.KubeServerVersion(ctx)
-				Expect(err).To(BeNil())
-				minorVersion = semver.MustParse(k8sVersion).Minor
-				credentialProviderURL = bootstrap.CredentialProviderURL(k8sVersion, "amd64")
-			})
-
-			It("should include or exclude --keep-terminated-pod-volumes based on kubelet version", func() {
-				if minorVersion < 31 {
-					Expect(kubeletFlags).To(ContainSubstring("--keep-terminated-pod-volumes"))
-				} else {
-					Expect(kubeletFlags).ToNot(ContainSubstring("--keep-terminated-pod-volumes"))
-				}
-			})
-
-			It("should include correct flags and credential provider URL when CredentialProviderURL is not empty", func() {
-				if credentialProviderURL != "" {
-					Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
-					Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
-					Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
-					Expect(customData).To(ContainSubstring(credentialProviderURL))
-				}
-			})
-
-			It("should include correct flags when CredentialProviderURL is empty", func() {
-				if credentialProviderURL == "" {
-					Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
-					Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
-					Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
-				}
-			})
-
-			It("should include karpenter.sh/unregistered taint", func() {
-				Expect(kubeletFlags).To(ContainSubstring("--register-with-taints=" + karpv1.UnregisteredNoExecuteTaint.ToString()))
-			})
-		})
-
-		DescribeTable("Azure CNI node labels and agentbaker network plugin", func(
-			networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
-			expectedNodeLabels sets.Set[string]) {
-			options := test.Options(test.OptionsFields{
-				NetworkPlugin:     lo.ToPtr(networkPlugin),
-				NetworkPluginMode: lo.ToPtr(networkPluginMode),
-				NetworkDataplane:  lo.ToPtr(networkDataplane),
-			})
-			ctx = options.ToContext(ctx)
-
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-			customData := ExpectDecodedCustomData(azureEnv)
-
-			Expect(customData).To(ContainSubstring(fmt.Sprintf("NETWORK_PLUGIN=%s", expectedAgentBakerNetPlugin)))
-
-			for label := range expectedNodeLabels {
-				Expect(customData).To(ContainSubstring(label))
+	DescribeTable("Filtering by ArtifactStreaming",
+		func(artifactStreaming *v1beta1.ArtifactStreaming, shouldIncludeArm64 bool) {
+			nodeClass.Spec.ArtifactStreaming = artifactStreaming
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			ExpectApplied(ctx, env.Client, nodeClass)
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ShouldNot(BeEmpty())
+
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			if shouldIncludeArm64 {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
+					"ARM64 instance type Standard_D16plds_v5 should be included")
+			} else {
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))),
+					"ARM64 instance type Standard_D16plds_v5 should be excluded")
 			}
+
+			// AMD64 instance types should always be included regardless of artifact streaming setting
+			Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+				"AMD64 instance type Standard_D2s_v3 should always be included")
 		},
-			Entry("Azure CNI V1",
-				"azure", "", "",
-				"azure", sets.New[string]()),
-			Entry("Azure CNI w Overlay",
-				"azure", "overlay", "",
-				"none",
-				sets.New(
-					"kubernetes.azure.com/azure-cni-overlay=true",
-					"kubernetes.azure.com/network-subnet=aks-subnet",
-					"kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
-					"kubernetes.azure.com/podnetwork-type=overlay",
-				)),
-			Entry("Network Plugin none",
-				"none", "", "", "none",
-				sets.New[string]()),
-			Entry("Azure CNI w Overlay w Cilium",
-				"azure", "overlay", "cilium",
-				"none",
-				sets.New(
-					"kubernetes.azure.com/azure-cni-overlay=true",
-					"kubernetes.azure.com/network-subnet=aks-subnet",
-					"kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
-					"kubernetes.azure.com/podnetwork-type=overlay",
-					"kubernetes.azure.com/ebpf-dataplane=cilium",
-				)),
-			Entry("Cilium w feature flag Microsoft.ContainerService/EnableCiliumNodeSubnet",
-				"azure", "", "cilium",
-				"none",
-				sets.New("kubernetes.azure.com/ebpf-dataplane=cilium")),
+		Entry("when artifact streaming is not set (default) - includes ARM64",
+			nil, true),
+		Entry("when artifact streaming is explicitly enabled - excludes ARM64",
+			&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}, false),
+		Entry("when artifact streaming is explicitly disabled - includes ARM64",
+			&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}, true),
+	)
+
+	Context("Ephemeral Disk", func() {
+		var originalOptions *options.Options
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					UseSIG: lo.ToPtr(true),
+				}))
+
+			// Repopilate instance types based on above ctx
+			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
+			// Clean up instance types
+			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+		})
+
+		Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
+			// B20ms:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 32212254720 -> 32.21225472 GB .. we should select this as the ephemeral disk size
+			// placement == CacheDisk
+			// MaxResourceVolumeMB == 163840 MiB -> 171.80 GB,
+			// Standard_D128ds_v6:
+			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
+			// and this is greater than 0, so we select 7559, placement == NvmeDisk
+			// Standard_D16plds_v5:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 429496729600 -> 429.4967296, this is greater than zero, so we select this as the ephemeral disk size
+			// placement == CacheDisk and size == 429.4967296 GB
+			// MaxResourceVolumeMB == 614400 MiB
+			// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
+			// Standard_D128ds_v6:
+			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
+			// and this is greater than 0, so we select 7559, placement == NvmeDisk
+			// Standard_NC24ads_A100_v4:
+			// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
+			// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacements == NvmeDisk so we move to cache disk
+			// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
+			// MaxResourceVolumeMB == 65536 MiB
+			// Standard_D64s_v3:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 1717986918400 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
+			// placement == CacheDisk and size == 1717 GB
+			// Standard_A0
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 0, this is zero
+			// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk
+			DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
+				func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
+					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+					Expect(sizeGB).To(Equal(expectedSize))
+					Expect(placement).To(Equal(expectedPlacement))
+				}, Entry("Standard_B20ms", fake.MakeSKU("Standard_B20ms"), int64(32), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D128ds_v6", fake.MakeSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
+				Entry("Standard_D16plds_v5", fake.MakeSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D2as_v6", fake.MakeSKU("Standard_D2as_v6"), int64(0), nil), // does not support ephemeral
+				Entry("Standard_NC24ads_A100_v4", fake.MakeSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D64s_v3", fake.MakeSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_A0", fake.MakeSKU("Standard_A0"), int64(0), nil),       // does not support ephemeral
+				Entry("Standard_D2_v2", fake.MakeSKU("Standard_D2_v2"), int64(0), nil), // does not support ephemeral
+				// TODO: codegen
+				// Entry("Standard_D2pls_v5", fake.MakeSKU("Standard_D2pls_v5"), int64(0), nil), // does not support ephemeral
+				// Entry("Standard_D2lds_v5", fake.MakeSKU("Standard_D2lds_v5"), int64(80), armcompute.DiffDiskPlacementResourceDisk),
+				Entry("Nil SKU", nil, int64(0), nil),
+			)
+		})
+		Context("Placement", func() {
+		})
+
+	})
+
+	Context("Zone-aware provisioning", func() {
+		It("should not include empty zone domain in instance type offerings", func() {
+			// Verify that no instance type has an offering with zone=""
+			// which would introduce a phantom domain in topology spread constraint calculations.
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ToNot(BeEmpty())
+
+			for _, it := range instanceTypes {
+				for _, offering := range it.Offerings {
+					zone := offering.Requirements.Get(v1.LabelTopologyZone).Any()
+					Expect(zone).ToNot(BeEmpty(),
+						fmt.Sprintf("instance type %s has an offering with empty zone, which breaks topology spread constraints", it.Name))
+				}
+			}
+		})
+	})
+
+	Context("Unavailable Offerings", func() {
+		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
+			for _, zone := range azEnv.Zones() {
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
+			}
+			instanceTypes, err := azEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			seeUnavailable := false
+			for _, instanceType := range instanceTypes {
+				if instanceType.Name == "Standard_D2_v2" {
+					seeUnavailable = true
+					if azEnv == azureEnv {
+						Expect(lo.Map(instanceType.Offerings.Available(), func(offering *corecloudprovider.Offering, _ int) string {
+							return offering.Requirements.Get(v1.LabelTopologyZone).Any()
+						})).To(ConsistOf(zones.Regional, zones.Regional))
+					} else {
+						Expect(len(instanceType.Offerings.Available())).To(Equal(0))
+					}
+				} else {
+					Expect(len(instanceType.Offerings.Available())).To(Not(Equal(0)))
+				}
+			}
+			// we should see the unavailable offering in the list
+			Expect(seeUnavailable).To(BeTrue())
+		},
+			Entry("zonal", azureEnv),
+			Entry("non-zonal", azureEnvNonZonal),
 		)
-
-		Context("LoadBalancer", func() {
-			resourceGroup := "test-resourceGroup"
-
-			It("should include loadbalancer backend pools the allocated VMs", func() {
-				standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
-				internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
-
-				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
-				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				iface := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
-
-				Expect(iface.Properties.IPConfigurations).ToNot(BeEmpty())
-				Expect(lo.FromPtr(iface.Properties.IPConfigurations[0].Properties.Primary)).To(Equal(true))
-
-				backendPools := iface.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools
-				Expect(backendPools).To(HaveLen(3))
-				Expect(lo.FromPtr(backendPools[0].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-				Expect(lo.FromPtr(backendPools[1].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
-				Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
-			})
-		})
-
-		Context("Zone-aware provisioning", func() {
-			It("should prefer zonal placement for zone-capable instance types by default", func() {
-				coretest.ReplaceRequirements(nodePool,
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC24ads_A100_v4"}},
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      karpv1.CapacityTypeLabelKey,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand}},
-				)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
-				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zones.Regional))
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Zones).ToNot(BeEmpty())
-			})
-
-			It("should launch zone-capable instance types regionally when placement scope requires it", func() {
-				coretest.ReplaceRequirements(nodePool,
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC24ads_A100_v4"}},
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      karpv1.CapacityTypeLabelKey,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{karpv1.CapacityTypeOnDemand}},
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1beta1.LabelPlacementScope,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{v1beta1.PlacementScopeRegional}},
-				)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Zones).To(BeEmpty())
-			})
-
-			It("should launch in the NodePool-requested zone", func() {
-				zone, vmZone := fmt.Sprintf("%s-3", fake.Region), "3"
-				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot, karpv1.CapacityTypeOnDemand}},
-					{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}},
-				}
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
-
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm).NotTo(BeNil())
-				Expect(vm.Zones).To(ConsistOf(&vmZone))
-			})
-			It("should support provisioning in non-zonal regions", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, azureEnvNonZonal, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Zones).To(BeEmpty())
-			})
-			It("should provision non-zonal instance types in zonal regions with zone label 0", func() {
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_NC6s_v3"}})
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-				Expect(vm.Zones).To(BeEmpty())
-			})
-			It("should not include empty zone domain in instance type offerings", func() {
-				// Verify that no instance type has an offering with zone=""
-				// which would introduce a phantom domain in topology spread constraint calculations.
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(instanceTypes).ToNot(BeEmpty())
-
-				for _, it := range instanceTypes {
-					for _, offering := range it.Offerings {
-						zone := offering.Requirements.Get(v1.LabelTopologyZone).Any()
-						Expect(zone).ToNot(BeEmpty(),
-							fmt.Sprintf("instance type %s has an offering with empty zone, which breaks topology spread constraints", it.Name))
-					}
-				}
-			})
-			It("should exclude non-zonal instance types via zone NodePool requirements", func() {
-				// Users can filter out non-zonal SKUs by constraining zones to specific AZs.
-				// Non-zonal SKUs have zone "0", so requiring a specific zone prevents them
-				// from being scheduled.
-				coretest.ReplaceRequirements(nodePool,
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelTopologyZone,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{fakeZone1},
-					},
-				)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				// Non-zonal SKU (zone="0") is incompatible with the zone requirement (zone-1),
-				// so the pod should not be scheduled.
-				ExpectNotScheduled(ctx, env.Client, pod)
-			})
-			It("should exclude non-zonal instance types when all real zones are specified", func() {
-				// Specifying all availability zones still excludes non-zonal SKUs,
-				// since their zone "0" is not in the allowed list.
-				coretest.ReplaceRequirements(nodePool,
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_NC6s_v3"}}, // non-zonal SKU
-					karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelTopologyZone,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   azureEnv.Zones(),
-					},
-				)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-			})
-			It("should schedule pods with zonal topology spread when non-zonal SKUs exist", func() {
-				// Reproduces https://github.com/Azure/karpenter-provider-azure/issues/1384
-				// Previously, non-zonal SKUs had zone="" which collided with Karpenter core's
-				// sentinel value for "no domain found", making topology spread always unsatisfiable.
-				// With zone="0", the non-zonal domain is valid and doesn't poison the spread calculation.
-				podLabels := map[string]string{"app": "tsc-repro"}
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pods := []*v1.Pod{}
-				for i := 0; i < 3; i++ {
-					pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
-						ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
-						TopologySpreadConstraints: []v1.TopologySpreadConstraint{
-							{
-								MaxSkew:           1,
-								TopologyKey:       v1.LabelTopologyZone,
-								WhenUnsatisfiable: v1.DoNotSchedule,
-								LabelSelector:     &metav1.LabelSelector{MatchLabels: podLabels},
-							},
-						},
-					}))
-				}
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
-				for _, pod := range pods {
-					ExpectScheduled(ctx, env.Client, pod)
-				}
-			})
-		})
-
-		Context("CloudProvider Create Error Cases", func() {
-			It("should return error when NodeClass readiness is Unknown", func() {
-				nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							karpv1.NodePoolLabelKey: nodePool.Name,
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Name:  nodeClass.Name,
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-						},
-					},
-				})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
-				Expect(claim).To(BeNil())
-				Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
-			})
-
-			It("should return error when instance type resolution fails", func() {
-				// Create and set up the status controller
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
-
-				// Set NodeClass to Ready
-				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				// Reconcile the NodeClass to ensure status is updated
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-
-				// Flush the cache to simulate the controller not having run yet.
-				// With the instance type controller, SKU API errors happen during
-				// UpdateInstanceTypes (controller reconcile), not during List.
-				// When the cache is empty, List returns an error.
-				azureEnv.InstanceTypesProvider.Reset()
-
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							karpv1.NodePoolLabelKey: nodePool.Name,
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Name:  nodeClass.Name,
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-						},
-					},
-				})
-
-				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
-				Expect(claim).To(BeNil())
-				Expect(err.Error()).To(ContainSubstring("resolving instance types"))
-
-				// Reset instance types
-				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
-			})
-
-			It("should return error when instance creation fails", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				// Create a NodeClaim with valid requirements
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							karpv1.NodePoolLabelKey: nodePool.Name,
-						},
-					},
-					Spec: karpv1.NodeClaimSpec{
-						NodeClassRef: &karpv1.NodeClassReference{
-							Name:  nodeClass.Name,
-							Group: object.GVK(nodeClass).Group,
-							Kind:  object.GVK(nodeClass).Kind,
-						},
-					},
-				})
-
-				// Set up the instance provider to fail
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-					&azcore.ResponseError{
-						ErrorCode: sdkerrors.OperationNotAllowed,
-						RawResponse: &http.Response{
-							Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, "Failed to create VM"),
-						},
-					},
-				)
-
-				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
-				Expect(claim).To(BeNil())
-				Expect(err.Error()).To(ContainSubstring("creating instance failed"))
-			})
-		})
-
-		// Note: this is the most sharable to AKS machine tests. No ties to VM at all.
-		// Suggestion: share it? Although might need to rework test location/structure for that.
-		Context("Unavailable Offerings", func() {
-			It("should not allocate a vm in a zone marked as unavailable", func() {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeSpot)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeOnDemand)
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D2_v2"}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
-				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
-			})
-			It("should handle ZonalAllocationFailed on creating the VM", func() {
-				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(
-					&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
-				)
-				// when ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
-				expectedUnavailableSKUs := []*skewer.SKU{
-					{
-						Name:   lo.ToPtr("Standard_D2_v2"),
-						Size:   lo.ToPtr("D2_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
-							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("2"),
-							},
-						},
-					},
-					{
-						Name:   lo.ToPtr("Standard_D16_v2"),
-						Size:   lo.ToPtr("D16_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
-							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("16"),
-							},
-						},
-					},
-					{
-						Name:   lo.ToPtr("Standard_D32_v2"),
-						Size:   lo.ToPtr("D32_v2"),
-						Family: lo.ToPtr("StandardDv2Family"),
-						Capabilities: &[]compute.ResourceSkuCapabilities{
-							{
-								Name:  lo.ToPtr("vCPUs"),
-								Value: lo.ToPtr("32"),
-							},
-						},
-					},
-				}
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D2_v2"}})
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectLaunched(ctx, env.Client, cloudProvider, coreProvisioner, pod)
-				ExpectNotScheduled(ctx, env.Client, pod)
-
-				Eventually(func() []*karpv1.NodeClaim { return ExpectNodeClaims(ctx, env.Client) }).To(HaveLen(0))
-
-				By("marking whatever zone was picked as unavailable - for both spot and on-demand")
-				zone, err := zones.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
-				Expect(err).ToNot(HaveOccurred())
-				for _, skuToCheck := range expectedUnavailableSKUs {
-					Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
-					Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
-				}
-
-				By("successfully scheduling in a different zone on retry")
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
-			})
-
-			DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
-				for _, zone := range azEnv.Zones() {
-					azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
-					azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
-				}
-				instanceTypes, err := azEnv.InstanceTypesProvider.List(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-
-				seeUnavailable := false
-				for _, instanceType := range instanceTypes {
-					if instanceType.Name == "Standard_D2_v2" {
-						seeUnavailable = true
-						if azEnv == azureEnv {
-							Expect(lo.Map(instanceType.Offerings.Available(), func(offering *corecloudprovider.Offering, _ int) string {
-								return offering.Requirements.Get(v1.LabelTopologyZone).Any()
-							})).To(ConsistOf(zones.Regional, zones.Regional))
-						} else {
-							Expect(len(instanceType.Offerings.Available())).To(Equal(0))
-						}
-					} else {
-						Expect(len(instanceType.Offerings.Available())).To(Not(Equal(0)))
-					}
-				}
-				// we should see the unavailable offering in the list
-				Expect(seeUnavailable).To(BeTrue())
-			},
-				Entry("zonal", azureEnv),
-				Entry("non-zonal", azureEnvNonZonal),
-			)
-
-			It("should launch instances in a different zone than preferred", func() {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeOnDemand)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2_v2"), fakeZone1, karpv1.CapacityTypeSpot)
-
-				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{
-					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
-				})
-				pod.Spec.Affinity = &v1.Affinity{
-					NodeAffinity: &v1.NodeAffinity{
-						PreferredDuringSchedulingIgnoredDuringExecution: []v1.PreferredSchedulingTerm{
-							{
-								Weight: 1,
-								Preference: v1.NodeSelectorTerm{
-									MatchExpressions: []v1.NodeSelectorRequirement{
-										{
-											Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1},
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-				Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
-				Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
-			})
-			It("should launch smaller instances than optimal if larger instance launch results in Insufficient Capacity Error", func() {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_F16s_v2"), fakeZone1, karpv1.CapacityTypeOnDemand)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_F16s_v2"), fakeZone1, karpv1.CapacityTypeSpot)
-				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_DS2_v2", "Standard_F16s_v2"}})
-				pods := []*v1.Pod{}
-				for i := 0; i < 2; i++ {
-					pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{
-						ResourceRequirements: v1.ResourceRequirements{
-							Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
-						},
-						NodeSelector: map[string]string{
-							v1.LabelTopologyZone: fakeZone1,
-						},
-					}))
-				}
-				// Provisions 2 smaller instances since larger was ICE'd
-				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
-
-				nodeNames := sets.New[string]()
-				for _, pod := range pods {
-					node := ExpectScheduled(ctx, env.Client, pod)
-					Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_DS2_v2"))
-					nodeNames.Insert(node.Name)
-				}
-				Expect(nodeNames.Len()).To(Equal(2))
-			})
-			DescribeTable("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry",
-				func(azureEnv *test.Environment, cluster *state.Cluster, cloudProvider *cloudprovider.CloudProvider, coreProvisioner *provisioning.Provisioner) {
-					for _, zone := range azureEnv.Zones() {
-						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeSpot)
-						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zone, karpv1.CapacityTypeOnDemand)
-					}
-					if azureEnv == azureEnvNonZonal {
-						// Non-zonal environments already use zone="0" as their only zone.
-					} else {
-						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeSpot)
-						azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", fake.MakeSKU("Standard_D2_v2"), zones.Regional, karpv1.CapacityTypeOnDemand)
-					}
-
-					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-					pod := coretest.UnschedulablePod(coretest.PodOptions{
-						NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
-					})
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectNotScheduled(ctx, env.Client, pod)
-					// capacity shortage is over - expire the items from the cache and try again
-					azureEnv.UnavailableOfferingsCache.Flush()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					node := ExpectScheduled(ctx, env.Client, pod)
-					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
-				},
-				Entry("zonal", azureEnv, cluster, cloudProvider, coreProvisioner),
-				Entry("non-zonal", azureEnvNonZonal, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal),
-			)
-
-			Context("SkuNotAvailable", func() {
-				AssertUnavailable := func(sku *skewer.SKU, capacityType string) {
-					// fake a SKU not available error
-					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
-						&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
-					)
-					coretest.ReplaceRequirements(nodePool,
-						karpv1.NodeSelectorRequirementWithMinValues{
-							Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}},
-						karpv1.NodeSelectorRequirementWithMinValues{
-							Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}},
-					)
-					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectNotScheduled(ctx, env.Client, pod)
-					for _, zoneID := range []string{"1", "2", "3"} {
-						ExpectUnavailable(azureEnv, sku, zones.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)
-					}
-				}
-
-				It("should mark SKU as unavailable in all zones for Spot", func() {
-					AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeSpot)
-				})
-
-				It("should mark SKU as unavailable in all zones for OnDemand", func() {
-					AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeOnDemand)
-				})
-			})
-		})
 	})
 
 	Context("Provider List", func() {
@@ -2582,364 +834,6 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 			})
 
-			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
-			type WellKnownLabelEntry struct {
-				Name      string
-				Label     string
-				ValueFunc func() string
-				SetupFunc func()
-				// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
-				// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
-				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written by another process.
-				// We expect that if ExpectedOnNode is set, ExpectedInKubeletLabels is also set.
-				ExpectedInKubeletLabels bool
-				// ExpectedOnNode indicates if we expect to see this on the node.
-				// If this is false it means is that Karpenter will not set it on the node directly via kube-apiserver.
-				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written as part of KUBELET_NODE_LABELS (see above)
-				// or by another process. We're asserting on this distinction currently because it helps clarify who is doing what
-				ExpectedOnNode bool
-			}
-
-			// requireFunc returns a SetupFunc that adds a label requirement to the NodePool
-			requireFunc := func(key, value string) func() {
-				return func() {
-					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
-						karpv1.NodeSelectorRequirementWithMinValues{Key: key, Operator: v1.NodeSelectorOpIn, Values: []string{value}},
-					)
-				}
-			}
-
-			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
-			entries := []WellKnownLabelEntry{
-				// Well known
-				{Name: v1.LabelTopologyRegion, Label: v1.LabelTopologyRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: karpv1.NodePoolLabelKey, Label: karpv1.NodePoolLabelKey, ValueFunc: func() string { return nodePool.Name }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelTopologyZone, Label: v1.LabelTopologyZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelInstanceTypeStable, Label: v1.LabelInstanceTypeStable, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelOSStable, Label: v1.LabelOSStable, ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1.LabelArchStable, Label: v1.LabelArchStable, ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: karpv1.CapacityTypeLabelKey, Label: karpv1.CapacityTypeLabelKey, ValueFunc: func() string { return "on-demand" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelPlacementScope, Label: v1beta1.LabelPlacementScope, ValueFunc: func() string { return v1beta1.PlacementScopeZonal }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				// Well Known to AKS
-				{Name: v1beta1.LabelSKUName, Label: v1beta1.LabelSKUName, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUFamily, Label: v1beta1.LabelSKUFamily, ValueFunc: func() string { return "N" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUSeries, Label: v1beta1.LabelSKUSeries, ValueFunc: func() string { return "NCads_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUVersion, Label: v1beta1.LabelSKUVersion, ValueFunc: func() string { return "4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "429" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUAcceleratedNetworking, Label: v1beta1.LabelSKUAcceleratedNetworking, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUStoragePremiumCapable, Label: v1beta1.LabelSKUStoragePremiumCapable, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUGPUName, Label: v1beta1.LabelSKUGPUName, ValueFunc: func() string { return "A100" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUGPUManufacturer, Label: v1beta1.LabelSKUGPUManufacturer, ValueFunc: func() string { return "nvidia" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUGPUCount, Label: v1beta1.LabelSKUGPUCount, ValueFunc: func() string { return "1" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUCPU, Label: v1beta1.LabelSKUCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUMemory, Label: v1beta1.LabelSKUMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				// AKS domain
-				{Name: v1beta1.AKSLabelCPU, Label: v1beta1.AKSLabelCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelMemory, Label: v1beta1.AKSLabelMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelMode + "=user", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "user" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelMode + "=system", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "system" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelScaleSetPriority + "=regular", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelScaleSetPriority + "=spot", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelPriority + "=regular", Label: v1beta1.AKSLabelPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelPriority + "=spot", Label: v1beta1.AKSLabelPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.AKSLabelOSSKU, Label: v1beta1.AKSLabelOSSKU, ValueFunc: func() string { return "Ubuntu" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{
-					Name:  v1beta1.AKSLabelFIPSEnabled,
-					Label: v1beta1.AKSLabelFIPSEnabled,
-					// Needs special setup because it only works on FIPS
-					SetupFunc: func() {
-						testOptions.UseSIG = true
-						ctx = options.ToContext(ctx, testOptions)
-
-						nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
-						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-						test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-					},
-					ValueFunc:               func() string { return "true" },
-					ExpectedInKubeletLabels: true,
-					ExpectedOnNode:          true,
-				},
-				// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
-				// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
-				// the new labels to the old labels for compatibility.
-				{Name: v1.LabelFailureDomainBetaRegion, Label: v1.LabelFailureDomainBetaRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: v1.LabelFailureDomainBetaZone, Label: v1.LabelFailureDomainBetaZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: "beta.kubernetes.io/arch", Label: "beta.kubernetes.io/arch", ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: "beta.kubernetes.io/os", Label: "beta.kubernetes.io/os", ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				// Unsupported labels
-				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
-				// Cluster Label
-				{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				// Previously reserved labels (kubernetes.io/k8s.io domains) that were restricted by Karpenter core before 1.9.x.
-				// These are now allowed on NodeClaims and synced to the Node by Karpenter, but kubelet cannot set them.
-				{
-					Name:                    "kubernetes.io (previously reserved)",
-					Label:                   "kubernetes.io/custom-label",
-					SetupFunc:               requireFunc("kubernetes.io/custom-label", "custom-value"),
-					ValueFunc:               func() string { return "custom-value" },
-					ExpectedInKubeletLabels: false,
-					ExpectedOnNode:          true,
-				},
-				{
-					Name:                    "k8s.io (previously reserved)",
-					Label:                   "k8s.io/custom-label",
-					SetupFunc:               requireFunc("k8s.io/custom-label", "custom-value"),
-					ValueFunc:               func() string { return "custom-value" },
-					ExpectedInKubeletLabels: false,
-					ExpectedOnNode:          true,
-				},
-				// kubelet.kubernetes.io is in the kubelet-allowed namespace, so kubelet CAN set these
-				{
-					Name:                    "kubelet.kubernetes.io (kubelet-allowed)",
-					Label:                   "kubelet.kubernetes.io/custom-label",
-					SetupFunc:               requireFunc("kubelet.kubernetes.io/custom-label", "custom-value"),
-					ValueFunc:               func() string { return "custom-value" },
-					ExpectedInKubeletLabels: true,
-					ExpectedOnNode:          true,
-				},
-			}
-
-			It("should support individual instance type labels (when all pods scheduled at once)", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-				var podDetails []struct {
-					pod   *v1.Pod
-					entry WellKnownLabelEntry
-				}
-				for _, item := range entries {
-					if item.SetupFunc != nil {
-						continue // can't support nonstandard setup here as we're putting all labels on one pod
-					}
-					podDetails = append(podDetails, struct {
-						pod   *v1.Pod
-						entry WellKnownLabelEntry
-					}{
-						pod:   coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: item.ValueFunc()}}),
-						entry: item,
-					})
-				}
-				pods := lo.Map(
-					podDetails,
-					func(detail struct {
-						pod   *v1.Pod
-						entry WellKnownLabelEntry
-					}, _ int) *v1.Pod {
-						return detail.pod
-					})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pods...)
-
-				// Collect all the VMs we provisioned
-				vmInputs := map[string]*fake.VirtualMachineCreateOrUpdateInput{}
-
-				for vmInput := range azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.All() {
-					vmInputs[*vmInput.VM.Name] = vmInput
-				}
-
-				for _, detail := range podDetails {
-					key := lo.Keys(detail.pod.Spec.NodeSelector)[0]
-					node := ExpectScheduled(ctx, env.Client, detail.pod)
-					if detail.entry.ExpectedOnNode {
-						Expect(node.Labels[key]).To(Equal(detail.pod.Spec.NodeSelector[key]))
-					} else {
-						Expect(node.Labels).ToNot(HaveKey(key))
-					}
-
-					// Get the VM creation input and decode custom data
-					// Extract the vm name from the provider ID
-					vmName, err := nodeclaimutils.GetVMName(node.Spec.ProviderID)
-					Expect(err).ToNot(HaveOccurred())
-
-					vm := vmInputs[vmName].VM
-					if detail.entry.ExpectedInKubeletLabels {
-						ExpectKubeletNodeLabelsInCustomData(&vm, detail.entry.Label, detail.entry.ValueFunc())
-					} else {
-						ExpectKubeletNodeLabelsNotInCustomData(&vm, detail.entry.Label, detail.entry.ValueFunc())
-					}
-				}
-			})
-
-			DescribeTable(
-				"should support individual instance type labels (when all pods scheduled individually)",
-				func(item WellKnownLabelEntry) {
-					if item.SetupFunc != nil {
-						item.SetupFunc()
-					}
-
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					value := item.ValueFunc()
-
-					pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
-					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
-					// end up with a new node for each scheduling attempt
-					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						bindings := []Bindings{}
-						for range 3 {
-							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
-						}
-						for i := range len(bindings) {
-							Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
-							Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
-						}
-					}
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					node := ExpectScheduled(ctx, env.Client, pod)
-
-					if item.ExpectedOnNode {
-						Expect(node.Labels[item.Label]).To(Equal(value))
-					} else {
-						Expect(node.Labels).ToNot(HaveKey(item.Label))
-					}
-
-					// Get the VM creation input and decode custom data
-					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-					vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-					vm := vmInput.VM
-					if item.ExpectedInKubeletLabels {
-						ExpectKubeletNodeLabelsInCustomData(&vm, item.Label, value)
-					} else {
-						ExpectKubeletNodeLabelsNotInCustomData(&vm, item.Label, value)
-					}
-				},
-				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
-					return Entry(item.Name, item)
-				}),
-			)
-
-			DescribeTable(
-				"should support individual instance type labels (when all pods scheduled individually) on bootstrap API",
-				func(item WellKnownLabelEntry) {
-					if item.SetupFunc != nil {
-						item.SetupFunc()
-					}
-
-					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-					value := item.ValueFunc()
-
-					pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
-					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
-					// end up with a new node for each scheduling attempt
-					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						bindings := []Bindings{}
-						for range 3 {
-							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
-						}
-						for i := range len(bindings) {
-							Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
-							Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
-						}
-					}
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, azureEnvBootstrap, pod)
-
-					node := ExpectScheduled(ctx, env.Client, pod)
-
-					if item.ExpectedOnNode {
-						Expect(node.Labels[item.Label]).To(Equal(value))
-					} else {
-						Expect(node.Labels).ToNot(HaveKey(item.Label))
-					}
-
-					// Get the bootstrap API input
-					Expect(azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
-					bootstrapInput := azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-					if item.ExpectedInKubeletLabels {
-						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).To(HaveKeyWithValue(item.Label, value))
-					} else {
-						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).ToNot(HaveKeyWithValue(item.Label, value))
-					}
-				},
-				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
-					return Entry(item.Name, item)
-				}),
-			)
-
-			It("entries should cover every WellKnownLabel", func() {
-				expectedLabels := append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)
-				Expect(lo.Map(entries, func(item WellKnownLabelEntry, _ int) string { return item.Label })).To(ContainElements(expectedLabels))
-			})
-
-			nonSchedulableLabels := map[string]string{
-				labels.AKSLabelRole:                     "agent",
-				v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
-				"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
-				//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
-				labels.AKSLabelSubnetName:          "aks-subnet",
-				labels.AKSLabelVNetGUID:            test.Options().VnetGUID,
-				labels.AKSLabelAzureCNIOverlay:     strconv.FormatBool(true),
-				labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
-				karpv1.NodeDoNotSyncTaintsLabelKey: "true",
-			}
-
-			It("should write other (non-schedulable) labels to kubelet", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				// Not checking on the node as not all these labels are expected there (via Karpenter setting them, they'll get there via kubelet)
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				vm := vmInput.VM
-				for key, value := range nonSchedulableLabels {
-					ExpectKubeletNodeLabelsInCustomData(&vm, key, value)
-				}
-			})
-
-			DescribeTable("should not write restricted labels to kubelet, but should write allowed labels", func(domain string, allowed bool) {
-				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{Key: domain + "/team", Operator: v1.NodeSelectorOpExists},
-					{Key: domain + "/custom-label", Operator: v1.NodeSelectorOpExists},
-					{Key: "subdomain." + domain + "/custom-label", Operator: v1.NodeSelectorOpExists},
-				}
-
-				nodeSelector := map[string]string{
-					domain + "/team":                        "team-1",
-					domain + "/custom-label":                "custom-value",
-					"subdomain." + domain + "/custom-label": "custom-value",
-				}
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: nodeSelector})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				node := ExpectScheduled(ctx, env.Client, pod)
-
-				// Not checking on the node as not all these labels are expected there (via Karpenter setting them, they'll get there via kubelet)
-
-				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				vm := vmInput.VM
-
-				// Ensure that the requirements/labels specified above are propagated onto the node and that it didn't do so via kubelet labels
-				for k, v := range nodeSelector {
-					Expect(node.Labels).To(HaveKeyWithValue(k, v))
-					if allowed {
-						ExpectKubeletNodeLabelsInCustomData(&vm, k, v)
-					} else {
-						ExpectKubeletNodeLabelsNotInCustomData(&vm, k, v)
-					}
-				}
-			},
-				Entry("node-restriction.kubernetes.io", "node-restriction.kubernetes.io", false),
-				Entry("node.kubernetes.io", "node.kubernetes.io", true),
-			)
-
-			It("should write other (non-schedulable) labels to kubelet on bootstrap API", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, azureEnvBootstrap, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				// Not checking on the node as not all these labels are expected there (via Karpenter setting them, they'll get there via kubelet)
-
-				Expect(azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
-				bootstrapInput := azureEnvBootstrap.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-				for key, value := range nonSchedulableLabels {
-					Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).To(HaveKeyWithValue(key, value))
-				}
-			})
-
 			It("should propagate all values to requirements from skewer", func() {
 				var gpuNode *corecloudprovider.InstanceType
 				var normalNode *corecloudprovider.InstanceType
@@ -3045,17 +939,6 @@ func ExpectKubeletFlagsPassed(customData string) string {
 	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 }
 
-func ExpectKubeletNodeLabelsPassed(customData string) string {
-	GinkgoHelper()
-	startIdx := strings.Index(customData, "KUBELET_NODE_LABELS=") + len("KUBELET_NODE_LABELS=")
-	endIdx := strings.Index(customData[startIdx:], "\n")
-	if endIdx == -1 {
-		// If no newline found, take to the end
-		return customData[startIdx:]
-	}
-	return customData[startIdx : startIdx+endIdx]
-}
-
 func ExpectCapacityPodsToMatchMaxPods(instanceTypes []*corecloudprovider.InstanceType, expectedMaxPods int32) {
 	GinkgoHelper()
 	expected := int64(expectedMaxPods)
@@ -3066,42 +949,4 @@ func ExpectCapacityPodsToMatchMaxPods(instanceTypes []*corecloudprovider.Instanc
 		Expect(ok).To(BeTrue(), "failed to convert pods capacity to int64")
 		Expect(podsCount).To(Equal(expected), "pods capacity does not match expected value")
 	}
-}
-
-func ExpectKubeletNodeLabelsInCustomData(vm *armcompute.VirtualMachine, key string, value string) {
-	GinkgoHelper()
-
-	Expect(vm.Properties).ToNot(BeNil())
-	Expect(vm.Properties.OSProfile).ToNot(BeNil())
-	Expect(vm.Properties.OSProfile.CustomData).ToNot(BeNil())
-
-	customData := *vm.Properties.OSProfile.CustomData
-	Expect(customData).ToNot(BeNil())
-
-	decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-	Expect(err).To(Succeed())
-	decodedString := string(decodedBytes[:])
-
-	// Extract and check KUBELET_NODE_LABELS contains the expected label
-	kubeletNodeLabels := ExpectKubeletNodeLabelsPassed(decodedString)
-	Expect(kubeletNodeLabels).To(ContainSubstring(fmt.Sprintf("%s=%s", key, value)))
-}
-
-func ExpectKubeletNodeLabelsNotInCustomData(vm *armcompute.VirtualMachine, key string, value string) {
-	GinkgoHelper()
-
-	Expect(vm.Properties).ToNot(BeNil())
-	Expect(vm.Properties.OSProfile).ToNot(BeNil())
-	Expect(vm.Properties.OSProfile.CustomData).ToNot(BeNil())
-
-	customData := *vm.Properties.OSProfile.CustomData
-	Expect(customData).ToNot(BeNil())
-
-	decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-	Expect(err).To(Succeed())
-	decodedString := string(decodedBytes[:])
-
-	// Extract and check KUBELET_NODE_LABELS contains the expected label
-	kubeletNodeLabels := ExpectKubeletNodeLabelsPassed(decodedString)
-	Expect(kubeletNodeLabels).ToNot(ContainSubstring(fmt.Sprintf("%s=%s", key, value)))
 }
