@@ -35,9 +35,8 @@ const (
 	NvidiaGridDriverVersion = "570.211.01"
 	AKSGPUGridVersionSuffix = "20260522192315"
 
-	// TODO: Replace the placeholder suffix with the published aks-gpu-grid-v20 MCR tag before merging.
 	NvidiaGridV20DriverVersion = "595.58.03"
-	AKSGPUGridV20VersionSuffix = "20260101000000"
+	AKSGPUGridV20VersionSuffix = "20260609172331"
 )
 
 type GPUSKUInfo struct {
