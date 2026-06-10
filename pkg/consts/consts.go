@@ -27,6 +27,10 @@ const (
 	NetworkDataplaneCilium = "cilium"
 	NetworkDataplaneAzure  = "azure"
 
+	// NetworkPolicy values (matched case-insensitively).
+	NetworkPolicyCilium = "cilium"
+	NetworkPolicyCalico = "calico"
+
 	StorageProfileManagedDisks = "ManagedDisks"
 	StorageProfileEphemeral    = "Ephemeral"
 

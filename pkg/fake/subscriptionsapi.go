@@ -22,10 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/samber/lo"
 )
@@ -40,7 +40,7 @@ type ListLocationsInput struct {
 
 type SubscriptionsAPIBehavior struct {
 	NewListLocationsPagerBehavior MockedFunction[ListLocationsInput, armsubscriptions.ClientListLocationsResponse]
-	Locations                     sync.Map
+	Locations                     fakesync.Map[string, armsubscriptions.Location]
 	UseFakeData                   bool
 }
 
@@ -54,7 +54,7 @@ func NewSubscriptionsAPI() (*SubscriptionsAPI, error) {
 	result := &SubscriptionsAPI{
 		SubscriptionsAPIBehavior: SubscriptionsAPIBehavior{
 			NewListLocationsPagerBehavior: MockedFunction[ListLocationsInput, armsubscriptions.ClientListLocationsResponse]{},
-			Locations:                     sync.Map{},
+			Locations:                     fakesync.Map[string, armsubscriptions.Location]{},
 			UseFakeData:                   true,
 		},
 	}
@@ -68,10 +68,7 @@ func NewSubscriptionsAPI() (*SubscriptionsAPI, error) {
 
 func (api *SubscriptionsAPI) Reset() {
 	api.NewListLocationsPagerBehavior.Reset()
-	api.Locations.Range(func(k, v any) bool {
-		api.Locations.Delete(k)
-		return true
-	})
+	api.Locations.Clear()
 	if api.UseFakeData {
 		err := loadLocationsFromFile(api)
 		if err != nil {
@@ -99,9 +96,8 @@ func (api *SubscriptionsAPI) NewListLocationsPager(
 					Value: []*armsubscriptions.Location{},
 				}
 
-				api.Locations.Range(func(key, value any) bool {
-					cast := value.(armsubscriptions.Location)
-					output.Value = append(output.Value, &cast)
+				api.Locations.Range(func(key string, value armsubscriptions.Location) bool {
+					output.Value = append(output.Value, &value)
 					return true
 				})
 

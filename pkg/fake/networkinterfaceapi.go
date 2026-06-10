@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"sync"
 
 	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	fakesync "github.com/Azure/karpenter-provider-azure/pkg/fake/sync"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
@@ -53,7 +53,7 @@ type NetworkInterfacesBehavior struct {
 	NetworkInterfacesCreateOrUpdateBehavior MockedLRO[NetworkInterfaceCreateOrUpdateInput, armnetwork.InterfacesClientCreateOrUpdateResponse]
 	NetworkInterfacesDeleteBehavior         MockedLRO[NetworkInterfaceDeleteInput, armnetwork.InterfacesClientDeleteResponse]
 	NetworkInterfacesUpdateTagsBehavior     MockedFunction[NetworkInterfaceUpdateTagsInput, armnetwork.InterfacesClientUpdateTagsResponse]
-	NetworkInterfaces                       sync.Map
+	NetworkInterfaces                       fakesync.Map[string, armnetwork.Interface]
 }
 
 // assert that the fake implements the interface
@@ -69,10 +69,7 @@ func (c *NetworkInterfacesAPI) Reset() {
 	c.NetworkInterfacesCreateOrUpdateBehavior.Reset()
 	c.NetworkInterfacesDeleteBehavior.Reset()
 	c.NetworkInterfacesUpdateTagsBehavior.Reset()
-	c.NetworkInterfaces.Range(func(k, v any) bool {
-		c.NetworkInterfaces.Delete(k)
-		return true
-	})
+	c.NetworkInterfaces.Clear()
 }
 
 func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGroupName string, interfaceName string, iface armnetwork.Interface, options *armnetwork.InterfacesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armnetwork.InterfacesClientCreateOrUpdateResponse], error) {
@@ -102,7 +99,7 @@ func (c *NetworkInterfacesAPI) Get(_ context.Context, resourceGroupName string, 
 		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 	}
 	return armnetwork.InterfacesClientGetResponse{
-		Interface: iface.(armnetwork.Interface),
+		Interface: iface,
 	}, nil
 }
 
@@ -138,7 +135,7 @@ func (c *NetworkInterfacesAPI) UpdateTags(
 			return armnetwork.InterfacesClientUpdateTagsResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 		}
 
-		iface := instance.(armnetwork.Interface)
+		iface := instance
 
 		if input.Tags.Tags != nil {
 			// Tags are full-replace if they're specified

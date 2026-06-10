@@ -17,11 +17,10 @@ limitations under the License.
 package v1beta1_test
 
 import (
+	"github.com/samber/lo"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"github.com/awslabs/operatorpkg/status"
-	"github.com/samber/lo"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,34 +31,15 @@ var _ = Describe("IsLocalDNSEnabled", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodeClass.Status = v1beta1.AKSNodeClassStatus{
-			Conditions: []status.Condition{{
-				Type:               v1beta1.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}},
-		}
 	})
 
-	DescribeTable("should return correct value based on LocalDNS mode and Kubernetes version",
-		func(mode v1beta1.LocalDNSMode, kubernetesVersion string, expected bool) {
-			if mode != "" {
-				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: mode}
-			}
-			if kubernetesVersion != "" {
-				nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
-			}
+	DescribeTable("reads from Status.LocalDNSState",
+		func(state *v1beta1.LocalDNSState, expected bool) {
+			nodeClass.Status.LocalDNSState = state
 			Expect(nodeClass.IsLocalDNSEnabled()).To(Equal(expected))
 		},
-		Entry("LocalDNS is nil", v1beta1.LocalDNSMode(""), "", false),
-		Entry("Mode is Required", v1beta1.LocalDNSModeRequired, "", true),
-		Entry("Mode is Disabled", v1beta1.LocalDNSModeDisabled, "", false),
-		Entry("Mode is Preferred, no k8s version", v1beta1.LocalDNSModePreferred, "", false),
-		Entry("Mode is Preferred, k8s 1.34.0", v1beta1.LocalDNSModePreferred, "1.34.0", false),
-		Entry("Mode is Preferred, k8s 1.35.0", v1beta1.LocalDNSModePreferred, "1.35.0", true),
-		Entry("Mode is Preferred, k8s v1.35.0", v1beta1.LocalDNSModePreferred, "v1.35.0", true),
-		Entry("Mode is Preferred, k8s 1.36.0", v1beta1.LocalDNSModePreferred, "1.36.0", true),
-		Entry("Mode is Preferred, k8s 1.35.5", v1beta1.LocalDNSModePreferred, "1.35.5", true),
-		Entry("Mode is Preferred, k8s 1.34.99", v1beta1.LocalDNSModePreferred, "1.34.99", false),
+		Entry("nil state", (*v1beta1.LocalDNSState)(nil), false),
+		Entry("Enabled state", lo.ToPtr(v1beta1.LocalDNSStateEnabled), true),
+		Entry("Disabled state", lo.ToPtr(v1beta1.LocalDNSStateDisabled), false),
 	)
 })

@@ -300,7 +300,7 @@ var _ = Describe("CloudProvider", func() {
 			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 		})
 
 		It("should list nodeclaim created by the CloudProvider", func() {
@@ -416,7 +416,7 @@ var _ = Describe("CloudProvider", func() {
 			// Wait for any async polling goroutines to complete before resetting
 			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 		})
 
 		It("should list nodeclaim created by the CloudProvider", func() {

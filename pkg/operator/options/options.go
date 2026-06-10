@@ -22,8 +22,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"hash/fnv"
-	"math/rand"
 	"net/url"
 	"os"
 	"strings"
@@ -67,7 +65,6 @@ type Options struct {
 	ClusterName                    string  `json:"clusterName,omitempty"`
 	ClusterEndpoint                string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
 	VMMemoryOverheadPercent        float64 `json:"vmMemoryOverheadPercent,omitempty"`
-	ClusterID                      string  `json:"clusterId,omitempty"`
 	KubeletClientTLSBootstrapToken string  `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
 	LinuxAdminUsername             string  `json:"-"`
 	SSHPublicKey                   string  `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
@@ -179,9 +176,6 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 		return fmt.Errorf("validating options, %w", err)
 	}
 
-	// ClusterID is generated from cluster endpoint
-	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
-
 	return nil
 }
 
@@ -208,15 +202,4 @@ func FromContext(ctx context.Context) *Options {
 		return nil
 	}
 	return retval.(*Options)
-}
-
-// getAKSClusterID returns cluster ID based on the DNS prefix of the cluster.
-// The logic comes from AgentBaker and other places, originally from aks-engine
-// with the additional assumption of DNS prefix being the first 33 chars of FQDN
-func getAKSClusterID(apiServerFQDN string) string {
-	dnsPrefix := apiServerFQDN[:33]
-	h := fnv.New64a()
-	h.Write([]byte(dnsPrefix))
-	r := rand.New(rand.NewSource(int64(h.Sum64()))) //nolint:gosec
-	return fmt.Sprintf("%08d", r.Uint32())[:8]
 }

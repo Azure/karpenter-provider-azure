@@ -21,6 +21,7 @@ import (
 
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,6 +52,7 @@ type Controller struct {
 	nodeImage         *NodeImageReconciler
 	subnet            *SubnetReconciler
 	validation        *ValidationReconciler
+	localDNS          *LocalDNSReconciler
 }
 
 // TODO: Consider splitting this (and other similar constructors)
@@ -60,9 +62,13 @@ func NewController(
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
+	managedKubernetesInterface kubernetes.Interface,
+	managedDynamicInterface dynamic.Interface,
 	subnetClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
+	networkPolicy string,
+	networkPlugin string,
 ) *Controller {
 	return &Controller{
 
@@ -72,6 +78,7 @@ func NewController(
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:            NewSubnetReconciler(subnetClient),
 		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
 	}
 }
 
@@ -94,6 +101,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 		c.nodeImage,
 		c.subnet,
 		c.validation,
+		c.localDNS,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)

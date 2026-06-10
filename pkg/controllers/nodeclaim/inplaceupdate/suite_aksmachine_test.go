@@ -93,7 +93,7 @@ var _ = Describe("In Place Update Controller", func() {
 			// Apply the nodeClass to the test environment
 			ExpectApplied(ctx, env.Client, nodeClass)
 
-			azureEnv.Reset()
+			azureEnv.Reset(ctx)
 
 			aksMachinesPool := test.AKSAgentPool(test.AKSAgentPoolOptions{
 				ClusterName: opts.ClusterName,
