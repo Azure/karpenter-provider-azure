@@ -1674,6 +1674,19 @@ spec:
                   If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
                 type: string
+              workloadRuntime:
+                description: |-
+                  workloadRuntime determines the type of workload a node can run.
+                  When unset, nodes run standard OCI containers (OCIContainer). KataVmIsolation (and the
+                  legacy KataMshvVmIsolation) enable AKS Pod Sandboxing so pods with
+                  runtimeClassName: kata-vm-isolation run in lightweight VMs. Pod Sandboxing
+                  requires imageFamily: AzureLinux and a generation-2, nested-virtualization-capable
+                  VM size. See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
+                enum:
+                - OCIContainer
+                - KataVmIsolation
+                - KataMshvVmIsolation
+                type: string
             type: object
             x-kubernetes-validations:
             - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
@@ -1685,6 +1698,11 @@ spec:
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
+            - message: workloadRuntime KataVmIsolation/KataMshvVmIsolation requires
+                imageFamily AzureLinux
+              rule: '!has(self.workloadRuntime) || (self.workloadRuntime != ''KataVmIsolation''
+                && self.workloadRuntime != ''KataMshvVmIsolation'') ? true : (has(self.imageFamily)
+                && self.imageFamily == ''AzureLinux'')'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:

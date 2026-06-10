@@ -113,6 +113,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(FIPSMode)
 		**out = **in
 	}
+	if in.WorkloadRuntime != nil {
+		in, out := &in.WorkloadRuntime, &out.WorkloadRuntime
+		*out = new(WorkloadRuntime)
+		**out = **in
+	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make(map[string]string, len(*in))

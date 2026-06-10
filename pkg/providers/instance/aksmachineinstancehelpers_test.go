@@ -945,4 +945,26 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
 		})
 	})
+
+	Context("configureWorkloadRuntime", func() {
+		It("should return nil when workloadRuntime is unset (AKS defaults to OCIContainer)", func() {
+			nodeClass.Spec.WorkloadRuntime = nil
+			Expect(configureWorkloadRuntime(nodeClass)).To(BeNil())
+		})
+
+		It("should return nil for explicit OCIContainer", func() {
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)
+			Expect(configureWorkloadRuntime(nodeClass)).To(BeNil())
+		})
+
+		It("should map KataVmIsolation", func() {
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+			Expect(lo.FromPtr(configureWorkloadRuntime(nodeClass))).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
+		})
+
+		It("should map KataMshvVmIsolation", func() {
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataMshvVMIsolation)
+			Expect(lo.FromPtr(configureWorkloadRuntime(nodeClass))).To(Equal(armcontainerservice.WorkloadRuntimeKataMshvVMIsolation))
+		})
+	})
 })

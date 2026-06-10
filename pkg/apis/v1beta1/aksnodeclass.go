@@ -32,6 +32,14 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+type WorkloadRuntime string
+
+const (
+	WorkloadRuntimeOCIContainer        WorkloadRuntime = "OCIContainer"
+	WorkloadRuntimeKataVMIsolation     WorkloadRuntime = "KataVmIsolation"
+	WorkloadRuntimeKataMshvVMIsolation WorkloadRuntime = "KataMshvVmIsolation" // legacy, still accepted
+)
+
 // ArtifactStreaming configures artifact streaming for provisioned nodes.
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreaming struct {
@@ -62,6 +70,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation/KataMshvVmIsolation requires imageFamily AzureLinux",rule="!has(self.workloadRuntime) || (self.workloadRuntime != 'KataVmIsolation' && self.workloadRuntime != 'KataMshvVmIsolation') ? true : (has(self.imageFamily) && self.imageFamily == 'AzureLinux')"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -86,6 +95,15 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
+	// workloadRuntime determines the type of workload a node can run.
+	// When unset, nodes run standard OCI containers (OCIContainer). KataVmIsolation (and the
+	// legacy KataMshvVmIsolation) enable AKS Pod Sandboxing so pods with
+	// runtimeClassName: kata-vm-isolation run in lightweight VMs. Pod Sandboxing
+	// requires imageFamily: AzureLinux and a generation-2, nested-virtualization-capable
+	// VM size. See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
+	// +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation,KataMshvVmIsolation}
+	// +optional
+	WorkloadRuntime *WorkloadRuntime `json:"workloadRuntime,omitempty"`
 	// tags to be applied on Azure resources like instances.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
@@ -794,4 +812,20 @@ func (in *AKSNodeClass) GetGPUMode() GPUMode {
 // set to "None".
 func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
 	return in.GetGPUMode() != GPUModeNone
+}
+
+// GetWorkloadRuntime returns the effective workload runtime, defaulting to
+// OCIContainer when unset (backward compatibility / objects created before
+// server-side defaulting applies).
+func (in *AKSNodeClass) GetWorkloadRuntime() WorkloadRuntime {
+	if in.Spec.WorkloadRuntime == nil {
+		return WorkloadRuntimeOCIContainer
+	}
+	return *in.Spec.WorkloadRuntime
+}
+
+// IsKataEnabled returns whether a Kata-based pod-sandboxing runtime is requested.
+func (in *AKSNodeClass) IsKataEnabled() bool {
+	wr := in.GetWorkloadRuntime()
+	return wr == WorkloadRuntimeKataVMIsolation || wr == WorkloadRuntimeKataMshvVMIsolation
 }

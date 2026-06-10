@@ -156,7 +156,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeInitializationTaints: nodeInitializationTaints,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
-				// WorkloadRuntime:          nil,
+				WorkloadRuntime:          configureWorkloadRuntime(nodeClass),
 				ArtifactStreamingProfile: configureArtifactStreamingProfile(nodeClass, instanceType),
 			},
 
@@ -190,6 +190,22 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	}
 	return &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
+	}
+}
+
+// configureWorkloadRuntime maps a Kata workloadRuntime to the AKS machine API enum.
+// It returns nil for the default OCIContainer case (the AKS machine API defaults to
+// OCIContainer), so non-Kata NodeClasses keep their existing wire payload. Kata values
+// enable AKS Pod Sandboxing; the AzureLinux image requirement is enforced by CEL validation
+// on the AKSNodeClass, and gen-2 SKU selection is enforced by the instance type provider.
+func configureWorkloadRuntime(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.WorkloadRuntime {
+	switch nodeClass.GetWorkloadRuntime() {
+	case v1beta1.WorkloadRuntimeKataVMIsolation:
+		return lo.ToPtr(armcontainerservice.WorkloadRuntimeKataVMIsolation)
+	case v1beta1.WorkloadRuntimeKataMshvVMIsolation:
+		return lo.ToPtr(armcontainerservice.WorkloadRuntimeKataMshvVMIsolation)
+	default:
+		return nil
 	}
 }
 

@@ -123,6 +123,15 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
+	// Kata / Pod Sandboxing is only wired through the AKS machine API provision path
+	// (see aksmachineinstancehelpers.go). This resolver serves the aksscriptless and
+	// bootstrappingclient paths, which cannot provision the Kata host stack today, so
+	// fail loudly rather than silently provisioning a standard OCI runtime.
+	if nodeClass.IsKataEnabled() {
+		return nil, fmt.Errorf("workloadRuntime %q is only supported with provision-mode %q",
+			nodeClass.GetWorkloadRuntime(), consts.ProvisionModeAKSMachineAPI)
+	}
+
 	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
 	imageID, err := r.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {

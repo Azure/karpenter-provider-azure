@@ -68,6 +68,7 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+	KataEnabled              bool
 }
 
 type Provider interface {
@@ -146,6 +147,7 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%d-%d-%016x",
@@ -296,7 +298,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
-		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params)
+		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
+		p.isInstanceTypeSupportedByKata(sku, params)
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
@@ -313,6 +316,18 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByKata(sku *skewer.SKU, params *instanceTypeParameters) bool {
+	// If a Kata workload runtime is not requested, all instance types are supported.
+	if !params.KataEnabled {
+		return true
+	}
+	// Pod Sandboxing requires a generation-2 SKU. Azure's resourceSkus API exposes no
+	// nested-virtualization capability flag, so gen-2 is the strongest dependable signal;
+	// the server rejects genuinely-unsupported SKUs at create time.
+	// TODO(#1719): consider a curated nested-virt-capable family allowlist if gen-2 proves too loose.
+	return sku.IsHyperVGen2Supported()
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {

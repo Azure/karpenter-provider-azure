@@ -2466,6 +2466,45 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		Context("Filtering by WorkloadRuntime (Kata)", func() {
+			var instanceTypes corecloudprovider.InstanceTypes
+			var err error
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			Context("when a Kata workload runtime is requested", func() {
+				BeforeEach(func() {
+					nodeClassKata := test.AKSNodeClass()
+					nodeClassKata.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+					nodeClassKata.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+					ExpectApplied(ctx, env.Client, nodeClassKata)
+					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassKata)
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				It("should only include generation-2-capable SKUs", func() {
+					// Standard_D2_v2 / Standard_D2_v3 are gen-1 only and should be filtered out
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v3"))))
+					// Standard_D2_v5 / Standard_D2s_v3 support gen-2 and should be included
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				})
+			})
+
+			Context("when no Kata workload runtime is requested", func() {
+				It("should include gen-1-only SKUs", func() {
+					nodeClassDefault := test.AKSNodeClass()
+					ExpectApplied(ctx, env.Client, nodeClassDefault)
+					instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassDefault)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Gen-1-only SKUs are allowed when Kata is not requested
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+				})
+			})
+		})
+
 		Context("MaxPods", func() {
 			BeforeEach(func() {
 				ctx = options.ToContext(ctx, test.Options())
