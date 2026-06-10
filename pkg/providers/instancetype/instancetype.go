@@ -201,9 +201,11 @@ func computeRequirements(
 	// composites
 	requirements[v1beta1.LabelSKUName].Insert(sku.GetName())
 
-	// size parts
-	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
-	requirements[v1beta1.LabelSKUSeries].Insert(vmsize.Series)
+	if vmsize != nil {
+		// size parts
+		requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
+		requirements[v1beta1.LabelSKUSeries].Insert(vmsize.Series)
+	}
 
 	setRequirementsEphemeralOSDiskSupported(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
@@ -242,7 +244,7 @@ func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, v
 	default:
 		return
 	}
-	if vmsize.AcceleratorType != nil {
+	if vmsize != nil && vmsize.AcceleratorType != nil {
 		requirements[v1beta1.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
 	}
 }

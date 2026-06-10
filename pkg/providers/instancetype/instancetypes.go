@@ -165,8 +165,7 @@ func (p *DefaultProvider) List(
 	for _, sku := range p.instanceTypesInfo {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
-			continue
+			log.FromContext(ctx).V(1).Info("failed to parse VM size, continuing without parsed SKU labels", "vmSize", sku.GetSize(), "error", err)
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
@@ -400,8 +399,7 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
-			continue
+			log.FromContext(ctx).V(1).Info("failed to parse VM size, continuing without parsed SKU labels", "vmSize", skus[i].GetSize(), "error", err)
 		}
 		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
@@ -461,6 +459,9 @@ func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 
 // SKU with constrained CPUs
 func (p *DefaultProvider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
+	if vmsize == nil {
+		return false
+	}
 	return vmsize.CpusConstrained != nil
 }
 
