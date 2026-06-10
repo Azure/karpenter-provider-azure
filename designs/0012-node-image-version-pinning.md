@@ -5,6 +5,7 @@
 **Authors:** @rakechill
 **Related:**
 - [AKS Prepared Image Specification (AKS#4704)](https://github.com/Azure/AKS/issues/4704)
+- [Add support for setting ImageID for nodeClass](https://github.com/Azure/karpenter-provider-azure/issues/1220)
 
 ---
 
@@ -25,7 +26,7 @@ already public signals pointing in this direction:
 - AKS support guidance already steers customers toward upgrading as a
   prerequisite for case resolution when running stale images.
 
-The anticipated policy model is:
+The _anticipated_ policy model is:
 
 | Concept | Definition |
 |---|---|
@@ -66,55 +67,7 @@ If we expose a version-pinning mechanism, it should:
 
 ---
 
-## 2. Background: Prepared Image Specification
-
-AKS is developing a **Prepared Image Specification** feature
-([AKS#4704](https://github.com/Azure/AKS/issues/4704)), targeting public
-preview with regional availability beginning June 2026.
-
-### What It Is
-
-A top-level `customImage` Azure resource in the customer's resource group
-that lets them specify:
-
-- **Container images to pre-cache** on the node (eliminates cold-pull on
-  scale-up)
-- **OS-level settings** (sysctls, kernel parameters, containerd config)
-- **A customization script** — a list of instructions run during image
-  preparation (GPU drivers, LLMs, security policies, etc.)
-
-This is applied at the node pool or cluster level. Subsequent nodes
-provisioned from that pool use the prepared image, which has all specified
-customizations baked in.
-
-### How It Differs from `imageVersion` Pinning
-
-| Dimension | `imageVersion` Pinning | Prepared Image Spec |
-|---|---|---|
-| **What's controlled** | Which AKS-managed VHD version is used | A custom image derived from an AKS base image, with user-specified layers |
-| **Image source** | AKS Community/Shared Image Gallery | Customer resource group (`customImage` resource) |
-| **Lifecycle** | Governed by AKS support window; version ages out | Customer-managed; presumably rebuilt on newer base images periodically |
-| **Use case** | "Don't use the latest image, it broke my workload" | "I need containers/drivers/configs cached on the node at boot" |
-| **Karpenter integration** | Version is a filter within existing image family resolution | Entirely different image source; bypasses gallery resolution |
-
-### What This Means for Karpenter
-
-When we design the API surface for image selection, we need to ensure it
-can evolve to accommodate Prepared Image Spec without breaking changes.
-The two features are **orthogonal but share the API surface**:
-
-- `imageVersion` operates **within** the AKS-managed image family
-  (SIG/CIG) — it's a version pin.
-- Prepared Image Spec operates **outside** the AKS-managed galleries —
-  it references a customer-owned image resource.
-
-A well-shaped API would keep these as distinct, non-overlapping fields
-rather than overloading a single `imageID` field with two different
-semantics.
-
----
-
-## 3. How Karpenter Selects Node Images Today
+## 2. How Karpenter Selects Node Images Today
 
 The current image selection pipeline:
 
@@ -174,15 +127,13 @@ VM creation with resolved image ID
 
 ---
 
-## 4. The Gap: What Customers Can't Do Today
+## 3. The Gap: What Customers Can't Do Today
 
 A Karpenter user can set `imageFamily: Ubuntu2204` but **cannot**:
 
 1. **Pin to a known-good version** when the latest image has a regression.
 2. **Observe what version is running** without inspecting the full image
    ID in status and extracting the version segment.
-3. **Reference a Prepared Image** (future) since image selection
-   is hardcoded to AKS-managed galleries.
 
 The workaround today is to disable Karpenter entirely and fall back to
 AKS autoscaling groups until a fixed image version ships, which defeats
@@ -190,7 +141,7 @@ the purpose of using Karpenter.
 
 ---
 
-## 5. Relationship Map
+## 4. Relationship Map
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -210,7 +161,7 @@ the purpose of using Karpenter.
 │                                                          │
 │  Precedence: imageRef > imageVersion                     │
 │  AKSNodeClassSpec.ImageID is an unused stub (json:"-"). │
-│  See section 7.4 for disposition options.                 │
+│  See section 6.4 for disposition options.                 │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
                         │
@@ -221,7 +172,7 @@ the purpose of using Karpenter.
 │  images[]:                                               │
 │    - id: /CommunityGalleries/.../versions/202604.24.0    │
 │      version: "202604.24.0"        ◄── new: surfaced     │
-│      publishedDate: 2026-04-24     ◄── new: for SLA calc │
+│      imageAgeDays: 30              ◄── new: per-image age│
 │      requirements: [...]                                 │
 │                                                          │
 │  conditions[]:                                           │
@@ -233,9 +184,9 @@ the purpose of using Karpenter.
 
 ---
 
-## 6. Design: `imageVersion` Field
+## 5. Design: `imageVersion` Field
 
-### 6.1 API Surface
+### 5.1 API Surface
 
 Add a new optional field to `AKSNodeClassSpec`:
 
@@ -266,17 +217,25 @@ type AKSNodeClassSpec struct {
 format (e.g., `202604.24.0`). This is enforced at admission time via the
 CRD schema.
 
-### 6.2 Image Version Existence Validation
+### 5.2 Image Version Existence Validation
 
 When `imageVersion` is set, the **status reconciler** must validate that
-the specified version exists in the image gallery (SIG or CIG) for at
-least one image definition in the resolved image family.
+the specified version exists in the image gallery (SIG or CIG) for the
+resolved image family's definitions.
 
-**Approach**: The status reconciler already queries the gallery to
-populate `status.images[]`. When `imageVersion` is set, the reconciler
-filters the gallery response to only include images matching the pinned
-version. If no matching images are found, the reconciler sets a status
-condition:
+Each `imageFamily` resolves to multiple **image definitions** — one per
+architecture/generation variant (e.g., `2204containerd` for gen1/amd64,
+`2204gen2containerd` for gen2/amd64, `2204gen2arm64containerd` for
+arm64). AKS releases all variants together, so the pinned version will
+typically either exist for all definitions or none. The status reconciler
+populates `status.images[]` with all definitions where the version is
+found. At provisioning time, `ResolveNodeImageFromNodeClass()` selects
+the specific image compatible with the instance type's architecture and
+hypervisor generation — which is ultimately driven by NodePool
+requirements.
+
+If no matching images are found for any definition, the reconciler sets
+a status condition:
 
 ```yaml
 status:
@@ -293,28 +252,44 @@ latency and a failure mode. The status reconciler already queries the
 gallery and can surface errors asynchronously. This is consistent with
 how Karpenter validates other external state (e.g., subnet existence).
 
-### 6.3 Image Age: Computed Status Field
+### 5.3 Image Age: Per-Image Field
 
-Add `imageAge` as a computed field in `AKSNodeClass.status` to make the
-image support window observable:
+Add `imageAgeDays` to the `NodeImage` struct so that each image in
+`status.images[]` carries its own age:
 
 ```go
-type AKSNodeClassStatus struct {
-    // ...existing fields...
+type NodeImage struct {
+    // ...existing fields (ID, Requirements)...
 
-    // imageAge is the age of the oldest image in status.images[],
-    // computed from the image's published date. This reflects how
-    // close the node class is to the support window boundary.
+    // version is the image version extracted from the image ID
+    // (e.g., "202604.24.0"). Surfaced for observability.
     // +optional
-    ImageAge *metav1.Duration `json:"imageAge,omitempty"`
+    Version string `json:"version,omitempty"`
+
+    // imageAgeDays is the age of this image in days, computed from the
+    // version string's encoded date (YYYYMM.DD) at reconciliation time.
+    // This reflects how close the image is to the support window
+    // boundary. Day granularity is sufficient for a 90-day window.
+    // +optional
+    ImageAgeDays *int32 `json:"imageAgeDays,omitempty"`
 }
 ```
 
-The status reconciler computes this from the `PublishedDate` returned by
-the gallery API (available in both CIG and SIG responses). The age is
-recomputed on each reconciliation cycle.
+**Why per-image, not top-level:** Different images in `status.images[]`
+could have different ages if `overrideAnyGoalStateVersionsWithExisting`
+retains older versions for some SKUs. Storing `imageAgeDays` on each
+image avoids ambiguity and lets the support window warning use the
+oldest entry.
 
-### 6.4 Support Window Warning
+**Age source:** The version string encodes the date as `YYYYMM.DD`
+(e.g., `202604.24` → April 24, 2026). The reconciler parses this to
+compute age at each reconciliation cycle. This avoids depending on a
+`PublishedDate` API field which is available for CIG but not currently
+exposed in the SIG path (see section 2, key observation 3). If a
+`PublishedDate` field becomes available for both gallery types in the
+future, it can be used instead for higher accuracy.
+
+### 5.4 Support Window Warning
 
 When the resolved image age exceeds the warning threshold, the status
 reconciler sets a warning condition. The initial threshold is **90 days**,
@@ -323,7 +298,6 @@ window has not yet been defined by AKS — 90 days is a warning only.
 
 ```yaml
 status:
-  imageAge: "2160h0m0s"  # 90 days
   conditions:
     - type: ImageWithinSupportWindow
       status: "False"
@@ -360,12 +334,15 @@ AKS API response) to track the official policy without code changes.
 
 **Metrics**: Emit a gauge metric `karpenter_image_age_days` with labels
 for `nodeclass`, `image_family`, and `image_version` so that operators
-can alert on image staleness.
+can alert on image staleness. This metric uses the same day-granularity
+value as `imageAgeDays`.
 
-### 6.5 Changes to Image Resolution Pipeline
+### 5.5 Changes to Image Resolution Pipeline
 
-The existing pipeline changes minimally. The modification is isolated to
-`NodeImageProvider.List()`:
+Changes span two layers: `NodeImageProvider.List()` (image resolution)
+and `NodeImageReconciler.Reconcile()` (status reconciliation).
+
+#### 5.5.1 `NodeImageProvider.List()` — version resolution
 
 ```
 AKSNodeClass.spec.imageFamily        (unchanged)
@@ -379,13 +356,15 @@ NodeImageProvider.List()             (MODIFIED)
         │  If imageVersion is SET:
         │    SIG: BuildImageIDSIG(..., imageVersion) directly — skip latest lookup
         │    CIG: BuildImageIDCIG(..., imageVersion) directly — skip latest lookup
-        │    Then: validate version exists via gallery API
+        │    Then: validate version exists via gallery API (see 5.5.4)
         │
         │  If imageVersion is UNSET:
         │    (unchanged — pick latest by date/SKU as today)
         │
         ▼
-AKSNodeClass.status.images[]         (unchanged structure, version is now pinned or latest)
+NodeImageReconciler.Reconcile()      (see 5.5.2 and 5.5.3)
+        ▼
+AKSNodeClass.status.images[]         (populated with pinned or latest version + imageAgeDays)
         ▼
 ResolveNodeImageFromNodeClass()      (unchanged)
         ▼
@@ -393,9 +372,103 @@ VM creation with resolved image ID
 ```
 
 The `AKSNodeClassSpec.ImageID` stub (`json:"-"`) is unused today and
-is not part of this design. See section 7.4 for options on its future.
+is not part of this design. See section 6.4 for options on its future.
 
-### 6.6 Drift Detection
+#### 5.5.2 Maintenance window interaction
+
+The images reconciler currently decides whether to update to latest via
+two triggers:
+
+1. **`imageVersionsUnready()`** — `ImagesReady` condition is `False`
+   (new nodeclass, K8s upgrade reset, etc.)
+2. **`isMaintenanceWindowOpen()`** — maintenance window is currently
+   open
+
+If neither is true, `overrideAnyGoalStateVersionsWithExisting()` keeps
+existing image versions and only adds newly discovered SKUs.
+
+**When `imageVersion` is set**, the maintenance window check is
+irrelevant for determining the target version — the pin is the target
+regardless of window state. The reconciler should:
+
+- Skip `isMaintenanceWindowOpen()` entirely when `imageVersion` is set.
+- Skip `overrideAnyGoalStateVersionsWithExisting()` — the pin is
+  authoritative; there is no "latest" to hold back.
+- Always use the images returned by `NodeImageProvider.List()` directly,
+  since they already reflect the pinned version.
+
+This simplifies the reconciler path when a pin is active to:
+
+```
+imageVersion SET?
+    │ YES
+    ▼
+goalImages = nodeImageProvider.List(ctx, nodeClass)   // returns pinned version
+    │
+    ▼
+nodeClass.Status.Images = goalImages                  // skip MW / override logic
+    │
+    ▼
+set ImagesReady = True (or False if version not found)
+```
+
+#### 5.5.3 Kubernetes upgrade interaction
+
+When the K8s version reconciler detects a control plane upgrade, it sets
+`ImagesReady` to `False`, which triggers a full image refresh
+(Scenario A, case 2 in the existing code).
+
+**When `imageVersion` is set**, this refresh should still resolve to the
+pinned version — not latest. The pin is the customer's explicit intent
+and takes precedence. Since `NodeImageProvider.List()` returns the
+pinned version when `imageVersion` is set, this works naturally: the
+refresh re-resolves to the same pinned version.
+
+Note: If the pinned image is incompatible with the new K8s version, the
+node may fail to join. This is an acceptable tradeoff — the customer
+explicitly pinned the version and is responsible for compatibility. The
+`imageAgeDays` field and support window warning provide signals to update.
+
+#### 5.5.4 Existence validation code path
+
+When `imageVersion` is set and `NodeImageProvider.List()` returns no
+images (the pinned version doesn't exist in the gallery for any image
+definition), the reconciler surfaces this through the existing
+`ImagesReady` condition:
+
+```go
+// In NodeImageReconciler.Reconcile(), after List():
+nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
+if err != nil {
+    return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
+}
+
+// ... map to goalImages ...
+
+if len(goalImages) == 0 {
+    nodeClass.Status.Images = nil
+    if nodeClass.Spec.ImageVersion != nil {
+        nodeClass.StatusConditions().SetFalse(
+            v1beta1.ConditionTypeImagesReady,
+            "ImageVersionNotFound",
+            fmt.Sprintf("imageVersion %s not found in gallery for image family %s",
+                *nodeClass.Spec.ImageVersion, nodeClass.Spec.ImageFamily),
+        )
+    } else {
+        nodeClass.StatusConditions().SetFalse(
+            v1beta1.ConditionTypeImagesReady,
+            "ImagesNotFound",
+            "ImageSelectors did not match any Images",
+        )
+    }
+    return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+```
+
+This reuses the existing "no images found" path with a more specific
+reason and message when a pin is active.
+
+### 5.6 Drift Detection
 
 When `imageVersion` is **set**, drift detection should compare the
 running node's image version against the pinned version. If they match,
@@ -404,22 +477,68 @@ the node is not drifted.
 When `imageVersion` is **unset** (default), drift detection works as
 today — comparing against the latest available version.
 
-The status controller should **continue polling for newer versions** even
-when `imageVersion` is set. This enables:
-- Surfacing "a newer image is available" information
-- Computing accurate `imageAge`
-- Allowing drift detection to work correctly if the user later removes
-  the version pin
+No changes are needed to `isImageVersionDrifted()` itself — it already
+compares `nodeClaim.Status.ImageID` against `nodeClass.Status.Images[]`.
+Since `status.images[]` will contain the pinned version when
+`imageVersion` is set, the comparison naturally works: nodes running the
+pinned version are not drifted, and nodes running a different version
+are.
+
+`imageAgeDays` is computed from the version string at reconciliation
+time and stored on each image in status, so it remains accurate without
+polling for newer versions.
 
 ---
 
-## 7. Design: Future Extension for Prepared Image Spec (`imageRef`)
+## 6. Future Extensibility: Prepared Image Specification
 
-> **Status**: Not for implementation now. This section establishes the
-> API shape so that `imageVersion` (section 6) is designed to be
-> forward-compatible.
+This section is out of scope for the `imageVersion` design but is
+included to demonstrate that the API shape in section 5 is
+forward-compatible with upcoming AKS capabilities.
 
-### 7.1 Prerequisite: AKS Machine API Support
+### 6.0 Background: Prepared Image Specification
+
+AKS is developing a **Prepared Image Specification** feature
+([AKS#4704](https://github.com/Azure/AKS/issues/4704)), targeting public
+preview with regional availability beginning June 2026.
+
+#### What It Is
+
+A top-level `customImage` Azure resource in the customer's resource group
+that lets them specify:
+
+- **Container images to pre-cache** on the node (eliminates cold-pull on
+  scale-up)
+- **OS-level settings** (sysctls, kernel parameters, containerd config)
+- **A customization script** — a list of instructions run during image
+  preparation (GPU drivers, LLMs, security policies, etc.)
+
+This is applied at the node pool or cluster level. Subsequent nodes
+provisioned from that pool use the prepared image, which has all specified
+customizations baked in.
+
+#### How It Differs from `imageVersion` Pinning
+
+| Dimension | `imageVersion` Pinning | Prepared Image Spec |
+|---|---|---|
+| **What's controlled** | Which AKS-managed VHD version is used | A custom image derived from an AKS base image, with user-specified layers |
+| **Image source** | AKS Community/Shared Image Gallery | Customer resource group (`customImage` resource) |
+| **Lifecycle** | Governed by AKS support window; version ages out | Customer-managed; presumably rebuilt on newer base images periodically |
+| **Use case** | "Don't use the latest image, it broke my workload" | "I need containers/drivers/configs cached on the node at boot" |
+| **Karpenter integration** | Version is a filter within existing image family resolution | Entirely different image source; bypasses gallery resolution |
+
+The two features are **orthogonal but share the API surface**:
+
+- `imageVersion` operates **within** the AKS-managed image family
+  (SIG/CIG) — it's a version pin.
+- Prepared Image Spec operates **outside** the AKS-managed galleries —
+  it references a customer-owned image resource.
+
+A well-shaped API keeps these as distinct, non-overlapping fields
+rather than overloading a single `imageID` field with two different
+semantics.
+
+### 6.1 Prerequisite: AKS Machine API Support
 
 The AKS Machine API must support Prepared Image Spec before Karpenter
 can expose it via `AKSNodeClass`. Karpenter provisions nodes through the
@@ -430,7 +549,7 @@ reference, exposing it in the CRD would be non-functional.
 accept a prepared image resource ID and use it for node provisioning.
 Until this is confirmed, `imageRef` remains a design placeholder only.
 
-### 7.2 Proposed API Field
+### 6.2 Proposed API Field
 
 ```go
 type AKSNodeClassSpec struct {
@@ -446,10 +565,10 @@ type AKSNodeClassSpec struct {
 }
 ```
 
-### 7.3 Field Precedence Hierarchy
+### 6.3 Field Precedence Hierarchy
 
 When multiple image fields are set, the following precedence applies
-(using `imageRef` as the placeholder name — see section 7.4 for naming
+(using `imageRef` as the placeholder name — see section 6.4 for naming
 options):
 
 ```
@@ -476,7 +595,7 @@ x-kubernetes-validations:
     rule: "!(has(self.imageRef) && has(self.imageVersion))"
 ```
 
-### 7.4 Disposition of `AKSNodeClassSpec.ImageID`
+### 6.4 Disposition of `AKSNodeClassSpec.ImageID`
 
 The existing `ImageID *string` field on `AKSNodeClassSpec` is currently
 an unused stub (`json:"-"`). Nothing sets or reads it. With the
@@ -534,7 +653,7 @@ naming confusion. The final decision depends on whether AKS settles on
 a stable feature name and resource type for Prepared Image Spec before
 we implement.
 
-### 7.5 Impact on Image Resolution Pipeline
+### 6.5 Impact on Image Resolution Pipeline
 
 ```
               prepared image field set?
@@ -552,7 +671,7 @@ we implement.
               │ YES
               ▼
         Pin to imageVersion within imageFamily
-        (section 6 design)
+        (section 5 design)
               │
               │ NO
               ▼
@@ -569,7 +688,7 @@ we implement.
         VM creation
 ```
 
-### 7.6 Open Questions for `imageRef`
+### 6.6 Open Questions for `imageRef`
 
 These must be resolved before `imageRef` implementation begins:
 
@@ -593,7 +712,7 @@ These must be resolved before `imageRef` implementation begins:
 
 ---
 
-## 8. Open Questions
+## 7. Open Questions
 
 Remaining questions not covered by the design sections above:
 
