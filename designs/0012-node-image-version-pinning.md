@@ -716,28 +716,18 @@ These must be resolved before `imageRef` implementation begins:
 
 Remaining questions not covered by the design sections above:
 
-### Compatibility
-1. How does `imageVersion` interact with NAP (Node Auto-Provisioning)?
-   There is a proposed (not yet implemented) NAP behavior that would
-   force latest image adoption when image age exceeds a threshold,
-   bypassing maintenance windows. If this is implemented, does a
-   Karpenter `imageVersion` pin override or defer to NAP behavior?
-2. Does the AKS Machine API path (`ProvisionModeAKSMachineAPI`) need
-   separate handling for version pinning, or does it flow through the
-   same image resolution?
-
 ### Operational
-3. Should we emit Kubernetes events when a pinned version crosses the
+1. Should we emit Kubernetes events when a pinned version crosses the
    warning threshold?
-4. What is the interaction between `imageVersion` and Karpenter's
+2. What is the interaction between `imageVersion` and Karpenter's
    built-in disruption budgets / node expiry?
 
 ### Support Window
-5. Should the warning threshold (currently 90 days) be configurable,
+3. Should the warning threshold (currently 90 days) be configurable,
    e.g., via a field on `AKSNodeClass.spec` or a controller flag? This
    would allow tracking the official AKS policy without code changes
    when the enforcement window is formalized.
-6. When AKS defines an enforcement window, should Karpenter block
+4. When AKS defines an enforcement window, should Karpenter block
    provisioning (by promoting `ImageWithinSupportWindow` to a readiness
    dependent) or only surface the condition and leave enforcement to
    AKS-side controls?
