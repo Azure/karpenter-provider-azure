@@ -49,9 +49,7 @@ func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
 	}
 	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
 	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
-	if options.Spec.OSDiskSizeGB == nil {
-		options.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
-	}
+	// (OSDiskSizeGB intentionally has no default: nil means auto-sized)
 	if options.Spec.ImageFamily == nil {
 		options.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 	}

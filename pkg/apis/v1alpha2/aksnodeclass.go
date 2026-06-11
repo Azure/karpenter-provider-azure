@@ -52,7 +52,8 @@ type AKSNodeClassSpec struct {
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
-	// +default=128
+	// If not specified, it is auto-sized per instance type: an ephemeral OS disk at the largest
+	// SKU-supported size (max 2040 GB) when possible, otherwise a managed OS disk sized by vCPU count.
 	// +kubebuilder:validation:Minimum=30
 	// +kubebuilder:validation:Maximum=2048
 	// +optional

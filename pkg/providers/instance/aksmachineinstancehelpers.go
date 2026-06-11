@@ -87,8 +87,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, err
 	}
 
-	// OSDiskType
-	osDiskType, err := configureOSDiskType(ctx, p.instanceTypeProvider, nodeClass, instanceType)
+	// OSDiskSizeGB, OSDiskType
+	osDiskSizeGB, osDiskType, err := configureOSDisk(ctx, p.instanceTypeProvider, nodeClass, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
 				OSSKU:        osSku,
-				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
+				OSDiskSizeGB: osDiskSizeGB,
 				OSDiskType:   osDiskType,
 				EnableFIPS:   enableFIPS,
 				LinuxProfile: func() *armcontainerservice.MachineOSProfileLinuxProfile {
@@ -260,16 +260,16 @@ func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[stri
 	return result
 }
 
-func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
-	// Karpenter defaults to Managed, but decides whether to use Ephemeral
-	sku, err := instanceTypeProvider.Get(ctx, instanceType.Name)
+// configureOSDisk resolves the OS disk size and type for the machine; the size is sent
+// explicitly (not left for the AKS machine API to default) so it matches the VM path and
+// the reported ephemeral-storage capacity.
+func configureOSDisk(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*int32, *armcontainerservice.OSDiskType, error) {
+	osDiskProfile, err := instancetype.ResolveOSDiskProfileFor(ctx, instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		return lo.ToPtr(armcontainerservice.OSDiskTypeEphemeral), nil
-	}
-	return lo.ToPtr(armcontainerservice.OSDiskTypeManaged), nil
+	osDiskType := lo.Ternary(osDiskProfile.IsEphemeral(), armcontainerservice.OSDiskTypeEphemeral, armcontainerservice.OSDiskTypeManaged)
+	return lo.ToPtr(osDiskProfile.SizeGB), lo.ToPtr(osDiskType), nil
 }
 
 func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriority {
