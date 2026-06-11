@@ -152,7 +152,8 @@ func handleLowPriorityQuotaError(
 ) error {
 	// Mark in cache that spot quota has been reached for this subscription
 	unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, SubscriptionQuotaReachedTTL)
-	return fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
+	err := fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
+	return corecloudprovider.NewCreateError(err, SubscriptionQuotaReachedReason, err.Error())
 }
 
 func handleSKUFamilyQuotaError(
@@ -180,7 +181,8 @@ func handleSKUFamilyQuotaError(
 			unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReachedReason, sku, getOfferingZone(offering), capacityType, LowQuotaTTL)
 		}
 	}
-	return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
+	err := fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
+	return corecloudprovider.NewCreateError(err, SubscriptionQuotaReachedReason, err.Error())
 }
 
 func handleSKUNotAvailableError(
@@ -203,11 +205,12 @@ func handleSKUNotAvailableError(
 	}
 	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings, sku, instanceType, zone, capacityType, SKUNotAvailableReason, skuNotAvailableTTL)
 
-	return fmt.Errorf(
+	err := fmt.Errorf(
 		"the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable",
 		instanceType.Name,
 		zone,
 		capacityType)
+	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
 }
 
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
@@ -224,7 +227,8 @@ func handleZonalAllocationFailureError(
 	unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, sku, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
 	unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, sku, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
 
-	return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
+	err := fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
+	return corecloudprovider.NewCreateError(err, ZonalAllocationFailureReason, err.Error())
 }
 
 // AllocationFailure means that VM allocation to the dedicated host has failed. But it can also mean "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."
@@ -248,7 +252,8 @@ func handleAllocationFailureError(
 ) error {
 	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, zone, AllocationFailureReason, AllocationFailureTTL)
 
-	return fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
+	err := fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
+	return corecloudprovider.NewCreateError(err, AllocationFailureReason, err.Error())
 }
 
 // OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
@@ -265,7 +270,8 @@ func handleOverconstrainedZonalAllocationFailureError(
 	// OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
 	unavailableOfferings.MarkUnavailableWithTTL(ctx, OverconstrainedZonalAllocationFailureReason, sku, zone, capacityType, AllocationFailureTTL)
 
-	return fmt.Errorf("unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)", zone, capacityType, instanceType.Name)
+	err := fmt.Errorf("unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)", zone, capacityType, instanceType.Name)
+	return corecloudprovider.NewCreateError(err, OverconstrainedZonalAllocationFailureReason, err.Error())
 }
 
 // OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
@@ -281,7 +287,8 @@ func handleOverconstrainedAllocationFailureError(
 ) error {
 	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings, sku, instanceType, zone, capacityType, OverconstrainedAllocationFailureReason, AllocationFailureTTL)
 
-	return fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", capacityType, instanceType.Name)
+	err := fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", capacityType, instanceType.Name)
+	return corecloudprovider.NewCreateError(err, OverconstrainedAllocationFailureReason, err.Error())
 }
 
 func handleRegionalQuotaError(

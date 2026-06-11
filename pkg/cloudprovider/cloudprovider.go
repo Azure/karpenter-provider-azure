@@ -177,7 +177,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
 	vmPromise, err := c.vmInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+		return nil, toCreateError(err, "creating instance failed")
 	}
 
 	if err := c.handleInstancePromise(ctx, vmPromise, nodeClaim); err != nil {
@@ -211,7 +211,7 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	// Begin the creation of the instance
 	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating AKS machine failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+		return nil, toCreateError(err, "creating AKS machine failed")
 	}
 
 	// Handle the promise
@@ -259,7 +259,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		err := instancePromise.Wait()
 		if err != nil {
 			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
-			return cloudprovider.NewCreateError(fmt.Errorf("creating standalone instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+			return toCreateError(err, "creating standalone instance failed")
 		}
 	}
 	// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
@@ -704,6 +704,21 @@ func truncateMessage(msg string) string {
 		return msg
 	}
 	return msg[:truncateAt] + "..."
+}
+
+// toCreateError wraps an instance-create failure as a *cloudprovider.CreateError with the
+// wrapMsg context prefix. When err carries a classified CreateError (set by the offerings
+// error handlers, e.g. SKUNotAvailable or ZonalAllocationFailure), its specific Launched
+// condition reason and message are surfaced so consumers can branch on the cause; otherwise
+// it falls back to the generic CreateInstanceFailed reason and error text, preserving prior
+// behavior.
+func toCreateError(err error, wrapMsg string) error {
+	reason, message := CreateInstanceFailedReason, err.Error()
+	var classified *cloudprovider.CreateError
+	if stderrors.As(err, &classified) {
+		reason, message = classified.ConditionReason, classified.ConditionMessage
+	}
+	return cloudprovider.NewCreateError(fmt.Errorf("%s, %w", wrapMsg, err), reason, truncateMessage(message))
 }
 
 func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) error {

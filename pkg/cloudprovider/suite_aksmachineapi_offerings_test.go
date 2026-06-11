@@ -17,6 +17,7 @@ limitations under the License.
 package cloudprovider
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -47,6 +48,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -546,6 +548,43 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
 				Expect(err.Error()).To(ContainSubstring("creating AKS machine failed"))
+
+				// An unclassified failure keeps the generic Launched condition reason.
+				var createErr *corecloudprovider.CreateError
+				Expect(errors.As(err, &createErr)).To(BeTrue())
+				Expect(createErr.ConditionReason).To(Equal(CreateInstanceFailedReason))
+			})
+
+			It("should surface the specific failure reason on the Launched condition for a classified error", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				testNodeClaim5 := coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							karpv1.NodePoolLabelKey: nodePool.Name,
+						},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Name:  nodeClass.Name,
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+						},
+					},
+				})
+
+				// A zonal allocation failure is classified by the error handlers.
+				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorZoneAllocationFailed("Standard_D2_v2", fakeZone1)
+
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, testNodeClaim5)
+				Expect(err).To(HaveOccurred())
+				Expect(claim).To(BeNil())
+
+				// The handler's classified reason is threaded through to the Launched condition
+				// rather than being collapsed to the generic CreateInstanceFailed reason.
+				var createErr *corecloudprovider.CreateError
+				Expect(errors.As(err, &createErr)).To(BeTrue())
+				Expect(createErr.ConditionReason).To(Equal(offerings.ZonalAllocationFailureReason))
 			})
 		})
 
