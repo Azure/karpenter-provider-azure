@@ -205,7 +205,8 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*AKSMachinePromise, error) {
-	aksMachineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaim.Name)
+	isWindows := v1beta1.WindowsFamilies.Has(lo.FromPtr(nodeClass.Spec.ImageFamily))
+	aksMachineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaim.Name, isWindows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AKS machine name from NodeClaim name %q: %w", nodeClaim.Name, err)
 	}

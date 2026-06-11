@@ -181,10 +181,23 @@ func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerser
 // ASSUMPTION: NodeClaim name is in the format of <NodePool name>-<hash suffix>
 // If total length exceeds AKS machine name limit, the exceeded part will be replaced with another deterministic hash.
 // E.g., "thisisalongnodepoolname-a1b2c" --> "thisisalongnoz9y8x7-a1b2c"
-func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) (string, error) {
+func GetAKSMachineNameFromNodeClaimName(nodeClaimName string, isWindows bool) (string, error) {
 	const maxAKSMachineNameLength = 34 // Defined by AKS machine API.
 	const prefixHashLength = 6         // The length of the hashed part replacing the exceeded part of the prefix.
 	// If 6, given alphanumeric hash, there will be a total of 36^6 = 2,176,782,336 combinations.
+
+	// Windows machines have a much shorter name limit in the AKS Machine API (12 chars in the
+	// reserved Karpenter agent pool, due to the Windows NetBIOS computer-name limit). The
+	// NodeClaim name is far longer, so derive a short, deterministic, collision-resistant name.
+	// Format: "w" + 11-char alphanumeric hash (starts with a letter; no hyphens), length 12.
+	if isWindows {
+		const maxWindowsAKSMachineNameLength = 12
+		hash, err := utils.GetAlphanumericHash(nodeClaimName, maxWindowsAKSMachineNameLength-1)
+		if err != nil {
+			return "", fmt.Errorf("failed to hash NodeClaim name %q for Windows AKS machine name: %w", nodeClaimName, err)
+		}
+		return "w" + hash, nil
+	}
 
 	if len(nodeClaimName) <= maxAKSMachineNameLength {
 		// Safe to use the whole name

@@ -63,13 +63,9 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 
 	// NodeImageVersion
 	// E.g., "AKSUbuntu-2204gen2containerd-2023.11.15"
-	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	nodeImageVersionPtr, err := p.resolveNodeImageVersion(nodeClass, instanceType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
-	}
-	nodeImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(vmImageID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert VM image ID to NodeImageVersion: %w", err)
+		return nil, err
 	}
 
 	// GPUProfile
@@ -116,7 +112,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		// hashing by design. See batch_field_registry.go for the full field classification.
 		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
-			NodeImageVersion: lo.ToPtr(nodeImageVersion),
+			NodeImageVersion: nodeImageVersionPtr,
 			Network: &armcontainerservice.MachineNetworkProperties{
 				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
 				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
@@ -131,21 +127,16 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				GpuProfile: gpuProfile,
 			},
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
-				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
+				OSType:       configureOSType(nodeClass),
 				OSSKU:        osSku,
 				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
 				OSDiskType:   osDiskType,
 				EnableFIPS:   enableFIPS,
-				LinuxProfile: func() *armcontainerservice.MachineOSProfileLinuxProfile {
-					linuxOSConfig := configureLinuxOSConfig(nodeClass)
-					if linuxOSConfig == nil {
-						return nil
-					}
-					return &armcontainerservice.MachineOSProfileLinuxProfile{
-						LinuxOSConfig: linuxOSConfig,
-					}
-				}(),
-				// WindowsProfile: nil,
+				LinuxProfile: configureLinuxProfile(nodeClass),
+				// WindowsProfile is optional. Windows admin credentials are sourced
+				// server-side by the AKS RP from the ManagedCluster's WindowsProfile, so
+				// Karpenter does not need to populate it. TODO(Windows): expose advanced
+				// AgentPoolWindowsProfile settings (e.g. DisableOutboundNat) if needed.
 			},
 
 			Kubernetes: &armcontainerservice.MachineKubernetesProfile{
@@ -284,36 +275,97 @@ func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriorit
 	}
 }
 
+// imageFamilyToARMOSSKU maps NodeClass image families with a 1:1 OSSKU to the AKS Machine
+// API OSSKU. The generic "Ubuntu" family (and any unknown family) is resolved separately by
+// defaultUbuntuOSSKU, since it depends on FIPS and the Kubernetes version.
+var imageFamilyToARMOSSKU = map[string]armcontainerservice.OSSKU{
+	v1beta1.Ubuntu2204ImageFamily:    armcontainerservice.OSSKUUbuntu2204,
+	v1beta1.Ubuntu2404ImageFamily:    armcontainerservice.OSSKUUbuntu2404,
+	v1beta1.AzureLinuxImageFamily:    armcontainerservice.OSSKUAzureLinux,
+	v1beta1.Windows2019ImageFamily:   armcontainerservice.OSSKUWindows2019,
+	v1beta1.Windows2022ImageFamily:   armcontainerservice.OSSKUWindows2022,
+	v1beta1.Windows2025ImageFamily:   armcontainerservice.OSSKUWindows2025,
+	v1beta1.WindowsAnnualImageFamily: armcontainerservice.OSSKUWindowsAnnual,
+}
+
 func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, error) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go
 
 	if nodeClass.Spec.ImageFamily == nil {
 		return nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
 	}
+	family := *nodeClass.Spec.ImageFamily
 
-	var ossku armcontainerservice.OSSKU
-	enableFIPS := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
+	// FIPS is not applicable to Windows; CEL validation rejects FIPS with a Windows family,
+	// but guard here as well so we never send EnableFIPS=true for a Windows machine.
+	enableFIPS := !v1beta1.WindowsFamilies.Has(family) && lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
 
-	switch *nodeClass.Spec.ImageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
-		ossku = armcontainerservice.OSSKUUbuntu2204
-	case v1beta1.Ubuntu2404ImageFamily:
-		ossku = armcontainerservice.OSSKUUbuntu2404
-	case v1beta1.AzureLinuxImageFamily:
-		ossku = armcontainerservice.OSSKUAzureLinux
-	case v1beta1.UbuntuImageFamily:
-		fallthrough
-	default:
-		if enableFIPS {
-			ossku = armcontainerservice.OSSKUUbuntu
-		} else if imagefamily.UseUbuntu2404(orchestratorVersion) {
-			ossku = armcontainerservice.OSSKUUbuntu2404
-		} else {
-			ossku = armcontainerservice.OSSKUUbuntu2204
-		}
+	ossku, ok := imageFamilyToARMOSSKU[family]
+	if !ok {
+		// Generic "Ubuntu" family or unknown family.
+		ossku = defaultUbuntuOSSKU(enableFIPS, orchestratorVersion)
 	}
 
 	return lo.ToPtr(ossku), lo.ToPtr(enableFIPS), nil
+}
+
+// defaultUbuntuOSSKU resolves the Ubuntu OSSKU for the generic "Ubuntu" image family,
+// based on FIPS mode and the Kubernetes version.
+func defaultUbuntuOSSKU(enableFIPS bool, orchestratorVersion string) armcontainerservice.OSSKU {
+	switch {
+	case enableFIPS:
+		return armcontainerservice.OSSKUUbuntu
+	case imagefamily.UseUbuntu2404(orchestratorVersion):
+		return armcontainerservice.OSSKUUbuntu2404
+	default:
+		return armcontainerservice.OSSKUUbuntu2204
+	}
+}
+
+// configureOSType returns the AKS Machine OSType (Linux or Windows) for the NodeClass's
+// image family. Windows families map to OSTypeWindows; everything else to OSTypeLinux.
+func configureOSType(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.OSType {
+	if v1beta1.WindowsFamilies.Has(lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+		return lo.ToPtr(armcontainerservice.OSTypeWindows)
+	}
+	return lo.ToPtr(armcontainerservice.OSTypeLinux)
+}
+
+// resolveNodeImageVersion resolves the AKS Machine API NodeImageVersion for the NodeClass.
+//
+// For Windows it returns nil: the AKS Machine API's node image version parser splits on "-"
+// and expects exactly "{gallery}-{name}-{version}", but Windows image names themselves
+// contain hyphens (e.g. "AKSWindows-2022-containerd-gen2-<ver>"), so passing an explicit
+// version is rejected as invalid. Leaving it nil lets the AKS RP resolve the latest image
+// from the OSSKU (it already owns Windows image/credential resolution server-side).
+func (p *DefaultAKSMachineProvider) resolveNodeImageVersion(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*string, error) {
+	if v1beta1.WindowsFamilies.Has(lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+		return nil, nil
+	}
+	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
+	}
+	nodeImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(vmImageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert VM image ID to NodeImageVersion: %w", err)
+	}
+	return lo.ToPtr(nodeImageVersion), nil
+}
+
+// configureLinuxProfile builds the Machine LinuxProfile. It returns nil for Windows nodes
+// (not applicable) and when no Linux OS config is set.
+func configureLinuxProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.MachineOSProfileLinuxProfile {
+	if v1beta1.WindowsFamilies.Has(lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+		return nil
+	}
+	linuxOSConfig := configureLinuxOSConfig(nodeClass)
+	if linuxOSConfig == nil {
+		return nil
+	}
+	return &armcontainerservice.MachineOSProfileLinuxProfile{
+		LinuxOSConfig: linuxOSConfig,
+	}
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
