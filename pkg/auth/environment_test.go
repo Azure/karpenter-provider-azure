@@ -29,7 +29,7 @@ import (
 
 func TestReadEnvironmentFromFile(t *testing.T) {
 	// Create a valid environment for successful test cases
-	validEnv := &azclient.Environment{
+	validEnv := &azclient.Environment{ //nolint:gosec // G101: test cloud endpoint URLs are not credentials
 		Name:                    "AzureStackCloud",
 		ResourceManagerEndpoint: "https://management.azurestack.local/",
 		ActiveDirectoryEndpoint: "https://login.microsoftonline.com/",
@@ -143,7 +143,7 @@ func TestMapTrack1ToTrack2Environment(t *testing.T) {
 	}{
 		{
 			name: "valid environment mapping",
-			env: &azclient.Environment{
+			env: &azclient.Environment{ //nolint:gosec // G101: test cloud endpoint URLs are not credentials
 				Name:                    "AzureStackCloud",
 				ResourceManagerEndpoint: "https://management.azurestack.local/",
 				ActiveDirectoryEndpoint: "https://login.microsoftonline.com/",
@@ -189,7 +189,7 @@ func TestMapTrack1ToTrack2Environment(t *testing.T) {
 
 func TestResolveCloudEnvironment(t *testing.T) {
 	// Create a valid environment for file-based test
-	validEnv := &azclient.Environment{
+	validEnv := &azclient.Environment{ //nolint:gosec // G101: test cloud endpoint URLs are not credentials
 		Name:                    "AzureStackCloud",
 		ResourceManagerEndpoint: "https://management.azurestack.local/",
 		ActiveDirectoryEndpoint: "https://login.microsoftonline.com/",
@@ -304,7 +304,7 @@ func TestValidateEnvironment(t *testing.T) {
 	}{
 		{
 			name: "valid environment with all required fields",
-			env: &azclient.Environment{
+			env: &azclient.Environment{ //nolint:gosec // G101: test cloud endpoint URLs are not credentials
 				Name:                    "AzureStackCloud",
 				ResourceManagerEndpoint: "https://management.azurestack.local/",
 				ActiveDirectoryEndpoint: "https://login.microsoftonline.com/",
@@ -315,7 +315,7 @@ func TestValidateEnvironment(t *testing.T) {
 		},
 		{
 			name: "missing resource manager endpoint",
-			env: &azclient.Environment{
+			env: &azclient.Environment{ //nolint:gosec // G101: test cloud endpoint URLs are not credentials
 				Name:                    "AzureStackCloud",
 				ActiveDirectoryEndpoint: "https://login.microsoftonline.com/",
 				TokenAudience:           "https://management.azurestack.local/",
@@ -326,7 +326,7 @@ func TestValidateEnvironment(t *testing.T) {
 		},
 		{
 			name: "missing active directory endpoint",
-			env: &azclient.Environment{
+			env: &azclient.Environment{ //nolint:gosec // G101: test cloud endpoint URLs are not credentials
 				Name:                    "AzureStackCloud",
 				ResourceManagerEndpoint: "https://management.azurestack.local/",
 				TokenAudience:           "https://management.azurestack.local/",
