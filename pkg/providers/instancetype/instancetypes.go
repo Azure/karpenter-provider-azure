@@ -163,9 +163,9 @@ func (p *DefaultProvider) List(
 	// Azure has zones availability directly from SKU info
 	var result []*cloudprovider.InstanceType
 	for _, sku := range p.instanceTypesInfo {
-		vmsize, err := sku.GetVMSize()
-		if err != nil {
-			log.FromContext(ctx).V(1).Info("failed to parse VM size, continuing without parsed SKU labels", "vmSize", sku.GetSize(), "error", err)
+		vmsize, ok := p.getVMSize(ctx, sku)
+		if !ok {
+			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
@@ -397,9 +397,9 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
-		vmsize, err := skus[i].GetVMSize()
-		if err != nil {
-			log.FromContext(ctx).V(1).Info("failed to parse VM size, continuing without parsed SKU labels", "vmSize", skus[i].GetSize(), "error", err)
+		vmsize, ok := p.getVMSize(ctx, &skus[i])
+		if !ok {
+			continue
 		}
 		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
@@ -476,6 +476,21 @@ func (p *DefaultProvider) Reset() {
 	defer p.muInstanceTypesInfo.Unlock()
 	p.instanceTypesInfo = map[string]*skewer.SKU{}
 	atomic.StoreUint64(&p.instanceTypesSeqNum, 0)
+}
+
+func (p *DefaultProvider) getVMSize(ctx context.Context, sku *skewer.SKU) (*skewer.VMSizeType, bool) {
+	vmsize, err := sku.GetVMSize()
+	if err == nil {
+		return vmsize, true
+	}
+
+	if utils.UseGridV20Drivers(sku.GetName()) {
+		log.FromContext(ctx).V(1).Info("failed to parse VM size, continuing for allowed SKU without parsed SKU labels", "sku", sku.GetName(), "vmSize", sku.GetSize(), "error", err)
+		return nil, true
+	}
+
+	log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
+	return nil, false
 }
 
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
