@@ -248,6 +248,9 @@
 - name: Standard_D16alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D16als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D16als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
@@ -374,6 +377,9 @@
 - name: Standard_D2alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D2als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D2als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
@@ -485,6 +491,9 @@
 - name: Standard_D32alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D32als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D32als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
@@ -602,6 +611,9 @@
 - name: Standard_D48alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D48als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D48als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
@@ -716,6 +728,9 @@
 - name: Standard_D4alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D4als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D4als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
@@ -830,6 +845,9 @@
 - name: Standard_D64alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D64als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D64als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
@@ -938,6 +956,9 @@
 - name: Standard_D8alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D8als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D8als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
@@ -1040,6 +1061,9 @@
 - name: Standard_D96alds_v7
   family: StandardDaldsv7Family
   discoveredOn: "2026-03-31"
+- name: Standard_D96als_v5
+  family: standardDALSv5Family
+  discoveredOn: "2025-05-15"
 - name: Standard_D96als_v6
   family: standardDalv6Family
   discoveredOn: "2025-05-15"
