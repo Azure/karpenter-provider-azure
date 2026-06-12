@@ -45,16 +45,29 @@ ifeq ($(GITHUB_ACTIONS),true)
       rm -rf "$$trace_dir"; \
       mkdir -p "$$trace_dir"; \
       echo "Tracing skaffold signals under $$trace_dir"; \
+			ps -eo pid,ppid,pgid,sid,stat,comm,args --forest > "$$trace_dir/ps.before" || true; \
       dump_skaffold_trace() { \
         status="$$?"; \
+				ps -eo pid,ppid,pgid,sid,stat,comm,args --forest > "$$trace_dir/ps.after" || true; \
         echo "::group::skaffold strace signal summary"; \
-        find "$$trace_dir" -type f -name 'skaffold*' -print -exec grep -H -E -- 'SIG(INT|TERM|PIPE)|si_pid=|si_code=|killed by|exited with' {} \; || true; \
+				if ! grep -H -E -- '--- SIG(INT|TERM|PIPE|HUP|QUIT|KILL)|killed by SIG(INT|TERM|PIPE|HUP|QUIT|KILL)|(kill|tgkill|tkill|pidfd_send_signal)\([^)]*SIG(INT|TERM|PIPE|HUP|QUIT|KILL)' "$$trace_dir"/skaffold.* 2>/dev/null; then \
+					echo "No delivered or sent SIGINT/SIGTERM/SIGPIPE/SIGHUP/SIGQUIT/SIGKILL events captured"; \
+				fi; \
+				echo "::endgroup::"; \
+				echo "::group::skaffold traced exec/exit summary"; \
+				grep -H -E -- 'execve\(|exited with|killed by' "$$trace_dir"/skaffold.* 2>/dev/null | tail -n 200 || true; \
+				echo "::endgroup::"; \
+				echo "::group::skaffold process snapshots"; \
+				echo "--- before skaffold ---"; \
+				cat "$$trace_dir/ps.before" || true; \
+				echo "--- after skaffold ---"; \
+				cat "$$trace_dir/ps.after" || true; \
         echo "::endgroup::"; \
         exit "$$status"; \
       }; \
       trap dump_skaffold_trace EXIT; \
       trap '' INT; \
-      strace -ff -tt -s 256 -e trace=signal -o "$$trace_dir/skaffold" setsid --wait skaffold build < /dev/null; \
+			strace -ff -tt -s 256 -e trace=signal,process -o "$$trace_dir/skaffold" setsid --wait skaffold build < /dev/null; \
     fi
 else
   SKAFFOLD_BUILD ?= skaffold build
