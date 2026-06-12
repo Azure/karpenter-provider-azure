@@ -32,6 +32,13 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= testmpool
 
+# Guard GitHub Actions builds from stray SIGINT while preserving local Ctrl-C behavior.
+ifeq ($(GITHUB_ACTIONS),true)
+  SKAFFOLD_BUILD ?= trap '' INT; setsid --wait skaffold build < /dev/null
+else
+  SKAFFOLD_BUILD ?= skaffold build
+endif
+
 .DEFAULT_GOAL := help	# make without arguments will show help
 
 export KO_GO_PATH ?= hack/go-crossbuild.sh
@@ -339,7 +346,7 @@ az-aks-check-acr:
 
 az-build: ## Build the Karpenter controller and webhook images using skaffold build (which uses ko build)
 	az acr login -n $(AZURE_ACR_NAME)
-	skaffold build
+	$(SKAFFOLD_BUILD)
 
 az-creds: ## Get cluster credentials
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
