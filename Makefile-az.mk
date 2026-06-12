@@ -31,17 +31,38 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 
 PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= testmpool
+SKAFFOLD_TRACE_DIR ?= $(or $(RUNNER_TEMP),/tmp)/skaffold-strace
 
 # Guard GitHub Actions builds from stray SIGINT while preserving local Ctrl-C behavior.
 ifeq ($(GITHUB_ACTIONS),true)
-  SKAFFOLD_BUILD ?= trap '' INT; setsid --wait skaffold build < /dev/null
+  SKAFFOLD_BUILD ?= trace_dir="$(SKAFFOLD_TRACE_DIR)"; \
+    case "$$trace_dir" in ""|"/") echo "invalid SKAFFOLD_TRACE_DIR=$$trace_dir"; exit 2;; esac; \
+    if ! command -v strace >/dev/null 2>&1; then \
+      echo "strace not found; running skaffold without signal trace"; \
+      trap '' INT; \
+      setsid --wait skaffold build < /dev/null; \
+    else \
+      rm -rf "$$trace_dir"; \
+      mkdir -p "$$trace_dir"; \
+      echo "Tracing skaffold signals under $$trace_dir"; \
+      dump_skaffold_trace() { \
+        status="$$?"; \
+        echo "::group::skaffold strace signal summary"; \
+        find "$$trace_dir" -type f -name 'skaffold*' -print -exec grep -H -E -- 'SIG(INT|TERM|PIPE)|si_pid=|si_code=|killed by|exited with' {} \; || true; \
+        echo "::endgroup::"; \
+        exit "$$status"; \
+      }; \
+      trap dump_skaffold_trace EXIT; \
+      trap '' INT; \
+      strace -ff -tt -s 256 -e trace=signal -o "$$trace_dir/skaffold" setsid --wait skaffold build < /dev/null; \
+    fi
 else
   SKAFFOLD_BUILD ?= skaffold build
 endif
 
 .DEFAULT_GOAL := help	# make without arguments will show help
 
-export KO_GO_PATH ?= hack/go-crossbuild.sh
+#export KO_GO_PATH ?= hack/go-crossbuild.sh
 
 AZ_ALL_PERMS := az-perm az-perm-acr
 ifneq ($(filter aksmachineapi aksmachineapiheaderbatch,$(PROVISION_MODE)),)
