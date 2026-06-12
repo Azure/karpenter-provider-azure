@@ -57,8 +57,9 @@ const (
 
 	// maxEphemeralOSDiskSizeGB is the maximum size (in GB) Azure supports for ephemeral OS disks.
 	maxEphemeralOSDiskSizeGB = 2040
-	// minOSDiskSizeGB matches the spec.osDiskSizeGB API minimum; auto-sizing never goes below it.
-	minOSDiskSizeGB = 30
+	// minEphemeralOSDiskSizeGB is AKS's threshold for auto-selecting an ephemeral OS disk;
+	// below it, auto-sizing falls back to vCPU-based managed defaults.
+	minEphemeralOSDiskSizeGB = 128
 )
 
 // instanceTypeParameters contains the resolved set of AKSNodeClass fields that affect
@@ -533,8 +534,8 @@ func (p OSDiskProfile) IsEphemeral() bool {
 }
 
 // ResolveOSDiskProfile resolves the OS disk size and type for the given SKU: an explicit
-// osDiskSizeGB is used as-is (ephemeral when it fits); nil auto-sizes to the largest
-// SKU-supported ephemeral size, falling back to vCPU-based managed defaults.
+// osDiskSizeGB is used as-is (ephemeral when it fits); nil auto-sizes to an ephemeral disk at
+// the SKU-supported size, or a vCPU-based managed default below the ephemeral threshold.
 func ResolveOSDiskProfile(sku *skewer.SKU, osDiskSizeGB *int32) OSDiskProfile {
 	maxEphemeralSizeGB, placement := FindMaxEphemeralSizeGBAndPlacement(sku)
 	maxEphemeralSizeGB = min(maxEphemeralSizeGB, maxEphemeralOSDiskSizeGB)
@@ -544,7 +545,7 @@ func ResolveOSDiskProfile(sku *skewer.SKU, osDiskSizeGB *int32) OSDiskProfile {
 		}
 		return OSDiskProfile{SizeGB: *osDiskSizeGB}
 	}
-	if maxEphemeralSizeGB >= minOSDiskSizeGB {
+	if maxEphemeralSizeGB >= minEphemeralOSDiskSizeGB {
 		return OSDiskProfile{SizeGB: int32(maxEphemeralSizeGB), Placement: placement}
 	}
 	return OSDiskProfile{SizeGB: defaultManagedOSDiskSizeGB(sku)}

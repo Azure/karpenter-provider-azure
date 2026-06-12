@@ -1022,11 +1022,11 @@ var _ = Describe("InstanceType Provider", func() {
 						instancetype.OSDiskProfile{SizeGB: 2040, Placement: lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)}),
 					Entry("explicit size above the ephemeral limit falls back to managed", fake.MakeSKU("Standard_D128ds_v6"), lo.ToPtr[int32](2048),
 						instancetype.OSDiskProfile{SizeGB: 2048}),
-					// auto (nil): prefer ephemeral at the SKU-supported size, capped at 2040GB
+					// auto (nil): ephemeral at SKU-supported size (capped 2040GB) above 128GiB, else managed by vCPU
 					Entry("auto-sizes ephemeral to SKU-supported size", fake.MakeSKU("Standard_D64s_v3"), nil,
 						instancetype.OSDiskProfile{SizeGB: 1600, Placement: lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)}),
-					Entry("auto-sizes small ephemeral to SKU-supported size", fake.MakeSKU("Standard_B20ms"), nil,
-						instancetype.OSDiskProfile{SizeGB: 30, Placement: lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)}),
+					Entry("auto falls back to managed when ephemeral capacity is below the 128GiB threshold", fake.MakeSKU("Standard_B20ms"), nil,
+						instancetype.OSDiskProfile{SizeGB: 512}),
 					Entry("caps auto-sized ephemeral at 2040GB", fake.MakeSKU("Standard_D128ds_v6"), nil,
 						instancetype.OSDiskProfile{SizeGB: 2040, Placement: lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)}),
 					Entry("auto falls back to managed default when ephemeral is not supported", fake.MakeSKU("Standard_D2as_v6"), nil,
@@ -1064,7 +1064,7 @@ var _ = Describe("InstanceType Provider", func() {
 					}
 					Expect(capacityByName).To(HaveKeyWithValue("Standard_D64s_v3", "1600G"))   // ephemeral, SKU-supported size
 					Expect(capacityByName).To(HaveKeyWithValue("Standard_D128ds_v6", "2040G")) // ephemeral, capped
-					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2s_v3", "50G"))      // ephemeral, SKU-supported size
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2s_v3", "128G"))     // managed, ephemeral below 128GiB
 					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2as_v6", "128G"))    // managed default, <8 vCPUs
 				})
 				It("should report ephemeral-storage capacity matching the explicit OS disk size", func() {
