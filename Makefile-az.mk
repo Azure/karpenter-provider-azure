@@ -339,6 +339,8 @@ az-aks-check-acr:
 
 az-build: ## Build the Karpenter controller and webhook images using skaffold build (which uses ko build)
 	az acr login -n $(AZURE_ACR_NAME)
+	# https://github.com/GoogleContainerTools/skaffold/issues/10106
+	docker pull mcr.microsoft.com/azurelinux/distroless/minimal:3.0@sha256:138fe2905465e384b232ffe8ba3147de04c633a83f29d8df00d6817e3eacb0d2
 	skaffold build
 
 az-creds: ## Get cluster credentials
