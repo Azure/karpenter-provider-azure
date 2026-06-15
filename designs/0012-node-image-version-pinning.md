@@ -125,7 +125,9 @@ VM creation with resolved image ID
    `imageFamily` + instance type requirements. It is not user-facing.
 
 6. Image data is **cached for 3 days** (`ImageExpirationInterval`), with
-   hourly cleanup.
+   hourly cleanup. The **cache key** is currently `hash(supportedImages,
+   k8sVersion)`. `imageVersion` is not part of the key — this must be
+   fixed as part of this design (see section 5.5.1).
 
 ---
 
@@ -140,6 +142,12 @@ A Karpenter user can set `imageFamily: Ubuntu2204` but **cannot**:
 The workaround today is to disable Karpenter entirely and fall back to
 AKS autoscaling groups until a fixed image version ships, which defeats
 the purpose of using Karpenter.
+
+### Non-goals
+
+- **`imageVersion` pinning for AKS Machine API + CIG**: `GetAKSMachineNodeImageVersionFromImageID()` does not support CIG images today (it returns an explicit error). Drift detection for that combination is already silently skipped. Supporting CIG pinning via the AKS Machine API path is out of scope for this design.
+- **Pinning for clusters using the AKS Machine API + CIG**: the supported pinning path for CIG is clusters using the **bootstrapping client** (non-Machine-API), where drift uses a full image ID comparison and works naturally.
+- **Exposing `imageVersion` on `v1alpha2`**: `imageVersion` will be added to `v1beta1` only (the storage version). Users of `v1alpha2` manifests cannot set it. This is acceptable because `v1beta1` is the current recommended API version.
 
 ---
 
@@ -286,8 +294,34 @@ image avoids ambiguity and lets the support window warning use the
 oldest entry.
 
 **Age source:** The version string encodes a date prefix in both
-supported formats (`YYYYMM.DD.patch` and `YYYY.MM.DD`). The reconciler
-parses the date portion to compute age at each reconciliation cycle.
+supported formats. Parsing requires two branches, following the same
+segment-splitting pattern used by `isNewerVersion()` in
+`nodeimageversionsclient.go`:
+
+```go
+// parseImageVersionDate extracts year/month/day from an AKS image version.
+// Supports both observed AKS formats:
+//   YYYYMM.DD.patch  e.g. "202604.24.0"  → segments[0]="202604", segments[1]="24"
+//   YYYY.MM.DD       e.g. "2022.10.03"   → segments[0]="2022",   segments[1]="10", segments[2]="03"
+func parseImageVersionDate(version string) (time.Time, error) {
+    segments := strings.Split(version, ".")
+    if len(segments[0]) == 6 {
+        // Current format: YYYYMM.DD.patch
+        year, _ := strconv.Atoi(segments[0][:4])
+        month, _ := strconv.Atoi(segments[0][4:])
+        day, _ := strconv.Atoi(segments[1])
+        return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
+    } else if len(segments[0]) == 4 && len(segments) >= 3 {
+        // Legacy format: YYYY.MM.DD
+        year, _ := strconv.Atoi(segments[0])
+        month, _ := strconv.Atoi(segments[1])
+        day, _ := strconv.Atoi(segments[2])
+        return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
+    }
+    return time.Time{}, fmt.Errorf("unrecognized image version format: %s", version)
+}
+```
+
 This avoids depending on a `PublishedDate` API field which is available
 for CIG but not currently exposed in the SIG path (see section 2, key
 observation 3). If a `PublishedDate` field becomes available for both
@@ -362,9 +396,11 @@ NodeImageProvider.List()             (MODIFIED)
         │    SIG: BuildImageIDSIG(..., imageVersion) directly — skip latest lookup
         │    CIG: BuildImageIDCIG(..., imageVersion) directly — skip latest lookup
         │    Then: validate version exists via gallery API (see 5.5.4)
+        │    Cache key: hash(supportedImages, k8sVersion, imageVersion)
         │
         │  If imageVersion is UNSET:
         │    (unchanged — pick latest by date/SKU as today)
+        │    Cache key: hash(supportedImages, k8sVersion)  ← unchanged
         │
         ▼
 NodeImageReconciler.Reconcile()      (see 5.5.2 and 5.5.3)
@@ -375,6 +411,13 @@ ResolveNodeImageFromNodeClass()      (unchanged)
         ▼
 VM creation with resolved image ID
 ```
+
+**Cache key change required**: `cacheKey()` currently hashes only
+`supportedImages + k8sVersion`. If `imageVersion` is not included,
+setting or changing a pin on an existing NodeClass will return the
+previously cached result for up to 3 days with no error. Fix: pass
+`nodeClass.Spec.ImageVersion` into `cacheKey()` so any version change
+immediately produces a cache miss and forces a fresh gallery lookup.
 
 The `AKSNodeClassSpec.ImageID` stub (`json:"-"`) is unused today and
 is not part of this design. See section 6.4 for options on its future.
@@ -488,6 +531,15 @@ Since `status.images[]` will contain the pinned version when
 `imageVersion` is set, the comparison naturally works: nodes running the
 pinned version are not drifted, and nodes running a different version
 are.
+
+**Drift by provisioning path:**
+
+| Path | Drift mechanism | `imageVersion` pinning supported? |
+|---|---|---|
+| Bootstrapping client + CIG | Full image ID comparison (`availableImage.ID == nodeClaim.Status.ImageID`) | ✅ Works naturally |
+| Bootstrapping client + SIG | Full image ID comparison | ✅ Works naturally |
+| AKS Machine API + SIG | `GetAKSMachineNodeImageVersionFromImageID()` converts to `gallery-definition-version` string | ✅ Works naturally |
+| AKS Machine API + CIG | `GetAKSMachineNodeImageVersionFromImageID()` returns an explicit error for CIG IDs | ❌ Non-goal (see section 3) |
 
 `imageAgeDays` is computed from the version string at reconciliation
 time and stored on each image in status, so it remains accurate without
@@ -728,10 +780,14 @@ Remaining questions not covered by the design sections above:
    built-in disruption budgets / node expiry?
 
 ### Support Window
-3. Should the warning threshold (currently 90 days) be configurable,
-   e.g., via a field on `AKSNodeClass.spec` or a controller flag? This
-   would allow tracking the official AKS policy without code changes
-   when the enforcement window is formalized.
+3. **Resolved**: The warning threshold should be a **controller-level
+   flag** (`--image-support-window-warning-days`, default `90`), not a
+   CRD field or a Helm chart value. A controller flag applies uniformly
+   to both NAP-managed and self-hosted Karpenter deployments, so
+   self-hosted users are not left with a hardcoded threshold they cannot
+   change without a code update. Helm values are not used here because
+   they would not reach self-hosted deployments that manage their own
+   controller flags.
 4. When AKS defines an enforcement window, should Karpenter block
    provisioning (by promoting `ImageWithinSupportWindow` to a readiness
    dependent) or only surface the condition and leave enforcement to
