@@ -606,9 +606,6 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 				},
 			},
 			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
-			AdditionalCapabilities: &armcompute.AdditionalCapabilities{
-				UltraSSDEnabled: &opts.UltraSsdEnabled,
-			},
 		},
 		Zones: zones.MakeARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
@@ -618,6 +615,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
+	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSsdEnabled)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -679,6 +677,15 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
+}
+
+func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSsdEnabled bool) {
+	if ultraSsdEnabled {
+		if vmProperties.AdditionalCapabilities == nil {
+			vmProperties.AdditionalCapabilities = &armcompute.AdditionalCapabilities{}
+		}
+		vmProperties.AdditionalCapabilities.UltraSSDEnabled = &ultraSsdEnabled
 	}
 }
 
