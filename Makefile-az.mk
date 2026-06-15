@@ -31,6 +31,7 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 
 PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= testmpool
+# pre-pull base images for skaffold/ko build, as a workaround for https://github.com/GoogleContainerTools/skaffold/issues/10106
 KO_BASE_IMAGE ?= mcr.microsoft.com/azurelinux/distroless/minimal:3.0@sha256:138fe2905465e384b232ffe8ba3147de04c633a83f29d8df00d6817e3eacb0d2
 KO_BASE_IMAGE_AMD64 ?= mcr.microsoft.com/azurelinux/distroless/minimal@sha256:fbe9982049f312a0ae6421599b0a33629369c919abe3564893a5405776fc6266
 KO_BASE_IMAGE_ARM64 ?= mcr.microsoft.com/azurelinux/distroless/minimal@sha256:ffcf415e6a14221e4d91b29445e33650062650095569407ea29a4315983721df
