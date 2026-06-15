@@ -1,0 +1,71 @@
+# Example for PROVISION_MODE=userdata: standalone, non-AKS Azure VMs from Azure Marketplace images, where an external
+# bootstrap owner (kops, Cluster API, custom tooling) supplies the COMPLETE bootstrap payload via spec.userData.
+# Karpenter generates no AKS bootstrap, CSE, or billing extensions.
+#
+# Operator requires PROVISION_MODE=userdata, cluster-name, ssh-public-key, vnet-subnet-id, node-resource-group;
+# cluster-endpoint and kubelet-bootstrap-token are not required (the user data owns bootstrap).
+---
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: userdata
+spec:
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+  template:
+    metadata:
+      # Scheduling label on the NodePool side only; the node sets its own labels via its bootstrap/kubelet config.
+      labels:
+        kops.k8s.io/instancegroup: nodes
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.azure.com/sku-family
+          operator: In
+          values: ["D"]
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: userdata
+---
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: userdata
+spec:
+  # Maps to an Azure Marketplace image: Ubuntu/Ubuntu2404 -> Canonical ubuntu-24_04-lts, Ubuntu2204 -> ubuntu-22_04-lts,
+  # AzureLinux -> azure-linux-3 (k8s >= 1.32) or cbl-mariner-2. The reconciler resolves the latest concrete version into
+  # status.images; nodes roll by image drift when it changes.
+  imageFamily: Ubuntu2404
+
+  # Required in userdata mode: Karpenter pod capacity. The user data must configure kubelet --max-pods to match.
+  maxPods: 110
+
+  # Optional: attach an existing NSG to the primary NIC (full Microsoft.Network/networkSecurityGroups resource ID).
+  # networkSecurityGroupID: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/cluster-rg/providers/Microsoft.Network/networkSecurityGroups/workers-nsg
+
+  # Tags on the VM/NIC/disk. Azure tag keys cannot contain '/', so Karpenter normalizes '/' to '_':
+  # "kops.k8s.io/instancegroup" lands as "kops.k8s.io_instancegroup". Set whatever your bootstrap owner matches on.
+  tags:
+    kops.k8s.io/instancegroup: nodes
+
+  # The COMPLETE bootstrap payload (cloud-init or shell script), base64-encoded once into OSProfile.CustomData. It must
+  # install and configure kubelet, the container runtime, and CNI, then join the cluster.
+  #
+  # For a clean handshake it must register kubelet with the startup taint karpenter.sh/unregistered:NoExecute
+  # (e.g. --register-with-taints=...); Karpenter removes it after syncing the node. It must also register with a
+  # spec.providerID matching the VM (azure:///subscriptions/.../virtualMachines/<name>), which cloud-provider-azure
+  # produces, otherwise set kubelet --provider-id.
+  userData: |
+    #!/bin/bash
+    set -euo pipefail
+    # ... your complete node bootstrap goes here ...

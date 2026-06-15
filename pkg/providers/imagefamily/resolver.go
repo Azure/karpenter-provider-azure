@@ -135,6 +135,25 @@ func (r *defaultResolver) Resolve(
 		logging.InstanceType, instanceType.Name,
 	)
 
+	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
+	if err != nil {
+		return nil, err
+	}
+
+	// In userdata mode the bootstrap payload is owned externally (spec.userData); no AKS params or image distro apply.
+	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeUserdata {
+		return &template.Parameters{
+			StaticParameters:          staticParameters,
+			RawUserData:               lo.FromPtr(nodeClass.Spec.UserData),
+			StorageProfileDiskType:    diskType,
+			StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
+			StorageProfilePlacement:   lo.FromPtr(placement),
+			StorageProfileSizeGB:      lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
+			ImageID:                   imageID,
+			IsWindows:                 false,
+		}, nil
+	}
+
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	useSIG := options.FromContext(ctx).UseSIG
 	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
@@ -144,11 +163,6 @@ func (r *defaultResolver) Resolve(
 
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
-
-	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
-	if err != nil {
-		return nil, err
-	}
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.

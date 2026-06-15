@@ -458,6 +458,71 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("nodebootstrapping-server-url")))
 		})
+		It("should succeed with provision-mode userdata without cluster-endpoint and kubelet-bootstrap-token", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "userdata",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should still require cluster-name with provision-mode userdata", func() {
+			err := opts.Parse(
+				fs,
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "userdata",
+			)
+			Expect(err).To(MatchError(ContainSubstring("missing field, cluster-name")))
+		})
+		It("should still require ssh-public-key, vnet-subnet-id and node-resource-group with provision-mode userdata", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--provision-mode", "userdata",
+			)
+			Expect(err).To(MatchError(ContainSubstring("missing field, ssh-public-key")))
+		})
+		It("should reject use-sig with provision-mode userdata", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "userdata",
+				"--use-sig",
+			)
+			Expect(err).To(MatchError(ContainSubstring("use-sig is not supported when provision-mode is userdata")))
+		})
+		It("should reject nodebootstrapping-server-url with provision-mode userdata", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "userdata",
+				"--nodebootstrapping-server-url", "https://nodebootstrapping-server-url",
+			)
+			Expect(err).To(MatchError(ContainSubstring("nodebootstrapping-server-url is not supported when provision-mode is userdata")))
+		})
+		It("should reject aks-machines-pool-name with provision-mode userdata", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "userdata",
+				"--aks-machines-pool-name", "my-pool",
+			)
+			Expect(err).To(MatchError(ContainSubstring("aks-machines-pool-name is not supported when provision-mode is userdata")))
+		})
 		It("should fail if use-sig is enabled, but sig-access-token-server-url is not set", func() {
 			err := opts.Parse(
 				fs,

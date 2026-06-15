@@ -18,6 +18,7 @@ package launchtemplate
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -166,13 +167,17 @@ func (p *Provider) getStaticParameters(
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
 
-	nsg, err := p.nsgProvider.ManagedNetworkSecurityGroup(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting managed network security group: %w", err)
+	// In userdata provision mode there is no AKS managed NSG or route table to discover.
+	var nsgName, routeTableName string
+	if p.provisionMode != consts.ProvisionModeUserdata {
+		nsg, err := p.nsgProvider.ManagedNetworkSecurityGroup(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("getting managed network security group: %w", err)
+		}
+		nsgName = lo.FromPtr(nsg.Name)
+		clusterID := networksecuritygroup.GetClusterIDFromNSGName(nsgName)
+		routeTableName = fmt.Sprintf("aks-agentpool-%s-routetable", clusterID)
 	}
-	nsgName := lo.FromPtr(nsg.Name)
-	clusterID := networksecuritygroup.GetClusterIDFromNSGName(nsgName)
-	routeTableName := fmt.Sprintf("aks-agentpool-%s-routetable", clusterID)
 
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
@@ -237,6 +242,9 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 			return nil, err
 		}
 		template.ScriptlessCustomData = userData
+	case consts.ProvisionModeUserdata:
+		// The raw user data is the complete bootstrap payload, base64-encoded exactly once here.
+		template.ScriptlessCustomData = base64.StdEncoding.EncodeToString([]byte(params.RawUserData))
 	}
 
 	return template, nil

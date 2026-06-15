@@ -59,6 +59,11 @@ type CommunityGalleryImageVersionsAPI interface {
 	NewListPager(location string, publicGalleryName string, galleryImageName string, options *armcomputev5.CommunityGalleryImageVersionsClientListOptions) *runtime.Pager[armcomputev5.CommunityGalleryImageVersionsClientListResponse]
 }
 
+// VirtualMachineImagesAPI is used for listing Azure Marketplace VM image versions.
+type VirtualMachineImagesAPI interface {
+	List(ctx context.Context, location string, publisherName string, offer string, skus string, options *armcomputev5.VirtualMachineImagesClientListOptions) (armcomputev5.VirtualMachineImagesClientListResponse, error)
+}
+
 type NodeImageVersionsAPI interface {
 	List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error)
 }

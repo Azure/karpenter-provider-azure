@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/mitchellh/hashstructure/v2"
@@ -57,17 +58,19 @@ type provider struct {
 
 	imageVersionsClient types.CommunityGalleryImageVersionsAPI
 	nodeImageVersions   types.NodeImageVersionsAPI
+	vmImagesClient      types.VirtualMachineImagesAPI
 
 	nodeImagesCache *cache.Cache
 	cm              *pretty.ChangeMonitor
 }
 
-func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache) *provider {
+func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, vmImagesClient types.VirtualMachineImagesAPI, nodeImagesCache *cache.Cache) *provider {
 	return &provider{
 		subscription:        subscription,
 		location:            location,
 		imageVersionsClient: versionsClient,
 		nodeImageVersions:   nodeImageVersionsClient,
+		vmImagesClient:      vmImagesClient,
 		nodeImagesCache:     nodeImagesCache,
 		cm:                  pretty.NewChangeMonitor(),
 	}
@@ -75,6 +78,11 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	// In userdata mode images come from the Azure Marketplace; the AKS galleries (SIG/CIG) are not used.
+	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeUserdata {
+		return p.listMarketplace(ctx, nodeClass)
+	}
+
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
@@ -150,6 +158,62 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 	return nodeImages, nil
 }
 
+// listMarketplace resolves the image family's marketplace images to their latest concrete versions. Status.Images
+// always holds concrete versions (never a "latest" alias) so VM creation is deterministic and bumps surface as drift.
+func (p *provider) listMarketplace(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return []NodeImage{}, err
+	}
+
+	marketplaceImages := GetMarketplaceImages(nodeClass.Spec.ImageFamily, kubernetesVersion)
+
+	key, err := p.cacheKey(marketplaceImages, kubernetesVersion)
+	if err != nil {
+		return []NodeImage{}, err
+	}
+	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
+		return nodeImages.([]NodeImage), nil
+	}
+
+	nodeImages := []NodeImage{}
+	for _, marketplaceImage := range marketplaceImages {
+		version, err := p.latestMarketplaceImageVersion(ctx, marketplaceImage)
+		if err != nil {
+			return []NodeImage{}, err
+		}
+		if version == "" {
+			// No versions available for this publisher/offer/sku in this location
+			continue
+		}
+		nodeImages = append(nodeImages, NodeImage{
+			ID:           BuildImageIDMarketplace(marketplaceImage.Publisher, marketplaceImage.Offer, marketplaceImage.SKU, version),
+			Requirements: marketplaceImage.Requirements,
+		})
+	}
+	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
+
+	return nodeImages, nil
+}
+
+func (p *provider) latestMarketplaceImageVersion(ctx context.Context, marketplaceImage MarketplaceImage) (string, error) {
+	resp, err := p.vmImagesClient.List(ctx, p.location, marketplaceImage.Publisher, marketplaceImage.Offer, marketplaceImage.SKU, nil)
+	if err != nil {
+		return "", fmt.Errorf("listing marketplace image versions for %s:%s:%s: %w", marketplaceImage.Publisher, marketplaceImage.Offer, marketplaceImage.SKU, err)
+	}
+	latest := ""
+	for _, image := range resp.VirtualMachineImageResourceArray {
+		version := lo.FromPtr(image.Name)
+		if version == "" {
+			continue
+		}
+		if latest == "" || isNewerVersion(version, latest) {
+			latest = version
+		}
+	}
+	return latest, nil
+}
+
 func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	for _, supportedImage := range supportedImages {
@@ -166,7 +230,7 @@ func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultIma
 	return nodeImages, nil
 }
 
-func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string) (string, error) {
+func (p *provider) cacheKey(supportedImages any, k8sVersion string) (string, error) {
 	// Note: the kubernetes version is part of the cache key here, because we bump images on kubernetes upgrade meaning
 	// we want to ensure if there is a kubernetes change we'll get fresh images if there are any.
 	hash, err := hashstructure.Hash([]interface{}{

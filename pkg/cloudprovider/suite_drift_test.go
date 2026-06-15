@@ -33,6 +33,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
@@ -179,6 +180,28 @@ var _ = Describe("CloudProvider", func() {
 				It("should trigger drift when the image version changes", func() {
 					test.ApplyCIGImagesWithVersion(nodeClass, "202503.02.0")
 					ExpectApplied(ctx, env.Client, nodeClass)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(ImageDrift))
+				})
+
+				// Marketplace images (userdata provision mode) surface in NodeClaim status as
+				// URNs (Publisher:Offer:Sku:Version) rather than the Status.Images ID format.
+				It("should not trigger drift when the marketplace image URN matches an available image", func() {
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					test.ApplyMarketplaceImages(nodeClass)
+					ExpectApplied(ctx, env.Client, nodeClass)
+					driftNodeClaim.Status.ImageID = "Canonical:ubuntu-22_04-lts:server:" + fake.MarketplaceImageVersion
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NoDrift))
+				})
+
+				It("should trigger drift when the marketplace image version changes", func() {
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					test.ApplyMarketplaceImages(nodeClass)
+					ExpectApplied(ctx, env.Client, nodeClass)
+					driftNodeClaim.Status.ImageID = "Canonical:ubuntu-22_04-lts:server:202001.01.0"
 					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(ImageDrift))

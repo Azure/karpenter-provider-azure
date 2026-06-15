@@ -28,6 +28,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -184,7 +185,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		}
 	} else {
 		for _, availableImage := range nodeImages {
-			if availableImage.ID == nodeClaim.Status.ImageID {
+			if imageMatchesNodeClaimImageID(availableImage.ID, nodeClaim.Status.ImageID) {
 				return "", nil
 			}
 		}
@@ -194,6 +195,18 @@ func (c *CloudProvider) isImageVersionDrifted(
 		"driftType", ImageDrift,
 		"actualImageVersion", nodeClaim.Status.ImageID)
 	return ImageDrift, nil
+}
+
+// imageMatchesNodeClaimImageID reports whether a Status.Images image matches the NodeClaim's image ID. Marketplace
+// images surface in NodeClaim status as URNs (Publisher:Offer:Sku:Version), not the Status.Images ID format.
+func imageMatchesNodeClaimImageID(availableImageID, nodeClaimImageID string) bool {
+	if availableImageID == nodeClaimImageID {
+		return true
+	}
+	if marketplaceRef, err := imagefamily.ParseMarketplaceImageID(availableImageID); err == nil {
+		return marketplaceRef.URN() == nodeClaimImageID
+	}
+	return false
 }
 
 // isKubeletIdentityDrifted returns drift if the kubelet identity has drifted

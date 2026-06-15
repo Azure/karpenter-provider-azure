@@ -125,6 +125,50 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
+	Context("NetworkSecurityGroupID", func() {
+		DescribeTable("Should only accept valid NetworkSecurityGroupID", func(networkSecurityGroupID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					NetworkSecurityGroupID: &networkSecurityGroupID,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid NetworkSecurityGroupID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/networkSecurityGroups/workers-nsg", true),
+			Entry("should allow mixed casing in all the names", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/RGName/providers/Microsoft.Network/networkSecurityGroups/Workers-NSG", true),
+			Entry("missing resourceGroups in path", "/subscriptions/12345678-1234-1234-1234-123456789012/rgname/providers/Microsoft.Network/networkSecurityGroups/workers-nsg", false),
+			Entry("invalid provider in path", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Storage/networkSecurityGroups/workers-nsg", false),
+			Entry("wrong resource type (subnet)", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
+			Entry("bare NSG name", "workers-nsg", false),
+		)
+	})
+
+	Context("UserData", func() {
+		It("should accept userData within the size limit", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					UserData: lo.ToPtr("#cloud-config\nruncmd:\n  - echo hello\n"),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+		It("should reject userData over the 65535 character limit", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					UserData: lo.ToPtr(strings.Repeat("a", 65536)),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
 	Context("ImageFamily", func() {
 		It("should reject invalid ImageFamily", func() {
 			invalidImageFamily := "123"

@@ -75,6 +75,7 @@ type Environment struct {
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
 	NodeImageVersionsAPI        *fake.NodeImageVersionsAPI
+	VirtualMachineImagesAPI     *fake.VirtualMachineImagesAPI
 	SKUsAPI                     *fake.ResourceSKUsAPI
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
@@ -151,6 +152,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
+	virtualMachineImagesAPI := &fake.VirtualMachineImagesAPI{DefaultVersions: []string{fake.MarketplaceImageVersion}}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
 
@@ -169,7 +171,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
-	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
+	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, virtualMachineImagesAPI, nodeImagesCache)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,
@@ -228,6 +230,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
 		nodeImageVersionsAPI,
+		virtualMachineImagesAPI,
 		nodeBootstrappingAPI,
 		skusAPI,
 		subscriptionAPI,
@@ -307,6 +310,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NetworkInterfacesAPI:        networkInterfacesAPI,
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		NodeImageVersionsAPI:        nodeImageVersionsAPI,
+		VirtualMachineImagesAPI:     virtualMachineImagesAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
 		SubnetsAPI:                  subnetsAPI,
@@ -362,6 +366,7 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
 	env.NodeImageVersionsAPI.Reset()
+	env.VirtualMachineImagesAPI.Reset()
 	env.NodeBootstrappingAPI.Reset()
 	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()

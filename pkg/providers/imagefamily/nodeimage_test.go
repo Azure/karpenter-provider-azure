@@ -22,12 +22,15 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/blang/semver/v4"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -78,6 +81,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 	var (
 		testOptions               *options.Options
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
+		virtualMachineImagesAPI   *fake.VirtualMachineImagesAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
 		nodeClass         *v1beta1.AKSNodeClass
@@ -93,7 +97,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
-		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
+		virtualMachineImagesAPI = &fake.VirtualMachineImagesAPI{DefaultVersions: []string{fake.MarketplaceImageVersion}}
+		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, virtualMachineImagesAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
 		nodeClass = test.AKSNodeClass()
@@ -167,6 +172,104 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(foundImages).To(Equal(expectedImages))
 			// Explicitly verify ARM64 image is included in CIG (Community Image Gallery) - was disabled in the past
 			Expect(foundImages).To(ContainElement(HaveField("ID", ContainSubstring(imagefamily.AzureLinux3Gen2ArmImageDefinition))))
+		})
+	})
+
+	Context("List Marketplace Images (userdata provision mode)", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeUserdata),
+			})
+			ctx = options.ToContext(ctx, testOptions)
+		})
+
+		It("should fail if KubernetesVersionReady is false", func() {
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionFalseForTesting", "testing false kubernetes version status")
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should resolve Ubuntu2404 to concrete Canonical ubuntu-24_04-lts marketplace images", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(HaveLen(3))
+			Expect(foundImages[0].ID).To(Equal(imagefamily.BuildImageIDMarketplace("Canonical", "ubuntu-24_04-lts", "server", fake.MarketplaceImageVersion)))
+			Expect(foundImages[1].ID).To(Equal(imagefamily.BuildImageIDMarketplace("Canonical", "ubuntu-24_04-lts", "server-gen1", fake.MarketplaceImageVersion)))
+			Expect(foundImages[2].ID).To(Equal(imagefamily.BuildImageIDMarketplace("Canonical", "ubuntu-24_04-lts", "server-arm64", fake.MarketplaceImageVersion)))
+		})
+
+		It("should resolve the default Ubuntu family to ubuntu-24_04-lts marketplace images", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(HaveLen(3))
+			Expect(foundImages[0].ID).To(ContainSubstring("ubuntu-24_04-lts"))
+		})
+
+		It("should resolve Ubuntu2204 to Canonical ubuntu-22_04-lts marketplace images", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(HaveLen(3))
+			Expect(foundImages[0].ID).To(Equal(imagefamily.BuildImageIDMarketplace("Canonical", "ubuntu-22_04-lts", "server", fake.MarketplaceImageVersion)))
+		})
+
+		It("should resolve AzureLinux to azure-linux-3 marketplace images for k8s >= 1.32", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.32.0")
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(HaveLen(3))
+			Expect(foundImages[0].ID).To(Equal(imagefamily.BuildImageIDMarketplace("MicrosoftCBLMariner", "azure-linux-3", "azure-linux-3-gen2", fake.MarketplaceImageVersion)))
+			Expect(foundImages[1].ID).To(Equal(imagefamily.BuildImageIDMarketplace("MicrosoftCBLMariner", "azure-linux-3", "azure-linux-3", fake.MarketplaceImageVersion)))
+			Expect(foundImages[2].ID).To(Equal(imagefamily.BuildImageIDMarketplace("MicrosoftCBLMariner", "azure-linux-3", "azure-linux-3-arm64", fake.MarketplaceImageVersion)))
+		})
+
+		It("should resolve AzureLinux to cbl-mariner marketplace images for k8s < 1.32", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.31.0")
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(HaveLen(3))
+			Expect(foundImages[0].ID).To(Equal(imagefamily.BuildImageIDMarketplace("MicrosoftCBLMariner", "cbl-mariner", "cbl-mariner-2-gen2", fake.MarketplaceImageVersion)))
+		})
+
+		It("should include architecture and Hyper-V generation requirements", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(HaveLen(3))
+			Expect(foundImages[0].Requirements.Get(corev1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
+			Expect(foundImages[0].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
+			Expect(foundImages[1].Requirements.Get(corev1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
+			Expect(foundImages[1].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV1))
+			Expect(foundImages[2].Requirements.Get(corev1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureArm64))
+			Expect(foundImages[2].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
+		})
+
+		It("should resolve latest to the newest concrete version", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			virtualMachineImagesAPI.SetVersions("Canonical", "ubuntu-24_04-lts", "server", []string{"24.04.202504080", "24.04.202610010", "24.04.202503010"})
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages[0].ID).To(Equal(imagefamily.BuildImageIDMarketplace("Canonical", "ubuntu-24_04-lts", "server", "24.04.202610010")))
+		})
+
+		It("should skip images with no available versions", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			virtualMachineImagesAPI.SetVersions("Canonical", "ubuntu-24_04-lts", "server-arm64", []string{})
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(HaveLen(2))
 		})
 	})
 
