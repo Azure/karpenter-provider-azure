@@ -97,4 +97,17 @@ var skusWithMissingPrice = map[string]float64{
 	"Standard_M416s_9_v2":       MissingPrice,
 	"Standard_ND40s_v3":         MissingPrice,
 	"Standard_NG32adms_V620_v1": MissingPrice,
+	// Added temporarily to deal with Lsv3/Lasv3 SKU missing in SpainCentral
+	"Standard_L8s_v3":   MissingPrice,
+	"Standard_L16s_v3":  MissingPrice,
+	"Standard_L32s_v3":  MissingPrice,
+	"Standard_L48s_v3":  MissingPrice,
+	"Standard_L64s_v3":  MissingPrice,
+	"Standard_L80s_v3":  MissingPrice,
+	"Standard_L8as_v3":  MissingPrice,
+	"Standard_L16as_v3": MissingPrice,
+	"Standard_L32as_v3": MissingPrice,
+	"Standard_L48as_v3": MissingPrice,
+	"Standard_L64as_v3": MissingPrice,
+	"Standard_L80as_v3": MissingPrice,
 }

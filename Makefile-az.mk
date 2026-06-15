@@ -31,6 +31,11 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 
 PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= testmpool
+# pre-pull base images for skaffold/ko build, as a workaround for https://github.com/GoogleContainerTools/skaffold/issues/10106
+KO_BASE_IMAGE ?= mcr.microsoft.com/azurelinux/distroless/minimal:3.0@sha256:138fe2905465e384b232ffe8ba3147de04c633a83f29d8df00d6817e3eacb0d2
+KO_BASE_IMAGE_AMD64 ?= mcr.microsoft.com/azurelinux/distroless/minimal@sha256:fbe9982049f312a0ae6421599b0a33629369c919abe3564893a5405776fc6266
+KO_BASE_IMAGE_ARM64 ?= mcr.microsoft.com/azurelinux/distroless/minimal@sha256:ffcf415e6a14221e4d91b29445e33650062650095569407ea29a4315983721df
+export KOCACHE ?= $(or $(RUNNER_TEMP),/tmp)/ko-cache
 
 .DEFAULT_GOAL := help	# make without arguments will show help
 
@@ -339,7 +344,14 @@ az-aks-check-acr:
 
 az-build: ## Build the Karpenter controller and webhook images using skaffold build (which uses ko build)
 	az acr login -n $(AZURE_ACR_NAME)
+	$(MAKE) az-ko-prewarm-base
 	skaffold build
+
+az-ko-prewarm-base: ## Prewarm ko's base image cache for skaffold/ko builds
+	mkdir -p $(KOCACHE)
+	crane pull --format=oci $(KO_BASE_IMAGE) $(KOCACHE)/img
+	crane pull --format=oci $(KO_BASE_IMAGE_AMD64) $(KOCACHE)/img
+	crane pull --format=oci $(KO_BASE_IMAGE_ARM64) $(KOCACHE)/img
 
 az-creds: ## Get cluster credentials
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
