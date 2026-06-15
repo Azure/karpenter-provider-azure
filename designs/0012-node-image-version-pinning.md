@@ -112,9 +112,11 @@ VM creation with resolved image ID
    - CIG: `/CommunityGalleries/{gallery}/images/{def}/versions/{version}`
    - SIG: `/subscriptions/{sub}/.../images/{def}/versions/{version}`
 
-3. **Version format**: `YYYYMM.DD.patch` (e.g., `202604.24.0`). This is
-   the same string customers see in `az aks nodepool show` and AgentBaker
-   release notes.
+3. **Version format**: AKS image versions are observed in at least two
+   formats:
+   - Current format: `YYYYMM.DD.patch` (e.g., `202604.24.0`)
+   - Legacy format: `YYYY.MM.DD` (e.g., `2022.10.03`)
+   Both are valid pin targets if they exist in the gallery.
 
 4. **All architecture variants share the same version** within a release.
    AKS releases all variants (gen1, gen2, arm64) together within 24 hours.
@@ -199,7 +201,7 @@ type AKSNodeClassSpec struct {
     // version instead of automatically selecting the latest available
     // image. The version must exist in the image gallery and should be
     // within the AKS node image support window.
-    // +kubebuilder:validation:Pattern=`^\d{6}\.\d{2}\.\d+$`
+      // +kubebuilder:validation:Pattern=`^(\d{6}\.\d{2}\.\d+|\d{4}\.\d{2}\.\d{2})$`
     // +optional
     ImageVersion *string `json:"imageVersion,omitempty"`
 }
@@ -213,9 +215,11 @@ type AKSNodeClassSpec struct {
 | set | set | Version is pinned. `imageFamily` determines which image definitions (arch/gen variants) are used; `imageVersion` determines which version of those definitions is resolved. |
 | set | unset | Version is pinned. `imageFamily` defaults to `Ubuntu` (existing default behavior). |
 
-**Regex validation**: `^\d{6}\.\d{2}\.\d+$` matches the `YYYYMM.DD.patch`
-format (e.g., `202604.24.0`). This is enforced at admission time via the
-CRD schema.
+**Regex validation**: `^(\d{6}\.\d{2}\.\d+|\d{4}\.\d{2}\.\d{2})$` accepts
+either `YYYYMM.DD.patch` (e.g., `202604.24.0`) **OR** `YYYY.MM.DD`
+(e.g., `2022.10.03`). This is enforced at admission time via the CRD
+schema. Gallery existence validation in the status reconciler remains
+authoritative.
 
 ### 5.2 Image Version Existence Validation
 
@@ -281,13 +285,14 @@ retains older versions for some SKUs. Storing `imageAgeDays` on each
 image avoids ambiguity and lets the support window warning use the
 oldest entry.
 
-**Age source:** The version string encodes the date as `YYYYMM.DD`
-(e.g., `202604.24` → April 24, 2026). The reconciler parses this to
-compute age at each reconciliation cycle. This avoids depending on a
-`PublishedDate` API field which is available for CIG but not currently
-exposed in the SIG path (see section 2, key observation 3). If a
-`PublishedDate` field becomes available for both gallery types in the
-future, it can be used instead for higher accuracy.
+**Age source:** The version string encodes a date prefix in both
+supported formats (`YYYYMM.DD.patch` and `YYYY.MM.DD`). The reconciler
+parses the date portion to compute age at each reconciliation cycle.
+This avoids depending on a `PublishedDate` API field which is available
+for CIG but not currently exposed in the SIG path (see section 2, key
+observation 3). If a `PublishedDate` field becomes available for both
+gallery types in the future, it can be used instead for higher
+accuracy.
 
 ### 5.4 Support Window Warning
 
