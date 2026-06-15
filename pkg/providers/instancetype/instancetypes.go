@@ -163,8 +163,9 @@ func (p *DefaultProvider) List(
 	// Azure has zones availability directly from SKU info
 	var result []*cloudprovider.InstanceType
 	for _, sku := range p.instanceTypesInfo {
-		vmsize, ok := p.getVMSize(ctx, sku)
-		if !ok {
+		vmsize, err := sku.GetVMSize()
+		if err != nil {
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
@@ -397,8 +398,9 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
-		vmsize, ok := p.getVMSize(ctx, &skus[i])
-		if !ok {
+		vmsize, err := skus[i].GetVMSize()
+		if err != nil {
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
 			continue
 		}
 		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
@@ -459,9 +461,6 @@ func (p *DefaultProvider) isUnsupportedGPU(sku *skewer.SKU) bool {
 
 // SKU with constrained CPUs
 func (p *DefaultProvider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
-	if vmsize == nil {
-		return false
-	}
 	return vmsize.CpusConstrained != nil
 }
 
@@ -476,21 +475,6 @@ func (p *DefaultProvider) Reset() {
 	defer p.muInstanceTypesInfo.Unlock()
 	p.instanceTypesInfo = map[string]*skewer.SKU{}
 	atomic.StoreUint64(&p.instanceTypesSeqNum, 0)
-}
-
-func (p *DefaultProvider) getVMSize(ctx context.Context, sku *skewer.SKU) (*skewer.VMSizeType, bool) {
-	vmsize, err := sku.GetVMSize()
-	if err == nil {
-		return vmsize, true
-	}
-
-	if utils.UseGridV20Drivers(sku.GetName()) {
-		log.FromContext(ctx).V(1).Info("failed to parse VM size, continuing for allowed SKU without parsed SKU labels", "sku", sku.GetName(), "vmSize", sku.GetSize(), "error", err)
-		return nil, true
-	}
-
-	log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
-	return nil, false
 }
 
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
