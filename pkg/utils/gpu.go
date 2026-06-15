@@ -154,7 +154,7 @@ func UseGridDrivers(size string) bool {
 }
 
 func UseGridV20Drivers(size string) bool {
-	return RTXPro6000GPUDriverSizes[strings.ToLower(size)]
+	return rtxPro6000GPUDriverSizes[strings.ToLower(size)]
 }
 
 /* ConvergedGPUDriverSizes : these sizes use a "converged" driver to support both cuda/grid workloads.
@@ -175,12 +175,12 @@ var ConvergedGPUDriverSizes = map[string]bool{
 	"standard_nc32ads_a10_v4":  true,
 }
 
-/* RTXPro6000GPUDriverSizes : NC_RTXPRO6000BSE_v6 (RTX PRO 6000 Blackwell Server
+/* rtxPro6000GPUDriverSizes : NC_RTXPRO6000BSE_v6 (RTX PRO 6000 Blackwell Server
 Edition) SKUs require the GRID v20 (595.x) driver, published as the
 aks-gpu-grid-v20 image. All other GRID SKUs continue to use aks-gpu-grid.
 */
 //nolint:gochecknoglobals
-var RTXPro6000GPUDriverSizes = map[string]bool{
+var rtxPro6000GPUDriverSizes = map[string]bool{
 	"standard_nc128ds_xl_rtxpro6000bse_v6":  true,
 	"standard_nc128lds_xl_rtxpro6000bse_v6": true,
 	"standard_nc256ds_xl_rtxpro6000bse_v6":  true,

@@ -202,6 +202,8 @@ func computeRequirements(
 	requirements[v1beta1.LabelSKUName].Insert(sku.GetName())
 
 	if vmsize != nil {
+		// vmsize is nil for new SKUs (e.g. RTX PRO 6000 BSE v6) that skewer can't parse yet;
+		// skip the parsed size-name labels and keep the SKU.
 		// size parts
 		requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
 		requirements[v1beta1.LabelSKUSeries].Insert(vmsize.Series)
