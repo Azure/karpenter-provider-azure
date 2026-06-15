@@ -94,6 +94,7 @@ verify: tidy download ## Verify code. Includes dependencies, linting, formatting
 	hack/validation/kubelet.sh
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
+	hack/validation/taints.sh
 	hack/mutation/kubectl_get_ux.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
 	hack/github/dependabot.sh
