@@ -40,7 +40,8 @@ runs:
       # space than the OS disk. 1ES pool VMs can run out of disk on / during large builds.
       GOTMPDIR: /mnt/go-tmp
       GOCACHE: /mnt/go-cache
+      KOCACHE: /mnt/ko-cache
     run: |
-      sudo mkdir -p "$GOTMPDIR" "$GOCACHE"
-      sudo chown "$(id -u):$(id -g)" "$GOTMPDIR" "$GOCACHE"
+      sudo mkdir -p "$GOTMPDIR" "$GOCACHE" "$KOCACHE"
+      sudo chown "$(id -u):$(id -g)" "$GOTMPDIR" "$GOCACHE" "$KOCACHE"
       make ci-install
