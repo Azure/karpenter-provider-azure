@@ -129,7 +129,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				VMSize: lo.ToPtr(instanceType.Name),
 				// GPUInstanceProfile: nil,
 				GpuProfile:      gpuProfile,
-				UltraSsdEnabled: lo.ToPtr(nodeClass.IsUltraSSDEnabled()),
+				UltraSsdEnabled: configureUltraSSDEnabled(nodeClass),
 			},
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
@@ -368,6 +368,13 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	}
 
 	return nodeLabelPtrs, modePtr
+}
+
+func configureUltraSSDEnabled(nodeClass *v1beta1.AKSNodeClass) *bool {
+	if nodeClass == nil || nodeClass.IsUltraSSDEnabled() == false {
+		return nil
+	}
+	return lo.ToPtr(nodeClass.IsUltraSSDEnabled())
 }
 
 // ConfigureAKSMachineTags returns the tags to be applied to AKS machine instances and their affiliated resources.
