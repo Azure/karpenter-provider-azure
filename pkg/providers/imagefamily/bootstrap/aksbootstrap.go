@@ -47,6 +47,7 @@ type AKS struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
+	IsIPv6Enabled                  bool
 }
 
 var _ Bootstrapper = (*AKS)(nil) // assert AKS implements Bootstrapper
@@ -293,6 +294,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
+	nbv.IPv6DualStackEnabled = a.IsIPv6Enabled
 
 	nbv.KubeBinaryURL = kubeBinaryURL(a.KubernetesVersion, a.Arch)
 	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)

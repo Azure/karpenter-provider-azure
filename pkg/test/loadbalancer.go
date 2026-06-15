@@ -50,3 +50,22 @@ func MakeStandardLoadBalancer(resourceGroup string, lbName string, includeOutbou
 
 	return result
 }
+
+// WithIPv6BackendPools appends the well-known IPv6 inbound and outbound backend pools to the
+// load balancer, simulating a dual-stack cluster's load balancer.
+func WithIPv6BackendPools(resourceGroup string, lb armnetwork.LoadBalancer) armnetwork.LoadBalancer {
+	lbName := lo.FromPtr(lb.Name)
+	lb.Properties.BackendAddressPools = append(lb.Properties.BackendAddressPools,
+		&armnetwork.BackendAddressPool{
+			ID:         lo.ToPtr(fake.MakeBackendAddressPoolID(resourceGroup, lbName, loadbalancer.SLBInboundBackendPoolNameIPv6)),
+			Name:       lo.ToPtr(loadbalancer.SLBInboundBackendPoolNameIPv6),
+			Properties: &armnetwork.BackendAddressPoolPropertiesFormat{},
+		},
+		&armnetwork.BackendAddressPool{
+			ID:         lo.ToPtr(fake.MakeBackendAddressPoolID(resourceGroup, lbName, loadbalancer.SLBOutboundBackendPoolNameIPv6)),
+			Name:       lo.ToPtr(loadbalancer.SLBOutboundBackendPoolNameIPv6),
+			Properties: &armnetwork.BackendAddressPoolPropertiesFormat{},
+		},
+	)
+	return lb
+}

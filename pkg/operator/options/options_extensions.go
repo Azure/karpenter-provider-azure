@@ -17,11 +17,25 @@ limitations under the License.
 package options
 
 import (
+	"strings"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
 func (o *Options) IsAzureCNIOverlay() bool {
 	return o.NetworkPlugin == consts.NetworkPluginAzure && o.NetworkPluginMode == consts.NetworkPluginModeOverlay
+}
+
+// IsIPv6Enabled reports whether the cluster is dual-stack (its IP families include IPv6),
+// in which case provisioned nodes must be configured with an IPv6 NIC IP configuration.
+// Mirrors the AKS RP's IsIPv6Enabled signal, which is derived from networkProfile.ipFamilies.
+func (o *Options) IsIPv6Enabled() bool {
+	for _, family := range o.NodeIPFamilies {
+		if strings.EqualFold(family, "IPv6") {
+			return true
+		}
+	}
+	return false
 }
 
 func (o *Options) IsCiliumNodeSubnet() bool {
