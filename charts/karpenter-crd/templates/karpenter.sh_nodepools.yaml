@@ -228,6 +228,16 @@ spec:
                               rule: self.all(x, x != "kubernetes.io/hostname")
                             - message: label domain "karpenter.azure.com" is restricted
                               rule: self.all(x, x in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count", "karpenter.azure.com/placement-scope" ] || !x.find("^([^/]+)").endsWith("karpenter.azure.com"))
+                            - message: label domain "kubernetes.azure.com" is restricted
+                              rule: self.all(x, x in [ "kubernetes.azure.com/mode", "kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/priority", "kubernetes.azure.com/fips_enabled", "kubernetes.azure.com/os-sku", "kubernetes.azure.com/cluster", "kubernetes.azure.com/sku-cpu", "kubernetes.azure.com/sku-memory", "kubernetes.azure.com/ebpf-dataplane", ] || !x.find("^([^/]+)").endsWith("kubernetes.azure.com"))
+                            - message: label "agentpool" is restricted
+                              rule: self.all(x, x != 'agentpool')
+                            - message: label "storageprofile" is restricted
+                              rule: self.all(x, x != 'storageprofile')
+                            - message: label "storagetier" is restricted
+                              rule: self.all(x, x != 'storagetier')
+                            - message: label "accelerator" is restricted
+                              rule: self.all(x, x != 'accelerator')
                       type: object
                     spec:
                       description: |-
@@ -297,6 +307,16 @@ spec:
                                     rule: self != "kubernetes.io/hostname"
                                   - message: label domain "karpenter.azure.com" is restricted
                                     rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count", "karpenter.azure.com/placement-scope" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
+                                  - message: label domain "kubernetes.azure.com" is restricted
+                                    rule: self in [ "kubernetes.azure.com/mode", "kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/priority", "kubernetes.azure.com/fips_enabled", "kubernetes.azure.com/os-sku", "kubernetes.azure.com/cluster", "kubernetes.azure.com/sku-cpu", "kubernetes.azure.com/sku-memory", "kubernetes.azure.com/ebpf-dataplane", ] || !self.find("^([^/]+)").endsWith("kubernetes.azure.com")
+                                  - message: label "agentpool" is restricted
+                                    rule: self != 'agentpool'
+                                  - message: label "storageprofile" is restricted
+                                    rule: self != 'storageprofile'
+                                  - message: label "storagetier" is restricted
+                                    rule: self != 'storagetier'
+                                  - message: label "accelerator" is restricted
+                                    rule: self != 'accelerator'
                               minValues:
                                 description: |-
                                   This field is ALPHA and can be dropped or replaced at any time
