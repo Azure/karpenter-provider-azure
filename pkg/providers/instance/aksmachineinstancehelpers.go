@@ -371,7 +371,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 }
 
 func configureUltraSSDEnabled(nodeClass *v1beta1.AKSNodeClass) *bool {
-	if nodeClass == nil || nodeClass.IsUltraSSDEnabled() == false {
+	if nodeClass == nil {
 		return nil
 	}
 	return lo.ToPtr(nodeClass.IsUltraSSDEnabled())
