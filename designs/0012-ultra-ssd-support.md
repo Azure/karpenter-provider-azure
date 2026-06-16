@@ -150,6 +150,16 @@ This mirrors the current AKS behavior behind `--enable-ultra-ssd`: the node is m
 
 Update AKS machine template creation so Ultra SSD-enabled node classes set `aksMachine.Properties.EnableUltraSSD = true`.
 
+### Customer Experience and AKS Parity
+
+Customers wishing to use UltraSSD will set the ultraSSD field on their AKSNodeClass CR to true. This field will be used to filter out offerings to those SKUs and zones that support it (i.g. making sure that the SKU supports UltraSSD in the given zones).
+
+In AKS, creating a cluster with `--enable-ultra-ssd` means the initial system pool gets UltraSSD capabilities. Additional pools must also explicitly include the `--enable-ultra-ssd` flag at creation time to enable it. Validation runs at cluster/pool validation and rejects the request if the user did not specify zones, or the SKU does not support UltraSSD in any of the zones, and all the nodes belonging to a pool created with the flag are UltraSSD capable. Clusters can have any mix of UltraSSD-enabled and disabled pools, regardless if the cluster was initially created with `--enable-ultra-ssd` or not.
+
+For NAP parity, enabling the feature in an AKSNodeClass means Karpenter will only consider offerings whose zone has UltraSSD available for the given SKU, and it will automatically set those nodes to support UltraSSD. If a customer disables the feature in the AKSNodeClass CR, then the nodes will be considered drifted and re-created with the UltraSSD support disabled. AKS does not add any kind of label, annotation, or taint to the nodes saying UltraSSD is enabled, so NAP doesn't either.
+
+See References section for more information on what AKS does.
+
 ## References
 
 - AKS Ultra Disks documentation: https://learn.microsoft.com/en-us/azure/aks/use-ultra-disks
