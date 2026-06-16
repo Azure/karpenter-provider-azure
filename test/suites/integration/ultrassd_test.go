@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("UltraSSD", func() {
@@ -45,8 +46,36 @@ var _ = Describe("UltraSSD", func() {
 		node := env.GetNode(pods[0].Spec.NodeName)
 		verifyUltraSSDOnNode(node, true)
 	})
+
+	It("should disable UltraSSD when explicitly disabled", func() {
+		enabled := false
+		nodeClass.Spec.UltraSSD = &v1beta1.UltraSSD{
+			Enabled: &enabled,
+		}
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
+		verifyUltraSSDOnNode(node, false)
+	})
 })
 
 func verifyUltraSSDOnNode(node *corev1.Node, expected bool) {
-	return
+	vm := env.GetVM(node.Name)
+	Expect(vm.Properties).ToNot(BeNil())
+
+	if expected {
+		Expect(vm.Properties.AdditionalCapabilities).ToNot(BeNil())
+		Expect(vm.Properties.AdditionalCapabilities.UltraSSDEnabled).ToNot(BeNil())
+		Expect(*vm.Properties.AdditionalCapabilities.UltraSSDEnabled).To(BeTrue())
+		return
+	}
+
+	if vm.Properties.AdditionalCapabilities == nil || vm.Properties.AdditionalCapabilities.UltraSSDEnabled == nil {
+		return
+	}
+	Expect(*vm.Properties.AdditionalCapabilities.UltraSSDEnabled).To(BeFalse())
 }
