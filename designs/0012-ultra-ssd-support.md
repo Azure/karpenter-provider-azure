@@ -71,7 +71,7 @@ Ultra SSD should be configured as a strongly typed `AKSNodeClass` feature, not a
 
 Reasons:
 
-- it is a provisioning feature, not just a schedulable label,
+- it is a provisioning feature, not a schedulable label,
 - it aligns with the current `AKSNodeClass` design pattern
 
 The user expectation of “default false” is still satisfied. If `spec.ultraSSD` or `spec.ultraSSD.enabled` is omitted, the effective value is disabled.
