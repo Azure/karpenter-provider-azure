@@ -18,25 +18,21 @@ package cloudprovider
 
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"testing"
 	"time"
 
-	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
-	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -48,11 +44,9 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -84,6 +78,10 @@ func TestCloudProvider(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "cloudProvider/Azure")
+}
+
+func createSDKErrorBody(code, message string) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }
 
 var _ = BeforeSuite(func() {
@@ -180,87 +178,59 @@ func validateVMNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool)
 	Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 }
 
-func reconcileCapacityOverlay(customResource v1.ResourceName, overlayCapacity resource.Quantity) {
-	GinkgoHelper()
-	nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
-		Spec: karpv1alpha1.NodeOverlaySpec{
-			Requirements: []karpv1alpha1.NodeSelectorRequirement{{
-				Key:      karpv1.NodePoolLabelKey,
-				Operator: v1.NodeSelectorOpIn,
-				Values:   []string{nodePool.Name},
-			}},
-			Capacity: v1.ResourceList{customResource: overlayCapacity},
-		},
-	})
-	ExpectApplied(ctx, env.Client, nodeOverlay)
-	nodeOverlayController := nodeoverlay.NewController(env.Client, cloudProvider, azureEnv.InstanceTypeStore, cluster)
-	ExpectReconcileSucceeded(ctx, nodeOverlayController, client.ObjectKeyFromObject(nodeOverlay))
+func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool) {
+	// Common validations
+	validateNodeClaimCommon(nodeClaim, nodePool)
+
+	// AKS-specific annotations
+	Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+	Expect(nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
 }
 
-type nodeOverlayCapacityTestOptions struct {
-	validateNodeClaim func(*karpv1.NodeClaim)
-	resetCreateCalls  func()
-	expectCreateCalls func()
+type provisionModeKind string
+
+const (
+	provisionModeKindScriptless               provisionModeKind = "scriptless"
+	provisionModeKindBootstrappingClient      provisionModeKind = "bootstrappingClient"
+	provisionModeKindAKSMachineAPI            provisionModeKind = "aksMachineAPI"
+	provisionModeKindAKSMachineAPIHeaderBatch provisionModeKind = "aksMachineAPIHeaderBatch"
+)
+
+type provisionModeTestCase struct {
+	name                  string
+	kind                  provisionModeKind
+	validateNodeClaim     func(*karpv1.NodeClaim)
+	resetCreateCalls      func()
+	expectCreateCalls     func()
+	expectCreatedResource func()
+	resetListCalls        func()
+	expectListCalls       func()
+	resetGetCalls         func()
+	expectGetCalls        func()
+	resetDeleteCalls      func()
+	expectDeleteCalls     func()
 }
 
-func runNodeOverlayCapacityTests(testOptions nodeOverlayCapacityTestOptions) {
-	Context("NodeOverlay", func() {
-		It("should launch a NodeClaim that requests capacity added by a NodeOverlay", func() {
-			ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
-				FeatureGates: coretest.FeatureGates{NodeOverlay: lo.ToPtr(true)},
-			}))
-			customResource := v1.ResourceName("example.com/dongle")
-			overlayCapacity := resource.MustParse("100")
-			nodeClaim.Spec.Resources.Requests = v1.ResourceList{customResource: resource.MustParse("1")}
-
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
-			reconcileCapacityOverlay(customResource, overlayCapacity)
-
-			if testOptions.resetCreateCalls != nil {
-				testOptions.resetCreateCalls()
-			}
-			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(cloudProviderMachine).ToNot(BeNil())
-			if testOptions.validateNodeClaim != nil {
-				testOptions.validateNodeClaim(cloudProviderMachine)
-			}
-			if testOptions.expectCreateCalls != nil {
-				testOptions.expectCreateCalls()
-			}
-			capacity, ok := cloudProviderMachine.Status.Capacity[customResource]
-			Expect(ok).To(BeTrue())
-			Expect(capacity.Cmp(overlayCapacity)).To(Equal(0))
-			allocatable, ok := cloudProviderMachine.Status.Allocatable[customResource]
-			Expect(ok).To(BeTrue())
-			Expect(allocatable.Cmp(overlayCapacity)).To(Equal(0))
-		})
-
-		It("should not use overlaid capacity when NodeOverlay is disabled", func() {
-			// Explicitly disable the NodeOverlay feature gate so this test does not
-			// depend on ordering with the previous It block that enables it.
-			ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
-				FeatureGates: coretest.FeatureGates{NodeOverlay: lo.ToPtr(false)},
-			}))
-			customResource := v1.ResourceName("example.com/dongle")
-			overlayCapacity := resource.MustParse("100")
-			nodeClaim.Spec.Resources.Requests = v1.ResourceList{customResource: resource.MustParse("1")}
-
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
-			reconcileCapacityOverlay(customResource, overlayCapacity)
-
-			if testOptions.resetCreateCalls != nil {
-				testOptions.resetCreateCalls()
-			}
-			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
-			Expect(cloudProviderMachine).To(BeNil())
-		})
-	})
+func (p provisionModeTestCase) isAKSMachineAPIHeaderBatchMode() bool {
+	return p.kind == provisionModeKindAKSMachineAPIHeaderBatch
 }
 
-func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
-	return nodeOverlayCapacityTestOptions{
+func (p provisionModeTestCase) isAKSMachineMode() bool {
+	switch p.kind {
+	case provisionModeKindAKSMachineAPI, provisionModeKindAKSMachineAPIHeaderBatch:
+		return true
+	case provisionModeKindScriptless, provisionModeKindBootstrappingClient:
+		return false
+	default:
+		Fail(fmt.Sprintf("unknown provision mode kind %q for %q", p.kind, p.name))
+		return false
+	}
+}
+
+func aksscriptlessProvisionMode() provisionModeTestCase {
+	return provisionModeTestCase{
+		name: "AKSScriptless",
+		kind: provisionModeKindScriptless,
 		validateNodeClaim: func(nodeClaim *karpv1.NodeClaim) {
 			validateVMNodeClaim(nodeClaim, nodePool)
 		},
@@ -272,217 +242,83 @@ func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		},
+		expectCreatedResource: func() {
+			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(createInput.VM.Properties).ToNot(BeNil())
+		},
+		resetListCalls: func() {
+			azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Reset()
+			azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Reset()
+		},
+		expectListCalls: func() {
+			if testOptions.ManageExistingAKSMachines {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(1))
+			} else {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(0))
+			}
+			Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1))
+		},
+		resetGetCalls: func() {
+			azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
+			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
+		},
+		expectGetCalls: func() {
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
+		resetDeleteCalls: func() {
+			azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Reset()
+			azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Reset()
+		},
+		expectDeleteCalls: func() {
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
 	}
 }
 
-var _ = Describe("CloudProvider", func() {
-	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
-	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
-	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
-	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = false", func() {
-		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
-				ManageExistingAKSMachines: lo.ToPtr(false),
-			})
-			ctx = coreoptions.ToContext(ctx, coretest.Options())
-			ctx = options.ToContext(ctx, testOptions)
-
-			azureEnv = test.NewEnvironment(ctx, env)
-			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-
-			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-		})
-
-		AfterEach(func() {
-			// Wait for any async polling goroutines to complete before resetting
-			cloudProvider.WaitForInstancePromises()
-			cluster.Reset()
-			azureEnv.Reset(ctx)
-		})
-
-		It("should list nodeclaim created by the CloudProvider", func() {
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-
-			nodeClaims, _ := cloudProvider.List(ctx)
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(0))
+func aksMachineAPIHeaderBatchProvisionMode() provisionModeTestCase {
+	return provisionModeTestCase{
+		name: "AKSMachineAPIHeaderBatch",
+		kind: provisionModeKindAKSMachineAPIHeaderBatch,
+		validateNodeClaim: func(nodeClaim *karpv1.NodeClaim) {
+			validateAKSMachineNodeClaim(nodeClaim, nodePool)
+		},
+		resetCreateCalls: func() {
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+		},
+		expectCreateCalls: func() {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
+		expectCreatedResource: func() {
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(createInput.AKSMachine.Properties).ToNot(BeNil())
+		},
+		resetListCalls: func() {
+			azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Reset()
+			azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Reset()
+		},
+		expectListCalls: func() {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1))
-			queryRequest := azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Pop().Query
-			Expect(*queryRequest.Query).To(Equal(instance.GetVMListQueryBuilder(azureEnv.AzureResourceGraphAPI.ResourceGroup).String()))
-			Expect(nodeClaims).To(HaveLen(1))
-			validateVMNodeClaim(nodeClaims[0], nodePool)
-			resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)
-			Expect(resp.VirtualMachine).ToNot(BeNil())
-		})
-		It("should list nodeclaim with correct instance type even after capacity error marks offerings unavailable", func() {
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-
-			// Get the instance type from the created VM
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			vmSize := string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
-			Expect(vmSize).ToNot(BeEmpty())
-
-			// Simulate a capacity error by marking all offerings for this instance type as unavailable
-			for _, zone := range azureEnv.Zones() {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU(vmSize), zone, karpv1.CapacityTypeOnDemand)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", fake.MakeSKU(vmSize), zone, karpv1.CapacityTypeSpot)
-			}
-
-			// List should still return the nodeclaim with the correct instance type
-			nodeClaims, err := cloudProvider.List(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(nodeClaims).To(HaveLen(1))
-			validateVMNodeClaim(nodeClaims[0], nodePool)
-			Expect(nodeClaims[0].Labels[v1.LabelInstanceTypeStable]).To(Equal(vmSize))
-		})
-		It("should return an ICE error when there are no instance types to launch", func() {
-			// Specify no instance types and expect to receive a capacity error
-			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-				{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"doesnotexist"}, // will not match any instance types
-				},
-			}
-
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
-			Expect(cloudProviderMachine).To(BeNil())
-		})
-
-		runNodeOverlayCapacityTests(vmNodeOverlayCapacityTestOptions())
-
-		Context("AKS Machine API integration", func() {
-			It("should not call writes to AKS Machine API", func() {
-				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
-
-			Context("AKS Machines Pool Management", func() {
-				It("should handle AKS machines pool not found on each CloudProvider operation", func() {
-					// First create a successful VM
-					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					// cloudprovider.List should return vm nodeclaim
-					nodeClaims, err := cloudProvider.List(ctx)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(nodeClaims).To(HaveLen(1))
-					validateVMNodeClaim(nodeClaims[0], nodePool)
-
-					// cloudprovider.Delete should be fine also
-					err = cloudProvider.Delete(ctx, nodeClaims[0])
-					Expect(err).ToNot(HaveOccurred())
-				})
-			})
-		})
-	})
-
-	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = true", func() {
-		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
-				ManageExistingAKSMachines: lo.ToPtr(true),
-			})
-			ctx = coreoptions.ToContext(ctx, coretest.Options())
-			ctx = options.ToContext(ctx, testOptions)
-
-			azureEnv = test.NewEnvironment(ctx, env)
-			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-
-			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-		})
-
-		AfterEach(func() {
-			// Wait for any async polling goroutines to complete before resetting
-			cloudProvider.WaitForInstancePromises()
-			cluster.Reset()
-			azureEnv.Reset(ctx)
-		})
-
-		It("should list nodeclaim created by the CloudProvider", func() {
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-
-			nodeClaims, _ := cloudProvider.List(ctx)
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(1)) // Expect to be called in case of existing AKS machines
-			Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1))
-			queryRequest := azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Pop().Query
-			Expect(*queryRequest.Query).To(Equal(instance.GetVMListQueryBuilder(azureEnv.AzureResourceGraphAPI.ResourceGroup).String()))
-			Expect(nodeClaims).To(HaveLen(1))
-			validateVMNodeClaim(nodeClaims[0], nodePool)
-			resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)
-			Expect(resp.VirtualMachine).ToNot(BeNil())
-		})
-		It("should return an ICE error when there are no instance types to launch", func() {
-			// Specify no instance types and expect to receive a capacity error
-			nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-				{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"doesnotexist"}, // will not match any instance types
-				},
-			}
-
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
-			Expect(cloudProviderMachine).To(BeNil())
-		})
-
-		runNodeOverlayCapacityTests(vmNodeOverlayCapacityTestOptions())
-
-		Context("AKS Machine API integration", func() {
-			It("should not call writes to AKS Machine API", func() {
-				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
-
-			Context("AKS Machines Pool Management", func() {
-				It("should handle AKS machines pool not found on each CloudProvider operation", func() {
-					// First create a successful VM
-					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-					pod := coretest.UnschedulablePod()
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-					ExpectScheduled(ctx, env.Client, pod)
-
-					// cloudprovider.List should return vm nodeclaim
-					nodeClaims, err := cloudProvider.List(ctx)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(nodeClaims).To(HaveLen(1))
-					validateVMNodeClaim(nodeClaims[0], nodePool)
-
-					// cloudprovider.Delete should be fine also
-					err = cloudProvider.Delete(ctx, nodeClaims[0])
-					Expect(err).ToNot(HaveOccurred())
-				})
-			})
-		})
-	})
-})
+		},
+		resetGetCalls: func() {
+			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
+			azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
+		},
+		expectGetCalls: func() {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
+		resetDeleteCalls: func() {
+			azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Reset()
+			azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Reset()
+		},
+		expectDeleteCalls: func() {
+			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Len()).To(Equal(0))
+		},
+	}
+}
