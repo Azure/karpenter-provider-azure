@@ -597,16 +597,22 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(configureUltraSSDEnabled(nil)).To(BeNil())
 		})
 
-		It("should return nil when UltraSSD is not configured", func() {
+		It("should return false when UltraSSD is not configured", func() {
 			nodeClass.Spec.UltraSSD = nil
 
-			Expect(configureUltraSSDEnabled(nodeClass)).To(BeNil())
+			result := configureUltraSSDEnabled(nodeClass)
+
+			Expect(result).ToNot(BeNil())
+			Expect(*result).To(BeFalse())
 		})
 
-		It("should return nil when UltraSSD is explicitly disabled", func() {
+		It("should return false when UltraSSD is explicitly disabled", func() {
 			nodeClass.Spec.UltraSSD = &v1beta1.UltraSSD{Enabled: lo.ToPtr(false)}
 
-			Expect(configureUltraSSDEnabled(nodeClass)).To(BeNil())
+			result := configureUltraSSDEnabled(nodeClass)
+
+			Expect(result).ToNot(BeNil())
+			Expect(*result).To(BeFalse())
 		})
 
 		It("should return true when UltraSSD is enabled", func() {
