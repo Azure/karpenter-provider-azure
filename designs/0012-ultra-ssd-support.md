@@ -142,7 +142,11 @@ Examples of user-managed policy include:
 
 ### VM mode wiring
 
-Update VM creation so Ultra SSD-enabled node classes set `vm.Properties.AdditionalCapabilities.UltraSSDEnabled = true`.
+#### VM
+Update VM creation so Ultra SSD-enabled node classes set `vm.Properties.AdditionalCapabilities.UltraSSDEnabled = true`. This is left nil if UltraSSD is not enabled, which is consistent with AKS.
+
+#### Machine
+Set `armcontainerservice.Machine.Properties.MachineProperties.MachineHardwareProfile.UltraSsdEnabled = true` if enabled and `false` if disabled. This is consistent with AKS.
 
 This mirrors the current AKS behavior behind `--enable-ultra-ssd`: the node is made capable of attaching Ultra SSDs, but scheduling policy is left to the user.
 
