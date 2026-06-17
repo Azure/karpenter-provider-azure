@@ -41,10 +41,13 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// UltraSSD configures Ultra SSD for provisioned nodes.
+// UltraSSD allows nodes to use Ultra SSD.
 type UltraSSD struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// IsEnabled returns true if Ultra SSD is enabled.
 func (u *UltraSSD) IsEnabled() bool {
 	return u != nil && u.Enabled != nil && *u.Enabled
 }

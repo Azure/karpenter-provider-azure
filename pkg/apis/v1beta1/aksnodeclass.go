@@ -58,10 +58,13 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 	return a != nil && a.Enabled != nil && *a.Enabled
 }
 
+// UltraSSD configures Ultra SSD for provisioned nodes.
+// UltraSSD allows nodes to use Ultra SSD.
 type UltraSSD struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// IsUltraSSDEnabled returns true if Ultra SSD is enabled.
 func (u *UltraSSD) IsEnabled() bool {
 	return u != nil && u.Enabled != nil && *u.Enabled
 }
@@ -807,6 +810,7 @@ func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
 	return in.GetGPUMode() != GPUModeNone
 }
 
+// IsUltraSSDEnabled returns true if Ultra SSD is enabled.
 func (in *AKSNodeClass) IsUltraSSDEnabled() bool {
 	return in.Spec.UltraSSD != nil && in.Spec.UltraSSD.Enabled != nil && *in.Spec.UltraSSD.Enabled
 }
