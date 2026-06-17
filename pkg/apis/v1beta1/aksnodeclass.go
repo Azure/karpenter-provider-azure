@@ -62,6 +62,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // UltraSSD allows nodes to use Ultra SSD.
 type UltraSSD struct {
 	// Enabled indicates if Ultra SSD is enabled.
+	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
