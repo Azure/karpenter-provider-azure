@@ -34,6 +34,9 @@ const (
 
 	NvidiaGridDriverVersion = "570.211.01"
 	AKSGPUGridVersionSuffix = "20260522192315"
+
+	NvidiaGridV20DriverVersion = "595.58.03"
+	AKSGPUGridV20VersionSuffix = "20260609172331"
 )
 
 type GPUSKUInfo struct {
@@ -88,6 +91,9 @@ func readGPUSKUConfig() {
 }
 
 func GetAKSGPUImageSHA(size string) string {
+	if UseGridV20Drivers(size) {
+		return AKSGPUGridV20VersionSuffix
+	}
 	if UseGridDrivers(size) {
 		return AKSGPUGridVersionSuffix
 	}
@@ -115,6 +121,9 @@ func IsMarinerEnabledGPUSKU(vmSize string) bool {
 // NVv1 seems to run with CUDA, NVv5 requires GRID.
 // NVv3 is untested on AKS, NVv4 is AMD so n/a, and NVv2 no longer seems to exist (?).
 func GetGPUDriverVersion(size string) string {
+	if UseGridV20Drivers(size) {
+		return NvidiaGridV20DriverVersion
+	}
 	if UseGridDrivers(size) {
 		return NvidiaGridDriverVersion
 	}
@@ -124,8 +133,11 @@ func GetGPUDriverVersion(size string) string {
 	return NvidiaCudaDriverVersion
 }
 
-// GetGPUDriverType returns the type of GPU driver for given VM SKU ("grid" or "cuda")
+// GetGPUDriverType returns the type of GPU driver for given VM SKU ("grid-v20", "grid", or "cuda")
 func GetGPUDriverType(size string) string {
+	if UseGridV20Drivers(size) {
+		return "grid-v20"
+	}
 	if UseGridDrivers(size) {
 		return "grid"
 	}
@@ -139,6 +151,10 @@ func isStandardNCv1(size string) bool {
 
 func UseGridDrivers(size string) bool {
 	return ConvergedGPUDriverSizes[strings.ToLower(size)]
+}
+
+func UseGridV20Drivers(size string) bool {
+	return rtxPro6000GPUDriverSizes[strings.ToLower(size)]
 }
 
 /* ConvergedGPUDriverSizes : these sizes use a "converged" driver to support both cuda/grid workloads.
@@ -157,6 +173,20 @@ var ConvergedGPUDriverSizes = map[string]bool{
 	"standard_nc8ads_a10_v4":   true,
 	"standard_nc16ads_a10_v4":  true,
 	"standard_nc32ads_a10_v4":  true,
+}
+
+/* rtxPro6000GPUDriverSizes : NC_RTXPRO6000BSE_v6 (RTX PRO 6000 Blackwell Server
+Edition) SKUs require the GRID v20 (595.x) driver, published as the
+aks-gpu-grid-v20 image. All other GRID SKUs continue to use aks-gpu-grid.
+*/
+//nolint:gochecknoglobals
+var rtxPro6000GPUDriverSizes = map[string]bool{
+	"standard_nc128ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc128lds_xl_rtxpro6000bse_v6": true,
+	"standard_nc256ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc256lds_xl_rtxpro6000bse_v6": true,
+	"standard_nc320ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc320lds_xl_rtxpro6000bse_v6": true,
 }
 
 // normalizeVMSize applies standard normalization: lowercase and trim _promo suffix
