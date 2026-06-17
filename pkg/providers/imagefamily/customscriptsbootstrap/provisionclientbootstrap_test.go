@@ -47,7 +47,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 	}{
 		{
 			name: "Success with valid parameters",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -74,7 +74,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 		},
 		{
 			name: "Error with nil NodeBootstrapping provider",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -101,7 +101,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 		},
 		{
 			name: "Error with Windows OS",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -127,7 +127,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 		},
 		{
 			name: "NodeBootstrapping returns error",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -705,7 +705,7 @@ func TestConstructProvisionValues(t *testing.T) {
 }
 
 func TestArtifactStreamingEnablement(t *testing.T) {
-	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
 		ClusterName:                    "test-cluster",
 		KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 		SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -832,7 +832,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 }
 
 func TestFIPSEnablement(t *testing.T) {
-	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{ //nolint:gosec // G101: fake bootstrap token in test fixture
 		ClusterName:                    "test-cluster",
 		KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
 		SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
