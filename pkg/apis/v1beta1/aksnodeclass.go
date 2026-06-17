@@ -808,5 +808,5 @@ func (in *AKSNodeClass) IsGPUDriverInstallationEnabled() bool {
 }
 
 func (in *AKSNodeClass) IsUltraSSDEnabled() bool {
-	return in.Spec.UltraSSD != nil && *in.Spec.UltraSSD.Enabled
+	return in.Spec.UltraSSD != nil && in.Spec.UltraSSD.Enabled != nil && *in.Spec.UltraSSD.Enabled
 }
