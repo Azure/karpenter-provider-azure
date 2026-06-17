@@ -26,12 +26,6 @@ import (
 )
 
 var _ = Describe("UltraSSD", func() {
-	BeforeEach(func() {
-		if !env.IsMachineModeOrNPS() {
-			Skip("UltraSSD tests require NPS (Node Provisioning Service) - only supported in NAP/managed Karpenter mode")
-		}
-	})
-
 	It("should enable UltraSSD when explicitly enabled", func() {
 		enabled := true
 		nodeClass.Spec.UltraSSD = &v1beta1.UltraSSD{
