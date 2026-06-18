@@ -128,14 +128,12 @@ var _ = Describe("Pricing", func() {
 	})
 
 	It("each supported instance type should have pricing at least somewhere", func() {
-		// for now just print the names of the SKUs that don't have pricing
-		fmt.Println("\nSKUs that don't have pricing:")
-
 		regions := pricing.Regions()
 		skus := instancetype.GetKarpenterWorkingSKUs()
 		for _, region := range regions {
 			providers = append(providers, pricing.NewProvider(ctx, env, fakePricingAPI, region, make(chan struct{})))
 		}
+		var skusWithoutPricing []string
 		for _, sku := range skus {
 			foundPricingForSKU := false
 			for _, provider := range providers {
@@ -149,9 +147,16 @@ var _ = Describe("Pricing", func() {
 				}
 			}
 			if !foundPricingForSKU {
-				fmt.Printf("%s\n", *sku.Name)
+				skusWithoutPricing = append(skusWithoutPricing, *sku.Name)
 			}
 		}
+		if len(skusWithoutPricing) > 0 {
+			fmt.Println("\nSKUs without pricing:")
+			for _, sku := range skusWithoutPricing {
+				fmt.Println(sku)
+			}
+		}
+		Expect(skusWithoutPricing).To(BeEmpty())
 	})
 
 	It("should poll pricing data in public clouds", func() {
@@ -169,12 +174,9 @@ var _ = Describe("Pricing", func() {
 		providers = append(providers, p)
 		start <- struct{}{}
 
-		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
-		// duplicating it here
-		expectedTime, _ := time.Parse(time.RFC3339, "2026-04-02T00:04:39Z")
 		Eventually(func(g Gomega) {
-			g.Expect(p.OnDemandLastUpdated()).ToNot(Equal(expectedTime))
-			g.Expect(p.SpotLastUpdated()).ToNot(Equal(expectedTime))
+			g.Expect(p.OnDemandLastUpdated()).ToNot(Equal(pricing.InitialPriceUpdate))
+			g.Expect(p.SpotLastUpdated()).ToNot(Equal(pricing.InitialPriceUpdate))
 		}, 3*time.Second).Should(Succeed())
 
 		// Price APIs still work
@@ -197,12 +199,9 @@ var _ = Describe("Pricing", func() {
 		providers = append(providers, p)
 		start <- struct{}{}
 
-		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
-		// duplicating it here
-		expectedTime, _ := time.Parse(time.RFC3339, "2026-04-02T00:04:39Z")
 		Consistently(func(g Gomega) {
-			g.Expect(p.OnDemandLastUpdated()).To(Equal(expectedTime))
-			g.Expect(p.SpotLastUpdated()).To(Equal(expectedTime))
+			g.Expect(p.OnDemandLastUpdated()).To(Equal(pricing.InitialPriceUpdate))
+			g.Expect(p.SpotLastUpdated()).To(Equal(pricing.InitialPriceUpdate))
 		}, 3*time.Second).Should(Succeed())
 
 		// Price APIs still work

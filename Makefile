@@ -117,7 +117,11 @@ licenses: download ## Verifies dependency licenses
 	go-licenses csv ./... > $$LICENSEFILE && \
 	! grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0' $$LICENSEFILE
 
-codegen: codegen-pricing codegen-locations codegen-skugen codegen-allazureskus ## Auto generate files based on Azure API responses
+codegen: codegen-prod codegen-test ## Auto generate files based on Azure API responses
+
+codegen-prod: codegen-pricing codegen-allazuresku ## Generate codegen data used in production
+
+codegen-test: codegen-locations codegen-skugen ## Generate codegen test data
 
 codegen-pricing: ## Generate pricing data
 	./hack/codegen.sh pricing

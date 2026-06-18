@@ -64,6 +64,11 @@ var _ = Describe("NewSKUs", func() {
 					Key:      v1beta1.LabelSKUFamily,
 					Operator: corev1.NodeSelectorOpExists,
 				},
+				{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
+				},
 			}
 
 			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
