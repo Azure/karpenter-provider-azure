@@ -38,6 +38,11 @@ const pricingUpdatePeriod = 12 * time.Hour
 
 const defaultRegion = "eastus"
 
+// MissingPrice is a high penalty price assigned to SKUs with no known pricing data.
+// Setting to a high value means it won't be chosen automatically,
+// but will still be available if chosen explicitly.
+const MissingPrice float64 = 999.0
+
 // Provider provides actual pricing data to the Azure cloud provider to allow it to make more informed decisions
 // regarding which instances to launch.  This is initialized at startup with a periodically updated static price list to
 // support running in locations where pricing data is unavailable.  In those cases the static pricing data provides a
@@ -147,34 +152,28 @@ func (p *Provider) SpotLastUpdated() time.Time {
 	return p.spotUpdateTime
 }
 
-// OnDemandPrice returns the last known on-demand price for a given instance type, returning false if there is no
-// known on-demand pricing for the instance type.
+// OnDemandPrice returns the last known on-demand price for a given instance type.
+// The boolean return indicates whether a real price was found (true) or the penalty
+// MissingPrice is being returned (false).
 func (p *Provider) OnDemandPrice(instanceType string) (float64, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	price, ok := p.onDemandPrices[instanceType]
 	if !ok {
-		// if we don't have a price, check if it's a known SKU with missing price
-		if price, ok = skusWithMissingPrice[instanceType]; ok {
-			return price, true
-		}
-		return 0.0, false
+		return MissingPrice, false
 	}
 	return price, true
 }
 
-// SpotPrice returns the last known spot price for a given instance type, returning false
-// if there is no known spot pricing for that instance type
+// SpotPrice returns the last known spot price for a given instance type.
+// The boolean return indicates whether a real price was found (true) or the penalty
+// MissingPrice is being returned (false).
 func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	price, ok := p.spotPrices[instanceType]
 	if !ok {
-		// if we don't have a price, check if it's a known SKU with missing price
-		if price, ok = skusWithMissingPrice[instanceType]; ok {
-			return price, true
-		}
-		return 0.0, false
+		return MissingPrice, false
 	}
 	return price, true
 }
