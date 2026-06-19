@@ -78,9 +78,9 @@ func NewProvider(
 
 	p := &Provider{
 		region:             region,
-		onDemandUpdateTime: initialPriceUpdate,
+		onDemandUpdateTime: InitialPriceUpdate,
 		onDemandPrices:     staticPricing,
-		spotUpdateTime:     initialPriceUpdate,
+		spotUpdateTime:     InitialPriceUpdate,
 		// default our spot pricing to the same as the on-demand pricing until a price update
 		spotPrices: staticPricing,
 		pricing:    pricing,
@@ -307,7 +307,7 @@ func (p *Provider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
-	p.onDemandUpdateTime = initialPriceUpdate
+	p.onDemandUpdateTime = InitialPriceUpdate
 }
 
 // WaitUntilDone should be called after canceling the context passed to NewProvider to wait until all goroutines have exited
