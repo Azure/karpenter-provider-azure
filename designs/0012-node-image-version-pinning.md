@@ -3,9 +3,6 @@
 **Status:** Draft
 **Date:** 2026-05-21
 **Authors:** @rakechill
-**Related:**
-- [AKS Prepared Image Specification (AKS#4704)](https://github.com/Azure/AKS/issues/4704)
-- [Add support for setting ImageID for nodeClass](https://github.com/Azure/karpenter-provider-azure/issues/1220)
 
 ---
 
@@ -101,12 +98,13 @@ VM creation with resolved image ID
 ### Key observations
 
 1. **`ImageID *string` already exists** in `AKSNodeClassSpec` but is
-   hidden from the API (`json:"-"`). It is an **unused stub** — nothing
-   in the codebase ever sets it. The *actual* resolved image ID lives on
-   `NodeClaim.Status.ImageID` (an upstream Karpenter core field), which
-   is populated after VM creation from the VM's storage profile or the
-   AKS Machine's `NodeImageVersion`. These are two different fields on
-   two different objects.
+  hidden from the API (`json:"-"`). It is an **unused stub** — nothing
+  in the codebase ever sets it. This design removes that stub rather
+  than reusing it. The *actual* resolved image ID lives on
+  `NodeClaim.Status.ImageID` (an upstream Karpenter core field), which
+  is populated after VM creation from the VM's storage profile or the
+  AKS Machine's `NodeImageVersion`. These are two different fields on
+  two different objects.
 
 2. **Version is the last segment** of every image ID:
    - CIG: `/CommunityGalleries/{gallery}/images/{def}/versions/{version}`
@@ -174,14 +172,8 @@ the purpose of using Karpenter.
 │      but not enforced — warning surfaced via condition   │
 │    • Applied as version filter in SIG/CIG resolution     │
 │                                                          │
-│  (future) imageRef: <resource-id>  ◄── stretch            │
-│    • References customer Prepared Image resource         │
-│    • Bypasses gallery resolution entirely                │
-│    • Orthogonal to imageFamily/imageVersion              │
-│                                                          │
-│  Precedence: imageRef > imageVersion                     │
-│  AKSNodeClassSpec.ImageID is an unused stub (json:"-"). │
-│  See section 6.4 for disposition options.                 │
+│  AKSNodeClassSpec.ImageID is removed as part of          │
+│  this design; imageVersion is the only new spec field.   │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
                         │
@@ -481,7 +473,7 @@ the TTL will correctly reuse the pinned result, because that cache entry
 is now scoped to the exact spec version being requested.
 
 The `AKSNodeClassSpec.ImageID` stub (`json:"-"`) is unused today and
-is not part of this design. See section 6.4 for options on its future.
+should be removed as part of this design rather than carried forward.
 
 #### 5.5.2 Maintenance window interaction
 
@@ -609,229 +601,7 @@ logic), so there is no status churn from this field.
 
 ---
 
-## 6. Future Extensibility: Prepared Image Specification
-
-This section is out of scope for the `imageVersion` design but is
-included to demonstrate that the API shape in section 5 is
-forward-compatible with upcoming AKS capabilities.
-
-### 6.0 Background: Prepared Image Specification
-
-AKS is developing a **Prepared Image Specification** feature
-([AKS#4704](https://github.com/Azure/AKS/issues/4704)), targeting public
-preview with regional availability beginning June 2026.
-
-#### What It Is
-
-A top-level `customImage` Azure resource in the customer's resource group
-that lets them specify:
-
-- **Container images to pre-cache** on the node (eliminates cold-pull on
-  scale-up)
-- **OS-level settings** (sysctls, kernel parameters, containerd config)
-- **A customization script** — a list of instructions run during image
-  preparation (GPU drivers, LLMs, security policies, etc.)
-
-This is applied at the node pool or cluster level. Subsequent nodes
-provisioned from that pool use the prepared image, which has all specified
-customizations baked in.
-
-#### How It Differs from `imageVersion` Pinning
-
-| Dimension | `imageVersion` Pinning | Prepared Image Spec |
-|---|---|---|
-| **What's controlled** | Which AKS-managed VHD version is used | A custom image derived from an AKS base image, with user-specified layers |
-| **Image source** | AKS Community/Shared Image Gallery | Customer resource group (`customImage` resource) |
-| **Lifecycle** | Governed by AKS support window; version ages out | Customer-managed; presumably rebuilt on newer base images periodically |
-| **Use case** | "Don't use the latest image, it broke my workload" | "I need containers/drivers/configs cached on the node at boot" |
-| **Karpenter integration** | Version is a filter within existing image family resolution | Entirely different image source; bypasses gallery resolution |
-
-The two features are **orthogonal but share the API surface**:
-
-- `imageVersion` operates **within** the AKS-managed image family
-  (SIG/CIG) — it's a version pin.
-- Prepared Image Spec operates **outside** the AKS-managed galleries —
-  it references a customer-owned image resource.
-
-A well-shaped API keeps these as distinct, non-overlapping fields
-rather than overloading a single `imageID` field with two different
-semantics.
-
-### 6.1 Prerequisite: AKS Machine API Support
-
-The AKS Machine API must support Prepared Image Spec before Karpenter
-can expose it via `AKSNodeClass`. Karpenter provisions nodes through the
-Machine API, and if the underlying API cannot accept a prepared image
-reference, exposing it in the CRD would be non-functional.
-
-**Gating criteria**: The AKS Machine API `CreateOrUpdate` operation must
-accept a prepared image resource ID and use it for node provisioning.
-Until this is confirmed, `imageRef` remains a design placeholder only.
-
-### 6.2 Proposed API Field
-
-```go
-type AKSNodeClassSpec struct {
-    // ...existing fields...
-
-    // imageRef is the Azure resource ID of a Prepared Image Specification
-    // resource. When set, Karpenter uses this image directly instead of
-    // resolving from the AKS image gallery. imageRef takes precedence over
-    // imageVersion.
-    // +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/[^\/]+\/[^\/]+\/[^\/]+$`
-    // +optional
-    ImageRef *string `json:"imageRef,omitempty"`
-}
-```
-
-### 6.3 Field Precedence Hierarchy
-
-When multiple image fields are set, the following precedence applies
-(using `imageRef` as the placeholder name — see section 6.4 for naming
-options):
-
-```
-imageRef  >  imageVersion
-```
-
-`imageFamily` is not part of this hierarchy — it determines *which*
-image definitions to resolve (arch/gen variants), not *which version or
-source*. It is always used for image definition selection regardless of
-whether `imageRef` or `imageVersion` is set.
-
-| Fields set | Resolution behavior |
-|---|---|
-| `imageRef` only | Use the prepared image directly. Skip gallery resolution entirely. `imageFamily` is used only as a hint for bootstrapping/distro detection. |
-| `imageRef` + `imageVersion` | `imageRef` wins. `imageVersion` is ignored. A warning condition is set. |
-| `imageVersion` (± `imageFamily`) | Pin to the specified version within the image family's gallery definitions. |
-| `imageFamily` only | Today's behavior — resolve latest version from gallery. |
-
-**CEL validation rule** (future, when `imageRef` is exposed):
-
-```yaml
-x-kubernetes-validations:
-  - message: "imageRef and imageVersion are mutually exclusive; imageRef takes precedence"
-    rule: "!(has(self.imageRef) && has(self.imageVersion))"
-```
-
-### 6.4 Disposition of `AKSNodeClassSpec.ImageID`
-
-The existing `ImageID *string` field on `AKSNodeClassSpec` is currently
-an unused stub (`json:"-"`). Nothing sets or reads it. With the
-introduction of `imageVersion` and a future prepared image spec field,
-we need to decide what to do with it. Three options:
-
-#### Option A: Remove `ImageID`, add `imageRef` (recommended)
-
-Remove the `ImageID` stub entirely. Introduce a new `imageRef` field
-for prepared image spec references. This gives the cleanest API surface:
-
-- `imageFamily` — which OS image family (exists today)
-- `imageVersion` — pin to a specific AKS gallery version (this design)
-- `imageRef` — reference a Prepared Image Spec resource (future)
-
-**Pros**: No legacy baggage. Clear naming — `imageRef` signals "a
-reference to an external image resource" which is exactly what Prepared
-Image Spec is. No confusion with `NodeClaim.Status.ImageID`.
-
-**Cons**: Removing a field (even an unexposed one) requires verifying no
-internal code depends on it.
-
-#### Option B: Remove `ImageID`, add `preparedImageSpec`
-
-Same as Option A but use `preparedImageSpec` instead of `imageRef` as
-the field name. This is more descriptive and ties directly to the AKS
-feature name.
-
-**Pros**: Self-documenting — customers immediately understand what the
-field is for. Aligns with AKS terminology.
-
-**Cons**: Longer field name. If AKS renames the feature, the field name
-becomes stale. Less generic if we ever need to support other custom
-image types beyond Prepared Image Spec.
-
-#### Option C: Repurpose existing `ImageID` for prepared image spec
-
-Unhide the existing `ImageID` field (change `json:"-"` to
-`json:"imageID,omitempty"`) and use it to hold the Prepared Image Spec
-resource ID.
-
-**Pros**: No new field needed. Reuses existing struct plumbing.
-
-**Cons**: `imageID` is ambiguous — it could mean a gallery image ID, a
-prepared image ID, or the same thing as `NodeClaim.Status.ImageID`.
-Customers and maintainers would need to learn that `imageID` on
-`AKSNodeClass.spec` means something different than `imageID` on
-`NodeClaim.status`. The field was originally stubbed with gallery image
-semantics in mind, not custom image references.
-
-#### Recommendation
-
-**Option A** provides the cleanest separation of concerns and avoids
-naming confusion. The final decision depends on whether AKS settles on
-a stable feature name and resource type for Prepared Image Spec before
-we implement.
-
-### 6.5 Impact on Image Resolution Pipeline
-
-```
-              prepared image field set?
-                    ┌───┤
-                    │ YES
-                    ▼
-              Use prepared image directly
-              (skip gallery resolution)
-              Populate status.images[] with single entry
-                    │
-                    │ NO
-                    ▼
-              imageVersion set?
-              ┌───┤
-              │ YES
-              ▼
-        Pin to imageVersion within imageFamily
-        (section 5 design)
-              │
-              │ NO
-              ▼
-        Resolve latest from gallery
-        (today's behavior)
-              │
-              ▼
-        status.images[] populated
-              │
-              ▼
-        ResolveNodeImageFromNodeClass()
-              │
-              ▼
-        VM creation
-```
-
-### 6.6 Open Questions for `imageRef`
-
-These must be resolved before `imageRef` implementation begins:
-
-1. **Resource type**: What is the exact Azure resource type for a
-   Prepared Image? This determines the `imageRef` validation pattern.
-2. **Bootstrapping**: When using a prepared image, how does Karpenter
-   determine the distro/OS for bootstrap script selection? Does
-   `imageFamily` serve as a hint, or does the prepared image resource
-   expose metadata?
-3. **Lifecycle**: Are prepared images subject to the AKS support
-   window, or do they follow a customer-managed lifecycle? This affects
-   whether `ImageWithinSupportWindow` applies.
-4. **Machine API contract**: What fields does the Machine API expect
-   when provisioning with a prepared image? Is it a direct image
-   reference, or does it go through a different API path?
-5. **Role of `imageFamily` when `imageRef` is set**: Should `imageFamily`
-   still be required or used when `imageRef` is explicitly set? It may be
-   needed as a hint for bootstrapping/distro detection, or the prepared
-   image resource itself may expose sufficient metadata to make it
-   unnecessary.
-
----
-
-## 7. Open Questions
+## 6. Open Questions
 
 Remaining questions not covered by the design sections above:
 
@@ -862,6 +632,5 @@ Remaining questions not covered by the design sections above:
 - [AKS Support Policies](https://learn.microsoft.com/en-us/azure/aks/support-policies)
 - [AKS Node Image Auto-Upgrade](https://learn.microsoft.com/en-us/azure/aks/auto-upgrade-node-os-image)
 - [AKS Custom Node Configuration](https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration)
-- [Prepared Image Specification (AKS#4704)](https://github.com/Azure/AKS/issues/4704)
 - [Karpenter image resolution code](../pkg/providers/imagefamily/resolver.go)
 - [Karpenter node image provider](../pkg/providers/imagefamily/nodeimage.go)
