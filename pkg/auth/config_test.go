@@ -153,6 +153,17 @@ func TestBuildAzureConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
+			// Clear all config-related env vars before each subtest to ensure isolation
+			// This is required if you run the test from a shell that happens to have one of these variables set.
+			for _, key := range []string{
+				"ARM_SUBSCRIPTION_ID",
+				"AZURE_SUBSCRIPTION_ID",
+				"ARM_TENANT_ID",
+				"AZURE_TENANT_ID",
+			} {
+				g.Expect(os.Unsetenv(key)).To(Succeed())
+			}
+
 			for k, v := range tt.env {
 				err := os.Setenv(k, v)
 				g.Expect(err).ToNot(HaveOccurred(), "error setting environment variable %s = %s", k, v)
