@@ -228,6 +228,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	return sets.New(zones.Regional)
 }
 
+// TODO: review; switch to controller-driven updates
 // createOfferings creates a set of mutually exclusive offerings for a given instance type. This provider maintains an
 // invariant that each offering is mutually exclusive. Specifically, there is an offering for each permutation of zone
 // and capacity type. ZoneID is also injected into the offering requirements, when available, but there is a 1-1

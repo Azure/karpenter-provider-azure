@@ -210,4 +210,19 @@ var _ = Describe("Pricing", func() {
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically(">", 0))
 	})
+
+	It("should return MissingPrice for unknown SKUs", func() {
+		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
+
+		// On-demand: unknown SKU returns MissingPrice with ok=false
+		price, ok := p.OnDemandPrice("Standard_NonExistent_SKU")
+		Expect(ok).To(BeFalse(), "pricing should not be known for a non-existent SKU")
+		Expect(price).To(Equal(pricing.MissingPrice), "unknown SKU should get MissingPrice")
+
+		// Spot: unknown SKU returns MissingPrice with ok=false
+		price, ok = p.SpotPrice("Standard_NonExistent_SKU")
+		Expect(ok).To(BeFalse(), "spot pricing should not be known for a non-existent SKU")
+		Expect(price).To(Equal(pricing.MissingPrice), "unknown SKU should get MissingPrice for spot")
+	})
 })
