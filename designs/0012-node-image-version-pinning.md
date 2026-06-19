@@ -31,7 +31,7 @@ The _anticipated_ policy model is:
 | Concept | Definition |
 |---|---|
 | **In-window** | Image age ≤ 90 days from release date. No restrictions; full support. |
-| **Outside-supported-window** | Image age > 90 days. Support may require upgrading to a newer image as a prerequisite for resolution. |
+| **Outside-supported-window** | Image age > 90 days. Support may require upgrading to a newer image as a prerequisite for resolution. **Scale-up and all other cluster operations remain unconditionally allowed** — no operations are blocked. |
 | **Unsupported** | Potential future enforcement state where specific operations (e.g., scale-up) could be blocked. Not part of initial rollout. |
 
 ### Key Policy Direction
@@ -39,7 +39,7 @@ The _anticipated_ policy model is:
 1. AKS ships node images frequently: **weekly for Linux, monthly for Windows**.
 2. Customers are expected to update regularly — via auto-upgrade channels or manual upgrades.
 3. **Rollback and pinning are supported flexibility mechanisms**, but they **do not override lifecycle expectations**. They are meant for short-term operational recovery, not long-term avoidance of updates.
-4. Within the supported window, scale-up is expected to be **unconditionally allowed** regardless of cluster state.
+4. Scale-up and all other cluster operations are **unconditionally allowed** regardless of image age. Running an image outside the support window does not block any operations.
 
 ### Release Cadence (empirical, from AgentBaker release notes)
 
@@ -129,6 +129,17 @@ VM creation with resolved image ID
    k8sVersion)`. `imageVersion` is not part of the key — this must be
    fixed as part of this design (see section 5.5.1).
 
+  This cache is in-memory in the operator process, so the 3-day TTL is
+  a maximum, not a guarantee. Any operator pod restart clears the cache
+  and causes the next reconcile to perform a fresh gallery lookup,
+  which may refresh `status.images[]` earlier than 3 days in practice.
+
+7. **SIG image versions are resolved via the public `ListNodeImageVersions`
+  API** (`GET .../providers/Microsoft.ContainerService/locations/{location}/nodeImageVersions`).
+  This is the authoritative source for which versions exist in SIG. Existence
+  validation for a pinned `imageVersion` should check against this list before
+  accepting the version as valid.
+
 ---
 
 ## 3. The Gap: What Customers Can't Do Today
@@ -161,7 +172,8 @@ the purpose of using Karpenter.
 │                                                          │
 │  imageVersion: "202604.24.0"      ◄── P0                │
 │    • Pins within AKS-managed galleries                   │
-│    • Should be within AKS support window                 │
+│    • Advisory: within AKS support window recommended,    │
+│      but not enforced — warning surfaced via condition   │
 │    • Applied as version filter in SIG/CIG resolution     │
 │                                                          │
 │  (future) imageRef: <resource-id>  ◄── stretch            │
@@ -181,8 +193,8 @@ the purpose of using Karpenter.
 │                                                          │
 │  images[]:                                               │
 │    - id: /CommunityGalleries/.../versions/202604.24.0    │
-│      version: "202604.24.0"        ◄── new: surfaced     │
-│      imageAgeDays: 30              ◄── new: per-image age│
+│      version: "202604.24.0"           ◄── new: surfaced   │
+│      imageCreateDate: "2026-04-24"    ◄── new: release date│
 │      requirements: [...]                                 │
 │                                                          │
 │  conditions[]:                                           │
@@ -223,6 +235,31 @@ type AKSNodeClassSpec struct {
 | set | set | Version is pinned. `imageFamily` determines which image definitions (arch/gen variants) are used; `imageVersion` determines which version of those definitions is resolved. |
 | set | unset | Version is pinned. `imageFamily` defaults to `Ubuntu` (existing default behavior). |
 
+**UX with `imageVersion` set:** After setting `imageVersion`, a user can confirm the pin is active and the correct version is resolved by inspecting both spec and status:
+
+```yaml
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: default
+spec:
+  imageFamily: Ubuntu2204
+  imageVersion: "202604.24.0"   # ← pinned version set by user
+status:
+  images:
+    - id: /CommunityGalleries/AKSUbuntu-38d80f77-.../versions/202604.24.0
+      version: "202604.24.0"         # ← confirms resolved version matches pin
+      imageCreateDate: "2026-04-24"  # ← release date for age/staleness visibility
+      requirements: [...]
+  conditions:
+    - type: ImagesReady
+      status: "True"
+    - type: ImageWithinSupportWindow
+      status: "True"   # "False" + reason: ImageOutsideSupportWindow if > 90 days old
+```
+
+When `imageVersion` is **not** set, `spec.imageVersion` is absent (`omitempty`), but the active version is still always visible via `status.images[].version`, populated by the status reconciler.
+
 **Regex validation**: `^(\d{6}\.\d{2}\.\d+|\d{4}\.\d{2}\.\d{2})$` accepts
 either `YYYYMM.DD.patch` (e.g., `202604.24.0`) **OR** `YYYY.MM.DD`
 (e.g., `2022.10.03`). This is enforced at admission time via the CRD
@@ -258,16 +295,21 @@ status:
       message: "imageVersion 202604.24.0 not found in gallery for image family Ubuntu2204"
 ```
 
-**Why status-time, not admission-time**: Validating at admission would
-require a synchronous gallery API call in the webhook hot path, adding
-latency and a failure mode. The status reconciler already queries the
-gallery and can surface errors asynchronously. This is consistent with
-how Karpenter validates other external state (e.g., subnet existence).
+**Why status-time, not admission-time**: Karpenter does not currently
+have a validating webhook for `AKSNodeClass`, so admission-time
+validation would require adding one. While webhooks run in the same pod
+as the operator and could technically access the in-memory cache,
+the standard pattern for this type of external-state validation in
+upstream Karpenter is status conditions on the NodeClass (e.g., subnet
+existence, kubernetes version readiness). Using a webhook would also
+add synchronous latency and a new failure mode on every `kubectl apply`.
+The status reconciler already queries the gallery and surfaces errors
+asynchronously — this is the preferred pattern.
 
-### 5.3 Image Age: Per-Image Field
+### 5.3 Image Create Date: Per-Image Field
 
-Add `imageAgeDays` to the `NodeImage` struct so that each image in
-`status.images[]` carries its own age:
+Add `imageCreateDate` to the `NodeImage` struct so that each image in
+`status.images[]` carries its own release date:
 
 ```go
 type NodeImage struct {
@@ -278,22 +320,32 @@ type NodeImage struct {
     // +optional
     Version string `json:"version,omitempty"`
 
-    // imageAgeDays is the age of this image in days, computed from the
-    // version string's encoded date (YYYYMM.DD) at reconciliation time.
-    // This reflects how close the image is to the support window
-    // boundary. Day granularity is sufficient for a 90-day window.
+    // imageCreateDate is the release date of this image, extracted from
+    // the version string's encoded date (e.g., "2026-04-24" for version
+    // "202604.24.0"). Stored as an immutable date fact; consumers
+    // (controllers, CEL validation, printer columns) compute age on
+    // read. This follows the same principle as creationTimestamp and
+    // lastTransitionTime in upstream Kubernetes APIs.
     // +optional
-    ImageAgeDays *int32 `json:"imageAgeDays,omitempty"`
+    ImageCreateDate *metav1.Time `json:"imageCreateDate,omitempty"`
 }
 ```
 
-**Why per-image, not top-level:** Different images in `status.images[]`
-could have different ages if `overrideAnyGoalStateVersionsWithExisting`
-retains older versions for some SKUs. Storing `imageAgeDays` on each
-image avoids ambiguity and lets the support window warning use the
-oldest entry.
+**Why a date, not age-in-days:** Age-in-days would need to be updated
+daily or it becomes stale, causing unnecessary status churn and watch
+events. A static creation date is an immutable fact — written once at
+reconciliation time and never updated. Consumers can compute age, compare
+dates, or bucket by month on read. This matches Kubernetes conventions
+(`creationTimestamp`, `lastTransitionTime`) and avoids clock-skew
+ambiguity inherent in relative integer fields.
 
-**Age source:** The version string encodes a date prefix in both
+**Why per-image, not top-level:** Different images in `status.images[]`
+could have different dates if `overrideAnyGoalStateVersionsWithExisting`
+retains older versions for some SKUs. Storing `imageCreateDate` on each
+image avoids ambiguity and lets the support window warning compare against
+the oldest entry.
+
+**Date source:** The version string encodes a date prefix in both
 supported formats. Parsing requires two branches, following the same
 segment-splitting pattern used by `isNewerVersion()` in
 `nodeimageversionsclient.go`:
@@ -330,10 +382,11 @@ accuracy.
 
 ### 5.4 Support Window Warning
 
-When the resolved image age exceeds the warning threshold, the status
-reconciler sets a warning condition. The initial threshold is **90 days**,
-matching the existing AppLens diagnostic insight. The enforcement support
-window has not yet been defined by AKS — 90 days is a warning only.
+When the resolved image's `imageCreateDate` is more than 90 days before
+the current date, the status reconciler sets a warning condition. The
+90-day threshold matches the existing AppLens diagnostic insight. The
+enforcement support window has not yet been defined by AKS — this is a
+warning only; no operations are blocked regardless of image age.
 
 ```yaml
 status:
@@ -356,6 +409,13 @@ will not cause `Ready` to become `False`. The condition is purely
 informational — it surfaces in `kubectl describe` and can be consumed by
 monitoring, but never gates provisioning.
 
+These conditions live on the **`AKSNodeClass.status.conditions[]`**
+field, alongside the resolved **`AKSNodeClass.status.images[]`** entries
+described above. In other words, both the pinned/latest resolved image
+state and the support-window warning are surfaced on the `AKSNodeClass`
+resource itself; nothing new is added to `NodePool` or `NodeClaim` for
+this feature.
+
 This pattern has upstream precedent: the core Karpenter `NodeClaim`
 registers only 3 of its 10 condition types (`Launched`, `Registered`,
 `Initialized`) as readiness dependents. Non-dependent conditions like
@@ -373,8 +433,9 @@ AKS API response) to track the official policy without code changes.
 
 **Metrics**: Emit a gauge metric `karpenter_image_age_days` with labels
 for `nodeclass`, `image_family`, and `image_version` so that operators
-can alert on image staleness. This metric uses the same day-granularity
-value as `imageAgeDays`.
+can alert on image staleness. This metric is computed at scrape time
+from `imageCreateDate` (i.e., `now - imageCreateDate` in days), so it
+remains accurate without requiring status updates.
 
 ### 5.5 Changes to Image Resolution Pipeline
 
@@ -393,9 +454,10 @@ ImageFamily.DefaultImages()          (unchanged — still resolves image definit
 NodeImageProvider.List()             (MODIFIED)
         │
         │  If imageVersion is SET:
-        │    SIG: BuildImageIDSIG(..., imageVersion) directly — skip latest lookup
-        │    CIG: BuildImageIDCIG(..., imageVersion) directly — skip latest lookup
-        │    Then: validate version exists via gallery API (see 5.5.4)
+        │    SIG: BuildImageIDSIG(..., imageVersion) directly
+        │         — skip "pick latest" lookup; existence check still runs (see 5.5.4)
+        │    CIG: BuildImageIDCIG(..., imageVersion) directly
+        │         — skip "pick latest" lookup; existence check still runs (see 5.5.4)
         │    Cache key: hash(supportedImages, k8sVersion, imageVersion)
         │
         │  If imageVersion is UNSET:
@@ -405,7 +467,7 @@ NodeImageProvider.List()             (MODIFIED)
         ▼
 NodeImageReconciler.Reconcile()      (see 5.5.2 and 5.5.3)
         ▼
-AKSNodeClass.status.images[]         (populated with pinned or latest version + imageAgeDays)
+AKSNodeClass.status.images[]         (populated with pinned or latest version + imageCreateDate)
         ▼
 ResolveNodeImageFromNodeClass()      (unchanged)
         ▼
@@ -418,6 +480,15 @@ setting or changing a pin on an existing NodeClass will return the
 previously cached result for up to 3 days with no error. Fix: pass
 `nodeClass.Spec.ImageVersion` into `cacheKey()` so any version change
 immediately produces a cache miss and forces a fresh gallery lookup.
+
+This is the key change needed for the status controller to correctly
+take `.spec.imageVersion` into account. The first reconcile after a pin
+is added, removed, or changed must bypass any cache entry produced for a
+different spec state; otherwise `status.images[]` could continue to
+surface the previously resolved version for up to the full 3-day TTL.
+Once the cache key includes `imageVersion`, subsequent reconciles within
+the TTL will correctly reuse the pinned result, because that cache entry
+is now scoped to the exact spec version being requested.
 
 The `AKSNodeClassSpec.ImageID` stub (`json:"-"`) is unused today and
 is not part of this design. See section 6.4 for options on its future.
@@ -475,7 +546,7 @@ refresh re-resolves to the same pinned version.
 Note: If the pinned image is incompatible with the new K8s version, the
 node may fail to join. This is an acceptable tradeoff — the customer
 explicitly pinned the version and is responsible for compatibility. The
-`imageAgeDays` field and support window warning provide signals to update.
+`imageCreateDate` field and support window warning provide signals to update.
 
 #### 5.5.4 Existence validation code path
 
@@ -541,9 +612,10 @@ are.
 | AKS Machine API + SIG | `GetAKSMachineNodeImageVersionFromImageID()` converts to `gallery-definition-version` string | ✅ Works naturally |
 | AKS Machine API + CIG | `GetAKSMachineNodeImageVersionFromImageID()` returns an explicit error for CIG IDs | ❌ Non-goal (see section 3) |
 
-`imageAgeDays` is computed from the version string at reconciliation
-time and stored on each image in status, so it remains accurate without
-polling for newer versions.
+`imageCreateDate` is set once at reconciliation time and never updated —
+it is an immutable fact derived from the version string. Age is computed
+from it on read (e.g., by the metrics emitter or support window warning
+logic), so there is no status churn from this field.
 
 ---
 
