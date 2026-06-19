@@ -112,11 +112,9 @@ VM creation with resolved image ID
    - CIG: `/CommunityGalleries/{gallery}/images/{def}/versions/{version}`
    - SIG: `/subscriptions/{sub}/.../images/{def}/versions/{version}`
 
-3. **Version format**: AKS image versions are observed in at least two
-   formats:
-   - Current format: `YYYYMM.DD.patch` (e.g., `202604.24.0`)
-   - Legacy format: `YYYY.MM.DD` (e.g., `2022.10.03`)
-   Both are valid pin targets if they exist in the gallery.
+3. **Version format**: AKS image versions use the current
+  `YYYYMM.DD.patch` format (e.g., `202604.24.0`). This is the only
+  supported pin format for this design.
 
 4. **All architecture variants share the same version** within a release.
    AKS releases all variants (gen1, gen2, arm64) together within 24 hours.
@@ -221,7 +219,7 @@ type AKSNodeClassSpec struct {
     // version instead of automatically selecting the latest available
     // image. The version must exist in the image gallery and should be
     // within the AKS node image support window.
-      // +kubebuilder:validation:Pattern=`^(\d{6}\.\d{2}\.\d+|\d{4}\.\d{2}\.\d{2})$`
+      // +kubebuilder:validation:Pattern=`^\d{6}\.\d{2}\.\d+$`
     // +optional
     ImageVersion *string `json:"imageVersion,omitempty"`
 }
@@ -260,11 +258,10 @@ status:
 
 When `imageVersion` is **not** set, `spec.imageVersion` is absent (`omitempty`), but the active version is still always visible via `status.images[].version`, populated by the status reconciler.
 
-**Regex validation**: `^(\d{6}\.\d{2}\.\d+|\d{4}\.\d{2}\.\d{2})$` accepts
-either `YYYYMM.DD.patch` (e.g., `202604.24.0`) **OR** `YYYY.MM.DD`
-(e.g., `2022.10.03`). This is enforced at admission time via the CRD
-schema. Gallery existence validation in the status reconciler remains
-authoritative.
+**Regex validation**: `^\d{6}\.\d{2}\.\d+$` accepts the supported
+`YYYYMM.DD.patch` format (e.g., `202604.24.0`). This is enforced at
+admission time via the CRD schema. Gallery existence validation in the
+status reconciler remains authoritative.
 
 ### 5.2 Image Version Existence Validation
 
@@ -345,32 +342,25 @@ retains older versions for some SKUs. Storing `imageCreateDate` on each
 image avoids ambiguity and lets the support window warning compare against
 the oldest entry.
 
-**Date source:** The version string encodes a date prefix in both
-supported formats. Parsing requires two branches, following the same
+**Date source:** The version string encodes a date prefix in the
+supported `YYYYMM.DD.patch` format. Parsing follows the same
 segment-splitting pattern used by `isNewerVersion()` in
 `nodeimageversionsclient.go`:
 
 ```go
 // parseImageVersionDate extracts year/month/day from an AKS image version.
-// Supports both observed AKS formats:
+// Supported format:
 //   YYYYMM.DD.patch  e.g. "202604.24.0"  → segments[0]="202604", segments[1]="24"
-//   YYYY.MM.DD       e.g. "2022.10.03"   → segments[0]="2022",   segments[1]="10", segments[2]="03"
 func parseImageVersionDate(version string) (time.Time, error) {
     segments := strings.Split(version, ".")
-    if len(segments[0]) == 6 {
-        // Current format: YYYYMM.DD.patch
-        year, _ := strconv.Atoi(segments[0][:4])
-        month, _ := strconv.Atoi(segments[0][4:])
-        day, _ := strconv.Atoi(segments[1])
-        return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
-    } else if len(segments[0]) == 4 && len(segments) >= 3 {
-        // Legacy format: YYYY.MM.DD
-        year, _ := strconv.Atoi(segments[0])
-        month, _ := strconv.Atoi(segments[1])
-        day, _ := strconv.Atoi(segments[2])
-        return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
-    }
+  if len(segments) < 2 || len(segments[0]) != 6 {
     return time.Time{}, fmt.Errorf("unrecognized image version format: %s", version)
+  }
+
+  year, _ := strconv.Atoi(segments[0][:4])
+  month, _ := strconv.Atoi(segments[0][4:])
+  day, _ := strconv.Atoi(segments[1])
+  return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
 }
 ```
 
