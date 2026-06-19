@@ -71,10 +71,15 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	// Azure Disk CSI driver uses "" for non-zonal topology; cloud-provider-azure
+	// uses "0" (fault domain) for regional VMs. Translate the empty value so
+	// normalized PV topology requirements match regional offerings.
+	karpv1.NormalizedLabelValues[corev1.LabelTopologyZone] = map[string]string{"": zones.Regional}
 }
 
 type Operator struct {
