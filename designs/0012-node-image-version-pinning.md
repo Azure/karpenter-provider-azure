@@ -603,27 +603,62 @@ logic), so there is no status churn from this field.
 
 ## 6. Open Questions
 
-Remaining questions not covered by the design sections above:
+### Kubernetes version ↔ node image compatibility (pending Node SIG response)
 
-### Operational
-1. Should we emit Kubernetes events when a pinned version crosses the
-   warning threshold?
-2. What is the interaction between `imageVersion` and Karpenter's
-   built-in disruption budgets / node expiry?
+1. Is there a supported compatibility contract between k8s version and node image version?
+2. If a user pins a node image version and then upgrades k8s, what is the expected behavior? Should Karpenter allow pinning across a k8s version upgrade, or should that be blocked/validated?
+3. When a k8s upgrade resets `ImagesReady=False` and triggers a full image refresh, should the pinned version be re-validated against the new k8s version before being accepted?
+4. Is there any authoritative API or source we should use for compatibility checks, or is presence in `ListNodeImageVersions` the intended signal?
 
-### Support Window
-3. **Resolved**: The warning threshold should be a **controller-level
-   flag** (`--image-support-window-warning-days`, default `90`), not a
-   CRD field or a Helm chart value. A controller flag applies uniformly
-   to both NAP-managed and self-hosted Karpenter deployments, so
-   self-hosted users are not left with a hardcoded threshold they cannot
-   change without a code update. Helm values are not used here because
-   they would not reach self-hosted deployments that manage their own
-   controller flags.
-4. When AKS defines an enforcement window, should Karpenter block
-   provisioning (by promoting `ImageWithinSupportWindow` to a readiness
-   dependent) or only surface the condition and leave enforcement to
-   AKS-side controls?
+---
+
+## 7. Alternatives Considered
+
+The three customer desires driving this design are:
+
+1. **Rollback** — revert to an older image version when the latest introduces a regression.
+2. **Decouple k8s and node image upgrades** — upgrade the control plane without immediately rolling all nodes to a new image, matching existing AKS node pool behavior.
+3. **Stability window** — stay on a known-good image for a bounded period (e.g., 90 days) before allowing updates.
+
+### 7.1 `do-not-disrupt` annotation
+
+Annotating nodes with `karpenter.sh/do-not-disrupt: "true"` prevents Karpenter from voluntarily disrupting them. Since image-version drift is handled via voluntary disruption, annotated nodes will not be replaced when a new image version becomes available.
+
+| Desire | Met? | Notes |
+|---|---|---|
+| Rollback | ❌ | Once nodes are already on the bad version, the annotation prevents further changes but cannot revert them |
+| Decouple k8s + image | ❌ | A k8s upgrade forces `ImagesReady=False`, which resets drift regardless of annotation |
+| Stability window | ⚠️ | Nodes are frozen at whatever version they happen to be on, but there is no version-targeted freeze |
+
+**Why not chosen**: The annotation prevents *all* voluntary disruption — consolidation, expiry, drift of any kind — not just image updates. There is no way to target a specific version or express "stay on `202604.24.0`". It is a useful workaround in an emergency but is not a supported version-management mechanism.
+
+### 7.2 EKS-style image selector terms
+
+EKS Karpenter supports [`amiSelectorTerms`](https://karpenter.sh/docs/concepts/nodeclasses/#specamiselectorterms) on `EC2NodeClass`, which lets users select AMIs by name glob, ID, tags, or SSM parameter path. This provides both exact pinning (`id: ami-12345`) and flexible filtering (`name: my-hardened-ami-*`).
+
+| Desire | Met? | Notes |
+|---|---|---|
+| Rollback | ✅ | Can pin to a specific AMI ID |
+| Decouple k8s + image | ✅ | AMI selection is independent of k8s version |
+| Stability window | ✅ | Can filter to images matching a name/tag pattern |
+
+**Why not directly applicable to AKS**: AKS node images are not customer-owned and have no queryable metadata (no tags, no owner, no SSM equivalents). The only meaningful selector is the version string. The `imageVersion` field in this design is the AKS equivalent of `id:`-style exact pinning in EKS.
+
+**Potential future extension — max-age filter**: A filter like `imageMaxAgeDays: 14` (only use images published within the last N days) would partially address the stability-window desire without requiring users to track a specific version. However, the resolved version would change on every cache expiry as new images are published, making node replacement non-deterministic and harder to reason about. It also does not address rollback. This could be a future additive extension but is not a replacement for explicit version pinning.
+
+**Investigating the EKS pattern further**: The EKS selector approach is worth considering more broadly if AKS ever exposes richer image metadata (e.g., release channel, severity tags). For now, the version string is the only stable identity for an AKS node image, so the selector reduces to a version pin.
+
+### 7.3 NodePool `expireAfter`
+
+Upstream Karpenter's `NodePool.spec.disruption.expireAfter` forces node replacement on a fixed schedule. Setting a long expiry (e.g., `90d`) means nodes live longer before being replaced, indirectly reducing image update frequency.
+
+| Desire | Met? | Notes |
+|---|---|---|
+| Rollback | ❌ | Replaced nodes get the current latest image, not a specific version |
+| Decouple k8s + image | ❌ | No control over which image version is used on replacement |
+| Stability window | ⚠️ | Nodes stay on their birth image longer, but the next replacement picks whatever is latest at that time |
+
+**Why not chosen**: `expireAfter` controls *when* nodes are replaced, not *what image* they get. It does not provide version control and cannot prevent a bad image from being picked up on the next expiry cycle.
 
 ---
 
