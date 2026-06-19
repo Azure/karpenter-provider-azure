@@ -29,6 +29,7 @@ import (
 	"github.com/samber/lo"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -244,6 +245,8 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 	offerings := []*cloudprovider.Offering{}
 	for zone := range offeringZones {
 		if params.UltraSSDEnabled && !sku.IsUltraSSDAvailableInAvailabilityZone(zone) {
+			// Log the fact that the offering is unavailable
+			klog.V(1).Infof("Offering for SKU %s in zone %s is unavailable", *sku.Name, zone)
 			continue
 		}
 
