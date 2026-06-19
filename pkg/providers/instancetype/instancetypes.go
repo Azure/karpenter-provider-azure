@@ -29,7 +29,6 @@ import (
 	"github.com/samber/lo"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -177,7 +176,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, instanceTypeParams), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, instanceTypeParams), instanceTypeParams, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -241,12 +240,16 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string], params *instanceTypeParameters) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], params *instanceTypeParameters) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range offeringZones {
 		if params.UltraSSDEnabled && !sku.IsUltraSSDAvailableInAvailabilityZone(zone) {
 			// Log the fact that the offering is unavailable
-			klog.V(1).Infof("Offering for SKU %s in zone %s is unavailable", *sku.Name, zone)
+			log.FromContext(ctx).Info(
+				"offering is unavailable",
+				"skuName", lo.FromPtr(sku.Name),
+				"zone", zone,
+			)
 			continue
 		}
 
