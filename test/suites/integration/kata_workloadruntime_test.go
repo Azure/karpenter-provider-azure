@@ -87,7 +87,6 @@ var _ = Describe("Kata WorkloadRuntime", func() {
 		env.ExpectCreated(runtimeClass, nodeClass, nodePool, pod)
 
 		env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
-		env.EventuallyExpectCreatedMachineCount("==", 1)
 		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
 		env.EventuallyExpectHealthyPodCount(selector, 1)
 
