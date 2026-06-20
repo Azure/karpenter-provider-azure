@@ -117,3 +117,26 @@ func TestAzureLinux3_Name(t *testing.T) {
 	azureLinux3 := imagefamily.AzureLinux3{}
 	g.Expect(azureLinux3.Name()).To(Equal("AzureLinux3"))
 }
+
+func TestAzureLinux3_DefaultImages_Kata(t *testing.T) {
+	g := NewWithT(t)
+	azureLinux3 := imagefamily.AzureLinux3{}
+
+	// Kata: only the dedicated Pod Sandboxing image variant (amd64 + gen2) is returned.
+	kataImages := azureLinux3.DefaultImages(true, nil, true)
+	g.Expect(kataImages).To(HaveLen(1))
+	g.Expect(kataImages[0].ImageDefinition).To(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
+	g.Expect(kataImages[0].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
+	g.Expect(kataImages[0].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
+
+	// Non-Kata: standard images, and never the Kata variant.
+	stdImages := azureLinux3.DefaultImages(true, nil, false)
+	for _, img := range stdImages {
+		g.Expect(img.ImageDefinition).ToNot(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
+	}
+
+	// FIPS+Kata is unsatisfiable (no FIPS Kata image): return no images rather than
+	// silently dropping the FIPS guarantee.
+	fipsMode := v1beta1.FIPSModeFIPS
+	g.Expect(azureLinux3.DefaultImages(true, &fipsMode, true)).To(BeEmpty())
+}

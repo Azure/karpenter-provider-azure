@@ -45,7 +45,7 @@ func (u Ubuntu2204) Name() string {
 	return v1beta1.Ubuntu2204ImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, _ bool) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		if !useSIG {

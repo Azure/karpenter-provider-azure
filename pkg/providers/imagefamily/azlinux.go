@@ -37,6 +37,9 @@ const (
 	AzureLinuxGen2ArmImageDefinition   = "V2gen2arm64"
 	AzureLinux2Gen2FIPSImageDefinition = "V2gen2fips"
 	AzureLinux2Gen1FIPSImageDefinition = "V2fips"
+	// AzureLinux2Gen2KataImageDefinition is the AKS Pod Sandboxing (Kata) image variant
+	// for AzureLinux 2. See AzureLinux3Gen2KataImageDefinition for the rationale.
+	AzureLinux2Gen2KataImageDefinition = "V2katagen2"
 )
 
 type AzureLinux struct {
@@ -47,7 +50,28 @@ func (u AzureLinux) Name() string {
 	return "AzureLinux2"
 }
 
-func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataEnabled bool) []types.DefaultImageOutput {
+	if kataEnabled {
+		// AKS Pod Sandboxing requires the dedicated Kata image variant (amd64 + gen2 only).
+		// See AzureLinux3.DefaultImages for the full rationale, including why FIPS+Kata
+		// returns no images rather than silently dropping the FIPS guarantee.
+		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+			return []types.DefaultImageOutput{}
+		}
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureLinux2Gen2KataImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-azurelinux-v2-kata-gen2",
+			},
+		}
+	}
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins

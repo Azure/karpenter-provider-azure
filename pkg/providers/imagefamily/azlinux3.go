@@ -38,6 +38,12 @@ const (
 	AzureLinux3Gen2FIPSImageDefinition      = "V3gen2fips"
 	AzureLinux3Gen1FIPSImageDefinition      = "V3fips"
 	AzureLinux3Gen2Arm64FIPSImageDefinition = "V3gen2arm64fips"
+	// AzureLinux3Gen2KataImageDefinition is the AKS Pod Sandboxing (Kata) image variant.
+	// The Kata host stack (kata-containers RPM -> /usr/local/bin/containerd-shim-kata-v2)
+	// ships only in this image; the standard V3gen2 image carries the containerd Kata
+	// runtime config but not the shim binary, so a Kata node must boot this variant.
+	// Pod Sandboxing is amd64 + gen2 (nested-virtualization) only.
+	AzureLinux3Gen2KataImageDefinition = "V3katagen2"
 )
 
 type AzureLinux3 struct {
@@ -48,7 +54,30 @@ func (u AzureLinux3) Name() string {
 	return "AzureLinux3"
 }
 
-func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataEnabled bool) []types.DefaultImageOutput {
+	if kataEnabled {
+		// AKS Pod Sandboxing requires the dedicated Kata image variant (see
+		// AzureLinux3Gen2KataImageDefinition). Pod Sandboxing is amd64 + gen2 only,
+		// so this is the only candidate image. There is no FIPS Kata image, so a
+		// FIPS+Kata request is unsatisfiable: return no images (surfaced as
+		// ImagesNotFound) rather than silently dropping the FIPS guarantee.
+		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+			return []types.DefaultImageOutput{}
+		}
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureLinux3Gen2KataImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-azurelinux-v3-kata-gen2",
+			},
+		}
+	}
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins
