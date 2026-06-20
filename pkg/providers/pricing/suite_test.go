@@ -189,11 +189,11 @@ var _ = Describe("Pricing", func() {
 
 	It("should not poll pricing data in non-public clouds", func() {
 		fakePricingAPI.NextError.Set(fmt.Errorf("failed"))
-		env := &auth.Environment{
+		govEnv := &auth.Environment{
 			Cloud: cloud.AzureGovernment,
 		}
 		start := make(chan struct{}, 1)
-		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", start)
+		p := pricing.NewProvider(ctx, govEnv, fakePricingAPI, "", start)
 		providers = append(providers, p)
 		start <- struct{}{}
 
