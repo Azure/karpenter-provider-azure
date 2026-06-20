@@ -128,6 +128,16 @@ spec:
                             rule: self != "kubernetes.io/hostname"
                           - message: label domain "karpenter.azure.com" is restricted
                             rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count", "karpenter.azure.com/placement-scope" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
+                          - message: label domain "kubernetes.azure.com" is restricted
+                            rule: self in [ "kubernetes.azure.com/mode", "kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/priority", "kubernetes.azure.com/fips_enabled", "kubernetes.azure.com/os-sku", "kubernetes.azure.com/cluster", "kubernetes.azure.com/sku-cpu", "kubernetes.azure.com/sku-memory", "kubernetes.azure.com/ebpf-dataplane", ] || !self.find("^([^/]+)").endsWith("kubernetes.azure.com")
+                          - message: label "agentpool" is restricted
+                            rule: self != 'agentpool'
+                          - message: label "storageprofile" is restricted
+                            rule: self != 'storageprofile'
+                          - message: label "storagetier" is restricted
+                            rule: self != 'storagetier'
+                          - message: label "accelerator" is restricted
+                            rule: self != 'accelerator'
                       minValues:
                         description: |-
                           This field is ALPHA and can be dropped or replaced at any time
@@ -168,6 +178,7 @@ spec:
                     type: object
                   maxItems: 100
                   type: array
+                  x-kubernetes-list-type: atomic
                   x-kubernetes-validations:
                     - message: requirements with operator 'In' must have a value defined
                       rule: 'self.all(x, x.operator == ''In'' ? x.values.size() != 0 : true)'
@@ -190,7 +201,7 @@ spec:
                   type: object
                 startupTaints:
                   description: |-
-                    StartupTaints are taints that are applied to nodes upon startup which are expected to be removed automatically
+                    startupTaints are taints that are applied to nodes upon startup which are expected to be removed automatically
                     within a short period of time, typically by a DaemonSet that tolerates the taint. These are commonly used by
                     daemonsets to allow initialization and enforce startup ordering.  StartupTaints are ignored for provisioning
                     purposes in that pods are not required to tolerate a StartupTaint in order to have nodes provisioned for them.
@@ -227,8 +238,9 @@ spec:
                       - key
                     type: object
                   type: array
+                  x-kubernetes-list-type: atomic
                 taints:
-                  description: Taints will be applied to the NodeClaim's node.
+                  description: taints will be applied to the NodeClaim's node.
                   items:
                     description: |-
                       The node this Taint is attached to has the "effect" on
@@ -262,6 +274,7 @@ spec:
                       - key
                     type: object
                   type: array
+                  x-kubernetes-list-type: atomic
                 terminationGracePeriod:
                   description: |-
                     TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
@@ -360,6 +373,9 @@ spec:
                       - type
                     type: object
                   type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
                 imageID:
                   description: ImageID is an identifier for the image that runs on the node
                   type: string
