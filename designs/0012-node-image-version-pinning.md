@@ -644,9 +644,32 @@ EKS Karpenter supports [`amiSelectorTerms`](https://karpenter.sh/docs/concepts/n
 
 **Why not directly applicable to AKS**: AKS node images are not customer-owned and have no queryable metadata (no tags, no owner, no SSM equivalents). The only meaningful selector is the version string. The `imageVersion` field in this design is the AKS equivalent of `id:`-style exact pinning in EKS.
 
-**Potential future extension — max-age filter**: A filter like `imageMaxAgeDays: 14` (only use images published within the last N days) would partially address the stability-window desire without requiring users to track a specific version. However, the resolved version would change on every cache expiry as new images are published, making node replacement non-deterministic and harder to reason about. It also does not address rollback. This could be a future additive extension but is not a replacement for explicit version pinning.
+**AKS selector variants considered (future alternatives):**
 
-**Investigating the EKS pattern further**: The EKS selector approach is worth considering more broadly if AKS ever exposes richer image metadata (e.g., release channel, severity tags). For now, the version string is the only stable identity for an AKS node image, so the selector reduces to a version pin.
+1. **`selector: previous`**
+  - Semantics: always resolve to the single version immediately before the current latest version for the resolved image definition.
+  - This is deterministic and fully computable from `ListNodeImageVersions` with no persistent or in-memory history required.
+  - Benefit: direct rollback intent without requiring users to copy/paste a full version string.
+  - Limitation: still does not guarantee k8s compatibility across upgrades; compatibility validation rules are still required.
+
+2. **`selector: month` + `yearMonth: YYYY-MM`**
+  - Semantics: resolve to a deterministic candidate within the specified month (for example: latest patch in that month).
+  - Benefit: expresses "stay on April 2026 train" style intent.
+  - Limitation: requires explicit tie-break rules and can still drift when the chosen month contains multiple releases.
+
+3. **`selector: holdCurrentForDays` (bounded stability hold)**
+  - Semantics: hold the currently resolved version for N days before allowing latest progression.
+  - Benefit: captures the customer desire to remain on a stable image for a bounded interval (for example, 90 days).
+  - Limitation: this behaves more like an update policy than a pure selector and overlaps with disruption/maintenance controls; it needs clear start-time and k8s-upgrade interaction rules.
+
+4. **`selector: maxAgeDays`**
+  - Semantics: only use images no older than N days.
+  - Benefit: simple freshness guardrail.
+  - Limitation: can change resolved versions on cache refresh, making replacement behavior less predictable and not directly supporting rollback.
+
+**Why not chosen for this design**: These selector forms are valuable to discuss and may be good follow-on enhancements, but they add policy semantics beyond the core rollback requirement. This design intentionally keeps P0 deterministic and explicit with `imageVersion` pinning, while documenting selector-style APIs as future alternatives.
+
+**Investigating the EKS pattern further**: The EKS selector approach is still worth tracking if AKS exposes richer image metadata (for example, release channel or severity tags). Today, the version string remains the only stable customer-facing identity for AKS node images.
 
 ### 7.3 NodePool `expireAfter`
 
