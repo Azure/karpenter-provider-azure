@@ -143,17 +143,17 @@ func (o *Options) validateProvisionMode() error {
 }
 
 func (o *Options) validateBatchOptions() error {
-	if o.MaxBatchSize < 1 || o.MaxBatchSize > 50 {
-		return fmt.Errorf("max-batch-size must be between 1 and 50, got %d", o.MaxBatchSize)
+	if o.ProviderInstanceCreateBatchMaxSize < 1 || o.ProviderInstanceCreateBatchMaxSize > consts.AKSMachineAPIHeaderBatchMaxSize {
+		return fmt.Errorf("provider-instance-create-batch-max-size must be between 1 and %d, got %d", consts.AKSMachineAPIHeaderBatchMaxSize, o.ProviderInstanceCreateBatchMaxSize)
 	}
-	if o.BatchIdleTimeoutMS < 0 {
-		return fmt.Errorf("batch-idle-timeout-ms must be non-negative, got %d", o.BatchIdleTimeoutMS)
+	if o.ProviderInstanceCreateBatchIdleDuration < 0 {
+		return fmt.Errorf("provider-instance-create-batch-idle-duration must be non-negative, got %s", o.ProviderInstanceCreateBatchIdleDuration)
 	}
-	if o.BatchMaxTimeoutMS < 0 {
-		return fmt.Errorf("batch-max-timeout-ms must be non-negative, got %d", o.BatchMaxTimeoutMS)
+	if o.ProviderInstanceCreateBatchMaxDuration < 0 {
+		return fmt.Errorf("provider-instance-create-batch-max-duration must be non-negative, got %s", o.ProviderInstanceCreateBatchMaxDuration)
 	}
-	if o.BatchMaxTimeoutMS < o.BatchIdleTimeoutMS {
-		return fmt.Errorf("batch-max-timeout-ms (%d) must be >= batch-idle-timeout-ms (%d)", o.BatchMaxTimeoutMS, o.BatchIdleTimeoutMS)
+	if o.ProviderInstanceCreateBatchMaxDuration < o.ProviderInstanceCreateBatchIdleDuration {
+		return fmt.Errorf("provider-instance-create-batch-max-duration (%s) must be >= provider-instance-create-batch-idle-duration (%s)", o.ProviderInstanceCreateBatchMaxDuration, o.ProviderInstanceCreateBatchIdleDuration)
 	}
 	return nil
 }

@@ -72,6 +72,12 @@ var _ = Describe("Options", func() {
 		"ENABLE_AZURE_SDK_LOGGING",
 		"AKS_MACHINES_POOL_NAME",
 		"MANAGE_EXISTING_AKS_MACHINES",
+		"BATCH_IDLE_TIMEOUT_MS",
+		"BATCH_MAX_TIMEOUT_MS",
+		"MAX_BATCH_SIZE",
+		"PROVIDER_INSTANCE_CREATE_BATCH_IDLE_DURATION",
+		"PROVIDER_INSTANCE_CREATE_BATCH_MAX_DURATION",
+		"PROVIDER_INSTANCE_CREATE_BATCH_MAX_SIZE",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -162,6 +168,45 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
+		It("should validate provider instance create batch duration env vars", func() {
+			os.Setenv("PROVIDER_INSTANCE_CREATE_BATCH_IDLE_DURATION", "6s")
+			os.Setenv("PROVIDER_INSTANCE_CREATE_BATCH_MAX_DURATION", "3s")
+			fs = &coreoptions.FlagSet{
+				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
+			}
+			opts.AddFlags(fs)
+
+			err := opts.Parse(fs, validHeaderBatchOptions()...)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-instance-create-batch-max-duration (3s) must be >= provider-instance-create-batch-idle-duration (6s)")))
+		})
+
+		It("should ignore old generic provider batch env vars", func() {
+			os.Setenv("BATCH_IDLE_TIMEOUT_MS", "6000")
+			os.Setenv("BATCH_MAX_TIMEOUT_MS", "3000")
+			os.Setenv("MAX_BATCH_SIZE", "0")
+			fs = &coreoptions.FlagSet{
+				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
+			}
+			opts.AddFlags(fs)
+
+			err := opts.Parse(fs, validHeaderBatchOptions()...)
+
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should validate provider instance create batch max size env var", func() {
+			os.Setenv("PROVIDER_INSTANCE_CREATE_BATCH_MAX_SIZE", "0")
+			fs = &coreoptions.FlagSet{
+				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
+			}
+			opts.AddFlags(fs)
+
+			err := opts.Parse(fs, validHeaderBatchOptions()...)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-instance-create-batch-max-size must be between 1 and 50, got 0")))
+		})
+
 		It("should fail when kubelet-identity-client-id is not a uuid", func() {
 			errMsg := "kubelet-identity-client-id not-a-uuid is malformed"
 			err := opts.Parse(
@@ -951,3 +996,18 @@ var _ = Describe("Options", func() {
 		})
 	})
 })
+
+func validHeaderBatchOptions() []string {
+	return []string{
+		"--cluster-name", "my-name",
+		"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+		"--kubelet-bootstrap-token", "flag-bootstrap-token",
+		"--ssh-public-key", "flag-ssh-public-key",
+		"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+		"--node-resource-group", "my-node-rg",
+		"--provision-mode", "aksmachineapiheaderbatch",
+		"--aks-machines-pool-name", "testmpool",
+		"--use-sig",
+		"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+	}
+}
