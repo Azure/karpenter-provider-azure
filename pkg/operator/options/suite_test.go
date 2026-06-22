@@ -72,9 +72,6 @@ var _ = Describe("Options", func() {
 		"ENABLE_AZURE_SDK_LOGGING",
 		"AKS_MACHINES_POOL_NAME",
 		"MANAGE_EXISTING_AKS_MACHINES",
-		"BATCH_IDLE_TIMEOUT_MS",
-		"BATCH_MAX_TIMEOUT_MS",
-		"MAX_BATCH_SIZE",
 		"PROVIDER_INSTANCE_CREATE_BATCH_IDLE_DURATION",
 		"PROVIDER_INSTANCE_CREATE_BATCH_MAX_DURATION",
 		"PROVIDER_INSTANCE_CREATE_BATCH_MAX_SIZE",
@@ -179,20 +176,6 @@ var _ = Describe("Options", func() {
 			err := opts.Parse(fs, validHeaderBatchOptions()...)
 
 			Expect(err).To(MatchError(ContainSubstring("provider-instance-create-batch-max-duration (3s) must be >= provider-instance-create-batch-idle-duration (6s)")))
-		})
-
-		It("should ignore old generic provider batch env vars", func() {
-			os.Setenv("BATCH_IDLE_TIMEOUT_MS", "6000")
-			os.Setenv("BATCH_MAX_TIMEOUT_MS", "3000")
-			os.Setenv("MAX_BATCH_SIZE", "0")
-			fs = &coreoptions.FlagSet{
-				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
-			}
-			opts.AddFlags(fs)
-
-			err := opts.Parse(fs, validHeaderBatchOptions()...)
-
-			Expect(err).ToNot(HaveOccurred())
 		})
 
 		It("should validate provider instance create batch max size env var", func() {
