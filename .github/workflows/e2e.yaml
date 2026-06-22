@@ -7,10 +7,6 @@ on:
       suite:
         type: string
         required: true
-      focus:
-        type: string
-        description: "optional ginkgo focus regex"
-        default: ""
       location:
         type: string
         description: "the azure location to run the e2e test in"
@@ -55,10 +51,6 @@ on:
           - Storage
           - Subnet
           - Utilization
-      focus:
-        type: string
-        description: "optional ginkgo focus regex"
-        default: ""
       location:
         type: choice
         description: "Azure location to run the e2e test in"
@@ -161,7 +153,7 @@ jobs:
             esm.ubuntu.com:443
             169.254.169.254:80
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.git_ref }}
       - if: always() && github.event_name == 'workflow_run'
@@ -246,7 +238,6 @@ jobs:
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
           AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID_TEST }}
           TEST_SUITE: ${{ inputs.suite }}
-          FOCUS: ${{ inputs.focus }}
           GIT_REF: ${{ github.sha }}
           PROVISION_MODE: ${{ inputs.provision_mode }}
         run: |
