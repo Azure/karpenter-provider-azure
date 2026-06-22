@@ -243,16 +243,15 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], params *instanceTypeParameters) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range offeringZones {
-		if params.UltraSSDEnabled && !sku.IsUltraSSDAvailableInAvailabilityZone(zone) {
-			// Log the fact that the offering is unavailable
-			log.FromContext(ctx).Info(
-				"offering is unavailable",
-				"skuName", lo.FromPtr(sku.Name),
-				"zone", zone,
-			)
-			continue
-		}
+		if params.UltraSSDEnabled {
+			if zone == "0" && !sku.IsUltraSSDAvailableWithoutAvailabilityZone() {
+				continue
+			}
 
+			if z := strings.Split(zone, "-"); len(z) > 1 && !sku.IsUltraSSDAvailableInAvailabilityZone(z[len(z)-1]) {
+				continue
+			}
+		}
 		placementScope := zones.PlacementScopeForZone(zone)
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
