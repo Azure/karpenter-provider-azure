@@ -176,7 +176,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, instanceTypeParams), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, instanceTypeParams), instanceTypeParams, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -240,7 +240,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], params *instanceTypeParameters) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string], params *instanceTypeParameters) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range offeringZones {
 		if params.UltraSSDEnabled {
@@ -248,6 +248,7 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 				continue
 			}
 
+			// Zones are formatted as <region>-<zone>, but we only care about the zone part.
 			if z := strings.Split(zone, "-"); len(z) > 1 && !sku.IsUltraSSDAvailableInAvailabilityZone(z[len(z)-1]) {
 				continue
 			}
