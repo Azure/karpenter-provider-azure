@@ -772,7 +772,7 @@ spec:
                 description: ultraSSD enables Ultra SSD for the provisioned nodes.
                 properties:
                   enabled:
-                    description: Enabled indicates if Ultra SSD is enabled.
+                    description: enabled indicates if Ultra SSD is enabled.
                     type: boolean
                 type: object
               vnetSubnetID:
@@ -1679,7 +1679,7 @@ spec:
                 description: ultraSSD enables Ultra SSD for the provisioned nodes.
                 properties:
                   enabled:
-                    description: Enabled indicates if Ultra SSD is enabled.
+                    description: enabled indicates if Ultra SSD is enabled.
                     type: boolean
                 type: object
               vnetSubnetID:
