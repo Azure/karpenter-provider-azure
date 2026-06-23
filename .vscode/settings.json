@@ -28,31 +28,5 @@
             }
         ]
     },
-    "chat.useAgentSkills": true,
-    "githubPullRequests.queries": [
-        {
-            "label": "Local Pull Request Branches",
-            "query": "default"
-        },
-        {
-            "label": "Waiting For My Review",
-            "query": "repo:${owner}/${repository} is:open review-requested:${user}"
-        },
-        {
-            "label": "Assigned To Me",
-            "query": "repo:${owner}/${repository} is:open assignee:${user}"
-        },
-        {
-            "label": "Created By Me",
-            "query": "repo:${owner}/${repository} is:open author:${user}"
-        },
-        {
-            "label": "All Open (-dependabot)",
-            "query": "repo:${owner}/${repository} is:open -label:dependencies"
-        },
-        {
-            "label": "All Open",
-            "query": "default"
-        }
-    ]
+    "chat.useAgentSkills": true
 }
