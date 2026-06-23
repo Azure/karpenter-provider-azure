@@ -338,6 +338,27 @@ func TestFilterInstanceOfferings_ZonalOfferingsBeforeRegionalAtSamePriceAndCapac
 	g.Expect(filtered[0].Offerings[0].Requirements.Get(corev1.LabelTopologyZone).Any()).To(Equal("westus-1"))
 }
 
+func TestFilterInstanceOfferings_ZonalPlacementScopeRejectsRegionalOfferings(t *testing.T) {
+	g := NewWithT(t)
+	provider := allocationstrategy.NewProvider()
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, v1beta1.PlacementScopeZonal),
+	)
+
+	instanceTypes := []*corecloudprovider.InstanceType{
+		{
+			Name: "Standard_Regional",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, zones.Regional),
+				newOfferingWithZone(0.1, karpv1.CapacityTypeSpot, zones.Regional),
+			},
+		},
+	}
+
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	g.Expect(filtered).To(BeEmpty())
+}
+
 func TestFilterInstanceOfferings_SpotRegionalOfferingBeforeOnDemandZonalAtSamePrice(t *testing.T) {
 	g := NewWithT(t)
 	provider := allocationstrategy.NewProvider()
