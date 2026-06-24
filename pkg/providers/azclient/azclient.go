@@ -268,9 +268,9 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			ctx,
 			aksMachinesClient,
 			batcher.Options{
-				IdleTimeout:  o.ProviderInstanceCreateBatchIdleDuration,
-				MaxTimeout:   o.ProviderInstanceCreateBatchMaxDuration,
-				MaxBatchSize: o.ProviderInstanceCreateBatchMaxSize,
+				IdleTimeout:  o.ProviderBatchIdleDuration,
+				MaxTimeout:   o.ProviderBatchMaxDuration,
+				MaxBatchSize: o.ProviderBatchMaxSize,
 			},
 		)
 	}

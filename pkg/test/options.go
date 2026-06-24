@@ -51,9 +51,9 @@ type OptionsFields struct {
 	ManageExistingAKSMachines      *bool
 	AKSMachinesPoolName            *string
 
-	ProviderInstanceCreateBatchIdleDuration *time.Duration
-	ProviderInstanceCreateBatchMaxDuration  *time.Duration
-	ProviderInstanceCreateBatchMaxSize      *int
+	ProviderBatchIdleDuration *time.Duration
+	ProviderBatchMaxDuration  *time.Duration
+	ProviderBatchMaxSize      *int
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -96,8 +96,8 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),
 
-		ProviderInstanceCreateBatchIdleDuration: lo.FromPtrOr(options.ProviderInstanceCreateBatchIdleDuration, time.Second),
-		ProviderInstanceCreateBatchMaxDuration:  lo.FromPtrOr(options.ProviderInstanceCreateBatchMaxDuration, 5*time.Second),
-		ProviderInstanceCreateBatchMaxSize:      lo.FromPtrOr(options.ProviderInstanceCreateBatchMaxSize, 50),
+		ProviderBatchIdleDuration: lo.FromPtrOr(options.ProviderBatchIdleDuration, time.Second),
+		ProviderBatchMaxDuration:  lo.FromPtrOr(options.ProviderBatchMaxDuration, 5*time.Second),
+		ProviderBatchMaxSize:      lo.FromPtrOr(options.ProviderBatchMaxSize, 50),
 	}
 }

@@ -72,9 +72,9 @@ var _ = Describe("Options", func() {
 		"ENABLE_AZURE_SDK_LOGGING",
 		"AKS_MACHINES_POOL_NAME",
 		"MANAGE_EXISTING_AKS_MACHINES",
-		"PROVIDER_INSTANCE_CREATE_BATCH_IDLE_DURATION",
-		"PROVIDER_INSTANCE_CREATE_BATCH_MAX_DURATION",
-		"PROVIDER_INSTANCE_CREATE_BATCH_MAX_SIZE",
+		"PROVIDER_BATCH_IDLE_DURATION",
+		"PROVIDER_BATCH_MAX_DURATION",
+		"PROVIDER_BATCH_MAX_SIZE",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -165,9 +165,9 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
-		It("should validate provider instance create batch duration env vars", func() {
-			os.Setenv("PROVIDER_INSTANCE_CREATE_BATCH_IDLE_DURATION", "6s")
-			os.Setenv("PROVIDER_INSTANCE_CREATE_BATCH_MAX_DURATION", "3s")
+		It("should validate provider batch duration env vars", func() {
+			os.Setenv("PROVIDER_BATCH_IDLE_DURATION", "6s")
+			os.Setenv("PROVIDER_BATCH_MAX_DURATION", "3s")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -175,11 +175,11 @@ var _ = Describe("Options", func() {
 
 			err := opts.Parse(fs, validHeaderBatchOptions()...)
 
-			Expect(err).To(MatchError(ContainSubstring("provider-instance-create-batch-max-duration (3s) must be >= provider-instance-create-batch-idle-duration (6s)")))
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-duration (3s) must be >= provider-batch-idle-duration (6s)")))
 		})
 
-		It("should validate provider instance create batch max size env var", func() {
-			os.Setenv("PROVIDER_INSTANCE_CREATE_BATCH_MAX_SIZE", "0")
+		It("should validate provider batch max size env var", func() {
+			os.Setenv("PROVIDER_BATCH_MAX_SIZE", "0")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -187,7 +187,7 @@ var _ = Describe("Options", func() {
 
 			err := opts.Parse(fs, validHeaderBatchOptions()...)
 
-			Expect(err).To(MatchError(ContainSubstring("provider-instance-create-batch-max-size must be between 1 and 50, got 0")))
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-size must be between 1 and 50, got 0")))
 		})
 
 		It("should fail when kubelet-identity-client-id is not a uuid", func() {

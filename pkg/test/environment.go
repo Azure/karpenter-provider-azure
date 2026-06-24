@@ -208,9 +208,9 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	var aksMachinesBatchAPI aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
 	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
 		aksMachinesBatchAPI = aksmachinesheaderbatch.NewClient(ctx, aksMachinesAPI, batcher.Options{
-			IdleTimeout:  testOptions.ProviderInstanceCreateBatchIdleDuration,
-			MaxTimeout:   testOptions.ProviderInstanceCreateBatchMaxDuration,
-			MaxBatchSize: testOptions.ProviderInstanceCreateBatchMaxSize,
+			IdleTimeout:  testOptions.ProviderBatchIdleDuration,
+			MaxTimeout:   testOptions.ProviderBatchMaxDuration,
+			MaxBatchSize: testOptions.ProviderBatchMaxSize,
 		})
 	}
 
