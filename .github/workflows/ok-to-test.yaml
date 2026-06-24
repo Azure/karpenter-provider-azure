@@ -1,0 +1,94 @@
+# If someone with write access comments "/ok-to-test sha=<short_sha>" on a pull request from a fork,
+# validate the short SHA matches the PR head and kick off the E2E matrix.
+# Adapted from: https://github.com/Azure/azure-service-operator/blob/main/.github/workflows/ok-to-test.yml
+name: Ok to test
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  ok-to-test:
+    runs-on: ubuntu-latest
+    # Only run for PR comments that start with /ok-to-test
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/ok-to-test')
+    permissions:
+      pull-requests: write
+    outputs:
+      sha: ${{ steps.validate.outputs.sha }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          disable-telemetry: true
+          disable-sudo: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - name: Check permission
+        id: check-permission
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.payload.comment.user.login,
+            });
+            const allowed = ['admin', 'write'].includes(permission.permission);
+            if (!allowed) {
+              core.setFailed(`User ${context.payload.comment.user.login} does not have write access.`);
+            }
+
+      - name: Validate SHA
+        id: validate
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const comment = context.payload.comment.body.trim();
+            const match = comment.match(/^\/ok-to-test\s+sha=([0-9a-fA-F]{7,})$/);
+            if (!match) {
+              core.setFailed('Comment must be in the format: /ok-to-test sha=<short_commit_sha>');
+              return;
+            }
+            const shortSHA = match[1].toLowerCase();
+
+            // Get the PR head SHA
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.issue.number,
+            });
+
+            if (!pr.head.sha.toLowerCase().startsWith(shortSHA)) {
+              core.setFailed(`Provided SHA ${shortSHA} does not match PR head SHA ${pr.head.sha}. Please use the latest commit SHA.`);
+              return;
+            }
+
+            core.setOutput('sha', pr.head.sha);
+            core.info(`Validated SHA: ${pr.head.sha}`);
+
+      - name: Add reaction
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+  e2e-matrix:
+    needs: [ok-to-test]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e-matrix.yaml
+    with:
+      git_ref: ${{ needs.ok-to-test.outputs.sha }}
+    secrets:
+      E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
+      E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}
