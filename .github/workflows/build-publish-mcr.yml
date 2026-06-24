@@ -12,6 +12,12 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-test.[a-z0-9]+'
+  workflow_dispatch:
+    inputs:
+      skip_trivy_scan:
+        description: 'Bypass the blocking Trivy scan (emergency release only). Scans still run in report-only mode. Select the release tag as the ref when running.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,6 +44,7 @@ jobs:
     - name: Build and publish image
       env:
         RELEASE_ACR: ${{ secrets.AZURE_REGISTRY }}
+        SKIP_TRIVY_SCAN: ${{ inputs.skip_trivy_scan }}
       run: |
         az login --identity
         ko version
