@@ -996,7 +996,33 @@ spec:
                     - Driver
                     - None
                     type: string
+                  nvidia:
+                    description: |-
+                      nvidia contains NVIDIA-specific GPU settings, such as the managed GPU
+                      experience. Ignored for non-NVIDIA VM sizes.
+                    properties:
+                      managementMode:
+                        description: |-
+                          managementMode toggles the managed GPU experience for NVIDIA GPUs.
+                          When set to Managed, AKS installs additional components (e.g. DCGM metrics
+                          and the NVIDIA device plugin) on top of the GPU driver. When set to
+                          Unmanaged (or not specified), only the GPU driver is installed and managing
+                          the device plugin/metrics is the user's responsibility.
+                          Managed requires gpu.mode to be Driver (driver installation enabled) and is
+                          only supported on NVIDIA GPU SKUs running Linux.
+                          For more details of what is installed, see aka.ms/aks/managed-gpu.
+                        enum:
+                        - Managed
+                        - Unmanaged
+                        type: string
+                    type: object
                 type: object
+                x-kubernetes-validations:
+                - message: gpu.nvidia.managementMode 'Managed' requires gpu.mode to
+                    be 'Driver' (the managed GPU experience requires driver installation)
+                  rule: '!(has(self.nvidia) && has(self.nvidia.managementMode) &&
+                    self.nvidia.managementMode == ''Managed'' && has(self.mode) &&
+                    self.mode == ''None'')'
               imageFamily:
                 default: Ubuntu
                 description: imageFamily is the image family that instances use.

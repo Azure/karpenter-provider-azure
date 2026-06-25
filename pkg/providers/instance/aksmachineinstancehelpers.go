@@ -188,9 +188,25 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	if nodeClass.IsGPUDriverInstallationEnabled() {
 		driverSetting = armcontainerservice.GPUDriverInstall
 	}
-	return &armcontainerservice.GPUProfile{
+	gpuProfile := &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
 	}
+	// Managed GPU experience: AKS installs additional components (DCGM metrics,
+	// NVIDIA device plugin) on top of the driver. It is NVIDIA-only and requires
+	// driver installation. Only emit Nvidia settings when the user explicitly
+	// opts in via gpu.nvidia.managementMode=Managed; leaving Nvidia nil keeps the
+	// request unmanaged, which is the non-breaking default (RP treats nil as
+	// Unmanaged). The SKU/driver guards avoid sending Managed for SKUs the RP
+	// would reject (e.g. AMD GPUs or driver=None), which the API-level CEL rule
+	// and instance-type filtering already prevent, but we re-check defensively.
+	if nodeClass.IsManagedGPUEnabled() &&
+		utils.IsNvidiaEnabledSKU(instanceType.Name) &&
+		nodeClass.IsGPUDriverInstallationEnabled() {
+		gpuProfile.Nvidia = &armcontainerservice.NvidiaGPUProfile{
+			ManagementMode: lo.ToPtr(armcontainerservice.ManagementModeManaged),
+		}
+	}
+	return gpuProfile
 }
 
 func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.AgentPoolArtifactStreamingProfile {
