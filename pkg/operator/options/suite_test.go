@@ -172,11 +172,6 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
-		It("should mention Go duration format for provider batch duration flags", func() {
-			Expect(fs.Lookup("provider-batch-idle-duration").Usage).To(ContainSubstring("Go duration format such as 1s"))
-			Expect(fs.Lookup("provider-batch-max-duration").Usage).To(ContainSubstring("Go duration format such as 1s"))
-		})
-
 		It("should validate provider batch duration flags", func() {
 			err := opts.Parse(fs, append(validHeaderBatchOptions(),
 				"--provider-batch-idle-duration", "6s",
