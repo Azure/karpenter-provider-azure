@@ -74,6 +74,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -2502,6 +2503,115 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
 				})
+			})
+		})
+
+		Context("Offering Availability", func() {
+			var instanceTypes corecloudprovider.InstanceTypes
+
+			BeforeEach(func() {
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				var err error
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should not have spot offerings available for SKUs with LowPriorityCapable=False", func() {
+				// Standard_B20ms has LowPriorityCapable=False in the fake SKU data
+				var b20ms *corecloudprovider.InstanceType
+				for _, it := range instanceTypes {
+					if it.Name == "Standard_B20ms" {
+						b20ms = it
+						break
+					}
+				}
+				Expect(b20ms).ToNot(BeNil(), "Standard_B20ms should be in the instance type list")
+
+				// On-demand offerings should be available
+				onDemandAvailable := lo.Filter(b20ms.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand)
+				})
+				Expect(onDemandAvailable).ToNot(BeEmpty(), "on-demand offerings should be available for Standard_B20ms")
+
+				// Spot offerings should NOT be available (LowPriorityCapable=False)
+				spotAvailable := lo.Filter(b20ms.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot)
+				})
+				Expect(spotAvailable).To(BeEmpty(), "spot offerings should not be available for Standard_B20ms (LowPriorityCapable=False)")
+			})
+
+			It("should have available offerings for a SKU present in the SKU API but missing from pricing data", func() {
+				// Add a SKU to the fake SKU API that does NOT have pricing in the static pricing data.
+				// This simulates a new SKU appearing in the SKU API before pricing data is available.
+				// Standard_D2_v2_Promo is in known_skus.yaml but has no southcentralus pricing.
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+					Name:         lo.ToPtr("Standard_D2_v2_Promo"),
+					Tier:         lo.ToPtr("Standard"),
+					Kind:         lo.ToPtr(""),
+					Size:         lo.ToPtr("D2_v2_Promo"),
+					Family:       lo.ToPtr("standardDv2Family"),
+					ResourceType: lo.ToPtr("virtualMachines"),
+					APIVersions:  &[]string{},
+					Costs:        &[]compute.ResourceSkuCosts{},
+					Restrictions: &[]compute.ResourceSkuRestrictions{},
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("102400")},
+						{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
+						{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1")},
+						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("7")},
+						{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("8")},
+						{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+						{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+						{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("2")},
+						{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+						{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("False")},
+						{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+						{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+					},
+					Locations:    &[]string{fake.Region},
+					LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+				})
+
+				// Verify this SKU has no known pricing
+				price, known := azureEnv.PricingProvider.OnDemandPrice("Standard_D2_v2_Promo")
+				Expect(known).To(BeFalse(), "Standard_D2_v2_Promo should not have known pricing")
+				Expect(price).To(BeNumerically("==", pricing.MissingPrice))
+
+				// Re-fetch instance types with the new SKU
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				updatedInstanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Find the new SKU in the list
+				var promoSKU *corecloudprovider.InstanceType
+				for _, it := range updatedInstanceTypes {
+					if it.Name == "Standard_D2_v2_Promo" {
+						promoSKU = it
+						break
+					}
+				}
+				Expect(promoSKU).ToNot(BeNil(), "Standard_D2_v2_Promo should appear in instance types even without pricing data")
+
+				// On-demand offerings should be available
+				onDemandAvailable := lo.Filter(promoSKU.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand)
+				})
+				Expect(onDemandAvailable).ToNot(BeEmpty(), "on-demand offerings should be available even without pricing data")
+
+				// Spot offerings should also be available
+				spotAvailable := lo.Filter(promoSKU.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot)
+				})
+				Expect(spotAvailable).ToNot(BeEmpty(), "spot offerings should be available for LowPriorityCapable=True SKU even without pricing data")
+
+				// Price should be MissingPrice
+				Expect(onDemandAvailable[0].Price).To(BeNumerically("==", pricing.MissingPrice))
+				Expect(spotAvailable[0].Price).To(BeNumerically("==", pricing.MissingPrice))
 			})
 		})
 

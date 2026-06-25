@@ -242,12 +242,25 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
 func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
+
 	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)
-		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
-		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
-		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
+
+		// Get prices for ordering; missing prices return MissingPrice (de-prioritized but not excluded).
+		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name)
+		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name)
+
+		// Determine allocatability from SKU capabilities.
+		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the unavailableOfferings cache.
+		availableOnDemand := !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
+		// Spot is only allocatable if the SKU reports LowPriorityCapable=True and the offering is not in the unavailableOfferings cache.
+		// IMPORTANT: Spot can be capacity restricted separately from dedicated. Unlike dedicated, spot capacity restrictions are not returned
+		// in the "restrictions" section of the SKU API, instead the LowPriorityCapable capability is set to False. This means that the VM SKU API cannot differentiate
+		// between restricted at a regional level and for all zones, or just restricted for some zones. Both are LowPriorityCapable=False. It would be
+		// nice to have the SKUs API fix this. Until it does, we _could_ try to join with spot price here and use the existence of a spot meter as
+		// supporting signal that actually the VM can be allocated as spot at the regional level. This seems an over-optimization for now though,
+		// so not doing it.
+		availableSpot := sku.IsLowPriorityCapable() && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
