@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
 	"github.com/go-logr/zapr"
@@ -59,6 +60,7 @@ func main() {
 		op.GetClient(),
 		op.ImageProvider,
 		op.InstanceTypeStore,
+		azurecache.NewLaunchFailureTracker(),
 	)
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
