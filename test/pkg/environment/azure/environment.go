@@ -24,8 +24,12 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+
 	"github.com/samber/lo"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -186,7 +190,9 @@ func NewEnvironment(t *testing.T) *Environment {
 	// Default to reserved managed machine agentpool name for NAP
 	azureEnv.MachineAgentPoolName = "aksmanagedap"
 	if azureEnv.InClusterController {
-		azureEnv.MachineAgentPoolName = "testmpool"
+		// Self-hosted machines pool name; matches AKS_MACHINES_POOL_NAME used at deploy time.
+		// Note: Windows machines require an agent pool name <= 6 characters, so keep this short.
+		azureEnv.MachineAgentPoolName = lo.Ternary(os.Getenv("AKS_MACHINES_POOL_NAME") == "", "mpool", os.Getenv("AKS_MACHINES_POOL_NAME"))
 	}
 	// Confirm we have a machine pool
 	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
@@ -251,6 +257,78 @@ func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()
 	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
+}
+
+// WindowsNodeClass returns an AKSNodeClass configured for the requested Windows image family.
+// Windows nodes are only provisionable in the AKS Machine API provision mode.
+func (env *Environment) WindowsNodeClass(imageFamily string) *v1beta1.AKSNodeClass {
+	nodeClass := env.DefaultAKSNodeClass()
+	nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+	return nodeClass
+}
+
+// WindowsNodePool returns a NodePool that provisions Windows (amd64) nodes for the given
+// nodeClass by replacing the default os=linux requirement with os=windows.
+func (env *Environment) WindowsNodePool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
+	nodePool := env.DefaultNodePool(nodeClass)
+	coretest.ReplaceRequirements(nodePool,
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1.LabelOSStable,
+			Operator: v1.NodeSelectorOpIn,
+			Values:   []string{string(v1.Windows)},
+		},
+	)
+	return nodePool
+}
+
+// SkipIfNotWindowsCapable skips the running spec unless this environment can actually provision
+// Windows nodes. Windows is an OS dimension layered onto existing suites, so suites that add
+// Windows cases call this rather than duplicating the preconditions.
+func (env *Environment) SkipIfNotWindowsCapable() {
+	GinkgoHelper()
+	// Windows nodes are only provisionable via the AKS Machine API provision mode.
+	if !env.IsAKSMachineAPIMode() {
+		Skip("Windows node provisioning is only supported in AKS Machine API provision mode")
+	}
+	// Windows machine names are bounded by the Windows NetBIOS computer-name limit once the AKS RP
+	// composes the VM name from the pool and machine names. The reserved NAP pool ("aksmanagedap")
+	// uses a 12-character pool-hash plus NodeClaim-suffix name. Custom pools use only the
+	// five-character NodeClaim suffix and additionally require the pool name to be <= 6 chars.
+	if env.MachineAgentPoolName != "aksmanagedap" && len(env.MachineAgentPoolName) > 6 {
+		Skip(fmt.Sprintf("Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
+			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
+	}
+	// The AKS RP sources Windows node admin credentials from the cluster's windowsProfile, so a
+	// cluster created without one cannot provision Windows at all. The E2E matrix only builds a
+	// Windows-capable cluster for the Windows suite, so any other suite carrying a Windows case
+	// must skip here rather than fail late in the Machine create.
+	managedCluster := env.ExpectGetManagedCluster()
+	if managedCluster.Properties == nil || managedCluster.Properties.WindowsProfile == nil {
+		Skip("cluster has no windowsProfile; Windows nodes require a Windows-capable cluster")
+	}
+}
+
+// WindowsPauseImage is a minimal Windows container image suitable for E2E workloads.
+const WindowsPauseImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+
+// WindowsDeployment returns a Deployment that only schedules onto Windows nodes. It defaults the
+// container image to a Windows image and tolerates the OS taint Karpenter may briefly surface
+// while a Windows node registers.
+func (env *Environment) WindowsDeployment(options coretest.DeploymentOptions) *appsv1.Deployment {
+	if options.PodOptions.Image == "" {
+		options.PodOptions.Image = WindowsPauseImage
+	}
+	if options.PodOptions.NodeSelector == nil {
+		options.PodOptions.NodeSelector = map[string]string{}
+	}
+	options.PodOptions.NodeSelector[v1.LabelOSStable] = string(v1.Windows)
+	options.PodOptions.Tolerations = append(options.PodOptions.Tolerations, v1.Toleration{
+		Key:      v1.LabelOSStable,
+		Operator: v1.TolerationOpEqual,
+		Value:    string(v1.Windows),
+		Effect:   v1.TaintEffectNoSchedule,
+	})
+	return coretest.Deployment(options)
 }
 
 // Pod wraps coretest.Pod for Azure E2E tests; use it instead of coretest.Pod when the test should apply Azure environment defaults.

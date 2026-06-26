@@ -81,7 +81,9 @@ dnsConfig: {}
 #  options:
 #    - name: ndots
 #      value: "1"
-# -- Node selectors to schedule the pod to nodes with labels.
+# -- Node selectors to schedule the pod to nodes with labels. Note: the controller is a
+# Linux-only component, so `kubernetes.io/os: linux` is always enforced by the chart (even
+# if overridden here) to keep it off Windows nodes in hybrid clusters.
 nodeSelector:
   kubernetes.io/os: linux
 # -- Affinity rules for scheduling the pod. If an explicit label selector is not provided for pod affinity or pod anti-affinity one will be created from the pod selector labels.

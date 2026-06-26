@@ -51,7 +51,7 @@ Karpenter provider for AKS can be used in two modes:
 ## Known limitations
 
 The following AKS features are not supported:
-* Windows nodes.
+* Windows nodes require the AKS Machine API provision mode. This mode is used by Node Auto Provisioning and can also be used with self-hosted Karpenter; the scriptless and bootstrapping-client provision modes do not support Windows. Windows2025 requires Kubernetes 1.32 or newer and AKS Windows2025 availability for the subscription and region.
 * Kubenet and Calico.
 * IPv6 clusters.
 * [Service Principal](https://learn.microsoft.com/azure/aks/kubernetes-service-principal) based clusters. A system-assigned or user-assigned managed identity must be used.
