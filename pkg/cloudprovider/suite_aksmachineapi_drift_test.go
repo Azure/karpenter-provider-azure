@@ -280,6 +280,76 @@ var _ = Describe("CloudProvider", func() {
 					Expect(drifted).To(Equal(K8sVersionDrift))
 				})
 			})
+
+		})
+
+		Context("Windows Drift", func() {
+			// provisionWindowsNodeClaim drives a Windows2022 machine through the normal
+			// provisioning path and returns its NodeClaim wired up the way the drift checks expect.
+			provisionWindowsNodeClaim := func() *karpv1.NodeClaim {
+				GinkgoHelper()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelOSStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{string(v1.Windows)},
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D2_v3"},
+					},
+				)
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelOSStable: string(v1.Windows)},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				if nodeClass.Status.KubernetesVersion != nil {
+					node.Status.NodeInfo.KubeletVersion = "v" + *nodeClass.Status.KubernetesVersion
+				}
+				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2"
+				ExpectApplied(ctx, env.Client, node)
+
+				nodeClaims, err := cloudProvider.List(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClaims).To(HaveLen(1))
+				windowsNodeClaim := nodeClaims[0]
+				windowsNodeClaim.Status.NodeName = node.Name
+				windowsNodeClaim.Spec.NodeClassRef = &karpv1.NodeClassReference{
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
+				}
+				return windowsNodeClaim
+			}
+
+			It("should not drift a newly created Windows2022 machine", func() {
+				windowsNodeClaim := provisionWindowsNodeClaim()
+
+				drifted, err := cloudProvider.IsDrifted(ctx, windowsNodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// Windows machines pin their node image at create time, so a newer Windows image on the
+			// NodeClass has to drift the node just as it does for Linux. Before pinning, the RP
+			// resolved the image itself and this drift signal did not exist for Windows.
+			It("should trigger image drift when the Windows image version changes", func() {
+				windowsNodeClaim := provisionWindowsNodeClaim()
+
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				test.ApplySIGImagesWithVersion(nodeClass, "20348.9999.260901")
+				ExpectApplied(ctx, env.Client, nodeClass)
+
+				drifted, err := cloudProvider.IsDrifted(ctx, windowsNodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(ImageDrift))
+			})
 		})
 	})
 })

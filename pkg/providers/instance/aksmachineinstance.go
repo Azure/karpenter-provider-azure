@@ -33,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -205,7 +206,14 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*AKSMachinePromise, error) {
-	aksMachineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaim.Name)
+	isWindows := v1beta1.IsWindowsImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
+	var aksMachineName string
+	var err error
+	if isWindows {
+		aksMachineName, err = GetWindowsAKSMachineName(nodeClaim.Name, options.FromContext(ctx).AKSMachinesPoolName)
+	} else {
+		aksMachineName, err = GetLinuxAKSMachineName(nodeClaim.Name)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AKS machine name from NodeClaim name %q: %w", nodeClaim.Name, err)
 	}
@@ -470,7 +478,14 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 	capacityType string,
 	zone string,
 ) (*AKSMachinePromise, error) {
-	handlableError, err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachineTemplate)
+	handlableError, err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(
+		ctx,
+		p.clusterResourceGroup,
+		p.clusterName,
+		p.aksMachinesPoolName,
+		aksMachineName,
+		aksMachineTemplate,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
 	}
