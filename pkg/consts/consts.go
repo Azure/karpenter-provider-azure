@@ -48,6 +48,13 @@ const (
 
 	AKSMachineAPIHeaderBatchMaxSize = 50
 
+	// HeaderUseWindowsGen2VM is the HTTP request header the AKS RP reads to decide whether a Windows
+	// node should be provisioned from a Generation 2 image. For the Windows2022/Windows2019 OSSKUs the
+	// RP defaults to a Generation 1 image and only selects Gen2 when this header is "true"; Windows2025
+	// and the Annual channel pick the generation from the VM size automatically. See the AKS RP
+	// getDistroForWindows/validateVMSizeGen2Support logic.
+	HeaderUseWindowsGen2VM = "UseWindowsGen2VM"
+
 	// Provisioning states for AKS Machine objects.
 	// The SDK's Machine.Properties.ProvisioningState is typed as *string (no typed constants).
 	// Suggestion: find a constant from azure-sdk-for-go if one becomes available.

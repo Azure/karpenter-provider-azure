@@ -1005,6 +1005,8 @@ spec:
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - Windows2022
+                - Windows2025
                 type: string
               kubelet:
                 description: |-
@@ -1680,6 +1682,12 @@ spec:
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
                 : true'
+            - message: FIPS is not supported for Windows image families
+              rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
+                || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: linuxOSConfig is not supported for Windows image families
+              rule: '!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily
+                in [''Windows2022'',''Windows2025''])'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)

@@ -38,7 +38,10 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 	}
 
 	hash := sha256.Sum256(jsonBytes)
-	prefix := item.resourceGroupName + "/" + item.resourceName + "/" + item.agentPoolName + "/"
+	// useWindowsGen2VM is part of the key so machines that disagree on the requested Windows image
+	// generation never coalesce into one batch (they also differ in vmSize/OSSKU, so this is
+	// defensive). The executor reads the value from the first request when composing batch headers.
+	prefix := fmt.Sprintf("%s/%s/%s/gen2=%t/", item.resourceGroupName, item.resourceName, item.agentPoolName, item.useWindowsGen2VM)
 
 	return prefix + fmt.Sprintf("%x", hash[:8]), nil
 }

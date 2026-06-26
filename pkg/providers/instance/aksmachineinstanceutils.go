@@ -181,9 +181,57 @@ func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerser
 // ASSUMPTION: NodeClaim name is in the format of <NodePool name>-<hash suffix>
 // If total length exceeds AKS machine name limit, the exceeded part will be replaced with another deterministic hash.
 // E.g., "thisisalongnodepoolname-a1b2c" --> "thisisalongnoz9y8x7-a1b2c"
-func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) (string, error) {
-	const maxAKSMachineNameLength = 34 // Defined by AKS machine API.
-	const prefixHashLength = 6         // The length of the hashed part replacing the exceeded part of the prefix.
+const (
+	// maxAKSMachineNameLength is the maximum AKS machine name length defined by the AKS machine API.
+	maxAKSMachineNameLength = 34
+
+	// ReservedNAPMachinesPoolName is the agent pool name reserved for managed Node Auto-Provisioning
+	// (NAP). The AKS RP grants this pool a larger Windows machine-name budget than custom pools.
+	ReservedNAPMachinesPoolName = "aksmanagedap"
+
+	// Windows AKS machine names are ultimately bounded by the Windows NetBIOS computer-name limit
+	// (15 chars) once the AKS RP composes the VM name from the pool and machine names. The usable
+	// machine-name budget therefore depends on the agent pool, and these values mirror the AKS RP
+	// machine-name validation:
+	//   - reserved NAP pool (aksmanagedap): VM name = "aks" + <machine>            => machine <= 12
+	//   - any custom/self-hosted pool:      VM name = "aks" + <pool> + "-" + <machine> => machine <= 5
+	windowsMachineNameMaxLenNAP    = 12
+	windowsMachineNameMaxLenCustom = 5
+)
+
+// WindowsMachineNameMaxLength returns the maximum usable Windows AKS machine-name length for the given
+// machines agent pool, mirroring the AKS RP validation (12 in the reserved NAP pool, 5 in custom pools).
+// Custom (self-hosted) pools have a much smaller budget because the RP-composed VM name also includes
+// the pool name; this is what allows self-hosted Windows provisioning into a short-named machines pool.
+func WindowsMachineNameMaxLength(machinesPoolName string) int {
+	if machinesPoolName == ReservedNAPMachinesPoolName {
+		return windowsMachineNameMaxLenNAP
+	}
+	return windowsMachineNameMaxLenCustom
+}
+
+// GetWindowsAKSMachineName derives a short, deterministic, hyphen-free AKS machine name from a NodeClaim
+// name for Windows, bounded to maxNameLength (see WindowsMachineNameMaxLength). Windows machine names are
+// constrained by the NetBIOS computer-name limit, so the (much longer) NodeClaim name is hashed rather
+// than truncated. Format: "w" + (maxNameLength-1)-char alphanumeric hash (starts with a letter; no
+// hyphens). Collision-resistance scales with maxNameLength: the reserved NAP budget of 12 gives an
+// 11-char (~36^11 ≈ 2^57) hash space, far exceeding the NodeClaim's input entropy at any cluster scale.
+func GetWindowsAKSMachineName(nodeClaimName string, maxNameLength int) (string, error) {
+	if maxNameLength < 2 {
+		return "", fmt.Errorf("windows AKS machine name max length must be >= 2, got %d", maxNameLength)
+	}
+	hash, err := utils.GetAlphanumericHash(nodeClaimName, maxNameLength-1)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash NodeClaim name %q for Windows AKS machine name: %w", nodeClaimName, err)
+	}
+	return "w" + hash, nil
+}
+
+// GetLinuxAKSMachineName derives a valid AKS machine name (<= 34 chars) from a NodeClaim name for Linux.
+// Names within the limit are used verbatim; longer names keep the legible prefix and trailing suffix and
+// hash the overflowing middle so the result stays deterministic and collision-resistant.
+func GetLinuxAKSMachineName(nodeClaimName string) (string, error) {
+	const prefixHashLength = 6 // The length of the hashed part replacing the exceeded part of the prefix.
 	// If 6, given alphanumeric hash, there will be a total of 36^6 = 2,176,782,336 combinations.
 
 	if len(nodeClaimName) <= maxAKSMachineNameLength {

@@ -42,7 +42,7 @@ func init() {
 	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
 	karpv1.WellKnownValuesForRequirements[AKSLabelScaleSetPriority] = sets.New(ScaleSetPriorityRegular, ScaleSetPrioritySpot)
 	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
-	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux)
+	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux, OSSKUWindows2022, OSSKUWindows2025)
 	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
 }
 
@@ -190,11 +190,26 @@ const (
 	Ubuntu2204ImageFamily = "Ubuntu2204"
 	Ubuntu2404ImageFamily = "Ubuntu2404"
 	AzureLinuxImageFamily = "AzureLinux"
+
+	// Windows image families. Each maps 1:1 to an AKS Windows OSSKU.
+	Windows2022ImageFamily = "Windows2022"
+	Windows2025ImageFamily = "Windows2025"
 )
 
 const (
 	OSSKUUbuntu     = "Ubuntu"
 	OSSKUAzureLinux = "AzureLinux"
+
+	// Windows os-sku label values. These match the kubernetes.azure.com/os-sku
+	// values AKS applies to Windows nodes (version-specific, unlike Ubuntu which collapses).
+	OSSKUWindows2022 = "Windows2022"
+	OSSKUWindows2025 = "Windows2025"
+)
+
+// OS label values for kubernetes.io/os (and the AKS Machine OSType mapping).
+const (
+	OSLinux   = "linux"
+	OSWindows = "windows"
 )
 
 const (
@@ -213,13 +228,21 @@ var UbuntuFamilies = sets.New(
 	Ubuntu2404ImageFamily,
 )
 
+// WindowsFamilies is the set of imageFamily spec values that provision Windows nodes.
+var WindowsFamilies = sets.New(
+	Windows2022ImageFamily,
+	Windows2025ImageFamily,
+)
+
 // imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
 // These values match what AKS writes for kubernetes.azure.com/os-sku.
 var imageFamilyToOSSKU = map[string]string{
-	UbuntuImageFamily:     OSSKUUbuntu,
-	Ubuntu2204ImageFamily: OSSKUUbuntu,
-	Ubuntu2404ImageFamily: OSSKUUbuntu,
-	AzureLinuxImageFamily: OSSKUAzureLinux,
+	UbuntuImageFamily:      OSSKUUbuntu,
+	Ubuntu2204ImageFamily:  OSSKUUbuntu,
+	Ubuntu2404ImageFamily:  OSSKUUbuntu,
+	AzureLinuxImageFamily:  OSSKUAzureLinux,
+	Windows2022ImageFamily: OSSKUWindows2022,
+	Windows2025ImageFamily: OSSKUWindows2025,
 }
 
 // GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
@@ -237,4 +260,26 @@ func GetOSSKUFromImageFamily(imageFamily string) string {
 
 func IsAKSLabel(label string) bool {
 	return strings.HasPrefix(label, AKSLabelDomain+"/") || aksLegacyLabels.Has(label)
+}
+
+// GetOSForImageFamily returns the kubernetes.io/os value ("linux" or "windows") for the
+// given imageFamily. Windows families return "windows"; everything else (including empty,
+// which defaults to Ubuntu) returns "linux".
+// IsWindowsImageFamily reports whether the given imageFamily provisions Windows nodes.
+// The comparison is case-insensitive for robustness; canonical values (enforced by the
+// AKSNodeClass imageFamily CEL enum) are the Windows*ImageFamily constants.
+func IsWindowsImageFamily(imageFamily string) bool {
+	for family := range WindowsFamilies {
+		if strings.EqualFold(imageFamily, family) {
+			return true
+		}
+	}
+	return false
+}
+
+func GetOSForImageFamily(imageFamily string) string {
+	if IsWindowsImageFamily(imageFamily) {
+		return OSWindows
+	}
+	return OSLinux
 }

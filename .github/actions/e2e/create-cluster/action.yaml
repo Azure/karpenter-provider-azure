@@ -33,6 +33,14 @@ inputs:
     description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
     required: false
     default: ""
+  windows:
+    description: "When 'true', create a dedicated Windows-capable cluster (Azure CNI overlay + windowsProfile) instead of the default Cilium cluster"
+    required: false
+    default: "false"
+  aks_machines_pool_name:
+    description: "Name of the AKS 'machines' mode agent pool to create (machine API modes only). Windows requires a name <= 6 chars."
+    required: false
+    default: "testmpool"
 runs:
   using: "composite"
   steps:
@@ -50,8 +58,19 @@ runs:
         AZURE_VM_SIZE: ${{ inputs.azure_vm_size }}
         K8S_VERSION: ${{ inputs.k8s_version }}
         PROVISION_MODE: ${{ inputs.provision_mode }}
+        AKS_MACHINES_POOL_NAME: ${{ inputs.aks_machines_pool_name }}
       run: |
-        if [ "${{ inputs.identity_type }}" = "UserAssigned" ]; then
+        if [ "${{ inputs.windows }}" = "true" ]; then
+          echo "Creating dedicated Windows-capable cluster (Azure CNI overlay + windowsProfile)"
+          # Generate a throwaway Windows admin password for this ephemeral cluster (meets Windows
+          # complexity: upper, lower, digit, special). Mask it so it never appears in logs. The RP
+          # sources Windows node admin credentials from the cluster's windowsProfile; the tests
+          # never use it and the cluster is deleted at the end of the run.
+          WINDOWS_ADMIN_PASSWORD="Aks$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 24)9!"
+          echo "::add-mask::$WINDOWS_ADMIN_PASSWORD"
+          export WINDOWS_ADMIN_PASSWORD
+          make ci-mkcluster-all-windows
+        elif [ "${{ inputs.identity_type }}" = "UserAssigned" ]; then
           echo "Creating cluster with user-assigned managed identity"
           make ci-mkcluster-all-userassigned
         else

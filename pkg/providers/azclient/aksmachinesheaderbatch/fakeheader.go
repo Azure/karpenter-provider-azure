@@ -44,3 +44,22 @@ func FakeBatchEntriesFromContext(ctx context.Context) []MachineEntry {
 	}
 	return nil
 }
+
+type fakeUseWindowsGen2VMKey struct{}
+
+// WithFakeUseWindowsGen2VM mirrors the per-batch UseWindowsGen2VM request flag into a context so
+// fakes/tests can observe it. Like WithFakeBatchEntries, this has NO production significance: the
+// real Azure API reads the UseWindowsGen2VM HTTP header (set via policy.WithHTTPHeader, whose
+// context key is unexported), not from this context value.
+func WithFakeUseWindowsGen2VM(ctx context.Context, useWindowsGen2VM bool) context.Context {
+	return context.WithValue(ctx, fakeUseWindowsGen2VMKey{}, useWindowsGen2VM)
+}
+
+// FakeUseWindowsGen2VMFromContext retrieves the mirrored UseWindowsGen2VM flag if present.
+// Only used by fakes/tests — see WithFakeUseWindowsGen2VM.
+func FakeUseWindowsGen2VMFromContext(ctx context.Context) bool {
+	if v, ok := ctx.Value(fakeUseWindowsGen2VMKey{}).(bool); ok {
+		return v
+	}
+	return false
+}

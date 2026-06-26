@@ -185,7 +185,9 @@ func NewEnvironment(t *testing.T) *Environment {
 	// Default to reserved managed machine agentpool name for NAP
 	azureEnv.MachineAgentPoolName = "aksmanagedap"
 	if azureEnv.InClusterController {
-		azureEnv.MachineAgentPoolName = "testmpool"
+		// Self-hosted machines pool name; matches AKS_MACHINES_POOL_NAME used at deploy time.
+		// Note: Windows machines require an agent pool name <= 6 characters, so keep this short.
+		azureEnv.MachineAgentPoolName = lo.Ternary(os.Getenv("AKS_MACHINES_POOL_NAME") == "", "testmpool", os.Getenv("AKS_MACHINES_POOL_NAME"))
 	}
 	// Confirm we have a machine pool
 	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
@@ -254,6 +256,28 @@ func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()
 	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
+}
+
+// WindowsNodeClass returns an AKSNodeClass configured for the Windows2022 image family.
+// Windows nodes are only provisionable in the AKS Machine API provision mode.
+func (env *Environment) WindowsNodeClass() *v1beta1.AKSNodeClass {
+	nodeClass := env.DefaultAKSNodeClass()
+	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+	return nodeClass
+}
+
+// WindowsNodePool returns a NodePool that provisions Windows (amd64) nodes for the given
+// nodeClass by replacing the default os=linux requirement with os=windows.
+func (env *Environment) WindowsNodePool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
+	nodePool := env.DefaultNodePool(nodeClass)
+	coretest.ReplaceRequirements(nodePool,
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1.LabelOSStable,
+			Operator: v1.NodeSelectorOpIn,
+			Values:   []string{string(v1.Windows)},
+		},
+	)
+	return nodePool
 }
 
 // Pod wraps coretest.Pod for Azure E2E tests; use it instead of coretest.Pod when the test should apply Azure environment defaults.
