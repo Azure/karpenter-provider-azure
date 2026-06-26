@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
 	. "github.com/onsi/ginkgo/v2"
@@ -72,6 +73,9 @@ var _ = Describe("Options", func() {
 		"ENABLE_AZURE_SDK_LOGGING",
 		"AKS_MACHINES_POOL_NAME",
 		"MANAGE_EXISTING_AKS_MACHINES",
+		"PROVIDER_BATCH_IDLE_DURATION",
+		"PROVIDER_BATCH_MAX_DURATION",
+		"PROVIDER_BATCH_MAX_SIZE",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -127,6 +131,9 @@ var _ = Describe("Options", func() {
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
 			os.Setenv("AKS_MACHINES_POOL_NAME", "testmpool")
 			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
+			os.Setenv("PROVIDER_BATCH_IDLE_DURATION", "1500ms")
+			os.Setenv("PROVIDER_BATCH_MAX_DURATION", "6s")
+			os.Setenv("PROVIDER_BATCH_MAX_SIZE", "42")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -157,11 +164,53 @@ var _ = Describe("Options", func() {
 				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
 				ManageExistingAKSMachines:      lo.ToPtr(true),
 				AKSMachinesPoolName:            lo.ToPtr("testmpool"),
+				ProviderBatchIdleDuration:      lo.ToPtr(1500 * time.Millisecond),
+				ProviderBatchMaxDuration:       lo.ToPtr(6 * time.Second),
+				ProviderBatchMaxSize:           lo.ToPtr(42),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
 		})
 	})
 	Context("Validation", func() {
+		It("should validate provider batch duration flags", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--provider-batch-idle-duration", "6s",
+				"--provider-batch-max-duration", "3s",
+			)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-duration (3s) must be >= provider-batch-idle-duration (6s)")))
+		})
+
+		It("should validate provider batch max size flag", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--provider-batch-max-size", "0",
+			)
+
+			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-size must be between 1 and 50, got 0")))
+		})
+
 		It("should fail when kubelet-identity-client-id is not a uuid", func() {
 			errMsg := "kubelet-identity-client-id not-a-uuid is malformed"
 			err := opts.Parse(
