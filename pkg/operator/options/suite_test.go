@@ -173,16 +173,40 @@ var _ = Describe("Options", func() {
 	})
 	Context("Validation", func() {
 		It("should validate provider batch duration flags", func() {
-			err := opts.Parse(fs, append(validHeaderBatchOptions(),
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 				"--provider-batch-idle-duration", "6s",
 				"--provider-batch-max-duration", "3s",
-			)...)
+			)
 
 			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-duration (3s) must be >= provider-batch-idle-duration (6s)")))
 		})
 
 		It("should validate provider batch max size flag", func() {
-			err := opts.Parse(fs, append(validHeaderBatchOptions(), "--provider-batch-max-size", "0")...)
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapiheaderbatch",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--provider-batch-max-size", "0",
+			)
 
 			Expect(err).To(MatchError(ContainSubstring("provider-batch-max-size must be between 1 and 50, got 0")))
 		})
@@ -976,18 +1000,3 @@ var _ = Describe("Options", func() {
 		})
 	})
 })
-
-func validHeaderBatchOptions() []string {
-	return []string{
-		"--cluster-name", "my-name",
-		"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-		"--kubelet-bootstrap-token", "flag-bootstrap-token",
-		"--ssh-public-key", "flag-ssh-public-key",
-		"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
-		"--node-resource-group", "my-node-rg",
-		"--provision-mode", "aksmachineapiheaderbatch",
-		"--aks-machines-pool-name", "testmpool",
-		"--use-sig",
-		"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
-	}
-}

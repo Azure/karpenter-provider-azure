@@ -95,10 +95,10 @@ type Options struct {
 	// If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE is already an AKS Machine API mode, as it will behave as if this option is set to true.
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 
-	AKSMachinesPoolName       string        `json:"aksMachinesPoolName,omitempty"` // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
-	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"`
-	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`
-	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`
+	AKSMachinesPoolName       string        `json:"aksMachinesPoolName,omitempty"`       // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
+	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"` // Idle duration for provider batch accumulation (default 1s). Only used on provision mode aksmachineapiheaderbatch.
+	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
+	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
 
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
