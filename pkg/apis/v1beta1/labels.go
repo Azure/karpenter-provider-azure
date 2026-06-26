@@ -174,10 +174,10 @@ var (
 	// denote the same mechanism mid-rename. Keep this in sync with AzureWellKnownLabels,
 	// WellKnownValuesForRequirements (see init), and the CEL allowlist in
 	// hack/validation/{labels,requirements}.sh (regenerate CRDs after changes).
-	// TODO(#1719): once AKS fully retires kata-mshv-vm-isolation, remove it from this list and the
-	// places above — but sequence that removal AFTER AKS stops stamping it, else pods still selecting
-	// the legacy label stop scheduling. Also verify whether the AKS machine API prunes
-	// kubernetes.azure.com labels it did not set (which would make advertising an unstamped label drift).
+	// When AKS fully retires kata-mshv-vm-isolation, remove it from this list and the places above —
+	// but only AFTER AKS stops stamping it, else pods still selecting the legacy label stop scheduling.
+	// Advertising both spellings is safe: e2e (#1721) confirmed AKS does not prune the kubernetes.azure.com
+	// label it didn't stamp, so the unstamped spelling persists on the node and does not cause drift.
 	KataNodeLabels = []string{AKSLabelKataVMIsolation, AKSLabelKataMshvVMIsolation}
 
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
