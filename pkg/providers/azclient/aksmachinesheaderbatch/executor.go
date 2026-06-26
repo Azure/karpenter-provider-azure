@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -35,6 +36,7 @@ type aksMachineCreatePayload struct {
 	agentPoolName     string
 	machineName       string
 	machineBody       *armcontainerservice.Machine
+	options           CreateOptions
 }
 
 // executor sends batches to Azure using the BatchPutMachine HTTP header.
@@ -62,12 +64,20 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 		distributeOperationalError(batch, fmt.Errorf("failed to build header for batch API: %w", err))
 		return
 	}
-	ctxWithHeader := policy.WithHTTPHeader(ctx, http.Header{
+	batchHeaders := http.Header{
 		"BatchPutMachine": []string{header},
-	})
+	}
+	// All requests in a batch share the same UseWindowsGen2VM value (it is part of the batch key),
+	// so request a Gen2 Windows image for the whole batch when the first request asks for it.
+	useWindowsGen2VM := batch.Requests[0].Payload.options.UseWindowsGen2VM
+	if useWindowsGen2VM {
+		batchHeaders.Set(consts.HeaderUseWindowsGen2VM, "true")
+	}
+	ctxWithHeader := policy.WithHTTPHeader(ctx, batchHeaders)
 	// Also mirror entries into context for fakes/testing.
 	// See WithFakeBatchEntries for why this duplication is necessary.
 	ctxWithHeader = WithFakeBatchEntries(ctxWithHeader, entries)
+	ctxWithHeader = WithFakeUseWindowsGen2VM(ctxWithHeader, useWindowsGen2VM)
 
 	// Use resource params from the first request (all requests in a batch
 	// share the same resource path due to the key function).

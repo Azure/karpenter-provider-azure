@@ -939,6 +939,28 @@ var _ = Describe("InstanceType Provider", func() {
 				&v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)}, true),
 		)
 
+		DescribeTable("Filtering architecture by image family",
+			func(imageFamily string, shouldIncludeArm64 bool) {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instanceTypes).ShouldNot(BeEmpty())
+
+				getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+				if shouldIncludeArm64 {
+					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))))
+				} else {
+					Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D16plds_v5"))))
+				}
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+			},
+			Entry("Ubuntu supports ARM64", v1beta1.Ubuntu2204ImageFamily, true),
+			Entry("Windows2022 excludes ARM64", v1beta1.Windows2022ImageFamily, false),
+			Entry("Windows2025 excludes ARM64", v1beta1.Windows2025ImageFamily, false),
+		)
+
 		Context("Ephemeral Disk", func() {
 			var originalOptions *options.Options
 			BeforeEach(func() {

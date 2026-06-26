@@ -43,6 +43,12 @@ func TestGetAKSMachineNodeImageVersionFromImageID(t *testing.T) {
 			expectedResult: "AKSUbuntu-2204gen2containerd-2022.10.03",
 		},
 		{
+			name:           "Valid Windows SIG image ID drops windows- prefix",
+			imageID:        "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Windows/providers/Microsoft.Compute/galleries/AKSWindows/images/windows-2022-containerd-gen2/versions/20348.4529.251212",
+			expectedError:  "",
+			expectedResult: "AKSWindows-2022-containerd-gen2-20348.4529.251212",
+		},
+		{
 			name:           "Invalid SIG image ID",
 			imageID:        "/subscriptions/invalid/format",
 			expectedError:  "incorrect SIG image ID id=/subscriptions/invalid/format",
@@ -95,6 +101,18 @@ func TestGetAKSMachineNodeImageVersionFromSIGImageID(t *testing.T) {
 			imageID:        "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03-build.1",
 			expectedError:  "",
 			expectedResult: "AKSUbuntu-2204gen2containerd-2022.10.03-build.1",
+		},
+		{
+			name:           "Valid Windows SIG image ID (gen2) drops windows- prefix",
+			imageID:        "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Windows/providers/Microsoft.Compute/galleries/AKSWindows/images/windows-2022-containerd-gen2/versions/20348.4529.251212",
+			expectedError:  "",
+			expectedResult: "AKSWindows-2022-containerd-gen2-20348.4529.251212",
+		},
+		{
+			name:           "Valid Windows Annual SIG image ID drops windows- prefix",
+			imageID:        "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Windows/providers/Microsoft.Compute/galleries/AKSWindows/images/windows-23H2-gen2/versions/25398.2025.251212",
+			expectedError:  "",
+			expectedResult: "AKSWindows-23H2-gen2-25398.2025.251212",
 		},
 		{
 			name:           "Invalid SIG image ID - missing subscription",
