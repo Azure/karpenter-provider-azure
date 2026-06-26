@@ -21,6 +21,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 )
 
 func TestGetOSSKUFromImageFamily(t *testing.T) {
@@ -50,6 +51,16 @@ func TestGetOSSKUFromImageFamily(t *testing.T) {
 			expected:    "AzureLinux",
 		},
 		{
+			name:        "Windows2022",
+			imageFamily: v1beta1.Windows2022ImageFamily,
+			expected:    "Windows2022",
+		},
+		{
+			name:        "Windows2025",
+			imageFamily: v1beta1.Windows2025ImageFamily,
+			expected:    "Windows2025",
+		},
+		{
 			name:        "empty string defaults to Ubuntu",
 			imageFamily: "",
 			expected:    "Ubuntu",
@@ -68,4 +79,47 @@ func TestGetOSSKUFromImageFamily(t *testing.T) {
 			g.Expect(result).To(Equal(c.expected))
 		})
 	}
+}
+
+func TestGetOSForImageFamily(t *testing.T) {
+	cases := []struct {
+		name        string
+		imageFamily string
+		expected    string
+	}{
+		{name: "Ubuntu default", imageFamily: v1beta1.UbuntuImageFamily, expected: "linux"},
+		{name: "Ubuntu2204", imageFamily: v1beta1.Ubuntu2204ImageFamily, expected: "linux"},
+		{name: "Ubuntu2404", imageFamily: v1beta1.Ubuntu2404ImageFamily, expected: "linux"},
+		{name: "AzureLinux", imageFamily: v1beta1.AzureLinuxImageFamily, expected: "linux"},
+		{name: "empty string defaults to linux", imageFamily: "", expected: "linux"},
+		{name: "unknown family defaults to linux", imageFamily: "CustomOS", expected: "linux"},
+		{name: "Windows2022", imageFamily: v1beta1.Windows2022ImageFamily, expected: "windows"},
+		{name: "Windows2025", imageFamily: v1beta1.Windows2025ImageFamily, expected: "windows"},
+		{name: "Windows is case-insensitive", imageFamily: "windows2022", expected: "windows"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := v1beta1.GetOSForImageFamily(c.imageFamily)
+			g.Expect(result).To(Equal(c.expected))
+		})
+	}
+}
+
+func TestIsFIPSEnabled(t *testing.T) {
+	g := NewWithT(t)
+
+	nodeClass := &v1beta1.AKSNodeClass{
+		Spec: v1beta1.AKSNodeClassSpec{
+			ImageFamily: lo.ToPtr(v1beta1.Windows2025ImageFamily),
+		},
+	}
+	g.Expect(nodeClass.IsFIPSEnabled()).To(BeTrue())
+
+	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+	g.Expect(nodeClass.IsFIPSEnabled()).To(BeFalse())
+
+	nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+	g.Expect(nodeClass.IsFIPSEnabled()).To(BeTrue())
 }

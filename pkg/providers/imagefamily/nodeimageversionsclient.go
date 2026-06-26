@@ -59,7 +59,7 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location string) ([]
 
 // FilteredNodeImages filters on two conditions
 // 1. The image is the latest version for the given OS and SKU
-// 2. the image belongs to a supported gallery(AKS Ubuntu or Azure Linux)
+// 2. the image belongs to a supported gallery (AKS Ubuntu, Azure Linux, or AKS Windows)
 func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersion) []*armcontainerservice.NodeImageVersion {
 	latestImages := make(map[string]*armcontainerservice.NodeImageVersion)
 
@@ -72,7 +72,7 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 		version := lo.FromPtr(image.Version)
 
 		// Skip the galleries that Karpenter does not support
-		if os != AKSUbuntuGalleryName && os != AKSAzureLinuxGalleryName {
+		if os != AKSUbuntuGalleryName && os != AKSAzureLinuxGalleryName && os != AKSWindowsGalleryName {
 			continue
 		}
 
