@@ -17,6 +17,7 @@ limitations under the License.
 package instance
 
 import (
+	"context"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -965,6 +967,20 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		It("should map KataMshvVmIsolation", func() {
 			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataMshvVMIsolation)
 			Expect(lo.FromPtr(configureWorkloadRuntime(nodeClass))).To(Equal(armcontainerservice.WorkloadRuntimeKataMshvVMIsolation))
+		})
+	})
+
+	Context("Kata feature gate", func() {
+		// The gate is enforced at the top of buildAKSMachineTemplate, before the image resolver is
+		// touched, so a zero-value provider is sufficient to exercise the rejection path.
+		It("should reject a Kata workloadRuntime when the feature is disabled", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+			ctx := options.ToContext(context.Background(), &options.Options{EnableKataPodSandboxing: false})
+			p := &DefaultAKSMachineProvider{}
+			_, err := p.buildAKSMachineTemplate(ctx, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, "westus-1", nodeClass, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("ENABLE_KATA_POD_SANDBOXING"))
 		})
 	})
 })

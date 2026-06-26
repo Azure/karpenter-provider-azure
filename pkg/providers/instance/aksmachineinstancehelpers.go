@@ -61,6 +61,10 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, fmt.Errorf("NodeClaim is not set")
 	}
 
+	if err := validateKataWorkloadRuntime(ctx, nodeClass); err != nil {
+		return nil, err
+	}
+
 	// NodeImageVersion
 	// E.g., "AKSUbuntu-2204gen2containerd-2023.11.15"
 	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
@@ -191,6 +195,17 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	return &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
 	}
+}
+
+// validateKataWorkloadRuntime rejects a Kata (Pod Sandboxing) workloadRuntime when the feature is
+// disabled, rather than silently provisioning a non-Kata node. This is defense-in-depth alongside the
+// AKSNodeClass validation reconciler, which already surfaces the same gap as a status condition.
+func validateKataWorkloadRuntime(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) error {
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).KataPodSandboxingEnabled() {
+		return fmt.Errorf("workloadRuntime %q requires the Kata Pod Sandboxing feature to be enabled (ENABLE_KATA_POD_SANDBOXING=true)",
+			nodeClass.GetWorkloadRuntime())
+	}
+	return nil
 }
 
 // configureWorkloadRuntime maps a Kata workloadRuntime to the AKS machine API enum.

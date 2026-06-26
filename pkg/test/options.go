@@ -52,6 +52,7 @@ type OptionsFields struct {
 	BatchIdleTimeoutMS             *int
 	BatchMaxTimeoutMS              *int
 	MaxBatchSize                   *int
+	EnableKataPodSandboxing        *bool
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -96,5 +97,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		BatchIdleTimeoutMS:             lo.FromPtrOr(options.BatchIdleTimeoutMS, 1000),
 		BatchMaxTimeoutMS:              lo.FromPtrOr(options.BatchMaxTimeoutMS, 5000),
 		MaxBatchSize:                   lo.FromPtrOr(options.MaxBatchSize, 50),
+		EnableKataPodSandboxing:        lo.FromPtrOr(options.EnableKataPodSandboxing, false),
 	}
 }

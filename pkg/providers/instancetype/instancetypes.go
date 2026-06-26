@@ -147,7 +147,11 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
-		KataEnabled:              nodeClass.IsKataEnabled(),
+		// Effective Kata: requested AND the feature is enabled. Folding the flag in here means it is
+		// part of the instance-type cache key (so toggling the flag invalidates cached types) and that
+		// a disabled cluster neither filters SKUs to gen-2 nor advertises Kata labels — provisioning is
+		// instead rejected up front (see the AKSNodeClass validation reconciler and buildAKSMachineTemplate).
+		KataEnabled: nodeClass.IsKataEnabled() && options.FromContext(ctx).KataPodSandboxingEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%d-%d-%016x",

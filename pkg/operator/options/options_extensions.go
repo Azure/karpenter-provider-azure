@@ -31,3 +31,8 @@ func (o *Options) IsCiliumNodeSubnet() bool {
 func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
+
+// KataPodSandboxingEnabled reports whether the workloadRuntime (Kata / AKS Pod Sandboxing) feature is enabled.
+func (o *Options) KataPodSandboxingEnabled() bool {
+	return o.EnableKataPodSandboxing
+}
