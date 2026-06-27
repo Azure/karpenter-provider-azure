@@ -75,7 +75,7 @@ var (
 		"kubernetes.azure.com/agentpool",
 		"kubernetes.azure.com/agentpool-family",
 		"kubernetes.azure.com/availability-zone",
-		"kubernetes.azure.com/network-policy",
+		//"kubernetes.azure.com/network-policy", // Allowing this for now
 		"kubernetes.azure.com/storageprofile",
 		"kubernetes.azure.com/storagetier",
 	)
