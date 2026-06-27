@@ -114,7 +114,7 @@ Semantics:
 
 ### Customer experience options
 
-AKS agent pool rollback requires customers to specify a concrete node image version. The only valid rollback targets are versions that appear in the agent pool's recentlyUsedVersions list with a matching orchestrator version and valid timestamp.
+AKS agent pool rollback requires customers to specify a concrete node image version. The only valid rollback targets are versions that appear in the agent pool's recentlyUsedVersions list with a matching orchestrator version and valid timestamp. A boolean rollback field would therefore introduce different semantics from the AKS RP API by asking Karpenter to choose the rollback target on the customer's behalf.
 
 NAP has two possible UX shapes:
 
