@@ -64,9 +64,9 @@ type RecentlyUsedVersions struct {
 	// was last active before Karpenter moved status.images forward.
 	TimestampUsed metav1.Time `json:"timestampUsed,omitempty"`
 
-	// nodeImageVersion is the AKS node image version string used for rollback,
-	// e.g. "AKSUbuntu-2204gen2containerd-202601.15.0".
-	NodeImageVersion string `json:"nodeImageVersion,omitempty"`
+	// imageVersion is the AKS node image release version suffix used for rollback,
+	// e.g. "202601.15.0".
+	ImageVersion string `json:"imageVersion,omitempty"`
 
 	// orchestratorVersion is the Kubernetes version paired with this image,
 	// e.g. "1.32.5".
@@ -84,43 +84,44 @@ type AKSNodeClassStatus struct {
 
 Semantics:
 
-1. recentlyUsedVersions captures the immediate prior node image version and orchestrator version pair before status.images advances.
+1. recentlyUsedVersions captures the immediate prior node image release version suffix and orchestrator version pair before status.images advances.
 2. recentlyUsedVersions.timestampUsed is static and is used to enforce the 7-day rollback eligibility window.
 3. Only one recently-used entry is retained, matching AKS RP semantics.
 4. If Karpenter stores multiple previous image versions in the future, rollback UX must specify how Karpenter chooses which previous version to use.
 
 ### Customer experience options
 
-AKS agent pool rollback requires customers to specify a concrete node image version. The only valid rollback targets are versions that appear in the agent pool's recentlyUsedVersions list with a matching orchestrator version and valid timestamp. A boolean rollback field would therefore introduce different semantics from the AKS RP API by asking Karpenter to choose the rollback target on the customer's behalf.
+AKS agent pool rollback requires customers to specify a concrete node image version. The only valid rollback targets are versions that appear in the agent pool's recentlyUsedVersions list with a matching orchestrator version and valid timestamp. For NAP, the explicit rollback value can be the shared release version suffix rather than the full AKS node image string, because Karpenter already derives the image definition from AKSNodeClass and instance-type requirements. A boolean rollback field would therefore introduce different semantics from the AKS RP API by asking Karpenter to choose the rollback target on the customer's behalf.
 
 NAP has two possible UX shapes:
 
 #### Option A: Explicit rollback target
 
-Customers specify the exact node image version to roll back to:
+Customers specify the exact node image release version suffix to roll back to:
 
 ```yaml
-spec:
-  imageVersion:
-    rollbackTo: AKSUbuntu-2204gen2containerd-202601.15.0
+spec: { imageVersion: { rollbackTo: "202601.15.0" } }
 ```
+
+Karpenter still derives the image family, architecture, generation, and runtime-specific image definition from the AKSNodeClass and selected instance type. This matters because multiple NodePools can share the same AKSNodeClass while selecting different instance types, which may resolve to different image definitions such as Gen1, Gen2, or Arm64 variants.
 
 Behavior:
 
 1. Karpenter validates the requested version against status.recentlyUsedVersions.
-2. Rollback is rejected if the requested version is not the single recently-used version, the orchestrator version does not match, or the timestamp is older than 7 days.
+2. Rollback is rejected if the requested version suffix is not the single recently-used version suffix, the orchestrator version does not match, or the timestamp is older than 7 days.
+3. For each resolved image definition, Karpenter applies the requested release version suffix instead of requiring the customer to specify a full image string such as `AKSUbuntu-2204gen2containerd-202601.15.0`.
 
 Pros:
 
 1. Mirrors AKS RP semantics closely.
 2. Makes customer intent explicit.
-3. Avoids surprise rollbacks to an image the customer did not realize was the previously used version.
+3. Avoids making customers specify image definition portions that Karpenter already derives.
+4. Avoids surprise rollbacks to an image the customer did not realize was the previously used version.
 
 Cons:
 
 1. Requires customers to inspect status and copy the exact rollback value.
-2. Requires customers to specify portions of the image version that are already represented by existing AKSNodeClass image-family fields.
-3. Slightly more cumbersome during incident response.
+2. Slightly more cumbersome during incident response.
 
 #### Option B: Boolean rollback request
 
@@ -188,7 +189,7 @@ NodeImageReconciler in images.go is the canonical place to capture rollback stat
 
 Before status.images is overwritten due to a detected version update:
 
-1. Snapshot the current node image version and orchestrator version into status.recentlyUsedVersions.
+1. Snapshot the current node image release version suffix and orchestrator version into status.recentlyUsedVersions.
 2. Set status.recentlyUsedVersions.timestampUsed to now.
 3. Then write newly resolved images into status.images.
 
@@ -198,11 +199,11 @@ This location is authoritative because both old and new sets are simultaneously 
 
 When rollback is requested through the chosen `spec.imageVersion` UX:
 
-1. Validate recentlyUsedVersions exists and has a nodeImageVersion.
+1. Validate recentlyUsedVersions exists and has an imageVersion.
 2. Validate now - recentlyUsedVersions.timestampUsed is within TTL.
 3. Validate recentlyUsedVersions.orchestratorVersion is compatible with the current rollback request.
-4. If valid, set effective target image version to recentlyUsedVersions.nodeImageVersion.
-5. Reconcile status.images to that target version.
+4. If valid, set effective target image release version suffix to recentlyUsedVersions.imageVersion.
+5. Reconcile status.images by applying that release version suffix to each image definition resolved from AKSNodeClass and instance-type requirements.
 
 ### TTL and expiry
 
@@ -232,9 +233,9 @@ AKS auto-upgrade behavior after rollback:
 
 Recommended behavior for v1:
 
-1. Block rollback when the request transitions from false/unset to true and recentlyUsedVersions is expired.
+1. Block rollback when a rollback request becomes active and recentlyUsedVersions is expired.
 2. Preserve recentlyUsedVersions for observability, but do not use it when expired.
-3. Do not flag an expired recentlyUsedVersions entry as an error when rollbackToPrevious is false or unset. Expired rollback state should only matter when a user actively requests rollback.
+3. Do not flag an expired recentlyUsedVersions entry as an error when rollback is not actively requested. Expired rollback state should only matter when a user actively requests rollback.
 
 ## Validation and Conditions
 
@@ -244,11 +245,11 @@ Rollback request validation should cover three cases:
 2. recentlyUsedVersions.timestampUsed is older than 7 days.
 3. recentlyUsedVersions.orchestratorVersion is not valid for the current rollback request.
 
-These validations should block setting rollbackToPrevious where possible. If admission-time validation cannot evaluate the state transition or status fields cleanly, the reconciler should reject the active rollback request via status and avoid applying it.
+These validations should block invalid rollback requests where possible. If admission-time validation cannot evaluate the state transition or status fields cleanly, the reconciler should reject the active rollback request via status and avoid applying it.
 
 Important edge case:
 
-1. If rollbackToPrevious is false or unset, an expired recentlyUsedVersions entry must not be erroneously flagged. The field is historical rollback eligibility state, not an error by itself.
+1. If rollback is not actively requested, an expired recentlyUsedVersions entry must not be erroneously flagged. The field is historical rollback eligibility state, not an error by itself.
 
 Add status conditions for operator clarity.
 
@@ -372,13 +373,13 @@ Options to evaluate later:
 
 1. status.images moves from version N to N+1.
 2. Reconciler snapshots N into recentlyUsedVersions at transition time.
-3. Customer sets rollbackToPrevious=true.
+3. Customer requests rollback through the chosen spec.imageVersion UX.
 4. Reconciler validates TTL and restores N set into status.images.
 5. Drift and replacement bring fleet back to N under existing disruption controls.
 
 ### Scenario B: Rollback requested after TTL
 
-1. Customer sets rollbackToPrevious=true after 7 days.
+1. Customer requests rollback after 7 days.
 2. Reconciler marks rollback expired.
 3. status.images remains subject to normal image update behavior.
 4. TTL expiry alone does not force roll-forward to latest.
@@ -393,7 +394,7 @@ Minimum test coverage:
 4. Rollback reject/ignore path for missing recentlyUsedVersions.
 5. Rollback reject/ignore path for expired TTL.
 6. Rollback reject/ignore path for orchestrator version mismatch.
-7. Ensure expired recentlyUsedVersions is not flagged when rollbackToPrevious is false or unset.
+7. Ensure expired recentlyUsedVersions is not flagged when rollback is not actively requested.
 8. Condition reason coverage for success and failure paths.
 9. Drift interaction test confirming rollback target drives drift decisions via status.images.
 
@@ -408,7 +409,7 @@ Minimum test coverage:
 
 1. Should expired rollback requests be auto-cleared from spec, or only ignored with status signaling?
 2. Should rollback include explicit guardrail checks against cluster auto-upgrade settings, similar to AKS RP constraints?
-3. Do we need an admission-time validation webhook for rollbackToPrevious semantics, or is reconcile-time validation sufficient?
+3. Do we need an admission-time validation webhook for rollback request semantics, or is reconcile-time validation sufficient?
 4. Should rollback support only the AKS Machine API path, or should it explicitly support both AKS Machine API and the node bootstrapping client/VM path? Current expectation is that it should work either way because both paths consume status.images, but this should be verified.
 5. Does the existing node image cache require rollback-specific invalidation or cache-key changes so that rollback requests and roll-forward after rollback are reflected immediately?
-6. When the maintenance window opens and Karpenter selects latest again, should rollbackToPrevious be reset to false, or should it remain set and become ignored/invalid once recentlyUsedVersions no longer applies?
+6. When the maintenance window opens and Karpenter selects latest again, should the rollback request be cleared, or should it remain set and become ignored/invalid once recentlyUsedVersions no longer applies?
