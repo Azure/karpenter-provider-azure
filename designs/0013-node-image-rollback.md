@@ -111,6 +111,66 @@ Semantics:
 1. When true, reconciler attempts rollback to status.recentlyUsedVersions.
 2. When false or unset, normal latest-image reconciliation behavior applies.
 
+### Customer experience options
+
+AKS agent pool rollback requires customers to specify a concrete node image version. The only valid rollback targets are versions that appear in the agent pool's recentlyUsedVersions list with a matching orchestrator version and valid timestamp.
+
+NAP has two possible UX shapes:
+
+#### Option A: Explicit rollback target
+
+Customers specify the exact node image version to roll back to:
+
+```yaml
+spec:
+  imageVersion:
+    rollbackTo: AKSUbuntu-2204gen2containerd-202601.15.0
+```
+
+Behavior:
+
+1. Karpenter validates the requested version against status.recentlyUsedVersions.
+2. Rollback is rejected if the requested version is not the single recently-used version, the orchestrator version does not match, or the timestamp is older than 7 days.
+
+Pros:
+
+1. Mirrors AKS RP semantics closely.
+2. Makes customer intent explicit.
+3. Avoids surprise rollbacks to an image the customer did not realize was the previously used version.
+
+Cons:
+
+1. Requires customers to inspect status and copy the exact rollback value.
+2. Slightly more cumbersome during incident response.
+
+#### Option B: Boolean rollback request
+
+Customers request rollback to the previous version without specifying the concrete version:
+
+```yaml
+spec:
+  imageVersion:
+    rollbackToPrevious: true
+```
+
+Behavior:
+
+1. Karpenter uses status.recentlyUsedVersions as the rollback target.
+2. Rollback is rejected if recentlyUsedVersions is missing, the orchestrator version is invalid for the request, or the timestamp is older than 7 days.
+
+Pros:
+
+1. Easier customer UX during a bad image incident.
+2. Avoids requiring customers to copy/paste long image version strings.
+3. Still uses the AKS-style recently-used allowlist under the hood.
+
+Cons:
+
+1. A customer may roll back to an image they did not realize was the previously used version.
+2. Requires status and conditions to make the selected rollback target highly visible.
+
+This design currently uses Option B for the v1 rollback surface, while calling out the surprise-risk tradeoff explicitly.
+
 ### Alternative considered: move imageFamily and fipsMode under an image section
 
 Current AKSNodeClass image controls are split across top-level fields. One option is to eventually group image controls under a dedicated section.
