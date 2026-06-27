@@ -89,29 +89,6 @@ Semantics:
 3. Only one recently-used entry is retained, matching AKS RP semantics.
 4. If Karpenter stores multiple previous image versions in the future, rollback UX must specify how Karpenter chooses which previous version to use.
 
-### AKSNodeClass spec: rollback request
-
-Add a rollback request field:
-
-```go
-type AKSNodeClassSpec struct {
-	// existing fields...
-	ImageVersion *ImageVersionSpec `json:"imageVersion,omitempty"`
-}
-
-type ImageVersionSpec struct {
-	// rollbackToPrevious requests use of status.recentlyUsedVersions instead of
-	// resolving and applying latest goal-state images.
-	// +optional
-	RollbackToPrevious *bool `json:"rollbackToPrevious,omitempty"`
-}
-```
-
-Semantics:
-
-1. When true, reconciler attempts rollback to status.recentlyUsedVersions.
-2. When false or unset, normal latest-image reconciliation behavior applies.
-
 ### Customer experience options
 
 AKS agent pool rollback requires customers to specify a concrete node image version. The only valid rollback targets are versions that appear in the agent pool's recentlyUsedVersions list with a matching orchestrator version and valid timestamp. A boolean rollback field would therefore introduce different semantics from the AKS RP API by asking Karpenter to choose the rollback target on the customer's behalf.
@@ -171,7 +148,7 @@ Cons:
 2. Requires status and conditions to make the selected rollback target highly visible.
 3. If Karpenter later stores multiple previous image versions, a boolean rollback request would become ambiguous unless the API also defines which previous entry is selected.
 
-This design currently uses Option B for the v1 rollback surface, while calling out the surprise-risk tradeoff explicitly.
+The final UX choice should be resolved before implementation. Both options rely on the same recentlyUsedVersions validation model.
 
 ### Alternative considered: move imageFamily and fipsMode under an image section
 
@@ -179,7 +156,7 @@ Current AKSNodeClass image controls are split across top-level fields. One optio
 
 This is not the primary choice for the rollback workstream.
 
-For now, rollback is introduced as a focused `spec.imageVersion` struct with `rollbackToPrevious` only.
+For now, rollback should remain focused within `spec.imageVersion`; the exact rollback request field should be chosen from the customer experience options above.
 
 Possible follow-up direction (discussion item only):
 
@@ -218,7 +195,7 @@ This location is authoritative because both old and new sets are simultaneously 
 
 ### Rollback path
 
-When spec.imageVersion.rollbackToPrevious is true:
+When rollback is requested through the chosen `spec.imageVersion` UX:
 
 1. Validate recentlyUsedVersions exists and has a nodeImageVersion.
 2. Validate now - recentlyUsedVersions.timestampUsed is within TTL.
