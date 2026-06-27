@@ -205,6 +205,34 @@ When rollback is requested through the chosen `spec.imageVersion` UX:
 4. If valid, set effective target image release version suffix to recentlyUsedVersions.imageVersion.
 5. Reconcile status.images by applying that release version suffix to each image definition resolved from AKSNodeClass and instance-type requirements.
 
+### Image selection during rollback
+
+status.images is already a list because a single AKSNodeClass can expose multiple compatible image definitions. For example, the same NodeClass may publish Gen2 amd64, Gen1 amd64, and Gen2 arm64 images, each with requirements that determine which instance types can use it.
+
+Rollback should preserve this model:
+
+1. Karpenter resolves the normal goal image list from the AKSNodeClass, Kubernetes version, FIPS mode, SIG/CIG mode, and supported image definitions.
+2. Each resolved image keeps its existing requirements. Node launch continues to choose the first image whose requirements are compatible with the selected instance type.
+3. Rollback does not choose one image from status.images globally. Instead, it rewrites every resolved image ID to the requested release version suffix.
+4. To rewrite an image ID, Karpenter strips the existing `/versions/<current>` suffix and appends `/versions/<rollback imageVersion>`.
+
+Example:
+
+```text
+normal goal image:
+/CommunityGalleries/.../images/2204gen2containerd/versions/202607.15.0
+
+recentlyUsedVersions.imageVersion:
+202606.08.1
+
+rollback goal image:
+/CommunityGalleries/.../images/2204gen2containerd/versions/202606.08.1
+```
+
+The same suffix rewrite is applied independently to each resolved image definition. This lets multiple NodePools share one AKSNodeClass while still rolling back to the image variant selected by each NodePool's instance type requirements.
+
+Before publishing rolled-back status.images, Karpenter should verify that the reconstructed image version exists for each resolved image definition. If any required image definition does not have the requested release suffix, rollback should fail with a clear condition rather than writing an invalid image ID.
+
 ### TTL and expiry
 
 Rollback TTL is 7 days from recentlyUsedVersions.timestampUsed.
