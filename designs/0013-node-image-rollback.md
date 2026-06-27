@@ -87,6 +87,7 @@ Semantics:
 1. recentlyUsedVersions captures the immediate prior node image version and orchestrator version pair before status.images advances.
 2. recentlyUsedVersions.timestampUsed is static and is used to enforce the 7-day rollback eligibility window.
 3. Only one recently-used entry is retained, matching AKS RP semantics.
+4. If Karpenter stores multiple previous image versions in the future, rollback UX must specify how Karpenter chooses which previous version to use.
 
 ### AKSNodeClass spec: rollback request
 
@@ -168,6 +169,7 @@ Cons:
 
 1. A customer may roll back to an image they did not realize was the previously used version.
 2. Requires status and conditions to make the selected rollback target highly visible.
+3. If Karpenter later stores multiple previous image versions, a boolean rollback request would become ambiguous unless the API also defines which previous entry is selected.
 
 This design currently uses Option B for the v1 rollback surface, while calling out the surprise-risk tradeoff explicitly.
 
@@ -324,6 +326,8 @@ Rationale:
 1. Aligns with AKS RP recently-used one-entry semantics.
 2. Keeps behavior explicit and simple.
 3. Reduces state complexity and ambiguity.
+
+Future consideration: if Karpenter stores multiple previous image versions, the API must define whether rollback selects the most recent entry, requires an explicit target, or exposes another selection mechanism.
 
 ### Decision 3: 7-day rollback window
 
