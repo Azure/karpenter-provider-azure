@@ -401,6 +401,7 @@ The following are intentionally deferred and must be designed separately:
 
 1. True node image pinning, including k8s version interactions, SLA considerations, and reconciliation behavior for long-duration static versions.
 2. Prepared image spec support that accepts full resource ID and maps to a dedicated AKS API field.
+3. Decoupling control plane k8s upgrades from node k8s upgrades, including how image resolution should behave when nodes intentionally remain on an older orchestrator version.
 
 ## Future Extensions for imageVersion
 
