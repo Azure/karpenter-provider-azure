@@ -203,7 +203,7 @@ When rollback is requested through the chosen `spec.imageVersion` UX:
 2. Validate now - recentlyUsedVersions.timestampUsed is within TTL.
 3. Validate recentlyUsedVersions.orchestratorVersion is compatible with the current rollback request.
 4. If valid, set effective target image release version suffix to recentlyUsedVersions.imageVersion.
-5. Reconcile status.images by applying that release version suffix to each image definition resolved from AKSNodeClass and instance-type requirements.
+5. Apply the rollback image version suffix using one of the implementation options below.
 
 ### Image selection during rollback
 
@@ -231,7 +231,57 @@ rollback goal image:
 
 The same suffix rewrite is applied independently to each resolved image definition. This lets multiple NodePools share one AKSNodeClass while still rolling back to the image variant selected by each NodePool's instance type requirements.
 
-Before publishing rolled-back status.images, Karpenter should verify that the reconstructed image version exists for each resolved image definition. If any required image definition does not have the requested release suffix, rollback should fail with a clear condition rather than writing an invalid image ID.
+Before using rolled-back images, Karpenter should verify that the reconstructed image version exists for each resolved image definition. If any required image definition does not have the requested release suffix, rollback should fail with a clear condition rather than using an invalid image ID.
+
+### Implementation options for applying rollback
+
+There are two viable places to apply the rollback image version suffix.
+
+#### Option 1: Keep status.images as latest and convert at use sites
+
+status.images continues to represent the normally resolved latest image set. Rollback is applied as a second layer by a helper such as `convertToRolledBackImage`, which rewrites the selected or candidate image ID from `/versions/<latest>` to `/versions/<rollback imageVersion>`.
+
+Behavior:
+
+1. NodeImageReconciler keeps publishing latest resolved images in status.images.
+2. Consumers that need the effective image call `convertToRolledBackImage` after normal image selection.
+3. The helper preserves the selected image's requirements and only replaces the version suffix.
+4. The helper verifies the reconstructed image exists in SIG before returning it.
+
+Pros:
+
+1. status.images remains the source of latest goal-state images and is not overloaded with rollback state.
+2. Rollback behavior is explicit at use sites, which makes it easier to reason about latest-vs-effective image selection.
+3. Existing status update and maintenance-window behavior can remain mostly unchanged.
+
+Cons:
+
+1. Every consumer that launches nodes or compares drift must consistently use the effective-image helper.
+2. A missed call site could accidentally use latest images while rollback is requested.
+3. Conditions and observability need to clearly show that effective images differ from status.images.
+
+#### Option 2: Write rolled-back images into status.images
+
+NodeImageReconciler applies the rollback image version suffix whenever it resolves images while rollback is active. status.images then contains the effective rolled-back image IDs instead of latest IDs.
+
+Behavior:
+
+1. NodeImageReconciler resolves the normal latest image list.
+2. If rollback is active and valid, it rewrites every resolved image ID to `/versions/<rollback imageVersion>` before writing status.images.
+3. The reconciler preserves each image's requirements and only replaces the version suffix.
+4. The reconciler verifies the reconstructed image exists in SIG before publishing it.
+
+Pros:
+
+1. Existing node launch and drift paths that already consume status.images automatically use the rolled-back images.
+2. Fewer use-site changes are required because status.images remains the effective image source.
+3. The current status surface directly shows the images Karpenter will use for new nodes.
+
+Cons:
+
+1. status.images no longer shows the latest normally resolved image set while rollback is active.
+2. Roll-forward behavior must carefully distinguish latest resolution from rolled-back effective state.
+3. Snapshotting recentlyUsedVersions must avoid treating the rollback rewrite itself as a new image update.
 
 ### TTL and expiry
 
