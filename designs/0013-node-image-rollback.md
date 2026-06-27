@@ -119,7 +119,8 @@ Pros:
 Cons:
 
 1. Requires customers to inspect status and copy the exact rollback value.
-2. Slightly more cumbersome during incident response.
+2. Requires customers to specify portions of the image version that are already represented by existing AKSNodeClass image-family fields.
+3. Slightly more cumbersome during incident response.
 
 #### Option B: Boolean rollback request
 
