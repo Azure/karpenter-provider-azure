@@ -245,6 +245,9 @@ func (a AKS) aksBootstrapScript() (string, error) {
 
 // Download URL for KUBE_BINARY_URL publishes each k8s version in the URL.
 func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
+	if semver.MustParse(kubernetesVersion).Minor >= 34 {
+		return ""
+	}
 	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
