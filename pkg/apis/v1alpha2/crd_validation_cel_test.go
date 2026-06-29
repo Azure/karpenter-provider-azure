@@ -782,6 +782,7 @@ var _ = Describe("CEL/Validation", func() {
 			v1beta1.AKSLabelPriority,
 			v1beta1.AKSLabelOSSKU,
 			v1beta1.AKSLabelFIPSEnabled,
+			v1beta1.LabelUltraSSD,
 		)
 		expectKnownValueValidationError := func(err error, key string) {
 			Expect(err).To(MatchError(And(
