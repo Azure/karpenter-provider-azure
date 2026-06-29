@@ -484,6 +484,13 @@ Minimum test coverage:
 3. Document operator behavior when rollback is expired.
 4. Ensure CRD schema and conversion behavior is backward compatible for existing AKSNodeClass objects.
 
+## References
+
+1. [Agent Pools - Get Upgrade Profile REST API](https://learn.microsoft.com/en-us/rest/api/aks/agent-pools/get-upgrade-profile): defines `properties.recentlyUsedVersions` as historical good versions for rollback operations, including `nodeImageVersion`, `orchestratorVersion`, and `timestamp`.
+2. [Agent Pools - Create Or Update REST API](https://learn.microsoft.com/en-us/rest/api/aks/agent-pools/create-or-update): defines `properties.nodeImageVersion` and states that setting this value triggers an agent pool rollback and only values from `recentlyUsedVersions` are allowed.
+3. [Roll Back Node Pool Versions in AKS](https://learn.microsoft.com/en-us/azure/aks/roll-back-node-pool-version): describes AKS node pool rollback behavior, the seven-day rollback window, auto-upgrade considerations, and the ability to roll back only the node image when only the node image changed.
+4. [Upgrade Operating System Version in AKS](https://learn.microsoft.com/en-us/azure/aks/upgrade-os-version): documents OS SKU rollback guidance and OS-version rollback limits that are separate from node image version rollback.
+
 ## Open Questions
 
 1. Should expired rollback requests be auto-cleared from spec, or only ignored with status signaling?
