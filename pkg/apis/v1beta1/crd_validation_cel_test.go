@@ -962,6 +962,9 @@ var _ = Describe("CEL/Validation", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for _, label := range []string{
 				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/ebpf-host-routing",
+				"kubernetes.azure.com/network-policy",
+				"kubernetes.azure.com/hostedvm",
 			} {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 					{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}},
@@ -1033,6 +1036,9 @@ var _ = Describe("CEL/Validation", func() {
 			oldNodePool := nodePool.DeepCopy()
 			for _, label := range []string{
 				"kubernetes.azure.com/ebpf-dataplane",
+				"kubernetes.azure.com/ebpf-host-routing",
+				"kubernetes.azure.com/network-policy",
+				"kubernetes.azure.com/hostedvm",
 			} {
 				nodePool.Spec.Template.Labels = map[string]string{
 					label: "test",
