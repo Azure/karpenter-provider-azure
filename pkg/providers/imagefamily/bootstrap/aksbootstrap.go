@@ -245,6 +245,8 @@ func (a AKS) aksBootstrapScript() (string, error) {
 
 // Download URL for KUBE_BINARY_URL publishes each k8s version in the URL.
 func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
+	// Versions 1.34+ use a different binary path for kubectl/kubelet. AgentBaker CSE has that path baked in to the image
+	// so we don't need to specify the URL.
 	if semver.MustParse(kubernetesVersion).Minor >= 34 {
 		return ""
 	}
