@@ -18,6 +18,7 @@ package integration_test
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -27,10 +28,11 @@ import (
 
 var _ = Describe("UltraSSD", func() {
 	It("should enable UltraSSD when explicitly enabled", func() {
-		enabled := true
-		nodeClass.Spec.UltraSSD = &v1beta1.UltraSSD{
-			Enabled: &enabled,
-		}
+		nodePool = coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelUltraSSD,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"true"},
+		})
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
@@ -42,10 +44,11 @@ var _ = Describe("UltraSSD", func() {
 	})
 
 	It("should disable UltraSSD when explicitly disabled", func() {
-		enabled := false
-		nodeClass.Spec.UltraSSD = &v1beta1.UltraSSD{
-			Enabled: &enabled,
-		}
+		nodePool = coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelUltraSSD,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"false"},
+		})
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
