@@ -10,6 +10,24 @@
 
 Note: The issue title says "Add support for setting ImageID for nodeClass", but the problem statement is primarily asking for rollback/pinning capability to recover from bad image releases. This rollback design addresses the bad-release recovery use case. It does not address the literal title request to set arbitrary ImageID; that is likely a future AKS workstream, and Karpenter should not set that standard prematurely.
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Background](#background)
+3. [Goals](#goals)
+4. [Non-Goals](#non-goals)
+5. [API Changes](#api-changes)
+6. [Reconciliation Design](#reconciliation-design)
+7. [Validation and Conditions](#validation-and-conditions)
+8. [Drift and Provisioning Behavior](#drift-and-provisioning-behavior)
+9. [Decision Notes](#decision-notes)
+10. [Out of Scope Follow-up Designs](#out-of-scope-follow-up-designs)
+11. [Operational Scenarios](#operational-scenarios)
+12. [Testing](#testing)
+13. [Production Readiness](#production-readiness)
+14. [References](#references)
+15. [Open Questions](#open-questions)
+
 ## Overview
 
 This document proposes a rollback-focused capability for AKS Node Auto Provisioning (NAP) in Karpenter, aligned with current AKS agent pool rollback semantics.
