@@ -195,7 +195,6 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsPremiumIO())),
 		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsAcceleratedNetworkingSupported())),
 		scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsUltraSSD())),
 		// all additive feature initialized elsewhere
 	)
 
