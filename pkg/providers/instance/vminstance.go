@@ -832,7 +832,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		UseSIG:              options.FromContext(ctx).UseSIG,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
-		UltraSsdEnabled:     nodeClass.IsUltraSSDEnabled(),
+		UltraSsdEnabled:     ultraSSD,
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
