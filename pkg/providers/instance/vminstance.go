@@ -764,7 +764,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	instanceType := selection.InstanceType
 	capacityType := selection.CapacityType()
 
-	ultraSSD := selection.UltraSSD() == "true"
+	ultraSSD := selection.UltraSSD()
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
 	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope, ultraSSD)

@@ -17,6 +17,8 @@ limitations under the License.
 package allocationstrategy
 
 import (
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -58,6 +60,6 @@ func (s *Selection) PlacementScope() string {
 }
 
 // UltraSSD returns the karpenter.azure.com/ultra-ssd value of the chosen offering.
-func (s *Selection) UltraSSD() string {
-	return s.Offering.Requirements.Get(v1beta1.LabelUltraSSD).Any()
+func (s *Selection) UltraSSD() bool {
+	return strings.EqualFold(s.Offering.Requirements.Get(v1beta1.LabelUltraSSD).Any(), "true")
 }
