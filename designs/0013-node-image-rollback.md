@@ -518,18 +518,6 @@ Minimum test coverage:
 3. [Roll Back Node Pool Versions in AKS](https://learn.microsoft.com/en-us/azure/aks/roll-back-node-pool-version): describes AKS node pool rollback behavior, the seven-day rollback window, auto-upgrade considerations, and the ability to roll back only the node image when only the node image changed.
 4. [Upgrade Operating System Version in AKS](https://learn.microsoft.com/en-us/azure/aks/upgrade-os-version): documents OS SKU rollback guidance and OS-version rollback limits that are separate from node image version rollback.
 
-## Proposed Shortening Edits
-
-These are candidate edits only. They are not required for the design to be correct, but they would shorten the document after reviewers agree on the final API and implementation direction.
-
-1. Remove the `Alternative considered: move imageFamily and fipsMode under an image section` section, or reduce it to one sentence in `Out of Scope Follow-up Designs`. It is useful context but not required for the rollback decision.
-2. After choosing Option A or Option B for the customer UX, remove the unchosen option and collapse the selected option's pros and cons into the final API description.
-3. After choosing one implementation strategy for applying rollback, remove the unchosen implementation option and move only the final behavior into `Rollback path` and `Drift and Provisioning Behavior`.
-4. Merge `Future Extensions for imageVersion` into `Out of Scope Follow-up Designs`. The current future fields are directional and can be covered by the deferred pinning and prepared-image designs.
-5. Shorten `Observability Options` into `Production Readiness` by keeping only the first implementation-required metrics, logs, and conditions.
-6. Remove `Operational Scenarios` once the reconciliation and drift sections are stable, because the scenarios restate the same happy path and expired-TTL behavior.
-7. Fold `Decision Notes` into the sections where each decision is introduced. This keeps the rationale close to the behavior and avoids a second pass over the same decisions.
-
 ## Open Questions
 
 1. Should expired rollback requests be auto-cleared from spec, or only ignored with status signaling?
