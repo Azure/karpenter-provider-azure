@@ -272,22 +272,29 @@ Cons:
 2. Roll-forward behavior must carefully distinguish latest resolution from rolled-back effective state.
 3. Snapshotting recentlyUsedVersions must avoid treating the rollback rewrite itself as a new image update.
 
-### TTL and expiry
+### Rollback eligibility and expiry
 
-Rollback TTL is 7 days from recentlyUsedVersions.timestampUsed.
+The public AKS docs describe the seven-day limit as rollback availability, not as the lifetime of an already completed rollback. The rollback guide says rollback is "Available only for seven days after upgrade completion." The Get Upgrade Profile API describes recentlyUsedVersions as historical good versions for rollback operations, with timestamp meaning when that version was last used. The Create/Update Agent Pool API says setting nodeImageVersion triggers rollback and only values from recentlyUsedVersions are allowed.
 
-If expired:
+In this design, recentlyUsedVersions.timestampUsed should therefore gate whether a rollback can be initiated against that historical version. It should not by itself cause an active rollback to expire or roll forward at the seven-day mark.
 
-1. Rollback request is rejected as stale at reconciliation time.
+If the user first requests rollback after the eligibility window has expired:
+
+1. The rollback request is rejected as stale.
 2. Effective behavior remains subject to normal image update behavior.
 
-Confirmed AKS RP behavior:
+If rollback was accepted while the historical version was still eligible:
 
-1. The 7-day TTL on recentlyUsedVersions is a validation gate only.
-2. TTL expiry does not trigger an automatic roll-forward to latest.
-3. There is no AKS RP background job watching recentlyUsedVersions expiry.
-4. Once a pool is rolled back, it can remain on the rolled-back image after the rollback eligibility window expires.
-5. Roll-forward is controlled separately by node image auto-upgrade behavior.
+1. TTL expiry alone does not trigger an automatic roll-forward to latest.
+2. The active rollback remains effective until the user clears rollback intent, a later image policy supersedes it, or auto-upgrade moves the pool forward.
+3. The implementation must not continuously revalidate an already-accepted rollback as if it were a new request, otherwise rollback would accidentally become limited to at most seven days.
+
+Implications from public docs:
+
+1. The 7-day limit is an eligibility gate for rollback operations.
+2. TTL expiry does not imply an automatic roll-forward to latest.
+3. Once a pool is rolled back, AKS guidance treats the rolled-back state as temporary but not automatically expired at day 7; post-rollback guidance recommends re-upgrading within days or weeks, with 30 days as the maximum recommended timeframe.
+4. Roll-forward should be controlled separately by user action or node image auto-upgrade behavior.
 
 AKS auto-upgrade behavior after rollback:
 
@@ -300,9 +307,10 @@ AKS auto-upgrade behavior after rollback:
 
 Recommended behavior for v1:
 
-1. Block rollback when a rollback request becomes active and recentlyUsedVersions is expired.
-2. Preserve recentlyUsedVersions for observability, but do not use it when expired.
-3. Do not flag an expired recentlyUsedVersions entry as an error when rollback is not actively requested. Expired rollback state should only matter when a user actively requests rollback.
+1. Block rollback when a new rollback request becomes active and recentlyUsedVersions is expired.
+2. Preserve recentlyUsedVersions for observability, but do not allow expired entries to start new rollback operations.
+3. Preserve enough accepted rollback state to keep an already-active rollback effective after recentlyUsedVersions expires.
+4. Do not flag an expired recentlyUsedVersions entry as an error when rollback is not actively requested. Expired rollback state should only matter when a user actively requests a new rollback.
 
 ## Validation and Conditions
 
@@ -466,6 +474,8 @@ Minimum test coverage:
 2. [Agent Pools - Create Or Update REST API](https://learn.microsoft.com/en-us/rest/api/aks/agent-pools/create-or-update): defines `properties.nodeImageVersion` and states that setting this value triggers an agent pool rollback and only values from `recentlyUsedVersions` are allowed.
 3. [Roll Back Node Pool Versions in AKS](https://learn.microsoft.com/en-us/azure/aks/roll-back-node-pool-version): describes AKS node pool rollback behavior, the seven-day rollback window, auto-upgrade considerations, and the ability to roll back only the node image when only the node image changed.
 4. [Upgrade Operating System Version in AKS](https://learn.microsoft.com/en-us/azure/aks/upgrade-os-version): documents OS SKU rollback guidance and OS-version rollback limits that are separate from node image version rollback.
+5. [Autoupgrade Node OS Images in AKS](https://learn.microsoft.com/en-us/azure/aks/auto-upgrade-node-os-image): describes node OS upgrade channels, including `None`, `Unmanaged`, `SecurityPatch`, and `NodeImage`, and states that managed node OS upgrades honor maintenance windows.
+6. [Planned Maintenance for AKS](https://learn.microsoft.com/en-us/azure/aks/planned-maintenance): describes `aksManagedAutoUpgradeSchedule` and `aksManagedNodeOSUpgradeSchedule`, including that planned maintenance schedules automatic cluster and node image upgrades but does not enable or disable them.
 
 ## Open Questions
 
@@ -474,4 +484,5 @@ Minimum test coverage:
 3. Do we need an admission-time validation webhook for rollback request semantics, or is reconcile-time validation sufficient?
 4. Should rollback support only the AKS Machine API path, or should it explicitly support both AKS Machine API and the node bootstrapping client/VM path? Current expectation is that it should work either way because both paths consume status.images, but this should be verified.
 5. Does the existing node image cache require rollback-specific invalidation or cache-key changes so that rollback requests and roll-forward after rollback are reflected immediately?
-6. When the maintenance window opens and Karpenter selects latest again, should the rollback request be cleared, or should it remain set and become ignored/invalid once recentlyUsedVersions no longer applies?
+6. Do we need explicit status for the accepted rollback target and accepted time so that TTL expiry cannot invalidate an already-applied rollback request?
+7. When auto-upgrade or a future image policy moves the pool forward after rollback, should the rollback request be cleared, or should it remain set and become ignored/invalid?
