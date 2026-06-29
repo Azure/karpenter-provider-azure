@@ -348,18 +348,45 @@ These conditions avoid silent behavior and explain why rollback did or did not o
 
 ## Drift and Provisioning Behavior
 
-Rollback should integrate with both existing drift behavior and new node creation by making status.images reflect rollback target images during active rollback.
+Rollback should integrate with both existing drift behavior and new node creation by ensuring both paths consume rollback-effective images while rollback is active and valid.
 
-Expected effects:
+### Existing nodes
 
-1. Existing nodes on post-upgrade images become drifted and are replaced according to disruption controls.
-2. New scale-ups use rolled-back image IDs while rollback remains active and valid.
-3. No special scale-up blocking is introduced.
+When a valid rollback request becomes active:
 
-This means rollback must be applied before both:
+1. The AKSNodeClass change is observed by Karpenter core.
+2. Karpenter core enqueues NodeClaims that reference the changed AKSNodeClass.
+3. Karpenter core calls the Azure provider's `IsDrifted()` implementation for each affected NodeClaim.
+4. Azure drift logic compares each NodeClaim image against the rollback-effective image set.
+5. Existing nodes running the post-upgrade image become drifted and are replaced according to normal disruption controls.
 
-1. Drift compares existing NodeClaim image state against AKSNodeClass status.images.
-2. Provisioning resolves an image for a newly-created node.
+Rollback should not introduce a separate replacement mechanism. It should rely on the existing drift and disruption flow once the effective desired image has changed.
+
+### New scale-ups
+
+When a new pod requires capacity while rollback is active:
+
+1. Karpenter schedules the pod to a new NodeClaim using the matching NodePool and AKSNodeClass.
+2. The Azure provider resolves the normal compatible image definition for the selected instance type.
+3. Rollback applies the requested image release suffix to that selected image definition.
+4. The newly-created machine uses the rollback-effective image ID.
+
+New scale-ups should not be blocked while rollback state is evaluated. If rollback validation fails, provisioning should continue only with normal latest-image behavior after the AKSNodeClass condition clearly reports why rollback was not applied.
+
+### Drift trigger choice
+
+There are two acceptable ways for rollback to make existing nodes drift:
+
+1. NodeClassDrift: if the chosen rollback request field is part of AKSNodeClass spec and participates in AKSNodeClass hashing, changing rollback intent changes the NodeClass hash and existing NodeClaims drift because their stored hash no longer matches.
+2. ImageDrift: if rollback changes the effective desired image set, existing NodeClaims drift because their current image no longer matches the rollback-effective images.
+
+The implementation does not need to depend on only one drift reason, but it must make both reasons internally consistent:
+
+1. If rollback fields participate in AKSNodeClass hashing, the hash-driven NodeClassDrift path should be expected and tested.
+2. If image drift is expected to identify rollback replacements, the image comparison must use rollback-effective images rather than the latest normally resolved images.
+3. New node creation must use the same effective image calculation as drift, regardless of whether rollback is applied by rewriting status.images or by a helper at use sites.
+
+The key invariant is that drift and provisioning must agree on the desired image while rollback is active.
 
 ## Decision Notes
 
