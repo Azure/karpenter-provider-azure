@@ -370,13 +370,6 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	return nodeLabelPtrs, modePtr
 }
 
-func configureUltraSSDEnabled(nodeClass *v1beta1.AKSNodeClass) *bool {
-	if nodeClass == nil {
-		return nil
-	}
-	return lo.ToPtr(nodeClass.IsUltraSSDEnabled())
-}
-
 // ConfigureAKSMachineTags returns the tags to be applied to AKS machine instances and their affiliated resources.
 // This includes all standard tags plus the AKS machine distinguishing tag.
 func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) map[string]*string {

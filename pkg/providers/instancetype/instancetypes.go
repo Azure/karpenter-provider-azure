@@ -147,7 +147,6 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
-		UltraSSDEnabled:          nodeClass.IsUltraSSDEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%d-%d-%016x",
