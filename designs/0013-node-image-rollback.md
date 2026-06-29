@@ -152,35 +152,6 @@ Cons:
 
 The final UX choice should be resolved before implementation. Both options rely on the same recentlyUsedVersions validation model.
 
-### Alternative considered: move imageFamily and fipsMode under an image section
-
-Current AKSNodeClass image controls are split across top-level fields. One option is to eventually group image controls under a dedicated section.
-
-This is not the primary choice for the rollback workstream.
-
-For now, rollback should remain focused within `spec.imageVersion`; the exact rollback request field should be chosen from the customer experience options above.
-
-Possible follow-up direction (discussion item only):
-
-```go
-type AKSNodeClassSpec struct {
-	// existing fields...
-	Image *ImageSpec `json:"image,omitempty"`
-
-	// Existing compatibility fields (kept during transition):
-	ImageFamily *string   `json:"imageFamily,omitempty"`
-	FIPSMode    *FIPSMode `json:"fipsMode,omitempty"`
-}
-
-type ImageSpec struct {
-	Family *string   `json:"family,omitempty"`
-	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
-	Version *ImageVersionSpec `json:"version,omitempty"`
-}
-```
-
-If this is pursued later, it should be handled in a separate API-shape design with explicit compatibility and precedence rules.
-
 ## Reconciliation Design
 
 ### Snapshot point
@@ -429,49 +400,9 @@ The following are intentionally deferred and must be designed separately:
 1. True node image pinning, including k8s version interactions, SLA considerations, and reconciliation behavior for long-duration static versions.
 2. Prepared image spec support that accepts full resource ID and maps to a dedicated AKS API field.
 3. Decoupling control plane k8s upgrades from node k8s upgrades, including how image resolution should behave when nodes intentionally remain on an older orchestrator version.
-
-## Future Extensions for imageVersion
-
-`spec.imageVersion` is intentionally minimal for v1 rollback and can be extended later.
-
-Potential future fields:
-
-1. `pin` (string): pin to a specific image version. If not specified, behavior defaults to latest.
-2. `usePreparedImage` (bool): when true, use prepared image spec from the MC object.
-
-### Interaction with future image controls
-
-As future work introduces pinning and prepared image spec support, this rollback design will overlap with:
-
-1. Decoupling control plane k8s upgrades from node k8s upgrades.
-2. Defining image source/selection precedence when multiple controls are present.
-
-Proposed baseline hierarchy for design consistency:
-
-1. Exactly one of the following image intents may be set at a time.
-2. Allowed intents: rollback, pinned image, prepared image spec.
-
-Rollback behavior under mixed configuration:
-
-1. If pinned image is specified, rollback is a no-op.
-2. If prepared image spec is specified, rollback is a no-op.
-3. Preferably, mixed intent should be blocked by AKSNodeClass validation rather than silently accepted.
-
-Note: During detailed design of pinning and prepared image spec, semantics may evolve. Even if wording changes, this document calls out the expected one-of model and precedence intent to prevent ambiguous behavior.
-
-TODO:
-
-1. Confirm prepared image spec contract/docs and whether the prepared image reference is supplied at MC level or AP level.
-
-## Observability Options
-
-This rollback design does not introduce support-window warnings for stale images. Those warnings may become relevant in the context of future image selection support, including pinning and prepared image spec.
-
-Options to evaluate later:
-
-1. Metrics for rollback requests, applied rollbacks, expired rollback requests, missing recently-used state, and potentially image age.
-2. Logs for rollback decision points, including missing/expired/mismatched recentlyUsedVersions.
-3. AKSNodeClass warning status conditions for future stale-image or support-window signaling.
+4. A broader image API shape that groups image-related controls together. AKSNodeClass now has multiple top-level image-related fields, and a future design should decide whether controls like image family, FIPS mode, rollback, pinning, and prepared images remain separate top-level fields or move under a dedicated image section with explicit compatibility and precedence rules.
+5. Future `spec.imageVersion` extensions such as pinned image versions or prepared-image selection. A follow-up design should define whether image intents are mutually exclusive and how rollback, pinning, and prepared images interact.
+6. Support-window or stale-image warnings for future image selection support, including pinning and prepared image spec.
 
 ## Operational Scenarios
 
@@ -506,8 +437,8 @@ Minimum test coverage:
 
 ## Production Readiness
 
-1. Decide which observability options to implement first: metrics, logs, and/or AKSNodeClass warning status conditions.
-2. Add eventing/log entries for rollback decision points.
+1. Add metrics for rollback requests, applied rollbacks, expired rollback requests, and missing recently-used state.
+2. Add logs or events for rollback decision points, including missing, expired, or mismatched recentlyUsedVersions.
 3. Document operator behavior when rollback is expired.
 4. Ensure CRD schema and conversion behavior is backward compatible for existing AKSNodeClass objects.
 
