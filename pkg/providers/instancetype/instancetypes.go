@@ -175,7 +175,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones, instanceTypeParams), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones), instanceTypeParams, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -239,7 +239,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string], params *instanceTypeParameters) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)
