@@ -61,6 +61,8 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
+// +kubebuilder:validation:XValidation:message="FIPS is not supported for Windows image families",rule="!has(self.fipsMode) || self.fipsMode != 'FIPS' || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="linuxOSConfig is not supported for Windows image families",rule="!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -79,7 +81,7 @@ type AKSNodeClassSpec struct {
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,Windows2022,Windows2025}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// fipsMode controls FIPS compliance for the provisioned nodes

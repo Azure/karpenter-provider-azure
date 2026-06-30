@@ -51,6 +51,7 @@ on:
           - Storage
           - Subnet
           - Utilization
+          - Windows
       location:
         type: choice
         description: "Azure location to run the e2e test in"
@@ -216,9 +217,14 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
           k8s_version: ${{ inputs.k8s_version }}
-          provision_mode: ${{ inputs.provision_mode }}
+          # Windows is only provisionable via the AKS Machine API, so force that mode for the Windows
+          # suite regardless of the matrix's provision_mode (it would otherwise skip under aksscriptless).
+          provision_mode: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
           identity_type: ${{ inputs.suite == 'Machine' && 'UserAssigned' || 'SystemAssigned' }}
           azure_vm_size: ${{ inputs.azure_vm_size }}
+          # Windows needs a dedicated (non-Cilium) cluster and a machines pool name <= 6 chars.
+          windows: ${{ inputs.suite == 'Windows' }}
+          aks_machines_pool_name: ${{ inputs.suite == 'Windows' && 'winmp' || 'testmpool' }}
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
@@ -228,7 +234,8 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
-          provision_mode: ${{ inputs.provision_mode }}
+          provision_mode: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
+          aks_machines_pool_name: ${{ inputs.suite == 'Windows' && 'winmp' || 'testmpool' }}
       - name: run the ${{ inputs.suite }} test suite
         env:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
@@ -239,7 +246,8 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID_TEST }}
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
-          PROVISION_MODE: ${{ inputs.provision_mode }}
+          PROVISION_MODE: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
+          AKS_MACHINES_POOL_NAME: ${{ inputs.suite == 'Windows' && 'winmp' || 'testmpool' }}
         run: |
           make az-creds
           make e2etests

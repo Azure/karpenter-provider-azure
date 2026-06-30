@@ -37,7 +37,10 @@ type AKSMachinesHeaderBatchAPI interface {
 	//   API errors, but nothing else).
 	// - The fact that HandlableError is considered one of the "expected" states in this
 	//   context, just not ideal. Operational error, on the other hand, is more of a bug.
-	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) (*offerings.HandlableError, error)
+	//
+	// useWindowsGen2VM requests a Generation 2 Windows image from the RP (UseWindowsGen2VM header).
+	// It participates in the batch key, so only machines that agree on it coalesce into one request.
+	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine, useWindowsGen2VM bool) (*offerings.HandlableError, error)
 }
 
 // We don't need the rest of machine API interface. Just create.
@@ -76,6 +79,7 @@ func (c *Client) BeginCreateWithBatch(
 	agentPoolName string,
 	machineName string,
 	machine *armcontainerservice.Machine,
+	useWindowsGen2VM bool,
 ) (*offerings.HandlableError, error) {
 	responseChan, err := c.b.Enqueue(aksMachineCreatePayload{
 		resourceGroupName: resourceGroupName,
@@ -83,6 +87,7 @@ func (c *Client) BeginCreateWithBatch(
 		agentPoolName:     agentPoolName,
 		machineName:       machineName,
 		machineBody:       machine,
+		useWindowsGen2VM:  useWindowsGen2VM,
 	})
 	if err != nil {
 		return nil, err

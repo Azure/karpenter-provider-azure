@@ -250,6 +250,9 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.Windows2022ImageFamily,
+		v1beta1.Windows2025ImageFamily:
+		return &Windows{Options: parameters, Family: lo.FromPtr(familyName)}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:

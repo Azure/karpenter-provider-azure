@@ -174,6 +174,33 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			})
 		})
 
+		Context("Windows Image Families", func() {
+			It("should configure Windows2022", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2022))
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should configure Windows2025", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should force EnableFIPS false for Windows even if FIPSMode is FIPS", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2022))
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
 		Context("Error Cases", func() {
 			It("should return error when ImageFamily is nil", func() {
 				nodeClass.Spec.ImageFamily = nil
@@ -195,6 +222,30 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(enableFIPs).ToNot(BeNil())
 				Expect(*enableFIPs).To(BeFalse())
 			})
+		})
+	})
+
+	Context("configureOSType", func() {
+		It("should return Linux for Linux image families", func() {
+			for _, fam := range []string{
+				v1beta1.UbuntuImageFamily,
+				v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AzureLinuxImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeLinux), "family %s", fam)
+			}
+		})
+
+		It("should return Windows for Windows image families", func() {
+			for _, fam := range []string{
+				v1beta1.Windows2022ImageFamily,
+				v1beta1.Windows2025ImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeWindows), "family %s", fam)
+			}
 		})
 	})
 
@@ -943,6 +994,45 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			profile := configureGPUProfile(instanceType, nodeClass)
 			Expect(profile).ToNot(BeNil())
 			Expect(*profile.Driver).To(Equal(armcontainerservice.GPUDriverNone))
+		})
+	})
+
+	Context("shouldUseWindowsGen2VM", func() {
+		// withHyperVGenerations returns instanceType with the given supported Hyper-V generation
+		// label values (e.g. "1", "2"), matching how instance types are labeled in production.
+		withHyperVGenerations := func(gens ...string) *corecloudprovider.InstanceType {
+			reqs := scheduling.NewRequirements(
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+			)
+			if len(gens) > 0 {
+				reqs.Add(scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, gens...))
+			}
+			return &corecloudprovider.InstanceType{Name: "Standard_Test", Requirements: reqs}
+		}
+
+		It("should request Gen2 for a Windows family on a Gen2-only SKU", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+			Expect(shouldUseWindowsGen2VM(nodeClass, withHyperVGenerations(v1beta1.HyperVGenerationV2))).To(BeTrue())
+		})
+
+		It("should request Gen2 for a Windows family on a dual-generation SKU (Gen2 preferred)", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+			Expect(shouldUseWindowsGen2VM(nodeClass, withHyperVGenerations(v1beta1.HyperVGenerationV1, v1beta1.HyperVGenerationV2))).To(BeTrue())
+		})
+
+		It("should NOT request Gen2 for a Windows family on a Gen1-only SKU", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+			Expect(shouldUseWindowsGen2VM(nodeClass, withHyperVGenerations(v1beta1.HyperVGenerationV1))).To(BeFalse())
+		})
+
+		It("should be case-insensitive about the Windows image family", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(strings.ToLower(v1beta1.Windows2022ImageFamily))
+			Expect(shouldUseWindowsGen2VM(nodeClass, withHyperVGenerations(v1beta1.HyperVGenerationV2))).To(BeTrue())
+		})
+
+		It("should NOT request Gen2 for a non-Windows family even on a Gen2-capable SKU", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			Expect(shouldUseWindowsGen2VM(nodeClass, withHyperVGenerations(v1beta1.HyperVGenerationV2))).To(BeFalse())
 		})
 	})
 })

@@ -82,7 +82,6 @@ func (r *recordingClient) snapshot() []recordedCall {
 // test helpers
 // ---------------------------------------------------------------------------
 
-//nolint:unparam // vmSize is always the same today but kept as param for future test flexibility
 func tpl(vmSize string, zones []string, tags map[string]string) *armcontainerservice.Machine {
 	m := &armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
@@ -112,6 +111,12 @@ func makeReq(name string, template *armcontainerservice.Machine) *batcher.Batche
 		},
 		ResponseChan: make(chan *batcher.Response[*offerings.HandlableError], 1),
 	}
+}
+
+func makeReqGen2(name string, template *armcontainerservice.Machine, useWindowsGen2VM bool) *batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError] {
+	req := makeReq(name, template)
+	req.Payload.useWindowsGen2VM = useWindowsGen2VM
+	return req
 }
 
 func makeBatch(requests ...*batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]) *batcher.Batch[aksMachineCreatePayload, *offerings.HandlableError] {
@@ -202,6 +207,34 @@ func TestExecutorAttachesPerMachineEntriesToContext(t *testing.T) {
 	g.Expect(entries[1].Tags).To(gomega.Equal(map[string]string{"b": "2"}))
 }
 
+// TestExecutorAttachesUseWindowsGen2VMToContext verifies the executor requests a Gen2 Windows image
+// for the batch exactly when the (first) request asks for it. The real UseWindowsGen2VM HTTP header
+// is set via policy.WithHTTPHeader (unreadable in-process), so we assert the mirrored context value.
+func TestExecutorAttachesUseWindowsGen2VMToContext(t *testing.T) {
+	t.Parallel()
+	g := gomega.NewWithT(t)
+
+	// Gen2-only SKU asking for Gen2 → executor flags the batch.
+	mockGen2 := &recordingClient{}
+	execGen2 := newExecutor(mockGen2)
+	rGen2 := makeReqGen2("m-1", tpl("Standard_D2als_v7", []string{"1"}, nil), true)
+	execGen2.executeBatch(context.Background(), makeBatch(rGen2))
+	callsGen2 := mockGen2.snapshot()
+	g.Expect(callsGen2).To(gomega.HaveLen(1))
+	g.Expect(FakeUseWindowsGen2VMFromContext(callsGen2[0].ctx)).To(gomega.BeTrue(),
+		"a Gen2 batch should set the UseWindowsGen2VM header")
+
+	// Default (no Gen2 request) → flag absent.
+	mockDefault := &recordingClient{}
+	execDefault := newExecutor(mockDefault)
+	rDefault := makeReq("m-2", tpl("Standard_D2s_v3", []string{"1"}, nil))
+	execDefault.executeBatch(context.Background(), makeBatch(rDefault))
+	callsDefault := mockDefault.snapshot()
+	g.Expect(callsDefault).To(gomega.HaveLen(1))
+	g.Expect(FakeUseWindowsGen2VMFromContext(callsDefault[0].ctx)).To(gomega.BeFalse(),
+		"a non-Gen2 batch should not set the UseWindowsGen2VM header")
+}
+
 func TestExecutorDistributesErrorToAllCallers(t *testing.T) {
 	t.Parallel()
 	g := gomega.NewWithT(t)
@@ -246,7 +279,7 @@ func TestConcurrentRequestsBatchThroughClient(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
-			_, _ = client.BeginCreateWithBatch(ctx, "rg", "cluster", "pool", fmt.Sprintf("machine-%d", i), tmpl)
+			_, _ = client.BeginCreateWithBatch(ctx, "rg", "cluster", "pool", fmt.Sprintf("machine-%d", i), tmpl, false)
 		}(i)
 	}
 	wg.Wait()

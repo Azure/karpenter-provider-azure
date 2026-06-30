@@ -22,7 +22,11 @@ const (
 
 	AKSUbuntuResourceGroup     = "AKS-Ubuntu"
 	AKSAzureLinuxResourceGroup = "AKS-AzureLinux"
+	// AKSWindowsResourceGroup is the resource group hosting the AKS Windows shared image gallery.
+	AKSWindowsResourceGroup = "AKS-Windows"
 
 	AKSUbuntuGalleryName     = "AKSUbuntu"
 	AKSAzureLinuxGalleryName = "AKSAzureLinux"
+	// AKSWindowsGalleryName is the shared image gallery name for AKS Windows images.
+	AKSWindowsGalleryName = "AKSWindows"
 )
