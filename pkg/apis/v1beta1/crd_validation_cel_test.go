@@ -903,6 +903,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("AKS OS SKU Ubuntu", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu, v1beta1.Ubuntu2204ImageFamily),
 			Entry("AKS OS SKU AzureLinux", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureLinux, "AzureLinux3"),
 			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
+			Entry("UltraSSD", v1beta1.LabelUltraSSD, "true", "maybe"),
 		)
 		It("should not allow internal labels", func() {
 			oldNodePool := nodePool.DeepCopy()
