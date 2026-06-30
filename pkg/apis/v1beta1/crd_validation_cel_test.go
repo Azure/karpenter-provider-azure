@@ -965,22 +965,8 @@ var _ = Describe("CEL/Validation", func() {
 	})
 	Context("Labels", func() {
 		It("should allow well known label exceptions", func() {
-			knownValueLabelLabels := sets.New(
-				karpv1.NodePoolLabelKey,
-				karpv1.CapacityTypeLabelKey,
-				v1beta1.LabelSKUAcceleratedNetworking,
-				v1beta1.LabelSKUStoragePremiumCapable,
-				v1beta1.LabelSKUGPUManufacturer,
-				v1beta1.LabelPlacementScope,
-				v1beta1.AKSLabelMode,
-				v1beta1.AKSLabelScaleSetPriority,
-				v1beta1.AKSLabelPriority,
-				v1beta1.AKSLabelOSSKU,
-				v1beta1.AKSLabelFIPSEnabled,
-				v1beta1.LabelUltraSSD,
-			)
 			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.WellKnownLabels.Difference(knownValueLabelLabels) {
+			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey)) {
 				nodePool.Spec.Template.Labels = map[string]string{
 					label: "test",
 				}
