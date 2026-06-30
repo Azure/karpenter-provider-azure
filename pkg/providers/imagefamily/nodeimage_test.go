@@ -52,7 +52,7 @@ func renderExpectedCIGNodeImages(
 	fips *v1beta1.FIPSMode,
 	version string,
 ) []imagefamily.NodeImage {
-	defaultImages := fam.DefaultImages(false, fips)
+	defaultImages := fam.DefaultImages(false, fips, false)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDCIG(img.PublicGalleryURL, img.ImageDefinition, version)
@@ -65,7 +65,7 @@ func renderExpectedSIGNodeImages(
 	fam imagefamily.ImageFamily,
 	fips *v1beta1.FIPSMode,
 ) []imagefamily.NodeImage {
-	defaultImages := fam.DefaultImages(true, fips)
+	defaultImages := fam.DefaultImages(true, fips, false)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, sigImageVersion)

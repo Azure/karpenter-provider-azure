@@ -61,6 +61,10 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, fmt.Errorf("NodeClaim is not set")
 	}
 
+	if err := validateKataWorkloadRuntime(ctx, nodeClass); err != nil {
+		return nil, err
+	}
+
 	// NodeImageVersion
 	// E.g., "AKSUbuntu-2204gen2containerd-2023.11.15"
 	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
@@ -156,7 +160,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeInitializationTaints: nodeInitializationTaints,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
-				// WorkloadRuntime:          nil,
+				WorkloadRuntime:          configureWorkloadRuntime(nodeClass),
 				ArtifactStreamingProfile: configureArtifactStreamingProfile(nodeClass, instanceType),
 			},
 
@@ -190,6 +194,33 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	}
 	return &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
+	}
+}
+
+// validateKataWorkloadRuntime rejects a Kata (Pod Sandboxing) workloadRuntime when the feature is
+// disabled, rather than silently provisioning a non-Kata node. This is defense-in-depth alongside the
+// AKSNodeClass validation reconciler, which already surfaces the same gap as a status condition.
+func validateKataWorkloadRuntime(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) error {
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).KataPodSandboxingEnabled() {
+		return fmt.Errorf("workloadRuntime %q requires the Kata Pod Sandboxing feature to be enabled (ENABLE_KATA_POD_SANDBOXING=true)",
+			nodeClass.GetWorkloadRuntime())
+	}
+	return nil
+}
+
+// configureWorkloadRuntime maps a Kata workloadRuntime to the AKS machine API enum.
+// It returns nil for the default OCIContainer case (the AKS machine API defaults to
+// OCIContainer), so non-Kata NodeClasses keep their existing wire payload. Kata values
+// enable AKS Pod Sandboxing; the AzureLinux image requirement is enforced by CEL validation
+// on the AKSNodeClass, and gen-2 SKU selection is enforced by the instance type provider.
+func configureWorkloadRuntime(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.WorkloadRuntime {
+	switch nodeClass.GetWorkloadRuntime() {
+	case v1beta1.WorkloadRuntimeKataVMIsolation:
+		return lo.ToPtr(armcontainerservice.WorkloadRuntimeKataVMIsolation)
+	case v1beta1.WorkloadRuntimeKataMshvVMIsolation:
+		return lo.ToPtr(armcontainerservice.WorkloadRuntimeKataMshvVMIsolation)
+	default:
+		return nil
 	}
 }
 

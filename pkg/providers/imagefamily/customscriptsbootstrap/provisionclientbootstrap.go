@@ -138,7 +138,11 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
 		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
-		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
+		// WorkloadRuntime: Kata / Pod Sandboxing is not supported on this provision path. The
+		// models.ProvisionProfile.WorkloadRuntime int32 enum values for OCIContainer/KataVmIsolation/
+		// KataMshvVmIsolation live server-side in the AKS RP and are not known in this repo, so we do
+		// not set it here. Kata is only supported via PROVISION_MODE=aksmachineapi (see
+		// aksmachineinstancehelpers.go); imagefamily/resolver.go guards against Kata on this path.
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},

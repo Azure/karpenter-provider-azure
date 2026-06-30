@@ -24,6 +24,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -42,6 +43,13 @@ const (
 	ValidationFailureRequeueInterval = 1 * time.Minute
 	// DiskEncryptionSetRBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
 	DiskEncryptionSetRBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
+	// KataPodSandboxingDisabled is the condition reason set when a NodeClass requests a Kata
+	// workloadRuntime but the Kata Pod Sandboxing feature is disabled on this controller.
+	KataPodSandboxingDisabled = "KataPodSandboxingDisabled"
+	// KataPodSandboxingUnsupportedProvisionMode is the condition reason set when a NodeClass requests a
+	// Kata workloadRuntime but the provision mode cannot provision the Kata host stack (only AKS Machine
+	// API modes can).
+	KataPodSandboxingUnsupportedProvisionMode = "KataPodSandboxingUnsupportedProvisionMode"
 )
 
 type ValidationReconciler struct {
@@ -61,6 +69,32 @@ func NewValidationReconciler(
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
+
+	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision when the
+	// feature is enabled AND the provision mode is an AKS Machine API mode (the only path wired for
+	// Kata). Surface either gap as a validation failure so the user gets fast feedback on the NodeClass
+	// (and Karpenter core won't create doomed NodeClaims) instead of silently-pending pods and churning
+	// launch failures. The provisioning paths (buildAKSMachineTemplate, imagefamily resolver) keep
+	// their own guards as defense-in-depth.
+	if nodeClass.IsKataEnabled() {
+		opts := options.FromContext(ctx)
+		if !opts.KataPodSandboxingEnabled() {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				KataPodSandboxingDisabled,
+				fmt.Sprintf("workloadRuntime %q requires the Kata Pod Sandboxing feature to be enabled (ENABLE_KATA_POD_SANDBOXING=true)", nodeClass.GetWorkloadRuntime()),
+			)
+			return reconcile.Result{}, nil
+		}
+		if !opts.IsAKSMachineAPIMode() {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				KataPodSandboxingUnsupportedProvisionMode,
+				fmt.Sprintf("workloadRuntime %q requires an AKS Machine API provision mode", nodeClass.GetWorkloadRuntime()),
+			)
+			return reconcile.Result{}, nil
+		}
+	}
 
 	// Check BYOK RBAC if DES ID is configured
 	if r.parsedDiskEncryptionSetID != nil {

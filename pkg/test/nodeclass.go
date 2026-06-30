@@ -160,12 +160,12 @@ func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, ve
 	var images []imagefamilytypes.DefaultImageOutput
 	switch imageFamily {
 	case v1beta1.Ubuntu2204ImageFamily:
-		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode)
+		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode, false)
 	case v1beta1.AzureLinuxImageFamily:
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode)
+			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode, false)
 		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode)
+			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode, false)
 		}
 	}
 	nodeImages := []imagefamily.NodeImage{}

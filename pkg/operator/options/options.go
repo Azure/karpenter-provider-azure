@@ -95,6 +95,11 @@ type Options struct {
 	// If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE is already an AKS Machine API mode, as it will behave as if this option is set to true.
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 
+	// EnableKataPodSandboxing gates the AKSNodeClass workloadRuntime field (AKS Pod Sandboxing / Kata).
+	// Disabled by default; when false, a NodeClass requesting a Kata workloadRuntime is rejected at
+	// provisioning. Requires an AKS Machine API provision mode.
+	EnableKataPodSandboxing bool `json:"enableKataPodSandboxing,omitempty"`
+
 	AKSMachinesPoolName       string        `json:"aksMachinesPoolName,omitempty"`       // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
 	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"` // Idle duration for provider batch accumulation (default 1s). Only used on provision mode aksmachineapiheaderbatch.
 	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
@@ -140,6 +145,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
 	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
 	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", true), "If set to false then Azure SDK middleware logging is disabled for debugging, and won't be logging all HTTP requests/responses to Azure APIs.")
+	fs.BoolVar(&o.EnableKataPodSandboxing, "enable-kata-pod-sandboxing", env.WithDefaultBool("ENABLE_KATA_POD_SANDBOXING", false), "If set to true, enables the AKSNodeClass workloadRuntime field (AKS Pod Sandboxing / Kata). Requires an AKS Machine API provision mode. Disabled by default.")
 }
 
 // IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.

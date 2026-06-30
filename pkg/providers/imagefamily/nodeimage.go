@@ -89,7 +89,7 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 		return []NodeImage{}, err
 	}
 
-	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG)
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsKataEnabled())
 
 	key, err := p.cacheKey(
 		supportedImages,

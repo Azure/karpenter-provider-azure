@@ -25,8 +25,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -104,6 +106,53 @@ var _ = Describe("Validation Reconciler", func() {
 				},
 			}
 
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsTrue()).To(BeTrue())
+		})
+	})
+
+	Context("Kata Pod Sandboxing (workloadRuntime) validation", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+		})
+
+		It("should fail validation when the Kata feature is disabled", func() {
+			ctx = options.ToContext(ctx, &options.Options{
+				EnableKataPodSandboxing: false,
+				ProvisionMode:           consts.ProvisionModeAKSMachineAPI,
+			})
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.KataPodSandboxingDisabled))
+		})
+
+		It("should fail validation when the feature is enabled but provision mode can't provision Kata", func() {
+			ctx = options.ToContext(ctx, &options.Options{
+				EnableKataPodSandboxing: true,
+				ProvisionMode:           consts.ProvisionModeAKSScriptless,
+			})
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.KataPodSandboxingUnsupportedProvisionMode))
+		})
+
+		It("should pass validation when the feature is enabled and provision mode is AKS Machine API", func() {
+			ctx = options.ToContext(ctx, &options.Options{
+				EnableKataPodSandboxing: true,
+				ProvisionMode:           consts.ProvisionModeAKSMachineAPI,
+			})
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))

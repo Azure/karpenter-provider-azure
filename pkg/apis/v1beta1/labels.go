@@ -44,6 +44,8 @@ func init() {
 	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
 	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux)
 	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
+	karpv1.WellKnownValuesForRequirements[AKSLabelKataVMIsolation] = sets.New("true")
+	karpv1.WellKnownValuesForRequirements[AKSLabelKataMshvVMIsolation] = sets.New("true")
 }
 
 var (
@@ -107,6 +109,8 @@ var (
 		AKSLabelPriority,
 		AKSLabelOSSKU,
 		AKSLabelFIPSEnabled,
+		AKSLabelKataVMIsolation,
+		AKSLabelKataMshvVMIsolation,
 	)
 
 	AllowUndefinedWellKnownAndRestrictedLabels = func(options *scheduling.CompatibilityOptions) {
@@ -157,6 +161,24 @@ var (
 	AKSLabelPriority                = AKSLabelDomain + "/priority"         // "spot" or "regular".
 	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
 	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
+
+	// Kata / AKS Pod Sandboxing labels. kata-mshv-vm-isolation is the legacy name being renamed to
+	// kata-vm-isolation; both denote the same Pod Sandboxing mechanism. Karpenter advertises/predicts
+	// and stamps BOTH for any Kata workloadRuntime (see KataNodeLabels) so scale-up prediction is
+	// robust to whichever label AKS actually stamps and whichever a pod selects during the rename.
+	AKSLabelKataVMIsolation     = AKSLabelDomain + "/kata-vm-isolation"      // "true" or not specified
+	AKSLabelKataMshvVMIsolation = AKSLabelDomain + "/kata-mshv-vm-isolation" // "true" or not specified (legacy)
+
+	// KataNodeLabels is the single source of truth for the node labels advertised and stamped for a
+	// Kata (Pod Sandboxing) node. Both spellings are emitted for any Kata workloadRuntime because they
+	// denote the same mechanism mid-rename. Keep this in sync with AzureWellKnownLabels,
+	// WellKnownValuesForRequirements (see init), and the CEL allowlist in
+	// hack/validation/{labels,requirements}.sh (regenerate CRDs after changes).
+	// When AKS fully retires kata-mshv-vm-isolation, remove it from this list and the places above —
+	// but only AFTER AKS stops stamping it, else pods still selecting the legacy label stop scheduling.
+	// Advertising both spellings is safe: e2e (#1721) confirmed AKS does not prune the kubernetes.azure.com
+	// label it didn't stamp, so the unstamped spelling persists on the node and does not cause drift.
+	KataNodeLabels = []string{AKSLabelKataVMIsolation, AKSLabelKataMshvVMIsolation}
 
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
 	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
