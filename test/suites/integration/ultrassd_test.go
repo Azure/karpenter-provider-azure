@@ -27,20 +27,14 @@ import (
 )
 
 var _ = Describe("UltraSSD", func() {
-	It("should enable UltraSSD when explicitly enabled", func() {
-		nodePool = coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      v1beta1.LabelUltraSSD,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"true"},
-		})
-
+	It("should disable UltraSSD when not specified", func() {
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
 		env.EventuallyExpectInitializedNodeCount("==", 1)
 		node := env.GetNode(pods[0].Spec.NodeName)
-		verifyUltraSSDOnNode(node, true)
+		verifyUltraSSDOnNode(node, false)
 	})
 
 	It("should disable UltraSSD when explicitly disabled", func() {
@@ -57,6 +51,22 @@ var _ = Describe("UltraSSD", func() {
 		env.EventuallyExpectInitializedNodeCount("==", 1)
 		node := env.GetNode(pods[0].Spec.NodeName)
 		verifyUltraSSDOnNode(node, false)
+	})
+
+	It("should enable UltraSSD when explicitly enabled", func() {
+		nodePool = coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelUltraSSD,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"true"},
+		})
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		node := env.GetNode(pods[0].Spec.NodeName)
+		verifyUltraSSDOnNode(node, true)
 	})
 })
 
