@@ -134,7 +134,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.AKSLabelMemory:                    "8192",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
-				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
+				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "50",
 				v1beta1.AKSLabelCluster:                   env.NodeResourceGroup,
 				v1beta1.AKSLabelMode:                      "system",
 				v1beta1.AKSLabelScaleSetPriority:          "regular",

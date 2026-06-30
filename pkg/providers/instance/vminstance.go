@@ -571,7 +571,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
 					Name:         lo.ToPtr(opts.VMName),
-					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
+					DiskSizeGB:   lo.ToPtr(opts.LaunchTemplate.StorageProfileSizeGB),
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},

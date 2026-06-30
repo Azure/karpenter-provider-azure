@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
@@ -145,10 +144,11 @@ func (r *defaultResolver) Resolve(
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
 
-	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
+	osDiskProfile, err := instancetype.ResolveOSDiskProfileFor(ctx, r.instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB)
 	if err != nil {
 		return nil, err
 	}
+	diskType := lo.Ternary(osDiskProfile.IsEphemeral(), consts.StorageProfileEphemeral, consts.StorageProfileManagedDisks)
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
@@ -176,31 +176,14 @@ func (r *defaultResolver) Resolve(
 			nodeClass.Spec.LinuxOSConfig,
 		),
 		StorageProfileDiskType:    diskType,
-		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
-		StorageProfilePlacement:   lo.FromPtr(placement),
-
-		// TODO: We could potentially use the instance type to do defaulting like
-		// traditional AKS, so putting this here along with the other settings
-		StorageProfileSizeGB: lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
-		ImageID:              imageID,
-		IsWindows:            false, // TODO(Windows)
+		StorageProfileIsEphemeral: osDiskProfile.IsEphemeral(),
+		StorageProfilePlacement:   lo.FromPtr(osDiskProfile.Placement),
+		StorageProfileSizeGB:      osDiskProfile.SizeGB,
+		ImageID:                   imageID,
+		IsWindows:                 false, // TODO(Windows)
 	}
 
 	return template, nil
-}
-
-func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, err error) {
-	sku, err := r.instanceTypeProvider.Get(ctx, instanceType.Name)
-	if err != nil {
-		return "", nil, err
-	}
-
-	_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
-
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		return consts.StorageProfileEphemeral, placement, nil
-	}
-	return consts.StorageProfileManagedDisks, placement, nil
 }
 
 func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {
