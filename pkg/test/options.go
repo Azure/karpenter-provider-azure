@@ -18,6 +18,7 @@ package test
 
 import (
 	"fmt"
+	"time"
 
 	"dario.cat/mergo"
 	"github.com/samber/lo"
@@ -49,9 +50,9 @@ type OptionsFields struct {
 	ClusterDNSServiceIP            *string
 	ManageExistingAKSMachines      *bool
 	AKSMachinesPoolName            *string
-	BatchIdleTimeoutMS             *int
-	BatchMaxTimeoutMS              *int
-	MaxBatchSize                   *int
+	ProviderBatchIdleDuration      *time.Duration
+	ProviderBatchMaxDuration       *time.Duration
+	ProviderBatchMaxSize           *int
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -93,8 +94,8 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
 		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),
-		BatchIdleTimeoutMS:             lo.FromPtrOr(options.BatchIdleTimeoutMS, 1000),
-		BatchMaxTimeoutMS:              lo.FromPtrOr(options.BatchMaxTimeoutMS, 5000),
-		MaxBatchSize:                   lo.FromPtrOr(options.MaxBatchSize, 50),
+		ProviderBatchIdleDuration:      lo.FromPtrOr(options.ProviderBatchIdleDuration, time.Second),
+		ProviderBatchMaxDuration:       lo.FromPtrOr(options.ProviderBatchMaxDuration, 5*time.Second),
+		ProviderBatchMaxSize:           lo.FromPtrOr(options.ProviderBatchMaxSize, 50),
 	}
 }
