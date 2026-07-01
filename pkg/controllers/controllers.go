@@ -32,6 +32,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/bootstraptoken"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -39,6 +40,7 @@ import (
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -80,5 +82,13 @@ func NewControllers(
 
 		instancetypecontroller.NewController(instanceTypesProvider),
 	}
+
+	// Only start the bootstrap token controller if the token was not explicitly provided via options.
+	// This allows the controller to automatically discover the token from kube-system secrets.
+	opts := options.FromContext(ctx)
+	if opts.KubeletClientTLSBootstrapToken == "" {
+		controllers = append(controllers, bootstraptoken.NewController(inClusterKubernetesInterface, opts))
+	}
+
 	return controllers
 }
