@@ -768,6 +768,23 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              vmSizeProperties:
+                description: |-
+                  vmSizeProperties configures VM size customization options such as vCPU-to-physical-core ratio.
+                  This allows disabling hyperthreading (SMT) by setting vCPUsPerCore to 1.
+                  For more details see https://learn.microsoft.com/en-us/azure/virtual-machines/vm-customization
+                properties:
+                  vCPUsPerCore:
+                    description: |-
+                      vCPUsPerCore specifies the vCPU to physical core ratio.
+                      Setting this to 1 disables hyperthreading (SMT).
+                      Setting this to 2 or omitting enables hyperthreading (default).
+                      Note: Can only be set at VM creation time, not on running VMs.
+                    format: int32
+                    maximum: 2
+                    minimum: 1
+                    type: integer
+                type: object
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -1668,6 +1685,23 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              vmSizeProperties:
+                description: |-
+                  vmSizeProperties configures VM size customization options such as vCPU-to-physical-core ratio.
+                  This allows disabling hyperthreading (SMT) by setting vCPUsPerCore to 1.
+                  For more details see https://learn.microsoft.com/en-us/azure/virtual-machines/vm-customization
+                properties:
+                  vCPUsPerCore:
+                    description: |-
+                      vCPUsPerCore specifies the vCPU to physical core ratio.
+                      Setting this to 1 disables hyperthreading (SMT).
+                      Setting this to 2 or omitting enables hyperthreading (default).
+                      Note: Can only be set at VM creation time, not on running VMs.
+                    format: int32
+                    maximum: 2
+                    minimum: 1
+                    type: integer
+                type: object
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
