@@ -53,7 +53,7 @@ Karpenter provider for AKS can be used in two modes:
 The following AKS features are not supported:
 * Windows nodes.
 * Kubenet and Calico.
-* IPv6 clusters.
+* Single-stack IPv6 clusters. Dual-stack (IPv4 + IPv6) Azure CNI clusters are supported, and nodes provisioned by Karpenter are configured with both IPv4 and IPv6 addresses.
 * [Service Principal](https://learn.microsoft.com/azure/aks/kubernetes-service-principal) based clusters. A system-assigned or user-assigned managed identity must be used.
 * Clusters running Karpenter should not be [stopped](https://learn.microsoft.com/azure/aks/start-stop-cluster).
 * All cluster egress [outbound types](https://learn.microsoft.com/azure/aks/egress-outboundtype) are supported, however the type can't be changed after the cluster is created.

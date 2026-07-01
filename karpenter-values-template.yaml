@@ -30,6 +30,8 @@ controller:
       value: ${VNET_GUID}
     - name: NODE_IDENTITIES
       value: ${NODE_IDENTITIES}
+    - name: NODE_IP_FAMILIES
+      value: ${NODE_IP_FAMILIES}
 
     # Azure client settings
     - name: AZURE_SUBSCRIPTION_ID
