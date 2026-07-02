@@ -50,7 +50,7 @@ import (
 //     system knows to move it to the per-machine header.
 //   - If the field is the same for all NodeClaims in a NodePool+NodeClass (like VMSize),
 //     no action needed — it's automatically part of the shared template and batch grouping hash.
-func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
+func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, zone string, ultraSSD bool, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
 	}
@@ -128,7 +128,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Hardware: &armcontainerservice.MachineHardwareProfile{
 				VMSize: lo.ToPtr(instanceType.Name),
 				// GPUInstanceProfile: nil,
-				GpuProfile: gpuProfile,
+				GpuProfile:      gpuProfile,
+				UltraSsdEnabled: lo.ToPtr(ultraSSD),
 			},
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),

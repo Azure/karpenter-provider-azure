@@ -68,6 +68,7 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+	UltraSSDEnabled          bool
 }
 
 type Provider interface {
@@ -267,6 +268,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, fmt.Sprint(isUltraSSDAvailable(sku, zone))),
 			),
 			Price:     onDemandPrice,
 			Available: availableOnDemand,
@@ -279,6 +281,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, fmt.Sprint(isUltraSSDAvailable(sku, zone))),
 			),
 			Price:     spotPrice,
 			Available: availableSpot,
@@ -533,4 +536,15 @@ func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
 	const selector = "NvmeDiskSizeInMiB"
 	return s.GetCapabilityIntegerQuantity(selector)
+}
+
+func isUltraSSDAvailable(sku *skewer.SKU, zone string) bool {
+	if zone == "0" {
+		return sku.IsUltraSSDAvailableWithoutAvailabilityZone()
+	}
+	z := strings.Split(zone, "-")
+	if len(z) > 1 {
+		return sku.IsUltraSSDAvailableInAvailabilityZone(z[len(z)-1])
+	}
+	return false
 }

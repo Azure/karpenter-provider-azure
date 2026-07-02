@@ -37,6 +37,7 @@ func init() {
 	karpv1.WellKnownValuesForRequirements[karpv1.CapacityTypeLabelKey] = sets.New(karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot)
 	karpv1.WellKnownValuesForRequirements[LabelSKUAcceleratedNetworking] = sets.New("true", "false")
 	karpv1.WellKnownValuesForRequirements[LabelSKUStoragePremiumCapable] = sets.New("true", "false")
+	karpv1.WellKnownValuesForRequirements[LabelUltraSSD] = sets.New("true", "false")
 	karpv1.WellKnownValuesForRequirements[LabelSKUGPUManufacturer] = sets.New(ManufacturerNvidia, ManufacturerAMD)
 	karpv1.WellKnownValuesForRequirements[LabelPlacementScope] = sets.New(PlacementScopeZonal, PlacementScopeRegional)
 	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
@@ -95,6 +96,7 @@ var (
 
 		LabelSKUStoragePremiumCapable,
 		LabelSKUStorageEphemeralOSMaxSize,
+		LabelUltraSSD,
 
 		LabelSKUGPUName,
 		LabelSKUGPUManufacturer,
@@ -136,6 +138,7 @@ var (
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
 	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // calculated as max(sku.CachedDiskBytes, sku.MaxResourceVolumeMB)
+	LabelUltraSSD                     = Group + "/sku-storage-ultra-ssd"           // sku.IsUltraSSD
 
 	// GPU labels
 	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize

@@ -551,6 +551,7 @@ type createVMOptions struct {
 	UseSIG              bool
 	DiskEncryptionSetID string
 	NodePoolName        string
+	UltraSsdEnabled     bool
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -614,6 +615,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
+	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSsdEnabled)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -675,6 +677,15 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
+}
+
+func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSsdEnabled bool) {
+	if ultraSsdEnabled {
+		if vmProperties.AdditionalCapabilities == nil {
+			vmProperties.AdditionalCapabilities = &armcompute.AdditionalCapabilities{}
+		}
+		vmProperties.AdditionalCapabilities.UltraSSDEnabled = &ultraSsdEnabled
 	}
 }
 
@@ -752,9 +763,13 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}
 	instanceType := selection.InstanceType
 	capacityType := selection.CapacityType()
+
+	ultraSSD := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).
+		Get(v1beta1.LabelUltraSSD).
+		Has("true")
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
-	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope)
+	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope, ultraSSD)
 	if err != nil {
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
@@ -819,6 +834,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		UseSIG:              options.FromContext(ctx).UseSIG,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
+		UltraSsdEnabled:     ultraSSD,
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
@@ -914,6 +930,7 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 	placementScope string,
+	ultraSSD bool,
 ) (*launchtemplate.Template, error) {
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
@@ -929,6 +946,7 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 		map[string]string{
 			karpv1.CapacityTypeLabelKey: capacityType,
 			v1beta1.LabelPlacementScope: placementScope,
+			v1beta1.LabelUltraSSD:       fmt.Sprint(ultraSSD),
 		},
 	)
 

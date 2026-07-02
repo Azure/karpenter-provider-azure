@@ -441,9 +441,12 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	capacityType := selection.CapacityType()
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
+	ultraSSD := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).
+		Get(v1beta1.LabelUltraSSD).
+		Has("true")
 
 	// Build the AKS machine template
-	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, placementScope, zone, nodeClass, nodeClaim)
+	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, placementScope, zone, ultraSSD, nodeClass, nodeClaim)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}

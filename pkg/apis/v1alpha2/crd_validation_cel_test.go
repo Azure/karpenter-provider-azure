@@ -782,6 +782,7 @@ var _ = Describe("CEL/Validation", func() {
 			v1beta1.AKSLabelPriority,
 			v1beta1.AKSLabelOSSKU,
 			v1beta1.AKSLabelFIPSEnabled,
+			v1beta1.LabelUltraSSD,
 		)
 		expectKnownValueValidationError := func(err error, key string) {
 			Expect(err).To(MatchError(And(
@@ -902,6 +903,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("AKS OS SKU Ubuntu", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu, v1beta1.Ubuntu2204ImageFamily),
 			Entry("AKS OS SKU AzureLinux", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureLinux, "AzureLinux3"),
 			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
+			Entry("UltraSSD", v1beta1.LabelUltraSSD, "true", "maybe"),
 		)
 		It("should not allow restricted kubernetes.azure.com requirements", func() {
 			oldNodePool := nodePool.DeepCopy()
@@ -956,8 +958,22 @@ var _ = Describe("CEL/Validation", func() {
 	})
 	Context("Labels", func() {
 		It("should allow well known label exceptions", func() {
+			knownValueLabelLabels := sets.New(
+				karpv1.NodePoolLabelKey,
+				karpv1.CapacityTypeLabelKey,
+				v1beta1.LabelSKUAcceleratedNetworking,
+				v1beta1.LabelSKUStoragePremiumCapable,
+				v1beta1.LabelSKUGPUManufacturer,
+				v1beta1.LabelPlacementScope,
+				v1beta1.AKSLabelMode,
+				v1beta1.AKSLabelScaleSetPriority,
+				v1beta1.AKSLabelPriority,
+				v1beta1.AKSLabelOSSKU,
+				v1beta1.AKSLabelFIPSEnabled,
+				v1beta1.LabelUltraSSD,
+			)
 			oldNodePool := nodePool.DeepCopy()
-			for label := range karpv1.WellKnownLabels.Difference(sets.New(karpv1.NodePoolLabelKey)) {
+			for label := range karpv1.WellKnownLabels.Difference(knownValueLabelLabels) {
 				nodePool.Spec.Template.Labels = map[string]string{
 					label: "test",
 				}
