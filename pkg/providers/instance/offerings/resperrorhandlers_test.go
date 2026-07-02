@@ -112,7 +112,7 @@ type responseErrorTestCase struct {
 // reason on the Launched condition, with the friendly message preserved. When no
 // reason is expected (e.g. InsufficientCapacityError passthrough), the error must
 // not carry a Launched reason and its message must match.
-func assertHandledError(g Gomega, actual, expected error, expectedReason string) {
+func assertHandledError(g Gomega, actual error, expected error, expectedReason string) {
 	if expected == nil {
 		g.Expect(actual).To(BeNil())
 		return

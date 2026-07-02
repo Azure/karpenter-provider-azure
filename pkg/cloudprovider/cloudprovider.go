@@ -713,10 +713,11 @@ func truncateMessage(msg string) string {
 // it falls back to the generic CreateInstanceFailed reason and error text, preserving prior
 // behavior.
 func toCreateError(err error, wrapMsg string) error {
-	reason, message := CreateInstanceFailedReason, err.Error()
-	var classified *cloudprovider.CreateError
-	if stderrors.As(err, &classified) {
-		reason, message = classified.ConditionReason, classified.ConditionMessage
+	reason := CreateInstanceFailedReason
+	message := err.Error()
+	if classified, ok := stderrors.AsType[*cloudprovider.CreateError](err); ok {
+		reason = classified.ConditionReason
+		message = classified.ConditionMessage
 	}
 	return cloudprovider.NewCreateError(fmt.Errorf("%s, %w", wrapMsg, err), reason, truncateMessage(message))
 }
