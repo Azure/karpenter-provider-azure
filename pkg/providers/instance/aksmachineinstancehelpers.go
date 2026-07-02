@@ -87,8 +87,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, err
 	}
 
-	// OSDiskSizeGB, OSDiskType
-	osDiskSizeGB, osDiskType, err := configureOSDisk(ctx, p.instanceTypeProvider, nodeClass, instanceType)
+	// OSDiskType
+	osDiskType, err := configureOSDiskType(ctx, p.instanceTypeProvider, nodeClass, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
 				OSSKU:        osSku,
-				OSDiskSizeGB: osDiskSizeGB,
+				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
 				OSDiskType:   osDiskType,
 				EnableFIPS:   enableFIPS,
 				LinuxProfile: func() *armcontainerservice.MachineOSProfileLinuxProfile {
@@ -261,16 +261,14 @@ func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[stri
 	return result
 }
 
-// configureOSDisk resolves the OS disk size and type for the machine; the size is sent
-// explicitly (not left for the AKS machine API to default) so it matches the VM path and
-// the reported ephemeral-storage capacity.
-func configureOSDisk(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*int32, *armcontainerservice.OSDiskType, error) {
+// configureOSDiskType resolves the OS disk type; the size is left for the AKS machine API to default when unset.
+func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
 	osDiskProfile, err := instancetype.ResolveOSDiskProfileFor(ctx, instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	osDiskType := lo.Ternary(osDiskProfile.IsEphemeral(), armcontainerservice.OSDiskTypeEphemeral, armcontainerservice.OSDiskTypeManaged)
-	return lo.ToPtr(osDiskProfile.SizeGB), lo.ToPtr(osDiskType), nil
+	return lo.ToPtr(osDiskType), nil
 }
 
 func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriority {

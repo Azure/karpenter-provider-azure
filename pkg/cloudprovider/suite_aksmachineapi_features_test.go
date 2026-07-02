@@ -471,9 +471,8 @@ var _ = Describe("CloudProvider", func() {
 				Expect(aksMachine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
 				Expect(*aksMachine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(128)))
 			})
-			It("should auto-size the OS disk and send the resolved size when osDiskSizeGB is not set", func() {
-				// Standard_D64s_v3 has 1600GiB of CacheDisk space; with osDiskSizeGB unset, the
-				// machine gets an ephemeral OS disk auto-sized to the SKU-supported maximum
+			It("should request an ephemeral OS disk and leave the size to the AKS machine API when osDiskSizeGB is not set", func() {
+				// Standard_D64s_v3 supports ephemeral; the unset size is left for the AKS machine API to default
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -491,8 +490,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
 				Expect(aksMachine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
 				Expect(*aksMachine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
-				Expect(aksMachine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
-				Expect(*aksMachine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(1600)))
+				Expect(aksMachine.Properties.OperatingSystem.OSDiskSizeGB).To(BeNil())
 			})
 		})
 
