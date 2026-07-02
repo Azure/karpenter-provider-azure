@@ -764,7 +764,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	instanceType := selection.InstanceType
 	capacityType := selection.CapacityType()
 
-	ultraSSD := selection.UltraSSD()
+	ultraSSD := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).
+		Get(v1beta1.LabelUltraSSD).
+		Has("true")
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
 	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope, ultraSSD)
