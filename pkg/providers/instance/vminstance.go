@@ -742,6 +742,15 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	return &createResult{Poller: poller, VM: vm}, nil
 }
 
+func isUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
+	for _, requirement := range nodeClaim.Spec.Requirements {
+		if requirement.Key == v1beta1.LabelUltraSSD && requirement.Operator == v1.NodeSelectorOpIn && len(requirement.Values) == 1 && requirement.Values[0] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
@@ -764,7 +773,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	instanceType := selection.InstanceType
 	capacityType := selection.CapacityType()
 
-	ultraSSD := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1beta1.LabelUltraSSD).Has("true")
+	ultraSSD := isUltraSSDRequested(nodeClaim)
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
 	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope, ultraSSD)
