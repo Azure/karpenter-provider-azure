@@ -303,6 +303,84 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+		// Managed NVIDIA GPU experience (gpu.nvidia.managementMode) on the AKS machine API path.
+		Context("Create - Managed NVIDIA GPU", func() {
+			scheduleGPUPod := func() {
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "managed-gpu",
+						Labels: map[string]string{"app": "managed-gpu"},
+					},
+					Image: "mcr.microsoft.com/azuredocs/samples-tf-mnist-demo:gpu",
+					ResourceRequirements: v1.ResourceRequirements{
+						Limits: v1.ResourceList{"nvidia.com/gpu": resource.MustParse("1")},
+					},
+					RestartPolicy: v1.RestartPolicy("OnFailure"),
+					Tolerations: []v1.Toleration{{
+						Key:      "sku",
+						Operator: v1.TolerationOpEqual,
+						Value:    "gpu",
+						Effect:   v1.TaintEffectNoSchedule,
+					}},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+
+			popCreatedMachine := func() armcontainerservice.Machine {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+				Expect(aksMachine.Properties).ToNot(BeNil())
+				Expect(aksMachine.Properties.Hardware).ToNot(BeNil())
+				return aksMachine
+			}
+
+			It("should set GpuProfile.Nvidia.ManagementMode=Managed for a Managed NVIDIA GPU NodeClass", func() {
+				nodeClass.Spec.GPU = &v1beta1.GPU{
+					Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				Expect(utils.IsNvidiaEnabledSKU(lo.FromPtr(aksMachine.Properties.Hardware.VMSize))).To(BeTrue())
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+				Expect(gpuProfile.Nvidia).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Nvidia.ManagementMode)).To(Equal(armcontainerservice.ManagementModeManaged))
+			})
+
+			It("should not set GpuProfile.Nvidia when management mode is unset (unmanaged default, non-breaking)", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				Expect(utils.IsNvidiaEnabledSKU(lo.FromPtr(aksMachine.Properties.Hardware.VMSize))).To(BeTrue())
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(gpuProfile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+				Expect(gpuProfile.Nvidia).To(BeNil())
+			})
+
+			It("should not set GpuProfile.Nvidia when management mode is explicitly Unmanaged", func() {
+				nodeClass.Spec.GPU = &v1beta1.GPU{
+					Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeUnmanaged)},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				scheduleGPUPod()
+
+				aksMachine := popCreatedMachine()
+				gpuProfile := aksMachine.Properties.Hardware.GpuProfile
+				Expect(gpuProfile).ToNot(BeNil())
+				Expect(gpuProfile.Nvidia).To(BeNil())
+			})
+		})
+
 		// Ported from VM test: Context "additional-tags"
 		Context("Create - Additional Tags", func() {
 			It("should add additional tags to the AKS machine", func() {

@@ -184,6 +184,72 @@ var _ = Describe("GPU", func() {
 			}
 		},
 	)
+
+	It("should provision a GPU node with managed mode (nvidia.managementMode=Managed)",
+		Label("GPU"),
+		func() {
+			// Managed mode: AKS installs and manages the NVIDIA stack (device
+			// plugin + DCGM metrics) on top of the driver. Unlike the default
+			// table above, we deliberately do NOT deploy a device plugin
+			// DaemonSet ourselves — the managed experience must advertise
+			// nvidia.com/gpu on its own. A healthy pod that requests
+			// nvidia.com/gpu therefore proves the managed device plugin was
+			// installed by the platform.
+			//
+			// Prerequisite: the cluster subscription must have the managed GPU
+			// preview feature registered; otherwise the AKS machine API rejects
+			// managementMode=Managed and the NodeClaim surfaces an error.
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.GPU = &v1beta1.GPU{
+				Mode:   lo.ToPtr(v1beta1.GPUModeDriver),
+				Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)},
+			}
+
+			nodePool := env.DefaultNodePool(nodeClass)
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
+			})
+			nodePool.Spec.Limits = karpv1.Limits{
+				corev1.ResourceCPU:                    resource.MustParse("25"),
+				corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+			}
+
+			deployment := test.Deployment(test.DeploymentOptions{
+				Replicas: 1,
+				PodOptions: test.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "managed-gpu-test",
+						Labels: map[string]string{"app": "managed-gpu-test"},
+					},
+					ResourceRequirements: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							"nvidia.com/gpu": resource.MustParse("1"),
+						},
+					},
+				},
+			})
+
+			// Note: no device plugin DaemonSet is created here on purpose.
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+
+			env.EventuallyExpectHealthyPodCountWithTimeout(
+				time.Minute*15,
+				labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels),
+				int(*deployment.Spec.Replicas),
+			)
+			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
+
+			// The managed device plugin must have advertised the GPU resource
+			// without any user-deployed device plugin.
+			nodes := env.Monitor.CreatedNodes()
+			Expect(nodes).To(HaveLen(int(*deployment.Spec.Replicas)))
+			for _, node := range nodes {
+				_, hasGPUResource := node.Status.Allocatable[corev1.ResourceName("nvidia.com/gpu")]
+				Expect(hasGPUResource).To(BeTrue(), "node %s should advertise nvidia.com/gpu under managed GPU mode", node.Name)
+			}
+		},
+	)
 })
 
 func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
