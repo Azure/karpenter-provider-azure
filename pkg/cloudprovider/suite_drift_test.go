@@ -45,6 +45,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
+// This test file is for drift detection and handling behavior.
+
 func runDriftTests(provisionMode provisionModeTestCase) {
 	Context("Drift", func() {
 		var nodeClaim *karpv1.NodeClaim

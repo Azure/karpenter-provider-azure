@@ -57,6 +57,8 @@ import (
 	"github.com/Azure/skewer"
 )
 
+// This test file is for offering (e.g., VM size, zones) selection and quota/capacity provisioning errors.
+
 //nolint:gocyclo
 func runOfferingTests(provisionMode provisionModeTestCase) {
 	Context("Create - Expected Creation Failures", func() {

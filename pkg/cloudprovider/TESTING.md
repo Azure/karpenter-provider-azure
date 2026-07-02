@@ -1,6 +1,7 @@
 # `cloudprovider` module acceptance tests
 
 This package contains acceptance tests (i.e., end-to-end unit tests, integration unit tests) targeting executions from core controllers through provider-level `cloudprovider` interface implementation.
+Non-acceptance unit tests is not covered here, and should stay close to the code it is testing.
 
 ## What about non-`cloudprovider`?
 

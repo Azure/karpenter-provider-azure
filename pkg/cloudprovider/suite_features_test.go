@@ -60,6 +60,11 @@ import (
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
+// This test file is for observable provisioning features, such as:
+// - Fields from NodeClass to API/provisioning payloads (e.g., LocalDNS, KubeletConfig)
+// - Karpenter-configured provisioning payloads (e.g., Scriptless bootstrapping config)
+// - Labels and taints written to created resources
+
 //nolint:gocyclo
 func runFeatureTests(provisionMode provisionModeTestCase) {
 	Context("Create - GPU Workloads + Nodes", func() {

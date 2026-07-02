@@ -51,6 +51,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
+// This test file is for helpers/infrastructure. Avoid adding actual tests here.
+
 var ctx context.Context
 var testOptions *options.Options
 var stop context.CancelFunc

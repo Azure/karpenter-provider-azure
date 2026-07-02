@@ -61,6 +61,11 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
+// This test file is for common operational correctness, such as:
+// - `Create`, `List`, `Get`, and `Delete` flows
+// - Basic lifecycle behavior
+// - Unexpected errors handling
+
 func runIntegrationTests(provisionMode provisionModeTestCase) {
 	It("should be able to handle basic operations", func() {
 		ExpectApplied(ctx, env.Client, nodeClass, nodePool)
