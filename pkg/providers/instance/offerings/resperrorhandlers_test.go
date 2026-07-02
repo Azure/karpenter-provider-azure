@@ -18,6 +18,7 @@ package offerings
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -74,6 +75,11 @@ func (b *testCaseBuilder) expectError(err error) *testCaseBuilder {
 	return b
 }
 
+func (b *testCaseBuilder) expectReason(reason string) *testCaseBuilder {
+	b.tc.expectedReason = reason
+	return b
+}
+
 func (b *testCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *testCaseBuilder {
 	b.tc.expectedUnavailableOfferingsInformation = offerings
 	return b
@@ -96,8 +102,30 @@ type responseErrorTestCase struct {
 	capacityType                            string
 	responseErr                             error
 	expectedErr                             error
+	expectedReason                          string
 	expectedUnavailableOfferingsInformation []offeringToCheck
 	expectedAvailableOfferingsInformation   []offeringToCheck
+}
+
+// assertHandledError verifies the error returned by a handler dispatch. When a
+// reason is expected, the error must be a CreateError carrying that machine-readable
+// reason on the Launched condition, with the friendly message preserved. When no
+// reason is expected (e.g. InsufficientCapacityError passthrough), the error must
+// not carry a Launched reason and its message must match.
+func assertHandledError(g Gomega, actual error, expected error, expectedReason string) {
+	if expected == nil {
+		g.Expect(actual).To(BeNil())
+		return
+	}
+	var ce *cloudprovider.CreateError
+	if expectedReason != "" {
+		g.Expect(errors.As(actual, &ce)).To(BeTrue(), "expected a CreateError carrying reason %q", expectedReason)
+		g.Expect(ce.ConditionReason).To(Equal(expectedReason))
+		g.Expect(ce.ConditionMessage).To(Equal(expected.Error()))
+	} else {
+		g.Expect(errors.As(actual, &ce)).To(BeFalse(), "did not expect a CreateError to be returned")
+		g.Expect(actual).To(MatchError(expected.Error()))
+	}
 }
 
 func createDefaultTestSKU() *skewer.SKU {
@@ -151,6 +179,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.LowPriorityQuotaExceededTerm).
 			expectError(fmt.Errorf("%s", errMsgLowPriorityQuota)).
+			expectReason(SubscriptionQuotaReachedReason).
 			expectUnavailable(defaultTestOfferingInfo("", karpv1.CapacityTypeSpot)).
 			build(),
 
@@ -159,6 +188,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.SKUFamilyQuotaExceededTerm).
 			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(SubscriptionQuotaReachedReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
@@ -170,6 +200,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OperationNotAllowed, "Family Cores quota Current Limit: 0").
 			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(SubscriptionQuotaReachedReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
@@ -181,6 +212,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withResponseError(sdkerrors.SKUNotAvailableErrorCode, "").
 			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeSpot)).
+			expectReason(SKUNotAvailableReason).
 			expectUnavailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
 			expectAvailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
 			build(),
@@ -190,6 +222,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.SKUNotAvailableErrorCode, "").
 			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, testInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
+			expectReason(SKUNotAvailableReason).
 			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
 			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
 			build(),
@@ -199,6 +232,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.ZoneAllocationFailed, "").
 			expectError(fmt.Errorf(errMsgZonalAllocationFailureFmt, testZone2)).
+			expectReason(ZonalAllocationFailureReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
@@ -216,6 +250,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.AllocationFailed, "").
 			expectError(fmt.Errorf(errMsgAllocationFailureFmt, testInstanceName)).
+			expectReason(AllocationFailureReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeSpot),
@@ -231,6 +266,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OverconstrainedZonalAllocationRequest, "").
 			expectError(fmt.Errorf(errMsgOverconstrainedZonalFmt, testZone2, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(OverconstrainedZonalAllocationFailureReason).
 			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
 			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
 			build(),
@@ -240,6 +276,7 @@ func setupTestCases() []responseErrorTestCase {
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OverconstrainedAllocationRequest, "").
 			expectError(fmt.Errorf(errMsgOverconstrainedAllocationFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectReason(OverconstrainedAllocationFailureReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeOnDemand),
@@ -294,11 +331,7 @@ func TestHandleResponseErrors(t *testing.T) {
 				tc.responseErr,
 			)
 
-			if tc.expectedErr == nil {
-				g.Expect(err).To(BeNil())
-			} else {
-				g.Expect(err).To(Equal(tc.expectedErr))
-			}
+			assertHandledError(g, err, tc.expectedErr, tc.expectedReason)
 			assertOfferingsState(t, provider.UnavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
