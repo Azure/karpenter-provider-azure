@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -764,9 +765,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	instanceType := selection.InstanceType
 	capacityType := selection.CapacityType()
 
-	ultraSSD := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).
-		Get(v1beta1.LabelUltraSSD).
-		Has("true")
+	ultraSSD := strings.EqualFold(nodeClaim.Labels[v1beta1.LabelUltraSSD], "true")
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
 	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope, ultraSSD)

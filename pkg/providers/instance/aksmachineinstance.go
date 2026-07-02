@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -441,9 +442,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	capacityType := selection.CapacityType()
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
-	ultraSSD := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).
-		Get(v1beta1.LabelUltraSSD).
-		Has("true")
+	ultraSSD := strings.EqualFold(nodeClaim.Labels[v1beta1.LabelUltraSSD], "true")
 
 	// Build the AKS machine template
 	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, placementScope, zone, ultraSSD, nodeClass, nodeClaim)
