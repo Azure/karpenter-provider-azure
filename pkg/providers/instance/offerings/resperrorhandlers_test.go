@@ -112,7 +112,9 @@ type responseErrorTestCase struct {
 // reason on the Launched condition, with the friendly message preserved. When no
 // reason is expected (e.g. InsufficientCapacityError passthrough), the error must
 // not carry a Launched reason and its message must match.
-func assertHandledError(g Gomega, actual error, expected error, expectedReason string) {
+func assertHandledError(t *testing.T, actual error, expected error, expectedReason string) {
+	t.Helper()
+	g := NewWithT(t)
 	if expected == nil {
 		g.Expect(actual).To(BeNil())
 		return
@@ -319,7 +321,6 @@ func TestHandleResponseErrors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
-			g := NewWithT(t)
 			provider := newTestResponseErrorHandling()
 
 			err := provider.Handle(
@@ -331,7 +332,7 @@ func TestHandleResponseErrors(t *testing.T) {
 				tc.responseErr,
 			)
 
-			assertHandledError(g, err, tc.expectedErr, tc.expectedReason)
+			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
 			assertOfferingsState(t, provider.UnavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}

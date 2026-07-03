@@ -169,7 +169,6 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
-			g := NewWithT(t)
 			handler := newTestAKSMachineBeginCreateErrorHandler()
 
 			err := handler.Handle(
@@ -181,7 +180,7 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 				tc.he,
 			)
 
-			assertHandledError(g, err, tc.expectedErr, tc.expectedReason)
+			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
 			assertOfferingsState(t, handler.unavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
