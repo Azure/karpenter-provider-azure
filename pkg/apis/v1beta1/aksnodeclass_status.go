@@ -94,7 +94,7 @@ type AKSNodeClassStatus struct {
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 }
 
-func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
+func (in *AKSNodeClass) StatusConditions(opts ...status.ForOption) status.ConditionSet {
 	conds := []string{
 		ConditionTypeImagesReady,
 		ConditionTypeKubernetesVersionReady,
@@ -102,7 +102,7 @@ func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
 		ConditionTypeValidationSucceeded,
 		ConditionTypeLocalDNSReady,
 	}
-	return status.NewReadyConditions(conds...).For(in)
+	return status.NewReadyConditions(conds...).For(in, opts...)
 }
 
 func (in *AKSNodeClass) GetConditions() []status.Condition {

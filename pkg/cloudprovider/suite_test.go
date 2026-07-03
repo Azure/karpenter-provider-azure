@@ -193,7 +193,7 @@ func reconcileCapacityOverlay(customResource v1.ResourceName, overlayCapacity re
 		},
 	})
 	ExpectApplied(ctx, env.Client, nodeOverlay)
-	nodeOverlayController := nodeoverlay.NewController(env.Client, cloudProvider, azureEnv.InstanceTypeStore, cluster)
+	nodeOverlayController := nodeoverlay.NewController(env.Clock, env.Client, cloudProvider, azureEnv.InstanceTypeStore, cluster)
 	ExpectReconcileSucceeded(ctx, nodeOverlayController, client.ObjectKeyFromObject(nodeOverlay))
 }
 
