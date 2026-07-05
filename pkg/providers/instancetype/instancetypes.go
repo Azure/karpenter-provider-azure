@@ -613,7 +613,7 @@ func ResolveOSDiskProfile(sku *skewer.SKU, osDiskSizeGB *int32) OSDiskProfile {
 		return OSDiskProfile{SizeGB: *osDiskSizeGB}
 	}
 	if maxEphemeralSizeGB >= minEphemeralOSDiskSizeGB {
-		return OSDiskProfile{SizeGB: int32(maxEphemeralSizeGB), Placement: placement}
+		return OSDiskProfile{SizeGB: int32(maxEphemeralSizeGB), Placement: placement} //nolint:gosec // G115: value bounded to [128,2040], safe int32 conversion
 	}
 	return OSDiskProfile{SizeGB: defaultManagedOSDiskSizeGB(sku)}
 }
