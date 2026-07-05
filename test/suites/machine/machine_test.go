@@ -116,6 +116,40 @@ var _ = Describe("Machine Tests", func() {
 		}))
 	})
 
+	It("should auto-size an ephemeral OS disk when osDiskSizeGB is unset", func() {
+		// With osDiskSizeGB unset, Karpenter auto-selects an ephemeral OS disk sized to the SKU and
+		// leaves the size for the AKS machine API to provision. Standard_D64s_v3 has a large cache
+		// disk that supports an ephemeral OS disk well above the 128 GiB auto-sizing threshold.
+		Expect(nodeClass.Spec.OSDiskSizeGB).To(BeNil())
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"Standard_D64s_v3"},
+		})
+
+		env.ExpectCreated(nodeClass, nodePool, dep)
+		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+		machine := env.EventuallyExpectCreatedMachineCount("==", 1)[0]
+		env.EventuallyExpectHealthyPodCount(selector, int(numPods))
+
+		// Karpenter auto-selects an ephemeral OS disk for this SKU.
+		Expect(machine.Properties.OperatingSystem).ToNot(BeNil())
+		Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+		Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(containerservice.OSDiskTypeEphemeral))
+
+		// The advertised ephemeral-storage capacity reflects the auto-sized OS disk (well above the
+		// 128 GiB threshold for this SKU), not the former 128 GiB default.
+		advertised := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
+		Expect(advertised.ScaledValue(resource.Giga)).To(BeNumerically(">", int64(128)))
+
+		// The node the AKS machine API actually provisioned backs that advertised capacity with a
+		// real, large ephemeral disk (not a small image default), confirming the advertised size
+		// aligns with what gets provisioned when the size is left unset.
+		actual := env.GetNode(node.Name).Status.Capacity[corev1.ResourceEphemeralStorage]
+		Expect(actual.ScaledValue(resource.Giga)).To(BeNumerically(">", int64(128)))
+	})
+
 	// NOTE: ClusterTests modify the actual cluster itself, which means that performing tests after a cluster test
 	// might not have a clean environment, and might produce unexpected results. Ordering of cluster tests is important.
 	// The cluster modification is safe in CI as each test runs in its own cluster.
