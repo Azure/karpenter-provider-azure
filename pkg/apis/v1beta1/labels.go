@@ -28,7 +28,8 @@ import (
 
 func init() {
 	karpv1.RestrictedLabelDomains = karpv1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
-	karpv1.RestrictedLabels = karpv1.RestrictedLabels.Union(RestrictedLabels)
+	// TODO: Uncomment this after Sept 30, see: https://github.com/Azure/karpenter-provider-azure/issues/1707
+	// karpv1.RestrictedLabels = karpv1.RestrictedLabels.Union(RestrictedLabels)
 	// Note that adding to WellKnownLabels here requires a corresponding update to
 	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
 	// Karpenter core expects that WellKnownLabels are mapped to requirements.
@@ -63,21 +64,22 @@ var (
 	RestrictedLabels = sets.New(
 		LabelSKUHyperVGeneration,
 
+		// TODO: Uncomment these label restrictions after Sept 30, see: https://github.com/Azure/karpenter-provider-azure/issues/1707
 		// Legacy labels
-		AKSLabelLegacyAgentPool,
-		AKSLabelLegacyStorageProfile,
-		AKSLabelLegacyStorageTier,
-		AKSLabelLegacyAccelerator,
+		// AKSLabelLegacyAgentPool,
+		// AKSLabelLegacyStorageProfile,
+		// AKSLabelLegacyStorageTier,
+		// AKSLabelLegacyAccelerator,
 
 		// Labels we observed were set. Note that we cannot add the whole kubernetes.azure.com domain to RestrictedLabelDomains
 		// see above comment for why
-		"kubernetes.azure.com/accelerator",
-		"kubernetes.azure.com/agentpool",
-		"kubernetes.azure.com/agentpool-family",
-		"kubernetes.azure.com/availability-zone",
-		//"kubernetes.azure.com/network-policy", // Allowing this for now
-		"kubernetes.azure.com/storageprofile",
-		"kubernetes.azure.com/storagetier",
+		// "kubernetes.azure.com/accelerator",
+		// "kubernetes.azure.com/agentpool",
+		// "kubernetes.azure.com/agentpool-family",
+		// "kubernetes.azure.com/availability-zone",
+		// //"kubernetes.azure.com/network-policy", // Allowing this for now
+		// "kubernetes.azure.com/storageprofile",
+		// "kubernetes.azure.com/storagetier",
 	)
 
 	AzureWellKnownLabels = sets.New(
