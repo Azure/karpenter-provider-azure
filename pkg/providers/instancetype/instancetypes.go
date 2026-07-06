@@ -531,7 +531,7 @@ func isUltraSSDAvailable(sku *skewer.SKU, zone string) bool {
 		return sku.IsUltraSSDAvailableWithoutAvailabilityZone()
 	}
 
-	if len(z) > 1 {
+	if len(z) == 1 {
 		return sku.IsUltraSSDAvailableInAvailabilityZone(*z[0])
 	}
 	return false
