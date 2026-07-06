@@ -526,12 +526,13 @@ func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
 }
 
 func isUltraSSDAvailable(sku *skewer.SKU, zone string) bool {
-	if zone == "0" {
+	z := zones.MakeARMZonesFromAKSLabelZone(zone)
+	if len(z) == 0 {
 		return sku.IsUltraSSDAvailableWithoutAvailabilityZone()
 	}
-	z := strings.Split(zone, "-")
+
 	if len(z) > 1 {
-		return sku.IsUltraSSDAvailableInAvailabilityZone(z[len(z)-1])
+		return sku.IsUltraSSDAvailableInAvailabilityZone(*z[0])
 	}
 	return false
 }
