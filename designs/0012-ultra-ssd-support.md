@@ -2,7 +2,7 @@
 
 **Author:** @pablotrivino
 
-**Last updated:** June 1, 2026
+**Last updated:** July 6, 2026
 
 **Status:** Proposed
 
@@ -14,9 +14,9 @@ Today in AKS, `--enable-ultra-ssd` ultimately enables `AdditionalCapabilities.Ul
 
 For Node Auto Provisioning (NAP), we need the equivalent behavior on dynamically created capacity. This means Karpenter must be able to:
 
-- express Ultra SSD as part of node configuration,
-- filter out VM sizes and zonal offerings that do not support Ultra SSD,
-- set the correct downstream API fields when creating capacity
+- let users request Ultra SSD-capable offerings through requirements,
+- filter out VM sizes and zonal offerings that do not support Ultra SSD when requested,
+- set the correct downstream API fields when creating capacity.
 
 This document proposes how to complete that work for NAP.
 
@@ -24,7 +24,7 @@ This document proposes how to complete that work for NAP.
 
 - Add support for enabling Ultra SSD on dynamically provisioned nodes.
 - Support both VM provisioning mode and AKS Machine API mode.
-- Filter instance types and offerings to only Ultra SSD-capable SKU plus zone combinations when the feature is enabled.
+- Filter instance types and offerings to only Ultra SSD-capable SKU plus zone combinations when the well-known label is requested.
 
 ### Non-Goals
 
@@ -35,7 +35,7 @@ This document proposes how to complete that work for NAP.
 
 ### Decision 1: Where should Ultra SSD be configured?
 
-#### Add a strongly typed field to `AKSNodeClass`
+#### Option A: Add a strongly typed field to `AKSNodeClass`
 
 Proposed shape:
 
@@ -66,105 +66,97 @@ func (in *AKSNodeClass) IsUltraSSDEnabled() bool {
 }
 ```
 
-This matches the existing API style for feature toggles such as `artifactStreaming`, `security.encryptionAtHost`, and `localDNS`.
-Ultra SSD should be configured as a strongly typed `AKSNodeClass` feature, not as a raw requirement.
+This would match the existing API style for feature toggles such as `artifactStreaming`, `security.encryptionAtHost`, and `localDNS`.
 
-Reasons:
+Arguments for this option:
 
 - it is a provisioning feature, not a schedulable label,
-- it aligns with the current `AKSNodeClass` design pattern
+- it aligns with the current `AKSNodeClass` design pattern.
 
 The user expectation of “default false” is still satisfied. If `spec.ultraSSD` or `spec.ultraSSD.enabled` is omitted, the effective value is disabled.
+
+We are not choosing this option because it makes Ultra SSD a NodeClass-level pool shape even though availability is offering-specific and users need to express the requirement through scheduling constraints.
+
+#### Option B: Use a Well-Known Label
+
+Ultra SSD is a scheduling consideration. Workloads that are using Ultra SSD should not be scheduled on nodes that do not have Ultra SSD enabled, as attaching the disk will fail.
+
+Scheduling requirements are handled by Requirements, usually defined in the NodePool. Therefore, we should make Ultra SSD enablement a well-known label. This matches precedents set by labels such as premium-storage-capable. Furthermore, this is a simple true/false configuration, which makes defining it as a rigid definition in the NodeClass overkill.
+
+#### Conclusion: Well-Known Label
+
+We choose to use a well-known label. This path is consistent with the fact that Requirements are designed to handle scheduling concerns.
 
 ### Decision 2: How should we filter for compatible Instances?
 
 #### Offerings Filtering
 
-Ultra SSD is only available in regions and zones that support it, and only by specific SKUs. Therefore, we need to check availability for each zone when creating Offerings for InstanceTypes.
+Ultra SSD is only available in regions and zones that support it, and only by specific SKUs. Therefore, we need to check availability for each zone when creating Offerings for InstanceTypes. We add the well-known label to the offering to reflect the availability. Note, for all offerings the label will always be added and be either true or false.
 
-#### Decision 3: Should the provider add labels, requirements, taints, or tolerations?
-
-#### No provider-managed scheduling projection
-
-We will not add Ultra SSD-specific Requirements, Labels, Taints, or Tolerations from the provider.
-
-Rationale:
-
-- this matches current AKS behavior, where `--enable-ultra-ssd` enables attachment capability but does not impose placement policy,
-- the primary job of this feature is to make the node capable of attaching Ultra SSDs, not to decide which workloads should land on it,
-- users who want explicit scheduling separation can model that themselves in the `NodePool` using labels, taints, tolerations, or affinity.
-
-#### Conclusion
-
-The implementation should follow the established provider pattern:
-
-1. strongly typed `AKSNodeClass` feature,
-2. helper accessor like `IsUltraSSDEnabled()`,
-3. instance type and offering filtering,
-4. downstream API wiring in both provisioning modes.
+Adding this label to the offering lets us use it as a Requirement for checking compatibility with the incoming NodeClaim.
 
 ## Proposed Implementation
 
-### API changes
+### Well-Known Labels
 
-Add a new field to `AKSNodeClass`:
+We will define Ultra SSD as the well-known label `karpenter.azure.com/sku-storage-ultra-ssd` with well-known values of `true` and `false`.
+
+Example NodePool requirement:
 
 ```yaml
-spec:
-	ultraSSD:
-		enabled: true
+requirements:
+- key: karpenter.azure.com/sku-storage-ultra-ssd
+  operator: In
+  values: ["true"]
 ```
 
-Semantics:
-
-- default is disabled when omitted,
-- enabling it opts the node class into Ultra SSD-capable capacity only,
-- changing it triggers node replacement through drift.
+Because this is a well-known label, users may omit it. An omitted label means Ultra SSD is not requested; it does not prevent Karpenter from selecting an instance type that could support Ultra SSD for other reasons, but the provider will not enable Ultra SSD on the created node unless the NodeClaim explicitly requires `karpenter.azure.com/sku-storage-ultra-ssd In ["true"]`.
 
 ### Filtering
 
-Filter out InstanceTypes that don't support UltraSSD when it is enabled.
+Set the label as `true` or `false` when we create offerings.
 
-- UltraSSD is also region and zone dependent, so we need to filter out at Offering level
-- Add a check during createOfferings to verify that the zone + SKU support UltraSSD
-
-### Scheduling behavior
-
-The provider will not add Ultra SSD-specific Requirements, Labels, Taints, or Tolerations.
-
-If users want workloads that use UltraSSD-backed PVs to land only on Ultra SSD-capable nodes, they must model that in their own `NodePool` and workload configuration.
-
-Examples of user-managed policy include:
-
-- adding labels to the `NodePool` template,
-- adding taints to the `NodePool`,
-- adding tolerations and affinity to workloads.
+- Incoming NodeClaims that require `karpenter.azure.com/sku-storage-ultra-ssd In ["true"]` will only be compatible with offerings where the selected SKU and zone support Ultra SSD.
 
 ### VM mode wiring
 
+For both Machine and VMInstance, we will check if the label is set to `true` in the incoming *NodeClaim*, not merely whether the selected offering supports it. This is because we do not want to enable Ultra SSD unless a workload or NodePool explicitly asks for it, even if the offering supports it.
+
 #### VM
-Update VM creation so Ultra SSD-enabled node classes set `vm.Properties.AdditionalCapabilities.UltraSSDEnabled = true`. This is left nil if UltraSSD is not enabled, which is consistent with AKS.
+Update VM creation so Ultra SSD-enabled NodeClaims set `vm.Properties.AdditionalCapabilities.UltraSSDEnabled = true`. This is left nil if Ultra SSD is not enabled, which is consistent with AKS.
 
 #### Machine
-Set `armcontainerservice.Machine.Properties.MachineProperties.MachineHardwareProfile.UltraSsdEnabled = true` if enabled and `false` if disabled. This is consistent with AKS.
+Set `armcontainerservice.Machine.Properties.Hardware.UltraSsdEnabled = true` if enabled and `false` if disabled. This is consistent with AKS.
 
-This mirrors the current AKS behavior behind `--enable-ultra-ssd`: the node is made capable of attaching Ultra SSDs, but scheduling policy is left to the user.
+##### Batching
+For batching with Machine API we run into a validation issue. Batching code currently batches groups of PutMachine requests into one request, and uses a shared machine "template" that all the requested machines will share. This template only includes properties, and zones and tags are passed through the header instead. The problem arises when Ultra SSD is enabled, as this field requires at least one zone to be specified, otherwise the API call fails because it cannot validate that Ultra SSD is available (zones are dropped in the shared template). To get around this we have a few options:
 
-### AKS Machine API wiring
+##### Option A: Populate the Zone
+We can simply fill in a zone if Ultra SSD is enabled. A batch might have multiple zones, but all the requests in a batch should share the same properties. In other words, Ultra SSD is enabled for all the requests, so we can safely assume any zone in the batch can be used to fill in the shared machine template's zone, which would allow validation to pass.
 
-Update AKS machine template creation so Ultra SSD-enabled node classes set `aksMachine.Properties.EnableUltraSSD = true`.
+This is a relatively straightforward solution. Server-side, the zones get replaced by the header zones anyway. The drawback with this approach is that it could lead to unexpected behavior if the server-side behavior ever changes.
+
+##### Option B: Group Requests Into Batches With the Same Zone
+Instead of just populating the shared machine template with a zone, we edit the function that builds the template to include the zone when Ultra SSD is enabled. This means that machine requests with Ultra SSD enabled will be placed in batches with requests that also have Ultra SSD enabled and are in the same zone.
+
+This approach removes uncertainty about specifying the zone, as the shared template will have the same zone as all requests in the batch. The drawback to this approach is we might end up with a lot of batches, effectively negating the advantages we gain from batching. This can happen if, for some reason, we enable Ultra SSD and end up picking multiple zones.
+
+##### Decision: Option B
+Option B essentially adds the zone to the shared template, allowing us to both consider the zone when grouping requests and specify a zone for validation. This option is good because it:
+
+- Keeps the shared-template zone consistent with the zones in the header.
+- Has low performance impact. There are typically only 3 zones per region, so we would only be distributing requests across a few additional batches.
 
 ### Customer Experience and AKS Parity
 
-Customers wishing to use UltraSSD will set the ultraSSD field on their AKSNodeClass CR to true. This field will be used to filter out offerings to those SKUs and zones that support it (i.g. making sure that the SKU supports UltraSSD in the given zones).
+Customers wishing to use Ultra SSD will add a NodePool requirement for `karpenter.azure.com/sku-storage-ultra-ssd In ["true"]`. This requirement filters offerings to SKU and zone combinations that support Ultra SSD, and the resulting NodeClaim carries the same requirement into provisioning.
 
-In AKS, creating a cluster with `--enable-ultra-ssd` means the initial system pool gets UltraSSD capabilities. Additional pools must also explicitly include the `--enable-ultra-ssd` flag at creation time to enable it. Validation runs at cluster/pool validation and rejects the request if the user did not specify zones, or the SKU does not support UltraSSD in any of the zones, and all the nodes belonging to a pool created with the flag are UltraSSD capable. Clusters can have any mix of UltraSSD-enabled and disabled pools, regardless if the cluster was initially created with `--enable-ultra-ssd` or not.
+In AKS, creating a cluster with `--enable-ultra-ssd` means the initial system pool gets Ultra SSD capabilities. Additional pools must also explicitly include the `--enable-ultra-ssd` flag at creation time to enable it. Validation runs at cluster/pool validation and rejects the request if the user did not specify zones, or the SKU does not support Ultra SSD in any of the zones, and all the nodes belonging to a pool created with the flag are Ultra SSD capable. Clusters can have any mix of Ultra SSD-enabled and disabled pools, regardless if the cluster was initially created with `--enable-ultra-ssd` or not.
 
-For NAP parity, enabling the feature in an AKSNodeClass means Karpenter will only consider offerings whose zone has UltraSSD available for the given SKU, and it will automatically set those nodes to support UltraSSD. If a customer disables the feature in the AKSNodeClass CR, then the nodes will be considered drifted and re-created with the UltraSSD support disabled. AKS does not add any kind of label, annotation, or taint to the nodes saying UltraSSD is enabled, so NAP doesn't either.
+For NAP parity, requesting the well-known label means Karpenter will only consider offerings whose zone has Ultra SSD available for the given SKU, and it will set those nodes to support Ultra SSD. Removing the requirement from the NodePool makes future NodeClaims stop requesting Ultra SSD; existing NodeClaims may be considered drifted through the normal NodePool requirements drift path. AKS does not add any provider-specific taint for Ultra SSD, and NAP does not add one either. The node will carry the normal requirement-derived label so scheduling can distinguish Ultra SSD-capable nodes.
 
 See References section for more information on what AKS does.
 
 ## References
 
 - AKS Ultra Disks documentation: https://learn.microsoft.com/en-us/azure/aks/use-ultra-disks
-
