@@ -31,7 +31,7 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 		return "", fmt.Errorf("nil payload, machine body, or properties")
 	}
 
-	template := buildSharedAKSMachineTemplate(*item.machineBody.Properties)
+	template := buildSharedAKSMachineTemplate(*item.machineBody.Properties, item.machineBody.Zones)
 	jsonBytes, err := json.Marshal(template)
 	if err != nil {
 		return "", err
@@ -46,7 +46,7 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 // buildSharedAKSMachineTemplate returns a Machine containing only the fields shared across all
 // machines in a batch, with per-machine and read-only fields zeroed.
 // Takes MachineProperties by value so the caller's original is never mutated.
-func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.MachineProperties) armcontainerservice.Machine {
+func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.MachineProperties, zones []*string) armcontainerservice.Machine {
 	// Design notes: for each section, we can either:
 	// - (A) Recreate a new struct with only the shared fields selected from the old struct, or
 	// - (B) Mutate the existing struct to nil-out the per-machine fields
@@ -69,8 +69,13 @@ func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.Mach
 	aksMachineProperties.ResourceID = nil
 	aksMachineProperties.Status = nil
 
-	return armcontainerservice.Machine{
+	machine := armcontainerservice.Machine{
 		// Dropping all fields outside of properties. They are per-machine/read-only by default.
 		Properties: &aksMachineProperties,
 	}
+
+	if ultraSSD := aksMachineProperties.Hardware.UltraSsdEnabled; ultraSSD != nil && *ultraSSD {
+		machine.Zones = zones
+	}
+	return machine
 }
