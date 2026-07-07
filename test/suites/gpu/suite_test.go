@@ -196,6 +196,15 @@ var _ = Describe("GPU", func() {
 			// nvidia.com/gpu therefore proves the managed device plugin was
 			// installed by the platform.
 			//
+			// The managed GPU experience is only delivered through the AKS
+			// machine API (NAP) provisioning path: the RP/control plane installs
+			// the driver, device plugin and DCGM. Self-hosted provisioning paths
+			// (scriptless / bootstrapping-client) do not forward managementMode
+			// and have no control plane to install the managed components, so the
+			// assertions below can never hold there — skip rather than fail.
+			if !env.IsAKSMachineAPIMode() {
+				Skip("managed GPU (gpu.nvidia.managementMode) is only supported on the AKS machine API / NAP provisioning path")
+			}
 			// Prerequisite: the cluster subscription must have the managed GPU
 			// preview feature registered; otherwise the AKS machine API rejects
 			// managementMode=Managed and the NodeClaim surfaces an error.
