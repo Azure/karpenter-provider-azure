@@ -123,9 +123,9 @@ All three parameters are caller-configured via `batcher.Options`:
 
 | Parameter | Env Var | Effect |
 |-----------|---------|---------|
-| Idle timeout | `BATCH_IDLE_TIMEOUT_MS` | How long to wait after last request before firing |
-| Max timeout | `BATCH_MAX_TIMEOUT_MS` | Hard cap on batch wait time |
-| Max batch size | `MAX_BATCH_SIZE` | Maximum machines to be created in one batch (must <= server-side limit) |
+| Idle duration | `PROVIDER_BATCH_IDLE_DURATION` | How long to wait after last request before firing, using Go duration syntax such as `1s` |
+| Max duration | `PROVIDER_BATCH_MAX_DURATION` | Hard cap on batch wait time, using Go duration syntax such as `5s` |
+| Max batch size | `PROVIDER_BATCH_MAX_SIZE` | Maximum machines to be created in one batch (must <= server-side limit) |
 
 #### Shared timer across keys
 

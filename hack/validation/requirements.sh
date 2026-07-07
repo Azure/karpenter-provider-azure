@@ -31,6 +31,9 @@ rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
 
 # kubernetes.azure.com domain restriction
 # We allow well-known labels as well as ebpf-dataplane (required for Cilium)
+# We allow kubernetes.azure.com/hostedvm as it's used by some deployments in HOBO in a NotIn targeting Karpenter nodes
+# We allow kubernetes.azure.com/ebpf-host-routing DoesNotExist as Cilium may request that
+# We allow kubernetes.azure.com/network-policy as Azure CNI requests NotIn ["none"] for it at the deployment level
 aks_rule=$'self in
     [
         "kubernetes.azure.com/mode",
@@ -42,6 +45,9 @@ aks_rule=$'self in
         "kubernetes.azure.com/sku-cpu",
         "kubernetes.azure.com/sku-memory",
         "kubernetes.azure.com/ebpf-dataplane",
+        "kubernetes.azure.com/ebpf-host-routing",
+        "kubernetes.azure.com/network-policy",
+        "kubernetes.azure.com/hostedvm",
     ]
     || !self.find("^([^/]+)").endsWith("kubernetes.azure.com")
 '

@@ -18,7 +18,6 @@ package azclient
 
 import (
 	"context"
-	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -269,9 +268,9 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			ctx,
 			aksMachinesClient,
 			batcher.Options{
-				IdleTimeout:  time.Duration(o.BatchIdleTimeoutMS) * time.Millisecond,
-				MaxTimeout:   time.Duration(o.BatchMaxTimeoutMS) * time.Millisecond,
-				MaxBatchSize: o.MaxBatchSize,
+				IdleTimeout:  o.ProviderBatchIdleDuration,
+				MaxTimeout:   o.ProviderBatchMaxDuration,
+				MaxBatchSize: o.ProviderBatchMaxSize,
 			},
 		)
 	}

@@ -54,6 +54,21 @@ func TestKubeBinaryURL(t *testing.T) {
 			version:  "1.27.1",
 			expected: fmt.Sprintf("%s/kubernetes/v1.27.1/binaries/kubernetes-node-linux-amd64.tar.gz", globalAKSMirror),
 		},
+		{
+			name:     "Test version 1.33.x",
+			version:  "1.33.7",
+			expected: fmt.Sprintf("%s/kubernetes/v1.33.7/binaries/kubernetes-node-linux-amd64.tar.gz", globalAKSMirror),
+		},
+		{
+			name:     "Test version 1.34.x",
+			version:  "1.34.0",
+			expected: "",
+		},
+		{
+			name:     "Test version 1.35.x",
+			version:  "1.35.5",
+			expected: "",
+		},
 	}
 
 	for _, tc := range cases {

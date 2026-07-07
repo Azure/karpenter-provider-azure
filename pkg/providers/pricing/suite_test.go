@@ -189,11 +189,11 @@ var _ = Describe("Pricing", func() {
 
 	It("should not poll pricing data in non-public clouds", func() {
 		fakePricingAPI.NextError.Set(fmt.Errorf("failed"))
-		env := &auth.Environment{
+		govEnv := &auth.Environment{
 			Cloud: cloud.AzureGovernment,
 		}
 		start := make(chan struct{}, 1)
-		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", start)
+		p := pricing.NewProvider(ctx, govEnv, fakePricingAPI, "", start)
 		providers = append(providers, p)
 		start <- struct{}{}
 
@@ -209,5 +209,20 @@ var _ = Describe("Pricing", func() {
 		price, ok := p.OnDemandPrice("Standard_D1")
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically(">", 0))
+	})
+
+	It("should return MissingPrice for unknown SKUs", func() {
+		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
+
+		// On-demand: unknown SKU returns MissingPrice with ok=false
+		price, ok := p.OnDemandPrice("Standard_NonExistent_SKU")
+		Expect(ok).To(BeFalse(), "pricing should not be known for a non-existent SKU")
+		Expect(price).To(Equal(pricing.MissingPrice), "unknown SKU should get MissingPrice")
+
+		// Spot: unknown SKU returns MissingPrice with ok=false
+		price, ok = p.SpotPrice("Standard_NonExistent_SKU")
+		Expect(ok).To(BeFalse(), "spot pricing should not be known for a non-existent SKU")
+		Expect(price).To(Equal(pricing.MissingPrice), "unknown SKU should get MissingPrice for spot")
 	})
 })
