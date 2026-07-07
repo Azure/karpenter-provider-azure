@@ -49,7 +49,59 @@ jobs:
     - uses: ./.github/actions/install-deps
       with:
         k8sVersion: ${{ matrix.k8sVersion }}
-    - run: K8S_VERSION=${{ matrix.k8sVersion }} make ci-test
+    # ---------------------------------------------------------------------------
+    # TEMPORARY: OOM/memory-pressure diagnostics for the recurring
+    # "The runner has received a shutdown signal ... Interrupted by User"
+    # cancellations that hit this workflow across many PRs at ~11-14 minutes
+    # into `make ci-test`. This branch (chore/ci-oom-diagnostics) is intended
+    # only to test the hypothesis that the tests are being OOM-killed.
+    # If the theory is confirmed we should revert this and address the root
+    # cause; if disproved we should revert this and investigate a different
+    # angle. Do not merge to main.
+    # ---------------------------------------------------------------------------
+    - name: Run ci-test with VM diagnostics
+      env:
+        # Emit a GC trace line to stderr on every Go GC. Format:
+        #   gc N @Ts s: PCT%: ns+ns+ns ms clock, ns+ns+ns/ns+ns/ns+ns+ns ns cpu,
+        #   XX->YY->ZZ MB, WW MB goal, VV MB stacks, UU MB globals, P P
+        # This gives us the heap-size trajectory of every test binary the
+        # ginkgo runner spawns, so we can see whether they are approaching
+        # the ~15 GB limit of a standard GitHub-hosted `ubuntu-latest` VM.
+        GODEBUG: gctrace=1
+      run: |
+        set -o pipefail
+
+        # Background VM-level memory sampler. Emits one line every 15s to
+        # stdout tagged `[mem-sampler]` so it can be grep'd out of the log
+        # stream. Stdout is written to the Actions log in real time, which
+        # is essential here because when the runner receives its shutdown
+        # signal every `if: always()` post-step is `skipped`, so we cannot
+        # rely on artifact uploads to capture pre-death state.
+        (
+          while :; do
+            ts=$(date -u +%FT%TZ)
+            mem=$(awk '/^MemTotal:|^MemAvailable:|^SwapFree:|^Buffers:|^Cached:/{printf "%s=%dMB ", $1, $2/1024}' /proc/meminfo)
+            top=$(ps -eo comm,rss --no-headers --sort=-rss | head -5 | awk '{printf "%s=%dMB ", $1, $2/1024}')
+            printf '[mem-sampler] %s %stop: %s\n' "$ts" "$mem" "$top"
+            sleep 15
+          done
+        ) &
+        SAMPLER_PID=$!
+        trap 'kill "${SAMPLER_PID}" 2>/dev/null || true' EXIT
+
+        K8S_VERSION=${{ matrix.k8sVersion }} make ci-test
+
+    # Only runs when the step above finishes normally; when the runner is
+    # shut down mid-job this step is `skipped` (confirmed in prior failures).
+    # Still worth capturing for successful runs that come close to the limit.
+    - name: Capture kernel OOM messages
+      if: always()
+      run: |
+        echo "=== dmesg tail (last 200 lines) ==="
+        sudo dmesg -T 2>/dev/null | tail -200 || true
+        echo "=== OOM / kill lines in kernel ring buffer ==="
+        sudo dmesg -T 2>/dev/null | grep -iE 'killed process|out of memory|oom-killer|invoked oom-killer' \
+          || echo "(no OOM lines found in kernel ring buffer)"
     - name: Send coverage
       # should only send coverage once https://docs.coveralls.io/parallel-builds
       if: matrix.k8sVersion == '1.32.x'
