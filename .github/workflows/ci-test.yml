@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: read
       statuses: write
-    runs-on: ubuntu-latest
+    runs-on: karpenter-ci-1es-pool
     strategy:
       fail-fast: false # https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idstrategyfail-fast
       matrix:
