@@ -2,12 +2,6 @@
 
 Designs in this section are specific to Azure.
 
-## Guidance
-
-These documents provide guidance for new designs and features.
-
-- [Labels vs. AKSNodeClass](./labels-vs-nodeclass)
-
 ## Proposed
 
 These designs are written but not implemented.
