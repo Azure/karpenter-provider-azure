@@ -178,9 +178,28 @@ var ConvergedGPUDriverSizes = map[string]bool{
 /* rtxPro6000GPUDriverSizes : NC_RTXPRO6000BSE_v6 (RTX PRO 6000 Blackwell Server
 Edition) SKUs require the GRID v20 (595.x) driver, published as the
 aks-gpu-grid-v20 image. All other GRID SKUs continue to use aks-gpu-grid.
+The family ships General Purpose (ds) and Compute Optimized (lds) sizes across
+fractional and whole GPU allocations (1/4, 1/2, 1, 2 GPUs); all use the same
+RTX PRO 6000 Blackwell GPU and therefore the same driver.
+
+Post-GA the sizes were renamed (128->144, 256/320->288 vCPU) and smaller sizes
+were added. The GA names are the primary entries; the preview names are retained
+as backward-compat aliases so driver selection stays correct if an older node or
+generated known_skus.yaml still reports them (same physical GPU, same driver).
 */
 //nolint:gochecknoglobals
 var rtxPro6000GPUDriverSizes = map[string]bool{
+	// GA sizes (General Purpose "ds" + Compute Optimized "lds").
+	"standard_nc24lds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc36ds_xl_rtxpro6000bse_v6":   true,
+	"standard_nc36lds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc72ds_xl_rtxpro6000bse_v6":   true,
+	"standard_nc72lds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc144ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc144lds_xl_rtxpro6000bse_v6": true,
+	"standard_nc288ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc288lds_xl_rtxpro6000bse_v6": true,
+	// Preview sizes, retained as backward-compat aliases (see doc comment above).
 	"standard_nc128ds_xl_rtxpro6000bse_v6":  true,
 	"standard_nc128lds_xl_rtxpro6000bse_v6": true,
 	"standard_nc256ds_xl_rtxpro6000bse_v6":  true,
