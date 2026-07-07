@@ -1010,6 +1010,9 @@ spec:
                           the device plugin/metrics is the user's responsibility.
                           Managed requires gpu.mode to be Driver (driver installation enabled) and is
                           only supported on NVIDIA GPU SKUs running Linux.
+                          The managed experience only applies to node pools managed by AKS Node Auto
+                          Provisioning (NAP). On self-hosted Karpenter this setting has no effect and
+                          the managed components are not installed.
                           For more details of what is installed, see aka.ms/aks/managed-gpu.
                         enum:
                         - Managed
