@@ -753,6 +753,13 @@ spec:
                       https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
+                  trustedLaunch:
+                    properties:
+                      secureBoot:
+                        type: boolean
+                      vtpm:
+                        type: boolean
+                    type: object
                 type: object
               tags:
                 additionalProperties:
@@ -1653,6 +1660,13 @@ spec:
                       https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
+                  trustedLaunch:
+                    properties:
+                      secureBoot:
+                        type: boolean
+                      vtpm:
+                        type: boolean
+                    type: object
                 type: object
               tags:
                 additionalProperties:
