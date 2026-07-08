@@ -670,12 +670,39 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 }
 
 func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+	if nodeClass.Spec.Security == nil {
+		return
+	}
+
+	if nodeClass.Spec.Security.EncryptionAtHost != nil {
 		if vmProperties.SecurityProfile == nil {
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
+
+	if nodeClass.Spec.Security.TrustedLaunch == nil {
+		return
+	}
+
+	if nodeClass.Spec.Security.TrustedLaunch.SecureBoot != nil {
+		if vmProperties.SecurityProfile == nil {
+			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
+		}
+		vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{
+			SecureBootEnabled: nodeClass.Spec.Security.TrustedLaunch.SecureBoot,
+		}
+	}
+
+	if nodeClass.Spec.Security.TrustedLaunch.VTPM != nil {
+		if vmProperties.SecurityProfile == nil {
+			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
+		}
+		vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{
+			VTpmEnabled: nodeClass.Spec.Security.TrustedLaunch.VTPM,
+		}
+	}
+
 }
 
 type createResult struct {
