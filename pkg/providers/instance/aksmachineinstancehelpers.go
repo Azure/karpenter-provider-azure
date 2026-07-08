@@ -164,8 +164,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Security: &armcontainerservice.MachineSecurityProfile{
 				SSHAccess:              lo.ToPtr(armcontainerservice.AgentPoolSSHAccessLocalUser),
 				EnableEncryptionAtHost: lo.ToPtr(nodeClass.GetEncryptionAtHost()),
-				// EnableVTPM:             nil,
-				// EnableSecureBoot:       nil,
+				EnableVTPM:             lo.ToPtr(nodeClass.IsTrustedLaunchVTPMEnabled()),
+				EnableSecureBoot:       lo.ToPtr(nodeClass.IsTrustedLaunchSecureBootEnabled()),
 			},
 			Priority: priority,
 

@@ -681,28 +681,21 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
 
-	if nodeClass.Spec.Security.TrustedLaunch == nil {
-		return
-	}
-
-	if nodeClass.Spec.Security.TrustedLaunch.SecureBoot != nil {
+	if nodeClass.IsTrustedLaunchSecureBootEnabled() || nodeClass.IsTrustedLaunchVTPMEnabled() {
 		if vmProperties.SecurityProfile == nil {
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
-		vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{
-			SecureBootEnabled: nodeClass.Spec.Security.TrustedLaunch.SecureBoot,
-		}
-	}
 
-	if nodeClass.Spec.Security.TrustedLaunch.VTPM != nil {
-		if vmProperties.SecurityProfile == nil {
-			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
+		if vmProperties.SecurityProfile.UefiSettings == nil {
+			vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{}
 		}
-		vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{
-			VTpmEnabled: nodeClass.Spec.Security.TrustedLaunch.VTPM,
-		}
-	}
 
+		if nodeClass.IsTrustedLaunchSecureBootEnabled() {
+			vmProperties.SecurityProfile.SecurityType = lo.ToPtr(armcompute.SecurityTypesTrustedLaunch)
+		}
+		vmProperties.SecurityProfile.UefiSettings.SecureBootEnabled = lo.ToPtr(nodeClass.IsTrustedLaunchSecureBootEnabled())
+		vmProperties.SecurityProfile.UefiSettings.VTpmEnabled = lo.ToPtr(nodeClass.IsTrustedLaunchVTPMEnabled())
+	}
 }
 
 type createResult struct {
