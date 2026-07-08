@@ -725,14 +725,14 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 	return false
 }
 
-func (in *AKSNodeClass) IsTrustedLaunchVTPMEnabled() bool {
+func (in *AKSNodeClass) IsVTPMEnabled() bool {
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.VTPM != nil {
 		return *in.Spec.Security.TrustedLaunch.VTPM
 	}
 	return false
 }
 
-func (in *AKSNodeClass) IsTrustedLaunchSecureBootEnabled() bool {
+func (in *AKSNodeClass) IsSecureBootEnabled() bool {
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.SecureBoot != nil {
 		return *in.Spec.Security.TrustedLaunch.SecureBoot
 	}
