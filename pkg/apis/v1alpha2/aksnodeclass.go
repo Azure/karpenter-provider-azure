@@ -118,6 +118,11 @@ type AKSNodeClassSpec struct {
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
 }
 
+type TrustedLaunch struct {
+	VTPM       *bool `json:"vtpm,omitempty"`
+	SecureBoot *bool `json:"secureBoot,omitempty"`
+}
+
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
 type Security struct {
 	// encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
@@ -125,7 +130,8 @@ type Security struct {
 	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
 	// +optional
-	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
+	EncryptionAtHost *bool          `json:"encryptionAtHost,omitempty"`
+	TrustedLaunch    *TrustedLaunch `json:"trustedLaunch,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={Preferred,Required,Disabled}
@@ -698,6 +704,20 @@ type AKSNodeClassList struct {
 func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 	if in.Spec.Security != nil && in.Spec.Security.EncryptionAtHost != nil {
 		return *in.Spec.Security.EncryptionAtHost
+	}
+	return false
+}
+
+func (in *AKSNodeClass) IsTrustedLaunchVTPMEnabled() bool {
+	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.VTPM != nil {
+		return *in.Spec.Security.TrustedLaunch.VTPM
+	}
+	return false
+}
+
+func (in *AKSNodeClass) IsTrustedLaunchSecureBootEnabled() bool {
+	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.SecureBoot != nil {
+		return *in.Spec.Security.TrustedLaunch.SecureBoot
 	}
 	return false
 }
