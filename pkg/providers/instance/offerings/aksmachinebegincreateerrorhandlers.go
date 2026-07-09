@@ -106,9 +106,10 @@ func handleSKUNotAvailableForSubscriptionError(
 ) error {
 	markAllPlacementsUnavailableForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, SKUNotAvailableReason, SKUNotAvailableOnDemandTTL)
 
-	return fmt.Errorf(
+	err := fmt.Errorf(
 		"VM size %s is not supported for this subscription in this location, for more details please visit: https://aka.ms/aks/vm-size-selector",
 		instanceType.Name)
+	return corecloudprovider.NewCreateError(err, SKUNotAvailableReason, err.Error())
 }
 
 // For "Virtual Machine size: '%s' is not supported for subscription %s in location '%[3]s'. %s. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location '%[3]s'."
