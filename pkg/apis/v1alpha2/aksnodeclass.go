@@ -722,6 +722,11 @@ func (in *AKSNodeClass) IsSecureBootEnabled() bool {
 	return false
 }
 
+// IsTrustedLaunchEnabled returns whether any Trusted Launch-backed setting is enabled.
+func (in *AKSNodeClass) IsTrustedLaunchEnabled() bool {
+	return in.IsVTPMEnabled() || in.IsSecureBootEnabled()
+}
+
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // The decision is sourced from Status.LocalDNSState, which is resolved by the
 // nodeclass.localdns status sub-reconciler:

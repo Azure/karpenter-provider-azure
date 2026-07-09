@@ -739,6 +739,11 @@ func (in *AKSNodeClass) IsSecureBootEnabled() bool {
 	return false
 }
 
+// IsTrustedLaunchEnabled returns whether any Trusted Launch-backed setting is enabled.
+func (in *AKSNodeClass) IsTrustedLaunchEnabled() bool {
+	return in.IsVTPMEnabled() || in.IsSecureBootEnabled()
+}
+
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.
 // Delegates to ArtifactStreaming.IsEnabled which handles ARM64 and nil checks.
 func (in *AKSNodeClass) IsArtifactStreamingEnabled(arch string) bool {
