@@ -681,7 +681,7 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
 
-	if nodeClass.IsSecureBootEnabled() || nodeClass.IsVTPMEnabled() {
+	if nodeClass.IsTrustedLaunchEnabled() {
 		if vmProperties.SecurityProfile == nil {
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}

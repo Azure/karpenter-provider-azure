@@ -312,7 +312,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
-		p.isInstanceTypeSupportedByTrustedLaunch(sku, params)
+		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
+		p.isInstanceTypeSupportedByLocalDNS(sku, params)
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
@@ -341,15 +342,15 @@ func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByTrustedLaunch(sku *skewer.SKU, params *instanceTypeParameters) bool {
-	if true {
+	if !params.TrustedLaunch {
 		return true
 	}
 
-	if supported, err := sku.IsTrustedLaunchEnabled(); err != nil {
+	supported, err := sku.IsTrustedLaunchEnabled()
+	if err != nil {
 		return false
-	} else {
-		return supported
 	}
+	return supported
 }
 
 // supportsEncryptionAtHost checks if the SKU supports encryption at host
