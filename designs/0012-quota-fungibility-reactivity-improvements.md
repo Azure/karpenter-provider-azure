@@ -20,7 +20,7 @@ Related issues
 **The current behavior is:**
 
 - Karpenter is entirely reactive to errors that it gets from the compute API (quota, capacity, etc), and only adjusts its provisioning based on errors it has seen (with some cache expiry so errors don't prevent it from ever trying a given size again).
-- Karpenter always tries the cheapest sizes first. If those sizes are under heavy regional createVMInstanceontention or the user has low quota for them, they are tried anyway unless they are excluded at the `NodePool` level. Only advanced users even know to do that.
+- Karpenter always tries the cheapest sizes first. If those sizes are under heavy regional contention or the user has low quota for them, they are tried anyway unless they are excluded at the `NodePool` level. Only advanced users even know to do that.
 - Karpenter allocates the same way all the time (price-aware only). There is no way for Azure to perform capacity shaping among "similar" sizes. Note that capacity shaping does not exist anywhere today, and when it exists will likely only be enabled with explicit user opt-in, but the desire to eventually support the capability is there.
 
 > [!NOTE]
@@ -28,9 +28,9 @@ Related issues
 
 ### Current statistics
 
-See [methodology](https://github.com/Azure/karpenter-poc/issues/1529) for more details about how these numbers were obtained.
+See [methodology](https://github.com/Azure/karpenter-poc/issues/1529) for more details about how these numbers were obtained. Note that these metrics are primarily focused on individual allocation attempts and NOT overall NodePool/NodeClaim allocation success. It's possible that an individual attempt for a given size fails, while the NodeClaim as a whole eventually allocates successfully. That initial failure results in increased latency for the user as well as increased Azure API throttling load, which is why we want to drive failed attempts down.
 
-- Global success rate, measured as "successes allocating a VM" / ("successes allocating a VM" + "failures allocating a VM") is **~27%** over the last 30d. Many of those errors are intermittent (throttling, network blips, etc). Excluding transient errors and errors unrelated to quota/capacity the success rate is **~58%**.
+- Global success rate of individual allocation attempts, measured as "successes allocating a VM" / ("successes allocating a VM" + "failures allocating a VM") is **~27%** over the last 30d. Many of those errors are intermittent (throttling, network blips, etc). Excluding transient errors and errors unrelated to quota/capacity the success rate is **~58%**.
 - The vast majority of observed failures are due to `SKUFamilyQuotaExceeded`.
 
 | ErrorCategory                         | Stage | Pct   |
@@ -45,19 +45,22 @@ See [methodology](https://github.com/Azure/karpenter-poc/issues/1529) for more d
 | SKUFamilyQuotaExceeded                | Async | 0.04  |
 | Other                                 | Async | 0.02  |
 
+We will use the queries defined in [methodology](https://github.com/Azure/karpenter-poc/issues/1529) to track the success rate of the "Improve reaction speed and responsiveness" goal defined below.
+
 ### Goals
 
-- **Increase "first allocation attempt" success rate** by taking more signals into account.
-- **Improve handling of quota issues** by choosing the size we attempt to allocate more intelligently.
-- **Improve handling of capacity issues** by choosing the size we attempt to allocate more intelligently.
+- **Improve reaction speed and responsiveness** by knowing more before initiating a costly provisioning attempt. Karpenter already picks a working size (eventually) today.
+  - **Increase "first allocation attempt" success rate** by taking more signals into account.
+  - **Improve handling of quota issues** by choosing the size we attempt to allocate more intelligently.
+  - **Improve handling of capacity issues** by choosing the size we attempt to allocate more intelligently.
+  - **Improve `unavailableofferings` cache** to react more intelligently to errors.
 - **Integrate with Azure Capacity Recommendation Service (CRS)** to enable capacity shaping.
-- **Improve `unavailableofferings` cache** to react more intelligently to errors.
 - **Improve traceability** to help users answer the question why a particular size was chosen.
 
 ### Non-Goals
 
 - Changing how we provision VMs (PUT virtualMachine or PUT machine) - we've got ongoing investment in the Machine path so doing something other than that doesn't meet our short-term goals.
-- Improving "eventual allocation" success rate. Karpenter already tries every possible size allowed by the users configuration until it hits one that works. We're aiming to improve reaction _speed_ and _responsiveness_, Karpenter already picks a working size (eventually) today.
+- Improving "eventual allocation" success rate. Karpenter already tries every possible size allowed by the users configuration until it hits one that works.
 
 ## Decisions
 
@@ -67,7 +70,7 @@ Right now we manage our available set of VMs using the [unavailableofferings cac
 
 Problems to consider here:
 
-1. Hitting a capacity error for D64 doesn't guarantee that D32 isn't available, but on the other hand it _strongly suggests_ it. Right now, we have two options we either exclude D32 or we don't. If we exclude D32 as well (basically marking that whole family as unavailable), that's great if they're actually out of capacity, but bad if they're just low on capacity but it's the only size in the allocation list.
+1. Hitting a capacity error for D64 doesn't guarantee that D32 isn't available, but on the other hand it _strongly suggests_ it. Today, we mark D64 and anything larger unavailable, but do not block smaller sizes. This often results in Karpenter just trying 2x D32 right after 1x D64 fails. Right now, we have two options we either exclude D32 or we don't. If we exclude D32 as well (basically marking that whole family as unavailable), that's great if they're actually out of capacity, but bad if they're just low on capacity but it's the only size in the allocation list.
 2. Size filtering only at NodeClaim creation time isn't enough, because if multiple NodeClaims are created at the same time for the same SKUs, one hitting capacity issues means the others will too.
 
 #### Conclusion: Integrate unavailableofferings into allocation strategy alongside price
@@ -75,6 +78,9 @@ Problems to consider here:
 This allows us to de-prioritize VMs whose families have hit capacity errors without excluding them entirely until we know for sure they won't work.
 
 For item 2: We already filter at allocation time as well, during `resolveInstanceTypes()` we consider if a VM is unavailable and exclude from attempting it when provisioning the node.
+
+> [!NOTE]
+> We will hold off on actually implementing this until we've integrated [near term quota API usage](#decision-3-how-can-we-improve-our-allocation-success-rate-in-the-near-term), as it may be an optimization we don't need once we have quota signals integrated.
 
 ### Decision 2: Which API should we use to get capacity recommendations from Azure?
 
@@ -149,6 +155,25 @@ Key design decisions for the quota provider:
 - **Family quota only.** Total regional quota is not useful as a size-selection input — if it is exhausted, no family or size choice will help and all we can do is retry until a node can be created.
 - **Fail open.** If quota data is unavailable, stale, or cannot be parsed, assume quota is available for every family and fall back to today's behavior (price + `unavailableofferings`).
 - **No local usage tracking between polls.** Counting in-flight vCPUs across concurrent NodeClaims, external VM creation, and controller restarts is error-prone and not worth the complexity. The quota provider supplies pre-knowledge only; observed failures still flow through `unavailableofferings` to block or de-prioritize offerings based on real errors. Quota provider will catch up at next poll interval.
+
+We can use this data either as a **hard filter**, or as a **ranking signal**.
+
+##### Hard filter
+
+* ✅ Easier to understand.
+* ✅ Preserves price-first with filters approach we've had historically.
+* ✅ Avoids wasting a VM creation attempt (and its latency/throttling cost) on a family we already know will fail.
+* ❌ Quota data is polled every 10m and stale between polls. If quota is freed (node deleted, external change), we won't know until next poll and will incorrectly exclude the family. This is very similar to the existing unavailableofferings cache, so users are (likely) already experiencing this latency today.
+* ❌ Quota is per-family, not per-size. A family with 8 remaining cores can't fit a D64 but can fit a D4. We will need to be core-aware which adds some complexity.
+
+##### Ranking signal
+
+* ✅ More resilient to stale data — families with freed quota still get attempted, just later in the order.
+* ❌ Still wastes one attempt if the top-ranked candidate ends up being quota-exhausted (though less likely since de-prioritized).
+* ❌ More complex ranking logic — need to define interaction between quota score and price (is a $0.30/hr family with plenty of quota better than the $0.20/hr family with almost none?).
+* ❌ Harder for users to reason about: "why did it pick a more expensive size?" vs the simpler "excluded due to quota."
+
+Given our objective is as a stopgap measure while we wait for the SKU Split API, going for the simpler hard filter seems the correct approach.
 
 ### Decision 4: How can we improve traceability for VM size selection?
 
@@ -297,9 +322,9 @@ Publicly callable
 
 #### API reference
 
-**URL (usages):** `GET /subscriptions/{subscriptionId}/providers/Microsoft.Compute/locations/{location}/usages?api-version=2025-09-01`
+**URL (usages):** `GET https://management.azure.com/{scope}/providers/Microsoft.Quota/usages?api-version=2025-09-01`
 
-**URL (quota):** `GET /subscriptions/{subscriptionId}/providers/Microsoft.Compute/locations/{location}/quotas?api-version=2025-09-01`
+**URL (quota):** `GET https://management.azure.com/{scope}/providers/Microsoft.Quota/quotas?api-version=2025-09-01`
 
 **Docs:**
 
