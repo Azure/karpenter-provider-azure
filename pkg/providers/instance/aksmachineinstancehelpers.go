@@ -97,7 +97,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	nodeInitializationTaints, nodeTaints := configureTaints(nodeClaim)
 
 	// NodeLabels, Mode
-	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType, placementScope)
+	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType, placementScope, ultraSSD)
 
 	// Priority (e.g., regular, spot)
 	priority := configurePriority(capacityType)
@@ -332,7 +332,7 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	return nodeInitializationTaintPtrs, nodeTaintPtrs
 }
 
-func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string) (map[string]*string, *armcontainerservice.AgentPoolMode) {
+func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, ultraSSD bool) (map[string]*string, *armcontainerservice.AgentPoolMode) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and instance/vminstance.go
 
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
@@ -345,6 +345,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{
 		karpv1.CapacityTypeLabelKey: capacityType,
 		v1beta1.LabelPlacementScope: placementScope,
+		v1beta1.LabelUltraSSD:       fmt.Sprint(ultraSSD),
 	})
 	var modePtr *armcontainerservice.AgentPoolMode
 	if modeFromLabel, ok := nodeLabels["kubernetes.azure.com/mode"]; ok && modeFromLabel == "system" {
