@@ -165,9 +165,6 @@ func (o *Options) validateRequiredFields() error {
 	if o.ClusterName == "" {
 		return fmt.Errorf("missing field, cluster-name")
 	}
-	if o.KubeletClientTLSBootstrapToken == "" {
-		return fmt.Errorf("missing field, kubelet-bootstrap-token")
-	}
 	if o.SSHPublicKey == "" {
 		return fmt.Errorf("missing field, ssh-public-key")
 	}
