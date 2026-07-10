@@ -46,6 +46,7 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -122,9 +123,9 @@ func TestAzure(t *testing.T) {
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
 	clusterBootstrap = state.NewCluster(fakeClock, env.Client, cloudProviderBootstrap)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
-	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal, fakeClock)
-	coreProvisionerBootstrap = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderBootstrap, clusterBootstrap, fakeClock)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
+	coreProvisionerBootstrap = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderBootstrap, clusterBootstrap, fakeClock, deviceallocation.NewController(env.Client))
 
 	RunSpecs(t, "Provider/Azure")
 }
@@ -2884,13 +2885,13 @@ var _ = Describe("InstanceType Provider", func() {
 					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
 					// end up with a new node for each scheduling attempt
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						bindings := []Bindings{}
+						bindings := []ProvisioningResult{}
 						for range 3 {
 							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}
 						for i := range len(bindings) {
-							Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
-							Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
+							Expect(lo.Values(bindings[i].Bindings)).ToNot(BeEmpty())
+							Expect(lo.Values(bindings[i].Bindings)[0].Node.Name).To(Equal(lo.Values(bindings[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -2931,13 +2932,13 @@ var _ = Describe("InstanceType Provider", func() {
 					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
 					// end up with a new node for each scheduling attempt
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						bindings := []Bindings{}
+						bindings := []ProvisioningResult{}
 						for range 3 {
 							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}
 						for i := range len(bindings) {
-							Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
-							Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
+							Expect(lo.Values(bindings[i].Bindings)).ToNot(BeEmpty())
+							Expect(lo.Values(bindings[i].Bindings)[0].Node.Name).To(Equal(lo.Values(bindings[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, azureEnvBootstrap, pod)
