@@ -174,12 +174,14 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
+	quotaProvider := quota.NewProvider(usageAPI, region)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,
 		skusAPI,
 		pricingProvider,
-		unavailableOfferingsCache)
+		unavailableOfferingsCache,
+		quotaProvider)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
 		networkSecurityGroupAPI,
@@ -295,7 +297,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
-	quotaProvider := quota.NewProvider(usageAPI, region)
 
 	// Populate the instance type cache before returning the environment, as many tests assume it's populated and it simplifies test setup.
 	// We can update it in individual tests as needed.

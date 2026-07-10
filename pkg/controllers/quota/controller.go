@@ -51,7 +51,6 @@ func (c *Controller) Reconcile(ctx context.Context) (reconciler.Result, error) {
 		log.FromContext(ctx).Error(err, "updating quota usages")
 		return reconciler.Result{}, err
 	}
-	log.FromContext(ctx).V(1).Info("updated quota usages")
 	return reconciler.Result{RequeueAfter: RefreshInterval}, nil
 }
 

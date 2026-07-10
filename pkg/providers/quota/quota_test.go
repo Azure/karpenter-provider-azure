@@ -150,3 +150,115 @@ func newTestProvider(t *testing.T) (*fake.UsageAPI, *quota.DefaultProvider) {
 	usageAPI := &fake.UsageAPI{}
 	return usageAPI, quota.NewProvider(usageAPI, fake.Region)
 }
+
+func Test_HasQuotaFor(t *testing.T) {
+	t.Parallel()
+	sku := fake.MakeSKU("Standard_D4s_v3") // 4 vCPUs, standardDSv3Family
+
+	tests := []struct {
+		name     string
+		usages   []*armcompute.Usage
+		update   bool // whether to call Update before checking
+		expected bool
+	}{
+		{
+			name: "allows when enough quota",
+			usages: []*armcompute.Usage{{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](10),
+				Limit:        lo.ToPtr[int64](100),
+			}},
+			update:   true,
+			expected: true,
+		},
+		{
+			name: "blocks when insufficient quota",
+			usages: []*armcompute.Usage{{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](98),
+				Limit:        lo.ToPtr[int64](100),
+			}},
+			update:   true,
+			expected: false, // 100-98=2 remaining, SKU needs 4
+		},
+		{
+			name: "allows exact fit",
+			usages: []*armcompute.Usage{{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](96),
+				Limit:        lo.ToPtr[int64](100),
+			}},
+			update:   true,
+			expected: true, // 100-96=4 remaining, SKU needs exactly 4
+		},
+		{
+			name: "fails open when family not found",
+			usages: []*armcompute.Usage{{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr("standardBSFamily")},
+				CurrentValue: lo.ToPtr[int32](100),
+				Limit:        lo.ToPtr[int64](100),
+			}},
+			update:   true,
+			expected: true,
+		},
+		{
+			name: "fails open when no data",
+			// No usages, no Update call
+			update:   false,
+			expected: true,
+		},
+		{
+			name: "fails open when Limit is nil",
+			usages: []*armcompute.Usage{{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](50),
+				Limit:        nil,
+			}},
+			update:   true,
+			expected: true,
+		},
+		{
+			name: "fails open when CurrentValue is nil",
+			usages: []*armcompute.Usage{{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(sku.GetFamilyName())},
+				CurrentValue: nil,
+				Limit:        lo.ToPtr[int64](100),
+			}},
+			update:   true,
+			expected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := TestContextWithLogger(t)
+			g := NewWithT(t)
+			usageAPI, quotaProvider := newTestProvider(t)
+
+			if len(tc.usages) > 0 {
+				usageAPI.Usages.Append(tc.usages...)
+			}
+			if tc.update {
+				lo.Must0(quotaProvider.Update(ctx))
+			}
+
+			g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func Test_SeqNum_IncrementsOnUpdate(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	_, quotaProvider := newTestProvider(t)
+
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(0)))
+
+	lo.Must0(quotaProvider.Update(ctx))
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+
+	lo.Must0(quotaProvider.Update(ctx))
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+}

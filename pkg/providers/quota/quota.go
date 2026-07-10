@@ -18,10 +18,16 @@ package quota
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/skewer"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
@@ -40,6 +46,15 @@ type Provider interface {
 	// GetTotalRegionalUsage returns the total regional vCPU usage (the "cores" entry).
 	// The bool indicates whether the entry was found.
 	GetTotalRegionalUsage() (bool, *armcompute.Usage)
+	// HasQuotaFor returns true if the SKU's family has enough remaining quota
+	// to accommodate the SKU's vCPU count. Returns true (fail-open) if quota
+	// data is unavailable, the family is not found in the cached data, or
+	// the SKU's family name or vCPU count cannot be determined.
+	HasQuotaFor(ctx context.Context, sku *skewer.SKU) bool
+	// SeqNum returns a monotonically increasing counter that is incremented
+	// each time quota data is successfully refreshed. Consumers can use this
+	// to invalidate caches that depend on quota state.
+	SeqNum() uint64
 }
 
 var _ Provider = &DefaultProvider{}
@@ -50,6 +65,7 @@ type DefaultProvider struct {
 	mu          sync.RWMutex
 	usages      map[string]*armcompute.Usage
 	cm          *pretty.ChangeMonitor
+	seqNum      uint64
 }
 
 func NewProvider(usageClient UsageAPI, location string) *DefaultProvider {
@@ -83,8 +99,9 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.usages = freshUsages
+	atomic.AddUint64(&p.seqNum, 1)
 	if p.cm.HasChanged("quota-usages", freshUsages) {
-		log.FromContext(ctx).V(1).Info("updated quota usages", "usages", len(freshUsages))
+		log.FromContext(ctx).V(1).Info("updated quota usages", "familyQuotas", formatFamilyQuotas(freshUsages))
 	}
 	return nil
 }
@@ -100,8 +117,49 @@ func (p *DefaultProvider) GetTotalRegionalUsage() (bool, *armcompute.Usage) {
 	return p.GetUsage("cores")
 }
 
+func (p *DefaultProvider) HasQuotaFor(ctx context.Context, sku *skewer.SKU) bool {
+	familyName := sku.GetFamilyName()
+	if familyName == "" {
+		log.FromContext(ctx).V(1).Info("WARNING: cannot check quota for SKU, family name is missing; assuming quota available", "sku", sku.GetName())
+		return true // fail open
+	}
+	vcpus, err := sku.VCPU()
+	if err != nil {
+		log.FromContext(ctx).V(1).Info("WARNING: cannot check quota for SKU, vCPU count unavailable; assuming quota available", "sku", sku.GetName(), "error", err)
+		return true // fail open
+	}
+	found, usage := p.GetUsage(familyName)
+	if !found {
+		return true // fail open
+	}
+	if usage.Limit == nil || usage.CurrentValue == nil {
+		log.FromContext(ctx).V(1).Info("WARNING: quota entry has nil Limit or CurrentValue; assuming quota available", "family", familyName)
+		return true // fail open
+	}
+	remaining := *usage.Limit - int64(*usage.CurrentValue)
+	return vcpus <= remaining
+}
+
+func (p *DefaultProvider) SeqNum() uint64 {
+	return atomic.LoadUint64(&p.seqNum)
+}
+
 func (p *DefaultProvider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.usages = map[string]*armcompute.Usage{}
+}
+
+// formatFamilyQuotas returns a compact summary of family quotas like "standardDSv3Family: 78/500, standardDv5Family: 20/100".
+// Only entries containing "Family" or "family" in the name are included.
+func formatFamilyQuotas(usages map[string]*armcompute.Usage) string {
+	var parts []string
+	for name, usage := range usages {
+		if !strings.Contains(strings.ToLower(name), "family") {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s: %d/%d", name, lo.FromPtr(usage.CurrentValue), lo.FromPtr(usage.Limit)))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ", ")
 }

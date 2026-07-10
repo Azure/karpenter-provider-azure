@@ -193,12 +193,14 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azConfig.Location)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
 		azClient.SKUClient,
 		pricingProvider,
 		unavailableOfferingsCache,
+		quotaProvider,
 	)
 
 	// Ensure we're able to hydrate instance types before starting any controllers
@@ -275,8 +277,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch,
 		aksMachineCache,
 	)
-
-	quotaProvider := quota.NewProvider(azClient.UsageClient, azConfig.Location)
 
 	return ctx, &Operator{
 		Operator:                     operator,
