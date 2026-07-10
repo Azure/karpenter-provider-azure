@@ -2885,13 +2885,13 @@ var _ = Describe("InstanceType Provider", func() {
 					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
 					// end up with a new node for each scheduling attempt
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						bindings := []ProvisioningResult{}
+						results := []ProvisioningResult{}
 						for range 3 {
-							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}
-						for i := range len(bindings) {
-							Expect(lo.Values(bindings[i].Bindings)).ToNot(BeEmpty())
-							Expect(lo.Values(bindings[i].Bindings)[0].Node.Name).To(Equal(lo.Values(bindings[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
+						for i := range len(results) {
+							Expect(lo.Values(results[i].Bindings)).ToNot(BeEmpty())
+							Expect(lo.Values(results[i].Bindings)[0].Node.Name).To(Equal(lo.Values(results[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -2932,13 +2932,13 @@ var _ = Describe("InstanceType Provider", func() {
 					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
 					// end up with a new node for each scheduling attempt
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						bindings := []ProvisioningResult{}
+						results := []ProvisioningResult{}
 						for range 3 {
-							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}
-						for i := range len(bindings) {
-							Expect(lo.Values(bindings[i].Bindings)).ToNot(BeEmpty())
-							Expect(lo.Values(bindings[i].Bindings)[0].Node.Name).To(Equal(lo.Values(bindings[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
+						for i := range len(results) {
+							Expect(lo.Values(results[i].Bindings)).ToNot(BeEmpty())
+							Expect(lo.Values(results[i].Bindings)[0].Node.Name).To(Equal(lo.Values(results[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, azureEnvBootstrap, pod)
