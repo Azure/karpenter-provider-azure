@@ -195,8 +195,6 @@ func NewEnvironment(t *testing.T) *Environment {
 	return azureEnv
 }
 
-
-
 func (env *Environment) GetDefaultCredential() azcore.TokenCredential {
 	return env.defaultCredential
 }
