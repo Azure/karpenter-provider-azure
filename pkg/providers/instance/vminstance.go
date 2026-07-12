@@ -503,6 +503,32 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 			)
 		}
 	}
+
+	// On dual-stack clusters, add a single non-primary IPv6 IP configuration. A NIC can only
+	// have one IPv6 ipConfig, so this is added once, outside the secondary-IP loop above.
+	// The IPv6 outbound LB backend pool (if any) is attached here, not on the primary IPv4
+	// config. Mirrors the AKS RP node NIC construction. The subnet is applied later by
+	// applyTemplateToNic to every ipConfig (IPv4 and IPv6 share the node subnet).
+	if opts.IsIPv6Enabled {
+		var ipv6BackendPools []*armnetwork.BackendAddressPool
+		for _, poolID := range opts.BackendPools.IPv6PoolIDs {
+			ipv6BackendPools = append(ipv6BackendPools, &armnetwork.BackendAddressPool{
+				ID: lo.ToPtr(poolID),
+			})
+		}
+		nic.Properties.IPConfigurations = append(
+			nic.Properties.IPConfigurations,
+			&armnetwork.InterfaceIPConfiguration{
+				Name: lo.ToPtr("ipv6config"),
+				Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+					Primary:                         lo.ToPtr(false),
+					PrivateIPAllocationMethod:       lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+					PrivateIPAddressVersion:         lo.ToPtr(armnetwork.IPVersionIPv6),
+					LoadBalancerBackendAddressPools: ipv6BackendPools,
+				},
+			},
+		)
+	}
 	return nic
 }
 
@@ -520,6 +546,7 @@ type createNICOptions struct {
 	NetworkPluginMode      string
 	MaxPods                int32
 	NetworkSecurityGroupID string
+	IsIPv6Enabled          bool
 }
 
 func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
@@ -797,6 +824,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 			BackendPools:           backendPools,
 			InstanceType:           instanceType,
 			NetworkSecurityGroupID: nsgID,
+			IsIPv6Enabled:          options.FromContext(ctx).IsIPv6Enabled(),
 		},
 	)
 	if err != nil {

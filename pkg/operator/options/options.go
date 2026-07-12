@@ -60,6 +60,25 @@ func (s *nodeIdentitiesValue) Get() any { return []string(*s) }
 
 func (s *nodeIdentitiesValue) String() string { return strings.Join(*s, ",") }
 
+type nodeIPFamiliesValue []string
+
+func newNodeIPFamiliesValue(val string, p *[]string) *nodeIPFamiliesValue {
+	*p = []string{}
+	if val != "" {
+		*p = strings.Split(val, ",")
+	}
+	return (*nodeIPFamiliesValue)(p)
+}
+
+func (s *nodeIPFamiliesValue) Set(val string) error {
+	*s = nodeIPFamiliesValue(strings.Split(val, ","))
+	return nil
+}
+
+func (s *nodeIPFamiliesValue) Get() any { return []string(*s) }
+
+func (s *nodeIPFamiliesValue) String() string { return strings.Join(*s, ",") }
+
 type optionsKey struct{}
 
 type Options struct {
@@ -80,6 +99,7 @@ type Options struct {
 	KubeletIdentityClientID string   `json:"kubeletIdentityClientID,omitempty"` // => Flows to bootstrap and used in drift
 	VnetGUID                string   `json:"vnetGuid,omitempty"`                // resource guid used by azure cni for identifying the right vnet
 	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
+	NodeIPFamilies          []string `json:"nodeIPFamilies,omitempty"`          // => The cluster IP families (IPv4, IPv6). Determines whether provisioned nodes are dual-stack. Mirrors the cluster networkProfile.ipFamilies.
 	setFlags                map[string]bool
 
 	ProvisionMode              string            `json:"provisionMode,omitempty"`
@@ -119,6 +139,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.VnetGUID, "vnet-guid", env.WithDefaultString("VNET_GUID", ""), "The vnet guid of the clusters vnet, only required by azure cni with overlay + byo vnet")
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
+	fs.Var(newNodeIPFamiliesValue(env.WithDefaultString("NODE_IP_FAMILIES", "IPv4"), &o.NodeIPFamilies), "node-ip-families", "Comma-separated cluster IP families (IPv4, IPv6). Set to \"IPv4,IPv6\" for dual-stack clusters; mirrors the cluster networkProfile.ipFamilies.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")

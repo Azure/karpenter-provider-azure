@@ -65,7 +65,7 @@ type Provider struct {
 
 type BackendAddressPools struct {
 	IPv4PoolIDs []string
-	IPv6PoolIDs []string // TODO: This is always empty currently
+	IPv6PoolIDs []string // Populated only on dual-stack clusters; attached to a non-primary IPv6 NIC ipConfig.
 }
 
 // NewProvider creates a new LoadBalancer provider
@@ -87,22 +87,29 @@ func (p *Provider) LoadBalancerBackendPools(ctx context.Context) (*BackendAddres
 	}
 
 	backendAddressPools := lo.FlatMap(loadBalancers, extractBackendAddressPools)
-	ipv4PoolIDs := lo.FilterMap(backendAddressPools, func(backendPool *armnetwork.BackendAddressPool, idx int) (string, bool) {
+	var ipv4PoolIDs, ipv6PoolIDs []string
+	for idx, backendPool := range backendAddressPools {
 		if !isBackendAddressPoolApplicable(backendPool, idx) {
-			return "", false
+			continue
 		}
+		if isIPv6BackendPool(backendPool) {
+			ipv6PoolIDs = append(ipv6PoolIDs, lo.FromPtr(backendPool.ID))
+		} else {
+			ipv4PoolIDs = append(ipv4PoolIDs, lo.FromPtr(backendPool.ID))
+		}
+	}
 
-		return lo.FromPtr(backendPool.ID), true
-	})
-
-	log.FromContext(ctx).V(1).Info("returning IPv4 backend pools", "ipv4PoolCount", len(ipv4PoolIDs), "ipv4PoolIDs", ipv4PoolIDs)
+	log.FromContext(ctx).V(1).Info("returning backend pools",
+		"ipv4PoolCount", len(ipv4PoolIDs), "ipv4PoolIDs", ipv4PoolIDs,
+		"ipv6PoolCount", len(ipv6PoolIDs), "ipv6PoolIDs", ipv6PoolIDs)
 
 	// RP only actually assigns the LB backend pools to VMs if OutboundType is LoadBalancer,
 	// but that's also the only OutboundType which creates the LoadBalancer, so as long as we're not allowing
 	// OutboundType changes, we can just infer that if the LBs exist we should assign them.
+	// IPv6 pools are only present (and only assigned) on dual-stack clusters.
 	return &BackendAddressPools{
 		IPv4PoolIDs: ipv4PoolIDs,
-		// TODO: IPv6 deferred for now. When they're used they must be put onto a non-primary NIC.
+		IPv6PoolIDs: ipv6PoolIDs,
 	}, nil
 }
 
@@ -164,12 +171,6 @@ func isBackendAddressPoolApplicable(backendPool *armnetwork.BackendAddressPool, 
 		return false // shouldn't ever happen
 	}
 
-	name := *backendPool.Name
-	// Ignore well-known named ipv6 pools for now
-	if strings.EqualFold(name, SLBOutboundBackendPoolNameIPv6) || strings.EqualFold(name, SLBInboundBackendPoolNameIPv6) {
-		return false
-	}
-
 	// Ignore IP-based pools, which are a thing in NodeIP mode. We don't need to assign these pools.
 	// See isIPBasedBackendPool in RP.
 	for _, backendAddress := range backendPool.Properties.LoadBalancerBackendAddresses {
@@ -183,4 +184,11 @@ func isBackendAddressPoolApplicable(backendPool *armnetwork.BackendAddressPool, 
 	}
 
 	return true
+}
+
+// isIPv6BackendPool reports whether the backend pool is an IPv6 pool, based on its well-known
+// AKS name. IPv6 pools must be attached to the IPv6 (non-primary) NIC IP configuration.
+func isIPv6BackendPool(backendPool *armnetwork.BackendAddressPool) bool {
+	name := lo.FromPtr(backendPool.Name)
+	return strings.EqualFold(name, SLBOutboundBackendPoolNameIPv6) || strings.EqualFold(name, SLBInboundBackendPoolNameIPv6)
 }

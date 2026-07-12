@@ -128,6 +128,7 @@ func (u Ubuntu2204) ScriptlessCustomData(
 		NetworkPlugin:                  u.Options.NetworkPlugin,
 		NetworkPolicy:                  u.Options.NetworkPolicy,
 		KubernetesVersion:              u.Options.KubernetesVersion,
+		IsIPv6Enabled:                  u.Options.IsIPv6Enabled,
 	}
 }
 

@@ -49,6 +49,7 @@ type StaticParameters struct {
 	KubernetesVersion              string
 	SubnetID                       string
 	ClusterResourceGroup           string
+	IsIPv6Enabled                  bool
 
 	Labels map[string]string
 }

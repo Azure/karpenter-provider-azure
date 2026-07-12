@@ -198,6 +198,7 @@ func (p *Provider) getStaticParameters(
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
+		IsIPv6Enabled:                  options.FromContext(ctx).IsIPv6Enabled(),
 	}, nil
 }
 

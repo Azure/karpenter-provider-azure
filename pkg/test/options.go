@@ -38,6 +38,7 @@ type OptionsFields struct {
 	NetworkDataplane               *string
 	VMMemoryOverheadPercent        *float64
 	NodeIdentities                 []string
+	NodeIPFamilies                 []string
 	SubnetID                       *string
 	NodeResourceGroup              *string
 	ProvisionMode                  *string
@@ -81,6 +82,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NetworkDataplane:               lo.FromPtrOr(options.NetworkDataplane, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
+		NodeIPFamilies:                 lo.Ternary(options.NodeIPFamilies != nil, options.NodeIPFamilies, []string{"IPv4"}),
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),

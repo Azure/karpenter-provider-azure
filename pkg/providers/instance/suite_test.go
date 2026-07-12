@@ -524,6 +524,61 @@ var _ = Describe("VMInstanceProvider", func() {
 
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(11))
 		})
+		It("should add a non-primary IPv6 ip config on dual-stack Azure CNI Overlay", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
+					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeOverlay),
+					NodeIPFamilies:    []string{"IPv4", "IPv6"},
+				}))
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+
+			// Overlay = 1 primary IPv4 ipConfig + 1 non-primary IPv6 ipConfig.
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(2))
+			ipv6Config, found := lo.Find(nic.Properties.IPConfigurations, func(c *armnetwork.InterfaceIPConfiguration) bool {
+				return c.Properties != nil && c.Properties.PrivateIPAddressVersion != nil &&
+					*c.Properties.PrivateIPAddressVersion == armnetwork.IPVersionIPv6
+			})
+			Expect(found).To(BeTrue(), "expected an IPv6 ip configuration on the NIC")
+			Expect(lo.FromPtr(ipv6Config.Name)).To(Equal("ipv6config"))
+			Expect(lo.FromPtr(ipv6Config.Properties.Primary)).To(BeFalse())
+		})
+		It("should not add an IPv6 ip config on single-stack (IPv4-only) clusters", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
+					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeOverlay),
+					NodeIPFamilies:    []string{"IPv4"},
+				}))
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
+			_, found := lo.Find(nic.Properties.IPConfigurations, func(c *armnetwork.InterfaceIPConfiguration) bool {
+				return c.Properties != nil && c.Properties.PrivateIPAddressVersion != nil &&
+					*c.Properties.PrivateIPAddressVersion == armnetwork.IPVersionIPv6
+			})
+			Expect(found).To(BeFalse(), "expected no IPv6 ip configuration on a single-stack cluster")
+		})
 	})
 
 	It("should create VM and NIC with valid ARM tags", func() {

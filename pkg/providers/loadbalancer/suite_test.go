@@ -86,25 +86,26 @@ var _ = Describe("LoadBalancer Provider", func() {
 			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 		})
 
-		It("should not return IPV6 pools", func() {
-			standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+		It("should classify IPv6 pools into IPv6PoolIDs on dual-stack clusters", func() {
+			// A dual-stack cluster's standard LB carries both IPv4 and IPv6 inbound/outbound pools.
+			standardLB := test.WithIPv6BackendPools(resourceGroup, test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true))
 			internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
-			otherLB := test.MakeStandardLoadBalancer(resourceGroup, "some-lb", true)
-			ipv6LB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBNameIPv6, true)
 
 			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
 			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(otherLB.ID), otherLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(ipv6LB.ID), ipv6LB)
 
 			pools, err := loadBalancerProvider.LoadBalancerBackendPools(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
+			// IPv4: standard inbound + standard outbound + internal inbound.
 			Expect(pools.IPv4PoolIDs).To(HaveLen(3))
-			Expect(pools.IPv6PoolIDs).To(HaveLen(0))
-			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
-			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs).To(ContainElement("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs).To(ContainElement("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
+
+			// IPv6: standard inbound-ipv6 + standard outbound-ipv6.
+			Expect(pools.IPv6PoolIDs).To(HaveLen(2))
+			Expect(pools.IPv6PoolIDs).To(ContainElement("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes-ipv6"))
+			Expect(pools.IPv6PoolIDs).To(ContainElement("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool-ipv6"))
 		})
 
 		It("should not return IP-based pools", func() {
