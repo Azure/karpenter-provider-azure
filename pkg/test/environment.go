@@ -50,9 +50,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 )
 
 func init() {
@@ -386,6 +386,8 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.UnavailableOfferingsCache.Flush()
 	env.AKSMachineCache.InvalidateAll()
 	env.LoadBalancerCache.Flush()
+
+	lo.Must0(env.InstanceTypesProvider.UpdateInstanceTypes(ctx))
 
 	// Re-seed the managed NSG so launchtemplate provider can resolve it
 	nodeResourceGroup := options.FromContext(ctx).NodeResourceGroup

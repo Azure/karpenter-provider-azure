@@ -20,10 +20,12 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -41,6 +43,7 @@ var ctx context.Context
 var env *coretest.Environment
 var azureEnv *test.Environment
 var controller *quotacontroller.Controller
+var fakeClock *clock.FakeClock
 
 func TestController(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -53,7 +56,8 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	azureEnv = test.NewEnvironment(ctx, env)
-	controller = quotacontroller.NewController(azureEnv.QuotaProvider)
+	fakeClock = clock.NewFakeClock(time.Now())
+	controller = quotacontroller.NewController(azureEnv.QuotaProvider, fakeClock)
 })
 
 var _ = AfterSuite(func() {
@@ -108,5 +112,39 @@ var _ = Describe("Quota Controller", func() {
 		err := ExpectSingletonReconcileFailed(ctx, controller)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("simulated usage API failure"))
+	})
+
+	It("should clear stale quota data after MaxStaleness of consecutive failures", func() {
+		// First, populate quota data with a successful reconciliation
+		azureEnv.UsageAPI.Usages.Append(
+			&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
+				CurrentValue: lo.ToPtr[int32](90),
+				Limit:        lo.ToPtr[int64](100),
+				Unit:         lo.ToPtr("Count"),
+			},
+		)
+		ExpectSingletonReconciled(ctx, controller)
+
+		found, _ := azureEnv.QuotaProvider.GetUsage("standardDSv3Family")
+		Expect(found).To(BeTrue(), "data should be present after successful reconciliation")
+
+		// Simulate the API failing
+		azureEnv.UsageAPI.Error = fmt.Errorf("simulated prolonged API failure")
+
+		// Immediate failure should preserve data
+		err := ExpectSingletonReconcileFailed(ctx, controller)
+		Expect(err).To(HaveOccurred())
+		found, _ = azureEnv.QuotaProvider.GetUsage("standardDSv3Family")
+		Expect(found).To(BeTrue(), "data should be preserved on immediate failure")
+
+		// Advance time past MaxStaleness
+		fakeClock.Step(quotacontroller.MaxStaleness + 1*time.Minute)
+
+		// Next failure should trigger cache clearing
+		err = ExpectSingletonReconcileFailed(ctx, controller)
+		Expect(err).To(HaveOccurred())
+		found, _ = azureEnv.QuotaProvider.GetUsage("standardDSv3Family")
+		Expect(found).To(BeFalse(), "stale data should be cleared after MaxStaleness")
 	})
 })

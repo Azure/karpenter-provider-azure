@@ -248,17 +248,32 @@ func Test_HasQuotaFor(t *testing.T) {
 	}
 }
 
-func Test_SeqNum_IncrementsOnUpdate(t *testing.T) {
+func Test_SeqNum_IncrementsOnlyWhenDataChanges(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	_, quotaProvider := newTestProvider(t)
+	usageAPI, quotaProvider := newTestProvider(t)
 
 	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(0)))
 
+	// First update with empty data → changes from initial state
 	lo.Must0(quotaProvider.Update(ctx))
 	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
 
+	// Second update with same empty data → no change, seqNum stays
+	lo.Must0(quotaProvider.Update(ctx))
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+
+	// Third update with new data → changes, seqNum increments
+	usageAPI.Usages.Append(&armcompute.Usage{
+		Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
+		CurrentValue: lo.ToPtr[int32](10),
+		Limit:        lo.ToPtr[int64](100),
+	})
+	lo.Must0(quotaProvider.Update(ctx))
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+
+	// Fourth update with same data → no change, seqNum stays
 	lo.Must0(quotaProvider.Update(ctx))
 	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
 }

@@ -55,6 +55,8 @@ type Provider interface {
 	// each time quota data is successfully refreshed. Consumers can use this
 	// to invalidate caches that depend on quota state.
 	SeqNum() uint64
+	// Reset clears all cached quota data, causing HasQuotaFor to fail open for all SKUs.
+	Reset()
 }
 
 var _ Provider = &DefaultProvider{}
@@ -99,8 +101,8 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.usages = freshUsages
-	atomic.AddUint64(&p.seqNum, 1)
 	if p.cm.HasChanged("quota-usages", freshUsages) {
+		atomic.AddUint64(&p.seqNum, 1)
 		log.FromContext(ctx).V(1).Info("updated quota usages", "familyQuotas", formatFamilyQuotas(freshUsages))
 	}
 	return nil

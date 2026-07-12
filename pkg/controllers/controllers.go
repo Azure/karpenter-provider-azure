@@ -23,6 +23,7 @@ import (
 	"github.com/awslabs/operatorpkg/status"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/clock"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -51,6 +52,7 @@ import (
 func NewControllers(
 	ctx context.Context,
 	mgr manager.Manager,
+	clk clock.Clock,
 	kubeClient client.Client,
 	recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider,
@@ -82,7 +84,7 @@ func NewControllers(
 		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")), //nolint:staticcheck // SA1019: will be replaced by mgr.GetEventRecorder once operatorpkg is updated
 
 		instancetypecontroller.NewController(instanceTypesProvider),
-		quotacontroller.NewController(quotaProvider),
+		quotacontroller.NewController(quotaProvider, clk),
 	}
 	return controllers
 }

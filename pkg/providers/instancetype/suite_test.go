@@ -3231,8 +3231,6 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		It("should fail open when quota data is unavailable", func() {
-			// No quota data set up — provider has no data
-
 			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).To(BeNil())
 			Expect(instanceTypes).ToNot(BeEmpty())
