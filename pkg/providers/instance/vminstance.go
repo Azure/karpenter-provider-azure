@@ -551,7 +551,7 @@ type createVMOptions struct {
 	UseSIG              bool
 	DiskEncryptionSetID string
 	NodePoolName        string
-	UltraSsdEnabled     bool
+	UltraSSDEnabled     bool
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -615,7 +615,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
-	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSsdEnabled)
+	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSSDEnabled)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -743,12 +743,8 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 }
 
 func isUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
-	for _, requirement := range nodeClaim.Spec.Requirements {
-		if requirement.Key == v1beta1.LabelUltraSSD && requirement.Operator == v1.NodeSelectorOpIn && len(requirement.Values) == 1 && requirement.Values[0] == "true" {
-			return true
-		}
-	}
-	return false
+	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
+	return reqs.Get(v1beta1.LabelUltraSSD).Any() == "true"
 }
 
 // beginLaunchInstance starts the launch of a VM instance.
@@ -841,7 +837,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		UseSIG:              options.FromContext(ctx).UseSIG,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
-		UltraSsdEnabled:     ultraSSD,
+		UltraSSDEnabled:     ultraSSD,
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)

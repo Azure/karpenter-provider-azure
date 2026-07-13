@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/samber/lo"
 )
 
 // determineBatchKey computes a grouping key from the AKS machine to be created.
@@ -31,7 +32,7 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 		return "", fmt.Errorf("nil payload, machine body, or properties")
 	}
 
-	template := buildSharedAKSMachineTemplate(*item.machineBody.Properties, item.machineBody.Zones)
+	template := buildSharedAKSMachineTemplate(*item.machineBody)
 	jsonBytes, err := json.Marshal(template)
 	if err != nil {
 		return "", err
@@ -46,7 +47,7 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 // buildSharedAKSMachineTemplate returns a Machine containing only the fields shared across all
 // machines in a batch, with per-machine and read-only fields zeroed.
 // Takes MachineProperties by value so the caller's original is never mutated.
-func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.MachineProperties, zones []*string) armcontainerservice.Machine {
+func buildSharedAKSMachineTemplate(aksMachine armcontainerservice.Machine) armcontainerservice.Machine {
 	// Design notes: for each section, we can either:
 	// - (A) Recreate a new struct with only the shared fields selected from the old struct, or
 	// - (B) Mutate the existing struct to nil-out the per-machine fields
@@ -59,6 +60,7 @@ func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.Mach
 	// 1. Add extraction logic in buildBatchHeader (header.go) so the field value is included in the per-machine header entries
 	// 2. Add the field to MachineEntry in header.go
 	// WARNING: be careful if we want to nil-out a nested field. Merely assigning nil will mutate the caller's struct. Value-copy/deep-copy it first.
+	aksMachineProperties := *aksMachine.Properties
 	aksMachineProperties.Tags = nil
 
 	// Clean-up read-only fields
@@ -74,10 +76,9 @@ func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.Mach
 		Properties: &aksMachineProperties,
 	}
 
-	if aksMachineProperties.Hardware != nil {
-		if ultraSSD := aksMachineProperties.Hardware.UltraSsdEnabled; ultraSSD != nil && *ultraSSD {
-			machine.Zones = zones
-		}
+	if lo.FromPtr(aksMachineProperties.Hardware.UltraSsdEnabled) {
+		machine.Zones = aksMachine.Zones
 	}
+
 	return machine
 }
