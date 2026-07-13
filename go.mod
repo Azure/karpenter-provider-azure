@@ -58,7 +58,7 @@ require (
 	k8s.io/utils v0.0.0-20251222233032-718f0e51e6d2
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.3
 	sigs.k8s.io/controller-runtime v0.23.1
-	sigs.k8s.io/karpenter v1.13.1-0.20260709225406-d20cbaffeff1
+	sigs.k8s.io/karpenter v1.14.0
 )
 
 require (
