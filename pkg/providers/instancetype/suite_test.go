@@ -2350,8 +2350,8 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			It("should not include AKSUbuntu GPU SKUs in list results", func() {
-				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC16ads_A10_v4"))))
+			It("should not include Ubuntu-only GPU SKUs in list results", func() {
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC6"))))
 			})
 			It("should include AzureLinux GPU SKUs in list results", func() {
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
