@@ -24,13 +24,30 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-// TODO: Get these from agentbaker
+// GPU driver versions and image suffixes, kept in sync with AgentBaker's
+// GPUContainerImages in parts/common/components.json. These select the
+// mcr.microsoft.com/aks/aks-gpu-<type>:<version>-<suffix> image that the node
+// bootstrap uses to install the NVIDIA driver.
+//
+// TODO: Get these from agentbaker.
 const (
+	// Legacy R470 driver for NCv1 (K80), installed via the "cuda" image.
 	Nvidia470CudaDriverVersion = "470.82.01"
 
-	// https://github.com/Azure/AgentBaker/blob/12d432b5fea64a6cda718df6e1ab851211b49c74/parts/common/components.json#L740-L752
+	// Pre-LTS CUDA image (aks-gpu-cuda), R580 line. Only NCv1 is routed to the
+	// "cuda" image path; modern CUDA SKUs use the LTS image below. Kept for the
+	// legacy path and to mirror AgentBaker (see GetGPUDriverType).
 	NvidiaCudaDriverVersion = "580.126.09"
-	AKSGPUCudaVersionSuffix = "20260126030251"
+	AKSGPUCudaVersionSuffix = "20260430040408"
+
+	// LTS CUDA image (aks-gpu-cuda-lts), R580.159 line. Default for modern CUDA
+	// compute SKUs (T4, V100, A100, H100, H200, ...). This is the branch the AKS
+	// GPU VHD driver prebake is built against, so scriptless nodes MUST install
+	// this version — installing an older CUDA driver on top of the prebaked
+	// userspace libraries produces an NVML "Driver/library version mismatch",
+	// which breaks the NVIDIA device plugin and hides the GPU from the node.
+	NvidiaCudaLTSDriverVersion = "580.159.04"
+	AKSGPUCudaLTSVersionSuffix = "20260629214430"
 
 	NvidiaGridDriverVersion = "570.211.01"
 	AKSGPUGridVersionSuffix = "20260522192315"
@@ -97,7 +114,9 @@ func GetAKSGPUImageSHA(size string) string {
 	if UseGridDrivers(size) {
 		return AKSGPUGridVersionSuffix
 	}
-	return AKSGPUCudaVersionSuffix
+	// CUDA path (both NCv1 and modern SKUs) uses the LTS image suffix, matching
+	// AgentBaker's GetAKSGPUImageSHA.
+	return AKSGPUCudaLTSVersionSuffix
 }
 
 // IsNvidiaEnabledSKU determines if an VM SKU has nvidia driver support
@@ -130,10 +149,15 @@ func GetGPUDriverVersion(size string) string {
 	if isStandardNCv1(size) {
 		return Nvidia470CudaDriverVersion
 	}
-	return NvidiaCudaDriverVersion
+	return NvidiaCudaLTSDriverVersion
 }
 
-// GetGPUDriverType returns the type of GPU driver for given VM SKU ("grid-v20", "grid", or "cuda")
+// GetGPUDriverType returns the type of GPU driver for given VM SKU ("grid-v20", "grid", "cuda-lts", or "cuda").
+// This value becomes NVIDIA_GPU_DRIVER_TYPE at provision time and selects the
+// mcr.microsoft.com/aks/aks-gpu-<type> image. Modern CUDA compute SKUs (T4, V100, A100,
+// H100, H200, ...) use the R580 LTS image (aks-gpu-cuda-lts) — the branch the GPU VHD
+// prebake is built against — while legacy NCv1 (K80) keeps the "cuda" path with its
+// pinned R470 driver. Kept in sync with AgentBaker's GetGPUDriverType.
 func GetGPUDriverType(size string) string {
 	if UseGridV20Drivers(size) {
 		return "grid-v20"
@@ -141,7 +165,10 @@ func GetGPUDriverType(size string) string {
 	if UseGridDrivers(size) {
 		return "grid"
 	}
-	return "cuda"
+	if isStandardNCv1(size) {
+		return "cuda"
+	}
+	return "cuda-lts"
 }
 
 func isStandardNCv1(size string) bool {
