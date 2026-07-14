@@ -1,13 +1,13 @@
 #  StandardNCADSA10v4Family:
 standard_nc16ads_a10_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 standard_nc32ads_a10_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 standard_nc8ads_a10_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 
 #  StandardNCADSA100v4Family:
 standard_nc24ads_a100_v4:
@@ -56,22 +56,22 @@ standard_nd120asr_a100_v4:
 #  StandardNVADSA10v5Family:
 standard_nv12ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 standard_nv18ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 standard_nv36adms_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 standard_nv36ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 standard_nv6ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 standard_nv72ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows"]
+  os: ["ubuntu", "windows", "azurelinux3"]
 
 #  standardNCFamily:
 standard_nc6:
