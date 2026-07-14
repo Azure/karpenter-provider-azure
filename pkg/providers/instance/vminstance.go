@@ -743,8 +743,11 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 }
 
 func isUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
+	enabled := scheduling.NewRequirements(
+		scheduling.NewRequirement(v1beta1.LabelUltraSSD, v1.NodeSelectorOpIn, "true"))
+
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
-	return reqs.Get(v1beta1.LabelUltraSSD).Any() == "true"
+	return reqs.Compatible(enabled) == nil
 }
 
 // beginLaunchInstance starts the launch of a VM instance.
