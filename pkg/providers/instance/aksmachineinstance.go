@@ -441,7 +441,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	capacityType := selection.CapacityType()
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
-	ultraSSD := isUltraSSDRequested(nodeClaim)
+	ultraSSD := resolveUltraSSDRequested(nodeClaim)
 
 	// Build the AKS machine template
 	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, placementScope, zone, ultraSSD, nodeClass, nodeClaim)

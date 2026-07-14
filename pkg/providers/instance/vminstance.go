@@ -742,12 +742,19 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	return &createResult{Poller: poller, VM: vm}, nil
 }
 
-func isUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
-	enabled := scheduling.NewRequirements(
-		scheduling.NewRequirement(v1beta1.LabelUltraSSD, v1.NodeSelectorOpIn, "true"))
-
+func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
-	return reqs.Compatible(enabled) == nil
+
+	compatibleWithTrue := reqs.Compatible(scheduling.NewRequirements(
+		scheduling.NewRequirement(v1beta1.LabelUltraSSD, v1.NodeSelectorOpIn, "true"))) == nil
+	compatibleWithFalse := reqs.Compatible(scheduling.NewRequirements(
+		scheduling.NewRequirement(v1beta1.LabelUltraSSD, v1.NodeSelectorOpIn, "false"))) == nil
+
+	// We only enable if the NodeClaim is explicitly requesting it. Ambiguous or unspecified requests result in false.
+	if compatibleWithTrue && !compatibleWithFalse {
+		return true
+	}
+	return false
 }
 
 // beginLaunchInstance starts the launch of a VM instance.
@@ -772,7 +779,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	instanceType := selection.InstanceType
 	capacityType := selection.CapacityType()
 
-	ultraSSD := isUltraSSDRequested(nodeClaim)
+	ultraSSD := resolveUltraSSDRequested(nodeClaim)
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
 	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope, ultraSSD)
