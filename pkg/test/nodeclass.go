@@ -23,6 +23,7 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	opstatus "github.com/awslabs/operatorpkg/status"
@@ -141,6 +142,24 @@ func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion 
 			},
 		},
 	}
+}
+
+// ApplyMarketplaceImages populates Status.Images with the marketplace images used in
+// userdata provision mode, resolved to the fake marketplace image version.
+func ApplyMarketplaceImages(nodeClass *v1beta1.AKSNodeClass) {
+	var kubernetesVersion string
+	if nodeClass.Status.KubernetesVersion != nil {
+		kubernetesVersion = *nodeClass.Status.KubernetesVersion
+	}
+	marketplaceImages := imagefamily.GetMarketplaceImages(nodeClass.Spec.ImageFamily, kubernetesVersion)
+	nodeImages := []imagefamily.NodeImage{}
+	for _, image := range marketplaceImages {
+		nodeImages = append(nodeImages, imagefamily.NodeImage{
+			ID:           imagefamily.BuildImageIDMarketplace(image.Publisher, image.Offer, image.SKU, fake.MarketplaceImageVersion),
+			Requirements: image.Requirements,
+		})
+	}
+	nodeClass.Status.Images = translateToStatusNodeImages(nodeImages)
 }
 
 func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {

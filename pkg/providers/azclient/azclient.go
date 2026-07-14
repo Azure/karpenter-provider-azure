@@ -55,9 +55,10 @@ type AZClient struct {
 	subnetsClient                  azapi.SubnetsAPI
 	diskEncryptionSetsClient       azapi.DiskEncryptionSetsAPI
 
-	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
-	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
-	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
+	NodeImageVersionsClient    imagefamilytypes.NodeImageVersionsAPI
+	ImageVersionsClient        imagefamilytypes.CommunityGalleryImageVersionsAPI
+	VirtualMachineImagesClient imagefamilytypes.VirtualMachineImagesAPI
+	NodeBootstrappingClient    imagefamilytypes.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
 	SKUClient                   skewer.ResourceClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
@@ -115,6 +116,7 @@ func NewAZClientFromAPI(
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
 	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
+	virtualMachineImagesClient imagefamilytypes.VirtualMachineImagesAPI,
 	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
 	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
@@ -131,6 +133,7 @@ func NewAZClientFromAPI(
 		diskEncryptionSetsClient:       diskEncryptionSetsClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
+		VirtualMachineImagesClient:     virtualMachineImagesClient,
 		NodeBootstrappingClient:        nodeBootstrappingClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
@@ -178,6 +181,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	communityImageVersionsClient, err := armcompute.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	virtualMachineImagesClient, err := armcompute.NewVirtualMachineImagesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +297,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
+		virtualMachineImagesClient,
 		nodeBootstrappingClient,
 		skuClient,
 		subscriptionsClient,

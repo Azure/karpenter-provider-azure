@@ -20,13 +20,17 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -110,6 +114,132 @@ var _ = Describe("Validation Reconciler", func() {
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
+		})
+	})
+
+	Context("provision mode field validation", func() {
+		expectValidationFailed := func(expectedReason string, messageSubstring string) {
+			GinkgoHelper()
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(expectedReason))
+			Expect(condition.Message).To(ContainSubstring(messageSubstring))
+		}
+		expectValidationSucceeded := func() {
+			GinkgoHelper()
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		}
+
+		Context("in AKS provision modes", func() {
+			BeforeEach(func() {
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSScriptless),
+				}))
+			})
+
+			It("should reject non-empty userData", func() {
+				nodeClass.Spec.UserData = lo.ToPtr("#cloud-config\n")
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.userData")
+			})
+
+			It("should reject networkSecurityGroupID", func() {
+				nodeClass.Spec.NetworkSecurityGroupID = lo.ToPtr("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg")
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.networkSecurityGroupID")
+			})
+
+			It("should reject userData in AKS Machine API mode", func() {
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				}))
+				nodeClass.Spec.UserData = lo.ToPtr("#cloud-config\n")
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.userData")
+			})
+
+			It("should accept a NodeClass without the userdata-only fields", func() {
+				expectValidationSucceeded()
+			})
+		})
+
+		Context("in userdata provision mode", func() {
+			BeforeEach(func() {
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeUserdata),
+				}))
+				nodeClass.Spec.MaxPods = lo.ToPtr(int32(110))
+				nodeClass.Spec.UserData = lo.ToPtr("#cloud-config\n")
+			})
+
+			It("should reject missing userData", func() {
+				nodeClass.Spec.UserData = nil
+				expectValidationFailed(status.MissingRequiredFields, "spec.userData")
+			})
+
+			It("should reject empty userData", func() {
+				nodeClass.Spec.UserData = lo.ToPtr("")
+				expectValidationFailed(status.MissingRequiredFields, "spec.userData")
+			})
+
+			It("should accept non-empty userData and networkSecurityGroupID", func() {
+				nodeClass.Spec.UserData = lo.ToPtr("#cloud-config\nruncmd:\n  - echo hello\n")
+				nodeClass.Spec.NetworkSecurityGroupID = lo.ToPtr("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg")
+				expectValidationSucceeded()
+			})
+
+			It("should accept gpu configuration", func() {
+				nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeNone)}
+				expectValidationSucceeded()
+			})
+
+			It("should accept fipsMode Disabled", func() {
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
+				expectValidationSucceeded()
+			})
+
+			It("should reject kubelet configuration", func() {
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{}
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.kubelet")
+			})
+
+			It("should reject localDNS configuration", func() {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.localDNS")
+			})
+
+			It("should reject linuxOSConfig configuration", func() {
+				nodeClass.Spec.LinuxOSConfig = &v1beta1.LinuxOSConfiguration{}
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.linuxOSConfig")
+			})
+
+			It("should reject artifactStreaming configuration", func() {
+				nodeClass.Spec.ArtifactStreaming = &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.artifactStreaming")
+			})
+
+			It("should reject fipsMode FIPS", func() {
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+				expectValidationFailed(status.UnsupportedFieldsForProvisionMode, "spec.fipsMode")
+			})
+
+			It("should reject missing maxPods", func() {
+				nodeClass.Spec.MaxPods = nil
+				expectValidationFailed(status.MissingRequiredFields, "spec.maxPods")
+			})
+
+			It("should reject whitespace-only userData", func() {
+				nodeClass.Spec.UserData = lo.ToPtr(" \n\t ")
+				expectValidationFailed(status.InvalidUserData, "whitespace")
+			})
+
+			It("should reject userData larger than 65535 bytes", func() {
+				nodeClass.Spec.UserData = lo.ToPtr(strings.Repeat("a", 65536))
+				expectValidationFailed(status.InvalidUserData, "65535 bytes")
+			})
 		})
 	})
 

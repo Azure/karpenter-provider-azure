@@ -87,6 +87,7 @@ type AKSNodeClassSpec struct {
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
 	// tags to be applied on Azure resources like instances.
+	// Note: '/' in tag keys is replaced with '_', as Azure tag keys cannot contain '/'.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
@@ -133,6 +134,17 @@ type AKSNodeClassSpec struct {
 	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 	// +optional
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
+	// userData is the complete raw bootstrap payload (cloud-init or shell script) for userdata provision mode
+	// (PROVISION_MODE=userdata). The provider base64-encodes it exactly once for Azure OSProfile.CustomData.
+	// Required in userdata mode; must not be set in other modes.
+	// +kubebuilder:validation:MaxLength=65535
+	// +optional
+	UserData *string `json:"userData,omitempty"`
+	// networkSecurityGroupID is the Azure NSG resource ID attached to the primary NIC in userdata provision mode.
+	// If omitted, no NIC-level NSG is attached. Only valid in userdata mode.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/networkSecurityGroups\/[^\/]+$`
+	// +optional
+	NetworkSecurityGroupID *string `json:"networkSecurityGroupID,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs

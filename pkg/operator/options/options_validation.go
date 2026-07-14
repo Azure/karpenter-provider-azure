@@ -117,27 +117,62 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 	return nil
 }
 
+func (o *Options) isKnownProvisionMode() bool {
+	switch o.ProvisionMode {
+	case consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient, consts.ProvisionModeUserdata:
+		return true
+	default:
+		return o.IsAKSMachineAPIMode()
+	}
+}
+
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !o.IsAKSMachineAPIMode() {
+	if !o.isKnownProvisionMode() {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
 	case consts.ProvisionModeBootstrappingClient:
-		if o.NodeBootstrappingServerURL == "" {
-			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
-		}
+		return o.validateBootstrappingClientOptions()
 	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
-		if o.AKSMachinesPoolName == "" {
-			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
+		return o.validateAKSMachineAPIOptions()
+	case consts.ProvisionModeUserdata:
+		return o.validateUserdataOptions()
+	}
+	return nil
+}
+
+func (o *Options) validateBootstrappingClientOptions() error {
+	if o.NodeBootstrappingServerURL == "" {
+		return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
+	}
+	return nil
+}
+
+func (o *Options) validateAKSMachineAPIOptions() error {
+	if o.AKSMachinesPoolName == "" {
+		return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
+	}
+	if !o.UseSIG {
+		return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
+	}
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+		if err := o.validateBatchOptions(); err != nil {
+			return err
 		}
-		if !o.UseSIG {
-			return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
-		}
-		if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
-			if err := o.validateBatchOptions(); err != nil {
-				return err
-			}
-		}
+	}
+	return nil
+}
+
+func (o *Options) validateUserdataOptions() error {
+	// These options select other provisioning or image-source paths.
+	if o.UseSIG {
+		return fmt.Errorf("use-sig is not supported when provision-mode is userdata")
+	}
+	if o.NodeBootstrappingServerURL != "" {
+		return fmt.Errorf("nodebootstrapping-server-url is not supported when provision-mode is userdata")
+	}
+	if o.AKSMachinesPoolName != "" {
+		return fmt.Errorf("aks-machines-pool-name is not supported when provision-mode is userdata")
 	}
 	return nil
 }
@@ -159,14 +194,17 @@ func (o *Options) validateBatchOptions() error {
 }
 
 func (o *Options) validateRequiredFields() error {
-	if o.ClusterEndpoint == "" {
-		return fmt.Errorf("missing field, cluster-endpoint")
+	// In userdata mode the external bootstrap owner supplies the payload, so AKS bootstrap-only options aren't required.
+	if o.ProvisionMode != consts.ProvisionModeUserdata {
+		if o.ClusterEndpoint == "" {
+			return fmt.Errorf("missing field, cluster-endpoint")
+		}
+		if o.KubeletClientTLSBootstrapToken == "" {
+			return fmt.Errorf("missing field, kubelet-bootstrap-token")
+		}
 	}
 	if o.ClusterName == "" {
 		return fmt.Errorf("missing field, cluster-name")
-	}
-	if o.KubeletClientTLSBootstrapToken == "" {
-		return fmt.Errorf("missing field, kubelet-bootstrap-token")
 	}
 	if o.SSHPublicKey == "" {
 		return fmt.Errorf("missing field, ssh-public-key")
@@ -181,6 +219,10 @@ func (o *Options) validateRequiredFields() error {
 }
 
 func (o *Options) validateUseSIG() error {
+	// use-sig is rejected by validateProvisionMode in userdata mode; skip here so that is the only error surfaced.
+	if o.ProvisionMode == consts.ProvisionModeUserdata {
+		return nil
+	}
 	if o.UseSIG {
 		if !o.IsAKSMachineAPIMode() {
 			// For AKS Machine API modes, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.

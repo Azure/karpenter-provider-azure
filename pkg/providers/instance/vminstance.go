@@ -46,6 +46,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
@@ -108,9 +109,13 @@ func ErrorCodeForMetrics(err error) string {
 }
 
 // GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
-// This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
+// This is a set of 0 to 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
 func GetManagedExtensionNames(provisionMode string, env *auth.Environment) []string {
 	var result []string
+	// No AKS extensions are created on standalone (non-AKS) VMs.
+	if provisionMode == consts.ProvisionModeUserdata {
+		return result
+	}
 	// Only including AKS identifying extension in the clouds it is supported in
 	if isAKSIdentifyingExtensionEnabled(env) {
 		result = append(result, aksIdentifyingExtensionName)
@@ -487,7 +492,8 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 			EnableIPForwarding:          lo.ToPtr(false),
 		},
 	}
-	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
+	// In userdata provision mode only the primary IP configuration is created, regardless of maxPods.
+	if p.provisionMode != consts.ProvisionModeUserdata && opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
 		for i := 1; i < int(opts.MaxPods); i++ {
@@ -618,6 +624,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
 	} else {
+		// In userdata mode ScriptlessCustomData holds the raw user data, base64-encoded once.
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.ScriptlessCustomData)
 	}
 
@@ -648,6 +655,16 @@ func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProp
 
 // setImageReference sets the image reference for the VM based on if we are using self hosted karpenter or the node auto provisioning addon
 func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageID string, useSIG bool) {
+	// Marketplace image IDs (userdata provision mode) carry their own publisher/offer/sku/version reference.
+	if marketplaceRef, err := imagefamily.ParseMarketplaceImageID(imageID); err == nil {
+		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
+			Publisher: lo.ToPtr(marketplaceRef.Publisher),
+			Offer:     lo.ToPtr(marketplaceRef.Offer),
+			SKU:       lo.ToPtr(marketplaceRef.SKU),
+			Version:   lo.ToPtr(marketplaceRef.Version),
+		}
+		return
+	}
 	if useSIG {
 		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
 			ID: lo.ToPtr(imageID),
@@ -762,24 +779,31 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting backend pools: %w", err)
-	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
-	if err != nil {
-		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
-	}
+	backendPools := &loadbalancer.BackendAddressPools{}
 	var nsgID string
-	if !isAKSManagedVNET {
-		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+	if p.provisionMode == consts.ProvisionModeUserdata {
+		// Standalone VMs have no AKS load balancer or managed NSG; only the NodeClass's explicit NSG (if any) is attached.
+		nsgID = lo.FromPtr(nodeClass.Spec.NetworkSecurityGroupID)
+	} else {
+		backendPools, err = p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("getting managed network security group: %w", err)
+			return nil, fmt.Errorf("getting backend pools: %w", err)
 		}
-		nsgID = lo.FromPtr(nsg.ID)
+
+		isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
+		if err != nil {
+			return nil, fmt.Errorf("checking if vnet is managed: %w", err)
+		}
+		if !isAKSManagedVNET {
+			nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("getting managed network security group: %w", err)
+			}
+			nsgID = lo.FromPtr(nsg.ID)
+		}
 	}
 
 	// TODO: Not returning after launching this LRO because
@@ -886,7 +910,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					return err
 				}
 			}
-			if isAKSIdentifyingExtensionEnabled(p.env) {
+			// Standalone (non-AKS) VMs do not get the AKS identifying/billing extension.
+			if p.provisionMode != consts.ProvisionModeUserdata && isAKSIdentifyingExtensionEnabled(p.env) {
 				err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
 				if err != nil {
 					return err

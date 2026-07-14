@@ -91,7 +91,8 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 	return filteredImages
 }
 
-// isNewerVersion will return if version1 is greater than version2, note the new versioning scheme is yearmm.dd.build, previously it was yy.mm.dd without the build id.
+// isNewerVersion will return if version1 is greater than version2, comparing dot-separated segments as integers.
+// Used for AKS VHD versions (yearmm.dd.build, previously yy.mm.dd without the build id) and marketplace image versions.
 func isNewerVersion(version1, version2 string) bool {
 	// Split by dots and compare each segment as an integer getting the largest vhd version
 	v1Segments := strings.Split(version1, ".")

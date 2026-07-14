@@ -92,6 +92,12 @@ func TestGetManagedExtensionNames(t *testing.T) {
 			env:           noBillingExtensionEnv,
 			expected:      nil,
 		},
+		{
+			name:          "PublicCloud with Userdata mode returns no extensions",
+			provisionMode: consts.ProvisionModeUserdata,
+			env:           publicCloudEnv,
+			expected:      nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -103,4 +109,9 @@ func TestGetManagedExtensionNames(t *testing.T) {
 			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestGenerateResourceName(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(GenerateResourceName("default-2jf98")).To(Equal("aks-default-2jf98"))
 }

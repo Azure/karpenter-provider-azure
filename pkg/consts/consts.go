@@ -45,6 +45,7 @@ const (
 	ProvisionModeBootstrappingClient      = "bootstrappingclient"
 	ProvisionModeAKSMachineAPI            = "aksmachineapi"
 	ProvisionModeAKSMachineAPIHeaderBatch = "aksmachineapiheaderbatch"
+	ProvisionModeUserdata                 = "userdata"
 
 	AKSMachineAPIHeaderBatchMaxSize = 50
 

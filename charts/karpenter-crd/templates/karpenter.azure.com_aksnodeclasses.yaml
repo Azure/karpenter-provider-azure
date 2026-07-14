@@ -735,6 +735,12 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              networkSecurityGroupID:
+                description: |-
+                  networkSecurityGroupID is the Azure NSG resource ID attached to the primary NIC in userdata provision mode.
+                  If omitted, no NIC-level NSG is attached. Only valid in userdata mode.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/networkSecurityGroups\/[^\/]+$
+                type: string
               osDiskSizeGB:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
@@ -757,7 +763,9 @@ spec:
               tags:
                 additionalProperties:
                   type: string
-                description: tags to be applied on Azure resources like instances.
+                description: |-
+                  tags to be applied on Azure resources like instances.
+                  Note: '/' in tag keys is replaced with '_', as Azure tag keys cannot contain '/'.
                 type: object
                 x-kubernetes-validations:
                 - message: tags keys must be less than 512 characters
@@ -768,6 +776,13 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              userData:
+                description: |-
+                  userData is the complete raw bootstrap payload (cloud-init or shell script) for userdata provision mode
+                  (PROVISION_MODE=userdata). The provider base64-encodes it exactly once for Azure OSProfile.CustomData.
+                  Required in userdata mode; must not be set in other modes.
+                maxLength: 65535
+                type: string
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -1635,6 +1650,12 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              networkSecurityGroupID:
+                description: |-
+                  networkSecurityGroupID is the Azure NSG resource ID attached to the primary NIC in userdata provision mode.
+                  If omitted, no NIC-level NSG is attached. Only valid in userdata mode.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/networkSecurityGroups\/[^\/]+$
+                type: string
               osDiskSizeGB:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
@@ -1657,7 +1678,9 @@ spec:
               tags:
                 additionalProperties:
                   type: string
-                description: tags to be applied on Azure resources like instances.
+                description: |-
+                  tags to be applied on Azure resources like instances.
+                  Note: '/' in tag keys is replaced with '_', as Azure tag keys cannot contain '/'.
                 type: object
                 x-kubernetes-validations:
                 - message: tags keys must be less than 512 characters
@@ -1668,6 +1691,13 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              userData:
+                description: |-
+                  userData is the complete raw bootstrap payload (cloud-init or shell script) for userdata provision mode
+                  (PROVISION_MODE=userdata). The provider base64-encodes it exactly once for Azure OSProfile.CustomData.
+                  Required in userdata mode; must not be set in other modes.
+                maxLength: 65535
+                type: string
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.

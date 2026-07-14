@@ -60,6 +60,7 @@ type Parameters struct {
 	*StaticParameters
 	ScriptlessCustomData           bootstrap.Bootstrapper
 	CustomScriptsNodeBootstrapping customscriptsbootstrap.Bootstrapper
+	RawUserData                    string
 	ImageID                        string
 	StorageProfileDiskType         string
 	StorageProfileIsEphemeral      bool

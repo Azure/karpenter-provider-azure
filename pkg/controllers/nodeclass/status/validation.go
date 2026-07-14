@@ -19,18 +19,30 @@ package status
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	// UnsupportedFieldsForProvisionMode is the condition reason when NodeClass fields are set that the mode rejects.
+	UnsupportedFieldsForProvisionMode = "UnsupportedFieldsForProvisionMode"
+	// InvalidUserData is the condition reason used when spec.userData fails runtime validation.
+	InvalidUserData = "InvalidUserData"
+	// MissingRequiredFields is the condition reason when fields required by the provision mode are not set.
+	MissingRequiredFields = "MissingRequiredFields"
+	// userDataMaxBytes is the max size of spec.userData in bytes before encoding (CRD MaxLength counts characters).
+	userDataMaxBytes = 65535
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -62,6 +74,18 @@ func NewValidationReconciler(
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
+	// Fail fast when NodeClass fields are used in provision modes that do not support them.
+	if reason, err := validateProvisionModeFields(ctx, nodeClass); err != nil {
+		logger.V(1).Info("NodeClass fields are invalid for the configured provision mode", "error", err)
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			reason,
+			err.Error(),
+		)
+		// No requeue needed; a spec change triggers reconciliation.
+		return reconcile.Result{}, nil
+	}
+
 	// Check BYOK RBAC if DES ID is configured
 	if r.parsedDiskEncryptionSetID != nil {
 		logger.V(1).Info("validating Disk Encryption Set RBAC")
@@ -86,6 +110,69 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+// validateProvisionModeFields validates NodeClass fields against the provision mode and returns the condition
+// reason with the error. AKS modes reject the userdata-only fields (userData, networkSecurityGroupID); userdata
+// mode rejects AKS bootstrap fields (kubelet, localDNS, linuxOSConfig, artifactStreaming, fipsMode=FIPS) and
+// requires maxPods and userData. gpu stays valid (gpu.mode filters instance types) but installs no drivers.
+func validateProvisionModeFields(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (string, error) {
+	var provisionMode string
+	if opts := options.FromContext(ctx); opts != nil {
+		provisionMode = opts.ProvisionMode
+	}
+	if provisionMode != consts.ProvisionModeUserdata {
+		return validateAKSModeFields(nodeClass)
+	}
+	return validateUserdataModeFields(nodeClass)
+}
+
+func validateAKSModeFields(nodeClass *v1beta1.AKSNodeClass) (string, error) {
+	if lo.FromPtr(nodeClass.Spec.UserData) != "" {
+		return UnsupportedFieldsForProvisionMode, fmt.Errorf("spec.userData is only supported when the operator runs with PROVISION_MODE=userdata")
+	}
+	if nodeClass.Spec.NetworkSecurityGroupID != nil {
+		return UnsupportedFieldsForProvisionMode, fmt.Errorf("spec.networkSecurityGroupID is only supported when the operator runs with PROVISION_MODE=userdata")
+	}
+	return "", nil
+}
+
+func validateUserdataModeFields(nodeClass *v1beta1.AKSNodeClass) (string, error) {
+	var unsupportedFields []string
+	if nodeClass.Spec.Kubelet != nil {
+		unsupportedFields = append(unsupportedFields, "spec.kubelet")
+	}
+	if nodeClass.Spec.LocalDNS != nil {
+		unsupportedFields = append(unsupportedFields, "spec.localDNS")
+	}
+	if nodeClass.Spec.LinuxOSConfig != nil {
+		unsupportedFields = append(unsupportedFields, "spec.linuxOSConfig")
+	}
+	if nodeClass.Spec.ArtifactStreaming != nil {
+		unsupportedFields = append(unsupportedFields, "spec.artifactStreaming")
+	}
+	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+		unsupportedFields = append(unsupportedFields, "spec.fipsMode: FIPS")
+	}
+	if len(unsupportedFields) > 0 {
+		return UnsupportedFieldsForProvisionMode, fmt.Errorf("%s not supported in userdata provision mode; bootstrap is owned by spec.userData or the image", strings.Join(unsupportedFields, ", "))
+	}
+
+	if nodeClass.Spec.MaxPods == nil {
+		return MissingRequiredFields, fmt.Errorf("spec.maxPods is required in userdata provision mode; the user data payload or image must configure kubelet to match")
+	}
+
+	userData := lo.FromPtr(nodeClass.Spec.UserData)
+	if userData == "" {
+		return MissingRequiredFields, fmt.Errorf("spec.userData is required in userdata provision mode")
+	}
+	if strings.TrimSpace(userData) == "" {
+		return InvalidUserData, fmt.Errorf("spec.userData must not be whitespace-only")
+	}
+	if len(userData) > userDataMaxBytes {
+		return InvalidUserData, fmt.Errorf("spec.userData must be no more than %d bytes before encoding, got %d", userDataMaxBytes, len(userData))
+	}
+	return "", nil
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {

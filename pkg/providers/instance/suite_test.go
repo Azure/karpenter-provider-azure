@@ -18,6 +18,7 @@ package instance_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -523,6 +524,125 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(11))
+		})
+	})
+
+	Context("Userdata provision mode", func() {
+		var originalOptions *options.Options
+		var originalEnv *test.Environment
+		var originalCloudProvider *cloudprovider.CloudProvider
+
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			originalEnv = azureEnv
+			originalCloudProvider = cloudProvider
+			// AzureCNI V1 (NodeSubnet) would create secondary IP configurations in AKS modes,
+			// which makes it a good probe that userdata mode only creates the primary one.
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				ProvisionMode:     lo.ToPtr(consts.ProvisionModeUserdata),
+				NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
+				NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+			}))
+			azureEnv = test.NewEnvironment(ctx, env)
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			test.ApplyDefaultStatus(nodeClass, env, false)
+			test.ApplyMarketplaceImages(nodeClass)
+		})
+
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			ctx = options.ToContext(ctx, originalOptions)
+			azureEnv = originalEnv
+			cloudProvider = originalCloudProvider
+		})
+
+		provisionPod := func() {
+			GinkgoHelper()
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+		}
+
+		It("should set raw user data as CustomData, base64-encoded exactly once", func() {
+			nodeClass.Spec.UserData = lo.ToPtr("#cloud-config\nruncmd:\n  - echo hello\n")
+			provisionPod()
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.OSProfile.CustomData).ToNot(BeNil())
+			decoded, err := base64.StdEncoding.DecodeString(lo.FromPtr(vm.Properties.OSProfile.CustomData))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(decoded)).To(Equal(lo.FromPtr(nodeClass.Spec.UserData)))
+		})
+
+		It("should set a marketplace image reference on the VM", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			test.ApplyMarketplaceImages(nodeClass)
+			provisionPod()
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			ref := vm.Properties.StorageProfile.ImageReference
+			Expect(ref).ToNot(BeNil())
+			Expect(lo.FromPtr(ref.Publisher)).To(Equal("Canonical"))
+			Expect(lo.FromPtr(ref.Offer)).To(Equal("ubuntu-24_04-lts"))
+			Expect(lo.FromPtr(ref.SKU)).ToNot(BeEmpty())
+			Expect(lo.FromPtr(ref.Version)).To(Equal(fake.MarketplaceImageVersion))
+			Expect(ref.ID).To(BeNil())
+			Expect(ref.CommunityGalleryImageID).To(BeNil())
+		})
+
+		It("should attach the explicit NSG and create only the primary IP configuration without backend pools", func() {
+			nsgID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/cluster-rg/providers/Microsoft.Network/networkSecurityGroups/workers-nsg"
+			nodeClass.Spec.NetworkSecurityGroupID = lo.ToPtr(nsgID)
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(50))
+			provisionPod()
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
+			Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(nsgID))
+			// only the primary IP configuration, regardless of maxPods
+			Expect(nic.Properties.IPConfigurations).To(HaveLen(1))
+			Expect(nic.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools).To(BeEmpty())
+		})
+
+		It("should leave the NIC NSG unset when networkSecurityGroupID is not specified", func() {
+			provisionPod()
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic.Properties.NetworkSecurityGroup).To(BeNil())
+		})
+
+		It("should not create CSE or the AKS identifying extension, and skip the billing tag", func() {
+			nodeClass.Spec.UserData = lo.ToPtr("#!/bin/bash\necho bootstrap\n")
+			provisionPod()
+
+			Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Tags).ToNot(HaveKey(launchtemplate.BillingTagKey))
+			Expect(lo.FromPtr(vm.Tags[launchtemplate.KarpenterManagedTagKey])).To(Equal(options.FromContext(ctx).ClusterName))
+			Expect(lo.FromPtr(vm.Tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
+		})
+
+		It("should keep the aks- name prefix for VM and NIC resources", func() {
+			provisionPod()
+
+			nodeClaims := &karpv1.NodeClaimList{}
+			Expect(env.Client.List(ctx, nodeClaims)).To(Succeed())
+			Expect(nodeClaims.Items).To(HaveLen(1))
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(vmInput.VMName).To(Equal("aks-" + nodeClaims.Items[0].Name))
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nicInput := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nicInput.InterfaceName).To(Equal("aks-" + nodeClaims.Items[0].Name))
 		})
 	})
 

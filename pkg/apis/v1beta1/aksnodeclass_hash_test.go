@@ -80,6 +80,8 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11008649797056761238", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "4895720480850206885", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
 		Entry("ArtifactStreaming.Enabled", "15355387647114481444", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("UserData", "4806895672410076482", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{UserData: lo.ToPtr("#cloud-config\n")}}),
+		Entry("NetworkSecurityGroupID", "13190730990156401460", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NetworkSecurityGroupID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg")}}),
 	)
 
 	DescribeTable("should change hash when static fields are updated", func(changes v1beta1.AKSNodeClass) {
@@ -99,6 +101,8 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("ArtifactStreaming.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("UserData", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{UserData: lo.ToPtr("#cloud-config\n")}}),
+		Entry("NetworkSecurityGroupID", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NetworkSecurityGroupID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg")}}),
 	)
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
