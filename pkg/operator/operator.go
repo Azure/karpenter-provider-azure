@@ -31,7 +31,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -44,7 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpapis "sigs.k8s.io/karpenter/pkg/apis"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -75,11 +73,7 @@ import (
 )
 
 func init() {
-	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
-	// Azure Disk CSI driver uses "" for non-zonal topology; cloud-provider-azure
-	// uses "0" (fault domain) for regional VMs. Translate the empty value so
-	// normalized PV topology requirements match regional offerings.
-	karpv1.NormalizedLabelValues[corev1.LabelTopologyZone] = map[string]string{"": zones.Regional}
+	zones.RegisterCSIZoneNormalization()
 }
 
 type Operator struct {
