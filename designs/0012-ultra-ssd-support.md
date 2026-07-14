@@ -8,7 +8,7 @@
 
 ## Overview
 
-AKS supports Azure Ultra Disks by enabling Ultra SSD on the cluster or on a node pool at creation time with `--enable-ultra-ssd`. Nodes created from that cluster or node pool can then attach Persistent Volumes backed by the `UltraSSD_LRS` storage class.
+AKS supports Azure Ultra Disks by enabling Ultra SSD on the cluster or on a nodepool at creation time with `--enable-ultra-ssd`. Nodes created from that cluster or node pool can then attach Persistent Volumes backed by the `UltraSSD_LRS` storage class.
 
 Today in AKS, `--enable-ultra-ssd` ultimately enables `AdditionalCapabilities.UltraSSDEnabled = true` on the underlying VM or VMSS model. That does not automatically add labels, taints, or tolerations for scheduling. It only makes the node capable of attaching Ultra SSDs for workloads that use an UltraSSD-backed PV. Placement policy remains the user's responsibility.
 
@@ -83,9 +83,11 @@ Ultra SSD is a scheduling consideration. Workloads that are using Ultra SSD shou
 
 Scheduling requirements are handled by Requirements, usually defined in the NodePool. Therefore, we should make Ultra SSD enablement a well-known label. This matches precedents set by labels such as premium-storage-capable. Furthermore, this is a simple true/false configuration, which makes defining it as a rigid definition in the NodeClass overkill.
 
+Users will use the well-known label on their workload or NodePool to request UltraSSD-enabled nodes. On the Karpenter-Provider side, this means filtering out Offerings that do not support it, and automatically enabling it if and only if the user has specifically requested it. The resulting label on the node is either true or false and answers the question "Is UltraSSD enabled on this node?".
+
 #### Conclusion: Well-Known Label
 
-We choose to use a well-known label. This path is consistent with the fact that Requirements are designed to handle scheduling concerns.
+We choose to use a well-known label. This path is consistent with the fact that Requirements are designed to handle scheduling concerns and the configuration is simple.
 
 ### Decision 2: How should we filter for compatible Instances?
 
@@ -120,7 +122,7 @@ Set the label as `true` or `false` when we create offerings.
 
 ### VM mode wiring
 
-For both Machine and VMInstance, we will check if the label is set to `true` in the incoming *NodeClaim*, not merely whether the selected offering supports it. This is because we do not want to enable Ultra SSD unless a workload or NodePool explicitly asks for it, even if the offering supports it.
+For both Machine and VMInstance, we will check if the label is set to `true` in the incoming *NodeClaim*, not merely whether the selected offering supports it. This is because we do not want to enable Ultra SSD unless a workload or NodePool explicitly asks for it, even if the offering supports it. Furthermore, the incoming NodeClaim must specifically request it as `true`. Empty or `[true, false]` will always default to false.
 
 #### VM
 Update VM creation so Ultra SSD-enabled NodeClaims set `vm.Properties.AdditionalCapabilities.UltraSSDEnabled = true`. This is left nil if Ultra SSD is not enabled, which is consistent with AKS.
