@@ -751,10 +751,7 @@ func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
 		scheduling.NewRequirement(v1beta1.LabelUltraSSD, v1.NodeSelectorOpIn, "false"))) == nil
 
 	// We only enable if the NodeClaim is explicitly requesting it. Ambiguous or unspecified requests result in false.
-	if compatibleWithTrue && !compatibleWithFalse {
-		return true
-	}
-	return false
+	return compatibleWithTrue && !compatibleWithFalse
 }
 
 // beginLaunchInstance starts the launch of a VM instance.
