@@ -211,6 +211,12 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
+	// Note that this is the Microsoft.Compute/locations/usages API,
+	// which is different than the Microsoft.Quota API. We use it here because:
+	//   * It is what the portal uses.
+	//   * It doesn't require additional RBAC over and above VM contributor which we already require.
+	//   * It is functionally identical to the Microsoft.Quota API.
+	// See designs/0012-quota-fungibility-reactivity-improvements.md for more details.
 	usageClient, err := armcompute.NewUsageClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
