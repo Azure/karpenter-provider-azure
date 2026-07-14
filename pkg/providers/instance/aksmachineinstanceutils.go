@@ -108,6 +108,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	labels[karpv1.CapacityTypeLabelKey] = capacityType
 	labels[v1beta1.AKSLabelScaleSetPriority] = KarpCapacityTypeToScaleSetPriorityLabel[capacityType]
 	labels[v1beta1.AKSLabelPriority] = KarpCapacityTypeToPriorityLabel[capacityType]
+	labels[v1beta1.LabelUltraSSD] = fmt.Sprint(aksMachineTemplate.Properties != nil && aksMachineTemplate.Properties.Hardware != nil && lo.FromPtr(aksMachineTemplate.Properties.Hardware.UltraSsdEnabled))
 	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}

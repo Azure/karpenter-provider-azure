@@ -1134,3 +1134,10 @@ func GetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
 	}
 	return ""
 }
+
+func GetUltraSSDEnabled(vm *armcompute.VirtualMachine) bool {
+	if vm != nil && vm.Properties != nil && vm.Properties.AdditionalCapabilities != nil {
+		return lo.FromPtr(vm.Properties.AdditionalCapabilities.UltraSSDEnabled)
+	}
+	return false
+}
