@@ -74,6 +74,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -100,7 +101,7 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx, stop = context.WithCancel(ctx)
+	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118: stop is called in AfterSuite
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
 	ctxBootstrap := options.ToContext(ctx, test.Options(test.OptionsFields{
@@ -2349,8 +2350,8 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			It("should not include AKSUbuntu GPU SKUs in list results", func() {
-				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC16ads_A10_v4"))))
+			It("should not include Ubuntu-only GPU SKUs in list results", func() {
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC6"))))
 			})
 			It("should include AzureLinux GPU SKUs in list results", func() {
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
@@ -2463,6 +2464,115 @@ var _ = Describe("InstanceType Provider", func() {
 					// Standard_D2_v5 supports encryption at host and should be included
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
 				})
+			})
+		})
+
+		Context("Offering Availability", func() {
+			var instanceTypes corecloudprovider.InstanceTypes
+
+			BeforeEach(func() {
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				var err error
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should not have spot offerings available for SKUs with LowPriorityCapable=False", func() {
+				// Standard_B20ms has LowPriorityCapable=False in the fake SKU data
+				var b20ms *corecloudprovider.InstanceType
+				for _, it := range instanceTypes {
+					if it.Name == "Standard_B20ms" {
+						b20ms = it
+						break
+					}
+				}
+				Expect(b20ms).ToNot(BeNil(), "Standard_B20ms should be in the instance type list")
+
+				// On-demand offerings should be available
+				onDemandAvailable := lo.Filter(b20ms.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand)
+				})
+				Expect(onDemandAvailable).ToNot(BeEmpty(), "on-demand offerings should be available for Standard_B20ms")
+
+				// Spot offerings should NOT be available (LowPriorityCapable=False)
+				spotAvailable := lo.Filter(b20ms.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot)
+				})
+				Expect(spotAvailable).To(BeEmpty(), "spot offerings should not be available for Standard_B20ms (LowPriorityCapable=False)")
+			})
+
+			It("should have available offerings for a SKU present in the SKU API but missing from pricing data", func() {
+				// Add a SKU to the fake SKU API that does NOT have pricing in the static pricing data.
+				// This simulates a new SKU appearing in the SKU API before pricing data is available.
+				// Standard_D2_v2_Promo is in known_skus.yaml but has no southcentralus pricing.
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+					Name:         lo.ToPtr("Standard_D2_v2_Promo"),
+					Tier:         lo.ToPtr("Standard"),
+					Kind:         lo.ToPtr(""),
+					Size:         lo.ToPtr("D2_v2_Promo"),
+					Family:       lo.ToPtr("standardDv2Family"),
+					ResourceType: lo.ToPtr("virtualMachines"),
+					APIVersions:  &[]string{},
+					Costs:        &[]compute.ResourceSkuCosts{},
+					Restrictions: &[]compute.ResourceSkuRestrictions{},
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("102400")},
+						{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
+						{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1")},
+						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("7")},
+						{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("8")},
+						{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+						{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+						{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("2")},
+						{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+						{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("False")},
+						{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+						{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+					},
+					Locations:    &[]string{fake.Region},
+					LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+				})
+
+				// Verify this SKU has no known pricing
+				price, known := azureEnv.PricingProvider.OnDemandPrice("Standard_D2_v2_Promo")
+				Expect(known).To(BeFalse(), "Standard_D2_v2_Promo should not have known pricing")
+				Expect(price).To(BeNumerically("==", pricing.MissingPrice))
+
+				// Re-fetch instance types with the new SKU
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				updatedInstanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Find the new SKU in the list
+				var promoSKU *corecloudprovider.InstanceType
+				for _, it := range updatedInstanceTypes {
+					if it.Name == "Standard_D2_v2_Promo" {
+						promoSKU = it
+						break
+					}
+				}
+				Expect(promoSKU).ToNot(BeNil(), "Standard_D2_v2_Promo should appear in instance types even without pricing data")
+
+				// On-demand offerings should be available
+				onDemandAvailable := lo.Filter(promoSKU.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand)
+				})
+				Expect(onDemandAvailable).ToNot(BeEmpty(), "on-demand offerings should be available even without pricing data")
+
+				// Spot offerings should also be available
+				spotAvailable := lo.Filter(promoSKU.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot)
+				})
+				Expect(spotAvailable).ToNot(BeEmpty(), "spot offerings should be available for LowPriorityCapable=True SKU even without pricing data")
+
+				// Price should be MissingPrice
+				Expect(onDemandAvailable[0].Price).To(BeNumerically("==", pricing.MissingPrice))
+				Expect(spotAvailable[0].Price).To(BeNumerically("==", pricing.MissingPrice))
 			})
 		})
 
@@ -3001,6 +3111,211 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(ok).To(BeTrue(), "Expected nvidia.com/gpu to be present in capacity, and be zero")
 				Expect(gpuQuantityNonGPU.Value()).To(Equal(int64(0)))
 			})
+		})
+	})
+
+	Context("Quota Filtering", func() {
+		It("should exclude on-demand offering when family quota is exhausted", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					// All on-demand offerings for this family should be unavailable
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeFalse(), fmt.Sprintf("on-demand offering for %s should be unavailable due to quota", it.Name))
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should allow on-demand offering when family has enough quota", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](0),
+					Limit:        lo.ToPtr[int64](1000),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeTrue(), fmt.Sprintf("on-demand offering for %s should be available with sufficient quota", it.Name))
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should block large sizes but allow small sizes in the same family", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			// Leave only 4 cores of quota remaining
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](96),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					vcpus := lo.Must(sku.VCPU())
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							if vcpus <= 4 {
+								Expect(offering.Available).To(BeTrue(), fmt.Sprintf("on-demand offering for %s (%d vCPUs) should be available with 4 remaining cores", it.Name, vcpus))
+							} else {
+								Expect(offering.Available).To(BeFalse(), fmt.Sprintf("on-demand offering for %s (%d vCPUs) should be unavailable with only 4 remaining cores", it.Name, vcpus))
+							}
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should not affect spot offerings when on-demand quota is exhausted", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundSpot := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot) && offering.Available {
+							foundSpot = true
+						}
+					}
+				}
+			}
+			Expect(foundSpot).To(BeTrue(), "spot offerings should still be available when on-demand quota is exhausted")
+		})
+
+		It("should fail open when quota data is unavailable", func() {
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			Expect(instanceTypes).ToNot(BeEmpty())
+
+			for _, it := range instanceTypes {
+				for _, offering := range it.Offerings {
+					if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+						Expect(offering.Available).To(BeTrue(), fmt.Sprintf("on-demand offering for %s should be available when quota data is empty (fail-open)", it.Name))
+					}
+				}
+			}
+		})
+
+		It("should invalidate instance type cache when quota data changes", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			// First call with plenty of quota
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](0),
+					Limit:        lo.ToPtr[int64](1000),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeTrue())
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+
+			// Now exhaust the quota and update
+			azureEnv.UsageAPI.Usages.Reset()
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			// Second call should reflect the new quota (cache invalidated by SeqNum change)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			foundFamily = false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeFalse(), fmt.Sprintf("on-demand offering for %s should be unavailable after quota exhaustion", it.Name))
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
 		})
 	})
 })

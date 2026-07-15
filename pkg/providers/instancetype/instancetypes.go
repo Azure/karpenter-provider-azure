@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
@@ -92,6 +93,7 @@ type DefaultProvider struct {
 	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
+	quotaProvider        quota.Provider
 
 	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
 	// Fully initialized Instance Types are also cached based on the set of all instance types,
@@ -112,6 +114,7 @@ func NewDefaultProvider(
 	skuClient skewer.ResourceClient,
 	pricingProvider *pricing.Provider,
 	offeringsCache *kcache.UnavailableOfferings,
+	quotaProvider quota.Provider,
 ) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
@@ -119,6 +122,7 @@ func NewDefaultProvider(
 		skuClient:            skuClient,
 		pricingProvider:      pricingProvider,
 		unavailableOfferings: offeringsCache,
+		quotaProvider:        quotaProvider,
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
 		instanceTypesSeqNum:  0,
@@ -149,9 +153,10 @@ func (p *DefaultProvider) List(
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x",
+	key := fmt.Sprintf("%d-%d-%d-%016x",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
+		p.quotaProvider.SeqNum(),
 		paramsHash,
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
@@ -175,7 +180,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones), instanceTypeParams, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -239,14 +244,33 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
+
 	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)
-		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
-		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
-		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
+
+		// Get prices for ordering; missing prices return MissingPrice (de-prioritized but not excluded).
+		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name)
+		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name)
+
+		// Determine allocatability from SKU capabilities.
+		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the
+		// unavailableOfferings cache and per-family quota.
+		availableOnDemand := !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
+			p.quotaProvider.HasQuotaFor(ctx, sku)
+		// Spot is only allocatable if the SKU reports LowPriorityCapable=True and the offering is not in the unavailableOfferings cache.
+		// NOTE:  Quota check applies to on-demand only. Spot VMs do not consume per-family vCPU quota;
+		// they use a single regional "Total Regional Spot vCPUs" (lowPriorityCores) pool shared
+		// across all families, which is not useful as a size-selection signal.
+		// See: https://learn.microsoft.com/en-us/azure/quotas/spot-quota
+		// IMPORTANT: Spot can be capacity restricted separately from dedicated. Unlike dedicated, spot capacity restrictions are not returned
+		// in the "restrictions" section of the SKU API, instead the LowPriorityCapable capability is set to False. This means that the VM SKU API cannot differentiate
+		// between restricted at a regional level and for all zones, or just restricted for some zones. Both are LowPriorityCapable=False. It would be
+		// nice to have the SKUs API fix this. Until it does, we _could_ try to join with spot price here and use the existence of a spot meter as
+		// supporting signal that actually the VM can be allocated as spot at the regional level. This seems an over-optimization for now though,
+		// so not doing it.
+		availableSpot := sku.IsLowPriorityCapable() && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(

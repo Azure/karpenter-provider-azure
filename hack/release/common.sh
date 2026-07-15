@@ -88,16 +88,24 @@ buildAndPublish() {
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko build -B --sbom none --tarball="${tarball_nap}" --platform=linux/amd64 --push=false ./cmd/controller
 
-  # Run trivy scans on local tarballs BEFORE pushing
-  if ! trivy image --input "${tarball}" --ignore-unfixed --exit-code 1; then
-    echo "Trivy scan failed for controller image. Aborting."
-    rm -f "${tarball}" "${tarball_nap}"
-    exit 1
-  fi
-  if ! trivy image --input "${tarball_nap}" --ignore-unfixed --exit-code 1; then
-    echo "Trivy scan failed for controller-aks image. Aborting."
-    rm -f "${tarball}" "${tarball_nap}"
-    exit 1
+  # Run trivy scans on local tarballs BEFORE pushing.
+  # Set SKIP_TRIVY_SCAN=true to bypass the blocking gate (e.g. an emergency release). The scans
+  # still run in report-only mode so findings remain in the logs, but they no longer abort the publish.
+  if [[ "${SKIP_TRIVY_SCAN:-false}" == "true" ]]; then
+    echo "::warning::Trivy scan BYPASSED via SKIP_TRIVY_SCAN=true; running in report-only mode (findings will not block the release)."
+    trivy image --input "${tarball}"     --ignore-unfixed --exit-code 0 || true
+    trivy image --input "${tarball_nap}" --ignore-unfixed --exit-code 0 || true
+  else
+    if ! trivy image --input "${tarball}" --ignore-unfixed --exit-code 1; then
+      echo "Trivy scan failed for controller image. Aborting."
+      rm -f "${tarball}" "${tarball_nap}"
+      exit 1
+    fi
+    if ! trivy image --input "${tarball_nap}" --ignore-unfixed --exit-code 1; then
+      echo "Trivy scan failed for controller-aks image. Aborting."
+      rm -f "${tarball}" "${tarball_nap}"
+      exit 1
+    fi
   fi
   rm -f "${tarball}" "${tarball_nap}"
 
