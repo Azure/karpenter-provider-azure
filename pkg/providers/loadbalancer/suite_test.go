@@ -21,11 +21,9 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -33,101 +31,144 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
-var ctx context.Context
-var stop context.CancelFunc
+const resourceGroup = "test-rg"
 
-var resourceGroup string
-var fakeLoadBalancersAPI *fake.LoadBalancersAPI
-var loadBalancerProvider *loadbalancer.Provider
-var loadBalancerCache *cache.Cache
-
-func TestAKS(t *testing.T) {
-	ctx = TestContextWithLogger(t)
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Providers/LoadBalancer/AKS")
+type testFixture struct {
+	ctx      context.Context
+	api      *fake.LoadBalancersAPI
+	cache    *cache.Cache
+	provider *loadbalancer.Provider
 }
 
-var _ = BeforeSuite(func() {
-	ctx, stop = context.WithCancel(ctx)
+func newTestFixture(t *testing.T) *testFixture {
+	t.Helper()
+	ctx := context.Background()
+	api := &fake.LoadBalancersAPI{}
+	c := cache.New(time.Second, time.Second)
+	provider := loadbalancer.NewProvider(api, c, resourceGroup)
+	return &testFixture{ctx: ctx, api: api, cache: c, provider: provider}
+}
 
-	fakeLoadBalancersAPI = &fake.LoadBalancersAPI{}
-	resourceGroup = "test-rg"
-	loadBalancerCache = cache.New(time.Second, time.Second)
-	loadBalancerProvider = loadbalancer.NewProvider(fakeLoadBalancersAPI, loadBalancerCache, resourceGroup)
-})
+func TestLoadBalancerBackendPools_ReturnsOnlyWellKnownPools(t *testing.T) {
+	g := NewWithT(t)
+	f := newTestFixture(t)
 
-var _ = AfterSuite(func() {
-	stop()
-})
+	standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+	internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
+	otherLB := test.MakeStandardLoadBalancer(resourceGroup, "some-lb", true)
 
-var _ = BeforeEach(func() {
-	fakeLoadBalancersAPI.Reset()
-	loadBalancerCache.Flush()
-})
+	f.api.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+	f.api.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+	f.api.LoadBalancers.Store(lo.FromPtr(otherLB.ID), otherLB)
 
-var _ = Describe("LoadBalancer Provider", func() {
-	Context("Backend pools", func() {
-		It("should return only well-known loadbalancer pools", func() {
-			standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
-			internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
-			otherLB := test.MakeStandardLoadBalancer(resourceGroup, "some-lb", true)
+	pools, err := f.provider.LoadBalancerBackendPools(f.ctx)
+	g.Expect(err).ToNot(HaveOccurred())
 
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(otherLB.ID), otherLB)
+	g.Expect(pools.IPv4PoolIDs).To(HaveLen(3))
+	g.Expect(pools.IPv6PoolIDs).To(HaveLen(0))
+	g.Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+	g.Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
+	g.Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+}
 
-			pools, err := loadBalancerProvider.LoadBalancerBackendPools(ctx)
-			Expect(err).ToNot(HaveOccurred())
+func TestLoadBalancerBackendPools_DoesNotReturnIPv6Pools(t *testing.T) {
+	g := NewWithT(t)
+	f := newTestFixture(t)
 
-			Expect(pools.IPv4PoolIDs).To(HaveLen(3))
-			Expect(pools.IPv6PoolIDs).To(HaveLen(0))
-			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
-			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
-		})
+	standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+	internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
+	otherLB := test.MakeStandardLoadBalancer(resourceGroup, "some-lb", true)
+	ipv6LB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBNameIPv6, true)
 
-		It("should not return IPV6 pools", func() {
-			standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
-			internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
-			otherLB := test.MakeStandardLoadBalancer(resourceGroup, "some-lb", true)
-			ipv6LB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBNameIPv6, true)
+	f.api.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+	f.api.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+	f.api.LoadBalancers.Store(lo.FromPtr(otherLB.ID), otherLB)
+	f.api.LoadBalancers.Store(lo.FromPtr(ipv6LB.ID), ipv6LB)
 
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(otherLB.ID), otherLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(ipv6LB.ID), ipv6LB)
+	pools, err := f.provider.LoadBalancerBackendPools(f.ctx)
+	g.Expect(err).ToNot(HaveOccurred())
 
-			pools, err := loadBalancerProvider.LoadBalancerBackendPools(ctx)
-			Expect(err).ToNot(HaveOccurred())
+	g.Expect(pools.IPv4PoolIDs).To(HaveLen(3))
+	g.Expect(pools.IPv6PoolIDs).To(HaveLen(0))
+	g.Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+	g.Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
+	g.Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+}
 
-			Expect(pools.IPv4PoolIDs).To(HaveLen(3))
-			Expect(pools.IPv6PoolIDs).To(HaveLen(0))
-			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
-			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
-		})
+func TestLoadBalancerBackendPools_DoesNotReturnIPBasedPools(t *testing.T) {
+	g := NewWithT(t)
+	f := newTestFixture(t)
 
-		It("should not return IP-based pools", func() {
-			standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
-			standardLB.Properties.BackendAddressPools[1].Properties.LoadBalancerBackendAddresses = []*armnetwork.LoadBalancerBackendAddress{
-				{
-					Properties: &armnetwork.LoadBalancerBackendAddressPropertiesFormat{
-						IPAddress: lo.ToPtr("1.2.3.4"),
-					},
-				},
-			}
-			internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
+	standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+	standardLB.Properties.BackendAddressPools[1].Properties.LoadBalancerBackendAddresses = []*armnetwork.LoadBalancerBackendAddress{
+		{
+			Properties: &armnetwork.LoadBalancerBackendAddressPropertiesFormat{
+				IPAddress: lo.ToPtr("1.2.3.4"),
+			},
+		},
+	}
+	internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
 
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
-			fakeLoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+	f.api.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+	f.api.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
 
-			pools, err := loadBalancerProvider.LoadBalancerBackendPools(ctx)
-			Expect(err).ToNot(HaveOccurred())
+	pools, err := f.provider.LoadBalancerBackendPools(f.ctx)
+	g.Expect(err).ToNot(HaveOccurred())
 
-			Expect(pools.IPv4PoolIDs).To(HaveLen(2))
-			Expect(pools.IPv6PoolIDs).To(HaveLen(0))
-			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
-		})
-	})
-})
+	g.Expect(pools.IPv4PoolIDs).To(HaveLen(2))
+	g.Expect(pools.IPv6PoolIDs).To(HaveLen(0))
+	g.Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+	g.Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+}
+
+func TestRefreshBackendPools_RefreshesWhenGenerationMatchesCurrentCache(t *testing.T) {
+	g := NewWithT(t)
+	f := newTestFixture(t)
+
+	standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+	f.api.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+
+	pools, err := f.provider.LoadBalancerBackendPools(f.ctx)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(pools.IPv4PoolIDs).To(HaveLen(2))
+	g.Expect(f.api.NewListPagerBehavior.Calls()).To(Equal(1))
+
+	// Simulate LB deletion
+	f.api.LoadBalancers.Clear()
+
+	refreshed, err := f.provider.RefreshBackendPools(f.ctx, pools)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(refreshed.IPv4PoolIDs).To(HaveLen(0))
+	g.Expect(f.api.NewListPagerBehavior.Calls()).To(Equal(2))
+
+	// Subsequent LoadBalancerBackendPools should serve from the refreshed cache
+	pools2, err := f.provider.LoadBalancerBackendPools(f.ctx)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(pools2.IPv4PoolIDs).To(HaveLen(0))
+	g.Expect(f.api.NewListPagerBehavior.Calls()).To(Equal(2)) // no additional call
+}
+
+func TestRefreshBackendPools_ReusesNewerGenerationWithoutCallingAzure(t *testing.T) {
+	g := NewWithT(t)
+	f := newTestFixture(t)
+
+	standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+	f.api.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+
+	// Get gen 1
+	pools1, err := f.provider.LoadBalancerBackendPools(f.ctx)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(f.api.NewListPagerBehavior.Calls()).To(Equal(1))
+
+	// Force a refresh to gen 2
+	f.cache.Flush()
+	pools2, err := f.provider.LoadBalancerBackendPools(f.ctx)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(f.api.NewListPagerBehavior.Calls()).To(Equal(2))
+
+	// Now try to refresh with stale gen-1 pools — should NOT call Azure again
+	refreshed, err := f.provider.RefreshBackendPools(f.ctx, pools1)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(f.api.NewListPagerBehavior.Calls()).To(Equal(2)) // no new call
+	g.Expect(refreshed.IPv4PoolIDs).To(HaveLen(len(pools2.IPv4PoolIDs)))
+}
