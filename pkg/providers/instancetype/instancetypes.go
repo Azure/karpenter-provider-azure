@@ -255,7 +255,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
-				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, fmt.Sprint(isUltraSSDAvailable(sku, zone))),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
 			),
 			Price:     onDemandPrice,
 			Available: availableOnDemand,
@@ -268,7 +268,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
-				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, fmt.Sprint(isUltraSSDAvailable(sku, zone))),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
 			),
 			Price:     spotPrice,
 			Available: availableSpot,
@@ -525,14 +525,17 @@ func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
 	return s.GetCapabilityIntegerQuantity(selector)
 }
 
-func isUltraSSDAvailable(sku *skewer.SKU, zone string) bool {
+func ultraSSDOptions(sku *skewer.SKU, zone string) []string {
 	z := zones.MakeARMZonesFromAKSLabelZone(zone)
-	if len(z) == 0 {
-		return sku.IsUltraSSDAvailableWithoutAvailabilityZone()
+	switch len(z) {
+	case 0:
+		if sku.IsUltraSSDAvailableWithoutAvailabilityZone() {
+			return []string{"true", "false"}
+		}
+	case 1:
+		if sku.IsUltraSSDAvailableInAvailabilityZone(*z[0]) {
+			return []string{"true", "false"}
+		}
 	}
-
-	if len(z) == 1 {
-		return sku.IsUltraSSDAvailableInAvailabilityZone(*z[0])
-	}
-	return false
+	return []string{"false"}
 }
