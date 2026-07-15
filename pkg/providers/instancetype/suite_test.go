@@ -2579,8 +2579,8 @@ var _ = Describe("InstanceType Provider", func() {
 
 			It("should propagate UltraSSD values from available offerings", func() {
 				for _, instanceType := range instanceTypes {
-					offeringValues := lo.Map(instanceType.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) string {
-						return o.Requirements.Get(v1beta1.LabelUltraSSD).Any()
+					offeringValues := lo.FlatMap(instanceType.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) []string {
+						return o.Requirements.Get(v1beta1.LabelUltraSSD).Values()
 					})
 					Expect(sets.New(instanceType.Requirements.Get(v1beta1.LabelUltraSSD).Values()...)).To(Equal(sets.New(offeringValues...)))
 				}
