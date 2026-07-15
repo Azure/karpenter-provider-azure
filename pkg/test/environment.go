@@ -50,6 +50,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -86,6 +87,7 @@ type Environment struct {
 	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
+	UsageAPI                    *fake.UsageAPI
 	DynamicInterface            dynamic.Interface
 
 	// Fake data stores for the APIs
@@ -111,6 +113,7 @@ type Environment struct {
 	LoadBalancerProvider         *loadbalancer.Provider
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
 	AllocationStrategyProvider   allocationstrategy.Provider
+	QuotaProvider                *quota.DefaultProvider
 
 	InstanceTypeStore *nodeoverlay.InstanceTypeStore
 
@@ -153,6 +156,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
+	usageAPI := &fake.UsageAPI{}
 
 	aksDataStorage := fake.NewAKSDataStorage()
 	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(aksDataStorage)
@@ -170,12 +174,14 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
+	quotaProvider := quota.NewProvider(usageAPI, region)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,
 		skusAPI,
 		pricingProvider,
-		unavailableOfferingsCache)
+		unavailableOfferingsCache,
+		quotaProvider)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
 		networkSecurityGroupAPI,
@@ -231,6 +237,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		nodeBootstrappingAPI,
 		skusAPI,
 		subscriptionAPI,
+		usageAPI,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()
 	vmInstanceProvider := instance.NewDefaultVMProvider(
@@ -317,6 +324,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NodeBootstrappingAPI:        nodeBootstrappingAPI,
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
+		UsageAPI:                    usageAPI,
 		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
@@ -339,6 +347,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
 		AllocationStrategyProvider:   allocationStrategyProvider,
+		QuotaProvider:                quotaProvider,
 
 		InstanceTypeStore: store,
 
@@ -368,6 +377,8 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.PricingProvider.Reset()
 	env.AKSMachinesAPI.Reset()
 	env.AKSAgentPoolsAPI.Reset()
+	env.UsageAPI.Reset()
+	env.QuotaProvider.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()
@@ -375,6 +386,8 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.UnavailableOfferingsCache.Flush()
 	env.AKSMachineCache.InvalidateAll()
 	env.LoadBalancerCache.Flush()
+
+	lo.Must0(env.InstanceTypesProvider.UpdateInstanceTypes(ctx))
 
 	// Re-seed the managed NSG so launchtemplate provider can resolve it
 	nodeResourceGroup := options.FromContext(ctx).NodeResourceGroup
