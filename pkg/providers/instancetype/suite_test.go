@@ -2576,10 +2576,9 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 
 			It("should have available offerings with MissingPrice for a SKU not in known_skus.yaml", func() {
-				// Add a SKU to the fake SKU API that is NOT in known_skus.yaml.
+				// Add a SKU to the SKU API that is NOT in known_skus.yaml (this SKU is made up/fake).
 				// This simulates a newly added or private VM size that hasn't been added to the known list yet.
-				// The SKU should still be provisionable but deprioritized with MissingPrice.
-				unknownSKUName := "Standard_D2ts_v6"
+				unknownSKUName := "Standard_FakeSKU_v6"
 				Expect(instancetype.IsKnownSKU(unknownSKUName)).To(BeFalse(), unknownSKUName+" should not be in known_skus.yaml")
 
 				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{

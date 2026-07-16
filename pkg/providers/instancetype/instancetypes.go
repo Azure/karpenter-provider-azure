@@ -446,16 +446,7 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 		return fmt.Errorf("no instance types found")
 	}
 
-	// Log unknown SKUs (not in known_skus.yaml) that passed all filters, grouped by family.
-	unknownFamilies := sets.New[string]()
-	for name, sku := range instanceTypes {
-		if !IsKnownSKU(name) {
-			unknownFamilies.Insert(sku.GetFamilyName())
-		}
-	}
-	if unknownFamilies.Len() > 0 {
-		log.FromContext(ctx).Info("discovered VM SKU families not in known_skus.yaml (deprioritized with MissingPrice)", "families", unknownFamilies.UnsortedList())
-	}
+	logUnknownSKUFamilies(ctx, instanceTypes)
 
 	if p.cm.HasChanged("instance-types", instanceTypes) {
 		// Only update instanceTypesSeqNum with the instance types have been changed
@@ -465,6 +456,20 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	}
 	p.instanceTypesInfo = instanceTypes
 	return nil
+}
+
+// logUnknownSKUFamilies logs VM SKU families that were discovered from the Azure API
+// but are not present in the embedded known_skus.yaml.
+func logUnknownSKUFamilies(ctx context.Context, instanceTypes map[string]*skewer.SKU) {
+	unknownFamilies := sets.New[string]()
+	for name, sku := range instanceTypes {
+		if !IsKnownSKU(name) {
+			unknownFamilies.Insert(sku.GetFamilyName())
+		}
+	}
+	if unknownFamilies.Len() > 0 {
+		log.FromContext(ctx).Info("discovered VM SKU families not in known_skus.yaml (deprioritized with MissingPrice)", "families", unknownFamilies.UnsortedList())
+	}
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
