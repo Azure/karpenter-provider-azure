@@ -296,9 +296,6 @@
 - name: Standard_D16d_v5
   family: standardDDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_D16darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_D16ds_v4
   family: standardDDSv4Family
   discoveredOn: "2025-05-15"
@@ -461,9 +458,6 @@
 - name: Standard_D2d_v5
   family: standardDDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_D2darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_D2ds_v4
   family: standardDDSv4Family
   discoveredOn: "2025-05-15"
@@ -599,9 +593,6 @@
 - name: Standard_D32d_v5
   family: standardDDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_D32darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_D32ds_v4
   family: standardDDSv4Family
   discoveredOn: "2025-05-15"
@@ -743,9 +734,6 @@
 - name: Standard_D48d_v5
   family: standardDDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_D48darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_D48ds_v4
   family: standardDDSv4Family
   discoveredOn: "2025-05-15"
@@ -884,9 +872,6 @@
 - name: Standard_D4d_v5
   family: standardDDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_D4darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_D4ds_v4
   family: standardDDSv4Family
   discoveredOn: "2025-05-15"
@@ -1157,9 +1142,6 @@
 - name: Standard_D8d_v5
   family: standardDDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_D8darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_D8ds_v4
   family: standardDDSv4Family
   discoveredOn: "2025-05-15"
@@ -1937,9 +1919,6 @@
 - name: Standard_E16d_v5
   family: standardEDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_E16darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_E16ds_v4
   family: standardEDSv4Family
   discoveredOn: "2025-05-15"
@@ -2030,9 +2009,6 @@
 - name: Standard_E20d_v5
   family: standardEDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_E20darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_E20ds_v4
   family: standardEDSv4Family
   discoveredOn: "2025-05-15"
@@ -2111,9 +2087,6 @@
 - name: Standard_E2d_v5
   family: standardEDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_E2darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_E2ds_v4
   family: standardEDSv4Family
   discoveredOn: "2025-05-15"
@@ -2276,9 +2249,6 @@
 - name: Standard_E32d_v5
   family: standardEDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_E32darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_E32ds_v4
   family: standardEDSv4Family
   discoveredOn: "2025-05-15"
@@ -2405,9 +2375,6 @@
 - name: Standard_E48d_v5
   family: standardEDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_E48darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_E48ds_v4
   family: standardEDSv4Family
   discoveredOn: "2025-05-15"
@@ -2492,9 +2459,6 @@
 - name: Standard_E4d_v5
   family: standardEDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_E4darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_E4ds_v4
   family: standardEDSv4Family
   discoveredOn: "2025-05-15"
@@ -2819,9 +2783,6 @@
 - name: Standard_E8d_v5
   family: standardEDv5Family
   discoveredOn: "2025-05-15"
-- name: Standard_E8darm_V3
-  family: standardARMv3Family
-  discoveredOn: "2026-06-18"
 - name: Standard_E8ds_v4
   family: standardEDSv4Family
   discoveredOn: "2025-05-15"
