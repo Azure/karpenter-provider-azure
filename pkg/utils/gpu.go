@@ -28,9 +28,20 @@ import (
 const (
 	Nvidia470CudaDriverVersion = "470.82.01"
 
-	// https://github.com/Azure/AgentBaker/blob/12d432b5fea64a6cda718df6e1ab851211b49c74/parts/common/components.json#L740-L752
+	// Default managed CUDA path. AgentBaker migrated modern compute SKUs (T4, V100, A100, H100, ...)
+	// from aks-gpu-cuda to the R580 LTS image aks-gpu-cuda-lts (AgentBaker #8811/#8822; see
+	// baker.go GetGPUDriverType/GetGPUDriverVersion and parts/common/components.json aks-gpu-cuda-lts).
+	// These MUST match the driver prebaked into the shared Ubuntu VHDs; otherwise the kernel module
+	// installed at bootstrap diverges from the VHD's userspace libnvidia-ml and NVML fails with
+	// "Driver/library version mismatch" (nvidia.com/gpu never advertised).
+	// https://github.com/Azure/AgentBaker/blob/main/parts/common/components.json (aks-gpu-cuda-lts)
+	NvidiaCudaLTSDriverVersion = "580.159.04"
+	AKSGPUCudaLTSVersionSuffix = "20260629214430"
+
+	// Pre-LTS CUDA image (aks-gpu-cuda). No longer the default compute driver; retained for legacy
+	// reference / parity with AgentBaker's components.json.
 	NvidiaCudaDriverVersion = "580.126.09"
-	AKSGPUCudaVersionSuffix = "20260126030251"
+	AKSGPUCudaVersionSuffix = "20260430040408"
 
 	NvidiaGridDriverVersion = "570.211.01"
 	AKSGPUGridVersionSuffix = "20260522192315"
@@ -97,7 +108,7 @@ func GetAKSGPUImageSHA(size string) string {
 	if UseGridDrivers(size) {
 		return AKSGPUGridVersionSuffix
 	}
-	return AKSGPUCudaVersionSuffix
+	return AKSGPUCudaLTSVersionSuffix
 }
 
 // IsNvidiaEnabledSKU determines if an VM SKU has nvidia driver support
@@ -130,10 +141,13 @@ func GetGPUDriverVersion(size string) string {
 	if isStandardNCv1(size) {
 		return Nvidia470CudaDriverVersion
 	}
-	return NvidiaCudaDriverVersion
+	return NvidiaCudaLTSDriverVersion
 }
 
-// GetGPUDriverType returns the type of GPU driver for given VM SKU ("grid-v20", "grid", or "cuda")
+// GetGPUDriverType returns the type of GPU driver for given VM SKU ("grid-v20", "grid", "cuda-lts", or "cuda").
+// Mirrors AgentBaker's GetGPUDriverType: modern CUDA compute SKUs use the R580 LTS image (cuda-lts);
+// legacy NCv1 (K80) keeps "cuda". The type selects the aks-gpu-<type> container image installed at
+// bootstrap and must match the driver prebaked into the shared Ubuntu VHD.
 func GetGPUDriverType(size string) string {
 	if UseGridV20Drivers(size) {
 		return "grid-v20"
@@ -141,7 +155,10 @@ func GetGPUDriverType(size string) string {
 	if UseGridDrivers(size) {
 		return "grid"
 	}
-	return "cuda"
+	if isStandardNCv1(size) {
+		return "cuda"
+	}
+	return "cuda-lts"
 }
 
 func isStandardNCv1(size string) bool {
