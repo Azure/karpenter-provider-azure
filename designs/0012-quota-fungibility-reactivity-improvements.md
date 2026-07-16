@@ -99,16 +99,16 @@ At this stage, the ideal API would:
 
 #### API Comparison
 
-| Dimension                                  | On-Demand Placement Score          | Spot Placement Score               | Attribute-Based Recommendations   | Quota API     | Compute Fleet               | SKU Mix Placement                        | Capacity APIs (svc underlay) |
-| ------------------------------------------ | ---------------------------------- | ---------------------------------- | --------------------------------- | ------------- | --------------------------- | ---------------------------------------- | ---------------------------- |
-| **1. Recommendation-only?**                | ✅                                 | ✅                                 | ✅                                | ✅            | ❌ Changes VM creation path | ✅                                       | ❓                           |
-| **2. Traceability?**                       | ⚠️ High/Medium/Low per SKU+Zone    | ⚠️ High/Medium/Low per SKU+Zone    | ⚠️ Ordered list, but no reasoning | ✅            | ❌                          | ⚠️ Score 1-10 + partialFulfillmentReason | ❓                           |
-| **3. Zone control?**                       | ✅                                 | ✅                                 | ❌                                | N/A           | ✅                          | ✅ Explicit zone in skuSplit             | ❓                           |
-| **4. All regions/clouds?**                 | ✅                                 | ✅                                 | ✅                                | ✅            | ✅                          | ⚠️ Public cloud only for now             | ✅                           |
-| **5. One-stop-shop (quota+capacity+CRS)?** | ⚠️ Quota/capacity assume per-zone  | ⚠️ Quota/capacity assume per-zone  | ❓                                | ❌ Quota only | ✅                          | ✅                                       | ❓                           |
-| **6. Public API?**                         | ❌                                 | ✅                                 | ✅                                | ✅            | ✅                          | ⚠️ Preview, public cloud only            | ❌ AKS-internal only         |
-| **7. Cacheable / high throttle limit?**    | ⚠️ Score depends on `desiredCount` | ⚠️ Score depends on `desiredCount` | ❓                                | ✅            | N/A                         | ⚠️ Score depends on count/sizes          | ❓                           |
-| **8. Supports 1-N VMs + partial success?** | ⚠️ Scores based on full success    | ⚠️ Scores based on full success    | ❌                                | N/A           | ✅                          | ✅                                       | ❓                           |
+| Dimension                                  | On-Demand Placement Score          | Spot Placement Score               | Attribute-Based Recommendations   | Quota API     | Compute Locations Quota (legacy) | Compute Fleet               | SKU Mix Placement                        | Capacity APIs (svc underlay) |
+| ------------------------------------------ | ---------------------------------- | ---------------------------------- | --------------------------------- | ------------- | -------------------------------- | --------------------------- | ---------------------------------------- | ---------------------------- |
+| **1. Recommendation-only?**                | ✅                                 | ✅                                 | ✅                                | ✅            | ✅                               | ❌ Changes VM creation path | ✅                                       | ❓                           |
+| **2. Traceability?**                       | ⚠️ High/Medium/Low per SKU+Zone    | ⚠️ High/Medium/Low per SKU+Zone    | ⚠️ Ordered list, but no reasoning | ✅            | ✅                               | ❌                          | ⚠️ Score 1-10 + partialFulfillmentReason | ❓                           |
+| **3. Zone control?**                       | ✅                                 | ✅                                 | ❌                                | N/A           | N/A                              | ✅                          | ✅ Explicit zone in skuSplit             | ❓                           |
+| **4. All regions/clouds?**                 | ✅                                 | ✅                                 | ✅                                | ✅            | ✅                               | ✅                          | ⚠️ Public cloud only for now             | ✅                           |
+| **5. One-stop-shop (quota+capacity+CRS)?** | ⚠️ Quota/capacity assume per-zone  | ⚠️ Quota/capacity assume per-zone  | ❓                                | ❌ Quota only | ❌ Quota only                    | ✅                          | ✅                                       | ❓                           |
+| **6. Public API?**                         | ❌                                 | ✅                                 | ✅                                | ✅            | ✅                               | ✅                          | ⚠️ Preview, public cloud only            | ❌ AKS-internal only         |
+| **7. Cacheable / high throttle limit?**    | ⚠️ Score depends on `desiredCount` | ⚠️ Score depends on `desiredCount` | ❓                                | ✅            | ✅                               | N/A                         | ⚠️ Score depends on count/sizes          | ❓                           |
+| **8. Supports 1-N VMs + partial success?** | ⚠️ Scores based on full success    | ⚠️ Scores based on full success    | ❌                                | N/A           | N/A                              | ✅                          | ✅                                       | ❓                           |
 
 Legend: ✅ = good / yes, ⚠️ = partial / caveats, ❌ = no / not supported, ❓ = unknown
 
@@ -141,14 +141,14 @@ Phase 2: Start using the API as the main source of size picking.
 
 ### Decision 3: How can we improve our allocation success rate in the near term?
 
-#### Conclusion: New quota provider (short term), to be replaced by SKU Split provider in the medium term
+#### Conclusion: New quota provider using Microsoft.Compute/locations/usages (short term), to be replaced by SKU Split provider in the medium term
 
-Create a `quota` provider located at `pkg/providers/quota/quota.go`. This provider should call the [Azure Quota SDK](https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/quota/armquota/v2) periodically (every 10m by default).
+Create a `quota` provider located at `pkg/providers/quota/quota.go`. This provider should call the [Compute locations usages API](https://learn.microsoft.com/en-us/rest/api/compute/usage/list?view=rest-compute-2024-07-01&tabs=HTTP) (`Microsoft.Compute/locations/usages`) periodically (every 10m by default).
 
 Reasons to do this now:
 
-- The quota and usage APIs are publicly available now in all regions/clouds.
-- The biggest cause of errors seems to be `SKUFamilyQuotaExceeded`, which can be checked with just the quota APIs.
+- The Compute locations usages API is publicly available now in all regions/clouds, requires no additional RBAC, and returns both usage and limit in a single call.
+- The biggest cause of errors seems to be `SKUFamilyQuotaExceeded`, which can be checked with just the usage/quota data from this API.
 
 Key design decisions for the quota provider:
 
@@ -160,18 +160,18 @@ We can use this data either as a **hard filter**, or as a **ranking signal**.
 
 ##### Hard filter
 
-* ✅ Easier to understand.
-* ✅ Preserves price-first with filters approach we've had historically.
-* ✅ Avoids wasting a VM creation attempt (and its latency/throttling cost) on a family we already know will fail.
-* ❌ Quota data is polled every 10m and stale between polls. If quota is freed (node deleted, external change), we won't know until next poll and will incorrectly exclude the family. This is very similar to the existing unavailableofferings cache, so users are (likely) already experiencing this latency today.
-* ❌ Quota is per-family, not per-size. A family with 8 remaining cores can't fit a D64 but can fit a D4. We will need to be core-aware which adds some complexity.
+- ✅ Easier to understand.
+- ✅ Preserves price-first with filters approach we've had historically.
+- ✅ Avoids wasting a VM creation attempt (and its latency/throttling cost) on a family we already know will fail.
+- ❌ Quota data is polled every 10m and stale between polls. If quota is freed (node deleted, external change), we won't know until next poll and will incorrectly exclude the family. This is very similar to the existing unavailableofferings cache, so users are (likely) already experiencing this latency today.
+- ❌ Quota is per-family, not per-size. A family with 8 remaining cores can't fit a D64 but can fit a D4. We will need to be core-aware which adds some complexity.
 
 ##### Ranking signal
 
-* ✅ More resilient to stale data — families with freed quota still get attempted, just later in the order.
-* ❌ Still wastes one attempt if the top-ranked candidate ends up being quota-exhausted (though less likely since de-prioritized).
-* ❌ More complex ranking logic — need to define interaction between quota score and price (is a $0.30/hr family with plenty of quota better than the $0.20/hr family with almost none?).
-* ❌ Harder for users to reason about: "why did it pick a more expensive size?" vs the simpler "excluded due to quota."
+- ✅ More resilient to stale data — families with freed quota still get attempted, just later in the order.
+- ❌ Still wastes one attempt if the top-ranked candidate ends up being quota-exhausted (though less likely since de-prioritized).
+- ❌ More complex ranking logic — need to define interaction between quota score and price (is a $0.30/hr family with plenty of quota better than the $0.20/hr family with almost none?).
+- ❌ Harder for users to reason about: "why did it pick a more expensive size?" vs the simpler "excluded due to quota."
 
 Given our objective is as a stopgap measure while we wait for the SKU Split API, going for the simpler hard filter seems the correct approach.
 
@@ -336,6 +336,49 @@ Publicly callable
 
 - Quota data is already taken care of by other APIs such as Placement Score and SKU Mix Placement, so this may be redundant if using those.
 -
+
+### Compute locations quota API (legacy)
+
+| Dimension                                  |               |
+| ------------------------------------------ | ------------- |
+| **1. Recommendation-only?**                | ✅            |
+| **2. Traceability?**                       | ✅            |
+| **3. Zone control?**                       | N/A           |
+| **4. All regions/clouds?**                 | ✅            |
+| **5. One-stop-shop (quota+capacity+CRS)?** | ❌ Quota only |
+| **6. Public API?**                         | ✅            |
+| **7. Cacheable / high throttle limit?**    | ✅            |
+| **8. Supports 1-N VMs + partial success?** | N/A           |
+
+#### API reference
+
+**URL:** `GET https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Compute/locations/{location}/usages?api-version=2024-07-01`
+
+**Docs:**
+
+- [List usage](https://learn.microsoft.com/en-us/rest/api/compute/usage/list?view=rest-compute-2024-07-01&tabs=HTTP)
+
+These two APIs expose **identical data** for all practical purposes. A live comparison of all 626 counters for `eastus2` showed:
+
+| Check                            | Result                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| Counter set (families/resources) | Identical — same 626 keys, none exclusive to either API        |
+| Limits (quota values)            | 100% match — 0 mismatches                                      |
+| Actual usage (currentValue)      | Match on every counter with usage > 0                          |
+| Difference                       | 203 counters where legacy Compute = 0 but Microsoft.Quota = -1 |
+
+The 203 discrepancies are all the same pattern: the legacy Compute API reports `currentValue: 0` while Microsoft.Quota reports `usages.value: -1` for families with `isQuotaApplicable: false` (VM families not offered/tracked in that region). For anything actually deployable and in use, the two agree exactly.
+
+#### Gotchas
+
+- Schema differences (same data, different shape):
+  - Legacy Compute returns usage and limit in one call: `{ name:{value,localizedValue}, currentValue, limit, unit }`.
+  - Microsoft.Quota splits them: `/usages` gives consumption, `/quotas` gives limits — two calls to get the full picture.
+  - Microsoft.Quota adds richer metadata (`isQuotaApplicable`, `limitType: Independent/Shared`, ARM resource `id`/`type`), and its `/quotas` endpoint additionally supports writing quota-increase requests.
+- Flattens "not tracked" families to `currentValue: 0` instead of providing an explicit sentinel or `isQuotaApplicable` flag.
+- Read-only — does not support writing quota-increase requests (use Microsoft.Quota for that).
+- This is the legacy API; Microsoft.Quota is the newer replacement with richer semantics.
+- No additional RBAC required, unlike Microsoft.Quota APIs.
 
 ### Compute fleet
 

@@ -22,9 +22,9 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.30
 	github.com/Azure/skewer v0.0.24
 	github.com/Pallinder/go-randomdata v1.2.0
-	github.com/alecthomas/kong v1.15.0
+	github.com/alecthomas/kong v1.16.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
-	github.com/awslabs/operatorpkg v0.0.0-20260501204335-c49b4ca8d58d
+	github.com/awslabs/operatorpkg v0.0.0-20260708223819-4da4c353c5fa
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
@@ -58,7 +58,7 @@ require (
 	k8s.io/utils v0.0.0-20251222233032-718f0e51e6d2
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.3
 	sigs.k8s.io/controller-runtime v0.23.1
-	sigs.k8s.io/karpenter v1.13.1-0.20260709192034-d77270f8d31a
+	sigs.k8s.io/karpenter v1.14.0
 )
 
 require (
@@ -151,14 +151,14 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/mod v0.36.0 // indirect
+	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.45.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect

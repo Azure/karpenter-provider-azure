@@ -3099,6 +3099,211 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 	})
+
+	Context("Quota Filtering", func() {
+		It("should exclude on-demand offering when family quota is exhausted", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					// All on-demand offerings for this family should be unavailable
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeFalse(), fmt.Sprintf("on-demand offering for %s should be unavailable due to quota", it.Name))
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should allow on-demand offering when family has enough quota", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](0),
+					Limit:        lo.ToPtr[int64](1000),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeTrue(), fmt.Sprintf("on-demand offering for %s should be available with sufficient quota", it.Name))
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should block large sizes but allow small sizes in the same family", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			// Leave only 4 cores of quota remaining
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](96),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					vcpus := lo.Must(sku.VCPU())
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							if vcpus <= 4 {
+								Expect(offering.Available).To(BeTrue(), fmt.Sprintf("on-demand offering for %s (%d vCPUs) should be available with 4 remaining cores", it.Name, vcpus))
+							} else {
+								Expect(offering.Available).To(BeFalse(), fmt.Sprintf("on-demand offering for %s (%d vCPUs) should be unavailable with only 4 remaining cores", it.Name, vcpus))
+							}
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should not affect spot offerings when on-demand quota is exhausted", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundSpot := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot) && offering.Available {
+							foundSpot = true
+						}
+					}
+				}
+			}
+			Expect(foundSpot).To(BeTrue(), "spot offerings should still be available when on-demand quota is exhausted")
+		})
+
+		It("should fail open when quota data is unavailable", func() {
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			Expect(instanceTypes).ToNot(BeEmpty())
+
+			for _, it := range instanceTypes {
+				for _, offering := range it.Offerings {
+					if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+						Expect(offering.Available).To(BeTrue(), fmt.Sprintf("on-demand offering for %s should be available when quota data is empty (fail-open)", it.Name))
+					}
+				}
+			}
+		})
+
+		It("should invalidate instance type cache when quota data changes", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			// First call with plenty of quota
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](0),
+					Limit:        lo.ToPtr[int64](1000),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			foundFamily := false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeTrue())
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+
+			// Now exhaust the quota and update
+			azureEnv.UsageAPI.Usages.Reset()
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			// Second call should reflect the new quota (cache invalidated by SeqNum change)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+			foundFamily = false
+			for _, it := range instanceTypes {
+				sku := fake.MakeSKU(it.Name)
+				if sku.GetFamilyName() == targetFamily {
+					foundFamily = true
+					for _, offering := range it.Offerings {
+						if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+							Expect(offering.Available).To(BeFalse(), fmt.Sprintf("on-demand offering for %s should be unavailable after quota exhaustion", it.Name))
+						}
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+	})
 })
 
 var _ = Describe("Tax Calculator", func() {
