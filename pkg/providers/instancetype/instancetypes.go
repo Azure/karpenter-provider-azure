@@ -253,6 +253,13 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name)
 
+		// Unknown SKUs (not in known_skus.yaml) are deprioritized to prevent them from
+		// winning scheduling over known-good SKUs. Users can override via NodeOverlay.
+		if !IsKnownSKU(*sku.Name) {
+			onDemandPrice = pricing.MissingPrice
+			spotPrice = pricing.MissingPrice
+		}
+
 		// Determine allocatability from SKU capabilities.
 		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the
 		// unavailableOfferings cache and per-family quota.
@@ -419,9 +426,12 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 		return fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
-	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
+	skus := cache.List(ctx, skewer.ResourceTypeFilter("virtualMachines"))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
+		if IsRestrictedSKU(skus[i].GetName()) {
+			continue
+		}
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
@@ -434,6 +444,17 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 
 	if len(instanceTypes) == 0 {
 		return fmt.Errorf("no instance types found")
+	}
+
+	// Log unknown SKUs (not in known_skus.yaml) that passed all filters, grouped by family.
+	unknownFamilies := sets.New[string]()
+	for name, sku := range instanceTypes {
+		if !IsKnownSKU(name) {
+			unknownFamilies.Insert(sku.GetFamilyName())
+		}
+	}
+	if unknownFamilies.Len() > 0 {
+		log.FromContext(ctx).Info("discovered VM SKU families not in known_skus.yaml (deprioritized with MissingPrice)", "families", unknownFamilies.UnsortedList())
 	}
 
 	if p.cm.HasChanged("instance-types", instanceTypes) {

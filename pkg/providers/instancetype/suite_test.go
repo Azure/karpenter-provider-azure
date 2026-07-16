@@ -2574,6 +2574,78 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(onDemandAvailable[0].Price).To(BeNumerically("==", pricing.MissingPrice))
 				Expect(spotAvailable[0].Price).To(BeNumerically("==", pricing.MissingPrice))
 			})
+
+			It("should have available offerings with MissingPrice for a SKU not in known_skus.yaml", func() {
+				// Add a SKU to the fake SKU API that is NOT in known_skus.yaml.
+				// This simulates a newly added or private VM size that hasn't been added to the known list yet.
+				// The SKU should still be provisionable but deprioritized with MissingPrice.
+				unknownSKUName := "Standard_D2ts_v6"
+				Expect(instancetype.IsKnownSKU(unknownSKUName)).To(BeFalse(), unknownSKUName+" should not be in known_skus.yaml")
+
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, compute.ResourceSku{
+					Name:         lo.ToPtr(unknownSKUName),
+					Tier:         lo.ToPtr("Standard"),
+					Kind:         lo.ToPtr(""),
+					Size:         lo.ToPtr("D2ts_v6"),
+					Family:       lo.ToPtr("standardDtsv6Family"),
+					ResourceType: lo.ToPtr("virtualMachines"),
+					APIVersions:  &[]string{},
+					Costs:        &[]compute.ResourceSkuCosts{},
+					Restrictions: &[]compute.ResourceSkuRestrictions{},
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("102400")},
+						{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+						{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
+						{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+						{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("8")},
+						{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("8")},
+						{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+						{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+						{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("2")},
+						{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+						{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+						{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+						{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+					},
+					Locations:    &[]string{fake.Region},
+					LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr(fake.Region), Zones: &[]string{"1", "2", "3"}}},
+				})
+
+				// Re-fetch instance types with the new SKU
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				updatedInstanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Find the unknown SKU in the list — it should be present (not blocked)
+				var unknownSKU *corecloudprovider.InstanceType
+				for _, it := range updatedInstanceTypes {
+					if it.Name == unknownSKUName {
+						unknownSKU = it
+						break
+					}
+				}
+				Expect(unknownSKU).ToNot(BeNil(), unknownSKUName+" should appear in instance types even though it's not in known_skus.yaml")
+
+				// On-demand offerings should be available
+				onDemandAvailable := lo.Filter(unknownSKU.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand)
+				})
+				Expect(onDemandAvailable).ToNot(BeEmpty())
+
+				// Spot offerings should also be available
+				spotAvailable := lo.Filter(unknownSKU.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
+					return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot)
+				})
+				Expect(spotAvailable).ToNot(BeEmpty())
+
+				// Prices should be MissingPrice (deprioritized)
+				Expect(onDemandAvailable[0].Price).To(Equal(pricing.MissingPrice))
+				Expect(spotAvailable[0].Price).To(Equal(pricing.MissingPrice))
+			})
 		})
 
 		Context("MaxPods", func() {
