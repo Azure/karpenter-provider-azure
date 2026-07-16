@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 var mainCtx context.Context
@@ -133,8 +134,19 @@ var _ = Describe("Pricing", func() {
 		for _, region := range regions {
 			providers = append(providers, pricing.NewProvider(ctx, env, fakePricingAPI, region, make(chan struct{})))
 		}
+		// These SKUs are not in the Azure Retail Pricing API and never have been historically.
+		// We used to not be asserting in this test so grandfathering these sizes in
+		skusWithNoPricingExpected := sets.New(
+			"Standard_EC128ieds_v5",
+			"Standard_EC128ies_v5",
+			"Standard_ND128isr_GB300_v6",
+			"Standard_NG32adms_V620_v1",
+		)
 		var skusWithoutPricing []string
 		for _, sku := range skus {
+			if skusWithNoPricingExpected.Has(*sku.Name) {
+				continue
+			}
 			foundPricingForSKU := false
 			for _, provider := range providers {
 				if price, ok := provider.OnDemandPrice(*sku.Name); ok && price > 0 {
