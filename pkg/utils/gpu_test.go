@@ -33,12 +33,13 @@ func TestGetAKSGPUImageSHA(t *testing.T) {
 		{"GRID v20 Driver - RTX PRO 6000 BSE ds", "standard_nc144ds_xl_rtxpro6000bse_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
 		{"GRID v20 Driver - RTX PRO 6000 BSE lds", "standard_nc144lds_xl_rtxpro6000bse_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
 		{"GRID v20 Driver - RTX PRO 6000 BSE mixed case", "Standard_NC24lds_xl_RTXPRO6000BSE_v6", AKSGPUGridV20VersionSuffix, "grid-v20"},
-		{"Cuda Driver - NV Series", "standard_nv6", AKSGPUCudaVersionSuffix, "cuda"},
-		{"CUDA Driver - NC Series", "standard_nc6s_v3", AKSGPUCudaVersionSuffix, "cuda"},
+		{"Cuda-LTS Driver - NV Series", "standard_nv6", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA-LTS Driver - NC Series", "standard_nc6s_v3", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
 		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", AKSGPUGridVersionSuffix, "grid"},
-		{"Unknown SKU", "unknown_sku", AKSGPUCudaVersionSuffix, "cuda"},
-		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", AKSGPUCudaVersionSuffix, "cuda"},
-		{"CUDA Driver - NV Series v3", "standard_nv12s_v3", AKSGPUCudaVersionSuffix, "cuda"},
+		{"CUDA-LTS Driver - Unknown SKU", "unknown_sku", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA-LTS Driver - NC Series v2", "standard_nc6s_v2", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA-LTS Driver - NV Series v3", "standard_nv12s_v3", AKSGPUCudaLTSVersionSuffix, "cuda-lts"},
+		{"CUDA Driver - NC Series v1 (K80)", "standard_nc6s", AKSGPUCudaLTSVersionSuffix, "cuda"},
 	}
 
 	for _, test := range tests {
@@ -61,9 +62,9 @@ func TestGetGPUDriverVersion(t *testing.T) {
 		{"GRID v20 Driver - RTX PRO 6000 BSE lds", "standard_nc144lds_xl_rtxpro6000bse_v6", NvidiaGridV20DriverVersion},
 		{"GRID v20 Driver - RTX PRO 6000 BSE mixed case", "Standard_NC24lds_xl_RTXPRO6000BSE_v6", NvidiaGridV20DriverVersion},
 		{"CUDA Driver - NC Series v1", "standard_nc6s", Nvidia470CudaDriverVersion},
-		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", NvidiaCudaDriverVersion},
-		{"Unknown SKU", "unknown_sku", NvidiaCudaDriverVersion},
-		{"CUDA Driver - NC Series v3", "standard_nc6s_v3", NvidiaCudaDriverVersion},
+		{"CUDA-LTS Driver - NC Series v2", "standard_nc6s_v2", NvidiaCudaLTSDriverVersion},
+		{"CUDA-LTS Driver - Unknown SKU", "unknown_sku", NvidiaCudaLTSDriverVersion},
+		{"CUDA-LTS Driver - NC Series v3", "standard_nc6s_v3", NvidiaCudaLTSDriverVersion},
 		{"GRID Driver - A10", "standard_nc8ads_a10_v4", NvidiaGridDriverVersion},
 	}
 

@@ -26,7 +26,6 @@ import (
 
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -45,12 +44,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 	clock "k8s.io/utils/clock"
 )
 
 func init() {
-	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": v1.LabelTopologyZone})
+	zones.RegisterCSIZoneNormalization()
 	coretest.DefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
 }
 

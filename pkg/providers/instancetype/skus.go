@@ -57,29 +57,31 @@ var allAzureVMSkus = func() []skewer.SKU {
 	return skus
 }()
 
-// GetKarpenterWorkingSKUs returns a the list of SKUs that are
+var knownSKUNames = func() sets.Set[string] {
+	names := sets.New[string]()
+	for _, entry := range allSKUEntries {
+		names.Insert(entry.Name)
+	}
+	return names
+}()
+
+// IsKnownSKU returns true if the SKU name is in the embedded known_skus.yaml.
+func IsKnownSKU(name string) bool {
+	return knownSKUNames.Has(name)
+}
+
+// IsRestrictedSKU returns true if the SKU is in the AKS or Karpenter restricted lists.
+func IsRestrictedSKU(name string) bool {
+	return AKSRestrictedVMSizes.Has(name) || karpenterRestrictedVMSKUs.Has(name)
+}
+
+// GetKarpenterWorkingSKUs returns the list of known SKUs that are
 // allowed to be used by Karpenter. This is a subset of the
 // SKUs that are available in Azure.
 func GetKarpenterWorkingSKUs() []skewer.SKU {
 	workingSKUs := []skewer.SKU{}
 	for _, sku := range allAzureVMSkus {
-		var exclude bool
-		// If we find this SKU in the AKS restricted list, exclude it
-		for _, aksRestrictedSKU := range AKSRestrictedVMSizes.UnsortedList() {
-			if aksRestrictedSKU == sku.GetName() {
-				exclude = true
-			}
-		}
-		// If it's not in the AKS restricted list, it may be in the Karpenter restricted list
-		if !exclude {
-			for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs.UnsortedList() {
-				if karpenterRestrictedSKU == sku.GetName() {
-					exclude = true
-				}
-			}
-		}
-		// If it's not in any of the restricted lists, we register it as a working VM SKU
-		if !exclude {
+		if !IsRestrictedSKU(sku.GetName()) {
 			workingSKUs = append(workingSKUs, sku)
 		}
 	}
