@@ -243,6 +243,58 @@ var _ = Describe("Persistent Volumes", func() {
 			env.EventuallyExpectHealthy(pod)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
+		It("should schedule a pod with a regional PV whose CSI topology zone is empty", Label("runner"), func() {
+			storageClass.Parameters = map[string]string{"skuname": "Standard_LRS"}
+			storageClass.VolumeBindingMode = lo.ToPtr(storagev1.VolumeBindingImmediate)
+
+			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
+				StorageClassName: &storageClass.Name,
+			})
+
+			By("provisioning a regional disk before node selection")
+			env.ExpectCreated(nodeClass, nodePool, storageClass, pvc)
+			pv := env.EventuallyExpectPVCBound(pvc)
+
+			By("verifying the PV exposes an empty CSI zone")
+			Expect(pv.Spec.NodeAffinity).ToNot(BeNil())
+			Expect(pv.Spec.NodeAffinity.Required).ToNot(BeNil())
+			csiZoneRequirement, ok := lo.Find(lo.FlatMap(pv.Spec.NodeAffinity.Required.NodeSelectorTerms, func(term corev1.NodeSelectorTerm, _ int) []corev1.NodeSelectorRequirement {
+				return term.MatchExpressions
+			}), func(requirement corev1.NodeSelectorRequirement) bool {
+				return requirement.Key == "topology.disk.csi.azure.com/zone"
+			})
+			Expect(ok).To(BeTrue())
+			Expect(csiZoneRequirement).To(Equal(corev1.NodeSelectorRequirement{
+				Key:      "topology.disk.csi.azure.com/zone",
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{""},
+			}))
+
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
+				PersistentVolumeClaims: []string{pvc.Name},
+			}})
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{
+				Name:      deployment.Spec.Template.Spec.Volumes[0].Name,
+				MountPath: "/mnt/regional-disk",
+			}}
+
+			By("scheduling a pod from the regional PV")
+			env.ExpectCreated(deployment)
+			nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+			zoneRequirement, ok := lo.Find(nodeClaim.Spec.Requirements, func(requirement karpv1.NodeSelectorRequirementWithMinValues) bool {
+				return requirement.Key == corev1.LabelTopologyZone
+			})
+			Expect(ok).To(BeTrue())
+			Expect(zoneRequirement.Operator).To(Equal(corev1.NodeSelectorOpIn))
+			Expect(zoneRequirement.Values).To(ConsistOf(zones.Regional))
+
+			By("verifying regional placement")
+			pods := env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+			node := env.GetNode(pods[0].Spec.NodeName)
+			Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zones.Regional))
+			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
+		})
 		// Validates the sigs.k8s.io/karpenter fix (PR kubernetes-sigs/karpenter#2743) to schedule pods
 		// on nodes in specific zones, even when PV is accessible in multiple zones.
 		It("should schedule a pod with ZRS PV when pod targets a specific zone", func() {
