@@ -201,8 +201,8 @@ settings:
   # -- How the Karpenter scheduler treats min values. Options include 'Strict' (fails scheduling when min values can't be met) and 'BestEffort' (relaxes min values when they can't be met).
   minValuesPolicy: ""
   # -- When set, Karpenter ignores pods' Dynamic Resource Allocation requests during scheduling simulations.
-  # This flag will be removed once formal DRA support is GA in Karpenter.
-  ignoreDRARequests: false
+  # DRA is not supported by the Azure provider, so this must remain enabled until support, RBAC, and validation are implemented.
+  ignoreDRARequests: true
   # -- Disable cluster state metrics and events.
   disableClusterStateObservability: false
 
