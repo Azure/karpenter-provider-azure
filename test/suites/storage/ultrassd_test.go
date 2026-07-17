@@ -70,14 +70,14 @@ var _ = Describe("UltraSSD", func() {
 		checkNodeLabels(node, false)
 	})
 
-	FIt("should provision and mount an UltraSSD volume on a zonal node", Label("runner"), func() {
+	It("should provision and mount an UltraSSD volume on a zonal node", Label("runner"), func() {
 		if env.Region == regionalUltraSSDRegion {
 			Skip(fmt.Sprintf("skipping zonal UltraSSD test in regional-only location %s", env.Region))
 		}
 		expectUltraSSDVolume(v1beta1.PlacementScopeZonal)
 	})
 
-	FIt("should provision and mount an UltraSSD volume on a regional node", Label("runner"), func() {
+	It("should provision and mount an UltraSSD volume on a regional node", Label("runner"), func() {
 		if env.Region != regionalUltraSSDRegion {
 			Skip(fmt.Sprintf("skipping regional UltraSSD test outside regional-only location %s", regionalUltraSSDRegion))
 		}
