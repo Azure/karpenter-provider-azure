@@ -8,7 +8,7 @@ These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
 
-- [Ultra SSD support](./0012-ultra-ssd-support.md)
+- [Ultra SSD support](./0013-ultra-ssd-support.md)
 
 ## Completed
 
