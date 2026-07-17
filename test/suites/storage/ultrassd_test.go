@@ -37,6 +37,7 @@ import (
 
 const (
 	azureDiskCSIProvisioner = "disk.csi.azure.com"
+	regionalUltraSSDRegion  = "westus"
 	ultraSSDMountPath       = "/mnt/ultrassd"
 )
 
@@ -70,15 +71,15 @@ var _ = Describe("UltraSSD", func() {
 	})
 
 	FIt("should provision and mount an UltraSSD volume on a zonal node", Label("runner"), func() {
-		if !env.SupportsZones() {
-			Skip(fmt.Sprintf("skipping zonal UltraSSD test because region %s does not support availability zones", env.Region))
+		if env.Region == regionalUltraSSDRegion {
+			Skip(fmt.Sprintf("skipping zonal UltraSSD test in regional-only location %s", env.Region))
 		}
 		expectUltraSSDVolume(v1beta1.PlacementScopeZonal)
 	})
 
 	FIt("should provision and mount an UltraSSD volume on a regional node", Label("runner"), func() {
-		if env.SupportsZones() {
-			Skip(fmt.Sprintf("skipping regional UltraSSD test because region %s supports availability zones; run in a regional-only UltraSSD location", env.Region))
+		if env.Region != regionalUltraSSDRegion {
+			Skip(fmt.Sprintf("skipping regional UltraSSD test outside regional-only location %s", regionalUltraSSDRegion))
 		}
 		expectUltraSSDVolume(v1beta1.PlacementScopeRegional)
 	})
