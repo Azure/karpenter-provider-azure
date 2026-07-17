@@ -93,7 +93,7 @@ We choose to use a well-known label. This path is consistent with the fact that 
 
 #### Offerings Filtering
 
-Ultra SSD is only available in regions and zones that support it, and only by specific SKUs. Therefore, we need to check availability for each zone when creating Offerings for InstanceTypes. We add the well-known label to the offering to reflect the availability. Note, for all offerings the label will always be added and be either true or false.
+Ultra SSD is only available in regions and zones that support it, and only by specific SKUs. Therefore, we need to check availability for each zone when creating Offerings for InstanceTypes. We add the well-known label to the offering to reflect the availability.
 
 Adding this label to the offering lets us use it as a Requirement for checking compatibility with the incoming NodeClaim.
 
