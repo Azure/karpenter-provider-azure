@@ -45,13 +45,19 @@ func (u Ubuntu2004) Name() string {
 	return v1beta1.UbuntuImageFamily
 }
 
-func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// Ubuntu2004 doesn't have default node images (only FIPS)
 		if !useSIG {
 			return []types.DefaultImageOutput{}
 		}
+
+		// Trusted Launch and FIPS are mutually exclusive for Ubuntu 20.04
+		if trustedLaunch {
+			return []types.DefaultImageOutput{}
+		}
+
 		return []types.DefaultImageOutput{
 			{
 				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,

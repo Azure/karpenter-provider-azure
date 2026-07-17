@@ -32,12 +32,13 @@ import (
 )
 
 const (
-	AzureLinux3Gen2ImageDefinition          = "V3gen2"
-	AzureLinux3Gen1ImageDefinition          = "V3"
-	AzureLinux3Gen2ArmImageDefinition       = "V3gen2arm64"
-	AzureLinux3Gen2FIPSImageDefinition      = "V3gen2fips"
-	AzureLinux3Gen1FIPSImageDefinition      = "V3fips"
-	AzureLinux3Gen2Arm64FIPSImageDefinition = "V3gen2arm64fips"
+	AzureLinux3Gen2ImageDefinition              = "V3gen2"
+	AzureLinux3Gen1ImageDefinition              = "V3"
+	AzureLinux3Gen2ArmImageDefinition           = "V3gen2arm64"
+	AzureLinux3Gen2FIPSImageDefinition          = "V3gen2fips"
+	AzureLinux3Gen1FIPSImageDefinition          = "V3fips"
+	AzureLinux3Gen2Arm64FIPSImageDefinition     = "V3gen2arm64fips"
+	AzureLinux3Gen2TrustedLaunchImageDefinition = "V3gen2TL"
 )
 
 type AzureLinux3 struct {
@@ -48,7 +49,7 @@ func (u AzureLinux3) Name() string {
 	return "AzureLinux3"
 }
 
-func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins
@@ -88,6 +89,21 @@ func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []ty
 					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 				),
 				Distro: "aks-azurelinux-v3-arm64-gen2-fips",
+			},
+		}
+	}
+	if trustedLaunch {
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureLinux3Gen2TrustedLaunchImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-azurelinux-v3-gen2-tl",
 			},
 		}
 	}

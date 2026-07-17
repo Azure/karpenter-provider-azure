@@ -41,7 +41,7 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 
 	t.Run("should return correct default images", func(t *testing.T) {
 		g := NewWithT(t)
-		images := ubuntu.DefaultImages(false, nil)
+		images := ubuntu.DefaultImages(false, nil, false)
 		g.Expect(images).To(HaveLen(3))
 
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2ImageDefinition))
@@ -57,14 +57,14 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 	t.Run("should return empty images for FIPS mode without SIG", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
-		images := ubuntu.DefaultImages(false, &fipsMode)
+		images := ubuntu.DefaultImages(false, &fipsMode, false)
 		g.Expect(images).To(BeEmpty())
 	})
 
 	t.Run("should return empty images for FIPS mode with SIG (not yet supported)", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
-		images := ubuntu.DefaultImages(true, &fipsMode)
+		images := ubuntu.DefaultImages(true, &fipsMode, false)
 		g.Expect(images).To(BeEmpty())
 	})
 }
