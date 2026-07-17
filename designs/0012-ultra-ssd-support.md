@@ -2,9 +2,9 @@
 
 **Author:** @pablotrivino
 
-**Last updated:** July 6, 2026
+**Last updated:** July 17, 2026
 
-**Status:** Proposed
+**Status:** Implemented
 
 ## Overview
 
@@ -18,7 +18,7 @@ For Node Auto Provisioning (NAP), we need the equivalent behavior on dynamically
 - filter out VM sizes and zonal offerings that do not support Ultra SSD when requested,
 - set the correct downstream API fields when creating capacity.
 
-This document proposes how to complete that work for NAP.
+This document describes the Ultra SSD support implemented for NAP.
 
 ### Goals
 
@@ -97,11 +97,39 @@ Ultra SSD is only available in regions and zones that support it, and only by sp
 
 Adding this label to the offering lets us use it as a Requirement for checking compatibility with the incoming NodeClaim.
 
-## Proposed Implementation
+This is a slight deviation from the normal offering shape. When a SKU and zone support Ultra SSD, the offering advertises both `true` and `false` for `karpenter.azure.com/sku-storage-ultra-ssd`. When they do not support Ultra SSD, the offering advertises only `false`. We do this instead of creating separate offerings for Ultra SSD enabled and disabled states. Creating multiple offerings would multiply the offerings list by feature permutations times the number of existing offerings, creating unnecessary performance cost and setting the precedent that each new feature should enlarge the offerings list by another permutation.
+
+### Decision 3: Should we always enable Ultra SSD by default?
+
+#### Option A: Do not always enable Ultra SSD
+
+Under this option, Karpenter only enables Ultra SSD when the NodeClaim explicitly requests `karpenter.azure.com/sku-storage-ultra-ssd In ["true"]`. If the label is omitted, ambiguous, or allows both `true` and `false`, Ultra SSD remains disabled.
+
+Arguments for this option:
+
+- Enabling Ultra SSD has a reservation fee, so defaulting it on could create cost for users who did not ask for it.
+- The user experience is already streamlined through the well-known label. Users request Ultra SSD the same way they request other schedulable capabilities.
+- It mirrors AKS more closely. AKS does not silently enable Ultra SSD on every pool; users opt in with `--enable-ultra-ssd`.
+- It reduces the chance of future compatibility or billing surprises because the provider only enables the Azure capability when a workload or NodePool explicitly requires it.
+
+#### Option B: Always enable Ultra SSD when the selected offering supports it
+
+Under this option, Karpenter would enable Ultra SSD on every node whose selected SKU and zone support Ultra SSD, even when the NodeClaim did not explicitly request it.
+
+Arguments for this option:
+
+- The code path is a little cleaner because offerings would only need to advertise a passive capability. They would not need to carry both `true` and `false` as valid values for supported SKU and zone combinations.
+- Provisioning would not need to distinguish between explicit user intent and selected offering capability.
+
+#### Conclusion: Option A
+
+We choose Option A. Ultra SSD remains opt-in and is enabled only when the NodeClaim explicitly selects `karpenter.azure.com/sku-storage-ultra-ssd In ["true"]`. This keeps costs and Azure capability enablement tied to user intent, matches AKS behavior, and avoids turning passive SKU capability into default node configuration.
+
+## Implementation
 
 ### Well-Known Labels
 
-We will define Ultra SSD as the well-known label `karpenter.azure.com/sku-storage-ultra-ssd` with well-known values of `true` and `false`.
+Ultra SSD is defined as the well-known label `karpenter.azure.com/sku-storage-ultra-ssd` with well-known values of `true` and `false`.
 
 Example NodePool requirement:
 
@@ -116,19 +144,22 @@ Because this is a well-known label, users may omit it. An omitted label means Ul
 
 ### Filtering
 
-Set the label as `true` or `false` when we create offerings.
+Set the label values when we create offerings.
 
-- Incoming NodeClaims that require `karpenter.azure.com/sku-storage-ultra-ssd In ["true"]` will only be compatible with offerings where the selected SKU and zone support Ultra SSD.
+- Offerings where the selected SKU and zone support Ultra SSD include both `true` and `false` for `karpenter.azure.com/sku-storage-ultra-ssd`.
+- Offerings where the selected SKU and zone do not support Ultra SSD include only `false`.
+- Incoming NodeClaims that require `karpenter.azure.com/sku-storage-ultra-ssd In ["true"]` are only compatible with offerings where the selected SKU and zone support Ultra SSD.
+- Incoming NodeClaims that omit the label or allow both values can still use Ultra SSD-capable offerings, but Ultra SSD remains disabled at provisioning time.
 
 ### VM mode wiring
 
-For both Machine and VMInstance, we will check if the label is set to `true` in the incoming *NodeClaim*, not merely whether the selected offering supports it. This is because we do not want to enable Ultra SSD unless a workload or NodePool explicitly asks for it, even if the offering supports it. Furthermore, the incoming NodeClaim must specifically request it as `true`. Empty or `[true, false]` will always default to false.
+For both Machine and VMInstance, we check if the label is set to `true` in the incoming *NodeClaim*, not merely whether the selected offering supports it. This is because we do not want to enable Ultra SSD unless a workload or NodePool explicitly asks for it, even if the offering supports it. Furthermore, the incoming NodeClaim must specifically request it as `true`. Empty or `[true, false]` always defaults to false.
 
 #### VM
-Update VM creation so Ultra SSD-enabled NodeClaims set `vm.Properties.AdditionalCapabilities.UltraSSDEnabled = true`. This is left nil if Ultra SSD is not enabled, which is consistent with AKS.
+VM creation sets `vm.Properties.AdditionalCapabilities.UltraSSDEnabled = true` for Ultra SSD-enabled NodeClaims. This is left nil if Ultra SSD is not enabled, which is consistent with AKS.
 
 #### Machine
-Set `armcontainerservice.Machine.Properties.Hardware.UltraSsdEnabled = true` if enabled and `false` if disabled. This is consistent with AKS.
+Machine API creation sets `armcontainerservice.Machine.Properties.Hardware.UltraSsdEnabled = true` if enabled and `false` if disabled. This is consistent with AKS.
 
 ##### Batching
 For batching with Machine API we run into a validation issue. Batching code currently batches groups of PutMachine requests into one request, and uses a shared machine "template" that all the requested machines will share. This template only includes properties, and zones and tags are passed through the header instead. The problem arises when Ultra SSD is enabled, as this field requires at least one zone to be specified, otherwise the API call fails because it cannot validate that Ultra SSD is available (zones are dropped in the shared template). To get around this we have a few options:
