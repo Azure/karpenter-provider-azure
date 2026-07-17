@@ -118,17 +118,21 @@ func expectUltraSSDVolume(placementScope string) {
 			corev1.ResourceStorage: resource.MustParse("4Gi"),
 		}},
 	})
-	pod := env.Pod(coretest.PodOptions{
-		PersistentVolumeClaims: []string{pvc.Name},
+	deployment := coretest.Deployment(coretest.DeploymentOptions{
+		Replicas: 1,
+		PodOptions: coretest.PodOptions{
+			PersistentVolumeClaims: []string{pvc.Name},
+		},
 	})
-	Expect(pod.Spec.Volumes).To(HaveLen(1))
-	pod.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{
-		Name:      pod.Spec.Volumes[0].Name,
+	Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(1))
+	// Mount the PVC so pod readiness proves the UltraSSD volume was attached and mounted, not only provisioned.
+	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{
+		Name:      deployment.Spec.Template.Spec.Volumes[0].Name,
 		MountPath: ultraSSDMountPath,
 	}}
 
-	env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, pod)
-	env.EventuallyExpectHealthy(pod)
+	env.ExpectCreated(nodeClass, nodePool, storageClass, pvc, deployment)
+	pods := env.EventuallyExpectHealthyDeployment(deployment)
 	pv := env.EventuallyExpectPVCBound(pvc)
 
 	Expect(pv.Spec.CSI).ToNot(BeNil())
@@ -136,7 +140,7 @@ func expectUltraSSDVolume(placementScope string) {
 	Expect(pv.Spec.CSI.VolumeHandle).ToNot(BeEmpty())
 
 	node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-	Expect(node.Name).To(Equal(pod.Spec.NodeName))
+	Expect(node.Name).To(Equal(pods[0].Spec.NodeName))
 	checkNodeLabels(node, true)
 	verifyUltraSSDOnNode(node, true)
 	Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, placementScope))
