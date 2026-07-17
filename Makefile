@@ -12,6 +12,11 @@ KARPENTER_NAMESPACE ?= kube-system
 # TODO: revisit testing tools (temporarily excluded here, for make verify)
 MOD_DIRS = $(shell find . -name go.mod -type f ! -path "./test/*" | xargs dirname)
 KARPENTER_CORE_DIR = $(shell go list -m -f '{{ .Dir }}' sigs.k8s.io/karpenter)
+KARPENTER_CORE_CRDS = \
+	karpenter.sh_nodeclaims.yaml \
+	karpenter.sh_nodeoverlays.yaml \
+	karpenter.sh_nodepools.yaml
+SUPPORTED_CRDS = karpenter.azure.com_aksnodeclasses.yaml $(KARPENTER_CORE_CRDS)
 
 # TEST_SUITE enables you to select a specific test suite directory to run "make e2etests" or "make test" against
 TEST_SUITE ?= "..."
@@ -90,12 +95,12 @@ verify: tidy download ## Verify code. Includes dependencies, linting, formatting
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
-	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
+	cp $(addprefix $(KARPENTER_CORE_DIR)/pkg/apis/crds/,$(KARPENTER_CORE_CRDS)) pkg/apis/crds
 	hack/validation/kubelet.sh
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
 	hack/mutation/kubectl_get_ux.sh
-	cp pkg/apis/crds/* charts/karpenter-crd/templates
+	cp $(addprefix pkg/apis/crds/,$(SUPPORTED_CRDS)) charts/karpenter-crd/templates
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint-custom run $(newline))
 	@git diff --quiet ||\
@@ -117,7 +122,11 @@ licenses: download ## Verifies dependency licenses
 	go-licenses csv ./... > $$LICENSEFILE && \
 	! grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0' $$LICENSEFILE
 
-codegen: codegen-pricing codegen-locations codegen-skugen codegen-allazureskus ## Auto generate files based on Azure API responses
+codegen: codegen-prod codegen-test ## Auto generate files based on Azure API responses
+
+codegen-prod: codegen-pricing codegen-allazuresku ## Generate codegen data used in production
+
+codegen-test: codegen-locations codegen-skugen ## Generate codegen test data
 
 codegen-pricing: ## Generate pricing data
 	./hack/codegen.sh pricing

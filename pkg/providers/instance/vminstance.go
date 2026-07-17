@@ -786,19 +786,30 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// TODO: doing so would bypass the capacity and other errors that are currently handled by
 	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
 	// TODO: emitted in capacity failure cases that we probably want.
-	nicReference, err := p.createNetworkInterface(
-		ctx,
-		&createNICOptions{
-			NICName:                resourceName,
-			NetworkPlugin:          networkPlugin,
-			NetworkPluginMode:      networkPluginMode,
-			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:         launchTemplate,
-			BackendPools:           backendPools,
-			InstanceType:           instanceType,
-			NetworkSecurityGroupID: nsgID,
-		},
-	)
+	nicOpts := &createNICOptions{
+		NICName:                resourceName,
+		NetworkPlugin:          networkPlugin,
+		NetworkPluginMode:      networkPluginMode,
+		MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
+		LaunchTemplate:         launchTemplate,
+		BackendPools:           backendPools,
+		InstanceType:           instanceType,
+		NetworkSecurityGroupID: nsgID,
+	}
+
+	nicReference, err := p.createNetworkInterface(ctx, nicOpts)
+	if err != nil && isMissingSubmittedBackendPool(err, backendPools) {
+		log.FromContext(ctx).Info("network interface creation failed due to stale load balancer backend pool reference, refreshing",
+			"nicName", resourceName,
+			"error", err)
+		refreshedPools, refreshErr := p.loadBalancerProvider.RefreshBackendPools(ctx, backendPools)
+		if refreshErr != nil {
+			return nil, fmt.Errorf("refreshing backend pools after network interface failure: %w", refreshErr)
+		}
+		nicOpts.BackendPools = refreshedPools
+		// Try again
+		nicReference, err = p.createNetworkInterface(ctx, nicOpts)
+	}
 	if err != nil {
 		return nil, err
 	}
