@@ -61,11 +61,18 @@ type Provider struct {
 	resourceGroup    string
 	cache            *cache.Cache
 	mu               sync.Mutex
+
+	// generation is incremented each time we refresh the LB list from Azure.
+	// It is used to prevent multiple callers from refreshing the LB list at the same time
+	generation uint64
 }
 
 type BackendAddressPools struct {
 	IPv4PoolIDs []string
 	IPv6PoolIDs []string // TODO: This is always empty currently
+
+	// generation is the generation of the LB list that was used to build this pool collection.
+	generation uint64
 }
 
 // NewProvider creates a new LoadBalancer provider
@@ -81,18 +88,67 @@ func NewProvider(loadBalancersAPI LoadBalancersAPI, cache *cache.Cache, resource
 // This collection is collected from Azure periodically but usually served from a cache to reduce
 // Azure request load.
 func (p *Provider) LoadBalancerBackendPools(ctx context.Context) (*BackendAddressPools, error) {
-	loadBalancers, err := p.getLoadBalancers(ctx)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.loadBalancerBackendPoolsLocked(ctx)
+}
+
+// RefreshBackendPools refreshes the LB cache if the provided pools came from
+// the same generation that is currently cached (meaning no other caller has refreshed
+// since). If a newer generation already exists, it returns pools from that generation
+// without calling Azure.
+func (p *Provider) RefreshBackendPools(ctx context.Context, observedPools *BackendAddressPools) (*BackendAddressPools, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if observedPools.generation == p.generation {
+		// Cache holds stale data. Delete so getLoadBalancersLocked re-fetches from Azure.
+		p.cache.Delete(loadBalancersCacheKey)
+	}
+
+	return p.loadBalancerBackendPoolsLocked(ctx)
+}
+
+// loadBalancerBackendPoolsLocked must be called with p.mu held.
+func (p *Provider) loadBalancerBackendPoolsLocked(ctx context.Context) (*BackendAddressPools, error) {
+	lbs, err := p.getLoadBalancersLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return p.newPoolsLocked(ctx, lbs), nil
+}
+
+// getLoadBalancersLocked returns cached LBs or fetches from Azure. Must be called with p.mu held.
+func (p *Provider) getLoadBalancersLocked(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
+	if cached, ok := p.cache.Get(loadBalancersCacheKey); ok {
+		return cached.([]*armnetwork.LoadBalancer), nil
+	}
+
+	lbs, err := p.loadFromAzure(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	p.generation++
+	p.cache.SetDefault(loadBalancersCacheKey, lbs)
+
+	return lbs, nil
+}
+
+// newPoolsLocked extracts pool IDs from LBs and tags the result with the current generation.
+// Must be called with p.mu held (reads p.generation).
+func (p *Provider) newPoolsLocked(ctx context.Context, loadBalancers []*armnetwork.LoadBalancer) *BackendAddressPools {
 	backendAddressPools := lo.FlatMap(loadBalancers, extractBackendAddressPools)
 	ipv4PoolIDs := lo.FilterMap(backendAddressPools, func(backendPool *armnetwork.BackendAddressPool, idx int) (string, bool) {
 		if !isBackendAddressPoolApplicable(backendPool, idx) {
 			return "", false
 		}
-
-		return lo.FromPtr(backendPool.ID), true
+		id := lo.FromPtr(backendPool.ID)
+		if id == "" {
+			return "", false
+		}
+		return id, true
 	})
 
 	log.FromContext(ctx).V(1).Info("returning IPv4 backend pools", "ipv4PoolCount", len(ipv4PoolIDs), "ipv4PoolIDs", ipv4PoolIDs)
@@ -103,27 +159,8 @@ func (p *Provider) LoadBalancerBackendPools(ctx context.Context) (*BackendAddres
 	return &BackendAddressPools{
 		IPv4PoolIDs: ipv4PoolIDs,
 		// TODO: IPv6 deferred for now. When they're used they must be put onto a non-primary NIC.
-	}, nil
-}
-
-func (p *Provider) getLoadBalancers(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if cached, ok := p.cache.Get(loadBalancersCacheKey); ok {
-		return cached.([]*armnetwork.LoadBalancer), nil
+		generation: p.generation,
 	}
-
-	lbs, err := p.loadFromAzure(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// If we wanted to hyper-optimize, we could set a much longer timeout once we find the -internal LB, as at that point we're "done" and
-	// aren't particularly interested in LB changes anymore.
-	p.cache.SetDefault(loadBalancersCacheKey, lbs)
-
-	return lbs, nil
 }
 
 func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
