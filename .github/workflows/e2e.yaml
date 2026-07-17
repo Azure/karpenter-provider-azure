@@ -58,6 +58,7 @@ on:
         # Limiting to a subset of regions to give a nice dropdown and also
         # ensure the regions are configured to pass with all of our tests (capacity, etc)
         options:
+          - westus # regional-only UltraSSD acceptance
           - westus3
           - southcentralus
           - eastus
