@@ -77,12 +77,22 @@ func buildSharedAKSMachineTemplate(aksMachine *armcontainerservice.Machine) armc
 		Properties: &aksMachineProperties,
 	}
 
-	// If UltraSSD is enabled, we need to preserve the zones for the batch key to be correct.
-	// This is because UltraSSD requires Zones to be specified during validation, so leaving this out
-	// will cause the shared machine to be rejected as invalid.
-	if aksMachineProperties.Hardware != nil && lo.FromPtr(aksMachineProperties.Hardware.UltraSsdEnabled) {
+	if requiresZonesInSharedTemplate(aksMachine) {
 		machine.Zones = aksMachine.Zones
 	}
 
 	return machine
+}
+
+func requiresZonesInSharedTemplate(aksMachine *armcontainerservice.Machine) bool {
+	// UltraSSD requires Zones to be specified during validation, so leaving this out
+	// will cause the shared machine to be rejected as invalid.
+	return isUltraSSDEnabled(aksMachine)
+}
+
+func isUltraSSDEnabled(aksMachine *armcontainerservice.Machine) bool {
+	return aksMachine != nil &&
+		aksMachine.Properties != nil &&
+		aksMachine.Properties.Hardware != nil &&
+		lo.FromPtr(aksMachine.Properties.Hardware.UltraSsdEnabled)
 }
