@@ -69,7 +69,6 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
-	UltraSSDEnabled          bool
 }
 
 type Provider interface {

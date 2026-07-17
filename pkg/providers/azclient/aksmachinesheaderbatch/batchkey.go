@@ -32,7 +32,7 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 		return "", fmt.Errorf("nil payload, machine body, or properties")
 	}
 
-	template := buildSharedAKSMachineTemplate(*item.machineBody)
+	template := buildSharedAKSMachineTemplate(item.machineBody)
 	jsonBytes, err := json.Marshal(template)
 	if err != nil {
 		return "", err
@@ -46,8 +46,9 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 
 // buildSharedAKSMachineTemplate returns a Machine containing only the fields shared across all
 // machines in a batch, with per-machine and read-only fields zeroed.
-// Takes MachineProperties by value so the caller's original is never mutated.
-func buildSharedAKSMachineTemplate(aksMachine armcontainerservice.Machine) armcontainerservice.Machine {
+// Returns a sanitized copy; nested pointer fields must be copied before modification
+// so the caller's Machine is not mutated.
+func buildSharedAKSMachineTemplate(aksMachine *armcontainerservice.Machine) armcontainerservice.Machine {
 	// Design notes: for each section, we can either:
 	// - (A) Recreate a new struct with only the shared fields selected from the old struct, or
 	// - (B) Mutate the existing struct to nil-out the per-machine fields
@@ -79,7 +80,7 @@ func buildSharedAKSMachineTemplate(aksMachine armcontainerservice.Machine) armco
 	// If UltraSSD is enabled, we need to preserve the zones for the batch key to be correct.
 	// This is because UltraSSD requires Zones to be specified during validation, so leaving this out
 	// will cause the shared machine to be rejected as invalid.
-	if lo.FromPtr(aksMachineProperties.Hardware.UltraSsdEnabled) {
+	if aksMachineProperties.Hardware != nil && lo.FromPtr(aksMachineProperties.Hardware.UltraSsdEnabled) {
 		machine.Zones = aksMachine.Zones
 	}
 

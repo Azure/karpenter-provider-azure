@@ -680,12 +680,12 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 	}
 }
 
-func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSsdEnabled bool) {
-	if ultraSsdEnabled {
+func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSSDEnabled bool) {
+	if ultraSSDEnabled {
 		if vmProperties.AdditionalCapabilities == nil {
 			vmProperties.AdditionalCapabilities = &armcompute.AdditionalCapabilities{}
 		}
-		vmProperties.AdditionalCapabilities.UltraSSDEnabled = &ultraSsdEnabled
+		vmProperties.AdditionalCapabilities.UltraSSDEnabled = &ultraSSDEnabled
 	}
 }
 
