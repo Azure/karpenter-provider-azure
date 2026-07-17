@@ -19,7 +19,7 @@ package instancetype
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
 	//nolint:staticcheck // deprecated package used by skewer
@@ -73,9 +73,8 @@ func TestUltraSSDOptions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if diff := cmp.Diff(test.want, ultraSSDOptions(test.sku, test.zone)); diff != "" {
-				t.Errorf("unexpected UltraSSD options (-want, +got):\n%s", diff)
-			}
+			g := NewWithT(t)
+			g.Expect(ultraSSDOptions(test.sku, test.zone)).To(Equal(test.want))
 		})
 	}
 }
