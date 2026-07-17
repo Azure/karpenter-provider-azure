@@ -551,6 +551,7 @@ type createVMOptions struct {
 	UseSIG              bool
 	DiskEncryptionSetID string
 	NodePoolName        string
+	UltraSSDEnabled     bool
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -614,6 +615,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
+	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSSDEnabled)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -678,6 +680,15 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 	}
 }
 
+func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSSDEnabled bool) {
+	if ultraSSDEnabled {
+		if vmProperties.AdditionalCapabilities == nil {
+			vmProperties.AdditionalCapabilities = &armcompute.AdditionalCapabilities{}
+		}
+		vmProperties.AdditionalCapabilities.UltraSSDEnabled = &ultraSSDEnabled
+	}
+}
+
 type createResult struct {
 	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
 	VM     *armcompute.VirtualMachine
@@ -731,6 +742,18 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	return &createResult{Poller: poller, VM: vm}, nil
 }
 
+func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
+	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
+
+	compatibleWithTrue := reqs.Compatible(scheduling.NewRequirements(
+		scheduling.NewRequirement(v1beta1.LabelUltraSSD, v1.NodeSelectorOpIn, "true"))) == nil
+	compatibleWithFalse := reqs.Compatible(scheduling.NewRequirements(
+		scheduling.NewRequirement(v1beta1.LabelUltraSSD, v1.NodeSelectorOpIn, "false"))) == nil
+
+	// We only enable if the NodeClaim is explicitly requesting it. Ambiguous or unspecified requests result in false.
+	return compatibleWithTrue && !compatibleWithFalse
+}
+
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
@@ -752,9 +775,11 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}
 	instanceType := selection.InstanceType
 	capacityType := selection.CapacityType()
+
+	ultraSSD := resolveUltraSSDRequested(nodeClaim)
 	zone := selection.Zone()
 	placementScope := selection.PlacementScope()
-	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope)
+	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType, placementScope, ultraSSD)
 	if err != nil {
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
@@ -830,6 +855,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		UseSIG:              options.FromContext(ctx).UseSIG,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
+		UltraSSDEnabled:     ultraSSD,
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, instanceType.Name)
@@ -925,6 +951,7 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 	placementScope string,
+	ultraSSD bool,
 ) (*launchtemplate.Template, error) {
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
@@ -940,6 +967,7 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 		map[string]string{
 			karpv1.CapacityTypeLabelKey: capacityType,
 			v1beta1.LabelPlacementScope: placementScope,
+			v1beta1.LabelUltraSSD:       fmt.Sprint(ultraSSD),
 		},
 	)
 
@@ -1116,4 +1144,11 @@ func GetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
 		return VMPriorityToPriority[*vm.Properties.Priority]
 	}
 	return ""
+}
+
+func GetUltraSSDEnabled(vm *armcompute.VirtualMachine) bool {
+	if vm != nil && vm.Properties != nil && vm.Properties.AdditionalCapabilities != nil {
+		return lo.FromPtr(vm.Properties.AdditionalCapabilities.UltraSSDEnabled)
+	}
+	return false
 }

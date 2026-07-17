@@ -285,6 +285,7 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
 			),
 			Price:     onDemandPrice,
 			Available: availableOnDemand,
@@ -297,6 +298,7 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
 			),
 			Price:     spotPrice,
 			Available: availableSpot,
@@ -570,4 +572,19 @@ func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
 	const selector = "NvmeDiskSizeInMiB"
 	return s.GetCapabilityIntegerQuantity(selector)
+}
+
+func ultraSSDOptions(sku *skewer.SKU, zone string) []string {
+	z := zones.MakeARMZonesFromAKSLabelZone(zone)
+	switch len(z) {
+	case 0:
+		if sku.IsUltraSSDAvailableWithoutAvailabilityZone() {
+			return []string{"true", "false"}
+		}
+	case 1:
+		if sku.IsUltraSSDAvailableInAvailabilityZone(*z[0]) {
+			return []string{"true", "false"}
+		}
+	}
+	return []string{"false"}
 }

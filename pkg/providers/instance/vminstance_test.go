@@ -21,10 +21,74 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
+
+func TestResolveUltraSSDRequested(t *testing.T) {
+	t.Parallel()
+
+	requirement := func(operator v1.NodeSelectorOperator, values ...string) karpv1.NodeSelectorRequirementWithMinValues {
+		return karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelUltraSSD,
+			Operator: operator,
+			Values:   values,
+		}
+	}
+
+	tests := []struct {
+		name         string
+		requirements []karpv1.NodeSelectorRequirementWithMinValues
+		expected     bool
+	}{
+		{
+			name:         "true",
+			requirements: []karpv1.NodeSelectorRequirementWithMinValues{requirement(v1.NodeSelectorOpIn, "true")},
+			expected:     true,
+		},
+		{
+			name:         "false",
+			requirements: []karpv1.NodeSelectorRequirementWithMinValues{requirement(v1.NodeSelectorOpIn, "false")},
+			expected:     false,
+		},
+		{
+			name:     "empty",
+			expected: false,
+		},
+		{
+			name:         "true and false",
+			requirements: []karpv1.NodeSelectorRequirementWithMinValues{requirement(v1.NodeSelectorOpIn, "true", "false")},
+			expected:     false,
+		},
+		{
+			name:         "not in false",
+			requirements: []karpv1.NodeSelectorRequirementWithMinValues{requirement(v1.NodeSelectorOpNotIn, "false")},
+			expected:     true,
+		},
+		{
+			name:         "not in true",
+			requirements: []karpv1.NodeSelectorRequirementWithMinValues{requirement(v1.NodeSelectorOpNotIn, "true")},
+			expected:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			result := resolveUltraSSDRequested(&karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{Requirements: tt.requirements},
+			})
+
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
 
 func TestGetManagedExtensionNames(t *testing.T) {
 	publicCloudEnv := lo.Must(auth.EnvironmentFromName("AzurePublicCloud"))
