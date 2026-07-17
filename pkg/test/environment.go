@@ -22,9 +22,6 @@ import (
 
 	gomegaformat "github.com/onsi/gomega/format"
 	"github.com/samber/lo"
-	corev1 "k8s.io/api/core/v1"
-
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
 	"github.com/patrickmn/go-cache"
@@ -56,7 +53,7 @@ import (
 )
 
 func init() {
-	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	zones.RegisterCSIZoneNormalization()
 
 	// Configuring this here because it's commonly imported and has an init already
 	gomegaformat.CharactersAroundMismatchToInclude = 40

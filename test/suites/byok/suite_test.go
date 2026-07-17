@@ -65,7 +65,7 @@ var _ = Describe("BYOK", func() {
 	BeforeEach(func() {
 
 	})
-	It("should provision a VM with customer-managed key disk encryption", Label("runner"), func(ctx SpecContext) {
+	It("should provision a VM with customer-managed key disk encryption", func(ctx SpecContext) {
 		var diskEncryptionSetID string
 
 		if env.IsAKSMachineAPIMode() {
@@ -119,7 +119,7 @@ var _ = Describe("BYOK", func() {
 		}
 	})
 
-	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", Label("runner"), func(ctx SpecContext) {
+	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func(ctx SpecContext) {
 		var diskEncryptionSetID string
 
 		if env.IsAKSMachineAPIMode() {
