@@ -22,10 +22,8 @@ var _ = Describe("Trusted Launch", func() {
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
-		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
-		env.EventuallyExpectInitializedNodeCount("==", 1)
-		node := env.GetNode(pods[0].Spec.NodeName)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		verifyTrustedLaunchSettings(node, true, true)
 	})
 
@@ -41,10 +39,8 @@ var _ = Describe("Trusted Launch", func() {
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
-		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
-		env.EventuallyExpectInitializedNodeCount("==", 1)
-		node := env.GetNode(pods[0].Spec.NodeName)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		verifyTrustedLaunchSettings(node, true, false)
 	})
 
@@ -60,10 +56,8 @@ var _ = Describe("Trusted Launch", func() {
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
-		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
-		env.EventuallyExpectInitializedNodeCount("==", 1)
-		node := env.GetNode(pods[0].Spec.NodeName)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		verifyTrustedLaunchSettings(node, false, true)
 	})
 
@@ -78,10 +72,9 @@ var _ = Describe("Trusted Launch", func() {
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
-		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.EventuallyExpectHealthyDeployment(deployment)
 
-		env.EventuallyExpectInitializedNodeCount("==", 1)
-		node := env.GetNode(pods[0].Spec.NodeName)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		verifyTrustedLaunchSettings(node, false, false)
 	})
 
@@ -90,10 +83,8 @@ var _ = Describe("Trusted Launch", func() {
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
-		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
-		env.EventuallyExpectInitializedNodeCount("==", 1)
-		node := env.GetNode(pods[0].Spec.NodeName)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		verifyTrustedLaunchSettings(node, false, false)
 	})
 })
