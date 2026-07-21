@@ -83,6 +83,7 @@ type Options struct {
 	setFlags                map[string]bool
 
 	ProvisionMode              string            `json:"provisionMode,omitempty"`
+	NodeOSUpgradeChannel       string            `json:"nodeOSUpgradeChannel,omitempty"` // => Mirrors the managed cluster's autoUpgradeProfile.nodeOSUpgradeChannel; drives node image lineage selection (e.g. SecurityPatch)
 	NodeBootstrappingServerURL string            `json:"-"`
 	UseSIG                     bool              `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
 	SIGAccessTokenServerURL    string            `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
@@ -120,6 +121,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
+	fs.StringVar(&o.NodeOSUpgradeChannel, "node-os-upgrade-channel", env.WithDefaultString("NODE_OS_UPGRADE_CHANNEL", ""), "The managed cluster node OS upgrade channel (e.g. 'SecurityPatch', 'NodeImage', 'None', 'Unmanaged'). When 'SecurityPatch' and use-sig is true, Karpenter requests security-patch node images. Only takes effect for AKS managed karpenter (use-sig=true).")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")
 	fs.StringVar(&o.KubeletIdentityClientID, "kubelet-identity-client-id", env.WithDefaultString("KUBELET_IDENTITY_CLIENT_ID", ""), "The client ID of the kubelet identity.")
@@ -145,6 +147,12 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 // IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
 func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
+// IsSecurityPatchChannel returns true if the cluster's node OS upgrade channel is SecurityPatch.
+// In this mode Karpenter should source node images from the security-patch lineage.
+func (o *Options) IsSecurityPatchChannel() bool {
+	return o.NodeOSUpgradeChannel == consts.NodeOSUpgradeChannelSecurityPatch
 }
 
 func (o *Options) GetAPIServerName() string {

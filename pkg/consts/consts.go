@@ -46,6 +46,15 @@ const (
 	ProvisionModeAKSMachineAPI            = "aksmachineapi"
 	ProvisionModeAKSMachineAPIHeaderBatch = "aksmachineapiheaderbatch"
 
+	// Node OS upgrade channel values. These mirror the managed cluster's
+	// autoUpgradeProfile.nodeOSUpgradeChannel and are surfaced to Karpenter so it
+	// can select the appropriate node image lineage. An empty value means the
+	// channel is unset/unknown and standard node images are used.
+	NodeOSUpgradeChannelNone          = "None"
+	NodeOSUpgradeChannelUnmanaged     = "Unmanaged"
+	NodeOSUpgradeChannelSecurityPatch = "SecurityPatch"
+	NodeOSUpgradeChannelNodeImage     = "NodeImage"
+
 	AKSMachineAPIHeaderBatchMaxSize = 50
 
 	// Provisioning states for AKS Machine objects.
