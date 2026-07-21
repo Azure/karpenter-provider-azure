@@ -11,7 +11,7 @@ import (
 )
 
 var _ = Describe("Trusted Launch", func() {
-	FIt("should enable vTPM and Secure Boot when explicitly enabled", func() {
+	It("should enable vTPM and Secure Boot when explicitly enabled", func() {
 		enabled := true
 		nodeClass.Spec.Security = &v1beta1.Security{
 			TrustedLaunch: &v1beta1.TrustedLaunch{
