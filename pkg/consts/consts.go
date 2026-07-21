@@ -50,8 +50,8 @@ const (
 	// autoUpgradeProfile.nodeOSUpgradeChannel and are surfaced to Karpenter so it
 	// can select the appropriate node image lineage. An empty value means the
 	// channel is unset/unknown and standard node images are used.
-	NodeOSUpgradeChannelNone          = "None"
-	NodeOSUpgradeChannelUnmanaged     = "Unmanaged"
+	// Only the AKS-managed channels are represented here: the None and Unmanaged
+	// channels have no meaning for NAP node image selection and are never surfaced.
 	NodeOSUpgradeChannelSecurityPatch = "SecurityPatch"
 	NodeOSUpgradeChannelNodeImage     = "NodeImage"
 

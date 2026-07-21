@@ -82,8 +82,13 @@ type Options struct {
 	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	setFlags                map[string]bool
 
-	ProvisionMode              string            `json:"provisionMode,omitempty"`
-	NodeOSUpgradeChannel       string            `json:"nodeOSUpgradeChannel,omitempty"` // => Mirrors the managed cluster's autoUpgradeProfile.nodeOSUpgradeChannel; drives node image lineage selection (e.g. SecurityPatch)
+	ProvisionMode string `json:"provisionMode,omitempty"`
+	// NodeOSUpgradeChannel mirrors the managed cluster's autoUpgradeProfile.nodeOSUpgradeChannel.
+	// Only the AKS-managed channels are surfaced: "SecurityPatch" (currently acted on: Karpenter
+	// requests security-patch node images) and "NodeImage" (reserved for future use). The None and
+	// Unmanaged channels are intentionally not surfaced as they have no meaning for NAP node image
+	// selection; an empty value means standard node images are used.
+	NodeOSUpgradeChannel       string            `json:"nodeOSUpgradeChannel,omitempty"`
 	NodeBootstrappingServerURL string            `json:"-"`
 	UseSIG                     bool              `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
 	SIGAccessTokenServerURL    string            `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation

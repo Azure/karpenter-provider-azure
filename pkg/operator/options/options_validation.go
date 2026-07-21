@@ -146,8 +146,6 @@ func (o *Options) validateProvisionMode() error {
 func (o *Options) validateNodeOSUpgradeChannel() error {
 	switch o.NodeOSUpgradeChannel {
 	case "",
-		consts.NodeOSUpgradeChannelNone,
-		consts.NodeOSUpgradeChannelUnmanaged,
 		consts.NodeOSUpgradeChannelSecurityPatch,
 		consts.NodeOSUpgradeChannelNodeImage:
 		return nil
