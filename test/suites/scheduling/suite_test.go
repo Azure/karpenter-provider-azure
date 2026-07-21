@@ -88,20 +88,18 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			// Can't test FIPS if not using SIG
 			selectors.Insert(v1beta1.AKSLabelFIPSEnabled)
 		}
-
-		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
-		// ignore GPU labels in the coverage assertion.
-		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) {
-			selectors.Insert(
-				v1beta1.LabelSKUGPUCount,
-				v1beta1.LabelSKUGPUManufacturer,
-			)
-		}
-
 	})
 	AfterAll(func() {
-		// Ensure that we're exercising all well known labels (with the above exceptions)
-		Expect(lo.Keys(selectors)).To(ContainElements(append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)))
+		// All selector tests are unlabeled except the GPU test, so only require coverage from tests selected by the label filter.
+		expectedSelectors := sets.New(append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)...)
+		gpuSelectors := sets.New(v1beta1.LabelSKUGPUCount, v1beta1.LabelSKUGPUManufacturer)
+		if !Label().MatchesLabelFilter(GinkgoLabelFilter()) { // unlabeled tests did not run (were filtered out)
+			expectedSelectors = gpuSelectors // only require GPU selector coverage
+		}
+		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) { // GPU tests did not run (were filtered out)
+			expectedSelectors = expectedSelectors.Difference(gpuSelectors) // don't require GPU selectors coverage
+		}
+		Expect(selectors.UnsortedList()).To(ContainElements(expectedSelectors.UnsortedList()))
 	})
 
 	It("should apply annotations to the node", func() {
