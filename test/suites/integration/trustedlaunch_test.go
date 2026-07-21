@@ -1,6 +1,8 @@
 package integration_test
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -118,6 +120,7 @@ func verifyTrustedLaunchSettings(node *corev1.Node, expectedVTPM, expectedSecure
 	if expectedVTPM || expectedSecureBoot {
 		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
 		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+		fmt.Println("Security Type:", *vm.Properties.SecurityProfile.SecurityType)
 		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal("TrustedLaunch"))
 	}
 }
