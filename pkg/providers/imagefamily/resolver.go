@@ -123,7 +123,7 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
+	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), kubernetesVersion, staticParameters)
 	imageID, err := r.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
@@ -235,11 +235,11 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 
 func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
-	imageFamily := GetImageFamily(familyName, fipsMode, kubernetesVersion, nil)
+	imageFamily := GetImageFamily(familyName, fipsMode, trustedLaunch, kubernetesVersion, nil)
 	return imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch)
 }
 
-func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
@@ -253,12 +253,12 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
-		return defaultUbuntu(fipsMode, kubernetesVersion, parameters)
+		return defaultUbuntu(fipsMode, trustedLaunch, kubernetesVersion, parameters)
 	}
 }
 
-func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
-	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+func defaultUbuntu(fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS && !trustedLaunch {
 		return &Ubuntu2004{Options: parameters}
 	}
 	if UseUbuntu2404(kubernetesVersion) {
