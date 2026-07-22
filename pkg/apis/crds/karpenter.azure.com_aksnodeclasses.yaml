@@ -789,15 +789,21 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+            - message: FIPS is not yet supported for Ubuntu2204 without TrustedLaunch
+                or Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
-                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
-                : true'
-            - message: TrustedLaunch cannot be enabled when FIPSMode is FIPS
-              rule: '!(has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
+                && self.imageFamily != ''Ubuntu2404'' && (self.imageFamily != ''Ubuntu2204''
+                || (has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))))) : true'
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
+                and Ubuntu2204
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
-                && self.security.trustedLaunch.secureBoot)))'
+                && self.security.trustedLaunch.secureBoot)) ? (has(self.imageFamily)
+                && (self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''))
+                : true'
             - message: TrustedLaunch is not supported for the selected imageFamily
               rule: 'has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
@@ -1714,15 +1720,21 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+            - message: FIPS is not yet supported for Ubuntu2204 without TrustedLaunch
+                or Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
-                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
-                : true'
-            - message: TrustedLaunch cannot be enabled when FIPSMode is FIPS
-              rule: '!(has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
+                && self.imageFamily != ''Ubuntu2404'' && (self.imageFamily != ''Ubuntu2204''
+                || (has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))))) : true'
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
+                and Ubuntu2204
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
-                && self.security.trustedLaunch.secureBoot)))'
+                && self.security.trustedLaunch.secureBoot)) ? (has(self.imageFamily)
+                && (self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''))
+                : true'
             - message: TrustedLaunch is not supported for the selected imageFamily
               rule: 'has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
