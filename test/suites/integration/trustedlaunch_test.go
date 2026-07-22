@@ -12,8 +12,64 @@ import (
 )
 
 var _ = Describe("Trusted Launch", func() {
-	It("should enable vTPM and Secure Boot when explicitly enabled", func() {
+	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {
 		enabled := true
+		imageFamily := v1beta1.UbuntuImageFamily
+		nodeClass.Spec.ImageFamily = &imageFamily
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{
+				VTPM:       &enabled,
+				SecureBoot: &enabled,
+			},
+		}
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		verifyTrustedLaunchSettings(nodeClass, node)
+	})
+
+	It("should enable vTPM and Secure Boot when explicitly enabled for Linux", func() {
+		enabled := true
+		imageFamily := v1beta1.AzureLinuxImageFamily
+		nodeClass.Spec.ImageFamily = &imageFamily
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{
+				VTPM:       &enabled,
+				SecureBoot: &enabled,
+			},
+		}
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		verifyTrustedLaunchSettings(nodeClass, node)
+	})
+
+	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu 2204", func() {
+		enabled := true
+		imageFamily := v1beta1.Ubuntu2204ImageFamily
+		nodeClass.Spec.ImageFamily = &imageFamily
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{
+				VTPM:       &enabled,
+				SecureBoot: &enabled,
+			},
+		}
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		verifyTrustedLaunchSettings(nodeClass, node)
+	})
+
+	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu 2404", func() {
+		enabled := true
+		imageFamily := v1beta1.Ubuntu2404ImageFamily
+		nodeClass.Spec.ImageFamily = &imageFamily
 		nodeClass.Spec.Security = &v1beta1.Security{
 			TrustedLaunch: &v1beta1.TrustedLaunch{
 				VTPM:       &enabled,
@@ -110,7 +166,7 @@ func verifyTrustedLaunchSettings(nodeClass *v1beta1.AKSNodeClass, node *corev1.N
 
 	Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 	Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-	Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).To(ContainSubstring("gen2TL"))
+	Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).To(ContainSubstring("TL"))
 
 	if nodeClass.IsVTPMEnabled() {
 		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())

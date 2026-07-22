@@ -60,7 +60,7 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 // intentionally not used from defaultUbuntu itself, to keep that function's
 // existing logic flow untouched. If the rule in defaultUbuntu ever changes,
 // update this helper to match.
-func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode) bool {
+func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) bool {
 	family := lo.FromPtr(familyName)
 	isUbuntuLegacyOrUnset := family == "" || family == v1beta1.UbuntuImageFamily
 	return isUbuntuLegacyOrUnset && lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS
