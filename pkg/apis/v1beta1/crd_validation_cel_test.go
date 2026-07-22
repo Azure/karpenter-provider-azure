@@ -701,15 +701,16 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("generic Ubuntu when FIPSMode is not explicitly set should succeed", v1beta1.UbuntuImageFamily, nil, false, true),
 			Entry("generic Ubuntu when FIPSMode is explicitly FIPS should succeed", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeFIPS, false, true),
 			Entry("generic Ubuntu when TrustedLaunch is enabled should succeed", v1beta1.UbuntuImageFamily, nil, true, true),
-			Entry("generic Ubuntu when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeFIPS, true, false),
+			Entry("generic Ubuntu when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeFIPS, true, true),
 			Entry("Ubuntu2204 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
 			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2204ImageFamily, nil, false, true),
 			Entry("Ubuntu2204 when TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2204ImageFamily, nil, true, true),
-			//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
 			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
 			Entry("Ubuntu2404 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
 			Entry("Ubuntu2404 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2404ImageFamily, nil, false, true),
 			Entry("Ubuntu2404 when TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2404ImageFamily, nil, true, true),
+			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeFIPS, true, false),
 			//TODO: Modify when Ubuntu 24.04 with FIPS becomes available
 			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
 			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeDisabled, false, true),
