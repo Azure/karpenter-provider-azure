@@ -135,8 +135,13 @@ type AKSNodeClassSpec struct {
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
 }
 
+// TrustedLaunch configures Trusted Launch security features for provisioned nodes.
 type TrustedLaunch struct {
-	VTPM       *bool `json:"vtpm,omitempty"`
+	// vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+	// +optional
+	VTPM *bool `json:"vtpm,omitempty"`
+	// secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+	// +optional
 	SecureBoot *bool `json:"secureBoot,omitempty"`
 }
 
@@ -147,8 +152,10 @@ type Security struct {
 	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
 	// +optional
-	EncryptionAtHost *bool          `json:"encryptionAtHost,omitempty"`
-	TrustedLaunch    *TrustedLaunch `json:"trustedLaunch,omitempty"`
+	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
+	// trustedLaunch specifies Trusted Launch settings for provisioned nodes.
+	// +optional
+	TrustedLaunch *TrustedLaunch `json:"trustedLaunch,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={Preferred,Required,Disabled}
