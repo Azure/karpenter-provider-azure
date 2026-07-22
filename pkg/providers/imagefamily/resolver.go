@@ -258,7 +258,10 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 }
 
 func defaultUbuntu(fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
-	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS && !trustedLaunch {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+		if trustedLaunch {
+			return &Ubuntu2204{Options: parameters}
+		}
 		return &Ubuntu2004{Options: parameters}
 	}
 	if UseUbuntu2404(kubernetesVersion) {
