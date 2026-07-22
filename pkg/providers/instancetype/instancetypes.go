@@ -312,8 +312,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
-		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
-		p.isInstanceTypeSupportedByLocalDNS(sku, params)
+		p.isInstanceTypeSupportedByTrustedLaunch(sku, params)
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {

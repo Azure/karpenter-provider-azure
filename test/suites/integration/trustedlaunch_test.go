@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -24,7 +25,7 @@ var _ = Describe("Trusted Launch", func() {
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		verifyTrustedLaunchSettings(node, true, true)
+		verifyTrustedLaunchSettings(nodeClass, node)
 	})
 
 	It("should enable vTPM when enabled but not Secure Boot", func() {
@@ -41,7 +42,7 @@ var _ = Describe("Trusted Launch", func() {
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		verifyTrustedLaunchSettings(node, true, false)
+		verifyTrustedLaunchSettings(nodeClass, node)
 	})
 
 	It("should enable Secure Boot when enabled but not vTPM", func() {
@@ -58,7 +59,7 @@ var _ = Describe("Trusted Launch", func() {
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		verifyTrustedLaunchSettings(node, false, true)
+		verifyTrustedLaunchSettings(nodeClass, node)
 	})
 
 	It("should not enable vTPM or Secure Boot when not enabled", func() {
@@ -75,7 +76,7 @@ var _ = Describe("Trusted Launch", func() {
 		env.EventuallyExpectHealthyDeployment(deployment)
 
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		verifyTrustedLaunchSettings(node, false, false)
+		verifyTrustedLaunchSettings(nodeClass, node)
 	})
 
 	It("should not enable vTPM or Secure Boot when security is not specified", func() {
@@ -85,31 +86,62 @@ var _ = Describe("Trusted Launch", func() {
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		verifyTrustedLaunchSettings(node, false, false)
+		verifyTrustedLaunchSettings(nodeClass, node)
 	})
 })
 
-func verifyTrustedLaunchSettings(node *corev1.Node, expectedVTPM, expectedSecureBoot bool) {
+func verifyTrustedLaunchSettings(nodeClass *v1beta1.AKSNodeClass, node *corev1.Node) {
 	vm := env.GetVM(node.Name)
 	Expect(vm.Properties).ToNot(BeNil())
 
-	if expectedVTPM {
-		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
-		Expect(vm.Properties.SecurityProfile.UefiSettings).ToNot(BeNil())
-		Expect(vm.Properties.SecurityProfile.UefiSettings.VTpmEnabled).ToNot(BeNil())
-		Expect(*vm.Properties.SecurityProfile.UefiSettings.VTpmEnabled).To(BeTrue())
+	var uefiSettings *armcompute.UefiSettings
+	if vm.Properties.SecurityProfile != nil {
+		uefiSettings = vm.Properties.SecurityProfile.UefiSettings
 	}
 
-	if expectedSecureBoot {
-		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
-		Expect(vm.Properties.SecurityProfile.UefiSettings).ToNot(BeNil())
-		Expect(vm.Properties.SecurityProfile.UefiSettings.SecureBootEnabled).ToNot(BeNil())
-		Expect(*vm.Properties.SecurityProfile.UefiSettings.SecureBootEnabled).To(BeTrue())
+	if !nodeClass.IsTrustedLaunchEnabled() {
+		expectTrustedLaunchDisabled(vm, uefiSettings)
+		return
 	}
 
-	if expectedVTPM || expectedSecureBoot {
+	Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+	Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+	Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+
+	Expect(vm.Properties.StorageProfile).ToNot(BeNil())
+	Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+	Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).To(ContainSubstring("gen2TL"))
+
+	if nodeClass.IsVTPMEnabled() {
 		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
-		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
-		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+		Expect(uefiSettings).ToNot(BeNil())
+		Expect(uefiSettings.VTpmEnabled).ToNot(BeNil())
+		Expect(*uefiSettings.VTpmEnabled).To(BeTrue())
+	} else if uefiSettings != nil && uefiSettings.VTpmEnabled != nil {
+		Expect(*uefiSettings.VTpmEnabled).To(BeFalse())
+	}
+
+	if nodeClass.IsSecureBootEnabled() {
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(uefiSettings).ToNot(BeNil())
+		Expect(uefiSettings.SecureBootEnabled).ToNot(BeNil())
+		Expect(*uefiSettings.SecureBootEnabled).To(BeTrue())
+	} else if uefiSettings != nil && uefiSettings.SecureBootEnabled != nil {
+		Expect(*uefiSettings.SecureBootEnabled).To(BeFalse())
+	}
+}
+
+func expectTrustedLaunchDisabled(vm armcompute.VirtualMachine, uefiSettings *armcompute.UefiSettings) {
+	if uefiSettings != nil && uefiSettings.VTpmEnabled != nil {
+		Expect(*uefiSettings.VTpmEnabled).To(BeFalse())
+	}
+	if uefiSettings != nil && uefiSettings.SecureBootEnabled != nil {
+		Expect(*uefiSettings.SecureBootEnabled).To(BeFalse())
+	}
+	if vm.Properties.SecurityProfile != nil && vm.Properties.SecurityProfile.SecurityType != nil {
+		Expect(*vm.Properties.SecurityProfile.SecurityType).ToNot(Equal(armcompute.SecurityTypesTrustedLaunch))
+	}
+	if vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
+		Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).ToNot(ContainSubstring("gen2TL"))
 	}
 }

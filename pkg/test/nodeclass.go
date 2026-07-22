@@ -152,20 +152,20 @@ func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion 
 	if nodeClass.Status.KubernetesVersion != nil {
 		kubernetesVersion = *nodeClass.Status.KubernetesVersion
 	}
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
+	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), sigImageVersion, kubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
+func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
 	switch imageFamily {
 	case v1beta1.Ubuntu2204ImageFamily:
-		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode, false)
+		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode, trustedLaunch)
 	case v1beta1.AzureLinuxImageFamily:
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode, false)
+			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode, trustedLaunch)
 		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode, false)
+			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode, trustedLaunch)
 		}
 	}
 	nodeImages := []imagefamily.NodeImage{}
