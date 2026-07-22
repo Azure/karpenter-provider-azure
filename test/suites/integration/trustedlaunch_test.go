@@ -142,6 +142,6 @@ func expectTrustedLaunchDisabled(vm armcompute.VirtualMachine, uefiSettings *arm
 		Expect(*vm.Properties.SecurityProfile.SecurityType).ToNot(Equal(armcompute.SecurityTypesTrustedLaunch))
 	}
 	if vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
-		Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).ToNot(ContainSubstring("gen2TL"))
+		Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).ToNot(ContainSubstring("TL"))
 	}
 }
