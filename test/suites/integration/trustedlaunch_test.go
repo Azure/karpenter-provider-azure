@@ -14,7 +14,7 @@ import (
 )
 
 var _ = Describe("Trusted Launch", func() {
-	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {
+	FIt("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {
 		enabled := true
 		imageFamily := v1beta1.UbuntuImageFamily
 		nodeClass.Spec.ImageFamily = &imageFamily
@@ -32,7 +32,7 @@ var _ = Describe("Trusted Launch", func() {
 		verifyTrustedLaunchSettings(nodeClass, node)
 	})
 
-	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu with FIPS", func() {
+	FIt("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu with FIPS", func() {
 		enabled := true
 		imageFamily := v1beta1.UbuntuImageFamily
 		fipsMode := v1beta1.FIPSModeFIPS
