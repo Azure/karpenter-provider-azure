@@ -265,8 +265,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/leodido/go-urn v1.4.0 h1:WT9HwE9SGECu3lg4d/dIA+jxlljEa1/ffXKmRjqdmIQ=
 github.com/leodido/go-urn v1.4.0/go.mod h1:bvxc+MVxLKB4z00jd1z+Dvzr47oO32F/QSNjSBOlFxI=
-github.com/lnguyen924/karpenter v0.0.0-20260722225039-7cb68460430c h1:aQy2/RciE5QFsrdW/BO1WWvRCL5pxonm1JV745MNZVI=
-github.com/lnguyen924/karpenter v0.0.0-20260722225039-7cb68460430c/go.mod h1:dqNEGzkVPK0GsJy0G2lRFpu4Fq1ZwxJ5+syEf+WT1zQ=
+github.com/lnguyen924/karpenter v0.0.0-20260723212946-c29faa7420d4 h1:50Ybjmuia/XBS5cdNyc5ydO3BRhDv1Xjk/R9v6HGV7Q=
+github.com/lnguyen924/karpenter v0.0.0-20260723212946-c29faa7420d4/go.mod h1:dqNEGzkVPK0GsJy0G2lRFpu4Fq1ZwxJ5+syEf+WT1zQ=
 github.com/maruel/natural v1.1.1 h1:Hja7XhhmvEFhcByqDoHz9QZbkWey+COd9xWfCfn1ioo=
 github.com/maruel/natural v1.1.1/go.mod h1:v+Rfd79xlw1AgVBjbO0BEQmptqb5HvL/k9GRHB7ZKEg=
 github.com/mfridman/tparse v0.18.0 h1:wh6dzOKaIwkUGyKgOntDW4liXSo37qg5AXbIhkMV3vE=
