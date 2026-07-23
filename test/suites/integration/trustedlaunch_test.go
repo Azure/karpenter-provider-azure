@@ -197,7 +197,7 @@ func verifyTrustedLaunchSettings(nodeClass *v1beta1.AKSNodeClass, node *corev1.N
 
 	Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 	Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-	Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).To(ContainSubstring("TL"))
+	Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).To(ContainSubstring("tl"))
 
 	if nodeClass.IsVTPMEnabled() {
 		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
@@ -229,6 +229,6 @@ func expectTrustedLaunchDisabled(vm armcompute.VirtualMachine, uefiSettings *arm
 		Expect(*vm.Properties.SecurityProfile.SecurityType).ToNot(Equal(armcompute.SecurityTypesTrustedLaunch))
 	}
 	if vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
-		Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).ToNot(ContainSubstring("TL"))
+		Expect(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)).ToNot(ContainSubstring("tl"))
 	}
 }
