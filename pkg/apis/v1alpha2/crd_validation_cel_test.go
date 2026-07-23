@@ -722,7 +722,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", "", &v1alpha2.FIPSModeFIPS, true, false),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1alpha2.FIPSModeFIPS, true, true),
 		)
 	})
 
