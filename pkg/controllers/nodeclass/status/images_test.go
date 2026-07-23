@@ -32,6 +32,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -193,7 +194,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			It("images ready status should be false if FIPS is enabled but UseSIG is false", func() {
 				// set up test options with UseSIG disabled (false)
-				options := test.Options(test.OptionsFields{
+				options := common.Options(common.OptionsFields{
 					UseSIG: lo.ToPtr(false),
 				})
 				ctx = options.ToContext(ctx)

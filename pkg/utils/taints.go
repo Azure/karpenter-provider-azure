@@ -22,6 +22,14 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
+var (
+	TaintCiliumNotReady = corev1.Taint{
+		Key:    "node.cilium.io/agent-not-ready",
+		Value:  "true",
+		Effect: corev1.TaintEffectNoExecute,
+	}
+)
+
 // ExtractTaints returns the general taints and startup taints from a NodeClaim,
 // ensuring that UnregisteredNoExecuteTaint is present in startup taints.
 func ExtractTaints(nodeClaim *karpv1.NodeClaim) (generalTaints, startupTaints []corev1.Taint) {

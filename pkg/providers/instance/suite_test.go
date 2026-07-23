@@ -62,6 +62,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var ctx context.Context
@@ -83,7 +84,7 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx = options.ToContext(ctx, test.Options())
+	ctx = options.ToContext(ctx, common.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 
 	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118: stop is called in AfterSuite
@@ -364,7 +365,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		var originalOptions *options.Options
 		var originalEnv *test.Environment
 		var originalCloudProvider *cloudprovider.CloudProvider
-		newOptions := test.Options(test.OptionsFields{
+		newOptions := common.Options(common.OptionsFields{
 			UseSIG: lo.ToPtr(true),
 		})
 		BeforeEach(func() {
@@ -454,7 +455,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			originalOptions = options.FromContext(ctx)
 			ctx = options.ToContext(
 				ctx,
-				test.Options(test.OptionsFields{
+				common.Options(common.OptionsFields{
 					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
 					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
 				}))
@@ -485,7 +486,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		It("should include 1 ip config for Azure CNI Overlay", func() {
 			ctx = options.ToContext(
 				ctx,
-				test.Options(test.OptionsFields{
+				common.Options(common.OptionsFields{
 					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
 					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeOverlay),
 				}))
@@ -609,7 +610,7 @@ var _ = Describe("VMInstanceProvider", func() {
 
 	It("should create VM with custom Linux admin username", func() {
 		customUsername := "customuser"
-		ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+		ctx = options.ToContext(ctx, common.Options(common.OptionsFields{
 			LinuxAdminUsername: lo.ToPtr(customUsername),
 		}))
 
@@ -637,7 +638,7 @@ var _ = Describe("VMInstanceProvider", func() {
 	It("should attach nsg to nic when in BYO VNET mode", func() {
 		ctx = options.ToContext(
 			ctx,
-			test.Options(test.OptionsFields{
+			common.Options(common.OptionsFields{
 				SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"), // different RG
 			}))
 

@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var _ = Describe("In Place Update Controller", func() {
@@ -48,7 +49,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 		BeforeEach(func() {
 			// Enable AKS machines management for these tests
-			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+			ctx = options.ToContext(ctx, common.Options(common.OptionsFields{
 				ManageExistingAKSMachines: lo.ToPtr(true),
 			}))
 
@@ -179,8 +180,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 			ctx = options.ToContext(
 				ctx,
-				test.Options(
-					test.OptionsFields{
+				common.Options(
+					common.OptionsFields{
 						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
@@ -220,8 +221,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 			ctx = options.ToContext(
 				ctx,
-				test.Options(
-					test.OptionsFields{
+				common.Options(
+					common.OptionsFields{
 						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
@@ -320,8 +321,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 			ctx = options.ToContext(
 				ctx,
-				test.Options(
-					test.OptionsFields{
+				common.Options(
+					common.OptionsFields{
 						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
@@ -373,8 +374,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 			ctx = options.ToContext(
 				ctx,
-				test.Options(
-					test.OptionsFields{
+				common.Options(
+					common.OptionsFields{
 						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
@@ -407,8 +408,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 			ctx = options.ToContext(
 				ctx,
-				test.Options(
-					test.OptionsFields{
+				common.Options(
+					common.OptionsFields{
 						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",

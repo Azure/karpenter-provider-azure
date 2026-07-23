@@ -19,6 +19,7 @@ package cloudprovider
 import (
 	"fmt"
 
+	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -45,12 +46,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:        lo.ToPtr(true),
 			})
@@ -308,7 +310,7 @@ var _ = Describe("CloudProvider", func() {
 		Context("Create - Additional Tags", func() {
 			It("should add additional tags to the AKS machine", func() {
 				// Set up test context with additional tags
-				aksTestOptions := test.Options(test.OptionsFields{
+				aksTestOptions := common.Options(common.OptionsFields{
 					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 					UseSIG:        lo.ToPtr(true),
 					AdditionalTags: map[string]string{
@@ -347,6 +349,58 @@ var _ = Describe("CloudProvider", func() {
 				// Clean up
 				aksCluster.Reset()
 				aksAzureEnv.Reset(ctx)
+			})
+		})
+
+		Context("Create - Network Transitions", func() {
+			It("should add Cilium labels and startup taints to NodeClaim if the dataplane is Cilium", func() {
+				aksTestOptions := common.Options(common.OptionsFields{
+					ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+					UseSIG:           lo.ToPtr(true),
+					NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneCilium),
+				})
+				aksCtx := coreoptions.ToContext(ctx, coretest.Options())
+				aksCtx = options.ToContext(aksCtx, aksTestOptions)
+
+				Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(BeNil())
+				Expect(options.FromContext(aksCtx).NetworkDataplane).To(Equal(consts.NetworkDataplaneCilium))
+
+				// Check that the default NodePool does not have Cilium labels and taints
+				Expect(nodePool.Spec.Template.Spec.StartupTaints).ToNot(ContainElement(utils.TaintCiliumNotReady))
+				Expect(nodePool.Spec.Template.ObjectMeta.Labels).ShouldNot(HaveKey(labelspkg.AKSLabelEBPFDataplane))
+
+				ExpectApplied(aksCtx, env.Client, nodePool, nodeClass, nodeClaim)
+				nc, err := CreateAndWaitForPromises(aksCtx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Check that our CloudProvider will return Cilium labels and startup taints to Core
+				Expect(nc.Labels).Should(HaveKey(labelspkg.AKSLabelEBPFDataplane))
+				Expect(nc.Status.CloudProviderStartupTaints).To(ContainElement(utils.TaintCiliumNotReady))
+			})
+
+			It("should not have Cilium labels and startup taints on NodeClaim if the dataplane is not Cilium", func() {
+				aksTestOptions := common.Options(common.OptionsFields{
+					ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+					UseSIG:           lo.ToPtr(true),
+					NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
+				})
+				aksCtx := coreoptions.ToContext(ctx, coretest.Options())
+				aksCtx = options.ToContext(aksCtx, aksTestOptions)
+
+				Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(BeNil())
+				Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(Equal(consts.NetworkDataplaneCilium))
+
+				// Check that the default NodePool does not have Cilium labels and taints
+				Expect(nodePool.Spec.Template.Spec.StartupTaints).ToNot(ContainElement(utils.TaintCiliumNotReady))
+				Expect(nodePool.Spec.Template.ObjectMeta.Labels).ShouldNot(HaveKey(labelspkg.AKSLabelEBPFDataplane))
+
+				ExpectApplied(aksCtx, env.Client, nodePool, nodeClass, nodeClaim)
+				nc, err := CreateAndWaitForPromises(aksCtx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Check that our CloudProvider will not return Cilium labels or startup taints to Core
+				Expect(nc.Spec.StartupTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNotReady.ToString())))
+				Expect(nc.Labels).ShouldNot(HaveKey(labelspkg.AKSLabelEBPFDataplane))
 			})
 		})
 
@@ -486,7 +540,7 @@ var _ = Describe("CloudProvider", func() {
 				// Override context to use a BYO VNet instead of managed VNet
 				// This allows testing custom subnet configuration (managed VNet doesn't allow custom subnets)
 				byoClusterSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"
-				byoOpts := test.Options(test.OptionsFields{
+				byoOpts := common.Options(common.OptionsFields{
 					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 					UseSIG:        lo.ToPtr(true),
 					SubnetID:      lo.ToPtr(byoClusterSubnetID),

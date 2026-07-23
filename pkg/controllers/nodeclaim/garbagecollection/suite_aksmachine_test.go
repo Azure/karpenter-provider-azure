@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -45,7 +46,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 	var _ = Context("AKS machine instances", func() {
 		BeforeEach(func() {
 			// Enable AKS machines management for these tests
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ManageExistingAKSMachines: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx, testOptions)
@@ -141,7 +142,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 	var _ = Context("Mixed VM and AKS machine instances", func() {
 		BeforeEach(func() {
 			// Enable AKS machines management for these tests
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ManageExistingAKSMachines: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx, testOptions)

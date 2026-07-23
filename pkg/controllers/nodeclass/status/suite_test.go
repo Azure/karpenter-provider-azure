@@ -34,6 +34,7 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -61,7 +62,7 @@ func TestAKSNodeClassStatusController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(test.AKSNodeClassFieldIndexer(ctx)))
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	testOptions = test.Options()
+	testOptions = common.Options()
 	ctx = options.ToContext(ctx, testOptions)
 	azureEnv = test.NewEnvironment(ctx, env)
 

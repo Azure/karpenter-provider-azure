@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 	"github.com/blang/semver/v4"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
@@ -86,7 +87,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	BeforeEach(func() {
 		ctx = coreoptions.ToContext(ctx, coretest.Options())
-		testOptions = test.Options()
+		testOptions = common.Options()
 		ctx = options.ToContext(ctx, testOptions)
 
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}

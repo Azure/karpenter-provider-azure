@@ -81,6 +81,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var ctx context.Context
@@ -103,9 +104,9 @@ func TestAzure(t *testing.T) {
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118: stop is called in AfterSuite
-	testOptions = test.Options()
+	testOptions = common.Options()
 	ctx = options.ToContext(ctx, testOptions)
-	ctxBootstrap := options.ToContext(ctx, test.Options(test.OptionsFields{
+	ctxBootstrap := options.ToContext(ctx, common.Options(common.OptionsFields{
 		ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
 	}))
 
@@ -145,7 +146,7 @@ var _ = Describe("InstanceType Provider", func() {
 	BeforeEach(func() {
 		// Reset testOptions and ctx in case a test edited them
 		// TODO: It would be nice to find a cleaner way to edit ctx/options in these tests...
-		testOptions = test.Options()
+		testOptions = common.Options()
 		ctx = options.ToContext(ctx, testOptions)
 
 		nodeClass = test.AKSNodeClass()
@@ -628,7 +629,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		Context("additional-tags", func() {
 			It("should add additional tags to the node", func() {
-				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				ctx = options.ToContext(ctx, common.Options(common.OptionsFields{
 					AdditionalTags: map[string]string{
 						"karpenter.azure.com/test-tag": "test-value",
 					},
@@ -945,7 +946,7 @@ var _ = Describe("InstanceType Provider", func() {
 				originalOptions = options.FromContext(ctx)
 				ctx = options.ToContext(
 					ctx,
-					test.Options(test.OptionsFields{
+					common.Options(common.OptionsFields{
 						UseSIG: lo.ToPtr(true),
 					}))
 
@@ -1192,7 +1193,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should support provisioning with custom DNS server from options", func() {
 				ctx = options.ToContext(
 					ctx,
-					test.Options(test.OptionsFields{
+					common.Options(common.OptionsFields{
 						ClusterDNSServiceIP: lo.ToPtr("10.244.0.1"),
 					}),
 				)
@@ -1267,7 +1268,7 @@ var _ = Describe("InstanceType Provider", func() {
 				originalOptions = options.FromContext(ctx)
 				ctx = options.ToContext(
 					ctx,
-					test.Options(test.OptionsFields{
+					common.Options(common.OptionsFields{
 						NetworkPlugin: lo.ToPtr("kubenet"),
 					}))
 			})
@@ -1381,7 +1382,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		Context("ImageReference", func() {
 			It("should use shared image gallery images when options are set to UseSIG", func() {
-				options := test.Options(test.OptionsFields{
+				options := common.Options(common.OptionsFields{
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
@@ -1404,7 +1405,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring("AKSUbuntu"))
 			})
 			It("should use Community Images when options are set to UseSIG=false", func() {
-				options := test.Options(test.OptionsFields{
+				options := common.Options(common.OptionsFields{
 					UseSIG: lo.ToPtr(false),
 				})
 				ctx = options.ToContext(ctx)
@@ -1430,7 +1431,7 @@ var _ = Describe("InstanceType Provider", func() {
 			azureLinuxGen2ArmImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
 
 			DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
-				options := test.Options(test.OptionsFields{
+				options := common.Options(common.OptionsFields{
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
@@ -1515,7 +1516,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should have VM identity set", func() {
 				ctx = options.ToContext(
 					ctx,
-					test.Options(test.OptionsFields{
+					common.Options(common.OptionsFields{
 						NodeIdentities: []string{
 							"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 							"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
@@ -1641,9 +1642,9 @@ var _ = Describe("InstanceType Provider", func() {
 					ContainSubstring("MIG_NODE=false"),
 					ContainSubstring("CONFIG_GPU_DRIVER_IF_NEEDED=true"),
 					ContainSubstring("ENABLE_GPU_DEVICE_PLUGIN_IF_NEEDED=false"),
-					ContainSubstring("GPU_DRIVER_TYPE=\"cuda-lts\""),
-					ContainSubstring(fmt.Sprintf("GPU_DRIVER_VERSION=\"%s\"", utils.NvidiaCudaLTSDriverVersion)),
-					ContainSubstring(fmt.Sprintf("GPU_IMAGE_SHA=\"%s\"", utils.AKSGPUCudaLTSVersionSuffix)),
+					ContainSubstring("GPU_DRIVER_TYPE=\"cuda\""),
+					ContainSubstring(fmt.Sprintf("GPU_DRIVER_VERSION=\"%s\"", utils.NvidiaCudaDriverVersion)),
+					ContainSubstring(fmt.Sprintf("GPU_IMAGE_SHA=\"%s\"", utils.AKSGPUCudaVersionSuffix)),
 					ContainSubstring("GPU_NEEDS_FABRIC_MANAGER=\"false\""),
 					ContainSubstring("GPU_INSTANCE_PROFILE=\"\""),
 				))
@@ -1710,7 +1711,7 @@ var _ = Describe("InstanceType Provider", func() {
 		DescribeTable("Azure CNI node labels and agentbaker network plugin", func(
 			networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
 			expectedNodeLabels sets.Set[string]) {
-			options := test.Options(test.OptionsFields{
+			options := common.Options(common.OptionsFields{
 				NetworkPlugin:     lo.ToPtr(networkPlugin),
 				NetworkPluginMode: lo.ToPtr(networkPluginMode),
 				NetworkDataplane:  lo.ToPtr(networkDataplane),
@@ -2650,7 +2651,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		Context("MaxPods", func() {
 			BeforeEach(func() {
-				ctx = options.ToContext(ctx, test.Options())
+				ctx = options.ToContext(ctx, common.Options())
 			})
 			It("should set pods equal to MaxPods in the AKSNodeClass when specified", func() {
 				maxPods := int32(150)
@@ -2669,7 +2670,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should set pods equal to the expected default MaxPods for NodeSubnet", func() {
 				ctx = options.ToContext(
 					ctx,
-					test.Options(test.OptionsFields{
+					common.Options(common.OptionsFields{
 						NetworkPlugin:     lo.ToPtr("azure"),
 						NetworkPluginMode: lo.ToPtr(""),
 					}),
@@ -2691,7 +2692,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should set pods equal to expected default MaxPods for network plugin none", func() {
 				ctx = options.ToContext(
 					ctx,
-					test.Options(test.OptionsFields{
+					common.Options(common.OptionsFields{
 						NetworkPlugin: lo.ToPtr("none"),
 					}),
 				)
@@ -2704,7 +2705,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should set pods equal to expected default MaxPods for unsupported cni", func() {
 				ctx = options.ToContext(
 					ctx,
-					test.Options(test.OptionsFields{
+					common.Options(common.OptionsFields{
 						NetworkPlugin: lo.ToPtr("kubenet"),
 					}),
 				)
@@ -2721,7 +2722,7 @@ var _ = Describe("InstanceType Provider", func() {
 			var err error
 			BeforeEach(func() {
 				// disable VM memory overhead for simpler capacity testing
-				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				ctx = options.ToContext(ctx, common.Options(common.OptionsFields{
 					VMMemoryOverheadPercent: lo.ToPtr[float64](0),
 				}))
 				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
@@ -2740,7 +2741,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 					Expect(reqs.Has(v1beta1.LabelSKUStoragePremiumCapable)).To(BeTrue())
 					Expect(reqs.Has(v1beta1.LabelSKUAcceleratedNetworking)).To(BeTrue())
-					Expect(reqs.Has(v1beta1.LabelUltraSSD)).To(BeTrue())
 					Expect(reqs.Has(v1beta1.LabelSKUHyperVGeneration)).To(BeTrue())
 					Expect(reqs.Has(v1beta1.LabelSKUStorageEphemeralOSMaxSize)).To(BeTrue())
 				}
@@ -2752,19 +2752,6 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(reqs.Get(v1beta1.LabelSKUStoragePremiumCapable).Values()[0]).To(SatisfyAny(Equal("true"), Equal("false")))
 					Expect(reqs.Get(v1beta1.LabelSKUAcceleratedNetworking).Values()).To(HaveLen(1))
 					Expect(reqs.Get(v1beta1.LabelSKUAcceleratedNetworking).Values()[0]).To(SatisfyAny(Equal("true"), Equal("false")))
-					Expect(reqs.Get(v1beta1.LabelUltraSSD).Values()).ToNot(BeEmpty())
-					for _, value := range reqs.Get(v1beta1.LabelUltraSSD).Values() {
-						Expect(value).To(SatisfyAny(Equal("true"), Equal("false")))
-					}
-				}
-			})
-
-			It("should propagate UltraSSD values from available offerings", func() {
-				for _, instanceType := range instanceTypes {
-					offeringValues := lo.FlatMap(instanceType.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) []string {
-						return o.Requirements.Get(v1beta1.LabelUltraSSD).Values()
-					})
-					Expect(sets.New(instanceType.Requirements.Get(v1beta1.LabelUltraSSD).Values()...)).To(Equal(sets.New(offeringValues...)))
 				}
 			})
 
@@ -2824,7 +2811,6 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "429" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUAcceleratedNetworking, Label: v1beta1.LabelSKUAcceleratedNetworking, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUStoragePremiumCapable, Label: v1beta1.LabelSKUStoragePremiumCapable, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelUltraSSD, Label: v1beta1.LabelUltraSSD, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUGPUName, Label: v1beta1.LabelSKUGPUName, ValueFunc: func() string { return "A100" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUGPUManufacturer, Label: v1beta1.LabelSKUGPUManufacturer, ValueFunc: func() string { return "nvidia" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUGPUCount, Label: v1beta1.LabelSKUGPUCount, ValueFunc: func() string { return "1" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
@@ -3058,11 +3044,11 @@ var _ = Describe("InstanceType Provider", func() {
 
 			nonSchedulableLabels := map[string]string{
 				labels.AKSLabelRole:                     "agent",
-				v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
+				v1beta1.AKSLabelKubeletIdentityClientID: common.Options().KubeletIdentityClientID,
 				"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
 				//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
 				labels.AKSLabelSubnetName:          "aks-subnet",
-				labels.AKSLabelVNetGUID:            test.Options().VnetGUID,
+				labels.AKSLabelVNetGUID:            common.Options().VnetGUID,
 				labels.AKSLabelAzureCNIOverlay:     strconv.FormatBool(true),
 				labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
 				karpv1.NodeDoNotSyncTaintsLabelKey: "true",

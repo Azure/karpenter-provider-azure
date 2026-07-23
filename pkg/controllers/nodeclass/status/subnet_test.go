@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -72,7 +73,7 @@ var _ = Describe("SubnetStatus", func() {
 
 	It("should use nodeclass subnet ID when specified (BYO VNet)", func() {
 		// Override context to use a BYO VNet instead of managed VNet
-		byoOpts := test.Options(test.OptionsFields{
+		byoOpts := common.Options(common.OptionsFields{
 			SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
 		})
 		byoCtx := options.ToContext(ctx, byoOpts)
@@ -156,7 +157,7 @@ var _ = Describe("SubnetStatus", func() {
 
 		It("should use nodeclass subnet ID when specified (BYO VNet)", func() {
 			// Override context to use a BYO VNet instead of managed VNet
-			byoOpts := test.Options(test.OptionsFields{
+			byoOpts := common.Options(common.OptionsFields{
 				SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"),
 			})
 			byoCtx := options.ToContext(ctx, byoOpts)
