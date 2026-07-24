@@ -49,6 +49,10 @@ func (u Ubuntu2204) Name() string {
 
 func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+		// Note: FIPS images aren't supported in public galleries, only shared image galleries
+		if !useSIG {
+			return []types.DefaultImageOutput{}
+		}
 		if trustedLaunch {
 			return []types.DefaultImageOutput{
 				{
@@ -63,10 +67,6 @@ func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trust
 					Distro: "aks-ubuntu-fips-containerd-22.04-tl-gen2",
 				},
 			}
-		}
-		// Note: FIPS images aren't supported in public galleries, only shared image galleries
-		if !useSIG {
-			return []types.DefaultImageOutput{}
 		}
 		//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
 		return []types.DefaultImageOutput{}
