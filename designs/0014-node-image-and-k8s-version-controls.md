@@ -23,7 +23,7 @@ Note: The issue title says "Add support for setting ImageID for nodeClass", but 
    - [API Field Grouping and Wrapper Name](#api-field-grouping-and-wrapper-name)
    - [kubernetesVersion Spec Field](#kubernetesversion-spec-field)
    - [nodeImageVersion Spec Field](#nodeimageversion-spec-field)
-   - [AKSNodeClass status: recentlyUsedVersions](#aksnodeclass-status-recentlyusedversions)
+   - [AKSNodeClass status: latestImageVersion and recentlyUsedVersions](#aksnodeclass-status-latestimageversion-and-recentlyusedversions)
 6. [Reconciliation Design](#reconciliation-design)
    - [Snapshot point](#snapshot-point)
    - [Rollback path](#rollback-path)
@@ -186,7 +186,7 @@ A boolean field (`rollbackToPrevious: true`) was considered, which would let Kar
 3. If Karpenter later stores multiple previous image versions, a boolean becomes ambiguous without additional API to specify which entry to use.
 4. The explicit version string approach mirrors AKS RP semantics, where `nodeImageVersion` is always a concrete version value.
 
-### AKSNodeClass status: recentlyUsedVersions
+### AKSNodeClass status: latestImageVersion and recentlyUsedVersions
 
 Add a new status section that mirrors the AKS RP recently-used rollback model:
 
