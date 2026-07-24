@@ -320,6 +320,42 @@ spec:
                     x-kubernetes-int-or-string: true
                   description: Capacity is the estimated full capacity of the node
                   type: object
+                cloudProviderStartupTaints:
+                  description: CloudProviderStartupTaints are the startup taints added by the cloud provider
+                  items:
+                    description: |-
+                      The node this Taint is attached to has the "effect" on
+                      any pod that does not tolerate the Taint.
+                    properties:
+                      effect:
+                        description: |-
+                          Required. The effect of the taint on pods
+                          that do not tolerate the taint.
+                          Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                        type: string
+                        enum:
+                          - NoSchedule
+                          - PreferNoSchedule
+                          - NoExecute
+                      key:
+                        description: Required. The taint key to be applied to a node.
+                        type: string
+                        minLength: 1
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                      timeAdded:
+                        description: TimeAdded represents the time at which the taint was added.
+                        format: date-time
+                        type: string
+                      value:
+                        description: The taint value corresponding to the taint key.
+                        type: string
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                    required:
+                      - effect
+                      - key
+                    type: object
+                  type: array
+                  x-kubernetes-list-type: atomic
                 conditions:
                   description: Conditions contains signals for health and readiness
                   items:
@@ -392,36 +428,6 @@ spec:
                 providerID:
                   description: ProviderID of the corresponding node object
                   type: string
-                cloudProviderStartupTaints:
-                  description: "cloudProviderStartupTaints are taints that cloud providers want to supply to Core's NodeClaim, whether because \nthey will add the taint themselves or because they know the taint will be added by another component. Either way,\nthese taints will be helpful for scheduling simulations, and it is expected that they will be removed automatically\nwithin a short period of time, typically by a DaemonSet that tolerates the taint. These are commonly used by\ndaemonsets to allow initialization and enforce startup ordering. Like regular startupTaints, these will also\nbe ignored for provisioning purposes in that pods are not required to tolerate a cloudProviderStartupTaint in order to \nhave nodes provisioned for them."
-                  items:
-                    description: |-
-                      The node this Taint is attached to has the "effect" on
-                      any pod that does not tolerate the Taint.
-                    properties:
-                      effect:
-                        description: |-
-                          Required. The effect of the taint on pods
-                          that do not tolerate the taint.
-                          Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
-                        type: string
-                        enum:
-                          - NoSchedule
-                          - PreferNoSchedule
-                          - NoExecute
-                      key:
-                        description: Required. The taint key to be applied to a node.
-                        type: string
-                        minLength: 1
-                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
-                      timeAdded:
-                        description: TimeAdded represents the time at which the taint was added.
-                        format: date-time
-                        type: string
-                      value:
-                        description: The taint value corresponding to the taint key.
-                        type: string
-                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
               type: object
           required:
             - spec
