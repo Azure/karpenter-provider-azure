@@ -36,6 +36,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -560,7 +561,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 		Entry("if the nodes are spot nodes", true),
 	)
 	DescribeTable("should consolidate nodes (replace)",
-		func(spotToSpot bool) {
+		func(spotToSpot, regional bool) {
 
 			if spotToSpot {
 				if env.InClusterController {
@@ -607,6 +608,13 @@ var _ = Describe("Consolidation", Ordered, func() {
 					},
 				},
 			})
+			if regional {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1beta1.LabelPlacementScope,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{v1beta1.PlacementScopeRegional},
+				})
+			}
 			nodePool = env.AdaptToClusterConfig(nodePool)
 
 			var numPods int32 = 3
@@ -678,8 +686,24 @@ var _ = Describe("Consolidation", Ordered, func() {
 			By("checking that all pods are healthy")
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
-			By("waiting for nodes (due to anti-affinity rules)")
-			env.ExpectCreatedNodeCount("==", int(numPods))
+			By("waiting for 8-CPU nodes (due to anti-affinity rules)")
+			sourceNodes := env.EventuallyExpectNodeCountWithSelector("==", int(numPods), labels.SelectorFromSet(map[string]string{
+				karpv1.NodePoolLabelKey: nodePool.Name,
+				v1beta1.LabelSKUCPU:     "8",
+			}))
+
+			if regional {
+				By("verifying regional source nodes have canonical and CSI zone labels")
+				Eventually(func(g Gomega) {
+					for _, sourceNode := range sourceNodes {
+						node := &corev1.Node{}
+						g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(sourceNode), node)).To(Succeed())
+						g.Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zones.Regional))
+						g.Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
+						g.Expect(node.Labels).To(HaveKeyWithValue("topology.disk.csi.azure.com/zone", ""))
+					}
+				}).Should(Succeed())
+			}
 
 			By("scaling down the large deployment (leaving only small pods on each node)")
 			largeDep.Spec.Replicas = lo.ToPtr[int32](0)
@@ -709,8 +733,9 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 			env.ExpectDeleted(largeDep, smallDep)
 		},
-		Entry("if the nodes are on-demand nodes", false),
-		Entry("if the nodes are spot nodes", true),
+		Entry("if the nodes are on-demand nodes", false, false),
+		Entry("if the nodes are spot nodes", true, false),
+		Entry("from regional on-demand nodes with empty CSI topology", false, true),
 	)
 	It("should consolidate on-demand nodes to spot (replace)", func() {
 		nodePool := coretest.NodePool(karpv1.NodePool{
