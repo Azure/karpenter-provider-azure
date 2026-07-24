@@ -1,8 +1,6 @@
 package integration_test
 
 import (
-	"strings"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +12,7 @@ import (
 )
 
 var _ = Describe("Trusted Launch", func() {
-	FIt("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {
+	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {
 		enabled := true
 		imageFamily := v1beta1.UbuntuImageFamily
 		nodeClass.Spec.ImageFamily = &imageFamily
@@ -30,35 +28,6 @@ var _ = Describe("Trusted Launch", func() {
 
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		verifyTrustedLaunchSettings(nodeClass, node)
-	})
-
-	FIt("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu with FIPS", func() {
-		enabled := true
-		imageFamily := v1beta1.UbuntuImageFamily
-		fipsMode := v1beta1.FIPSModeFIPS
-		nodeClass.Spec.ImageFamily = &imageFamily
-		nodeClass.Spec.FIPSMode = &fipsMode
-		nodeClass.Spec.Security = &v1beta1.Security{
-			TrustedLaunch: &v1beta1.TrustedLaunch{
-				VTPM:       &enabled,
-				SecureBoot: &enabled,
-			},
-		}
-
-		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
-		env.ExpectCreated(nodeClass, nodePool, deployment)
-
-		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		verifyTrustedLaunchSettings(nodeClass, node)
-		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
-
-		vm := env.GetVM(node.Name)
-		Expect(vm.Properties).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-		imageReference := utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)
-		Expect(strings.ToLower(imageReference)).To(ContainSubstring("fips"),
-			"Expected FIPS image reference to contain 'fips': %s", imageReference)
 	})
 
 	It("should enable vTPM and Secure Boot when explicitly enabled for Linux", func() {

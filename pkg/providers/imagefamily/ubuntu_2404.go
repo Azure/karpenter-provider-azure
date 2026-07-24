@@ -56,22 +56,8 @@ func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trust
 		return []types.DefaultImageOutput{}
 	}
 	if trustedLaunch {
-		// Note: Trusted Launch for Ubuntu 24.04 is not yet available in public galleries, only shared image galleries
 		if !useSIG {
 			return []types.DefaultImageOutput{}
-		}
-		return []types.DefaultImageOutput{
-			{
-				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-				GalleryResourceGroup: AKSUbuntuResourceGroup,
-				GalleryName:          AKSUbuntuGalleryName,
-				ImageDefinition:      Ubuntu2404Gen2TrustedLaunchImageDefinition,
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-				),
-				Distro: "aks-ubuntu-containerd-24.04-tl-gen2",
-			},
 		}
 	}
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2404Gen2containerd first in the defaultImages
