@@ -131,12 +131,13 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(BeNil())
 			Expect(options.FromContext(aksCtx).NetworkDataplane).To(Equal(consts.NetworkDataplaneCilium))
 
-			// assume the AKS machine has the Cilium dataplane label set in its Kubernetes profile (i.e. MachineAPI works?)
+			// we'll simulate setting the Cilium label on the machine (i.e. we assume MachineAPI works as expected)
+			// but we should still be passing back the label on the NodeClaim to Karpenter Core based on the dataplane regardless
 			aksMachine.Properties.Kubernetes.NodeLabels[labelspkg.AKSLabelEBPFDataplane] = lo.ToPtr(consts.NetworkDataplaneCilium)
 			Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(Not(BeNil()))
 			Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, lo.ToPtr(consts.NetworkDataplaneCilium)))
 
-			// assume the Cilium startup taint isn't on the Machine yet (the DaemonPod hasn't scheduled...)
+			// assume the Cilium startup taint isn't on the Machine yet (i.e. the DaemonPod hasn't scheduled...)
 			Expect(aksMachine.Properties.Kubernetes.NodeInitializationTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNotReady.ToString())))
 
 			nodeClaim, err := BuildNodeClaimFromAKSMachine(aksCtx, aksMachine, possibleInstanceTypes, aksMachineLocation)
@@ -199,7 +200,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 
 			// Check that the Cilium label and startup taint are not on the NodeClaim we pass back to Karpenter Core
-			Expect(nodeClaim.Status.CloudProviderStartupTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNotReady.ToString())))
+			Expect(nodeClaim.Status.CloudProviderStartupTaints).ToNot(ContainElement(utils.TaintCiliumNotReady))
 			Expect(nodeClaim.Labels).ShouldNot(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, consts.NetworkDataplaneCilium))
 		})
 
