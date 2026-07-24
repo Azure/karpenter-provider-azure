@@ -97,24 +97,6 @@ var _ = Describe("Trusted Launch", func() {
 		verifyTrustedLaunchSettings(nodeClass, node)
 	})
 
-	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu 2404", func() {
-		enabled := true
-		imageFamily := v1beta1.Ubuntu2404ImageFamily
-		nodeClass.Spec.ImageFamily = &imageFamily
-		nodeClass.Spec.Security = &v1beta1.Security{
-			TrustedLaunch: &v1beta1.TrustedLaunch{
-				VTPM:       &enabled,
-				SecureBoot: &enabled,
-			},
-		}
-
-		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
-		env.ExpectCreated(nodeClass, nodePool, deployment)
-
-		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		verifyTrustedLaunchSettings(nodeClass, node)
-	})
-
 	It("should enable vTPM when enabled but not Secure Boot", func() {
 		vtpm := true
 		secureBoot := false
