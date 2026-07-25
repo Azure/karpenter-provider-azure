@@ -56,9 +56,8 @@ func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trust
 		return []types.DefaultImageOutput{}
 	}
 	if trustedLaunch {
-		if !useSIG {
-			return []types.DefaultImageOutput{}
-		}
+		// TODO: Fill out when Ubuntu 24.04 with Trusted Launch becomes available
+		return []types.DefaultImageOutput{}
 	}
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2404Gen2containerd first in the defaultImages
 	return []types.DefaultImageOutput{

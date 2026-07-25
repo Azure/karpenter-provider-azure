@@ -46,6 +46,7 @@ func (u Ubuntu2004) Name() string {
 }
 
 func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
+	// Trusted Launch is not supported for Ubuntu 20.04
 	if trustedLaunch {
 		return []types.DefaultImageOutput{}
 	}
