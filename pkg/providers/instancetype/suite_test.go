@@ -101,7 +101,7 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118: stop is called in AfterSuite
+	ctx, stop = context.WithCancel(ctx)
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
 	ctxBootstrap := options.ToContext(ctx, test.Options(test.OptionsFields{

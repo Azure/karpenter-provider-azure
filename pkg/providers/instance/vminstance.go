@@ -697,7 +697,6 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 			}
 		}
 	}
-
 }
 
 type createResult struct {
