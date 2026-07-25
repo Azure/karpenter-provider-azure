@@ -179,4 +179,4 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace sigs.k8s.io/karpenter => github.com/lnguyen924/karpenter v0.0.0-20260724191911-c80b3250f183
+replace sigs.k8s.io/karpenter => github.com/lnguyen924/karpenter v0.0.0-20260725180200-ca07b75cd5ad
