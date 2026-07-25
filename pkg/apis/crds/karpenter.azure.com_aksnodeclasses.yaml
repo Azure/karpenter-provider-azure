@@ -809,8 +809,7 @@ spec:
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
                 || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
-                || self.imageFamily == ''Ubuntu2404'' || self.imageFamily == ''AzureLinux'')
-                : true'
+                || self.imageFamily == ''AzureLinux'') : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
@@ -1740,8 +1739,7 @@ spec:
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
                 || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
-                || self.imageFamily == ''Ubuntu2404'' || self.imageFamily == ''AzureLinux'')
-                : true'
+                || self.imageFamily == ''AzureLinux'') : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
