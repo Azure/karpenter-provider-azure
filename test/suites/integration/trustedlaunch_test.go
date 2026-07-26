@@ -169,7 +169,6 @@ func verifyTrustedLaunchSettings(nodeClass *v1beta1.AKSNodeClass, node *corev1.N
 	Expect(strings.ToLower(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference))).To(ContainSubstring("tl"))
 
 	if nodeClass.IsVTPMEnabled() {
-		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
 		Expect(uefiSettings).ToNot(BeNil())
 		Expect(uefiSettings.VTpmEnabled).ToNot(BeNil())
 		Expect(*uefiSettings.VTpmEnabled).To(BeTrue())
@@ -178,7 +177,6 @@ func verifyTrustedLaunchSettings(nodeClass *v1beta1.AKSNodeClass, node *corev1.N
 	}
 
 	if nodeClass.IsSecureBootEnabled() {
-		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
 		Expect(uefiSettings).ToNot(BeNil())
 		Expect(uefiSettings.SecureBootEnabled).ToNot(BeNil())
 		Expect(*uefiSettings.SecureBootEnabled).To(BeTrue())
