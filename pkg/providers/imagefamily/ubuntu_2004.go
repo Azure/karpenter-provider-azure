@@ -57,7 +57,6 @@ func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trust
 		if !useSIG {
 			return []types.DefaultImageOutput{}
 		}
-
 		return []types.DefaultImageOutput{
 			{
 				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
