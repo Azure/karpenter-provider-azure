@@ -88,6 +88,8 @@ type ImageFamily interface {
 		localDNS *v1beta1.LocalDNS,
 		artifactStreaming *v1beta1.ArtifactStreaming,
 		linuxOSConfig *v1beta1.LinuxOSConfiguration,
+		vtpmEnabled bool,
+		secureBootEnabled bool,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns supported AKS node image definitions for this ImageFamily.
@@ -174,6 +176,8 @@ func (r *defaultResolver) Resolve(
 			nodeClass.ResolvedLocalDNSForWire(),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
+			nodeClass.IsVTPMEnabled(),
+			nodeClass.IsSecureBootEnabled(),
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,

@@ -198,6 +198,8 @@ func (u AzureLinux3) CustomScriptsNodeBootstrapping(
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled bool,
+	secureBootEnabled bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -222,5 +224,7 @@ func (u AzureLinux3) CustomScriptsNodeBootstrapping(
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }

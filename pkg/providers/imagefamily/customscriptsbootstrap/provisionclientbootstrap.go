@@ -127,8 +127,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		NodeTaints:               lo.Map(p.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		SecurityProfile: &models.AgentPoolSecurityProfile{
 			SSHAccess:        lo.ToPtr(models.SSHAccessLocalUser),
-			EnableVTPM:       lo.ToPtr(p.VTPMEnabled),       // Unsupported as of now (Trusted launch)
-			EnableSecureBoot: lo.ToPtr(p.SecureBootEnabled), // Unsupported as of now (Trusted launch)
+			EnableVTPM:       lo.ToPtr(p.VTPMEnabled),
+			EnableSecureBoot: lo.ToPtr(p.SecureBootEnabled),
 		},
 		MaxPods: lo.ToPtr(p.KubeletConfig.MaxPods),
 

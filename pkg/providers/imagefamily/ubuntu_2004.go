@@ -139,6 +139,8 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 	_ *v1beta1.LocalDNS, // Ubuntu 20.04 does not support LocalDNS
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled bool,
+	secureBootEnabled bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -162,5 +164,7 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 		FIPSMode:                       fipsMode,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }
