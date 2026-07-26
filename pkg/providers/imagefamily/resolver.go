@@ -88,8 +88,8 @@ type ImageFamily interface {
 		localDNS *v1beta1.LocalDNS,
 		artifactStreaming *v1beta1.ArtifactStreaming,
 		linuxOSConfig *v1beta1.LinuxOSConfiguration,
-		vtpmEnabled bool,
-		secureBootEnabled bool,
+		vtpmEnabled *bool,
+		secureBootEnabled *bool,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns supported AKS node image definitions for this ImageFamily.
@@ -151,6 +151,11 @@ func (r *defaultResolver) Resolve(
 	if err != nil {
 		return nil, err
 	}
+	var vtpmEnabled, secureBootEnabled *bool
+	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.TrustedLaunch != nil {
+		vtpmEnabled = nodeClass.Spec.Security.TrustedLaunch.VTPM
+		secureBootEnabled = nodeClass.Spec.Security.TrustedLaunch.SecureBoot
+	}
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
@@ -176,8 +181,8 @@ func (r *defaultResolver) Resolve(
 			nodeClass.ResolvedLocalDNSForWire(),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
-			nodeClass.IsVTPMEnabled(),
-			nodeClass.IsSecureBootEnabled(),
+			vtpmEnabled,
+			secureBootEnabled,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,

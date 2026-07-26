@@ -81,8 +81,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
-		false,
-		false,
+		nil,
+		nil,
 	)
 
 	g := NewWithT(t)
@@ -112,8 +112,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.FIPSMode).To(BeNil(), "FIPSMode should be nil when not specified")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(BeNil(), "LocalDNSProfile should be nil when not specified")
 	g.Expect(provisionBootstrapper.LinuxOSConfig).To(BeNil(), "LinuxOSConfig should be nil when not specified")
-	g.Expect(provisionBootstrapper.VTPMEnabled).To(BeFalse())
-	g.Expect(provisionBootstrapper.SecureBootEnabled).To(BeFalse())
+	g.Expect(provisionBootstrapper.VTPMEnabled).To(BeNil())
+	g.Expect(provisionBootstrapper.SecureBootEnabled).To(BeNil())
 }
 
 func TestAzureLinux_Name(t *testing.T) {

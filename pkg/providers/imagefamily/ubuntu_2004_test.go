@@ -81,8 +81,8 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		nil, // Ubuntu 20.04 does not support LocalDNS
 		artifactStreaming,
 		linuxOSConfig,
-		false,
-		false,
+		nil,
+		nil,
 	)
 
 	g := NewWithT(t)
@@ -112,8 +112,8 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.FIPSMode).To(Equal(fipsMode), "FIPSMode field must match the input parameter")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(BeNil(), "Ubuntu 20.04 does not support LocalDNS")
 	g.Expect(provisionBootstrapper.LinuxOSConfig).To(BeNil(), "LinuxOSConfig should be nil when not specified")
-	g.Expect(provisionBootstrapper.VTPMEnabled).To(BeFalse())
-	g.Expect(provisionBootstrapper.SecureBootEnabled).To(BeFalse())
+	g.Expect(provisionBootstrapper.VTPMEnabled).To(BeNil())
+	g.Expect(provisionBootstrapper.SecureBootEnabled).To(BeNil())
 }
 
 func TestUbuntu2004_Name(t *testing.T) {
