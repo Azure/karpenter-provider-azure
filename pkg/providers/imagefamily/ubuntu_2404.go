@@ -32,10 +32,9 @@ import (
 )
 
 const (
-	Ubuntu2404Gen2ImageDefinition              = "2404gen2containerd"
-	Ubuntu2404Gen1ImageDefinition              = "2404containerd"
-	Ubuntu2404Gen2ArmImageDefinition           = "2404gen2arm64containerd"
-	Ubuntu2404Gen2TrustedLaunchImageDefinition = "2404gen2TLcontainerd"
+	Ubuntu2404Gen2ImageDefinition    = "2404gen2containerd"
+	Ubuntu2404Gen1ImageDefinition    = "2404containerd"
+	Ubuntu2404Gen2ArmImageDefinition = "2404gen2arm64containerd"
 )
 
 type Ubuntu2404 struct {
@@ -56,22 +55,7 @@ func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trust
 		return []types.DefaultImageOutput{}
 	}
 	if trustedLaunch {
-		if !useSIG {
-			return []types.DefaultImageOutput{}
-		}
-		return []types.DefaultImageOutput{
-			{
-				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-				GalleryResourceGroup: AKSUbuntuResourceGroup,
-				GalleryName:          AKSUbuntuGalleryName,
-				ImageDefinition:      Ubuntu2404Gen2TrustedLaunchImageDefinition,
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-				),
-				Distro: "aks-ubuntu-containerd-24.04-tl-gen2",
-			},
-		}
+		return []types.DefaultImageOutput{}
 	}
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2404Gen2containerd first in the defaultImages
 	return []types.DefaultImageOutput{
