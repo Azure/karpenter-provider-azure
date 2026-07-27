@@ -51,8 +51,9 @@ func renderExpectedCIGNodeImages(
 	fam imagefamily.ImageFamily,
 	fips *v1beta1.FIPSMode,
 	version string,
+	trustedLaunch bool,
 ) []imagefamily.NodeImage {
-	defaultImages := fam.DefaultImages(false, fips, false)
+	defaultImages := fam.DefaultImages(false, fips, trustedLaunch)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDCIG(img.PublicGalleryURL, img.ImageDefinition, version)
@@ -64,8 +65,9 @@ func renderExpectedCIGNodeImages(
 func renderExpectedSIGNodeImages(
 	fam imagefamily.ImageFamily,
 	fips *v1beta1.FIPSMode,
+	trustedLaunch bool,
 ) []imagefamily.NodeImage {
-	defaultImages := fam.DefaultImages(true, fips, false)
+	defaultImages := fam.DefaultImages(true, fips, trustedLaunch)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, sigImageVersion)
@@ -111,7 +113,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		It("should match expected images for Ubuntu2204", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -120,7 +122,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -142,7 +144,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			} else {
 				fam = &imagefamily.AzureLinux{}
 			}
-			expectedImages := renderExpectedCIGNodeImages(fam, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages := renderExpectedCIGNodeImages(fam, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -152,7 +154,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureLinux{}, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureLinux{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -163,10 +165,39 @@ var _ = Describe("NodeImageProvider tests", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
-			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureLinux3{}, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureLinux3{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 			// Explicitly verify ARM64 image is included in CIG (Community Image Gallery) - was disabled in the past
 			Expect(foundImages).To(ContainElement(HaveField("ID", ContainSubstring(imagefamily.AzureLinux3Gen2ArmImageDefinition))))
+		})
+
+		Context("List TrustedLaunch Images", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{
+						VTPM:       lo.ToPtr(true),
+						SecureBoot: lo.ToPtr(true),
+					},
+				}
+			})
+
+			DescribeTable("should match expected TrustedLaunch images",
+				func(imageFamily *string, kubernetesVersion string, fam imagefamily.ImageFamily) {
+					nodeClass.Spec.ImageFamily = imageFamily
+					nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
+
+					foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(nodeClass.IsTrustedLaunchEnabled()).To(BeTrue())
+
+					expectedImages := renderExpectedCIGNodeImages(fam, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
+					Expect(foundImages).To(Equal(expectedImages))
+				},
+				Entry("for Ubuntu2204", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), "1.31.0", &imagefamily.Ubuntu2204{}),
+				Entry("for Ubuntu2404", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.31.0", &imagefamily.Ubuntu2404{}),
+				Entry("for AzureLinux with version < 1.32", lo.ToPtr(v1beta1.AzureLinuxImageFamily), "1.31.0", &imagefamily.AzureLinux{}),
+				Entry("for AzureLinux with version >= 1.32", lo.ToPtr(v1beta1.AzureLinuxImageFamily), "1.32.0", &imagefamily.AzureLinux3{}),
+			)
 		})
 	})
 
@@ -179,6 +210,36 @@ var _ = Describe("NodeImageProvider tests", func() {
 			ctx = options.ToContext(ctx, testOptions)
 		})
 
+		Context("List TrustedLaunch Images", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.FIPSMode = nil
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{
+						VTPM:       lo.ToPtr(true),
+						SecureBoot: lo.ToPtr(true),
+					},
+				}
+			})
+
+			DescribeTable("should match expected TrustedLaunch images",
+				func(imageFamily *string, kubernetesVersion string, fam imagefamily.ImageFamily) {
+					nodeClass.Spec.ImageFamily = imageFamily
+					nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
+
+					foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(nodeClass.IsTrustedLaunchEnabled()).To(BeTrue())
+
+					expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
+					Expect(foundImages).To(Equal(expectedImages))
+				},
+				Entry("for Ubuntu2204", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), "1.31.0", &imagefamily.Ubuntu2204{}),
+				Entry("for Ubuntu2404", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), "1.31.0", &imagefamily.Ubuntu2404{}),
+				Entry("for AzureLinux with version < 1.32", lo.ToPtr(v1beta1.AzureLinuxImageFamily), "1.31.0", &imagefamily.AzureLinux{}),
+				Entry("for AzureLinux with version >= 1.32", lo.ToPtr(v1beta1.AzureLinuxImageFamily), "1.32.0", &imagefamily.AzureLinux3{}),
+			)
+		})
+
 		Context("List FIPS Images When FIPSMode Is Explicitly FIPS", func() {
 			BeforeEach(func() {
 				nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
@@ -188,7 +249,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2004{}, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2004{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -199,6 +260,22 @@ var _ = Describe("NodeImageProvider tests", func() {
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(foundImages).To(BeEmpty())
+			})
+
+			It("should match expected images for FIPS Ubuntu2204 with TrustedLaunch", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{
+						VTPM:       lo.ToPtr(true),
+						SecureBoot: lo.ToPtr(true),
+					},
+				}
+
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.IsTrustedLaunchEnabled()).To(BeTrue())
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 
 			// This test changes depending on the Kubernetes version, in effect making version-specific tests unnecessary.
@@ -218,7 +295,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -246,7 +323,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -254,7 +331,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -262,7 +339,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -283,7 +360,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -309,7 +386,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 
 			})
@@ -318,7 +395,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -326,7 +403,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -347,7 +424,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 		})
@@ -371,7 +448,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, fipsMode)
+				expectedImages := renderExpectedSIGNodeImages(fam, fipsMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 
 				if k8sVersion.GE(semver.Version{Major: 1, Minor: 32}) && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
@@ -418,7 +495,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 					Expect(version.Minor).To(BeNumerically("<", 34))
 				}
 
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -431,7 +508,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should use Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -444,7 +521,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should use Ubuntu2404 for K8s >= 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -458,7 +535,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should default to Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -471,7 +548,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should default to Ubuntu2404 for K8s >= 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil, nodeClass.IsTrustedLaunchEnabled())
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 		})
@@ -481,7 +558,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		It("should ensure List images uses cached data", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 
 			communityImageVersionsAPI.Reset()
@@ -491,14 +568,14 @@ var _ = Describe("NodeImageProvider tests", func() {
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			// Should still use the old version from cache
-			expectedImages = renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages = renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
 		It("should ensure List gets new image data if imageFamily changes", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 
 			communityImageVersionsAPI.Reset()
@@ -521,7 +598,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				azFam = &imagefamily.AzureLinux{}
 			}
 			// Should use the new version since image family changed
-			expectedImages = renderExpectedCIGNodeImages(azFam, nodeClass.Spec.FIPSMode, laterCIGImageVersionTest)
+			expectedImages = renderExpectedCIGNodeImages(azFam, nodeClass.Spec.FIPSMode, laterCIGImageVersionTest, nodeClass.IsTrustedLaunchEnabled())
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 	})
