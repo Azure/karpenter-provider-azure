@@ -120,24 +120,9 @@ var _ = Describe("Validation Reconciler", func() {
 			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
 		})
 
-		It("should fail validation when the Kata feature is disabled", func() {
+		It("should fail validation on the aksscriptless provision mode, which cannot install the Kata host stack", func() {
 			ctx = options.ToContext(ctx, &options.Options{
-				EnableKataPodSandboxing: false,
-				ProvisionMode:           consts.ProvisionModeAKSMachineAPI,
-			})
-			result, err := reconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero())
-
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.KataPodSandboxingDisabled))
-		})
-
-		It("should fail validation when the feature is enabled but provision mode can't provision Kata", func() {
-			ctx = options.ToContext(ctx, &options.Options{
-				EnableKataPodSandboxing: true,
-				ProvisionMode:           consts.ProvisionModeAKSScriptless,
+				ProvisionMode: consts.ProvisionModeAKSScriptless,
 			})
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
@@ -148,18 +133,20 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(condition.Reason).To(Equal(status.KataPodSandboxingUnsupportedProvisionMode))
 		})
 
-		It("should pass validation when the feature is enabled and provision mode is AKS Machine API", func() {
-			ctx = options.ToContext(ctx, &options.Options{
-				EnableKataPodSandboxing: true,
-				ProvisionMode:           consts.ProvisionModeAKSMachineAPI,
-			})
-			result, err := reconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+		DescribeTable("should pass validation on provision modes that can express workloadRuntime",
+			func(provisionMode string) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-			Expect(condition.IsTrue()).To(BeTrue())
-		})
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsTrue()).To(BeTrue())
+			},
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+		)
 	})
 
 	Context("Disk Encryption Set RBAC validation", func() {

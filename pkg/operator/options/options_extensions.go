@@ -32,7 +32,10 @@ func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
 
-// KataPodSandboxingEnabled reports whether the workloadRuntime (Kata / AKS Pod Sandboxing) feature is enabled.
-func (o *Options) KataPodSandboxingEnabled() bool {
-	return o.EnableKataPodSandboxing
+// SupportsWorkloadRuntime reports whether the configured provision mode can provision a non-default
+// workloadRuntime (AKS Pod Sandboxing). The AKS machine API carries it on the machine object and the
+// bootstrapping client carries it in the node bootstrapping request. The aksscriptless path builds
+// custom data locally and has no way to install the Kata host stack.
+func (o *Options) SupportsWorkloadRuntime() bool {
+	return o.IsAKSMachineAPIMode() || o.ProvisionMode == consts.ProvisionModeBootstrappingClient
 }

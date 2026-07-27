@@ -84,11 +84,11 @@ const (
 	LabelArch = "beta.kubernetes.io/arch"
 )
 
-// setKataNodeLabels stamps the Kata (Pod Sandboxing) node labels when the feature is enabled for the
-// NodeClass, matching the requirements advertised by the instance type provider (see computeRequirements).
-// Both spellings are stamped for any Kata runtime; gated on the feature flag to stay in sync with provisioning.
-func setKataNodeLabels(labels map[string]string, nodeClass *v1beta1.AKSNodeClass, opts *options.Options) {
-	if !nodeClass.IsKataEnabled() || !opts.KataPodSandboxingEnabled() {
+// setKataNodeLabels stamps the Kata (Pod Sandboxing) node labels when the NodeClass requests it,
+// matching the requirements advertised by the instance type provider (see computeRequirements).
+// Both the current and legacy spellings are stamped so pods selecting either one schedule here.
+func setKataNodeLabels(labels map[string]string, nodeClass *v1beta1.AKSNodeClass) {
+	if !nodeClass.IsKataEnabled() {
 		return
 	}
 	for _, label := range v1beta1.KataNodeLabels {
@@ -129,7 +129,7 @@ func Get(
 	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
 		labels[v1beta1.AKSLabelFIPSEnabled] = "true"
 	}
-	setKataNodeLabels(labels, nodeClass, opts)
+	setKataNodeLabels(labels, nodeClass)
 
 	// Add os-sku-requested label that exactly matches the imageFamily specified on the NodeClass
 	labels[v1beta1.AKSLabelOSSKURequested] = lo.FromPtr(nodeClass.Spec.ImageFamily)

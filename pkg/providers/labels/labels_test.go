@@ -392,14 +392,14 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 func TestKataLabels(t *testing.T) {
 	testCases := []struct {
 		name             string
-		featureEnabled   bool
 		workloadRuntime  *v1beta1.WorkloadRuntime
 		expectedLabels   map[string]string
 		unexpectedLabels []string
 	}{
 		{
-			name:            "KataVmIsolation with feature enabled stamps both Kata labels",
-			featureEnabled:  true,
+			// Both spellings are stamped so pods selecting either one schedule onto the node,
+			// independent of which spelling AKS itself stamps.
+			name:            "KataVmIsolation stamps both Kata labels",
 			workloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
 			expectedLabels: map[string]string{
 				v1beta1.AKSLabelKataVMIsolation:     "true",
@@ -407,30 +407,13 @@ func TestKataLabels(t *testing.T) {
 			},
 		},
 		{
-			name:            "legacy KataMshvVmIsolation with feature enabled stamps both Kata labels",
-			featureEnabled:  true,
-			workloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataMshvVMIsolation),
-			expectedLabels: map[string]string{
-				v1beta1.AKSLabelKataVMIsolation:     "true",
-				v1beta1.AKSLabelKataMshvVMIsolation: "true",
-			},
-		},
-		{
-			name:             "OCIContainer with feature enabled stamps no kata label",
-			featureEnabled:   true,
+			name:             "OCIContainer stamps no kata label",
 			workloadRuntime:  lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer),
 			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation, v1beta1.AKSLabelKataMshvVMIsolation},
 		},
 		{
 			name:             "Unset workloadRuntime stamps no kata label",
-			featureEnabled:   true,
 			workloadRuntime:  nil,
-			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation, v1beta1.AKSLabelKataMshvVMIsolation},
-		},
-		{
-			name:             "KataVmIsolation with feature disabled stamps no kata label",
-			featureEnabled:   false,
-			workloadRuntime:  lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
 			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation, v1beta1.AKSLabelKataMshvVMIsolation},
 		},
 	}
@@ -442,7 +425,6 @@ func TestKataLabels(t *testing.T) {
 				NodeResourceGroup:       "test-rg",
 				KubeletIdentityClientID: "test-client-id",
 				SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
-				EnableKataPodSandboxing: tc.featureEnabled,
 			})
 
 			nodeClass := &v1beta1.AKSNodeClass{
