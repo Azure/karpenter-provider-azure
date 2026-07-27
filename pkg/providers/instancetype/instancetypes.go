@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
@@ -92,6 +93,7 @@ type DefaultProvider struct {
 	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
+	quotaProvider        quota.Provider
 
 	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
 	// Fully initialized Instance Types are also cached based on the set of all instance types,
@@ -112,6 +114,7 @@ func NewDefaultProvider(
 	skuClient skewer.ResourceClient,
 	pricingProvider *pricing.Provider,
 	offeringsCache *kcache.UnavailableOfferings,
+	quotaProvider quota.Provider,
 ) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
@@ -119,6 +122,7 @@ func NewDefaultProvider(
 		skuClient:            skuClient,
 		pricingProvider:      pricingProvider,
 		unavailableOfferings: offeringsCache,
+		quotaProvider:        quotaProvider,
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
 		instanceTypesSeqNum:  0,
@@ -154,9 +158,10 @@ func (p *DefaultProvider) List(
 		KataEnabled: nodeClass.IsKataEnabled() && options.FromContext(ctx).KataPodSandboxingEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x",
+	key := fmt.Sprintf("%d-%d-%d-%016x",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
+		p.quotaProvider.SeqNum(),
 		paramsHash,
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
@@ -180,7 +185,7 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(sku, instanceTypeZones), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones), instanceTypeParams, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -244,7 +249,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 
 	for zone := range offeringZones {
@@ -254,10 +259,23 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 		onDemandPrice, _ := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, _ := p.pricingProvider.SpotPrice(*sku.Name)
 
+		// Unknown SKUs (not in known_skus.yaml) are deprioritized to prevent them from
+		// winning scheduling over known-good SKUs. Users can override via NodeOverlay.
+		if !IsKnownSKU(*sku.Name) {
+			onDemandPrice = pricing.MissingPrice
+			spotPrice = pricing.MissingPrice
+		}
+
 		// Determine allocatability from SKU capabilities.
-		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the unavailableOfferings cache.
-		availableOnDemand := !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
+		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the
+		// unavailableOfferings cache and per-family quota.
+		availableOnDemand := !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
+			p.quotaProvider.HasQuotaFor(ctx, sku)
 		// Spot is only allocatable if the SKU reports LowPriorityCapable=True and the offering is not in the unavailableOfferings cache.
+		// NOTE:  Quota check applies to on-demand only. Spot VMs do not consume per-family vCPU quota;
+		// they use a single regional "Total Regional Spot vCPUs" (lowPriorityCores) pool shared
+		// across all families, which is not useful as a size-selection signal.
+		// See: https://learn.microsoft.com/en-us/azure/quotas/spot-quota
 		// IMPORTANT: Spot can be capacity restricted separately from dedicated. Unlike dedicated, spot capacity restrictions are not returned
 		// in the "restrictions" section of the SKU API, instead the LowPriorityCapable capability is set to False. This means that the VM SKU API cannot differentiate
 		// between restricted at a regional level and for all zones, or just restricted for some zones. Both are LowPriorityCapable=False. It would be
@@ -273,6 +291,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
 			),
 			Price:     onDemandPrice,
 			Available: availableOnDemand,
@@ -285,6 +304,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, offeringZones sets.Se
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
 			),
 			Price:     spotPrice,
 			Available: availableSpot,
@@ -427,9 +447,12 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 		return fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
-	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
+	skus := cache.List(ctx, skewer.ResourceTypeFilter("virtualMachines"))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
+		if IsRestrictedSKU(skus[i].GetName()) {
+			continue
+		}
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
 			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
@@ -444,6 +467,8 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 		return fmt.Errorf("no instance types found")
 	}
 
+	logUnknownSKUFamilies(ctx, instanceTypes)
+
 	if p.cm.HasChanged("instance-types", instanceTypes) {
 		// Only update instanceTypesSeqNum with the instance types have been changed
 		// This is to not create new keys with duplicate instance types option
@@ -452,6 +477,20 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	}
 	p.instanceTypesInfo = instanceTypes
 	return nil
+}
+
+// logUnknownSKUFamilies logs VM SKU families that were discovered from the Azure API
+// but are not present in the embedded known_skus.yaml.
+func logUnknownSKUFamilies(ctx context.Context, instanceTypes map[string]*skewer.SKU) {
+	unknownFamilies := sets.New[string]()
+	for name, sku := range instanceTypes {
+		if !IsKnownSKU(name) {
+			unknownFamilies.Insert(sku.GetFamilyName())
+		}
+	}
+	if unknownFamilies.Len() > 0 {
+		log.FromContext(ctx).Info("discovered VM SKU families not in known_skus.yaml (deprioritized with MissingPrice)", "families", unknownFamilies.UnsortedList())
+	}
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
@@ -552,4 +591,19 @@ func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
 	const selector = "NvmeDiskSizeInMiB"
 	return s.GetCapabilityIntegerQuantity(selector)
+}
+
+func ultraSSDOptions(sku *skewer.SKU, zone string) []string {
+	z := zones.MakeARMZonesFromAKSLabelZone(zone)
+	switch len(z) {
+	case 0:
+		if sku.IsUltraSSDAvailableWithoutAvailabilityZone() {
+			return []string{"true", "false"}
+		}
+	case 1:
+		if sku.IsUltraSSDAvailableInAvailabilityZone(*z[0]) {
+			return []string{"true", "false"}
+		}
+	}
+	return []string{"false"}
 }

@@ -784,6 +784,7 @@ var _ = Describe("CEL/Validation", func() {
 			v1beta1.AKSLabelFIPSEnabled,
 			v1beta1.AKSLabelKataVMIsolation,
 			v1beta1.AKSLabelKataMshvVMIsolation,
+			v1beta1.LabelUltraSSD,
 		)
 		expectKnownValueValidationError := func(err error, key string) {
 			Expect(err).To(MatchError(And(
@@ -906,6 +907,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
 			Entry("AKS Kata VM isolation", v1beta1.AKSLabelKataVMIsolation, "true", "false"),
 			Entry("AKS Kata MSHV VM isolation", v1beta1.AKSLabelKataMshvVMIsolation, "true", "false"),
+			Entry("UltraSSD", v1beta1.LabelUltraSSD, "true", "maybe"),
 		)
 		It("should not allow restricted kubernetes.azure.com requirements", func() {
 			oldNodePool := nodePool.DeepCopy()

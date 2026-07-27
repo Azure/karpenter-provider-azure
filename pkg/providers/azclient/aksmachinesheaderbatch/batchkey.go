@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/samber/lo"
 )
 
 // determineBatchKey computes a grouping key from the AKS machine to be created.
@@ -31,7 +32,7 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 		return "", fmt.Errorf("nil payload, machine body, or properties")
 	}
 
-	template := buildSharedAKSMachineTemplate(*item.machineBody.Properties)
+	template := buildSharedAKSMachineTemplate(item.machineBody)
 	jsonBytes, err := json.Marshal(template)
 	if err != nil {
 		return "", err
@@ -45,8 +46,9 @@ func determineBatchKey(item *aksMachineCreatePayload) (string, error) {
 
 // buildSharedAKSMachineTemplate returns a Machine containing only the fields shared across all
 // machines in a batch, with per-machine and read-only fields zeroed.
-// Takes MachineProperties by value so the caller's original is never mutated.
-func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.MachineProperties) armcontainerservice.Machine {
+// Returns a sanitized copy; nested pointer fields must be copied before modification
+// so the caller's Machine is not mutated.
+func buildSharedAKSMachineTemplate(aksMachine *armcontainerservice.Machine) armcontainerservice.Machine {
 	// Design notes: for each section, we can either:
 	// - (A) Recreate a new struct with only the shared fields selected from the old struct, or
 	// - (B) Mutate the existing struct to nil-out the per-machine fields
@@ -59,6 +61,7 @@ func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.Mach
 	// 1. Add extraction logic in buildBatchHeader (header.go) so the field value is included in the per-machine header entries
 	// 2. Add the field to MachineEntry in header.go
 	// WARNING: be careful if we want to nil-out a nested field. Merely assigning nil will mutate the caller's struct. Value-copy/deep-copy it first.
+	aksMachineProperties := *aksMachine.Properties
 	aksMachineProperties.Tags = nil
 
 	// Clean-up read-only fields
@@ -69,8 +72,27 @@ func buildSharedAKSMachineTemplate(aksMachineProperties armcontainerservice.Mach
 	aksMachineProperties.ResourceID = nil
 	aksMachineProperties.Status = nil
 
-	return armcontainerservice.Machine{
+	machine := armcontainerservice.Machine{
 		// Dropping all fields outside of properties. They are per-machine/read-only by default.
 		Properties: &aksMachineProperties,
 	}
+
+	if requiresZonesInSharedTemplate(aksMachine) {
+		machine.Zones = aksMachine.Zones
+	}
+
+	return machine
+}
+
+func requiresZonesInSharedTemplate(aksMachine *armcontainerservice.Machine) bool {
+	// UltraSSD requires Zones to be specified during validation, so leaving this out
+	// will cause the shared machine to be rejected as invalid.
+	return isUltraSSDEnabled(aksMachine)
+}
+
+func isUltraSSDEnabled(aksMachine *armcontainerservice.Machine) bool {
+	return aksMachine != nil &&
+		aksMachine.Properties != nil &&
+		aksMachine.Properties.Hardware != nil &&
+		lo.FromPtr(aksMachine.Properties.Hardware.UltraSsdEnabled)
 }

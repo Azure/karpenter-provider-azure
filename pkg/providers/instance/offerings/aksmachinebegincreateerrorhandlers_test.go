@@ -65,6 +65,11 @@ func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectError(err error) *aksM
 	return b
 }
 
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectReason(reason string) *aksMachineBeginCreateErrorTestCaseBuilder {
+	b.tc.expectedReason = reason
+	return b
+}
+
 func (b *aksMachineBeginCreateErrorTestCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.expectedUnavailableOfferingsInformation = offerings
 	return b
@@ -82,6 +87,7 @@ type aksMachineBeginCreateErrorTestCase struct {
 	capacityType                            string
 	he                                      *HandlableError
 	expectedErr                             error
+	expectedReason                          string
 	expectedUnavailableOfferingsInformation []offeringToCheck
 	expectedAvailableOfferingsInformation   []offeringToCheck
 }
@@ -97,6 +103,7 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withHandlableError("VMSizeNotSupported", "hello").
 			expectError(fmt.Errorf(errMsgSKUNotAvailableForSubscriptionFmt, testInstanceName)).
+			expectReason(SKUNotAvailableReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
@@ -113,6 +120,7 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 			withHandlableError("BadRequest",
 				fmt.Sprintf("Virtual Machine size: '%s' is not supported for subscription sub-123 in location 'westus'. Please refer to aka.ms/aks/vm-size-selector to find supported VM sizes in location 'westus'.", testInstanceName)).
 			expectError(fmt.Errorf(errMsgSKUNotAvailableForSubscriptionFmt, testInstanceName)).
+			expectReason(SKUNotAvailableReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
@@ -161,7 +169,6 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
-			g := NewWithT(t)
 			handler := newTestAKSMachineBeginCreateErrorHandler()
 
 			err := handler.Handle(
@@ -173,11 +180,7 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 				tc.he,
 			)
 
-			if tc.expectedErr == nil {
-				g.Expect(err).To(BeNil())
-			} else {
-				g.Expect(err).To(Equal(tc.expectedErr))
-			}
+			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
 			assertOfferingsState(t, handler.unavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}

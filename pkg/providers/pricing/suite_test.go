@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 var mainCtx context.Context
@@ -128,15 +129,24 @@ var _ = Describe("Pricing", func() {
 	})
 
 	It("each supported instance type should have pricing at least somewhere", func() {
-		// for now just print the names of the SKUs that don't have pricing
-		fmt.Println("\nSKUs that don't have pricing:")
-
 		regions := pricing.Regions()
 		skus := instancetype.GetKarpenterWorkingSKUs()
 		for _, region := range regions {
 			providers = append(providers, pricing.NewProvider(ctx, env, fakePricingAPI, region, make(chan struct{})))
 		}
+		// These SKUs are not in the Azure Retail Pricing API and never have been historically.
+		// We used to not be asserting in this test so grandfathering these sizes in
+		skusWithNoPricingExpected := sets.New(
+			"Standard_EC128ieds_v5",
+			"Standard_EC128ies_v5",
+			"Standard_ND128isr_GB300_v6",
+			"Standard_NG32adms_V620_v1",
+		)
+		var skusWithoutPricing []string
 		for _, sku := range skus {
+			if skusWithNoPricingExpected.Has(*sku.Name) {
+				continue
+			}
 			foundPricingForSKU := false
 			for _, provider := range providers {
 				if price, ok := provider.OnDemandPrice(*sku.Name); ok && price > 0 {
@@ -149,9 +159,16 @@ var _ = Describe("Pricing", func() {
 				}
 			}
 			if !foundPricingForSKU {
-				fmt.Printf("%s\n", *sku.Name)
+				skusWithoutPricing = append(skusWithoutPricing, *sku.Name)
 			}
 		}
+		if len(skusWithoutPricing) > 0 {
+			fmt.Println("\nSKUs without pricing:")
+			for _, sku := range skusWithoutPricing {
+				fmt.Println(sku)
+			}
+		}
+		Expect(skusWithoutPricing).To(BeEmpty())
 	})
 
 	It("should poll pricing data in public clouds", func() {
@@ -169,12 +186,9 @@ var _ = Describe("Pricing", func() {
 		providers = append(providers, p)
 		start <- struct{}{}
 
-		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
-		// duplicating it here
-		expectedTime, _ := time.Parse(time.RFC3339, "2026-04-02T00:04:39Z")
 		Eventually(func(g Gomega) {
-			g.Expect(p.OnDemandLastUpdated()).ToNot(Equal(expectedTime))
-			g.Expect(p.SpotLastUpdated()).ToNot(Equal(expectedTime))
+			g.Expect(p.OnDemandLastUpdated()).ToNot(Equal(pricing.InitialPriceUpdate))
+			g.Expect(p.SpotLastUpdated()).ToNot(Equal(pricing.InitialPriceUpdate))
 		}, 3*time.Second).Should(Succeed())
 
 		// Price APIs still work
@@ -197,12 +211,9 @@ var _ = Describe("Pricing", func() {
 		providers = append(providers, p)
 		start <- struct{}{}
 
-		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
-		// duplicating it here
-		expectedTime, _ := time.Parse(time.RFC3339, "2026-04-02T00:04:39Z")
 		Consistently(func(g Gomega) {
-			g.Expect(p.OnDemandLastUpdated()).To(Equal(expectedTime))
-			g.Expect(p.SpotLastUpdated()).To(Equal(expectedTime))
+			g.Expect(p.OnDemandLastUpdated()).To(Equal(pricing.InitialPriceUpdate))
+			g.Expect(p.SpotLastUpdated()).To(Equal(pricing.InitialPriceUpdate))
 		}, 3*time.Second).Should(Succeed())
 
 		// Price APIs still work

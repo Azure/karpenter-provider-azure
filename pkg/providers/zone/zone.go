@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/samber/lo"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -35,10 +36,6 @@ const (
 	maxFailuresPerWindow = 10
 	windowBackoff        = 60 * time.Minute
 )
-
-type Clock interface {
-	Now() time.Time
-}
 
 // SubscriptionsAPI defines the interface for Azure Subscriptions client operations
 type SubscriptionsAPI interface {
@@ -54,7 +51,7 @@ type SubscriptionsAPI interface {
 type Provider struct {
 	subscriptionsAPI SubscriptionsAPI
 	subscriptionID   string
-	clock            Clock
+	clock            clock.PassiveClock
 
 	// Cached zone list data - maps region name to list of available zones
 	zoneList  map[string][]string
@@ -68,7 +65,7 @@ type Provider struct {
 // NewProvider creates a new zone provider
 func NewProvider(
 	subscriptionsAPI SubscriptionsAPI,
-	clock Clock,
+	clock clock.PassiveClock,
 	subscriptionID string,
 ) *Provider {
 	result := &Provider{

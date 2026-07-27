@@ -389,7 +389,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		Context("Agent Pool Mode Configuration", func() {
 			It("should configure user mode by default", func() {
-				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(labels).ToNot(BeNil())
 				Expect(mode).ToNot(BeNil())
@@ -403,7 +403,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should configure system mode when explicitly specified", func() {
 				nodeClaim.Labels["kubernetes.azure.com/mode"] = "system"
 
-				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal)
+				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal, false)
 
 				Expect(mode).ToNot(BeNil())
 				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeSystem))
@@ -416,7 +416,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should configure user mode when mode label is user", func() {
 				nodeClaim.Labels["kubernetes.azure.com/mode"] = "user"
 
-				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(mode).ToNot(BeNil())
 				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
@@ -425,7 +425,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should configure user mode when mode label is empty", func() {
 				nodeClaim.Labels["kubernetes.azure.com/mode"] = ""
 
-				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(mode).ToNot(BeNil())
 				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
@@ -434,7 +434,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should configure user mode when mode label has invalid value", func() {
 				nodeClaim.Labels["kubernetes.azure.com/mode"] = "invalid-mode"
 
-				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				_, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(mode).ToNot(BeNil())
 				Expect(*mode).To(Equal(armcontainerservice.AgentPoolModeUser))
@@ -443,24 +443,38 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		Context("Capacity Type Configuration", func() {
 			It("should handle on-demand capacity type", func() {
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			})
 
 			It("should handle spot capacity type", func() {
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeSpot, v1beta1.PlacementScopeZonal, false)
 
 				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeSpot))
 			})
 
 			It("should include selected placement scope when provided", func() {
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeRegional)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeRegional, false)
 
 				Expect(labels).To(HaveKey(v1beta1.LabelPlacementScope))
 				Expect(*labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
+			})
+
+			It("should include UltraSSD label when enabled", func() {
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, true)
+
+				Expect(labels).To(HaveKey(v1beta1.LabelUltraSSD))
+				Expect(*labels[v1beta1.LabelUltraSSD]).To(Equal("true"))
+			})
+
+			It("should include UltraSSD label when disabled", func() {
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+
+				Expect(labels).To(HaveKey(v1beta1.LabelUltraSSD))
+				Expect(*labels[v1beta1.LabelUltraSSD]).To(Equal("false"))
 			})
 		})
 
@@ -472,7 +486,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					"environment":   "test",
 				}
 
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				// Should include original labels
 				Expect(labels).To(HaveKey("custom-label"))
@@ -489,7 +503,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should handle empty nodeclaim labels", func() {
 				nodeClaim.Labels = nil
 
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				// Should still have capacity type and placement scope
 				Expect(labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
@@ -501,7 +515,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should handle empty instance type requirements", func() {
 				instanceType.Requirements = scheduling.NewRequirements()
 
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				// Should include original labels plus capacity type and placement scope
 				Expect(labels).To(HaveKey("test-label"))
@@ -520,7 +534,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement("custom-requirement", v1.NodeSelectorOpIn, "custom-value"),
 				)
 
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(labels).To(HaveKey("custom-requirement"))
 				Expect(*labels["custom-requirement"]).To(Equal("custom-value"))
@@ -531,7 +545,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should handle nil nodeClaim labels map", func() {
 				nodeClaim.Labels = nil
 
-				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, mode := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(labels).ToNot(BeNil())
 				Expect(mode).ToNot(BeNil())
@@ -545,7 +559,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					"long-label": longValue,
 				}
 
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				Expect(labels).To(HaveKey("long-label"))
 				Expect(*labels["long-label"]).To(Equal(longValue))
@@ -558,8 +572,8 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					"m-label": "m-value",
 				}
 
-				labels1, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
-				labels2, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels1, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
+				labels2, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				// Both calls should produce same labels
 				Expect(len(labels1)).To(Equal(len(labels2)))
@@ -579,7 +593,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					label: "custom-value",
 				}
 
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal)
+				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, false)
 
 				if expectedInNodeLabels {
 					Expect(labels).To(HaveKey(label))
@@ -978,7 +992,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
 			ctx := options.ToContext(context.Background(), &options.Options{EnableKataPodSandboxing: false})
 			p := &DefaultAKSMachineProvider{}
-			_, err := p.buildAKSMachineTemplate(ctx, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, "westus-1", nodeClass, nodeClaim)
+			_, err := p.buildAKSMachineTemplate(ctx, instanceType, karpv1.CapacityTypeOnDemand, v1beta1.PlacementScopeZonal, "westus-1", false, nodeClass, nodeClaim)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("ENABLE_KATA_POD_SANDBOXING"))
 		})
