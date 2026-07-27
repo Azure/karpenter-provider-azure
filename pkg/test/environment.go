@@ -236,7 +236,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		subscriptionAPI,
 		usageAPI,
 	)
-	allocationStrategyProvider := allocationstrategy.NewProvider()
+	allocationStrategyProvider := allocationstrategy.NewProvider(allocationstrategy.NewZoneLoadTracker(env.Client))
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
