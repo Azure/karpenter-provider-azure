@@ -384,7 +384,6 @@ func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU
 	if params.GPUMode != v1beta1.GPUModeDriver {
 		return true
 	}
-
 	name := sku.GetName()
 	// Non-GPU SKUs are always allowed
 	if !utils.IsGPUSKU(name) {
