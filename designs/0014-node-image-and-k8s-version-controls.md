@@ -275,13 +275,18 @@ Before using rolled-back images, Karpenter should verify that the reconstructed 
 
 ### Implementation options for applying rollback
 
-**Decision: write rolled-back images into `status.images` (Option 2).**
+Two options exist for where to apply the version suffix rewrite:
 
-`status.images` always contains the effective image IDs Karpenter will use for provisioning and drift. When `spec.upgradeControl.nodeImageVersion` is set, the reconciler rewrites every resolved image ID to `/versions/<nodeImageVersion>` before publishing. When unset, `status.images` contains the latest resolved images. All existing consumers of `status.images` automatically pick up the correct images without call-site changes.
+- **Option 1 — Keep `status.images` as latest, convert at use sites:** `status.images` always holds the latest resolved images. A helper (e.g. `convertToRolledBackImage`) rewrites the version suffix at each consumer call site (provisioning, drift).
+- **Option 2 — Write effective images into `status.images`:** The reconciler applies the version suffix rewrite before publishing `status.images`. All consumers automatically receive the correct images with no call-site changes. A separate `status.latestImageVersion` field always tracks the latest gallery version regardless of the active pin.
+
+**Decision: Option 2.**
+
+`status.images` always contains the effective image IDs Karpenter will use for provisioning and drift. When `spec.upgradeControl.nodeImageVersion` is set, the reconciler rewrites every resolved image ID to `/versions/<nodeImageVersion>` before publishing. When unset, `status.images` contains the latest resolved images.
 
 `status.latestImageVersion` is always updated to the latest gallery version regardless of the active pin, serving two purposes: (1) it is the valid "pin at current" target for CEL validation, and (2) it lets operators see whether a newer version is available while the cluster is pinned.
 
-**Alternative considered:** keeping `status.images` as latest and converting at each consumer call site was rejected because a missed call site would silently provision the wrong image.
+Option 1 was rejected because a missed call site would silently provision the wrong image — Option 2 is safer by default.
 
 ## Validation and Conditions
 
@@ -359,17 +364,12 @@ Future consideration: if Karpenter stores multiple previous image versions, the 
 
 ## Open Questions
 
-1. Should rollback include explicit guardrail checks against cluster auto-upgrade settings, similar to AKS RP constraints?
-2. Do we need an admission-time validation webhook for rollback request semantics, or is reconcile-time validation sufficient? This is particularly relevant for `nodeImageVersion` validation against status fields, which may not be accessible to standard CRD CEL validators at admission time.
-3. Should rollback support only the AKS Machine API path, or should it explicitly support both AKS Machine API and the node bootstrapping client/VM path? Current expectation is that it should work either way because both paths consume status.images, but this should be verified.
-4. Does the existing node image cache require rollback-specific invalidation or cache-key changes so that rollback requests and roll-forward after rollback are reflected immediately?
-5. When auto-upgrade or a future image policy moves the pool forward after rollback, should the rollback request be cleared, or should it remain set and become ignored/invalid?
-6. Should `kubernetesVersion` accept full patch versions (e.g. `1.32.5`) or only minor versions (e.g. `1.32`)? AKS agent pool behavior for Kubernetes version handling should be researched before finalizing accepted values and drift comparison semantics.
-7. What should the wrapper field grouping `nodeImageVersion` and `kubernetesVersion` be named? The leading candidates are `upgradeControl` and `manualUpgrade`; see API Field Grouping and Wrapper Name.
-8. As future image version selectors are introduced, how should they coexist with `nodeImageVersion`? Should `nodeImageVersion` take precedence over selectors, or should they be mutually exclusive? Should selectors live in the same grouping as `nodeImageVersion` and `kubernetesVersion`?
-9. Should a dedicated `status.currentImageVersion` field be added for operator clarity, or is the current node image version sufficiently visible through `status.images`?
-
-   **Resolved:** `status.latestImageVersion` is added to always reflect the latest resolved version suffix regardless of rollback/pinning state. This is sufficient for both observability and CEL validation; no separate `currentImageVersion` field is needed.
+1. Do we need an admission-time validation webhook for rollback request semantics, or is reconcile-time validation sufficient? This is particularly relevant for `nodeImageVersion` validation against status fields, which may not be accessible to standard CRD CEL validators at admission time.
+2. Should rollback support only the AKS Machine API path, or should it explicitly support both AKS Machine API and the node bootstrapping client/VM path? Current expectation is that it should work either way because both paths consume status.images, but this should be verified.
+3. Does the existing node image cache require rollback-specific invalidation or cache-key changes so that rollback requests and roll-forward after rollback are reflected immediately?
+4. When auto-upgrade or a future image policy moves the pool forward after rollback, should the rollback request be cleared, or should it remain set and become ignored/invalid?
+5. Should `kubernetesVersion` accept full patch versions (e.g. `1.32.5`) or only minor versions (e.g. `1.32`)? AKS agent pool behavior for Kubernetes version handling should be researched before finalizing accepted values and drift comparison semantics.
+6. What should the wrapper field grouping `nodeImageVersion` and `kubernetesVersion` be named? The leading candidates are `upgradeControl` and `manualUpgrade`; see API Field Grouping and Wrapper Name.
 
 ## Out of Scope Follow-up Designs
 
