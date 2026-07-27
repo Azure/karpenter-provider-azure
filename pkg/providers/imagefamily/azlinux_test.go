@@ -68,6 +68,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
 
+	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
+
 	bootstrapper := azureLinux.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
 		taints,
@@ -78,6 +80,7 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		workloadRuntime,
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,

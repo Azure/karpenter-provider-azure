@@ -85,6 +85,7 @@ type ImageFamily interface {
 		storageProfile string,
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
 		fipsMode *v1beta1.FIPSMode,
+		workloadRuntime *v1beta1.WorkloadRuntime,
 		localDNS *v1beta1.LocalDNS,
 		artifactStreaming *v1beta1.ArtifactStreaming,
 		linuxOSConfig *v1beta1.LinuxOSConfiguration,
@@ -126,13 +127,13 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	// Kata / Pod Sandboxing is only wired through the AKS machine API provision path
-	// (see aksmachineinstancehelpers.go). This resolver serves the aksscriptless and
-	// bootstrappingclient paths, which cannot provision the Kata host stack today, so
-	// fail loudly rather than silently provisioning a standard OCI runtime.
-	if nodeClass.IsKataEnabled() {
-		return nil, fmt.Errorf("workloadRuntime %q is only supported with provision-mode %q",
-			nodeClass.GetWorkloadRuntime(), consts.ProvisionModeAKSMachineAPI)
+	// The aksscriptless path builds node custom data locally and has no way to install the Kata host
+	// stack, so fail loudly rather than silently provisioning a standard OCI runtime. The
+	// bootstrappingclient path sends the runtime to the RP (see provisionclientbootstrap.go) and the
+	// AKS machine API path sets it on the machine object, so both are fine.
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		return nil, fmt.Errorf("workloadRuntime %q is not supported with provision-mode %q",
+			nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode)
 	}
 
 	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
@@ -183,6 +184,7 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
+			nodeClass.Spec.WorkloadRuntime,
 			nodeClass.ResolvedLocalDNSForWire(),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,

@@ -64,6 +64,7 @@ type ProvisionClientBootstrap struct {
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	GPUDriverInstallationEnabled   bool
 	FIPSMode                       *v1beta1.FIPSMode
+	WorkloadRuntime                *v1beta1.WorkloadRuntime
 	LocalDNSProfile                *v1beta1.LocalDNS
 	ArtifactStreaming              *v1beta1.ArtifactStreaming
 	LinuxOSConfig                  *v1beta1.LinuxOSConfiguration
@@ -138,11 +139,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
 		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
-		// WorkloadRuntime: Kata / Pod Sandboxing is not supported on this provision path. The
-		// models.ProvisionProfile.WorkloadRuntime int32 enum values for OCIContainer/KataVmIsolation/
-		// KataMshvVmIsolation live server-side in the AKS RP and are not known in this repo, so we do
-		// not set it here. Kata is only supported via PROVISION_MODE=aksmachineapi (see
-		// aksmachineinstancehelpers.go); imagefamily/resolver.go guards against Kata on this path.
+		// WorkloadRuntime is left unset for the default OCIContainer case so existing payloads are
+		// unchanged; it is only sent when Pod Sandboxing (Kata) is requested.
+		WorkloadRuntime: convertWorkloadRuntimeToModel(p.WorkloadRuntime),
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},
@@ -212,4 +211,14 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
 	}, nil
+}
+
+// convertWorkloadRuntimeToModel maps the AKSNodeClass workloadRuntime onto the node bootstrapping
+// contract's WorkloadRuntime enum. It returns nil for the default OCIContainer case so non-Kata
+// NodeClasses keep their existing wire payload.
+func convertWorkloadRuntimeToModel(workloadRuntime *v1beta1.WorkloadRuntime) *int32 {
+	if lo.FromPtr(workloadRuntime) == v1beta1.WorkloadRuntimeKataVMIsolation {
+		return lo.ToPtr(models.WorkloadRuntimeKataVMIsolation)
+	}
+	return nil
 }

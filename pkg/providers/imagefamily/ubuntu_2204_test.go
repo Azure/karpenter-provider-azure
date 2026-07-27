@@ -72,6 +72,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
 	}
 
+	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
+
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
 		taints,
@@ -82,6 +84,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		workloadRuntime,
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
