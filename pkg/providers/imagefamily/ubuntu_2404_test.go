@@ -54,6 +54,12 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 		g.Expect(images[2].Distro).To(Equal("aks-ubuntu-arm64-containerd-24.04-gen2"))
 	})
 
+	t.Run("should return empty images for TrustedLaunch", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(false, nil, true)
+		g.Expect(images).To(BeEmpty())
+	})
+
 	t.Run("should return empty images for FIPS mode without SIG", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
