@@ -206,3 +206,18 @@ func TestKubeletConfigMap(t *testing.T) {
 		g.Expect(actualKubeletConfig[k]).To(Equal(v), fmt.Sprintf("parameter mismatch for %s", k))
 	}
 }
+
+func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
+	g := NewWithT(t)
+
+	// Node hardening on: enforce the kube-reserved and system-reserved cgroups in addition to
+	// pods, matching the AKS RP hardened --enforce-node-allocatable value.
+	hardened := kubeletConfigToMap(&KubeletConfiguration{
+		EnforceNodeAllocatable: []string{"pods", "kube-reserved", "system-reserved"},
+	})
+	g.Expect(hardened["--enforce-node-allocatable"]).To(Equal("pods,kube-reserved,system-reserved"))
+
+	// Node hardening off: the flag is not emitted, so the kubelet default ("pods") is left in place.
+	_, ok := kubeletConfigToMap(&KubeletConfiguration{})["--enforce-node-allocatable"]
+	g.Expect(ok).To(BeFalse())
+}

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -126,15 +127,17 @@ func newInstanceType(
 	params *instanceTypeParameters,
 	architecture string,
 ) *cloudprovider.InstanceType {
+	opts := options.FromContext(ctx)
+	memoryGiB := lo.Must(sku.Memory())
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
-		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, params),
+		Requirements: computeRequirements(opts, sku, vmsize, architecture, offerings, region, params),
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, params),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
-			SystemReserved:    SystemReservedResources(),
-			EvictionThreshold: EvictionThreshold(),
+			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), memoryGiB, params.MaxPods, opts.NodeHardeningEnabled),
+			SystemReserved:    SystemReservedResources(memoryGiB, opts.NetworkPlugin == consts.NetworkPluginAzure, opts.NodeHardeningEnabled),
+			EvictionThreshold: EvictionThreshold(memoryGiB, opts.NodeHardeningEnabled),
 		},
 	}
 }
@@ -343,28 +346,61 @@ func pods(params *instanceTypeParameters) *resource.Quantity {
 	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
-func SystemReservedResources() corev1.ResourceList {
-	// AKS does not set system-reserved values and only CPU and memory are considered
-	// https://learn.microsoft.com/en-us/azure/aks/concepts-clusters-workloads#resource-reservations
+// SystemReservedResources returns the system-reserved overhead for a node.
+//
+// By default AKS does not set system-reserved values and only CPU and memory
+// are considered:
+// https://learn.microsoft.com/en-us/azure/aks/concepts-clusters-workloads#resource-reservations
+//
+// When node hardening is enabled, a capacity-scaled tier (plus a fixed CPU and
+// ephemeral-storage reservation) is reserved for system daemons to match what
+// the AKS RP / NodeProvisioner configures on hardened nodes.
+func SystemReservedResources(memoryGib float64, isAzureCNI, nodeHardeningEnabled bool) corev1.ResourceList {
+	if !nodeHardeningEnabled {
+		return corev1.ResourceList{
+			corev1.ResourceCPU:    resource.Quantity{},
+			corev1.ResourceMemory: resource.Quantity{},
+		}
+	}
 	return corev1.ResourceList{
-		corev1.ResourceCPU:    resource.Quantity{},
-		corev1.ResourceMemory: resource.Quantity{},
+		corev1.ResourceCPU:              *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
+		corev1.ResourceMemory:           *resource.NewQuantity(mibToBytes(systemReservedMemoryMiB(memoryGib, isAzureCNI)), resource.BinarySI),
+		corev1.ResourceEphemeralStorage: resource.MustParse(systemReservedEphemeralStorage),
 	}
 }
 
-func KubeReservedResources(vcpus int64, memoryGib float64) corev1.ResourceList {
-	reservedMemoryMi := int64(1024 * reservedMemoryTaxGi.Calculate(memoryGib))
+// KubeReservedResources returns the kube-reserved overhead for a node.
+//
+// CPU is reserved via the standard bracketed tax in both modes. Memory uses the
+// legacy memory tax brackets by default; when node hardening is enabled it uses
+// the capacity- and pod-density-scaled formula that matches hardened nodes.
+func KubeReservedResources(vcpus int64, memoryGib float64, maxPods int32, nodeHardeningEnabled bool) corev1.ResourceList {
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
+
+	var reservedMemoryMi int64
+	if nodeHardeningEnabled {
+		reservedMemoryMi = hardenedKubeReservedMemoryMiB(maxPods, int64(math.Floor(memoryGib*1024)))
+	} else {
+		reservedMemoryMi = int64(1024 * reservedMemoryTaxGi.Calculate(memoryGib))
+	}
 
 	resources := corev1.ResourceList{
 		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
-		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
+		corev1.ResourceMemory: *resource.NewQuantity(mibToBytes(reservedMemoryMi), resource.BinarySI),
 	}
 
 	return resources
 }
 
-func EvictionThreshold() corev1.ResourceList {
+// EvictionThreshold returns the hard-eviction memory.available overhead for a
+// node. By default a flat threshold is used; when node hardening is enabled the
+// VM-size-dependent ladder that matches hardened nodes is used instead.
+func EvictionThreshold(memoryGib float64, nodeHardeningEnabled bool) corev1.ResourceList {
+	if nodeHardeningEnabled {
+		return corev1.ResourceList{
+			corev1.ResourceMemory: *resource.NewQuantity(mibToBytes(hardEvictionMemoryMiB(int64(math.Floor(memoryGib*1024)))), resource.BinarySI),
+		}
+	}
 	return corev1.ResourceList{
 		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
 	}
