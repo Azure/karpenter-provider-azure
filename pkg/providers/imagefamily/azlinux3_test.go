@@ -67,6 +67,8 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var localDNS *v1beta1.LocalDNS                   // to test with nil
 	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
+	var vTPMEnabled *bool                            // to test with nil
+	var secureBootEnabled *bool                      // to test with nil
 
 	bootstrapper := azureLinux3.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -81,8 +83,8 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
-		nil,
-		nil,
+		vTPMEnabled,
+		secureBootEnabled,
 	)
 
 	g := NewWithT(t)

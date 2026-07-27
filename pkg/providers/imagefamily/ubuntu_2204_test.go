@@ -71,6 +71,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		SwapFileSize:               lo.ToPtr("1500Mi"),
 		TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
 	}
+	vtpmEnabled := lo.ToPtr(true)
+	secureBootEnabled := lo.ToPtr(true)
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -85,8 +87,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
-		lo.ToPtr(true),
-		lo.ToPtr(true),
+		vtpmEnabled,
+		secureBootEnabled,
 	)
 
 	g := NewWithT(t)
