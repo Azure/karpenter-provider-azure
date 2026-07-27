@@ -35,9 +35,8 @@ var (
 type WorkloadRuntime string
 
 const (
-	WorkloadRuntimeOCIContainer        WorkloadRuntime = "OCIContainer"
-	WorkloadRuntimeKataVMIsolation     WorkloadRuntime = "KataVmIsolation"
-	WorkloadRuntimeKataMshvVMIsolation WorkloadRuntime = "KataMshvVmIsolation" // legacy, still accepted
+	WorkloadRuntimeOCIContainer    WorkloadRuntime = "OCIContainer"
+	WorkloadRuntimeKataVMIsolation WorkloadRuntime = "KataVmIsolation"
 )
 
 // ArtifactStreaming configures artifact streaming for provisioned nodes.
@@ -70,7 +69,8 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
-// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation/KataMshvVmIsolation requires imageFamily AzureLinux",rule="!has(self.workloadRuntime) || (self.workloadRuntime != 'KataVmIsolation' && self.workloadRuntime != 'KataMshvVmIsolation') ? true : (has(self.imageFamily) && self.imageFamily == 'AzureLinux')"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -95,13 +95,15 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
-	// workloadRuntime determines the type of workload a node can run.
-	// When unset, nodes run standard OCI containers (OCIContainer). KataVmIsolation (and the
-	// legacy KataMshvVmIsolation) enable AKS Pod Sandboxing so pods with
-	// runtimeClassName: kata-vm-isolation run in lightweight VMs. Pod Sandboxing
-	// requires imageFamily: AzureLinux and a generation-2, nested-virtualization-capable
-	// VM size. See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
-	// +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation,KataMshvVmIsolation}
+	// workloadRuntime determines the additional workload runtime a node can run.
+	// OCIContainer (the default) runs standard OCI containers only. KataVmIsolation enables AKS
+	// Pod Sandboxing alongside standard containers, so pods with runtimeClassName: kata-vm-isolation
+	// run in lightweight VMs while other pods on the same node keep running as normal containers.
+	// Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS, and
+	// needs a generation-2, nested-virtualization-capable VM size.
+	// See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
+	// +default="OCIContainer"
+	// +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation}
 	// +optional
 	WorkloadRuntime *WorkloadRuntime `json:"workloadRuntime,omitempty"`
 	// tags to be applied on Azure resources like instances.
@@ -710,7 +712,9 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v3"
+// v4: workloadRuntime gained a server-side default of OCIContainer, which changes the hash of
+// every AKSNodeClass that previously left the field unset (condition 1 above).
+const AKSNodeClassHashVersion = "v4"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
@@ -824,8 +828,7 @@ func (in *AKSNodeClass) GetWorkloadRuntime() WorkloadRuntime {
 	return *in.Spec.WorkloadRuntime
 }
 
-// IsKataEnabled returns whether a Kata-based pod-sandboxing runtime is requested.
+// IsKataEnabled returns whether AKS Pod Sandboxing (Kata) is requested.
 func (in *AKSNodeClass) IsKataEnabled() bool {
-	wr := in.GetWorkloadRuntime()
-	return wr == WorkloadRuntimeKataVMIsolation || wr == WorkloadRuntimeKataMshvVMIsolation
+	return in.GetWorkloadRuntime() == WorkloadRuntimeKataVMIsolation
 }

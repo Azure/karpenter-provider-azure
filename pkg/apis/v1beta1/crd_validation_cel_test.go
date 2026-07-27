@@ -734,12 +734,34 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("OCIContainer with Ubuntu should succeed", v1beta1.UbuntuImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
 			Entry("OCIContainer with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
 			Entry("KataVmIsolation with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
-			Entry("KataMshvVmIsolation with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataMshvVMIsolation), true),
 			Entry("KataVmIsolation with Ubuntu should fail", v1beta1.UbuntuImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
 			Entry("KataVmIsolation with Ubuntu2204 should fail", v1beta1.Ubuntu2204ImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
 			Entry("KataVmIsolation with Ubuntu2404 should fail", v1beta1.Ubuntu2404ImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
-			Entry("KataMshvVmIsolation with Ubuntu should fail", v1beta1.UbuntuImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataMshvVMIsolation), false),
 			Entry("KataVmIsolation with unspecified ImageFamily (defaults to Ubuntu) should fail", "", lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+		)
+
+		DescribeTable("should reject KataVmIsolation combined with FIPS", func(fipsMode *v1beta1.FIPSMode, workloadRuntime *v1beta1.WorkloadRuntime, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:        fipsMode,
+					WorkloadRuntime: workloadRuntime,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			// Kata is not FIPS compliant, so the combination has no satisfiable image and is rejected
+			// at admission rather than surfacing later as ImagesNotFound.
+			Entry("FIPS with KataVmIsolation should fail", lo.ToPtr(v1beta1.FIPSModeFIPS), lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("Disabled FIPS with KataVmIsolation should succeed", lo.ToPtr(v1beta1.FIPSModeDisabled), lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("unset FIPS with KataVmIsolation should succeed", nil, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("FIPS with OCIContainer should succeed", lo.ToPtr(v1beta1.FIPSModeFIPS), lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+			Entry("FIPS with unset workloadRuntime should succeed", lo.ToPtr(v1beta1.FIPSModeFIPS), nil, true),
 		)
 	})
 

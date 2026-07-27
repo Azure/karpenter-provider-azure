@@ -1675,17 +1675,18 @@ spec:
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
                 type: string
               workloadRuntime:
+                default: OCIContainer
                 description: |-
-                  workloadRuntime determines the type of workload a node can run.
-                  When unset, nodes run standard OCI containers (OCIContainer). KataVmIsolation (and the
-                  legacy KataMshvVmIsolation) enable AKS Pod Sandboxing so pods with
-                  runtimeClassName: kata-vm-isolation run in lightweight VMs. Pod Sandboxing
-                  requires imageFamily: AzureLinux and a generation-2, nested-virtualization-capable
-                  VM size. See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
+                  workloadRuntime determines the additional workload runtime a node can run.
+                  OCIContainer (the default) runs standard OCI containers only. KataVmIsolation enables AKS
+                  Pod Sandboxing alongside standard containers, so pods with runtimeClassName: kata-vm-isolation
+                  run in lightweight VMs while other pods on the same node keep running as normal containers.
+                  Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS, and
+                  needs a generation-2, nested-virtualization-capable VM size.
+                  See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
                 enum:
                 - OCIContainer
                 - KataVmIsolation
-                - KataMshvVmIsolation
                 type: string
             type: object
             x-kubernetes-validations:
@@ -1698,11 +1699,14 @@ spec:
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
                 || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn
                 == false)'
-            - message: workloadRuntime KataVmIsolation/KataMshvVmIsolation requires
-                imageFamily AzureLinux
-              rule: '!has(self.workloadRuntime) || (self.workloadRuntime != ''KataVmIsolation''
-                && self.workloadRuntime != ''KataMshvVmIsolation'') ? true : (has(self.imageFamily)
-                && self.imageFamily == ''AzureLinux'')'
+            - message: workloadRuntime KataVmIsolation requires imageFamily AzureLinux
+              rule: 'has(self.workloadRuntime) && self.workloadRuntime == ''KataVmIsolation''
+                ? (has(self.imageFamily) && self.imageFamily == ''AzureLinux'') :
+                true'
+            - message: workloadRuntime KataVmIsolation is not supported with fipsMode
+                FIPS
+              rule: 'has(self.workloadRuntime) && self.workloadRuntime == ''KataVmIsolation''
+                ? (!has(self.fipsMode) || self.fipsMode != ''FIPS'') : true'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:

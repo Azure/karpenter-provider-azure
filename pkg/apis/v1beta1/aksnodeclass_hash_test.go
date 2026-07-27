@@ -70,6 +70,7 @@ var _ = Describe("Hash", func() {
 
 		// Static fields, expect changed hash from base
 		Entry("VNETSubnetID", "13971920214979852468", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("WorkloadRuntime", "13352508654154828139", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{WorkloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)}}),
 		Entry("OSDiskSizeGB", "7816855636861645563", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", "15616969746300892810", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", "33638514539106194", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
@@ -121,7 +122,7 @@ var _ = Describe("Hash", func() {
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
 	It("when hashing algorithm updates, we should update the hash version", func() {
-		currentHashVersion := "v3"
+		currentHashVersion := "v4"
 		if nodeClass.Hash() != staticHash {
 			Expect(v1beta1.AKSNodeClassHashVersion).ToNot(Equal(currentHashVersion))
 		} else {
