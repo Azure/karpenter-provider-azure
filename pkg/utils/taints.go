@@ -23,10 +23,18 @@ import (
 )
 
 var (
-	TaintCiliumNotReady = corev1.Taint{
+	TaintCiliumNoExecute = corev1.Taint{
 		Key:    "node.cilium.io/agent-not-ready",
 		Value:  "true",
 		Effect: corev1.TaintEffectNoExecute,
+	}
+)
+
+var (
+	TaintCiliumNoSchedule = corev1.Taint{
+		Key:    "node.cilium.io/agent-not-ready",
+		Value:  "true",
+		Effect: corev1.TaintEffectNoSchedule,
 	}
 )
 
