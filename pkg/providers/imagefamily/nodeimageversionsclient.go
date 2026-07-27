@@ -92,10 +92,16 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 }
 
 // isNewerVersion will return if version1 is greater than version2, note the new versioning scheme is yearmm.dd.build, previously it was yy.mm.dd without the build id.
+//
+// Security-patch node images (returned when the SecurityPatchOnly header is set) use a different
+// scheme: "<baseVersion>-<securityPatchDate>", e.g. "202605.14.0-2026.06.13". We tokenize on both
+// "." and "-" so these are compared correctly (base version first, then security-patch date).
+// Standard versions contain no "-", so their comparison is unchanged. The two schemes are never
+// compared against each other since security-patch and standard images come from separate calls.
 func isNewerVersion(version1, version2 string) bool {
-	// Split by dots and compare each segment as an integer getting the largest vhd version
-	v1Segments := strings.Split(version1, ".")
-	v2Segments := strings.Split(version2, ".")
+	// Split by dots and hyphens and compare each segment as an integer getting the largest vhd version
+	v1Segments := splitVersion(version1)
+	v2Segments := splitVersion(version2)
 
 	for i := 0; i < len(v1Segments) && i < len(v2Segments); i++ {
 		v1Segment, err1 := strconv.Atoi(v1Segments[i])
@@ -116,4 +122,13 @@ func isNewerVersion(version1, version2 string) bool {
 	// the longer version is considered newer if it has additional segments
 	// the legacy linux versions use "yy.mm.dd" whereas new linux versions use "yymm.dd.build"
 	return len(v1Segments) > len(v2Segments)
+}
+
+// splitVersion tokenizes a node image version into its numeric segments, splitting on both "." and
+// "-". Standard versions like "202607.09.0" yield ["202607","09","0"]; security-patch versions like
+// "202605.14.0-2026.06.13" yield ["202605","14","0","2026","06","13"].
+func splitVersion(version string) []string {
+	return strings.FieldsFunc(version, func(r rune) bool {
+		return r == '.' || r == '-'
+	})
 }
