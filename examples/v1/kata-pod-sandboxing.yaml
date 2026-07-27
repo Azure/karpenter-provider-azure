@@ -1,10 +1,13 @@
 # AKS Pod Sandboxing (Kata Containers) example.
 #
 # Set workloadRuntime: KataVmIsolation on the AKSNodeClass to provision nodes with the Kata host
-# stack installed. Requires imageFamily: AzureLinux and a generation-2, nested-virtualization-capable
-# VM size (enforced by CEL validation and instance-type filtering respectively). Also requires the
-# controller to run with ENABLE_KATA_POD_SANDBOXING=true and an AKS Machine API provision mode;
-# otherwise the AKSNodeClass reports ValidationSucceeded=False with the reason.
+# stack installed. Pod Sandboxing is an *additional* runtime: standard OCI containers keep running on
+# the same node, and only pods that ask for the Kata RuntimeClass get a lightweight VM.
+#
+# Requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS (both enforced by CEL
+# validation at admission), and needs a generation-2, nested-virtualization-capable VM size
+# (enforced by instance-type filtering). Only provision modes that can express the workload runtime
+# are supported; on others the AKSNodeClass reports ValidationSucceeded=False with the reason.
 #
 # How scale-up works (no nodeSelector needed on your pod):
 #   The managed kata-vm-isolation RuntimeClass declares
@@ -42,10 +45,8 @@ spec:
         value: "true"
       expireAfter: Never
       requirements:
-      # Pod Sandboxing is amd64 + generation-2 (nested virtualization) only.
-      - key: kubernetes.io/arch
-        operator: In
-        values: ["amd64"]
+      # No arch/generation requirement is needed here: requesting Kata on the AKSNodeClass already
+      # narrows the offered instance types to amd64, generation-2, nested-virtualization-capable SKUs.
       - key: kubernetes.io/os
         operator: In
         values: ["linux"]
@@ -62,7 +63,6 @@ metadata:
 spec:
   # Kata requires AzureLinux.
   imageFamily: AzureLinux
-  # KataMshvVmIsolation is also accepted (legacy alias); both run AKS Pod Sandboxing.
   workloadRuntime: KataVmIsolation
 ---
 # Example workload. Note there is NO nodeSelector here: runtimeClassName is sufficient, because the
