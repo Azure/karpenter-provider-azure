@@ -700,6 +700,9 @@ var _ = Describe("Consolidation", Ordered, func() {
 						g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(sourceNode), node)).To(Succeed())
 						g.Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zones.Regional))
 						g.Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeRegional))
+						// Azure Disk CSI publishes an empty zone for non-zonal nodes:
+						// https://github.com/kubernetes-sigs/azuredisk-csi-driver/blob/c17796139c3f65289b2e06baf20e66ec0d4b27ff/pkg/azuredisk/nodeserver.go#L352-L388
+						// (Karpenter normalizes this to the canonical regional zone "0" internally)
 						g.Expect(node.Labels).To(HaveKeyWithValue("topology.disk.csi.azure.com/zone", ""))
 					}
 				}).Should(Succeed())
