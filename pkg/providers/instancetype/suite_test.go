@@ -1239,6 +1239,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("memory.available<"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
+				ExpectHardEvictionThresholds(customData, "512Mi")
 				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period="))
 				Expect(kubeletFlags).To(ContainSubstring("memory.available=30s"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
@@ -1270,7 +1271,6 @@ var _ = Describe("InstanceType Provider", func() {
 				customData := ExpectDecodedCustomData(azureEnv)
 
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"image-gc-high-threshold": "30",
 					"image-gc-low-threshold":  "20",
 					"cpu-cfs-quota":           "true",
@@ -1284,6 +1284,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
@@ -1345,7 +1346,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 				customData := ExpectDecodedCustomData(azureEnv)
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"max-pods":                "110",
 					"image-gc-low-threshold":  "20",
 					"image-gc-high-threshold": "30",
@@ -1358,6 +1358,7 @@ var _ = Describe("InstanceType Provider", func() {
 					"pod-max-pids":            "99",
 				}
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
@@ -1389,7 +1390,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 				customData := ExpectDecodedCustomData(azureEnv)
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"max-pods":                "15",
 					"image-gc-low-threshold":  "20",
 					"image-gc-high-threshold": "30",
@@ -1403,6 +1403,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
@@ -3534,6 +3535,15 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
 	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
+}
+
+func ExpectHardEvictionThresholds(customData, memory string) {
+	GinkgoHelper()
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	Expect(kubeletFlags).To(ContainSubstring("memory.available<" + memory))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
+	Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
 }
 
 func ExpectKubeletNodeLabelsPassed(customData string) string {

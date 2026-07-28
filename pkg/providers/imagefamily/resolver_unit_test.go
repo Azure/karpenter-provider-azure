@@ -52,6 +52,16 @@ func prepareTestKubeletConfiguration(enableNodeHardening bool) *bootstrap.Kubele
 func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
 	configuration := prepareTestKubeletConfiguration(true)
 
+	expectedHardThresholds := map[string]string{
+		"memory.available":  "512Mi",
+		"nodefs.available":  "10%",
+		"nodefs.inodesFree": "5%",
+		"pid.available":     "2000",
+	}
+	if !reflect.DeepEqual(configuration.EvictionHard, expectedHardThresholds) {
+		t.Fatalf("hard eviction thresholds = %#v, want %#v", configuration.EvictionHard, expectedHardThresholds)
+	}
+
 	expectedThresholds := map[string]string{
 		"memory.available":  "1Gi",
 		"nodefs.available":  "12%",
@@ -79,10 +89,23 @@ func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
 	if configuration.SystemReserved["pid"] != "1000" {
 		t.Fatalf("system reserved pid = %q, want %q", configuration.SystemReserved["pid"], "1000")
 	}
+	if configuration.KubeReserved["pid"] != "1000" {
+		t.Fatalf("kube reserved pid = %q, want %q", configuration.KubeReserved["pid"], "1000")
+	}
 }
 
 func TestPrepareKubeletConfigurationSoftEvictionDisabled(t *testing.T) {
 	configuration := prepareTestKubeletConfiguration(false)
+
+	expectedHardThresholds := map[string]string{
+		"memory.available":  "512Mi",
+		"nodefs.available":  "10%",
+		"nodefs.inodesFree": "5%",
+		"pid.available":     "2000",
+	}
+	if !reflect.DeepEqual(configuration.EvictionHard, expectedHardThresholds) {
+		t.Fatalf("hard eviction thresholds = %#v, want %#v", configuration.EvictionHard, expectedHardThresholds)
+	}
 
 	if configuration.EvictionSoft != nil {
 		t.Fatalf("soft eviction thresholds = %#v, want nil", configuration.EvictionSoft)
@@ -98,5 +121,8 @@ func TestPrepareKubeletConfigurationSoftEvictionDisabled(t *testing.T) {
 	}
 	if _, ok := configuration.SystemReserved["pid"]; ok {
 		t.Fatalf("system reserved pid should not be set when hardening is disabled")
+	}
+	if configuration.KubeReserved["pid"] != "1000" {
+		t.Fatalf("kube reserved pid = %q, want %q", configuration.KubeReserved["pid"], "1000")
 	}
 }

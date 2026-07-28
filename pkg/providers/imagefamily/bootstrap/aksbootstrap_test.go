@@ -166,7 +166,9 @@ func TestKubeletConfigMap(t *testing.T) {
 			"cpu": "200m",
 		},
 		KubeReserved: map[string]string{
-			"cpu": "400m",
+			"cpu":    "180m",
+			"memory": "2250Mi",
+			"pid":    "1000",
 		},
 		EvictionHard: map[string]string{
 			"memory.available": "100Mi",
@@ -192,8 +194,8 @@ func TestKubeletConfigMap(t *testing.T) {
 		"--container-log-max-files":       "13",
 		"--container-log-max-size":        "42Mi",
 		"--pod-max-pids":                  "99",
-		"--system-reserved":               "cpu=200m",               // TODO: test multiple resource
-		"--kube-reserved":                 "cpu=400m",               // TODO: test multiple resource
+		"--system-reserved":               "cpu=200m", // TODO: test multiple resource
+		"--kube-reserved":                 "cpu=180m,memory=2250Mi,pid=1000",
 		"--eviction-hard":                 "memory.available<100Mi", // TODO: test multiple resource
 		"--eviction-soft":                 "memory.available<99Mi",  // TODO: test multiple resource
 		"--eviction-soft-grace-period":    "memory.available=1m30s",
@@ -214,9 +216,11 @@ func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
 	// Node hardening on: emit the AKS RP hardening signal; AgentBaker owns the
 	// kube-reserved and system-reserved cgroup paths.
 	hardened := kubeletConfigToMap(&KubeletConfiguration{
+		KubeReserved:           map[string]string{"pid": "1000"},
 		SystemReserved:         map[string]string{"pid": "1000"},
 		EnforceNodeAllocatable: []string{"pods", "kube-reserved", "system-reserved"},
 	})
+	g.Expect(hardened["--kube-reserved"]).To(Equal("pid=1000"))
 	g.Expect(hardened["--system-reserved"]).To(Equal("pid=1000"))
 	g.Expect(hardened["--enforce-node-allocatable"]).To(Equal("pods,kube-reserved,system-reserved"))
 	_, hasKubeReservedCgroup := hardened["--kube-reserved-cgroup"]
@@ -258,4 +262,24 @@ func TestKubeletConfigMapNodeHardeningSoftEviction(t *testing.T) {
 		"nodefs.inodesFree=2m0s",
 	))
 	g.Expect(flags["--eviction-max-pod-grace-period"]).To(Equal("60"))
+}
+
+func TestKubeletConfigMapHardEviction(t *testing.T) {
+	g := NewWithT(t)
+	configuration := &KubeletConfiguration{
+		EvictionHard: map[string]string{
+			"memory.available":  "512Mi",
+			"nodefs.available":  "10%",
+			"nodefs.inodesFree": "5%",
+			"pid.available":     "2000",
+		},
+	}
+
+	flags := kubeletConfigToMap(configuration)
+	g.Expect(strings.Split(flags["--eviction-hard"], ",")).To(ConsistOf(
+		"memory.available<512Mi",
+		"nodefs.available<10%",
+		"nodefs.inodesFree<5%",
+		"pid.available<2000",
+	))
 }

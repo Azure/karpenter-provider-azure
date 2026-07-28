@@ -44,9 +44,11 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			resources := KubeReservedResources(test.vcpus, test.memoryGiB, test.maxPods, true)
 			memory := resources[corev1.ResourceMemory]
+			pids := resources[corev1.ResourceName(systemReservedPIDResource)]
 			wantMemory := *resource.NewQuantity(mibToBytes(test.wantMemoryMiB), resource.BinarySI)
-			if memory.Cmp(wantMemory) != 0 {
-				t.Fatalf("memory = %s, want %s", memory.String(), wantMemory.String())
+			wantPIDs := resource.MustParse(KubeReservedPIDs)
+			if memory.Cmp(wantMemory) != 0 || pids.Cmp(wantPIDs) != 0 {
+				t.Fatalf("resources = memory=%s,pid=%s; want memory=%s,pid=%s", memory.String(), pids.String(), wantMemory.String(), KubeReservedPIDs)
 			}
 		})
 	}
@@ -78,10 +80,11 @@ func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 			pids := resources[corev1.ResourceName(systemReservedPIDResource)]
 			wantCPU := *resource.NewMilliQuantity(systemReservedCPUMillicores, resource.DecimalSI)
 			wantMemory := *resource.NewQuantity(mibToBytes(test.wantMemoryMiB), resource.BinarySI)
+			wantPIDs := resource.MustParse(SystemReservedPIDs)
 
-			if cpu.Cmp(wantCPU) != 0 || memory.Cmp(wantMemory) != 0 || ephemeralStorage.String() != systemReservedEphemeralStorage || pids.Value() != systemReservedPIDs {
-				t.Fatalf("resources = cpu=%s,memory=%s,ephemeral-storage=%s,pid=%s; want cpu=%s,memory=%s,ephemeral-storage=%s,pid=%d",
-					cpu.String(), memory.String(), ephemeralStorage.String(), pids.String(), wantCPU.String(), wantMemory.String(), systemReservedEphemeralStorage, systemReservedPIDs)
+			if cpu.Cmp(wantCPU) != 0 || memory.Cmp(wantMemory) != 0 || ephemeralStorage.String() != systemReservedEphemeralStorage || pids.Cmp(wantPIDs) != 0 {
+				t.Fatalf("resources = cpu=%s,memory=%s,ephemeral-storage=%s,pid=%s; want cpu=%s,memory=%s,ephemeral-storage=%s,pid=%s",
+					cpu.String(), memory.String(), ephemeralStorage.String(), pids.String(), wantCPU.String(), wantMemory.String(), systemReservedEphemeralStorage, SystemReservedPIDs)
 			}
 		})
 	}

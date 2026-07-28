@@ -37,11 +37,6 @@ import "math"
 //   - eviction memory ladder: resourceprovider/server/microsoft.com/containerservice/
 //     server/validation/eviction/eviction.go (MemoryLadder)
 const (
-	// Hardened kube-reserved memory (Linux):
-	//   min(35*maxPods + max(250, 2% of totalMemMiB), 25% of totalMemMiB)
-	hardenedKubeReservedPerPodMiB int64 = 35
-	hardenedKubeReservedFloorMiB  int64 = 250
-
 	// Hardened system-reserved memory (Linux):
 	//   200 + 100*floor(memGiB/32) (+100 when Azure CNI)
 	systemReservedBaseMiB       int64 = 200
@@ -49,12 +44,23 @@ const (
 	systemReservedStepGiB       int64 = 32
 	systemReservedCNIBonusMiB   int64 = 100
 	systemReservedCPUMillicores int64 = 100
-	systemReservedPIDs          int64 = 1000
 
 	// systemReservedEphemeralStorage mirrors the RP's fixed 1Gi ephemeral-storage
 	// system reservation on hardened nodes.
 	systemReservedEphemeralStorage = "1Gi"
 	systemReservedPIDResource      = "pid"
+
+	NodeFSAvailable                      = "nodefs.available"
+	NodeFSInodesFree                     = "nodefs.inodesFree"
+	PIDAvailable                         = "pid.available"
+	HardEvictionNodeFSAvailable          = "10%"
+	HardEvictionNodeFSInodesFree         = "5%"
+	HardEvictionPIDAvailable             = "2000"
+	SoftEvictionNodeFSAvailable          = "12%"
+	SoftEvictionNodeFSInodesFree         = "7%"
+	SoftEvictionMaxPodGracePeriodSeconds = int32(60)
+	KubeReservedPIDs                     = "1000"
+	SystemReservedPIDs                   = "1000"
 )
 
 // mibToBytes converts a MiB quantity to bytes.
@@ -69,7 +75,7 @@ func mibToBytes(mib int64) int64 {
 // Mirrors calculateMemoryReservation(enableNodeHardening=true) in the AKS RP.
 func hardenedKubeReservedMemoryMiB(maxPods int32, totalMemoryMiB int64) int64 {
 	capMiB := totalMemoryMiB / 4 // 25%
-	reservedMiB := hardenedKubeReservedPerPodMiB*int64(maxPods) + max(totalMemoryMiB*2/100, hardenedKubeReservedFloorMiB)
+	reservedMiB := 35*int64(maxPods) + max(totalMemoryMiB*2/100, 250)
 	return min(reservedMiB, capMiB)
 }
 

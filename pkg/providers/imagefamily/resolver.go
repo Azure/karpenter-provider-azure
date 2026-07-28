@@ -55,15 +55,6 @@ type Resolver interface {
 	ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error)
 }
 
-const (
-	nodeFSAvailable                      = "nodefs.available"
-	nodeFSInodesFree                     = "nodefs.inodesFree"
-	softEvictionNodeFSAvailable          = "12%"
-	softEvictionNodeFSInodesFree         = "7%"
-	softEvictionMaxPodGracePeriodSeconds = int32(60)
-	systemReservedPIDs                   = "1000"
-)
-
 // assert that defaultResolver implements Resolver interface
 var _ Resolver = &defaultResolver{}
 
@@ -241,24 +232,33 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
-	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	// resource.Quantity canonicalizes 1000 as "1k"; retain the RP's literal
+	// --kube-reserved component for exact bootstrap parity.
+	kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
+	kubeletConfig.EvictionHard = map[string]string{
+		instancetype.MemoryAvailable:  instanceType.Overhead.EvictionThreshold.Memory().String(),
+		instancetype.NodeFSAvailable:  instancetype.HardEvictionNodeFSAvailable,
+		instancetype.NodeFSInodesFree: instancetype.HardEvictionNodeFSInodesFree,
+		instancetype.PIDAvailable:     instancetype.HardEvictionPIDAvailable,
+	}
+
 	if options.FromContext(ctx).EnableNodeHardening {
 		// resource.Quantity canonicalizes 1000 as "1k"; retain the RP's literal
 		// --system-reserved component for exact bootstrap parity.
-		kubeletConfig.SystemReserved["pid"] = systemReservedPIDs
+		kubeletConfig.SystemReserved["pid"] = instancetype.SystemReservedPIDs
 		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
 		softEvictionThreshold := instancetype.SoftEvictionThreshold(totalMemoryMiB)
 		kubeletConfig.EvictionSoft = map[string]string{
-			instancetype.MemoryAvailable: softEvictionThreshold.Memory().String(),
-			nodeFSAvailable:              softEvictionNodeFSAvailable,
-			nodeFSInodesFree:             softEvictionNodeFSInodesFree,
+			instancetype.MemoryAvailable:  softEvictionThreshold.Memory().String(),
+			instancetype.NodeFSAvailable:  instancetype.SoftEvictionNodeFSAvailable,
+			instancetype.NodeFSInodesFree: instancetype.SoftEvictionNodeFSInodesFree,
 		}
 		kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{
-			instancetype.MemoryAvailable: {Duration: 30 * time.Second},
-			nodeFSAvailable:              {Duration: 2 * time.Minute},
-			nodeFSInodesFree:             {Duration: 2 * time.Minute},
+			instancetype.MemoryAvailable:  {Duration: 30 * time.Second},
+			instancetype.NodeFSAvailable:  {Duration: 2 * time.Minute},
+			instancetype.NodeFSInodesFree: {Duration: 2 * time.Minute},
 		}
-		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(softEvictionMaxPodGracePeriodSeconds)
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(instancetype.SoftEvictionMaxPodGracePeriodSeconds)
 
 		// Signal node hardening to AgentBaker, which owns the reserved-cgroup paths.
 		// Mirrors nodeAllocatableEnforcementHardened in the AKS RP.
