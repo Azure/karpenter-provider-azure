@@ -114,6 +114,7 @@ func (u Ubuntu2404) ScriptlessCustomData(
 			GPUImageSHA:                  u.Options.GPUImageSHA,
 			GPUDriverInstallationEnabled: u.Options.GPUDriverInstallationEnabled,
 			SubnetID:                     u.Options.SubnetID,
+			NodeHardeningEnabled:         u.Options.NodeHardeningEnabled,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,

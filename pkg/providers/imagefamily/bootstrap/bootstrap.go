@@ -58,6 +58,12 @@ type Options struct {
 	GPUImageSHA                  string
 	GPUDriverInstallationEnabled bool
 	SubnetID                     string
+	// NodeHardeningEnabled mirrors the `enableNodeHardening` field in aks-rp.
+	// When true, applyOptions emits `--enforce-node-allocatable=pods,kube-reserved,system-reserved`;
+	// AgentBaker uses that signal to activate cgroup-level enforcement of kube-reserved/system-reserved.
+	// AgentBaker creates the `kubereserved` and `system` slices and assigns them to
+	// --kube-reserved-cgroup and --system-reserved-cgroup, respectively.
+	NodeHardeningEnabled bool
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script

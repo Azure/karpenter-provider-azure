@@ -100,6 +100,14 @@ type Options struct {
 	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
 	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
 
+	// NodeHardeningEnabled mirrors the aks-rp `enableNodeHardening` property
+	// When true, Karpenter's scheduling-simulation `Overhead` values use the same values for
+	// `kube-reserved`, `system-reserved`, and eviction formulas as aks-rp so that Karpenter
+	// does not over- or under-schedule pods relative to what RP will actually reserve on the node.
+	//
+	// TODO: Remove this bool once node hardening goes GA and the enableNodeHardening property is removed from aks-rp
+	NodeHardeningEnabled bool `json:"nodeHardeningEnabled,omitempty"`
+
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
 }
@@ -128,6 +136,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
 	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect when already on an AKS Machine API mode.")
+	fs.BoolVar(&o.NodeHardeningEnabled, "node-hardening-enabled", env.WithDefaultBool("NODE_HARDENING_ENABLED", false), "If set to true, Karpenter uses the AKS node-hardening kube-reserved / system-reserved / eviction formulas for scheduling simulation, matching a ManagedCluster with enableNodeHardening=true and the CustomNodeConfigPreview AFEC registered. Must be kept in sync with the ManagedCluster property.")
 	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with AKS machine API provision modes. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE is an AKS machine API mode.")
 	fs.DurationVar(&o.ProviderBatchIdleDuration, "provider-batch-idle-duration", env.WithDefaultDuration("PROVIDER_BATCH_IDLE_DURATION", time.Second), "Idle duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
 	fs.DurationVar(&o.ProviderBatchMaxDuration, "provider-batch-max-duration", env.WithDefaultDuration("PROVIDER_BATCH_MAX_DURATION", 5*time.Second), "Maximum duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
