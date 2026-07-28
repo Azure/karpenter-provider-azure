@@ -230,7 +230,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	if options.FromContext(ctx).NodeHardeningEnabled {
+	if options.FromContext(ctx).EnableNodeHardening {
 		// Match AKS node hardening: enforce the kube-reserved and system-reserved cgroups (in
 		// addition to the default pods cgroup) so the reservations computed above are actually
 		// held back from workloads. Mirrors nodeAllocatableEnforcementHardened in the AKS RP

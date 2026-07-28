@@ -66,8 +66,8 @@ type Options struct {
 	ClusterName                    string  `json:"clusterName,omitempty"`
 	ClusterEndpoint                string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
 	VMMemoryOverheadPercent        float64 `json:"vmMemoryOverheadPercent,omitempty"`
-	NodeHardeningEnabled           bool    `json:"nodeHardeningEnabled,omitempty"` // => reserve kube-reserved/system-reserved/eviction-hard matching AKS node hardening
-	KubeletClientTLSBootstrapToken string  `json:"-"`                              // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	EnableNodeHardening            bool    `json:"enableNodeHardening,omitempty"` // =>  kube-reserved/system-reserved/hard and soft eviction is applied if true, matching AKS node hardening.
+	KubeletClientTLSBootstrapToken string  `json:"-"`                             // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
 	LinuxAdminUsername             string  `json:"-"`
 	SSHPublicKey                   string  `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
@@ -109,7 +109,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.ClusterName, "cluster-name", env.WithDefaultString("CLUSTER_NAME", ""), "[REQUIRED] The kubernetes cluster name for resource tags.")
 	fs.StringVar(&o.ClusterEndpoint, "cluster-endpoint", env.WithDefaultString("CLUSTER_ENDPOINT", ""), "[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with.")
 	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", utils.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
-	fs.BoolVar(&o.NodeHardeningEnabled, "node-hardening-enabled", env.WithDefaultBool("NODE_HARDENING_ENABLED", false), "If set to true, Karpenter reserves node resources (kube-reserved, system-reserved and hard-eviction) matching AKS node hardening, keeping scheduling simulation and rendered kubelet configuration aligned with hardened nodes.")
+	fs.BoolVar(&o.EnableNodeHardening, "enable-node-hardening", env.WithDefaultBool("ENABLE_NODE_HARDENING", false), "If set to true, Karpenter applies (kube-reserved, system-reserved, hard-eviction, soft-eviction) matching AKS node hardening, keeping scheduling simulation and rendered kubelet configuration aligned with hardened values.")
 	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-bootstrap-token", env.WithDefaultString("KUBELET_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
 	fs.StringVar(&o.LinuxAdminUsername, "linux-admin-username", env.WithDefaultString("LINUX_ADMIN_USERNAME", "azureuser"), "The admin username for Linux VMs.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
