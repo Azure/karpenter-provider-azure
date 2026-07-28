@@ -1213,11 +1213,11 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		Context("Node hardening", func() {
-			It("should enforce kube-reserved and system-reserved node allocatable when enabled", func() {
+			It("should configure hardened reservations and eviction thresholds when enabled", func() {
 				ctx = options.ToContext(
 					ctx,
 					test.Options(test.OptionsFields{
-						NodeHardeningEnabled: lo.ToPtr(true),
+						EnableNodeHardening: lo.ToPtr(true),
 					}),
 				)
 
@@ -1229,10 +1229,21 @@ var _ = Describe("InstanceType Provider", func() {
 				customData := ExpectDecodedCustomData(azureEnv)
 
 				expectedFlags := map[string]string{
-					"enforce-node-allocatable": "pods,kube-reserved,system-reserved",
+					"enforce-node-allocatable":      "pods,kube-reserved,system-reserved",
+					"eviction-max-pod-grace-period": "60",
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft="))
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
+				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period="))
+				Expect(kubeletFlags).To(ContainSubstring("memory.available=30s"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree=2m0s"))
+				Expect(kubeletFlags).To(ContainSubstring("pid=1000"))
 			})
 		})
 
@@ -3482,9 +3493,11 @@ var _ = Describe("Tax Calculator", func() {
 			cpu := resources[v1.ResourceCPU]
 			mem := resources[v1.ResourceMemory]
 			eph := resources[v1.ResourceEphemeralStorage]
+			pids := resources[v1.ResourceName("pid")]
 			Expect(cpu.String()).To(Equal("100m"))
 			Expect(mem.String()).To(Equal("400Mi"))
 			Expect(eph.String()).To(Equal("1Gi"))
+			Expect(pids.String()).To(Equal("1k"))
 		})
 		It("SystemReservedResources omits the bonus for non-Azure CNI", func() {
 			resources := instancetype.SystemReservedResources(8.0, false, true)
@@ -3493,12 +3506,7 @@ var _ = Describe("Tax Calculator", func() {
 		})
 		It("SystemReservedResources is empty when hardening is disabled", func() {
 			resources := instancetype.SystemReservedResources(32.0, true, false)
-			cpu := resources[v1.ResourceCPU]
-			mem := resources[v1.ResourceMemory]
-			Expect(cpu.IsZero()).To(BeTrue())
-			Expect(mem.IsZero()).To(BeTrue())
-			_, hasEphemeral := resources[v1.ResourceEphemeralStorage]
-			Expect(hasEphemeral).To(BeFalse())
+			Expect(resources).To(BeEmpty())
 		})
 		It("EvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
 			small := instancetype.EvictionThreshold(8.0, true)[v1.ResourceMemory]
@@ -3507,6 +3515,14 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(small.String()).To(Equal("250Mi"))
 			Expect(medium.String()).To(Equal("375Mi"))
 			Expect(large.String()).To(Equal("512Mi"))
+		})
+		It("SoftEvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
+			small := instancetype.SoftEvictionThreshold(8 * 1024)[v1.ResourceMemory]
+			medium := instancetype.SoftEvictionThreshold(16 * 1024)[v1.ResourceMemory]
+			large := instancetype.SoftEvictionThreshold(32 * 1024)[v1.ResourceMemory]
+			Expect(small.String()).To(Equal("500Mi"))
+			Expect(medium.String()).To(Equal("750Mi"))
+			Expect(large.String()).To(Equal("1Gi"))
 		})
 		It("EvictionThreshold is the flat default when hardening is disabled", func() {
 			threshold := instancetype.EvictionThreshold(32.0, false)[v1.ResourceMemory]

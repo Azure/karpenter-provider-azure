@@ -18,6 +18,7 @@ package options_test
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -52,6 +53,7 @@ var _ = Describe("Options", func() {
 		"CLUSTER_NAME",
 		"CLUSTER_ENDPOINT",
 		"VM_MEMORY_OVERHEAD_PERCENT",
+		"ENABLE_NODE_HARDENING",
 		"CLUSTER_ID",
 		"KUBELET_BOOTSTRAP_TOKEN",
 		"SSH_PUBLIC_KEY",
@@ -111,6 +113,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("CLUSTER_NAME", "env-cluster")
 			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
+			os.Setenv("ENABLE_NODE_HARDENING", "true")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
 			os.Setenv("NETWORK_PLUGIN", "none") // Testing with none to make sure the default isn't overriding or something like that with "azure"
@@ -144,6 +147,7 @@ var _ = Describe("Options", func() {
 				ClusterName:                    lo.ToPtr("env-cluster"),
 				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
+				EnableNodeHardening:            lo.ToPtr(true),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				LinuxAdminUsername:             lo.ToPtr("customadminusername"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
@@ -169,6 +173,15 @@ var _ = Describe("Options", func() {
 				ProviderBatchMaxSize:           lo.ToPtr(42),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
+		})
+
+		It("should expose the enable-node-hardening external contract", func() {
+			Expect(fs.Lookup("enable-node-hardening")).ToNot(BeNil())
+
+			encoded, err := json.Marshal(&options.Options{EnableNodeHardening: true})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(encoded)).To(ContainSubstring(`"enableNodeHardening":true`))
+			Expect(string(encoded)).ToNot(ContainSubstring("nodeHardeningEnabled"))
 		})
 	})
 	Context("Validation", func() {

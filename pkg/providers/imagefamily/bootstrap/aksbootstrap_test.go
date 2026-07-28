@@ -18,6 +18,7 @@ package bootstrap
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,14 +211,51 @@ func TestKubeletConfigMap(t *testing.T) {
 func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
 	g := NewWithT(t)
 
-	// Node hardening on: enforce the kube-reserved and system-reserved cgroups in addition to
-	// pods, matching the AKS RP hardened --enforce-node-allocatable value.
+	// Node hardening on: emit the AKS RP hardening signal; AgentBaker owns the
+	// kube-reserved and system-reserved cgroup paths.
 	hardened := kubeletConfigToMap(&KubeletConfiguration{
+		SystemReserved:         map[string]string{"pid": "1000"},
 		EnforceNodeAllocatable: []string{"pods", "kube-reserved", "system-reserved"},
 	})
+	g.Expect(hardened["--system-reserved"]).To(Equal("pid=1000"))
 	g.Expect(hardened["--enforce-node-allocatable"]).To(Equal("pods,kube-reserved,system-reserved"))
+	_, hasKubeReservedCgroup := hardened["--kube-reserved-cgroup"]
+	_, hasSystemReservedCgroup := hardened["--system-reserved-cgroup"]
+	g.Expect(hasKubeReservedCgroup).To(BeFalse(), "--kube-reserved-cgroup is owned by AgentBaker")
+	g.Expect(hasSystemReservedCgroup).To(BeFalse(), "--system-reserved-cgroup is owned by AgentBaker")
 
-	// Node hardening off: the flag is not emitted, so the kubelet default ("pods") is left in place.
-	_, ok := kubeletConfigToMap(&KubeletConfiguration{})["--enforce-node-allocatable"]
+	// Node hardening off: the enforcement flag is not emitted, so kubelet defaults remain in place.
+	disabled := kubeletConfigToMap(&KubeletConfiguration{})
+	_, ok := disabled["--enforce-node-allocatable"]
 	g.Expect(ok).To(BeFalse())
+}
+
+func TestKubeletConfigMapNodeHardeningSoftEviction(t *testing.T) {
+	g := NewWithT(t)
+	configuration := &KubeletConfiguration{
+		EvictionSoft: map[string]string{
+			"memory.available":  "1Gi",
+			"nodefs.available":  "12%",
+			"nodefs.inodesFree": "7%",
+		},
+		EvictionSoftGracePeriod: map[string]metav1.Duration{
+			"memory.available":  {Duration: 30 * time.Second},
+			"nodefs.available":  {Duration: 2 * time.Minute},
+			"nodefs.inodesFree": {Duration: 2 * time.Minute},
+		},
+		EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
+	}
+
+	flags := kubeletConfigToMap(configuration)
+	g.Expect(strings.Split(flags["--eviction-soft"], ",")).To(ConsistOf(
+		"memory.available<1Gi",
+		"nodefs.available<12%",
+		"nodefs.inodesFree<7%",
+	))
+	g.Expect(strings.Split(flags["--eviction-soft-grace-period"], ",")).To(ConsistOf(
+		"memory.available=30s",
+		"nodefs.available=2m0s",
+		"nodefs.inodesFree=2m0s",
+	))
+	g.Expect(flags["--eviction-max-pod-grace-period"]).To(Equal("60"))
 }

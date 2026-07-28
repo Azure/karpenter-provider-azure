@@ -19,8 +19,11 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -51,6 +54,15 @@ type Resolver interface {
 		staticParameters *template.StaticParameters) (*template.Parameters, error)
 	ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error)
 }
+
+const (
+	nodeFSAvailable                      = "nodefs.available"
+	nodeFSInodesFree                     = "nodefs.inodesFree"
+	softEvictionNodeFSAvailable          = "12%"
+	softEvictionNodeFSInodesFree         = "7%"
+	softEvictionMaxPodGracePeriodSeconds = int32(60)
+	systemReservedPIDs                   = "1000"
+)
 
 // assert that defaultResolver implements Resolver interface
 var _ Resolver = &defaultResolver{}
@@ -231,10 +243,25 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	if options.FromContext(ctx).EnableNodeHardening {
-		// Match AKS node hardening: enforce the kube-reserved and system-reserved cgroups (in
-		// addition to the default pods cgroup) so the reservations computed above are actually
-		// held back from workloads. Mirrors nodeAllocatableEnforcementHardened in the AKS RP
-		// (resourceprovider/sharedlib/common/kubereserved/utils.go).
+		// resource.Quantity canonicalizes 1000 as "1k"; retain the RP's literal
+		// --system-reserved component for exact bootstrap parity.
+		kubeletConfig.SystemReserved["pid"] = systemReservedPIDs
+		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
+		softEvictionThreshold := instancetype.SoftEvictionThreshold(totalMemoryMiB)
+		kubeletConfig.EvictionSoft = map[string]string{
+			instancetype.MemoryAvailable: softEvictionThreshold.Memory().String(),
+			nodeFSAvailable:              softEvictionNodeFSAvailable,
+			nodeFSInodesFree:             softEvictionNodeFSInodesFree,
+		}
+		kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{
+			instancetype.MemoryAvailable: {Duration: 30 * time.Second},
+			nodeFSAvailable:              {Duration: 2 * time.Minute},
+			nodeFSInodesFree:             {Duration: 2 * time.Minute},
+		}
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(softEvictionMaxPodGracePeriodSeconds)
+
+		// Signal node hardening to AgentBaker, which owns the reserved-cgroup paths.
+		// Mirrors nodeAllocatableEnforcementHardened in the AKS RP.
 		kubeletConfig.EnforceNodeAllocatable = []string{"pods", "kube-reserved", "system-reserved"}
 	}
 	return kubeletConfig

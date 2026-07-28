@@ -346,26 +346,21 @@ func pods(params *instanceTypeParameters) *resource.Quantity {
 	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
-// SystemReservedResources returns the system-reserved overhead for a node.
-//
-// By default AKS does not set system-reserved values and only CPU and memory
-// are considered:
+// By default AKS does not set system-reserved values and only CPU and memory are considered:
 // https://learn.microsoft.com/en-us/azure/aks/concepts-clusters-workloads#resource-reservations
 //
-// When node hardening is enabled, a capacity-scaled tier (plus a fixed CPU and
-// ephemeral-storage reservation) is reserved for system daemons to match what
-// the AKS RP / NodeProvisioner configures on hardened nodes.
+// When node hardening is enabled, a capacity-scaled tier (plus fixed CPU,
+// ephemeral-storage, and PID reservations) is reserved for system daemons to
+// match what the AKS RP / NodeProvisioner configures on hardened nodes.
 func SystemReservedResources(memoryGib float64, isAzureCNI, enableNodeHardening bool) corev1.ResourceList {
 	if !enableNodeHardening {
-		return corev1.ResourceList{
-			corev1.ResourceCPU:    resource.Quantity{},
-			corev1.ResourceMemory: resource.Quantity{},
-		}
+		return corev1.ResourceList{}
 	}
 	return corev1.ResourceList{
-		corev1.ResourceCPU:              *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
-		corev1.ResourceMemory:           *resource.NewQuantity(mibToBytes(systemReservedMemoryMiB(memoryGib, isAzureCNI)), resource.BinarySI),
-		corev1.ResourceEphemeralStorage: resource.MustParse(systemReservedEphemeralStorage),
+		corev1.ResourceCPU:                             *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
+		corev1.ResourceMemory:                          *resource.NewQuantity(mibToBytes(systemReservedMemoryMiB(memoryGib, isAzureCNI)), resource.BinarySI),
+		corev1.ResourceEphemeralStorage:                resource.MustParse(systemReservedEphemeralStorage),
+		corev1.ResourceName(systemReservedPIDResource): *resource.NewQuantity(systemReservedPIDs, resource.DecimalSI),
 	}
 }
 
@@ -387,11 +382,21 @@ func KubeReservedResources(vcpus int64, memoryGib float64, maxPods int32, enable
 
 func EvictionThreshold(memoryGib float64, enableNodeHardening bool) corev1.ResourceList {
 	if enableNodeHardening {
+		_, hardMemoryMiB := evictionMemoryLadder(int64(math.Floor(memoryGib * 1024)))
 		return corev1.ResourceList{
-			corev1.ResourceMemory: *resource.NewQuantity(mibToBytes(hardEvictionMemoryMiB(int64(math.Floor(memoryGib*1024)))), resource.BinarySI),
+			corev1.ResourceMemory: *resource.NewQuantity(mibToBytes(hardMemoryMiB), resource.BinarySI),
 		}
 	}
 	return corev1.ResourceList{
 		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
+	}
+}
+
+// SoftEvictionThreshold returns the hardened soft-eviction memory threshold
+// for the VM's total memory using the AKS RP memory ladder.
+func SoftEvictionThreshold(totalMemoryMiB int64) corev1.ResourceList {
+	softMemoryMiB, _ := evictionMemoryLadder(totalMemoryMiB)
+	return corev1.ResourceList{
+		corev1.ResourceMemory: *resource.NewQuantity(mibToBytes(softMemoryMiB), resource.BinarySI),
 	}
 }
