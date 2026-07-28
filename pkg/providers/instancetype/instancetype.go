@@ -221,8 +221,7 @@ func computeRequirements(
 	// Advertise the Kata node labels AKS will stamp so Karpenter can scale up for pending pods that
 	// select them. Both spellings are advertised for any Kata runtime (they denote the same Pod
 	// Sandboxing mechanism mid-rename), so prediction is robust to whichever label AKS stamps and
-	// whichever a pod selects. params.KataEnabled is the effective predicate (requested AND the
-	// feature flag enabled), so a disabled cluster predicts nothing it can't provision.
+	// whichever a pod selects.
 	if params.KataEnabled {
 		for _, label := range v1beta1.KataNodeLabels {
 			requirements[label].Insert("true")

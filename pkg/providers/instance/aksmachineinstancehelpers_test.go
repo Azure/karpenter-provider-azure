@@ -975,6 +975,5 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
 			Expect(lo.FromPtr(configureWorkloadRuntime(nodeClass))).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
 		})
-
 	})
 })

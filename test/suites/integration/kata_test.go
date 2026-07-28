@@ -40,9 +40,12 @@ const kataRuntimeClassName = "kata-vm-isolation"
 
 var _ = Describe("Kata (Pod Sandboxing)", func() {
 	BeforeEach(func() {
-		// Kata can only be provisioned on a provision mode that can express the workload runtime.
+		// Kata can only be provisioned on a provision mode that can express the workload runtime: the
+		// AKS machine API carries it on the machine object and the bootstrapping client (the
+		// out-of-cluster/NPS case) carries it in the node bootstrapping request. aksscriptless builds
+		// custom data locally and cannot install the Kata host stack, so skip there.
 		if !env.IsMachineModeOrNPS() {
-			Skip("Kata Pod Sandboxing requires an AKS Machine API provision mode (or NPS)")
+			Skip("Kata Pod Sandboxing is not supported on the aksscriptless provision mode")
 		}
 
 		// Kata requires AzureLinux and a nested-virt-capable gen-2 SKU. Constrain to a known-good SKU
