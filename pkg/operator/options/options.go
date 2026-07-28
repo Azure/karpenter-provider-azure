@@ -63,13 +63,17 @@ func (s *nodeIdentitiesValue) String() string { return strings.Join(*s, ",") }
 type optionsKey struct{}
 
 type Options struct {
-	ClusterName                    string  `json:"clusterName,omitempty"`
-	ClusterEndpoint                string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
-	VMMemoryOverheadPercent        float64 `json:"vmMemoryOverheadPercent,omitempty"`
-	EnableNodeHardening            bool    `json:"enableNodeHardening,omitempty"` // =>  kube-reserved/system-reserved/hard and soft eviction is applied if true, matching AKS node hardening.
-	KubeletClientTLSBootstrapToken string  `json:"-"`                             // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	LinuxAdminUsername             string  `json:"-"`
-	SSHPublicKey                   string  `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
+	ClusterName             string  `json:"clusterName,omitempty"`
+	ClusterEndpoint         string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
+	VMMemoryOverheadPercent float64 `json:"vmMemoryOverheadPercent,omitempty"`
+	// EnableNodeHardening mirrors the cluster-level enableNodeHardening setting
+	// in the AKS RP. Keep this option synchronized with the RP so Karpenter's
+	// scheduling simulation and rendered kubelet configuration match the node.
+	// Remove it when node hardening becomes unconditional in the RP.
+	EnableNodeHardening            bool   `json:"enableNodeHardening,omitempty"`
+	KubeletClientTLSBootstrapToken string `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	LinuxAdminUsername             string `json:"-"`
+	SSHPublicKey                   string `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
 	NetworkPlugin     string `json:"networkPlugin,omitempty"`     // => NetworkPlugin in bootstrap
 	NetworkPolicy     string `json:"networkPolicy,omitempty"`     // => NetworkPolicy in bootstrap

@@ -3504,14 +3504,6 @@ var _ = Describe("Tax Calculator", func() {
 			mem := resources[v1.ResourceMemory]
 			Expect(mem.String()).To(Equal("200Mi"))
 		})
-		It("SystemReservedResources preserves legacy zero values when hardening is disabled", func() {
-			resources := instancetype.SystemReservedResources(32.0, true, false)
-			cpu := resources[v1.ResourceCPU]
-			memory := resources[v1.ResourceMemory]
-			Expect(resources).To(HaveLen(2))
-			Expect(cpu.IsZero()).To(BeTrue())
-			Expect(memory.IsZero()).To(BeTrue())
-		})
 		It("EvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
 			small := instancetype.EvictionThreshold(8.0, true)[v1.ResourceMemory]
 			medium := instancetype.EvictionThreshold(16.0, true)[v1.ResourceMemory]

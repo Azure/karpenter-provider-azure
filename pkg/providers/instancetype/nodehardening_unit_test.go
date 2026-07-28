@@ -16,7 +16,85 @@ limitations under the License.
 
 package instancetype
 
-import "testing"
+import (
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+)
+
+// These cases mirror calculateMemoryReservation(enableNodeHardening=true) in
+// resourceprovider/sharedlib/common/kubereserved/utils.go in the AKS RP.
+func TestKubeReservedResourcesHardeningParity(t *testing.T) {
+	tests := []struct {
+		name          string
+		vcpus         int64
+		memoryGiB     float64
+		maxPods       int32
+		wantMemoryMiB int64
+	}{
+		{name: "7 GiB with 30 pods", vcpus: 4, memoryGiB: 7, maxPods: 30, wantMemoryMiB: 1300},
+		{name: "8 GiB with 110 pods is capped", vcpus: 2, memoryGiB: 8, maxPods: 110, wantMemoryMiB: 2048},
+		{name: "32 GiB with 110 pods", vcpus: 8, memoryGiB: 32, maxPods: 110, wantMemoryMiB: 4505},
+		{name: "64 GiB with 110 pods", vcpus: 8, memoryGiB: 64, maxPods: 110, wantMemoryMiB: 5160},
+		{name: "128 GiB with 250 pods", vcpus: 16, memoryGiB: 128, maxPods: 250, wantMemoryMiB: 11371},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resources := KubeReservedResources(test.vcpus, test.memoryGiB, test.maxPods, true)
+			memory := resources[corev1.ResourceMemory]
+			wantMemory := *resource.NewQuantity(mibToBytes(test.wantMemoryMiB), resource.BinarySI)
+			if memory.Cmp(wantMemory) != 0 {
+				t.Fatalf("memory = %s, want %s", memory.String(), wantMemory.String())
+			}
+		})
+	}
+}
+
+// These cases mirror calculateSystemReservedMemoryMiB and buildSystemReserved
+// in resourceprovider/sharedlib/common/kubereserved/utils.go in the AKS RP.
+func TestSystemReservedResourcesHardeningParity(t *testing.T) {
+	tests := []struct {
+		name          string
+		memoryGiB     float64
+		isAzureCNI    bool
+		wantMemoryMiB int64
+	}{
+		{name: "7 GiB without Azure CNI", memoryGiB: 7, wantMemoryMiB: 200},
+		{name: "7 GiB with Azure CNI", memoryGiB: 7, isAzureCNI: true, wantMemoryMiB: 300},
+		{name: "32 GiB without Azure CNI", memoryGiB: 32, wantMemoryMiB: 300},
+		{name: "32 GiB with Azure CNI", memoryGiB: 32, isAzureCNI: true, wantMemoryMiB: 400},
+		{name: "64 GiB without Azure CNI", memoryGiB: 64, wantMemoryMiB: 400},
+		{name: "128 GiB with Azure CNI", memoryGiB: 128, isAzureCNI: true, wantMemoryMiB: 700},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resources := SystemReservedResources(test.memoryGiB, test.isAzureCNI, true)
+			cpu := resources[corev1.ResourceCPU]
+			memory := resources[corev1.ResourceMemory]
+			ephemeralStorage := resources[corev1.ResourceEphemeralStorage]
+			pids := resources[corev1.ResourceName(systemReservedPIDResource)]
+			wantCPU := *resource.NewMilliQuantity(systemReservedCPUMillicores, resource.DecimalSI)
+			wantMemory := *resource.NewQuantity(mibToBytes(test.wantMemoryMiB), resource.BinarySI)
+
+			if cpu.Cmp(wantCPU) != 0 || memory.Cmp(wantMemory) != 0 || ephemeralStorage.String() != systemReservedEphemeralStorage || pids.Value() != systemReservedPIDs {
+				t.Fatalf("resources = cpu=%s,memory=%s,ephemeral-storage=%s,pid=%s; want cpu=%s,memory=%s,ephemeral-storage=%s,pid=%d",
+					cpu.String(), memory.String(), ephemeralStorage.String(), pids.String(), wantCPU.String(), wantMemory.String(), systemReservedEphemeralStorage, systemReservedPIDs)
+			}
+		})
+	}
+}
+
+func TestSystemReservedResourcesDisabledPreservesLegacyValues(t *testing.T) {
+	resources := SystemReservedResources(64, true, false)
+	cpu, hasCPU := resources[corev1.ResourceCPU]
+	memory, hasMemory := resources[corev1.ResourceMemory]
+	if len(resources) != 2 || !hasCPU || !hasMemory || !cpu.IsZero() || !memory.IsZero() {
+		t.Fatalf("resources = %#v, want exactly zero-valued CPU and memory", resources)
+	}
+}
 
 func TestEvictionMemoryLadder(t *testing.T) {
 	tests := []struct {
