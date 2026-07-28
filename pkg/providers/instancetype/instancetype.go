@@ -346,15 +346,12 @@ func pods(params *instanceTypeParameters) *resource.Quantity {
 	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
-// By default AKS does not set system-reserved values and only CPU and memory are considered:
-// https://learn.microsoft.com/en-us/azure/aks/concepts-clusters-workloads#resource-reservations
-//
-// When node hardening is enabled, a capacity-scaled tier (plus fixed CPU,
-// ephemeral-storage, and PID reservations) is reserved for system daemons to
-// match what the AKS RP / NodeProvisioner configures on hardened nodes.
 func SystemReservedResources(memoryGib float64, isAzureCNI, enableNodeHardening bool) corev1.ResourceList {
 	if !enableNodeHardening {
-		return corev1.ResourceList{}
+		return corev1.ResourceList{
+			corev1.ResourceCPU:    resource.Quantity{},
+			corev1.ResourceMemory: resource.Quantity{},
+		}
 	}
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                             *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
