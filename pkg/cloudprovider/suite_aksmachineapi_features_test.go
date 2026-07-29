@@ -366,7 +366,6 @@ var _ = Describe("CloudProvider", func() {
 				Expect(options.FromContext(aksCtx).NetworkDataplane).To(Equal(consts.NetworkDataplaneCilium))
 
 				// Check that the default NodePool does not have Cilium labels and taints
-				Expect(nodePool.Spec.Template.Spec.StartupTaints).ToNot(ContainElement(utils.TaintCiliumNoExecute))
 				Expect(nodePool.Spec.Template.Spec.StartupTaints).ToNot(ContainElement(utils.TaintCiliumNoSchedule))
 				Expect(nodePool.Spec.Template.ObjectMeta.Labels).ShouldNot(HaveKey(labelspkg.AKSLabelEBPFDataplane))
 
@@ -376,7 +375,6 @@ var _ = Describe("CloudProvider", func() {
 
 				// Check that our CloudProvider will return Cilium labels and startup taints to Core
 				Expect(nc.Labels).Should(HaveKey(labelspkg.AKSLabelEBPFDataplane))
-				Expect(nc.Status.CloudProviderStartupTaints).To(ContainElement(utils.TaintCiliumNoExecute))
 				Expect(nc.Status.CloudProviderStartupTaints).To(ContainElement(utils.TaintCiliumNoSchedule))
 			})
 
@@ -393,7 +391,6 @@ var _ = Describe("CloudProvider", func() {
 				Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(Equal(consts.NetworkDataplaneCilium))
 
 				// Check that the default NodePool does not have Cilium labels and taints
-				Expect(nodePool.Spec.Template.Spec.StartupTaints).ToNot(ContainElement(utils.TaintCiliumNoExecute))
 				Expect(nodePool.Spec.Template.Spec.StartupTaints).ToNot(ContainElement(utils.TaintCiliumNoSchedule))
 				Expect(nodePool.Spec.Template.ObjectMeta.Labels).ShouldNot(HaveKey(labelspkg.AKSLabelEBPFDataplane))
 
@@ -403,7 +400,6 @@ var _ = Describe("CloudProvider", func() {
 
 				// Check that our CloudProvider will not return Cilium labels or startup taints to Core
 				Expect(nc.Labels).ShouldNot(HaveKey(labelspkg.AKSLabelEBPFDataplane))
-				Expect(nc.Status.CloudProviderStartupTaints).ToNot(ContainElement(utils.TaintCiliumNoExecute))
 				Expect(nc.Status.CloudProviderStartupTaints).ToNot(ContainElement(utils.TaintCiliumNoSchedule))
 			})
 		})

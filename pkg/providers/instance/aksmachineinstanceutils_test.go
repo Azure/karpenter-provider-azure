@@ -138,7 +138,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, lo.ToPtr(consts.NetworkDataplaneCilium)))
 
 			// assume the Cilium startup taint isn't on the Machine yet (i.e. the DaemonPod hasn't scheduled...)
-			Expect(aksMachine.Properties.Kubernetes.NodeInitializationTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNoExecute.ToString())))
 			Expect(aksMachine.Properties.Kubernetes.NodeInitializationTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNoSchedule.ToString())))
 
 			nodeClaim, err := BuildNodeClaimFromAKSMachine(aksCtx, aksMachine, possibleInstanceTypes, aksMachineLocation)
@@ -161,7 +160,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 			// Check that the Cilium label and startup taint is on the NodeClaim we pass back to Karpenter Core
 			Expect(nodeClaim.Labels).Should(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, consts.NetworkDataplaneCilium))
-			Expect(nodeClaim.Status.CloudProviderStartupTaints).To(ContainElement(utils.TaintCiliumNoExecute))
 			Expect(nodeClaim.Status.CloudProviderStartupTaints).To(ContainElement(utils.TaintCiliumNoSchedule))
 		})
 
@@ -180,7 +178,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 			// expect that the Cilium label and startup taint is not on the Machine
 			Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, lo.ToPtr(consts.NetworkDataplaneCilium)))
-			Expect(aksMachine.Properties.Kubernetes.NodeInitializationTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNoExecute.ToString())))
 			Expect(aksMachine.Properties.Kubernetes.NodeInitializationTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNoSchedule.ToString())))
 
 			nodeClaim, err := BuildNodeClaimFromAKSMachine(aksCtx, aksMachine, possibleInstanceTypes, aksMachineLocation)
@@ -202,7 +199,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 
 			// Check that the Cilium label and startup taint are not on the NodeClaim we pass back to Karpenter Core
-			Expect(nodeClaim.Status.CloudProviderStartupTaints).ToNot(ContainElement(utils.TaintCiliumNoExecute))
 			Expect(nodeClaim.Status.CloudProviderStartupTaints).ToNot(ContainElement(utils.TaintCiliumNoSchedule))
 			Expect(nodeClaim.Labels).ShouldNot(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, consts.NetworkDataplaneCilium))
 		})

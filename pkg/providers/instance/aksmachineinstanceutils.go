@@ -124,7 +124,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	opts := options.FromContext(ctx)
 	if opts != nil {
 		if opts.NetworkDataplane == consts.NetworkDataplaneCilium {
-			cloudProviderStartupTaints = lo.Uniq(append(cloudProviderStartupTaints, utils.TaintCiliumNoExecute, utils.TaintCiliumNoSchedule))
+			cloudProviderStartupTaints = lo.Uniq(append(cloudProviderStartupTaints, utils.TaintCiliumNoSchedule))
 			labels[labelspkg.AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
 		}
 	}
