@@ -54,6 +54,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -188,6 +189,99 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 					"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
 				}))
 			}
+		})
+		It("should not allow the user to override Karpenter-managed tags", func() {
+			nodeClass.Spec.Tags = map[string]string{
+				"karpenter.azure.com/cluster": "my-override-cluster",
+				"karpenter.sh/nodepool":       "my-override-nodepool",
+				"compute.aks.billing":         "my-override-billing",
+			}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			if provisionMode.isAKSMachineMode() {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.Tags).To(HaveKeyWithValue(launchtemplate.NodePoolTagKey, lo.ToPtr(nodePool.Name)))
+				Expect(aksMachine.Properties.Tags).To(HaveKeyWithValue(launchtemplate.KarpenterManagedTagKey, lo.ToPtr(testOptions.ClusterName)))
+				Expect(aksMachine.Properties.Tags).To(HaveKeyWithValue(launchtemplate.BillingTagKey, lo.ToPtr(launchtemplate.BillingTagValueLinux)))
+				return
+			}
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
+			vm, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
+			Expect(err).To(BeNil())
+			Expect(vm.Tags).To(HaveKeyWithValue(launchtemplate.NodePoolTagKey, lo.ToPtr(nodePool.Name)))
+			Expect(vm.Tags).To(HaveKeyWithValue(launchtemplate.KarpenterManagedTagKey, lo.ToPtr(testOptions.ClusterName)))
+			Expect(vm.Tags).To(HaveKeyWithValue(launchtemplate.BillingTagKey, lo.ToPtr(launchtemplate.BillingTagValueLinux)))
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+			Expect(nic.Tags).To(HaveKeyWithValue(launchtemplate.NodePoolTagKey, lo.ToPtr(nodePool.Name)))
+			Expect(nic.Tags).To(HaveKeyWithValue(launchtemplate.KarpenterManagedTagKey, lo.ToPtr(testOptions.ClusterName)))
+			Expect(nic.Tags).To(HaveKeyWithValue(launchtemplate.BillingTagKey, lo.ToPtr(launchtemplate.BillingTagValueLinux)))
+		})
+	})
+
+	Context("Create - EncryptionAtHost", func() {
+		DescribeTable("should propagate specified EncryptionAtHost from AKSNodeClass",
+			func(encryptionAtHost bool) {
+				if nodeClass.Spec.Security == nil {
+					nodeClass.Spec.Security = &v1beta1.Security{}
+				}
+				nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(encryptionAtHost)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				if provisionMode.isAKSMachineMode() {
+					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+					Expect(aksMachine.Properties.Security).ToNot(BeNil())
+					Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
+					Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(Equal(encryptionAtHost))
+					return
+				}
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+				Expect(vm.Properties.SecurityProfile.EncryptionAtHost).ToNot(BeNil())
+				Expect(lo.FromPtr(vm.Properties.SecurityProfile.EncryptionAtHost)).To(Equal(encryptionAtHost))
+			},
+			Entry("enabled", true),
+			Entry("disabled", false),
+		)
+
+		It("should use the mode default when EncryptionAtHost is not specified in AKSNodeClass", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			if provisionMode.isAKSMachineMode() {
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.Security).ToNot(BeNil())
+				Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeFalse())
+				return
+			}
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.SecurityProfile).To(BeNil())
 		})
 	})
 
@@ -1170,6 +1264,104 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				Expect(nic).NotTo(BeNil())
 				Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal(nodeClassSubnetID))
 			})
+			Context("AzureCNI V1", func() {
+				var originalOptions *options.Options
+
+				BeforeEach(func() {
+					originalOptions = options.FromContext(ctx)
+					ctx = options.ToContext(
+						ctx,
+						test.Options(test.OptionsFields{
+							NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
+							NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+						}))
+				})
+
+				AfterEach(func() {
+					ctx = options.ToContext(ctx, originalOptions)
+				})
+				It("should include 30 secondary ips by default for NodeSubnet", func() {
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+					pod := coretest.UnschedulablePod(coretest.PodOptions{})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+					Expect(nic).ToNot(BeNil())
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+					Expect(len(nic.Properties.IPConfigurations)).To(Equal(30))
+					customData := ExpectDecodedCustomData(azureEnv)
+					expectedFlags := map[string]string{
+						"max-pods": "30",
+					}
+					ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				})
+				It("should set the number of secondary ips equal to max pods (NodeSubnet)", func() {
+					nodeClass.Spec.MaxPods = lo.ToPtr(int32(11))
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+					pod := coretest.UnschedulablePod(coretest.PodOptions{})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+					Expect(nic).ToNot(BeNil())
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+					Expect(len(nic.Properties.IPConfigurations)).To(Equal(11))
+				})
+			})
+
+			It("should attach nsg to nic when in BYO VNET mode", func() {
+				ctx = options.ToContext(
+					ctx,
+					test.Options(test.OptionsFields{
+						SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"), // different RG
+					}))
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+				Expect(nic).ToNot(BeNil())
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, "00000000")
+				Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
+				Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
+			})
+
+			It("should attach nsg to nic when NodeClass VNET specified", func() {
+				subnetOptions := *options.FromContext(ctx)
+				subnetOptions.SubnetID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"
+				ctx = options.ToContext(ctx, &subnetOptions)
+				nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/nodeclass-subnet")
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+				Expect(nic).ToNot(BeNil())
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, "00000000")
+				Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
+				Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
+			})
 
 			DescribeTable("Azure CNI node labels and agentbaker network plugin", func(
 				networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
@@ -1278,6 +1470,38 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				Expect(lo.FromPtr(backendPools[1].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
 				Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 			})
+		})
+
+		Context("Create - VM and NIC Tags", func() {
+			It("should create VM and NIC with valid ARM tags", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
+				vm, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
+				Expect(err).To(BeNil())
+				tags := vm.Tags
+				Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
+				Expect(lo.FromPtr(tags[launchtemplate.BillingTagKey])).To(Equal("linux"))
+				Expect(lo.PickBy(tags, func(key string, value *string) bool {
+					return strings.Contains(key, "/") // ARM tags can't contain '/'
+				})).To(HaveLen(0))
+
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+				Expect(nic).ToNot(BeNil())
+				nicTags := nic.Tags
+				Expect(lo.FromPtr(nicTags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
+				Expect(lo.FromPtr(nicTags[launchtemplate.BillingTagKey])).To(Equal("linux"))
+				Expect(lo.PickBy(nicTags, func(key string, value *string) bool {
+					return strings.Contains(key, "/") // ARM tags can't contain '/'
+				})).To(HaveLen(0))
+			})
+
 		})
 
 		Context("Kubenet", func() {
@@ -1476,6 +1700,16 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				Expect(nic.Properties).ToNot(BeNil())
 
 				Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
+				Expect(vm.Properties.OSProfile).ToNot(BeNil())
+				Expect(vm.Properties.OSProfile.CustomData).ToNot(BeNil())
+
+				decodedBytes, err := base64.StdEncoding.DecodeString(*vm.Properties.OSProfile.CustomData)
+				Expect(err).To(Succeed())
+				customData := string(decodedBytes[:])
+				expectedFlags := map[string]string{
+					"max-pods": "250",
+				}
+				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 			})
 		})
 
@@ -1537,6 +1771,33 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 					Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
 				}
 			})
+			It("should create VM with custom Linux admin username", func() {
+				customUsername := "customuser"
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					LinuxAdminUsername: lo.ToPtr(customUsername),
+				}))
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+
+				// Verify the custom username was propagated
+				Expect(vm.Properties.OSProfile.AdminUsername).ToNot(BeNil())
+				Expect(*vm.Properties.OSProfile.AdminUsername).To(Equal(customUsername))
+
+				// Verify SSH key path uses the custom username
+				Expect(vm.Properties.OSProfile.LinuxConfiguration).ToNot(BeNil())
+				Expect(vm.Properties.OSProfile.LinuxConfiguration.SSH).ToNot(BeNil())
+				Expect(vm.Properties.OSProfile.LinuxConfiguration.SSH.PublicKeys).To(HaveLen(1))
+				expectedPath := "/home/" + customUsername + "/.ssh/authorized_keys"
+				Expect(*vm.Properties.OSProfile.LinuxConfiguration.SSH.PublicKeys[0].Path).To(Equal(expectedPath))
+			})
+
 		})
 	}
 
@@ -1671,95 +1932,6 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(lo.ToPtr("startup-taint=startup-value:NoExecute")))
 			})
 
-			It("should not allow the user to override Karpenter-managed tags", func() {
-				nodeClass.Spec.Tags = map[string]string{
-					"karpenter.azure.com/cluster": "my-override-cluster",
-					"karpenter.sh/nodepool":       "my-override-nodepool",
-				}
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				// Verify AKS machine was created with correct Karpenter-managed tags (not user overrides)
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				input := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				aksMachine := input.AKSMachine
-
-				// Check that AKS machine has correct Karpenter-managed tags
-				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.sh_nodepool"))
-				Expect(aksMachine.Properties.Tags["karpenter.sh_nodepool"]).To(Equal(&nodePool.Name))
-				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
-				Expect(aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(&testOptions.ClusterName))
-
-				// Verify user-specified tags are ignored for Karpenter-managed keys
-				Expect(*aksMachine.Properties.Tags["karpenter.sh_nodepool"]).ToNot(Equal("my-override-nodepool"))
-				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).ToNot(Equal("my-override-cluster"))
-			})
-		})
-
-		// Ported from VM test: "EncryptionAtHost"
-		Context("Create - EncryptionAtHost", func() {
-			It("should create AKS machine with EncryptionAtHost enabled when specified in AKSNodeClass", func() {
-				if nodeClass.Spec.Security == nil {
-					nodeClass.Spec.Security = &v1beta1.Security{}
-				}
-				nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				aksMachine := createInput.AKSMachine
-
-				Expect(aksMachine.Properties.Security).ToNot(BeNil())
-				Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
-				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeTrue())
-			})
-
-			It("should create AKS machine with EncryptionAtHost disabled when specified in AKSNodeClass", func() {
-				if nodeClass.Spec.Security == nil {
-					nodeClass.Spec.Security = &v1beta1.Security{}
-				}
-				nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(false)
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				aksMachine := createInput.AKSMachine
-
-				Expect(aksMachine.Properties.Security).ToNot(BeNil())
-				Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
-				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeFalse())
-			})
-
-			It("should create AKS machine with EncryptionAtHost disabled when not specified in AKSNodeClass", func() {
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-
-				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-				aksMachine := createInput.AKSMachine
-
-				// Security profile should still exist but EncryptionAtHost should be false (default)
-				Expect(aksMachine.Properties.Security).ToNot(BeNil())
-				Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
-				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeFalse())
-			})
 		})
 
 		Context("Create - LinuxOSConfig", func() {
