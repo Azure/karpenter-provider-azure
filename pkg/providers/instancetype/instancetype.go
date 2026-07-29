@@ -354,10 +354,9 @@ func SystemReservedResources(memoryGiB float64, isAzureCNI, enableNodeHardening 
 		}
 	}
 	return corev1.ResourceList{
-		corev1.ResourceCPU:                             *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
-		corev1.ResourceMemory:                          *resource.NewQuantity(mibToBytes(systemReservedMemoryMiB(memoryGiB, isAzureCNI)), resource.BinarySI),
-		corev1.ResourceEphemeralStorage:                resource.MustParse(systemReservedEphemeralStorage),
-		corev1.ResourceName(systemReservedPIDResource): resource.MustParse(SystemReservedPIDs),
+		corev1.ResourceCPU:              *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
+		corev1.ResourceMemory:           *resource.NewQuantity(mibToBytes(systemReservedMemoryMiB(memoryGiB, isAzureCNI)), resource.BinarySI),
+		corev1.ResourceEphemeralStorage: resource.MustParse(systemReservedEphemeralStorage),
 	}
 }
 
@@ -370,9 +369,8 @@ func KubeReservedResources(vcpus int64, memoryGiB float64, maxPods int32, enable
 	}
 
 	resources := corev1.ResourceList{
-		corev1.ResourceCPU:                             *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
-		corev1.ResourceMemory:                          *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
-		corev1.ResourceName(systemReservedPIDResource): resource.MustParse(KubeReservedPIDs),
+		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
+		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
 	}
 
 	return resources

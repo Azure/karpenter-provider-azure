@@ -232,8 +232,6 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
-	// resource.Quantity canonicalizes 1000 as "1k"; retain the RP's literal
-	// --kube-reserved component for exact bootstrap parity.
 	kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable:  instanceType.Overhead.EvictionThreshold.Memory().String(),
@@ -243,8 +241,6 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	}
 
 	if options.FromContext(ctx).EnableNodeHardening {
-		// resource.Quantity canonicalizes 1000 as "1k"; retain the RP's literal
-		// --system-reserved component for exact bootstrap parity.
 		kubeletConfig.SystemReserved["pid"] = instancetype.SystemReservedPIDs
 		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
 		softEvictionThreshold := instancetype.SoftEvictionThreshold(totalMemoryMiB)

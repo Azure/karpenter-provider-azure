@@ -3485,11 +3485,9 @@ var _ = Describe("Tax Calculator", func() {
 			cpu := resources[v1.ResourceCPU]
 			mem := resources[v1.ResourceMemory]
 			eph := resources[v1.ResourceEphemeralStorage]
-			pids := resources[v1.ResourceName("pid")]
 			Expect(cpu.String()).To(Equal("100m"))
 			Expect(mem.String()).To(Equal("400Mi"))
 			Expect(eph.String()).To(Equal("1Gi"))
-			Expect(pids.String()).To(Equal("1k"))
 		})
 		It("SystemReservedResources omits the bonus for non-Azure CNI", func() {
 			resources := instancetype.SystemReservedResources(8.0, false, true)

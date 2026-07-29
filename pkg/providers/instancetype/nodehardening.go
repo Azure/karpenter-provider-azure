@@ -48,7 +48,6 @@ const (
 	// systemReservedEphemeralStorage mirrors the RP's fixed 1Gi ephemeral-storage
 	// system reservation on hardened nodes.
 	systemReservedEphemeralStorage = "1Gi"
-	systemReservedPIDResource      = "pid"
 
 	NodeFSAvailable                      = "nodefs.available"
 	NodeFSInodesFree                     = "nodefs.inodesFree"
