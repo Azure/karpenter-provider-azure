@@ -1239,7 +1239,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("memory.available<"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
-				ExpectHardEvictionThresholds(customData, "512Mi")
+				ExpectHardEvictionThresholds(customData, "250Mi")
 				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period="))
 				Expect(kubeletFlags).To(ContainSubstring("memory.available=30s"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
@@ -1289,10 +1289,7 @@ var _ = Describe("InstanceType Provider", func() {
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 		})
 
@@ -1363,10 +1360,7 @@ var _ = Describe("InstanceType Provider", func() {
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -1408,10 +1402,7 @@ var _ = Describe("InstanceType Provider", func() {
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 		})
 
@@ -3544,6 +3535,16 @@ func ExpectHardEvictionThresholds(customData, memory string) {
 	Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
 	Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
 	Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
+}
+
+func ExpectKubeReservedResources(customData string, expected ...string) {
+	GinkgoHelper()
+	const prefix = "--kube-reserved="
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	start := strings.Index(kubeletFlags, prefix)
+	Expect(start).ToNot(Equal(-1))
+	value := strings.Fields(kubeletFlags[start+len(prefix):])[0]
+	Expect(strings.Split(value, ",")).To(ConsistOf(expected))
 }
 
 func ExpectKubeletNodeLabelsPassed(customData string) string {
