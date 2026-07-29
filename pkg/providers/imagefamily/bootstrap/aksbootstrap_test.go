@@ -194,8 +194,7 @@ func TestKubeletConfigMap(t *testing.T) {
 		"--container-log-max-files":       "13",
 		"--container-log-max-size":        "42Mi",
 		"--pod-max-pids":                  "99",
-		"--system-reserved":               "cpu=200m", // TODO: test multiple resource
-		"--kube-reserved":                 "cpu=180m,memory=2250Mi,pid=1000",
+		"--system-reserved":               "cpu=200m",               // TODO: test multiple resource
 		"--eviction-hard":                 "memory.available<100Mi", // TODO: test multiple resource
 		"--eviction-soft":                 "memory.available<99Mi",  // TODO: test multiple resource
 		"--eviction-soft-grace-period":    "memory.available=1m30s",
@@ -208,6 +207,7 @@ func TestKubeletConfigMap(t *testing.T) {
 	for k, v := range expectedKubeletConfigs {
 		g.Expect(actualKubeletConfig[k]).To(Equal(v), fmt.Sprintf("parameter mismatch for %s", k))
 	}
+	g.Expect(strings.Split(actualKubeletConfig["--kube-reserved"], ",")).To(ConsistOf("cpu=180m", "memory=2250Mi", "pid=1000"))
 }
 
 func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
