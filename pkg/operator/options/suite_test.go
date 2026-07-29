@@ -447,6 +447,32 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("invalid")))
 		})
+		It("should fail validation when NodeOSUpgradeChannel is not valid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-os-upgrade-channel", "NotAChannel",
+			)
+			Expect(err).To(MatchError(ContainSubstring("node-os-upgrade-channel is invalid")))
+		})
+		It("should fail validation when NodeOSUpgradeChannel is None (not surfaced to Karpenter)", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-os-upgrade-channel", "None",
+			)
+			Expect(err).To(MatchError(ContainSubstring("node-os-upgrade-channel is invalid")))
+		})
 		It("should fail validation when ProvisionMode is bootstrappingclient but NodebootstrappingServerURL is not provided", func() {
 			err := opts.Parse(
 				fs,
@@ -819,6 +845,82 @@ var _ = Describe("Options", func() {
 				"--aks-machines-pool-name", "unusedpool",
 			)
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should enable security-patch images on an AKS machine API mode with use-sig", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapi",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--node-os-upgrade-channel", "SecurityPatch",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.IsSecurityPatchChannel()).To(BeTrue())
+		})
+
+		It("should NOT enable security-patch images on a non AKS machine API mode", func() {
+			// Security-patch images are only resolvable by the service on the AKS machine API
+			// provision modes. Requesting them on a direct-VM mode yields image references that
+			// cannot be provisioned, so the channel must not be acted on.
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "bootstrappingclient",
+				"--nodebootstrapping-server-url", "https://nodebootstrapping-server-url.com",
+				"--use-sig",
+				"--sig-access-token-server-url", "https://sig-access-token-server-url.com",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--node-os-upgrade-channel", "SecurityPatch",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.IsSecurityPatchChannel()).To(BeFalse())
+		})
+
+		It("should NOT enable security-patch images without use-sig", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--node-os-upgrade-channel", "SecurityPatch",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.IsSecurityPatchChannel()).To(BeFalse())
+		})
+
+		It("should NOT enable security-patch images on the NodeImage channel", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "aksmachineapi",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
+				"--node-os-upgrade-channel", "NodeImage",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.IsSecurityPatchChannel()).To(BeFalse())
 		})
 
 		It("should default manage-existing-aks-machines to false", func() {

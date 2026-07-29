@@ -186,7 +186,14 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
-	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	// copy the options to avoid modifying the original, so the SecurityPatchOnly header policy is
+	// only applied to the node image versions client.
+	var nodeImageVersionsClientOptions = *opts
+	if o.IsSecurityPatchChannel() {
+		log.FromContext(ctx).Info("cluster is on the SecurityPatch node OS upgrade channel; requesting security-patch node images")
+		nodeImageVersionsClientOptions.PerCallPolicies = append(nodeImageVersionsClientOptions.PerCallPolicies, &securityPatchOnlyPolicy{})
+	}
+	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, &nodeImageVersionsClientOptions)
 	if err != nil {
 		return nil, err
 	}

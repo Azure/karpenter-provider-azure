@@ -82,7 +82,17 @@ type Options struct {
 	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	setFlags                map[string]bool
 
-	ProvisionMode              string            `json:"provisionMode,omitempty"`
+	ProvisionMode string `json:"provisionMode,omitempty"`
+	// NodeOSUpgradeChannel mirrors the managed cluster's autoUpgradeProfile.nodeOSUpgradeChannel.
+	// Only the AKS-managed channels are surfaced: "SecurityPatch" and "NodeImage". The None and
+	// Unmanaged channels are intentionally not surfaced as they have no meaning for NAP node image
+	// selection; an empty value means standard node images are used.
+	//
+	// Note: SecurityPatch node images are only usable on the AKS Machine API provision modes, where
+	// the service resolves the logical node image version to the physical security-patch image. On
+	// the direct-VM provision modes Karpenter builds the image ID itself and cannot address the
+	// security-patch gallery, so the channel is not acted on there. See IsSecurityPatchChannel.
+	NodeOSUpgradeChannel       string            `json:"nodeOSUpgradeChannel,omitempty"`
 	NodeBootstrappingServerURL string            `json:"-"`
 	UseSIG                     bool              `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
 	SIGAccessTokenServerURL    string            `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
@@ -120,6 +130,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
+	fs.StringVar(&o.NodeOSUpgradeChannel, "node-os-upgrade-channel", env.WithDefaultString("NODE_OS_UPGRADE_CHANNEL", ""), "The managed cluster node OS upgrade channel ('SecurityPatch' or 'NodeImage'). When 'SecurityPatch', use-sig is true, and provision-mode is an AKS Machine API mode, Karpenter requests security-patch node images.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")
 	fs.StringVar(&o.KubeletIdentityClientID, "kubelet-identity-client-id", env.WithDefaultString("KUBELET_IDENTITY_CLIENT_ID", ""), "The client ID of the kubelet identity.")
@@ -145,6 +156,26 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 // IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
 func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
+// IsSecurityPatchChannel returns true if Karpenter should source node images from the
+// security-patch lineage.
+//
+// This requires all of:
+//   - the cluster's node OS upgrade channel is SecurityPatch,
+//   - SIG is in use (security-patch images are only published to the AKS shared galleries), and
+//   - an AKS Machine API provision mode.
+//
+// The provision mode requirement is not incidental. On the AKS Machine API modes Karpenter sends the
+// logical node image version (e.g. "AKSUbuntu-2404gen2containerd-202606.08.1-2026.06.13") and the
+// service resolves it to the physical security-patch image. On the direct-VM modes Karpenter builds
+// the image ID itself from the standard node image gallery, which cannot address the security-patch
+// gallery (different gallery, image definition and physical version encoding), so requesting
+// security-patch images there yields unprovisionable image references.
+func (o *Options) IsSecurityPatchChannel() bool {
+	return o.NodeOSUpgradeChannel == consts.NodeOSUpgradeChannelSecurityPatch &&
+		o.UseSIG &&
+		o.IsAKSMachineAPIMode()
 }
 
 func (o *Options) GetAPIServerName() string {

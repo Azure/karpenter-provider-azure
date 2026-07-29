@@ -43,6 +43,7 @@ func (o *Options) Validate() error {
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
 		o.validateProvisionMode(),
+		o.validateNodeOSUpgradeChannel(),
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
 		o.validateAdditionalTags(),
@@ -140,6 +141,17 @@ func (o *Options) validateProvisionMode() error {
 		}
 	}
 	return nil
+}
+
+func (o *Options) validateNodeOSUpgradeChannel() error {
+	switch o.NodeOSUpgradeChannel {
+	case "",
+		consts.NodeOSUpgradeChannelSecurityPatch,
+		consts.NodeOSUpgradeChannelNodeImage:
+		return nil
+	default:
+		return fmt.Errorf("node-os-upgrade-channel is invalid: %s", o.NodeOSUpgradeChannel)
+	}
 }
 
 func (o *Options) validateBatchOptions() error {
