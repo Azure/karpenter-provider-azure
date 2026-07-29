@@ -74,7 +74,7 @@ Additionally, a Kubernetes version upgrade also triggers a node image version re
 
 Current NAP behavior has no rollback affordance and no version control surface:
 
-1. No spec field lets customers request rollback or pin to a specific node image version.
+1. No spec field lets customers request rollback or control node image version rollout manually.
 2. No spec field lets customers decouple their NAP nodes' Kubernetes version from the control plane's current version.
 3. No status field preserves the previous image set as a first-class rollback target.
 4. Drift logic replaces nodes that are not on the current status image set, but does not model rollback intent.
