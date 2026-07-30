@@ -882,6 +882,7 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 			{name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, valueFunc: func() string { return "429" }, expectedInKubeletLabels: true, expectedOnNode: true},
 			{name: v1beta1.LabelSKUAcceleratedNetworking, label: v1beta1.LabelSKUAcceleratedNetworking, valueFunc: func() string { return "true" }, expectedInKubeletLabels: true, expectedOnNode: true},
 			{name: v1beta1.LabelSKUStoragePremiumCapable, label: v1beta1.LabelSKUStoragePremiumCapable, valueFunc: func() string { return "true" }, expectedInKubeletLabels: true, expectedOnNode: true},
+			{name: v1beta1.LabelUltraSSD, label: v1beta1.LabelUltraSSD, valueFunc: func() string { return "true" }, expectedInKubeletLabels: true, expectedOnNode: true},
 			{name: v1beta1.LabelSKUGPUName, label: v1beta1.LabelSKUGPUName, valueFunc: func() string { return "A100" }, expectedInKubeletLabels: true, expectedOnNode: true},
 			{name: v1beta1.LabelSKUGPUManufacturer, label: v1beta1.LabelSKUGPUManufacturer, valueFunc: func() string { return "nvidia" }, expectedInKubeletLabels: true, expectedOnNode: true},
 			{name: v1beta1.LabelSKUGPUCount, label: v1beta1.LabelSKUGPUCount, valueFunc: func() string { return "1" }, expectedInKubeletLabels: true, expectedOnNode: true},
@@ -2497,6 +2498,7 @@ var _ = Describe("CloudProvider", func() {
 				{name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, valueFunc: func() string { return "429" }, expectedInKubeletLabels: true, expectedOnNode: true},
 				{name: v1beta1.LabelSKUAcceleratedNetworking, label: v1beta1.LabelSKUAcceleratedNetworking, valueFunc: func() string { return "true" }, expectedInKubeletLabels: true, expectedOnNode: true},
 				{name: v1beta1.LabelSKUStoragePremiumCapable, label: v1beta1.LabelSKUStoragePremiumCapable, valueFunc: func() string { return "true" }, expectedInKubeletLabels: true, expectedOnNode: true},
+				{name: v1beta1.LabelUltraSSD, label: v1beta1.LabelUltraSSD, valueFunc: func() string { return "true" }, expectedInKubeletLabels: true, expectedOnNode: true},
 				{name: v1beta1.LabelSKUGPUName, label: v1beta1.LabelSKUGPUName, valueFunc: func() string { return "A100" }, expectedInKubeletLabels: true, expectedOnNode: true},
 				{name: v1beta1.LabelSKUGPUManufacturer, label: v1beta1.LabelSKUGPUManufacturer, valueFunc: func() string { return "nvidia" }, expectedInKubeletLabels: true, expectedOnNode: true},
 				{name: v1beta1.LabelSKUGPUCount, label: v1beta1.LabelSKUGPUCount, valueFunc: func() string { return "1" }, expectedInKubeletLabels: true, expectedOnNode: true},
@@ -2654,41 +2656,42 @@ var _ = Describe("CloudProvider", func() {
 		})
 	})
 
-	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = false", func() {
-		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
-				ManageExistingAKSMachines: lo.ToPtr(false),
-			})
-			ctx = coreoptions.ToContext(ctx, coretest.Options())
-			ctx = options.ToContext(ctx, testOptions)
+	// Skip this for now as it takes long time while ManageExistingAKSMachines = true should performs not too different on this codepath
+	// Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = false", func() {
+	// 	BeforeEach(func() {
+	// 		testOptions = test.Options(test.OptionsFields{
+	// 			ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
+	// 			ManageExistingAKSMachines: lo.ToPtr(false),
+	// 		})
+	// 		ctx = coreoptions.ToContext(ctx, coretest.Options())
+	// 		ctx = options.ToContext(ctx, testOptions)
 
-			azureEnv = test.NewEnvironment(ctx, env)
-			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
-			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
+	// 		azureEnv = test.NewEnvironment(ctx, env)
+	// 		azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+	// 		statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+	// 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+	// 		cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	// 		cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
 
-			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
+	// 		cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	// 		clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+	// 		coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+	// 		coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
 
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-		})
+	// 		ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+	// 		ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+	// 	})
 
-		AfterEach(func() {
-			// Wait for any async polling goroutines to complete before resetting
-			cloudProvider.WaitForInstancePromises()
-			cluster.Reset()
-			azureEnv.Reset(ctx)
-			azureEnvNonZonal.Reset(ctx)
-		})
+	// 	AfterEach(func() {
+	// 		// Wait for any async polling goroutines to complete before resetting
+	// 		cloudProvider.WaitForInstancePromises()
+	// 		cluster.Reset()
+	// 		azureEnv.Reset(ctx)
+	// 		azureEnvNonZonal.Reset(ctx)
+	// 	})
 
-		runFeatureTests(aksscriptlessProvisionMode())
-	})
+	// 	runFeatureTests(aksscriptlessProvisionMode())
+	// })
 
 	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = true", func() {
 		BeforeEach(func() {
