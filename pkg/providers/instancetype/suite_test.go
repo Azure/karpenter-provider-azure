@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
@@ -70,6 +71,8 @@ var fakeClock *clock.FakeClock
 var coreProvisioner, coreProvisionerNonZonal, coreProvisionerBootstrap *provisioning.Provisioner
 var cluster, clusterNonZonal, clusterBootstrap *state.Cluster
 var cloudProvider, cloudProviderNonZonal, cloudProviderBootstrap *cloudprovider.CloudProvider
+
+var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
