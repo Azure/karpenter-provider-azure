@@ -526,7 +526,7 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, imageOptions.ParsedDiskEncryptionSetID, imageOptions.NetworkPolicy, imageOptions.NetworkPlugin)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -581,7 +581,7 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, imageOptions.ParsedDiskEncryptionSetID, imageOptions.NetworkPolicy, imageOptions.NetworkPlugin)
 				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 				cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-				coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+				coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -626,7 +626,7 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, imageOptions.ParsedDiskEncryptionSetID, imageOptions.NetworkPolicy, imageOptions.NetworkPlugin)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -667,7 +667,7 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, imageOptions.ParsedDiskEncryptionSetID, imageOptions.NetworkPolicy, imageOptions.NetworkPlugin)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -708,7 +708,7 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, imageOptions.ParsedDiskEncryptionSetID, imageOptions.NetworkPolicy, imageOptions.NetworkPlugin)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -908,7 +908,7 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 					statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 					cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 					cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-					coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+					coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 					ExpectApplied(ctx, env.Client, nodeClass)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 					Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
@@ -2446,8 +2446,8 @@ var _ = Describe("CloudProvider", func() {
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -2523,7 +2523,7 @@ var _ = Describe("CloudProvider", func() {
 						statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
 						cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 						cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-						coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
+						coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 						ExpectApplied(ctx, env.Client, nodeClass)
 						ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 						Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
@@ -2580,13 +2580,13 @@ var _ = Describe("CloudProvider", func() {
 					value := item.valueFunc()
 					pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.label: value}})
 					if item.label != v1.LabelWindowsBuild {
-						bindings := []Bindings{}
+						results := []ProvisioningResult{}
 						for range 3 {
-							bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod))
+							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod))
 						}
-						for i := range len(bindings) {
-							Expect(lo.Values(bindings[i])).ToNot(BeEmpty())
-							Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
+						for i := range len(results) {
+							Expect(lo.Values(results[i].Bindings)).ToNot(BeEmpty())
+							Expect(lo.Values(results[i].Bindings)[0].Node.Name).To(Equal(lo.Values(results[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -2672,8 +2672,8 @@ var _ = Describe("CloudProvider", func() {
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -2708,8 +2708,8 @@ var _ = Describe("CloudProvider", func() {
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
