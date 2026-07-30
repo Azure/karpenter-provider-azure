@@ -1502,7 +1502,6 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 					return strings.Contains(key, "/") // ARM tags can't contain '/'
 				})).To(HaveLen(0))
 			})
-
 		})
 
 		Context("Kubenet", func() {
@@ -1798,7 +1797,6 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				expectedPath := "/home/" + customUsername + "/.ssh/authorized_keys"
 				Expect(*vm.Properties.OSProfile.LinuxConfiguration.SSH.PublicKeys[0].Path).To(Equal(expectedPath))
 			})
-
 		})
 	}
 
@@ -1932,7 +1930,6 @@ func runFeatureTests(provisionMode provisionModeTestCase) {
 				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(lo.ToPtr("test-taint=test-value:NoSchedule")))
 				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(lo.ToPtr("startup-taint=startup-value:NoExecute")))
 			})
-
 		})
 
 		Context("Create - LinuxOSConfig", func() {

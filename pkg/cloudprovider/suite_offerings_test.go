@@ -19,6 +19,7 @@ package cloudprovider
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sync/atomic"
 
@@ -100,7 +101,12 @@ func exceedsDSv3FamilyQuota(usedCores *atomic.Int32, coreQuota int32, vmSize str
 	if sku.GetFamilyName() != "standardDSv3Family" {
 		return 0, 0, false
 	}
-	vcpus = int32(lo.Must(sku.VCPU()))
+	vcpus64 := lo.Must(sku.VCPU())
+	if vcpus64 < math.MinInt32 || vcpus64 > math.MaxInt32 {
+		Fail(fmt.Sprintf("vCPU count %d exceeds int32 range", vcpus64))
+		return 0, 0, false
+	}
+	vcpus = int32(vcpus64)
 	current = usedCores.Load()
 	if current+vcpus > coreQuota {
 		return current, vcpus, true
