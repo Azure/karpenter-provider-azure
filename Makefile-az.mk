@@ -394,6 +394,7 @@ az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 
 az-mon-access: ## Get Grafana admin password and forward port
 	@echo Consider running port forward outside of codespace ...
+	@echo "Consider running port forward outside of codespace ..."
 	$(eval POD_NAME=$(shell kubectl get pods --namespace monitoring -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=grafana" -o jsonpath="{.items[0].metadata.name}"))
 	kubectl port-forward --namespace monitoring $(POD_NAME) 3000
 
