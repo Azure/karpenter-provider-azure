@@ -380,12 +380,14 @@ az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	helm repo add grafana-charts https://grafana.github.io/helm-charts
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
-	kubectl create namespace monitoring || true
-	helm install --namespace monitoring prometheus prometheus-community/prometheus \
+	# Create the namespace if not extant; NOP otherwise
+	kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+	# using 'upgrade' instead of 'install' to avoid errors if it already exists (e.g. from a previous run)
+	helm upgrade --namespace monitoring prometheus prometheus-community/prometheus \
 		--values hack/monitoring/prometheus-values.yaml
-	helm install --namespace monitoring pyroscope grafana-charts/pyroscope \
+	helm upgrade --namespace monitoring pyroscope grafana-charts/pyroscope \
 		--set pyroscope.extraArgs.'usage-stats\.enabled'=false
-	helm install --namespace monitoring grafana grafana-charts/grafana \
+	helm upgrade --namespace monitoring grafana grafana-charts/grafana \
 		--values hack/monitoring/grafana-values.yaml \
 		--set env.GF_AUTH_ANONYMOUS_ENABLED=true \
 		--set env.GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
