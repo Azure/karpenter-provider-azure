@@ -8,7 +8,7 @@
 
 **Related issues:** [Azure/karpenter-provider-azure#1220](https://github.com/Azure/karpenter-provider-azure/issues/1220), [Azure/karpenter-provider-azure#1355](https://github.com/Azure/karpenter-provider-azure/issues/1355)
 
-Note: The issue title says "Add support for setting ImageID for nodeClass", but the problem statement is primarily asking for rollback/pinning capability to recover from bad image releases. This rollback design addresses the bad-release recovery use case. It does not address the literal title request to set arbitrary ImageID; that is likely a future AKS workstream, and Karpenter should not set that standard prematurely.
+Note: The issue title says "Add support for setting ImageID for nodeClass", but the problem statement is primarily asking for rollback/pinning capability to recover from bad image releases and the ability to control when new images will be picked up by NAP nodes. This rollback design addresses the bad-release recovery and version control use cases. It does not address the literal title request to set arbitrary ImageID; that is likely a future AKS workstream, and Karpenter should not set that standard prematurely.
 
 ## Table of Contents
 
@@ -62,11 +62,11 @@ AKS node images are VHD-based image versions that are updated frequently. Today,
 
 ### Node image version updates
 
-When a new node image version becomes available, Karpenter automatically picks it up and surfaces it in `status.images`. Existing nodes running the prior image are then considered drifted and replaced according to normal disruption controls, subject to maintenance windows and disruption budgets. Customers have no mechanism today to opt out of this process, defer it, or manually trigger it at a time of their choosing: the upgrade happens whenever the disruption controller determines it is safe to act.
+When a new node image version becomes available, Karpenter automatically picks it up and surfaces it in `status.images`. Existing nodes running the prior image are then considered drifted and replaced according to normal disruption controls, subject to maintenance windows and disruption budgets. Customers have no suggested mechanism to opt out of this process, defer it, or manually trigger it at a time of their choosing: the upgrade happens whenever the disruption controller determines it is safe to act. They can achieve this with heavily restrictive maintenance windows, but it is a fragile mechanism and not user-friendly.
 
 ### Kubernetes version upgrades
 
-NAP node Kubernetes version upgrades behave differently from AKS managed agent pools. When the cluster control plane is upgraded to a new Kubernetes version, Karpenter immediately recognizes the version delta and marks affected nodes as drifted. Replacement is then driven by the standard disruption flow, respecting maintenance windows and disruption budgets, but customers cannot separately stage or defer the node k8s version upgrade the way they can with AKS agent pool upgrade controls.
+NAP node Kubernetes version upgrades behave differently from AKS managed agent pools. When the cluster control plane is upgraded to a new Kubernetes version, Karpenter recognizes the version delta soon after the update (subject to a polling interval) and marks affected nodes as drifted. Replacement is then driven by the standard disruption flow, respecting maintenance windows and disruption budgets, but customers cannot separately stage or defer the node k8s version upgrade the way they can with AKS agent pool upgrade controls.
 
 Additionally, a Kubernetes version upgrade also triggers a node image version refresh: nodes are replaced with the latest node image compatible with the new Kubernetes version. This means a control plane upgrade causes both a k8s version change and a node image change on NAP nodes simultaneously, neither of which is individually controllable today.
 
@@ -77,15 +77,12 @@ Current NAP behavior has no rollback affordance and no version control surface:
 1. No spec field lets customers request rollback or control node image version rollout manually.
 2. No spec field lets customers decouple their NAP nodes' Kubernetes version from the control plane's current version.
 3. No status field preserves the previous image set as a first-class rollback target.
-4. Drift logic replaces nodes that are not on the current status image set, but does not model rollback intent.
-
-AKS RP rollback semantics rely on a recently-used allowlist. NAP currently has no equivalent mechanism.
 
 ## Goals
 
 1. Provide a `nodeImageVersion` spec field that allows customers to pin to their current node image version or roll back to the previously used version.
 2. Preserve recently-used version state durably in AKSNodeClass status, including the Kubernetes version paired with the previously used node image.
-3. Keep rollback and pinning operationally safe and predictable. Pinning is limited to the current and previously used versions only.
+3. Keep rollback and pinning operationally safe and predictable. Pinning is limited to the current and previously used versions only, following AKS's current policy.
 4. Provide a `kubernetesVersion` spec field that allows customers to specify the desired Kubernetes version for drift detection, decoupling node k8s version drift from the cluster control plane version.
 5. Surface both the current node image version and the recently used node image version (with its paired Kubernetes version) in AKSNodeClass status.
 6. Keep the API design extensible for future image version selectors.
@@ -121,7 +118,7 @@ The open question is the name of the wrapper. Three candidates:
 | `upgradeControl` | Directionally neutral — covers upgrading, pinning, and rolling back without implying movement. Reads naturally in a Kubernetes API context. | Slightly more abstract. Does not immediately convey the opt-out-of-auto framing. |
 | `manualVersionControl` | Accurate description of what the fields do. | "Version control" carries strong source-control connotations (git, svn). Longest of the three. |
 
-**Recommendation:** `upgradeControl` — semantically precise, direction-neutral, and fits the Kubernetes API style. `manualUpgrade` is a strong second if the opt-out-of-auto signal is prioritized over directional neutrality.
+**Recommendation:** open — the wrapper name is an open question (see Open Questions). The leading candidates are `upgradeControl` and `manualUpgrade`.
 
 ### kubernetesVersion Spec Field
 
@@ -154,8 +151,8 @@ The `nodeImageVersion` spec field is the unified customer surface for both node 
 
 1. **Unset (default):** Karpenter always resolves and uses the latest available node image version. This is the existing NAP behavior.
 2. **Set to `status.latestImageVersion`:** Karpenter pins to the latest resolved version. New nodes are provisioned on that version. Automatic node image upgrades are paused — if a newer version becomes available, nodes will not drift until the customer updates or clears the pin.
-3. **Set to `status.recentlyUsedVersions.imageVersion`:** Karpenter rolls back to the previously used version. The rollback validation rules from `status.recentlyUsedVersions` apply: the requested version must match `status.recentlyUsedVersions.imageVersion` and the Kubernetes version must be compatible.
-4. **Set to any other value:** CEL admission validation rejects the request. The only valid values are `status.latestImageVersion` (pinning at latest) or `status.recentlyUsedVersions.imageVersion` (rollback to previous).
+3. **Set to a value in `status.recentlyUsedVersions[*].imageVersion`:** Karpenter rolls back to that previously used version. The rollback validation rules from `status.recentlyUsedVersions` apply: the requested version must match an entry in the array and the Kubernetes version of that entry must be compatible.
+4. **Set to any other value:** CEL admission validation rejects the request. The only valid values are `status.latestImageVersion` (pinning at latest) or a value present in `status.recentlyUsedVersions[*].imageVersion` (rollback to a previous version).
 
 The latest image version is always visible through `status.latestImageVersion`. The previously used version is visible through `status.recentlyUsedVersions`.
 
@@ -169,7 +166,7 @@ spec:
     nodeImageVersion: "202601.15.0"
 ```
 
-Karpenter still derives the image family, architecture, generation, and runtime-specific image definition from the AKSNodeClass and selected instance type. This matters because multiple NodePools can share the same AKSNodeClass while selecting different instance types, which may resolve to different image definitions such as Gen1, Gen2, or Arm64 variants. Customers read the valid values from `status.recentlyUsedVersions.imageVersion` (for rollback) or from `status.latestImageVersion` (for pinning at current).
+Karpenter still derives the image family, architecture, generation, and runtime-specific image definition from the AKSNodeClass and selected instance type. This matters because multiple NodePools can share the same AKSNodeClass while selecting different instance types, which may resolve to different image definitions such as Gen1, Gen2, or Arm64 variants. Customers read the valid values from `status.recentlyUsedVersions[*].imageVersion` (for rollback) or from `status.latestImageVersion` (for pinning at current).
 
 Behavior:
 
@@ -179,7 +176,7 @@ Behavior:
 
 **Alternative considered: boolean rollback flag**
 
-A boolean field (`rollbackToPrevious: true`) was considered, which would let Karpenter automatically select `status.recentlyUsedVersions.imageVersion` without the customer specifying it. This was rejected because:
+A boolean field (`rollbackToPrevious: true`) was considered, which would let Karpenter automatically select the most recent entry in `status.recentlyUsedVersions` without the customer specifying it. This was rejected because:
 
 1. It does not extend to pinning-at-current, where there is no "previous" to roll back to.
 2. A customer could silently roll back to a version they did not intend.
@@ -191,37 +188,49 @@ A boolean field (`rollbackToPrevious: true`) was considered, which would let Kar
 Add a new status section that mirrors the AKS RP recently-used rollback model:
 
 ```go
-type RecentlyUsedVersions struct {
+// RecentlyUsedVersion records a node image version that was previously active
+// on this NodeClass, used to validate rollback targets.
+type RecentlyUsedVersion struct {
 	// timestampUsed is the time this node image version was last active,
-	// recorded for observability when Karpenter moves status.images forward.
+	// recorded when Karpenter moves status.images forward.
+	// +optional
 	TimestampUsed metav1.Time `json:"timestampUsed,omitempty"`
 
-	// imageVersion is the AKS node image release version suffix used for rollback,
+	// imageVersion is the AKS node image release version suffix,
 	// e.g. "202601.15.0".
+	// +optional
 	ImageVersion string `json:"imageVersion,omitempty"`
 
 	// kubernetesVersion is the Kubernetes version paired with this image,
 	// e.g. "1.32.5".
+	// +optional
 	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
 }
 ```
 
 ```go
 type AKSNodeClassStatus struct {
-	// existing fields...
-	Images               []NodeImage             `json:"images,omitempty"`
-	LatestImageVersion   string                  `json:"latestImageVersion,omitempty"`
-	RecentlyUsedVersions *RecentlyUsedVersions   `json:"recentlyUsedVersions,omitempty"`
+	// images contains the current set of images available to use for the NodeClass.
+	// +optional
+	Images []NodeImage `json:"images,omitempty"`
+	// latestImageVersion is the latest resolved image version suffix from the gallery,
+	// updated on every reconcile pass regardless of any active pin or rollback.
+	// +optional
+	LatestImageVersion string `json:"latestImageVersion,omitempty"`
+	// recentlyUsedVersions contains the previously active node image versions
+	// in reverse chronological order, used to validate rollback targets.
+	// +optional
+	RecentlyUsedVersions []RecentlyUsedVersion `json:"recentlyUsedVersions,omitempty"`
 }
 ```
 
 Semantics:
 
-1. recentlyUsedVersions captures the immediate prior node image release version suffix and Kubernetes version pair before status.images advances.
-2. recentlyUsedVersions.timestampUsed records when the previous version was last active, for observability.
+1. recentlyUsedVersions is an array of previously active node image versions in reverse chronological order. Each entry captures the version suffix and Kubernetes version that were in use before status.images advanced.
+2. recentlyUsedVersions[*].timestampUsed records when that version was last active, for observability.
 3. latestImageVersion always reflects the latest resolved image version suffix, regardless of whether rollback or pinning is active. It is updated on every reconcile pass, even when status.images is overwritten with a rolled-back or pinned version.
-4. Only one recently-used entry is retained, matching AKS RP semantics.
-5. If Karpenter stores multiple previous image versions in the future, rollback UX must specify how Karpenter chooses which previous version to use.
+4. The maximum number of entries retained in recentlyUsedVersions is an open question; retaining more entries extends how far back a rollback target can be pinned (see Out of Scope item 5 on multi-environment staged rollout).
+5. If Karpenter stores multiple previous image versions, rollback UX must specify how Karpenter chooses which entry to use.
 
 ## Reconciliation Design
 
@@ -233,16 +242,16 @@ NodeImageReconciler in images.go updates `status.latestImageVersion` on every re
 - **Customer sets `nodeImageVersion`:** effective version changes from what was in `status.images` to the newly requested value.
 - **Customer unsets `nodeImageVersion`:** effective version changes from the pinned version back to `status.latestImageVersion`.
 
-In all cases the snapshot captures the version being left, so `status.recentlyUsedVersions.imageVersion` always represents "the previous effective version before the current one." `status.recentlyUsedVersions.kubernetesVersion` reflects `spec.upgradeControl.kubernetesVersion` if set, otherwise the cluster control plane version.
+In all cases the snapshot captures the version being left, so each entry in `status.recentlyUsedVersions` represents a previously effective version. `status.recentlyUsedVersions[0].kubernetesVersion` (the most recent entry) reflects `spec.upgradeControl.kubernetesVersion` if it was set at snapshot time, otherwise the cluster control plane version.
 
 ### Rollback path
 
 When `spec.upgradeControl.nodeImageVersion` is set to the previously used version:
 
-1. Validate `status.recentlyUsedVersions` exists and has an `imageVersion`.
-2. Validate the requested `nodeImageVersion` matches `status.recentlyUsedVersions.imageVersion`.
-3. Validate the currently desired Kubernetes version is compatible with `status.recentlyUsedVersions.kubernetesVersion`. The desired Kubernetes version is `spec.upgradeControl.kubernetesVersion` if set, otherwise the cluster control plane version.
-4. If valid, set the effective target image release version suffix to `status.recentlyUsedVersions.imageVersion`.
+1. Validate `status.recentlyUsedVersions` is non-empty.
+2. Validate the requested `nodeImageVersion` matches an entry in `status.recentlyUsedVersions[*].imageVersion`.
+3. Validate the currently desired Kubernetes version is compatible with that entry's `kubernetesVersion`. The desired Kubernetes version is `spec.upgradeControl.kubernetesVersion` if set, otherwise the cluster control plane version.
+4. If valid, set the effective target image release version suffix to the matched `recentlyUsedVersions` entry's `imageVersion`.
 5. Apply the rollback image version suffix to `status.images` per the implementation decision (Option 2).
 
 ### Image selection during rollback
@@ -262,7 +271,7 @@ Example:
 normal goal image:
 /CommunityGalleries/.../images/2204gen2containerd/versions/202607.15.0
 
-recentlyUsedVersions.imageVersion:
+recentlyUsedVersions[0].imageVersion:
 202606.08.1
 
 rollback goal image:
@@ -290,7 +299,7 @@ Option 1 was rejected because a missed call site would silently provision the wr
 
 ## Validation and Conditions
 
-Rollback validation rejects a request when `recentlyUsedVersions` is missing or incomplete, or when the desired Kubernetes version is incompatible with `recentlyUsedVersions.kubernetesVersion`. If admission-time validation cannot cleanly evaluate status fields, the reconciler rejects the request via condition.
+Rollback validation rejects a request when `recentlyUsedVersions` is empty, or when the desired Kubernetes version is incompatible with the matched entry's `kubernetesVersion`. If admission-time validation cannot cleanly evaluate status fields, the reconciler rejects the request via condition.
 
 **Proposed conditions:**
 
@@ -310,7 +319,7 @@ In addition to rollback-specific validation, the following rules apply to `nodeI
 
 **CEL admission validation for `nodeImageVersion`:**
 
-`spec.upgradeControl.nodeImageVersion` must equal `status.latestImageVersion` (pin at current) or `status.recentlyUsedVersions.imageVersion` (rollback). All other values are rejected. Note: status-dependent CEL rules may require a webhook validator; reconcile-time validation with a clear condition is acceptable as a fallback.
+`spec.upgradeControl.nodeImageVersion` must equal `status.latestImageVersion` (pin at current) or one of the `imageVersion` values in `status.recentlyUsedVersions` (rollback). All other values are rejected. Note: status-dependent CEL rules may require a webhook validator; reconcile-time validation with a clear condition is acceptable as a fallback.
 
 **CEL admission validation for `kubernetesVersion`:**
 
@@ -350,17 +359,17 @@ Rationale:
 3. Mirrors the AKS RP rollback allowlist shape.
 4. No new external state store required.
 
-### Decision 2: Single-entry history
+### Decision 2: Array-based version history
 
-Conclusion: Keep one recently-used version entry only.
+Conclusion: Use `[]RecentlyUsedVersion` (array) rather than a single pointer.
 
 Rationale:
 
-1. Aligns with AKS RP recently-used one-entry semantics.
-2. Keeps behavior explicit and simple.
-3. Reduces state complexity and ambiguity.
+1. Matches the AKS RP preview API shape (`recentlyUsedVersions` is an array there too).
+2. Enables multi-environment staged rollout scenarios by retaining more than one historical version.
+3. The maximum number of entries to retain is an open question; a single entry would match current AKS RP behavior, while more entries extend rollback reach.
 
-Future consideration: if Karpenter stores multiple previous image versions, the API must define whether rollback selects the most recent entry, requires an explicit target, or exposes another selection mechanism. See Out of Scope Follow-up Design item 5.
+Future consideration: the API must define how rollback selects the target entry when multiple are present — most recent match, explicit index, or another mechanism. See Out of Scope Follow-up Design item 5.
 
 ## Open Questions
 
