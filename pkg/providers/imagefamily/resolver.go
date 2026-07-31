@@ -271,6 +271,46 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		// Mirrors nodeAllocatableEnforcementHardened in the AKS RP.
 		kubeletConfig.EnforceNodeAllocatable = []string{"pods", "kube-reserved", "system-reserved"}
 	}
+
+	// Overlay per-key customer overrides from AKSNodeClass.spec.kubelet on top of the
+	// baseline + hardening defaults, matching AKS RP per-key semantics for KubeletConfig.
+	if nodeClass.Spec.Kubelet != nil {
+		if len(nodeClass.Spec.Kubelet.KubeReserved) > 0 {
+			if kubeletConfig.KubeReserved == nil {
+				kubeletConfig.KubeReserved = map[string]string{}
+			}
+			for k, v := range nodeClass.Spec.Kubelet.KubeReserved {
+				kubeletConfig.KubeReserved[k] = v
+			}
+		}
+		if len(nodeClass.Spec.Kubelet.EvictionHard) > 0 {
+			if kubeletConfig.EvictionHard == nil {
+				kubeletConfig.EvictionHard = map[string]string{}
+			}
+			for k, v := range nodeClass.Spec.Kubelet.EvictionHard {
+				kubeletConfig.EvictionHard[k] = v
+			}
+		}
+		if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 {
+			if kubeletConfig.EvictionSoft == nil {
+				kubeletConfig.EvictionSoft = map[string]string{}
+			}
+			for k, v := range nodeClass.Spec.Kubelet.EvictionSoft {
+				kubeletConfig.EvictionSoft[k] = v
+			}
+		}
+		if len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 {
+			if kubeletConfig.EvictionSoftGracePeriod == nil {
+				kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{}
+			}
+			for k, v := range nodeClass.Spec.Kubelet.EvictionSoftGracePeriod {
+				kubeletConfig.EvictionSoftGracePeriod[k] = v
+			}
+		}
+		if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
+			kubeletConfig.EvictionMaxPodGracePeriod = nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod
+		}
+	}
 	return kubeletConfig
 }
 
