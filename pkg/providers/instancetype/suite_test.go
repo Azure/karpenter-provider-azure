@@ -3390,6 +3390,127 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
 		})
 	})
+
+	Context("Capacity Reservation Group", func() {
+		const reservedSKU = "Standard_D2s_v3"
+		var reservedZone string
+
+		// reserve points the NodeClass at a group whose member reservations cover the
+		// given {VM size, ARM zones} pairs. Empty zones mean a regional reservation.
+		reserve := func(placements ...lo.Tuple2[string, []string]) {
+			nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(
+				"/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg")
+			nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
+				ID:       lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID),
+				Location: fake.Region,
+				CapacityReservations: lo.Map(placements, func(p lo.Tuple2[string, []string], i int) v1beta1.CapacityReservation {
+					return v1beta1.CapacityReservation{
+						ID:     fmt.Sprintf("%s/capacityReservations/r%d", lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID), i),
+						Name:   fmt.Sprintf("r%d", i),
+						VMSize: p.A,
+						Zones:  p.B,
+					}
+				}),
+			}
+		}
+
+		offeringZones := func(instanceTypes corecloudprovider.InstanceTypes) []string {
+			instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == reservedSKU })
+			Expect(found).To(BeTrue(), "expected %s to be offered", reservedSKU)
+			return lo.Map(instanceType.Offerings, func(o *corecloudprovider.Offering, _ int) string {
+				return o.Requirements.Get(v1.LabelTopologyZone).Any()
+			})
+		}
+
+		BeforeEach(func() {
+			reservedZone = fake.Region + "-1"
+		})
+
+		It("should offer only the reserved SKUs", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(lo.Map(instanceTypes, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })).
+				To(ConsistOf(reservedSKU))
+		})
+
+		It("should offer only the reserved zone of a reserved SKU", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
+		})
+
+		It("should offer only the regional placement for a regional reservation", func() {
+			reserve(lo.T2(reservedSKU, []string(nil)))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(zones.Regional))
+		})
+
+		It("should offer every reserved zone of a reserved SKU", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}), lo.T2(reservedSKU, []string{"3"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(fake.Region+"-1", fake.Region+"-3"))
+		})
+
+		It("should not offer spot, because spot cannot consume a reservation", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			for _, instanceType := range instanceTypes {
+				for _, offering := range instanceType.Offerings {
+					Expect(offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Any()).To(Equal(karpv1.CapacityTypeOnDemand))
+				}
+			}
+		})
+
+		It("should not offer UltraSSD, which is incompatible with a reservation", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			for _, instanceType := range instanceTypes {
+				for _, offering := range instanceType.Offerings {
+					Expect(offering.Requirements.Get(v1beta1.LabelUltraSSD).Values()).To(ConsistOf("false"))
+				}
+			}
+		})
+
+		It("should tolerate ARM returning a differently cased VM size", func() {
+			reserve(lo.T2(strings.ToUpper(reservedSKU), []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
+		})
+
+		It("should offer nothing while the group is unresolved, rather than falling back to unreserved capacity", func() {
+			reserve()
+			nodeClass.Status.CapacityReservationGroup = nil
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(BeEmpty())
+		})
+
+		It("should key the instance type cache on the resolved group shape", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
+
+			reserve(lo.T2(reservedSKU, []string{"3"}))
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(fake.Region + "-3"))
+		})
+
+		It("should leave offerings unrestricted when no group is configured", func() {
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(instanceTypes)).To(BeNumerically(">", 1))
+			Expect(offeringZones(instanceTypes)).To(ContainElements(zones.Regional, reservedZone))
+		})
+	})
 })
 
 var _ = Describe("Tax Calculator", func() {
