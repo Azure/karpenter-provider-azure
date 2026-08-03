@@ -709,7 +709,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
 			Entry("Ubuntu2404 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
 			Entry("Ubuntu2404 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2404ImageFamily, nil, false, true),
-			Entry("Ubuntu2404 when TrustedLaunch is enabled should fail", v1beta1.Ubuntu2404ImageFamily, nil, true, false),
+			Entry("Ubuntu2404 when TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2404ImageFamily, nil, true, true),
 			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeFIPS, true, false),
 			//TODO: Modify when Ubuntu 24.04 with FIPS becomes available
 			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
