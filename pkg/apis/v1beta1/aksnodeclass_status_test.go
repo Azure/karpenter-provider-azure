@@ -30,6 +30,38 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+var _ = Describe("CapacityReservationGroup readiness gating", func() {
+	It("should not gate Ready on the capacity reservation group when none is configured", func() {
+		nodeClass := &v1beta1.AKSNodeClass{ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{})}
+		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady)).To(BeNil())
+
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		Expect(nodeClass.StatusConditions().Root().IsTrue()).To(BeTrue())
+	})
+
+	It("should gate Ready on the capacity reservation group when one is configured", func() {
+		nodeClass := &v1beta1.AKSNodeClass{
+			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
+			Spec: v1beta1.AKSNodeClassSpec{
+				CapacityReservationGroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"),
+			},
+		}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+		Expect(nodeClass.StatusConditions().Root().IsTrue()).To(BeFalse())
+
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeCapacityReservationGroupReady)
+		Expect(nodeClass.StatusConditions().Root().IsTrue()).To(BeTrue())
+	})
+})
+
 var _ = Describe("Status, successful outcomes", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	BeforeEach(func() {

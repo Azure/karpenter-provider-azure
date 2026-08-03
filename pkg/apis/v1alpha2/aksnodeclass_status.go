@@ -28,7 +28,62 @@ const (
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
 	ConditionTypeSubnetsReady           = "SubnetsReady"
 	ConditionTypeLocalDNSReady          = "LocalDNSReady"
+	// ConditionTypeCapacityReservationGroupReady is only a dependent of the Ready
+	// condition when spec.capacityReservationGroupID is set.
+	ConditionTypeCapacityReservationGroupReady = "CapacityReservationGroupReady"
 )
+
+// CapacityReservation is a resolved member reservation of the configured
+// Capacity Reservation Group. Each member reserves one VM size in one
+// placement, which is what makes it eligible to back an offering.
+type CapacityReservation struct {
+	// id is the ARM resource ID of the capacity reservation.
+	// +required
+	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
+	ID string `json:"id"`
+	// name is the name of the capacity reservation within its group.
+	// +required
+	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
+	Name string `json:"name"`
+	// vmSize is the VM size reserved by this capacity reservation.
+	// +required
+	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
+	VMSize string `json:"vmSize"`
+	// zones are the ARM availability zones of this capacity reservation. Empty for
+	// a regional reservation.
+	// +optional
+	//nolint:kubeapilinter // ssatags: the list is replaced wholesale on each resolution
+	Zones []string `json:"zones,omitempty"`
+	// quantity is the number of instances reserved. Zero is valid: a zero-quantity
+	// reservation can be associated and intentionally overallocated.
+	// +optional
+	Quantity *int32 `json:"quantity,omitempty"`
+}
+
+// CapacityReservationGroup is the resolved shape of the Capacity Reservation
+// Group named by spec.capacityReservationGroupID. It describes which VM sizes
+// and placements the group can back; it deliberately does not describe how much
+// of the reserved capacity is currently in use, because that is volatile and
+// must not be treated as a per-node guarantee.
+type CapacityReservationGroup struct {
+	// id is the ARM resource ID of the capacity reservation group.
+	// +required
+	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
+	ID string `json:"id"`
+	// location is the Azure region of the capacity reservation group.
+	// +required
+	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
+	Location string `json:"location"`
+	// zones are the ARM availability zones of the group. An empty list means the
+	// group is regional, and consuming instances must omit zones.
+	// +optional
+	//nolint:kubeapilinter // ssatags: the list is replaced wholesale on each resolution
+	Zones []string `json:"zones,omitempty"`
+	// capacityReservations are the resolved member reservations of the group.
+	// +optional
+	//nolint:kubeapilinter // ssatags: the list is replaced wholesale on each resolution
+	CapacityReservations []CapacityReservation `json:"capacityReservations,omitempty"`
+}
 
 // LocalDNSState is the resolved enable/disable decision for LocalDNS on the
 // NodeClass. It represents the current LocalDNS enablement state at the
@@ -91,6 +146,11 @@ type AKSNodeClassStatus struct {
 	// +optional
 	// +kubebuilder:validation:Enum:=Enabled;Disabled
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
+	// capacityReservationGroup is the resolved shape of the capacity reservation
+	// group named by spec.capacityReservationGroupID. It is unset when no group is
+	// configured.
+	// +optional
+	CapacityReservationGroup *CapacityReservationGroup `json:"capacityReservationGroup,omitempty"`
 }
 
 func (in *AKSNodeClass) StatusConditions(opts ...status.ForOption) status.ConditionSet {
@@ -99,6 +159,11 @@ func (in *AKSNodeClass) StatusConditions(opts ...status.ForOption) status.Condit
 		ConditionTypeKubernetesVersionReady,
 		ConditionTypeSubnetsReady,
 		ConditionTypeLocalDNSReady,
+	}
+	// Only gate readiness on the capacity reservation group when one is configured,
+	// so NodeClasses that do not use the feature are unaffected by it.
+	if in.Spec.CapacityReservationGroupID != nil {
+		conds = append(conds, ConditionTypeCapacityReservationGroupReady)
 	}
 	return status.NewReadyConditions(conds...).For(in, opts...)
 }

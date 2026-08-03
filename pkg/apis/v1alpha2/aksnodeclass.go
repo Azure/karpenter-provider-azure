@@ -51,6 +51,17 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// capacityReservationGroupID is the ARM resource ID of the Capacity Reservation
+	// Group that instances provisioned by this NodeClass are associated with.
+	// The group must be in the same subscription and region as the cluster, and must
+	// be of the Targeted reservation type.
+	// Association is a launch constraint, not a preference: when set, every instance
+	// from this NodeClass targets the group. Azure may allocate instances beyond the
+	// reserved quantity, in which case the excess is ordinary On-Demand capacity that
+	// is not covered by the capacity reservation SLA.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$`
+	// +optional
+	CapacityReservationGroupID *string `json:"capacityReservationGroupID,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +default=128
 	// +kubebuilder:validation:Minimum=30

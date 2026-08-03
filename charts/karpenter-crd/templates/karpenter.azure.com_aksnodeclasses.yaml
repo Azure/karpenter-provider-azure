@@ -71,6 +71,18 @@ spec:
                       If not specified, defaults to false.
                     type: boolean
                 type: object
+              capacityReservationGroupID:
+                description: |-
+                  capacityReservationGroupID is the ARM resource ID of the Capacity Reservation
+                  Group that instances provisioned by this NodeClass are associated with.
+                  The group must be in the same subscription and region as the cluster, and must
+                  be of the Targeted reservation type.
+                  Association is a launch constraint, not a preference: when set, every instance
+                  from this NodeClass targets the group. Azure may allocate instances beyond the
+                  reserved quantity, in which case the excess is ordinary On-Demand capacity that
+                  is not covered by the capacity reservation SLA.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                type: string
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -788,6 +800,70 @@ spec:
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
+              capacityReservationGroup:
+                description: |-
+                  capacityReservationGroup is the resolved shape of the capacity reservation
+                  group named by spec.capacityReservationGroupID. It is unset when no group is
+                  configured.
+                properties:
+                  capacityReservations:
+                    description: capacityReservations are the resolved member reservations
+                      of the group.
+                    items:
+                      description: |-
+                        CapacityReservation is a resolved member reservation of the configured
+                        Capacity Reservation Group. Each member reserves one VM size in one
+                        placement, which is what makes it eligible to back an offering.
+                      properties:
+                        id:
+                          description: id is the ARM resource ID of the capacity reservation.
+                          type: string
+                        name:
+                          description: name is the name of the capacity reservation
+                            within its group.
+                          type: string
+                        quantity:
+                          description: |-
+                            quantity is the number of instances reserved. Zero is valid: a zero-quantity
+                            reservation can be associated and intentionally overallocated.
+                          format: int32
+                          type: integer
+                        vmSize:
+                          description: vmSize is the VM size reserved by this capacity
+                            reservation.
+                          type: string
+                        zones:
+                          description: |-
+                            zones are the ARM availability zones of this capacity reservation. Empty for
+                            a regional reservation.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - id
+                      - name
+                      - vmSize
+                      type: object
+                    type: array
+                  id:
+                    description: id is the ARM resource ID of the capacity reservation
+                      group.
+                    type: string
+                  location:
+                    description: location is the Azure region of the capacity reservation
+                      group.
+                    type: string
+                  zones:
+                    description: |-
+                      zones are the ARM availability zones of the group. An empty list means the
+                      group is regional, and consuming instances must omit zones.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - id
+                - location
+                type: object
               conditions:
                 description: conditions contains signals for health and readiness
                 items:
@@ -971,6 +1047,18 @@ spec:
                       If not specified, defaults to false.
                     type: boolean
                 type: object
+              capacityReservationGroupID:
+                description: |-
+                  capacityReservationGroupID is the ARM resource ID of the Capacity Reservation
+                  Group that instances provisioned by this NodeClass are associated with.
+                  The group must be in the same subscription and region as the cluster, and must
+                  be of the Targeted reservation type.
+                  Association is a launch constraint, not a preference: when set, every instance
+                  from this NodeClass targets the group. Azure may allocate instances beyond the
+                  reserved quantity, in which case the excess is ordinary On-Demand capacity that
+                  is not covered by the capacity reservation SLA.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                type: string
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -1688,6 +1776,70 @@ spec:
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
+              capacityReservationGroup:
+                description: |-
+                  capacityReservationGroup is the resolved shape of the capacity reservation
+                  group named by spec.capacityReservationGroupID. It is unset when no group is
+                  configured.
+                properties:
+                  capacityReservations:
+                    description: capacityReservations are the resolved member reservations
+                      of the group.
+                    items:
+                      description: |-
+                        CapacityReservation is a resolved member reservation of the configured
+                        Capacity Reservation Group. Each member reserves one VM size in one
+                        placement, which is what makes it eligible to back an offering.
+                      properties:
+                        id:
+                          description: id is the ARM resource ID of the capacity reservation.
+                          type: string
+                        name:
+                          description: name is the name of the capacity reservation
+                            within its group.
+                          type: string
+                        quantity:
+                          description: |-
+                            quantity is the number of instances reserved. Zero is valid: a zero-quantity
+                            reservation can be associated and intentionally overallocated.
+                          format: int32
+                          type: integer
+                        vmSize:
+                          description: vmSize is the VM size reserved by this capacity
+                            reservation.
+                          type: string
+                        zones:
+                          description: |-
+                            zones are the ARM availability zones of this capacity reservation. Empty for
+                            a regional reservation.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - id
+                      - name
+                      - vmSize
+                      type: object
+                    type: array
+                  id:
+                    description: id is the ARM resource ID of the capacity reservation
+                      group.
+                    type: string
+                  location:
+                    description: location is the Azure region of the capacity reservation
+                      group.
+                    type: string
+                  zones:
+                    description: |-
+                      zones are the ARM availability zones of the group. An empty list means the
+                      group is regional, and consuming instances must omit zones.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - id
+                - location
+                type: object
               conditions:
                 description: conditions contains signals for health and readiness
                 items:
