@@ -24,6 +24,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -165,6 +167,47 @@ func TestGetManagedExtensionNames(t *testing.T) {
 			result := GetManagedExtensionNames(tt.provisionMode, tt.env)
 
 			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestSetVMPropertiesCapacityReservation(t *testing.T) {
+	t.Parallel()
+
+	const groupID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+
+	tests := []struct {
+		name      string
+		nodeClass *v1beta1.AKSNodeClass
+		expected  *string
+	}{
+		{
+			name:      "no group configured leaves the VM unassociated",
+			nodeClass: &v1beta1.AKSNodeClass{},
+			expected:  nil,
+		},
+		{
+			name: "configured group is passed through to ARM",
+			nodeClass: &v1beta1.AKSNodeClass{
+				Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)},
+			},
+			expected: lo.ToPtr(groupID),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			properties := &armcompute.VirtualMachineProperties{}
+			setVMPropertiesCapacityReservation(properties, tt.nodeClass)
+
+			if tt.expected == nil {
+				g.Expect(properties.CapacityReservation).To(BeNil())
+				return
+			}
+			g.Expect(properties.CapacityReservation.CapacityReservationGroup.ID).To(Equal(tt.expected))
 		})
 	}
 }

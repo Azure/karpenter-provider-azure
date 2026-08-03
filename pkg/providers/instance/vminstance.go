@@ -616,6 +616,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSSDEnabled)
+	setVMPropertiesCapacityReservation(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -686,6 +687,20 @@ func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachi
 			vmProperties.AdditionalCapabilities = &armcompute.AdditionalCapabilities{}
 		}
 		vmProperties.AdditionalCapabilities.UltraSSDEnabled = &ultraSSDEnabled
+	}
+}
+
+// setVMPropertiesCapacityReservation associates the VM with the Capacity Reservation
+// Group named by the NodeClass. Offerings are already restricted to VM sizes and
+// placements the group can back, so ARM only has to match the request to a member
+// reservation. A regional group requires the VM to carry no zone, which
+// zones.MakeARMZonesFromAKSLabelZone already guarantees for the regional placement.
+func setVMPropertiesCapacityReservation(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
+	if nodeClass.Spec.CapacityReservationGroupID == nil {
+		return
+	}
+	vmProperties.CapacityReservation = &armcompute.CapacityReservationProfile{
+		CapacityReservationGroup: &armcompute.SubResource{ID: nodeClass.Spec.CapacityReservationGroupID},
 	}
 }
 
