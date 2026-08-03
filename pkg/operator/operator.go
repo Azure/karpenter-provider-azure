@@ -103,6 +103,10 @@ type Operator struct {
 	LoadBalancerProvider      *loadbalancer.Provider
 	QuotaProvider             *quota.DefaultProvider
 	AZClient                  *azclient.AZClient
+
+	// SubscriptionID and Location identify the Azure scope this operator manages.
+	SubscriptionID string
+	Location       string
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -293,6 +297,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		LoadBalancerProvider:         loadBalancerProvider,
 		QuotaProvider:                quotaProvider,
 		AZClient:                     azClient,
+		SubscriptionID:               azConfig.SubscriptionID,
+		Location:                     azConfig.Location,
 	}
 }
 
