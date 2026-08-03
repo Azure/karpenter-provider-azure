@@ -1,0 +1,141 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package azure
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/samber/lo"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+// contributorRole covers the four actions a VM owner needs on a capacity reservation
+// group: read and deploy, on the group and on its member reservations.
+// See https://learn.microsoft.com/azure/virtual-machines/capacity-reservation-associate-virtual-machine
+const contributorRole = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+
+// CapacityReservationGroupOptions describes a capacity reservation group to create for a
+// test, along with the single member reservation it holds.
+type CapacityReservationGroupOptions struct {
+	// Name of the group. The member reservation is named "<Name>-reservation".
+	Name string
+	// VMSize reserved by the member reservation.
+	VMSize string
+	// Capacity is the number of instances reserved. Zero is valid and is the cheap
+	// choice for tests: Azure only accepts a non-zero quantity when it can genuinely set
+	// that capacity aside, which is far from guaranteed even when on-demand capacity and
+	// family quota are both plentiful. A VM still associates with a zero-quantity
+	// reservation; it is simply overallocated.
+	Capacity int32
+	// ARMZones is the placement of both the group and its reservation. Empty produces a
+	// regional group, whose consuming VMs must omit zones.
+	ARMZones []string
+	// GrantToPrincipalID, when set, receives Contributor on the group so it can deploy
+	// into it. Leave empty to exercise the missing-permission path.
+	GrantToPrincipalID string
+}
+
+// ExpectCreatedCapacityReservationGroup creates a capacity reservation group with a
+// single member reservation in the node resource group, and returns the group's ARM ID.
+//
+// Cleanup goes through the environment tracker rather than DeferCleanup: Azure refuses
+// to delete a reservation that still has instances allocated, and the tracker runs after
+// the test's Kubernetes objects are removed. Reserved capacity is billed, so a leaked
+// group costs money until the cluster's resource group is deleted.
+func (env *Environment) ExpectCreatedCapacityReservationGroup(ctx context.Context, opts CapacityReservationGroupOptions) string {
+	GinkgoHelper()
+
+	reservationName := opts.Name + "-reservation"
+	zones := lo.ToSlicePtr(opts.ARMZones)
+
+	group, err := env.CapacityReservationGroupsClient.CreateOrUpdate(ctx, env.NodeResourceGroup, opts.Name, armcompute.CapacityReservationGroup{
+		Location: lo.ToPtr(env.Region),
+		Zones:    zones,
+	}, nil)
+	Expect(err).ToNot(HaveOccurred(), "failed to create capacity reservation group %s", opts.Name)
+	groupID := lo.FromPtr(group.ID)
+
+	env.tracker.Add(groupID, func() error {
+		return env.deleteCapacityReservationGroup(opts.Name, reservationName)
+	})
+
+	reservation, err := env.CapacityReservationsClient.BeginCreateOrUpdate(ctx, env.NodeResourceGroup, opts.Name, reservationName, armcompute.CapacityReservation{
+		Location: lo.ToPtr(env.Region),
+		SKU:      &armcompute.SKU{Name: lo.ToPtr(opts.VMSize), Capacity: lo.ToPtr(int64(opts.Capacity))},
+		Zones:    zones,
+	}, nil)
+	Expect(err).ToNot(HaveOccurred(), "failed to request capacity reservation for %s", opts.VMSize)
+	// A capacity shortage surfaces here rather than at VM creation, because this is where
+	// Azure actually sets the capacity aside.
+	_, err = reservation.PollUntilDone(ctx, nil)
+	Expect(err).ToNot(HaveOccurred(), "failed to reserve %d x %s in %s zones %v", opts.Capacity, opts.VMSize, env.Region, opts.ARMZones)
+
+	if opts.GrantToPrincipalID != "" {
+		roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRole)
+		Expect(env.RBACManager.EnsureRole(ctx, groupID, roleDefinitionID, opts.GrantToPrincipalID)).To(Succeed(),
+			"failed to grant Contributor on %s", groupID)
+	}
+
+	return groupID
+}
+
+func (env *Environment) deleteCapacityReservationGroup(groupName, reservationName string) error {
+	ctx := context.Background()
+	// The member reservation has to go first; Azure rejects deleting a group that still
+	// has members.
+	poller, err := env.CapacityReservationsClient.BeginDelete(ctx, env.NodeResourceGroup, groupName, reservationName, nil)
+	if err != nil {
+		return fmt.Errorf("deleting capacity reservation %s: %w", reservationName, err)
+	}
+	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+		return fmt.Errorf("deleting capacity reservation %s: %w", reservationName, err)
+	}
+	if _, err := env.CapacityReservationGroupsClient.Delete(ctx, env.NodeResourceGroup, groupName, nil); err != nil {
+		// ARM answers 202 when it defers the delete, which the generated client reports as
+		// an error because it only accepts 200 and 204. The delete was accepted either way.
+		var responseErr *azcore.ResponseError
+		if !errors.As(err, &responseErr) || responseErr.StatusCode != http.StatusAccepted {
+			return fmt.Errorf("deleting capacity reservation group %s: %w", groupName, err)
+		}
+	}
+	return nil
+}
+
+// ExpectCapacityReservationUtilization returns the VM IDs Azure reports as allocated
+// against the group's member reservation. This is the authoritative answer to whether a
+// launch actually consumed reserved capacity.
+func (env *Environment) ExpectCapacityReservationUtilization(ctx context.Context, groupName string) []string {
+	GinkgoHelper()
+
+	reservation, err := env.CapacityReservationsClient.Get(ctx, env.NodeResourceGroup, groupName, groupName+"-reservation",
+		&armcompute.CapacityReservationsClientGetOptions{Expand: lo.ToPtr(armcompute.CapacityReservationInstanceViewTypesInstanceView)})
+	Expect(err).ToNot(HaveOccurred(), "failed to read capacity reservation for group %s", groupName)
+	Expect(reservation.Properties).ToNot(BeNil())
+
+	if reservation.Properties.InstanceView == nil || reservation.Properties.InstanceView.UtilizationInfo == nil {
+		return nil
+	}
+	return lo.Map(reservation.Properties.InstanceView.UtilizationInfo.VirtualMachinesAllocated,
+		func(vm *armcompute.SubResourceReadOnly, _ int) string { return lo.FromPtr(vm.ID) })
+}

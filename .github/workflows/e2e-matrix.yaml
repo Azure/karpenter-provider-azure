@@ -36,6 +36,7 @@ jobs:
         suite:
           - ACR
           - BYOK
+          - CapacityReservation
           - Chaos
           - Consolidation
           - Drift
