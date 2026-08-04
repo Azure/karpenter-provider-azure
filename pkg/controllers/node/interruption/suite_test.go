@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -327,7 +328,7 @@ var _ = Describe("Spot Interruption", func() {
 
 			result, err := controller.Reconcile(ctx, node)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result).To(Equal(reconcile.Result{}))
 		})
 		It("should not error when the NodeClaim was already removed", func() {
 			node = withPreemptionScheduled(node, preemptionMessage(fakeClock.Now().Add(38*time.Second)))
@@ -338,7 +339,7 @@ var _ = Describe("Spot Interruption", func() {
 
 			result, err := controller.Reconcile(ctx, node)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result).To(Equal(reconcile.Result{}))
 		})
 	})
 
@@ -369,6 +370,12 @@ var _ = Describe("Spot Interruption", func() {
 				HaveField("ConditionType", corev1.NodeReady),
 				HaveField("ConditionType", corev1.NodeConditionType("kubernetes.azure.com/NodeHealthy")),
 			))
+		})
+		It("should keep the deprecated cloudprovider alias in sync with the owning controller", func() {
+			// cloudprovider.SpotConditionPreemptionScheduled is retained for source compatibility with
+			// external importers. It is a separate literal, so guard the two against drifting apart.
+			//nolint:staticcheck // SA1019: deliberately referencing the deprecated alias to pin its value
+			Expect(cloudprovider.SpotConditionPreemptionScheduled).To(Equal(string(interruption.ConditionTypePreemptionScheduled)))
 		})
 	})
 })

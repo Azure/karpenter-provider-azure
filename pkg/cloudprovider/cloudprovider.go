@@ -73,6 +73,15 @@ const (
 	NodeClassReadinessUnknownReason    = "NodeClassReadinessUnknown"
 	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
 	CreateInstanceFailedReason         = "CreateInstanceFailed"
+
+	// SpotConditionPreemptionScheduled is the Node condition the AKS node-problem-detector sets when
+	// Azure schedules an eviction for the underlying Spot VM.
+	//
+	// Deprecated: this condition is no longer a repair policy. Azure Spot preemption is owned by the
+	// deadline-aware controller in pkg/controllers/node/interruption, which keys off
+	// interruption.ConditionTypePreemptionScheduled. This constant is retained only for source
+	// compatibility with external importers and will be removed in a future release.
+	SpotConditionPreemptionScheduled = "PreemptionScheduled"
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
