@@ -877,7 +877,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		if skuErr != nil {
 			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
-		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID), err)
 		if handledError != nil {
 			// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 			// Thus the error needs to be returned.
@@ -921,7 +921,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
-				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID), err)
 				if handledError != nil {
 					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 					// Thus the error needs to be returned.

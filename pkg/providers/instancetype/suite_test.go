@@ -3533,6 +3533,22 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 		})
 
+		It("should keep a reserved offering available when unreserved capacity is exhausted", func() {
+			// The reason to pay for a reservation is to survive exactly this.
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure",
+				fake.MakeSKU(reservedSKU), reservedZone, karpv1.CapacityTypeOnDemand)
+
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == reservedSKU })
+			Expect(found).To(BeTrue(), "expected %s to still be offered", reservedSKU)
+			for _, offering := range instanceType.Offerings {
+				Expect(offering.Available).To(BeTrue(), "a general capacity shortage should not suppress the reserved offering")
+			}
+		})
+
 		Context("Launch", func() {
 			provisionVM := func() armcompute.VirtualMachine {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)

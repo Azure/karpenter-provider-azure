@@ -65,7 +65,7 @@ var (
 	SKUNotAvailableOnDemandTTL = 23 * time.Hour
 )
 
-type errorHandle func(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
+type errorHandle func(ctx context.Context, unavailableOfferings *cache.ScopedOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
 
 // markOfferingsUnavailableForCapacityTypeAndPlacement marks every offering for
 // the attempted capacity type within the attempted placement scope. The zone
@@ -73,7 +73,7 @@ type errorHandle func(ctx context.Context, unavailableOfferings *cache.Unavailab
 // scope; for a zonal offering this intentionally includes sibling zones.
 func markOfferingsUnavailableForCapacityTypeAndPlacement(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone string,
@@ -96,7 +96,7 @@ func markOfferingsUnavailableForCapacityTypeAndPlacement(
 // scope; for a zonal offering this intentionally includes sibling zones.
 func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone string,
@@ -123,7 +123,7 @@ func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 // attempted zonal or regional placement.
 func markAllPlacementsUnavailableForBothCapacityTypes(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	reason string,
@@ -142,7 +142,7 @@ func markAllPlacementsUnavailableForBothCapacityTypes(
 
 func handleLowPriorityQuotaError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -158,7 +158,7 @@ func handleLowPriorityQuotaError(
 
 func handleSKUFamilyQuotaError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -187,7 +187,7 @@ func handleSKUFamilyQuotaError(
 
 func handleSKUNotAvailableError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -216,7 +216,7 @@ func handleSKUNotAvailableError(
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
 func handleZonalAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -242,7 +242,7 @@ func handleZonalAllocationFailureError(
 // requested scope.
 func handleAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -259,7 +259,7 @@ func handleAllocationFailureError(
 // OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
 func handleOverconstrainedZonalAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -277,7 +277,7 @@ func handleOverconstrainedZonalAllocationFailureError(
 // OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
 func handleOverconstrainedAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -293,7 +293,7 @@ func handleOverconstrainedAllocationFailureError(
 
 func handleRegionalQuotaError(
 	ctx context.Context,
-	unavailableOfferings *cache.UnavailableOfferings,
+	unavailableOfferings *cache.ScopedOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,

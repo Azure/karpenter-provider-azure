@@ -19,6 +19,7 @@ package cache
 import (
 	"context"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,7 +171,7 @@ func TestUnavailableOfferingsVMFamilyBlocksAll(t *testing.T) {
 
 func TestUnavailableOfferings_KeyGeneration(t *testing.T) {
 	expectedKey := "spot:NV16as_v4:westus"
-	key := singleInstanceKey("NV16as_v4", "westus", "spot")
+	key := singleInstanceKey("", "NV16as_v4", "westus", "spot")
 	if key != expectedKey {
 		t.Errorf("Expected key to be %s, but got %s", expectedKey, key)
 	}
@@ -236,4 +237,53 @@ func TestUnavailableOfferingsRestrictiveLimitPreservation(t *testing.T) {
 	for _, sku := range skus {
 		assertOfferingAvailable(t, u, sku, "westus-1", karpv1.CapacityTypeOnDemand, "Offering should not be marked as unavailable after cache expiration")
 	}
+}
+
+func TestUnavailableOfferings_CapacityReservationGroupScope(t *testing.T) {
+	const groupID = "/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+	sku := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+
+	t.Run("a failure launching into a group does not poison unreserved capacity", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.ForCapacityReservationGroup(groupID).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if !u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the reserved offering to be unavailable")
+		}
+		if u.IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected unreserved capacity to be unaffected by a capacity reservation group failure")
+		}
+	})
+
+	// This is the direction that matters most: reserved capacity is guaranteed precisely
+	// when general capacity is short, so a general shortage must not disable it.
+	t.Run("a general capacity shortage does not suppress a reserved offering", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if !u.IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the unreserved offering to be unavailable")
+		}
+		if u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the reserved offering to survive a general capacity shortage")
+		}
+	})
+
+	t.Run("groups do not affect each other", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.ForCapacityReservationGroup(groupID).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if u.ForCapacityReservationGroup(groupID+"-other").IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected a different capacity reservation group to be unaffected")
+		}
+	})
+
+	t.Run("group scope is case insensitive, because ARM is inconsistent about ID casing", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.ForCapacityReservationGroup(strings.ToUpper(groupID)).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if !u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the same group in different casing to share a scope")
+		}
+	})
 }

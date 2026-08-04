@@ -201,7 +201,7 @@ func (p *DefaultProvider) List(
 		if capacityReserved {
 			instanceTypeZones = instanceTypeZones.Intersection(reservedZones[strings.ToLower(sku.GetName())])
 		}
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, capacityReserved), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, instanceTypeParams.CapacityReservationGroupID), instanceTypeParams, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -302,8 +302,12 @@ func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Se
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReserved bool) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
+	// Availability is tracked separately per group, so a shortage of unreserved capacity
+	// does not suppress the reserved offering that exists to survive exactly that.
+	capacityReserved := capacityReservationGroupID != ""
+	unavailableOfferings := p.unavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID)
 
 	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)
@@ -325,7 +329,7 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		// Reserved offerings skip the quota preflight: creating the reservation already spent
 		// the family quota, and Azure omits its own quota check for deployments up to the
 		// reserved quantity. Gating on remaining quota here would strand a paid-for reservation.
-		availableOnDemand := !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
+		availableOnDemand := !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
 			(capacityReserved || p.quotaProvider.HasQuotaFor(ctx, sku))
 
 		// Ultra Disk cannot be attached to a VM that consumes a capacity reservation.
@@ -364,7 +368,7 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		// nice to have the SKUs API fix this. Until it does, we _could_ try to join with spot price here and use the existence of a spot meter as
 		// supporting signal that actually the VM can be allocated as spot at the regional level. This seems an over-optimization for now though,
 		// so not doing it.
-		availableSpot := sku.IsLowPriorityCapable() && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
+		availableSpot := sku.IsLowPriorityCapable() && !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
 		spotOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(

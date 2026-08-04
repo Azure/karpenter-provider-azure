@@ -174,7 +174,7 @@ func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement(t *testing.T) {
 	instanceType := createCommonErrorInstanceType(
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
 
-	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings, sku, instanceType, testZone1, karpv1.CapacityTypeSpot, AllocationFailureReason, AllocationFailureTTL)
+	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, testZone1, karpv1.CapacityTypeSpot, AllocationFailureReason, AllocationFailureTTL)
 
 	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
 	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
@@ -190,7 +190,7 @@ func TestMarkOfferingsUnavailableForRegionalPlacement(t *testing.T) {
 	instanceType := createCommonErrorInstanceType(
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
 
-	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, zones.Regional, AllocationFailureReason, AllocationFailureTTL)
+	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, unavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, zones.Regional, AllocationFailureReason, AllocationFailureTTL)
 
 	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeTrue())
 	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeSpot)).To(BeTrue())
