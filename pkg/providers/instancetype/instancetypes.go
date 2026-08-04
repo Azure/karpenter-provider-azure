@@ -322,8 +322,11 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		// Determine allocatability from SKU capabilities.
 		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the
 		// unavailableOfferings cache and per-family quota.
+		// Reserved offerings skip the quota preflight: creating the reservation already spent
+		// the family quota, and Azure omits its own quota check for deployments up to the
+		// reserved quantity. Gating on remaining quota here would strand a paid-for reservation.
 		availableOnDemand := !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
-			p.quotaProvider.HasQuotaFor(ctx, sku)
+			(capacityReserved || p.quotaProvider.HasQuotaFor(ctx, sku))
 
 		// Ultra Disk cannot be attached to a VM that consumes a capacity reservation.
 		ultraSSD := ultraSSDOptions(sku, zone)

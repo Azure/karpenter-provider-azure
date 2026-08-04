@@ -3512,6 +3512,27 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(offeringZones(instanceTypes)).To(ContainElements(zones.Regional, reservedZone))
 		})
 
+		It("should keep a reserved offering available when the family quota is exhausted", func() {
+			// Creating the reservation already spent the quota, so a user who sizes quota to
+			// their reservation would otherwise never get to use what they are paying for.
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(fake.MakeSKU(reservedSKU).GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](100),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == reservedSKU })
+			Expect(found).To(BeTrue(), "expected %s to still be offered", reservedSKU)
+			for _, offering := range instanceType.Offerings {
+				Expect(offering.Available).To(BeTrue(), "reserved offering should not be gated on remaining family quota")
+			}
+		})
+
 		Context("Launch", func() {
 			provisionVM := func() armcompute.VirtualMachine {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
