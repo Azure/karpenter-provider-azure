@@ -1,5 +1,5 @@
 {
-    "go.testTimeout": "2000s",
+    "go.testTimeout": "720s",
     "gopls": {
         "build.directoryFilters": [
             "-hack"

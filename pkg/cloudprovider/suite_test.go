@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -57,6 +58,17 @@ var ctx context.Context
 var testOptions *options.Options
 var stop context.CancelFunc
 var env *coretest.Environment
+
+// controller-runtime provides two useful client behaviors for this suite:
+//   - directClient talks to the API server without waiting for a local cache.
+//   - indexedClient reads through a cache that can index Nodes by spec.providerID.
+//
+// Before test reunification, most instance tests used direct-client suites while
+// Drift used the indexed cloudprovider suite. Reunification made every moved test
+// pay the indexed client's cache-synchronization cost after writes. Keep the direct
+// client as the suite default, and opt only the Drift contexts into the indexed one.
+var directClient client.Client
+var indexedClient client.Client
 var azureEnv *test.Environment
 var azureEnvNonZonal *test.Environment
 var coreProvisioner *provisioning.Provisioner
@@ -88,6 +100,11 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 
 var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(coretest.NodeProviderIDFieldIndexer(ctx)))
+	indexedClient = env.Client
+	var err error
+	directClient, err = client.New(env.Config, client.Options{Scheme: indexedClient.Scheme()})
+	Expect(err).ToNot(HaveOccurred())
+	env.Client = directClient
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx, stop = context.WithCancel(ctx)
 	fakeClock = clock.NewFakeClock(time.Now())

@@ -324,6 +324,17 @@ func runDriftTests(provisionMode provisionModeTestCase) {
 }
 
 var _ = Describe("CloudProvider", func() {
+	BeforeEach(func() {
+		// Run before the mode-specific hooks construct fixtures so every Drift
+		// dependency uses the indexed client.
+		env.Client = indexedClient
+	})
+
+	AfterEach(func() {
+		// Restore the direct client as the default for later non-Drift specs.
+		env.Client = directClient
+	})
+
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
