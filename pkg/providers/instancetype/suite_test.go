@@ -3412,6 +3412,7 @@ var _ = Describe("InstanceType Provider", func() {
 					}
 				}),
 			}
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeCapacityReservationGroupReady)
 		}
 
 		offeringZones := func(instanceTypes corecloudprovider.InstanceTypes) []string {
@@ -3509,6 +3510,37 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(instanceTypes)).To(BeNumerically(">", 1))
 			Expect(offeringZones(instanceTypes)).To(ContainElements(zones.Regional, reservedZone))
+		})
+
+		Context("Launch", func() {
+			provisionVM := func() armcompute.VirtualMachine {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+				return azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			}
+
+			It("should associate a zonal VM with the group", func() {
+				reserve(lo.T2(reservedSKU, []string{"1"}))
+				vm := provisionVM()
+				Expect(lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)).
+					To(Equal(lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID)))
+				Expect(lo.Map(vm.Zones, func(z *string, _ int) string { return lo.FromPtr(z) })).To(ConsistOf("1"))
+			})
+
+			It("should associate a regional VM with the group and send no zones", func() {
+				reserve(lo.T2(reservedSKU, []string(nil)))
+				vm := provisionVM()
+				Expect(lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)).
+					To(Equal(lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID)))
+				Expect(vm.Zones).To(BeEmpty())
+			})
+
+			It("should not associate a VM when no group is configured", func() {
+				vm := provisionVM()
+				Expect(vm.Properties.CapacityReservation).To(BeNil())
+			})
 		})
 	})
 })
