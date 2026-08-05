@@ -85,11 +85,18 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 // ForCapacityReservationGroup returns a view of the cache whose entries are namespaced to
 // one capacity reservation group. An empty id yields the unreserved view.
 //
-// The two namespaces are deliberately kept apart in both directions. A failure launching
-// into a group says nothing about unreserved capacity for that size, and would otherwise
-// poison it for every other NodeClass. More importantly, a general capacity shortage must
-// not suppress a reserved offering: reserved capacity is guaranteed precisely when general
-// capacity is short, which is the whole reason to pay for it.
+// The two namespaces are kept apart in both directions because letting either leak into
+// the other strands capacity silently, and for as long as the TTL: a group's launch
+// failure would disable that size and zone for every other NodeClass, including ones that
+// never touch the group, and a general capacity shortage would disable the reserved
+// offering that exists to survive exactly that.
+//
+// Separating them does discard some real signal. A quota or allocation failure while
+// overallocating a group is also evidence about unreserved capacity, and past the reserved
+// quantity a general shortage really does predict a reserved launch failing. Each of those
+// now costs one extra launch attempt, which then records itself in the correct scope.
+// That is a better failure than silent stranding, and telling the two apart requires
+// knowing the reserved quantity, which is what the bucket inventory is for.
 func (u *UnavailableOfferings) ForCapacityReservationGroup(id string) *ScopedOfferings {
 	return &ScopedOfferings{offerings: u, scope: strings.ToLower(id)}
 }
