@@ -85,18 +85,21 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 // ForCapacityReservationGroup returns a view of the cache whose entries are namespaced to
 // one capacity reservation group. An empty id yields the unreserved view.
 //
-// The two namespaces are kept apart in both directions because letting either leak into
-// the other strands capacity silently, and for as long as the TTL: a group's launch
-// failure would disable that size and zone for every other NodeClass, including ones that
-// never touch the group, and a general capacity shortage would disable the reserved
-// offering that exists to survive exactly that.
+// The read side is the load-bearing part: a general capacity shortage must not suppress a
+// reserved offering, because reserved capacity is what the user bought in order to survive
+// exactly that.
 //
-// Separating them does discard some real signal. A quota or allocation failure while
-// overallocating a group is also evidence about unreserved capacity, and past the reserved
-// quantity a general shortage really does predict a reserved launch failing. Each of those
-// now costs one extra launch attempt, which then records itself in the correct scope.
-// That is a better failure than silent stranding, and telling the two apart requires
-// knowing the reserved quantity, which is what the bucket inventory is for.
+// The write side is a closer call, and deliberately conservative. Every error that reaches
+// this cache is a quota or capacity fact about the subscription or the region, not about
+// the reservation -- failures that really are reservation-specific, such as a missing
+// member reservation or a denied deploy role, match no handler and are never recorded at
+// all. So confining a group's failure to its own scope does withhold real information from
+// the unreserved path. It is still the better default: within the reserved quantity these
+// failures reflect the reservation rather than the region, and attributing them to the
+// region costs every other NodeClass an hour of a size and zone it could have used,
+// whereas withholding costs the unreserved path a single launch attempt that then records
+// itself correctly. Family quota, the signal that would hurt most to lose, is covered for
+// unreserved offerings independently by the quota preflight.
 func (u *UnavailableOfferings) ForCapacityReservationGroup(id string) *ScopedOfferings {
 	return &ScopedOfferings{offerings: u, scope: strings.ToLower(id)}
 }
