@@ -23,8 +23,10 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy/stages"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 )
 
 type Provider interface {
@@ -48,10 +50,16 @@ type Provider interface {
 
 var _ Provider = &DefaultProvider{}
 
-type DefaultProvider struct{}
+type DefaultProvider struct {
+	capacityProvider          capacityrecommendation.Provider
+	computeRecommendationMode string
+}
 
-func NewProvider() *DefaultProvider {
-	return &DefaultProvider{}
+func NewProvider(capacityProvider capacityrecommendation.Provider, computeRecommendationMode string) *DefaultProvider {
+	return &DefaultProvider{
+		capacityProvider:          capacityProvider,
+		computeRecommendationMode: computeRecommendationMode,
+	}
 }
 
 func (p *DefaultProvider) Allocate(ctx context.Context, instanceTypes []*corecloudprovider.InstanceType, requirements scheduling.Requirements) *Selection {
@@ -71,13 +79,16 @@ func (p *DefaultProvider) Allocate(ctx context.Context, instanceTypes []*coreclo
 }
 
 func (p *DefaultProvider) FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering {
-	stages := []stages.Stage{
+	stageList := []stages.Stage{
 		stages.NewAvailabilityCompatibilityFilterStage(requirements),
 		// Keep offering ranking in a single stage so future customizable allocation strategy work can swap or parameterize the ranker
 		// without introducing multiple reorder stages where the last reorder wins.
 		stages.NewDefaultOfferingRankStage(),
 	}
-	for _, stage := range stages {
+	if p.computeRecommendationMode != consts.ComputeRecommendationModeDisabled {
+		stageList = append(stageList, stages.NewSKUMixRankStage(p.capacityProvider, p.computeRecommendationMode))
+	}
+	for _, stage := range stageList {
 		instanceOfferings = stage.Process(ctx, instanceOfferings)
 	}
 	return instanceOfferings
