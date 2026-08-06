@@ -284,11 +284,6 @@ func (o *Options) validateDiskEncryptionSetID() error {
 }
 
 func (o *Options) validateComputeRecommendationMode() error {
-	// TODO: We currently only accept disabled. Will expand to accept the other documented values later
-	if o.ComputeRecommendationMode != consts.ComputeRecommendationModeDisabled {
-		return fmt.Errorf("compute-recommendation-mode %q is invalid, must be one of 'disabled'", o.ComputeRecommendationMode)
-	}
-
 	switch o.ComputeRecommendationMode {
 	case consts.ComputeRecommendationModeDisabled,
 		consts.ComputeRecommendationModeLog,

@@ -19,11 +19,18 @@ package allocationstrategy_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
+	"github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -32,7 +39,7 @@ import (
 
 func TestFilterInstanceOfferings_RemovesUnavailable(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, "In", karpv1.CapacityTypeOnDemand),
 	)
@@ -187,7 +194,7 @@ func TestFilterInstanceOfferings_ZerothItemHasExpectedPriority(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			g := NewWithT(t)
-			provider := allocationstrategy.NewProvider()
+			provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 
 			filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(c.instanceTypes), c.requirements)
 
@@ -207,7 +214,7 @@ func TestFilterInstanceOfferings_ZerothItemHasExpectedPriority(t *testing.T) {
 
 func TestFilterInstanceOfferings_Requirements_FiltersByZone(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 	)
@@ -238,7 +245,7 @@ func TestFilterInstanceOfferings_Requirements_FiltersByZone(t *testing.T) {
 
 func TestFilterInstanceOfferings_OrdersByPrice(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, "In", karpv1.CapacityTypeOnDemand),
 	)
@@ -280,7 +287,7 @@ func TestFilterInstanceOfferings_OrdersByPrice(t *testing.T) {
 
 func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
@@ -316,7 +323,7 @@ func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testi
 
 func TestFilterInstanceOfferings_ZonalOfferingsBeforeRegionalAtSamePriceAndCapacityType(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -340,7 +347,7 @@ func TestFilterInstanceOfferings_ZonalOfferingsBeforeRegionalAtSamePriceAndCapac
 
 func TestFilterInstanceOfferings_SpotRegionalOfferingBeforeOnDemandZonalAtSamePrice(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -365,7 +372,7 @@ func TestFilterInstanceOfferings_SpotRegionalOfferingBeforeOnDemandZonalAtSamePr
 
 func TestFilterInstanceOfferings_ZonalInstanceTypeBeforeRegionalAtSamePriceAndCapacityType(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -399,7 +406,7 @@ func TestFilterInstanceOfferings_ZonalInstanceTypeBeforeRegionalAtSamePriceAndCa
 // TODO: Consider a property-based test helper if we add more randomized ranker checks.
 func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
@@ -425,9 +432,58 @@ func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
 	g.Expect(seen).To(HaveLen(3), "expected all three zones to appear at index 0 across 200 trials, got %v", seen)
 }
 
+func TestFilterInstanceOfferings_InvokesComputeRecommendationStageInLogMode(t *testing.T) {
+	g := NewWithT(t)
+	client := &fake.SKUMixPlacementScoresAPI{}
+	client.PostBehavior.Output.Set(&armrecommender.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ValidUntil: to.Ptr(time.Now().Add(2 * time.Minute)),
+			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
+				{
+					ID:    to.Ptr("recommendation-1"),
+					Score: to.Ptr(int32(9)),
+					SKUSplit: []*armrecommender.SKUMixPlacementItem{
+						{
+							Name:     to.Ptr("Standard_D4s_v5"),
+							Zone:     to.Ptr("1"),
+							Priority: to.Ptr(armrecommender.SKUMixPlacementPriorityRegular),
+							Capacity: to.Ptr(int32(1)),
+						},
+					},
+				},
+			},
+		},
+	})
+	capacityProvider := capacityrecommendation.NewProvider(client, cache.New(cache.NoExpiration, time.Minute), "eastus")
+	provider := allocationstrategy.NewProvider(capacityProvider, consts.ComputeRecommendationModeLog)
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+	)
+	instanceTypes := []*corecloudprovider.InstanceType{
+		{Name: "Standard_D2s_v5", Requirements: linuxRequirements(), Offerings: corecloudprovider.Offerings{newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1")}},
+		{Name: "Standard_D4s_v5", Requirements: linuxRequirements(), Offerings: corecloudprovider.Offerings{newOfferingWithZone(0.2, karpv1.CapacityTypeOnDemand, "westus-1")}},
+	}
+
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	g.Expect([]string{filtered[0].InstanceType.Name, filtered[1].InstanceType.Name}).To(Equal([]string{"Standard_D2s_v5", "Standard_D4s_v5"}))
+	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
+	apiInput := client.PostBehavior.CalledWithInput.Pop()
+	g.Expect(apiInput.Location).To(Equal("eastus"))
+	g.Expect(*apiInput.Request.CapacityProfile.Priority).To(Equal(armrecommender.SKUMixPlacementPriorityRegular))
+	g.Expect(*apiInput.Request.CapacityProfile.OSType).To(Equal(armrecommender.SKUMixPlacementOSTypeLinux))
+	g.Expect(*apiInput.Request.CapacityProfile.Capacity).To(Equal(int32(10)))
+	g.Expect(apiInput.Request.Zones).To(ConsistOf(to.Ptr("1")))
+	g.Expect(apiInput.Request.InstanceDescription.VMSizes).To(HaveLen(2))
+	g.Expect(*apiInput.Request.InstanceDescription.VMSizes[0].Name).To(Equal("Standard_D2s_v5"))
+	g.Expect(*apiInput.Request.InstanceDescription.VMSizes[0].Rank).To(Equal(int32(0)))
+	g.Expect(*apiInput.Request.InstanceDescription.VMSizes[1].Name).To(Equal("Standard_D4s_v5"))
+	g.Expect(*apiInput.Request.InstanceDescription.VMSizes[1].Rank).To(Equal(int32(1)))
+}
+
 func TestAllocate(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -458,7 +514,7 @@ func TestAllocate(t *testing.T) {
 
 func TestAllocate_NoCompatibleOfferings(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil, consts.ComputeRecommendationModeDisabled)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
 	)
@@ -498,4 +554,10 @@ func newOffering(price float64, available bool, capacityType string) *corecloudp
 		),
 		Available: available,
 	}
+}
+
+func linuxRequirements() scheduling.Requirements {
+	return scheduling.NewRequirements(
+		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
+	)
 }
