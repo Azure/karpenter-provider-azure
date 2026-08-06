@@ -40,8 +40,8 @@ import (
 )
 
 const (
-	hiK8s = "1.36.0"
-	loK8s = "1.35.0"
+	hiK8s = "1.99.0"
+	loK8s = "1.98.0"
 )
 
 func newDynFake() *dynamicfake.FakeDynamicClient {

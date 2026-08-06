@@ -50,7 +50,7 @@ import (
 //     system knows to move it to the per-machine header.
 //   - If the field is the same for all NodeClaims in a NodePool+NodeClass (like VMSize),
 //     no action needed — it's automatically part of the shared template and batch grouping hash.
-func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
+func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, zone string, ultraSSD bool, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
 	}
@@ -97,7 +97,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	nodeInitializationTaints, nodeTaints := configureTaints(nodeClaim)
 
 	// NodeLabels, Mode
-	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType, placementScope)
+	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType, placementScope, ultraSSD)
 
 	// Priority (e.g., regular, spot)
 	priority := configurePriority(capacityType)
@@ -128,7 +128,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Hardware: &armcontainerservice.MachineHardwareProfile{
 				VMSize: lo.ToPtr(instanceType.Name),
 				// GPUInstanceProfile: nil,
-				GpuProfile: gpuProfile,
+				GpuProfile:      gpuProfile,
+				UltraSsdEnabled: lo.ToPtr(ultraSSD),
 			},
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
@@ -331,7 +332,7 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	return nodeInitializationTaintPtrs, nodeTaintPtrs
 }
 
-func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string) (map[string]*string, *armcontainerservice.AgentPoolMode) {
+func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, ultraSSD bool) (map[string]*string, *armcontainerservice.AgentPoolMode) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and instance/vminstance.go
 
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
@@ -344,6 +345,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{
 		karpv1.CapacityTypeLabelKey: capacityType,
 		v1beta1.LabelPlacementScope: placementScope,
+		v1beta1.LabelUltraSSD:       fmt.Sprint(ultraSSD),
 	})
 	var modePtr *armcontainerservice.AgentPoolMode
 	if modeFromLabel, ok := nodeLabels["kubernetes.azure.com/mode"]; ok && modeFromLabel == "system" {

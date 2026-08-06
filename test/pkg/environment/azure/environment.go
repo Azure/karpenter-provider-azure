@@ -26,7 +26,6 @@ import (
 
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -45,11 +44,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
+	clock "k8s.io/utils/clock"
 )
 
 func init() {
-	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": v1.LabelTopologyZone})
+	zones.RegisterCSIZoneNormalization()
 	coretest.DefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
 }
 
@@ -174,7 +175,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
 	subscriptionsClient := lo.Must(armsubscriptions.NewClient(cred, nil))
-	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, realClock{}, azureEnv.SubscriptionID)
+	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, clock.RealClock{}, azureEnv.SubscriptionID)
 	// If ProvisionMode wasn't set, default to scriptless, though note that this is
 	// actually defaulted dynamically based on the value of a toggle in AKS which means
 	// assuming we're always in ProvisionMode Scriptless here is incorrect at times, though OK
@@ -193,10 +194,6 @@ func NewEnvironment(t *testing.T) *Environment {
 	}
 	return azureEnv
 }
-
-type realClock struct{}
-
-func (realClock) Now() time.Time { return time.Now() }
 
 func (env *Environment) GetDefaultCredential() azcore.TokenCredential {
 	return env.defaultCredential

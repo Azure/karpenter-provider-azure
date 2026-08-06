@@ -31,7 +31,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -44,7 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpapis "sigs.k8s.io/karpenter/pkg/apis"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -69,12 +67,14 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
 func init() {
-	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	zones.RegisterCSIZoneNormalization()
 }
 
 type Operator struct {
@@ -101,6 +101,7 @@ type Operator struct {
 	VMInstanceProvider        *instance.DefaultVMProvider
 	AKSMachineProvider        *instance.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
+	QuotaProvider             *quota.DefaultProvider
 	AZClient                  *azclient.AZClient
 }
 
@@ -191,12 +192,14 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azConfig.Location)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
 		azClient.SKUClient,
 		pricingProvider,
 		unavailableOfferingsCache,
+		quotaProvider,
 	)
 
 	// Ensure we're able to hydrate instance types before starting any controllers
@@ -288,6 +291,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		VMInstanceProvider:           vmInstanceProvider,
 		AKSMachineProvider:           aksMachineInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
+		QuotaProvider:                quotaProvider,
 		AZClient:                     azClient,
 	}
 }

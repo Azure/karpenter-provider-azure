@@ -66,6 +66,35 @@ func TestMachineKeyFunc(t *testing.T) {
 	g.Expect(h3).ToNot(gomega.Equal(h1), "hashes should differ when VM size differs")
 }
 
+func TestMachineKeyFunc_ZonesIncludedWithUltraSSD(t *testing.T) {
+	t.Parallel()
+	g := gomega.NewWithT(t)
+
+	vmSize := "Standard_D2s_v3"
+	item1 := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{
+		Zones: []*string{lo.ToPtr("1")},
+		Properties: &armcontainerservice.MachineProperties{
+			Hardware: &armcontainerservice.MachineHardwareProfile{
+				VMSize:          &vmSize,
+				UltraSsdEnabled: lo.ToPtr(true),
+			},
+		},
+	}}
+	item2 := aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{
+		Zones: []*string{lo.ToPtr("2")},
+		Properties: &armcontainerservice.MachineProperties{
+			Hardware: &armcontainerservice.MachineHardwareProfile{
+				VMSize:          &vmSize,
+				UltraSsdEnabled: lo.ToPtr(true),
+			},
+		},
+	}}
+
+	g.Expect(mustDetermineBatchKey(t, &item2)).ToNot(gomega.Equal(mustDetermineBatchKey(t, &item1)), "hashes should differ when UltraSSD zones differ")
+	g.Expect(item1.machineBody.Zones).ToNot(gomega.BeNil())
+	g.Expect(item1.machineBody.Properties.Hardware.UltraSsdEnabled).ToNot(gomega.BeNil())
+}
+
 func TestMachineKeyFunc_TagsExcluded(t *testing.T) {
 	t.Parallel()
 	g := gomega.NewWithT(t)
@@ -98,6 +127,9 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 	}}
 
 	g.Expect(mustDetermineBatchKey(t, &item2)).To(gomega.Equal(mustDetermineBatchKey(t, &item1)), "read-only fields should not affect hash")
+	g.Expect(item1.machineBody.Properties.ETag).ToNot(gomega.BeNil())
+	g.Expect(item1.machineBody.Properties.ProvisioningState).ToNot(gomega.BeNil())
+	g.Expect(item1.machineBody.Properties.ResourceID).ToNot(gomega.BeNil())
 }
 
 // realisticMachineProps returns a fully-populated MachineProperties matching
