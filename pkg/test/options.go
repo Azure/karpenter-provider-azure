@@ -54,6 +54,7 @@ type OptionsFields struct {
 	ProviderBatchIdleDuration      *time.Duration
 	ProviderBatchMaxDuration       *time.Duration
 	ProviderBatchMaxSize           *int
+	ComputeRecommendationMode      *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -99,5 +100,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ProviderBatchIdleDuration:      lo.FromPtrOr(options.ProviderBatchIdleDuration, time.Second),
 		ProviderBatchMaxDuration:       lo.FromPtrOr(options.ProviderBatchMaxDuration, 5*time.Second),
 		ProviderBatchMaxSize:           lo.FromPtrOr(options.ProviderBatchMaxSize, 50),
+		ComputeRecommendationMode:      lo.FromPtrOr(options.ComputeRecommendationMode, "disabled"),
 	}
 }
