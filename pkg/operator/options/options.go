@@ -88,10 +88,10 @@ type Options struct {
 	// Unmanaged channels are intentionally not surfaced as they have no meaning for NAP node image
 	// selection; an empty value means standard node images are used.
 	//
-	// Note: SecurityPatch node images are only usable on the AKS Machine API provision modes, where
+	// SecurityPatch node images are only usable on the AKS Machine API provision modes, where
 	// the service resolves the logical node image version to the physical security-patch image. On
 	// the direct-VM provision modes Karpenter builds the image ID itself and cannot address the
-	// security-patch gallery, so the channel is not acted on there. See IsSecurityPatchChannel.
+	// security-patch gallery. Invalid combinations are rejected during option validation.
 	NodeOSUpgradeChannel       string            `json:"nodeOSUpgradeChannel,omitempty"`
 	NodeBootstrappingServerURL string            `json:"-"`
 	UseSIG                     bool              `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
@@ -158,24 +158,11 @@ func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
-// IsSecurityPatchChannel returns true if Karpenter should source node images from the
-// security-patch lineage.
-//
-// This requires all of:
-//   - the cluster's node OS upgrade channel is SecurityPatch,
-//   - SIG is in use (security-patch images are only published to the AKS shared galleries), and
-//   - an AKS Machine API provision mode.
-//
-// The provision mode requirement is not incidental. On the AKS Machine API modes Karpenter sends the
-// logical node image version (e.g. "AKSUbuntu-2404gen2containerd-202606.08.1-2026.06.13") and the
-// service resolves it to the physical security-patch image. On the direct-VM modes Karpenter builds
-// the image ID itself from the standard node image gallery, which cannot address the security-patch
-// gallery (different gallery, image definition and physical version encoding), so requesting
-// security-patch images there yields unprovisionable image references.
+// IsSecurityPatchChannel returns true when Karpenter should source node images from the
+// security-patch lineage. Validate guarantees that SecurityPatch is only configured with SIG and
+// an AKS Machine API provision mode.
 func (o *Options) IsSecurityPatchChannel() bool {
-	return o.NodeOSUpgradeChannel == consts.NodeOSUpgradeChannelSecurityPatch &&
-		o.UseSIG &&
-		o.IsAKSMachineAPIMode()
+	return o.NodeOSUpgradeChannel == consts.NodeOSUpgradeChannelSecurityPatch
 }
 
 func (o *Options) GetAPIServerName() string {

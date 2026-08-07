@@ -41,6 +41,7 @@ type OptionsFields struct {
 	SubnetID                       *string
 	NodeResourceGroup              *string
 	ProvisionMode                  *string
+	NodeOSUpgradeChannel           *string
 	NodeBootstrappingServerURL     *string
 	VnetGUID                       *string
 	KubeletIdentityClientID        *string
@@ -84,6 +85,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
+		NodeOSUpgradeChannel:           lo.FromPtrOr(options.NodeOSUpgradeChannel, ""),
 		NodeBootstrappingServerURL:     lo.FromPtrOr(options.NodeBootstrappingServerURL, ""),
 		EnableAzureSDKLogging:          lo.FromPtrOr(options.EnableAzureSDKLogging, true),
 		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),

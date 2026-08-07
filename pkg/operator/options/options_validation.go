@@ -146,8 +146,15 @@ func (o *Options) validateProvisionMode() error {
 func (o *Options) validateNodeOSUpgradeChannel() error {
 	switch o.NodeOSUpgradeChannel {
 	case "",
-		consts.NodeOSUpgradeChannelSecurityPatch,
 		consts.NodeOSUpgradeChannelNodeImage:
+		return nil
+	case consts.NodeOSUpgradeChannelSecurityPatch:
+		if !o.UseSIG {
+			return fmt.Errorf("use-sig is required to be true when node-os-upgrade-channel is %s", o.NodeOSUpgradeChannel)
+		}
+		if !o.IsAKSMachineAPIMode() {
+			return fmt.Errorf("provision-mode must be an AKS Machine API mode when node-os-upgrade-channel is %s", o.NodeOSUpgradeChannel)
+		}
 		return nil
 	default:
 		return fmt.Errorf("node-os-upgrade-channel is invalid: %s", o.NodeOSUpgradeChannel)

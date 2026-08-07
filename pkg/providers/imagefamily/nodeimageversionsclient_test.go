@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 )
 
@@ -57,10 +58,8 @@ func TestIsNewerVersion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.version1+"_"+tc.version2, func(t *testing.T) {
-			result := isNewerVersion(tc.version1, tc.version2)
-			if result != tc.expected {
-				t.Errorf("isNewerVersion(%q, %q) = %v; want %v", tc.version1, tc.version2, result, tc.expected)
-			}
+			g := NewWithT(t)
+			g.Expect(isNewerVersion(tc.version1, tc.version2)).To(Equal(tc.expected))
 		})
 	}
 }
@@ -70,6 +69,7 @@ func TestIsNewerVersion(t *testing.T) {
 // selects the newest one. Ordering is intentionally not latest-first in the input to guard against a
 // regression where the first-seen image is kept.
 func TestFilteredNodeImagesSecurityPatch(t *testing.T) {
+	g := NewWithT(t)
 	img := func(sku, version string) *armcontainerservice.NodeImageVersion {
 		return &armcontainerservice.NodeImageVersion{
 			OS:      lo.ToPtr(AKSUbuntuGalleryName),
@@ -85,17 +85,14 @@ func TestFilteredNodeImagesSecurityPatch(t *testing.T) {
 	}
 
 	filtered := FilteredNodeImages(input)
-	if len(filtered) != 1 {
-		t.Fatalf("expected 1 image after filtering, got %d", len(filtered))
-	}
-	if got := lo.FromPtr(filtered[0].Version); got != "202606.08.1-2026.06.13" {
-		t.Errorf("FilteredNodeImages selected version %q; want the newest %q", got, "202606.08.1-2026.06.13")
-	}
+	g.Expect(filtered).To(HaveLen(1))
+	g.Expect(lo.FromPtr(filtered[0].Version)).To(Equal("202606.08.1-2026.06.13"))
 }
 
 // TestFilteredNodeImagesSecurityPatchPrefersNewerPatchDate verifies that a newer security patch date
 // wins even when its base image version is older, matching how the service orders security VHDs.
 func TestFilteredNodeImagesSecurityPatchPrefersNewerPatchDate(t *testing.T) {
+	g := NewWithT(t)
 	img := func(version string) *armcontainerservice.NodeImageVersion {
 		return &armcontainerservice.NodeImageVersion{
 			OS:      lo.ToPtr(AKSUbuntuGalleryName),
@@ -109,10 +106,6 @@ func TestFilteredNodeImagesSecurityPatchPrefersNewerPatchDate(t *testing.T) {
 	}
 
 	filtered := FilteredNodeImages(input)
-	if len(filtered) != 1 {
-		t.Fatalf("expected 1 image after filtering, got %d", len(filtered))
-	}
-	if got := lo.FromPtr(filtered[0].Version); got != "202602.19.0-2026.03.02" {
-		t.Errorf("FilteredNodeImages selected version %q; want the newest security patch date %q", got, "202602.19.0-2026.03.02")
-	}
+	g.Expect(filtered).To(HaveLen(1))
+	g.Expect(lo.FromPtr(filtered[0].Version)).To(Equal("202602.19.0-2026.03.02"))
 }
