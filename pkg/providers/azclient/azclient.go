@@ -46,8 +46,6 @@ import (
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
-var _ azapi.FleetsAPI = (*armcomputefleet.FleetsClient)(nil)
-
 type AZClient struct {
 	azureResourceGraphClient       azapi.AzureResourceGraphAPI
 	virtualMachinesClient          azapi.VirtualMachinesAPI
