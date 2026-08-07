@@ -96,9 +96,9 @@ type Options struct {
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 
 	AKSMachinesPoolName       string        `json:"aksMachinesPoolName,omitempty"`       // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
-	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"` // Idle duration for provider batch accumulation (default 1s). Only used on provision mode aksmachineapiheaderbatch.
-	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
-	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
+	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"` // Idle duration for provider batch accumulation (default 1s). Used on batched provision modes.
+	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Used on batched provision modes.
+	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50). Used on batched provision modes.
 
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
@@ -129,9 +129,9 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
 	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect when already on an AKS Machine API mode.")
 	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with AKS machine API provision modes. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE is an AKS machine API mode.")
-	fs.DurationVar(&o.ProviderBatchIdleDuration, "provider-batch-idle-duration", env.WithDefaultDuration("PROVIDER_BATCH_IDLE_DURATION", time.Second), "Idle duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
-	fs.DurationVar(&o.ProviderBatchMaxDuration, "provider-batch-max-duration", env.WithDefaultDuration("PROVIDER_BATCH_MAX_DURATION", 5*time.Second), "Maximum duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
-	fs.IntVar(&o.ProviderBatchMaxSize, "provider-batch-max-size", env.WithDefaultInt("PROVIDER_BATCH_MAX_SIZE", consts.AKSMachineAPIHeaderBatchMaxSize), fmt.Sprintf("Maximum number of machines per provider batch (AKS API limit is %d). Only used on provision mode aksmachineapiheaderbatch.", consts.AKSMachineAPIHeaderBatchMaxSize))
+	fs.DurationVar(&o.ProviderBatchIdleDuration, "provider-batch-idle-duration", env.WithDefaultDuration("PROVIDER_BATCH_IDLE_DURATION", time.Second), "Idle duration for provider batch accumulation. Use Go duration format such as `1s`. Used on batched provision modes.")
+	fs.DurationVar(&o.ProviderBatchMaxDuration, "provider-batch-max-duration", env.WithDefaultDuration("PROVIDER_BATCH_MAX_DURATION", 5*time.Second), "Maximum duration for provider batch accumulation. Use Go duration format such as `1s`. Used on batched provision modes.")
+	fs.IntVar(&o.ProviderBatchMaxSize, "provider-batch-max-size", env.WithDefaultInt("PROVIDER_BATCH_MAX_SIZE", consts.AKSMachineAPIHeaderBatchMaxSize), fmt.Sprintf("Maximum number of machines per provider batch (AKS API limit is %d). Used on batched provision modes.", consts.AKSMachineAPIHeaderBatchMaxSize))
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
@@ -145,6 +145,11 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 // IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
 func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
+// IsFleetMode returns true if the current provision mode uses Azure Compute Fleet.
+func (o *Options) IsFleetMode() bool {
+	return o.ProvisionMode == consts.ProvisionModeFleet
 }
 
 func (o *Options) GetAPIServerName() string {
