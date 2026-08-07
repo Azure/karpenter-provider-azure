@@ -220,7 +220,15 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 		Context("image catalog transitions", func() {
 			It("refreshes persisted SecurityPatch images when switching to NodeImage", func() {
+				old, had := os.LookupEnv("SYSTEM_NAMESPACE")
 				os.Setenv("SYSTEM_NAMESPACE", "kube-system")
+				DeferCleanup(func() {
+					if had {
+						os.Setenv("SYSTEM_NAMESPACE", old)
+					} else {
+						os.Unsetenv("SYSTEM_NAMESPACE")
+					}
+				})
 				testCtx := test.Options(test.OptionsFields{
 					ProvisionMode:        lo.ToPtr("aksmachineapi"),
 					UseSIG:               lo.ToPtr(true),
