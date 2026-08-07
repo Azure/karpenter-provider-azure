@@ -14,23 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package azclient
+package imagefamily
 
 import (
-	"net/http"
+	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	. "github.com/onsi/gomega"
 )
 
-const securityPatchOnlyHeader = "SecurityPatchOnly"
+func TestNodeImageCacheKeyIncludesSecurityPatchCatalog(t *testing.T) {
+	g := NewWithT(t)
+	p := &provider{}
 
-var _ policy.Policy = &securityPatchOnlyPolicy{}
+	standardKey, err := p.cacheKey(nil, "1.35.0", false)
+	g.Expect(err).ToNot(HaveOccurred())
+	securityPatchKey, err := p.cacheKey(nil, "1.35.0", true)
+	g.Expect(err).ToNot(HaveOccurred())
 
-// securityPatchOnlyPolicy sets the SecurityPatchOnly header so the service returns node image
-// versions from the security-patch lineage instead of the standard node image lineage.
-type securityPatchOnlyPolicy struct{}
-
-func (p *securityPatchOnlyPolicy) Do(req *policy.Request) (*http.Response, error) {
-	req.Raw().Header.Set(securityPatchOnlyHeader, "true")
-	return req.Next()
+	g.Expect(securityPatchKey).ToNot(Equal(standardKey))
 }

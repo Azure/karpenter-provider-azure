@@ -22,8 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	. "github.com/onsi/gomega"
 )
 
 // captureHeaderPolicy is a terminal test policy that records a header value and
@@ -39,8 +38,9 @@ func (c *captureHeaderPolicy) Do(req *policy.Request) (*http.Response, error) {
 }
 
 func TestSecurityPatchOnlyPolicy_SetsHeader(t *testing.T) {
+	g := NewWithT(t)
 	req, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://management.azure.com/nodeImageVersions")
-	require.NoError(t, err)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	var seen string
 	pipeline := runtime.NewPipeline("test", "v1.0.0", runtime.PipelineOptions{
@@ -51,15 +51,16 @@ func TestSecurityPatchOnlyPolicy_SetsHeader(t *testing.T) {
 	}, nil)
 
 	_, err = pipeline.Do(req)
-	require.NoError(t, err)
-	assert.Equal(t, "true", seen)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(seen).To(Equal("true"))
 }
 
 // TestNoSecurityPatchOnlyPolicy_HeaderAbsent guards the default path: without the policy attached the
 // header must not be present, so standard node images are returned.
 func TestNoSecurityPatchOnlyPolicy_HeaderAbsent(t *testing.T) {
+	g := NewWithT(t)
 	req, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://management.azure.com/nodeImageVersions")
-	require.NoError(t, err)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	var seen string
 	pipeline := runtime.NewPipeline("test", "v1.0.0", runtime.PipelineOptions{
@@ -69,6 +70,6 @@ func TestNoSecurityPatchOnlyPolicy_HeaderAbsent(t *testing.T) {
 	}, nil)
 
 	_, err = pipeline.Do(req)
-	require.NoError(t, err)
-	assert.Empty(t, seen)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(seen).To(BeEmpty())
 }

@@ -218,6 +218,28 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 		})
 
+		Context("image catalog transitions", func() {
+			It("refreshes persisted SecurityPatch images when switching to NodeImage", func() {
+				os.Setenv("SYSTEM_NAMESPACE", "kube-system")
+				testCtx := test.Options(test.OptionsFields{
+					ProvisionMode:        lo.ToPtr("aksmachineapi"),
+					UseSIG:               lo.ToPtr(true),
+					NodeOSUpgradeChannel: lo.ToPtr("NodeImage"),
+				}).ToContext(ctx)
+				imageReconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+				ExpectApplied(testCtx, env.Client, getClosedMWConfigMap())
+				for i := range nodeClass.Status.Images {
+					nodeClass.Status.Images[i].ID += "-2026.06.13"
+				}
+
+				_, err := imageReconciler.Reconcile(testCtx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				for _, image := range nodeClass.Status.Images {
+					Expect(image.ID).ToNot(ContainSubstring("-2026.06.13"))
+				}
+			})
+		})
+
 		When("SYSTEM_NAMESPACE is set", func() {
 			var (
 				imageReconciler *status.NodeImageReconciler

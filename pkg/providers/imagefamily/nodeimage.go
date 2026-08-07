@@ -94,6 +94,7 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	key, err := p.cacheKey(
 		supportedImages,
 		kubernetesVersion,
+		options.FromContext(ctx).IsSecurityPatchChannel(),
 	)
 	if err != nil {
 		return []NodeImage{}, err
@@ -166,12 +167,13 @@ func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultIma
 	return nodeImages, nil
 }
 
-func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string) (string, error) {
+func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string, securityPatch bool) (string, error) {
 	// Note: the kubernetes version is part of the cache key here, because we bump images on kubernetes upgrade meaning
 	// we want to ensure if there is a kubernetes change we'll get fresh images if there are any.
 	hash, err := hashstructure.Hash([]interface{}{
 		supportedImages,
 		k8sVersion,
+		securityPatch,
 	}, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	if err != nil {
 		return "", err
