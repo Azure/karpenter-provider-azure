@@ -34,17 +34,13 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
 ## Main Topics
 
-### Step: [Install Karpenter](https://catalog.workshops.aws/karpenter/en-US/install-karpenter)
+### Step: [Install Karpenter](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/1_aks_cluster_creation_and_install_karpenter.md)
 
-- Instead follow [1_aks_cluster_creation_and_install_karpenter.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/1_aks_cluster_creation_and_install_karpenter.md)
 
-### Step: [Basic NodePool](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool)
+### Step: [Basic NodePool](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/2_basic_nodepool.md)
 
 - Notes:
     - AKSNodeClass is Azure’s equivalence to EC2NodeClass for Azure specific settings. Each Karpenter NodePool must contain a reference to an AKSNodeClass via the spec.template.spec.nodeClassRef.
-
-- Adjustments:
-    - The same concepts within the workshop generally translate to AKS. However, for the actual deployment step, we need a `AKSNodeClass`, and a few additional Azure specific adjustments. So, instead of the given deployment command follow [2_basic_noodpool.md](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/2_basic_nodepool.md)
 
 ### Step: [Scaling Application](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/scaling)
 
