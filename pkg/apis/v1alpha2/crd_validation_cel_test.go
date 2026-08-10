@@ -675,8 +675,8 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
-	Context("ImageFamily and FIPSMode", func() {
-		DescribeTable("should only accept valid ImageFamily and FIPSMode combinations", func(imageFamily string, fipsMode *v1alpha2.FIPSMode, expected bool) {
+	Context("ImageFamily, FIPSMode, and TrustedLaunch", func() {
+		DescribeTable("should only accept valid ImageFamily, FIPSMode, and TrustedLaunch combinations", func(imageFamily string, fipsMode *v1alpha2.FIPSMode, trustedLaunch bool, expected bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec:       v1alpha2.AKSNodeClassSpec{},
@@ -686,29 +686,43 @@ var _ = Describe("CEL/Validation", func() {
 				nodeClass.Spec.ImageFamily = &imageFamily
 			}
 			nodeClass.Spec.FIPSMode = fipsMode
+			if trustedLaunch {
+				nodeClass.Spec.Security = &v1alpha2.Security{
+					TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)},
+				}
+			}
 			if expected {
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("generic Ubuntu when FIPSMode is explicitly Disabled should succeed", v1alpha2.UbuntuImageFamily, &v1alpha2.FIPSModeDisabled, true),
-			Entry("generic Ubuntu when FIPSMode is not explicitly set should succeed", v1alpha2.UbuntuImageFamily, nil, true),
-			Entry("generic Ubuntu when FIPSMode is explicitly FIPS should succeed", v1alpha2.UbuntuImageFamily, &v1alpha2.FIPSModeFIPS, true),
-			Entry("Ubuntu2204 when FIPSMode is explicitly Disabled should succeed", v1alpha2.Ubuntu2204ImageFamily, &v1alpha2.FIPSModeDisabled, true),
-			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1alpha2.Ubuntu2204ImageFamily, nil, true),
-			//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
-			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1alpha2.Ubuntu2204ImageFamily, &v1alpha2.FIPSModeFIPS, false),
-			Entry("Ubuntu2404 when FIPSMode is explicitly Disabled should succeed", v1alpha2.Ubuntu2404ImageFamily, &v1alpha2.FIPSModeDisabled, true),
-			Entry("Ubuntu2404 when FIPSMode is not explicitly set should succeed", v1alpha2.Ubuntu2404ImageFamily, nil, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly Disabled should succeed", v1alpha2.UbuntuImageFamily, &v1alpha2.FIPSModeDisabled, false, true),
+			Entry("generic Ubuntu when FIPSMode is not explicitly set should succeed", v1alpha2.UbuntuImageFamily, nil, false, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly FIPS should succeed", v1alpha2.UbuntuImageFamily, &v1alpha2.FIPSModeFIPS, false, true),
+			Entry("generic Ubuntu when TrustedLaunch is enabled should succeed", v1alpha2.UbuntuImageFamily, nil, true, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1alpha2.UbuntuImageFamily, &v1alpha2.FIPSModeFIPS, true, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly Disabled should succeed", v1alpha2.Ubuntu2204ImageFamily, &v1alpha2.FIPSModeDisabled, false, true),
+			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1alpha2.Ubuntu2204ImageFamily, nil, false, true),
+			Entry("Ubuntu2204 when TrustedLaunch is enabled should succeed", v1alpha2.Ubuntu2204ImageFamily, nil, true, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1alpha2.Ubuntu2204ImageFamily, &v1alpha2.FIPSModeFIPS, true, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1alpha2.Ubuntu2204ImageFamily, &v1alpha2.FIPSModeFIPS, false, false),
+			Entry("Ubuntu2404 when FIPSMode is explicitly Disabled should succeed", v1alpha2.Ubuntu2404ImageFamily, &v1alpha2.FIPSModeDisabled, false, true),
+			Entry("Ubuntu2404 when FIPSMode is not explicitly set should succeed", v1alpha2.Ubuntu2404ImageFamily, nil, false, true),
+			Entry("Ubuntu2404 when TrustedLaunch is enabled should succeed", v1alpha2.Ubuntu2404ImageFamily, nil, true, true),
+			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1alpha2.Ubuntu2404ImageFamily, &v1alpha2.FIPSModeFIPS, true, false),
 			//TODO: Modify when Ubuntu 24.04 with FIPS becomes available
-			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS should fail", v1alpha2.Ubuntu2404ImageFamily, &v1alpha2.FIPSModeFIPS, false),
-			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeDisabled, true),
-			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1alpha2.AzureLinuxImageFamily, nil, true),
-			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, true),
+			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS should fail", v1alpha2.Ubuntu2404ImageFamily, &v1alpha2.FIPSModeFIPS, false, false),
+			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeDisabled, false, true),
+			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1alpha2.AzureLinuxImageFamily, nil, false, true),
+			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, false, true),
+			Entry("generic AzureLinux when TrustedLaunch is enabled should succeed", v1alpha2.AzureLinuxImageFamily, nil, true, true),
+			Entry("generic AzureLinux when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, true, false),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, false, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, false, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1alpha2.FIPSModeFIPS, true, true),
 		)
 	})
 
