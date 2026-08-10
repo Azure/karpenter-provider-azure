@@ -33,9 +33,9 @@ func TestResolvesToUbuntu2004(t *testing.T) {
 		trustedLaunch bool
 		want          bool
 	}{
-		{"nil family + nil fips", nil, nil, false, false},
-		{"nil family + FIPS", nil, lo.ToPtr(v1beta1.FIPSModeFIPS), false, true},
-		{"nil family + FIPS + TrustedLaunch", nil, lo.ToPtr(v1beta1.FIPSModeFIPS), true, false},
+		"nil family + nil fips": {nil, nil, false, false},
+		"nil family + FIPS": {, nil, lo.ToPtr(v1beta1.FIPSModeFIPS), false, true},
+		"nil family + FIPS + TrustedLaunch": {, nil, lo.ToPtr(v1beta1.FIPSModeFIPS), true, false},
 		{"nil family + FIPS Disabled", nil, lo.ToPtr(v1beta1.FIPSModeDisabled), false, false},
 		{"empty family + FIPS", lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), false, true},
 		{"empty family + FIPS + TrustedLaunch", lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), true, false},
