@@ -69,7 +69,7 @@ type Options struct {
 	// EnableNodeHardening mirrors the cluster-level enableNodeHardening setting
 	// in the AKS RP. Keep this option synchronized with the RP so Karpenter's
 	// scheduling simulation and rendered kubelet configuration match the node.
-	// Remove it when node hardening becomes unconditional in the RP.
+	// Remove it when node hardening becomes unconditional in AKS.
 	EnableNodeHardening            bool   `json:"enableNodeHardening,omitempty"`
 	KubeletClientTLSBootstrapToken string `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
 	LinuxAdminUsername             string `json:"-"`
