@@ -29,6 +29,7 @@ import (
 type RBACManager struct {
 	subscriptionID string
 	client         *armauthorization.RoleAssignmentsClient
+	definitions    *armauthorization.RoleDefinitionsClient
 }
 
 // NewRBACManager builds a client with the provided TokenCredential.
@@ -37,7 +38,36 @@ func NewRBACManager(subscriptionID string, cred azcore.TokenCredential) (*RBACMa
 	if err != nil {
 		return nil, err
 	}
-	return &RBACManager{subscriptionID: subscriptionID, client: c}, nil
+	d, err := armauthorization.NewRoleDefinitionsClient(cred, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &RBACManager{subscriptionID: subscriptionID, client: c, definitions: d}, nil
+}
+
+// EnsureCustomRole creates or updates a subscription-scoped custom role granting exactly
+// actions, and returns its role definition ID. The definition ID is derived from roleName
+// so repeated runs converge on one definition rather than accumulating them; it is left
+// behind deliberately, since deleting it would break a concurrent run.
+func (r *RBACManager) EnsureCustomRole(ctx context.Context, roleName string, actions []string) (string, error) {
+	scope := fmt.Sprintf("/subscriptions/%s", r.subscriptionID)
+	definitionID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(roleName)).String()
+
+	resp, err := r.definitions.CreateOrUpdate(ctx, scope, definitionID, armauthorization.RoleDefinition{
+		Properties: &armauthorization.RoleDefinitionProperties{
+			RoleName:         lo.ToPtr(roleName),
+			Description:      lo.ToPtr("Least-privilege role used by Karpenter E2E tests."),
+			RoleType:         lo.ToPtr("CustomRole"),
+			AssignableScopes: []*string{lo.ToPtr(scope)},
+			Permissions: []*armauthorization.Permission{{
+				Actions: lo.ToSlicePtr(actions),
+			}},
+		},
+	}, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating custom role %q: %w", roleName, err)
+	}
+	return lo.FromPtr(resp.ID), nil
 }
 
 // EnsureRole assigns roleDefinitionID to principalID at scope if not already present.

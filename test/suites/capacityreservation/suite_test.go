@@ -274,15 +274,17 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 
 		By("Creating a static NodePool with headroom for a replacement")
 		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(groupID)
+		// One replica, limit at N+1: enough to exercise the recipe and the surge that drift
+		// needs, without paying for a second full replacement cycle in every run.
 		nodePool := reservedNodePool(nodeClass, expectedNodeZone, reservedVMSize)
-		nodePool.Spec.Replicas = lo.ToPtr[int64](2)
-		nodePool.Spec.Limits = karpv1.Limits{"nodes": resource.MustParse("3")}
+		nodePool.Spec.Replicas = lo.ToPtr[int64](1)
+		nodePool.Spec.Limits = karpv1.Limits{"nodes": resource.MustParse("2")}
 		env.ExpectCreated(nodeClass, nodePool)
 
 		By("Waiting for the pool to reach its replica count")
-		env.EventuallyExpectCreatedNodeClaimCount("==", 2)
-		env.EventuallyExpectInitializedNodeCount("==", 2)
-		originalNames := expectNodeClaimsOnReservedCapacity(ctx, nodePool, groupID, expectedNodeZone, 2)
+		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
+		env.EventuallyExpectInitializedNodeCount("==", 1)
+		originalNames := expectNodeClaimsOnReservedCapacity(ctx, nodePool, groupID, expectedNodeZone, 1)
 
 		By("Forcing drift on the NodeClass")
 		Eventually(func(g Gomega) {
@@ -297,7 +299,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 			claims := currentNodeClaims(ctx, g, nodePool)
 			names := sets.New(lo.Map(claims, func(nc *karpv1.NodeClaim, _ int) string { return nc.Name })...)
 			g.Expect(names.Intersection(originalNames)).To(BeEmpty(), "original claims should all be replaced")
-			g.Expect(names).To(HaveLen(2), "the pool should settle back to its replica count")
+			g.Expect(names).To(HaveLen(1), "the pool should settle back to its replica count")
 			for _, claim := range claims {
 				g.Expect(claim.StatusConditions().Get(karpv1.ConditionTypeDrifted).IsTrue()).To(BeFalse(), "%s is still drifted", claim.Name)
 				g.Expect(claim.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue()).To(BeTrue(), "%s is not initialized", claim.Name)
@@ -305,7 +307,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 		}).WithTimeout(20 * time.Minute).WithPolling(20 * time.Second).Should(Succeed())
 
 		By("Verifying the replacements are still on the reserved capacity")
-		expectNodeClaimsOnReservedCapacity(ctx, nodePool, groupID, expectedNodeZone, 2)
+		expectNodeClaimsOnReservedCapacity(ctx, nodePool, groupID, expectedNodeZone, 1)
 	})
 
 	// The playbook's flexible-case recipe: a NodeOverlay priced at zero to pull scheduling
@@ -471,5 +473,8 @@ func expectCapacityReservationGroupCondition(ctx SpecContext, nodeClass *v1beta1
 		assert(g, condition)
 		// The group condition gates Ready only when the field is set, so the two must agree.
 		g.Expect(retrieved.StatusConditions().Get(status.ConditionReady).IsTrue()).To(Equal(condition.IsTrue()))
-	}).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+		// Generous because the role assignment granting read on the group is made moments
+		// earlier, and Azure takes its time making one effective; the reconciler retries every
+		// minute until it does.
+	}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
