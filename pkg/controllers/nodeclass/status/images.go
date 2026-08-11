@@ -150,7 +150,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
-	shouldUpdate := imageVersionsUnready(nodeClass) || imageCatalogChanged(ctx, nodeClass.Status.Images)
+	shouldUpdate := imageVersionsUnready(nodeClass) || imageCatalogChanged(options.FromContext(ctx).IsSecurityPatchChannel(), nodeClass.Status.Images)
 	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
 		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
@@ -191,11 +191,10 @@ func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 // restart, so a valid SecurityPatch <-> NodeImage channel transition must force a full refresh even
 // when the node OS maintenance window is closed. Security-patch versions are composite
 // "<baseVersion>-<securityPatchDate>" values; standard node image versions have no patch-date suffix.
-func imageCatalogChanged(ctx context.Context, images []v1beta1.NodeImage) bool {
+func imageCatalogChanged(wantSecurityPatch bool, images []v1beta1.NodeImage) bool {
 	if len(images) == 0 {
 		return false
 	}
-	wantSecurityPatch := options.FromContext(ctx).IsSecurityPatchChannel()
 	for _, image := range images {
 		if isSecurityPatchImageID(image.ID) != wantSecurityPatch {
 			return true
@@ -204,6 +203,8 @@ func imageCatalogChanged(ctx context.Context, images []v1beta1.NodeImage) bool {
 	return false
 }
 
+// isSecurityPatchImageID reports whether an image ID uses the composite
+// "<baseVersion>-<securityPatchDate>" version format returned by the SecurityPatch catalog.
 func isSecurityPatchImageID(imageID string) bool {
 	parts := strings.Split(imageID, "/")
 	if len(parts) < 2 || parts[len(parts)-2] != "versions" {
@@ -216,6 +217,7 @@ func isSecurityPatchImageID(imageID string) bool {
 	return isNumericDotVersion(base) && isNumericDotVersion(patchDate)
 }
 
+// isNumericDotVersion reports whether every dot-separated segment is a non-empty decimal number.
 func isNumericDotVersion(version string) bool {
 	if version == "" {
 		return false
