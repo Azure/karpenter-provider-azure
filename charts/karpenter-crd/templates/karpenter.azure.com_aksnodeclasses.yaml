@@ -1741,6 +1741,11 @@ spec:
             - message: AzureContainerLinux requires an OS disk of at least 60 GB
               rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
                 || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
+            - message: artifactStreaming.enabled cannot be true when imageFamily is
+                AzureContainerLinux
+              rule: 'has(self.artifactStreaming) && has(self.artifactStreaming.enabled)
+                && self.artifactStreaming.enabled == true ? !(has(self.imageFamily)
+                && self.imageFamily == ''AzureContainerLinux'') : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
