@@ -479,7 +479,9 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 
 		result, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result.RequeueAfter).ToNot(BeZero())
+		// Not the healthy interval: a group is commonly empty only while it is being
+		// populated, and waiting a full revalidation period to notice strands the NodeClass.
+		Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute}))
 		expectUnready(status.CapacityReservationGroupUnreadyReasonNoReservations)
 	})
 

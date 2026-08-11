@@ -63,6 +63,10 @@ const (
 const (
 	capacityReservationGroupReconcilerName = "nodeclass.capacityreservationgroup"
 	capacityReservationGroupResourceType   = "capacityReservationGroups"
+
+	// unreadyRequeueInterval retries states that a user action can clear at once, rather
+	// than leaving the NodeClass unready for a full healthy revalidation period.
+	unreadyRequeueInterval = time.Minute
 )
 
 // instanceTypeLister is the projection side of the CRG feature, narrowed to what
@@ -194,7 +198,9 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		nodeClass.Status.CapacityReservationGroup = nil
 		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNoReservations,
 			fmt.Sprintf("capacity reservation group has no capacity reservations: %s", crgID))
-		return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
+		// Short interval, not the healthy one: a group is commonly listed empty while the
+		// operator is still populating it, and ARM can briefly list a fresh member as absent.
+		return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
 	}
 
 	// Recorded before eligibility is judged: when nothing can back an offering, the member
@@ -233,7 +239,7 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
 			CapacityReservationGroupUnreadyReasonNoCompatibleReservations,
 			fmt.Sprintf("no capacity reservation in group reserves a VM size this NodeClass can use: %s", crgID))
-		return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
+		return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
 	}
 
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeCapacityReservationGroupReady)
