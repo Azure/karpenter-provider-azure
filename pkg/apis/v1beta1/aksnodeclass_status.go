@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
@@ -59,6 +60,30 @@ type CapacityReservation struct {
 	// reservation can be associated and intentionally overallocated.
 	// +optional
 	Quantity *int32 `json:"quantity,omitempty"`
+	// provisioningState is the ARM provisioning state of the capacity reservation.
+	// Only a reservation reported as Succeeded backs offerings; any other state, such as
+	// Creating, means it is not yet usable. Members that cannot back offerings are still
+	// listed here, so that a NodePool authored against one shows why it stopped placing.
+	// +optional
+	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// CapacityReservationProvisioningStateSucceeded is the only ARM provisioning state in
+// which a member reservation can back an offering.
+const CapacityReservationProvisioningStateSucceeded = "Succeeded"
+
+// IsEligible reports whether this member can currently back offerings.
+//
+// An absent state counts as eligible. The field is read-only and populated in every
+// observed response, so treating a missing value as ineligible would turn an optional
+// field into a hard provisioning outage; and unlike association itself, guessing wrong
+// here cannot launch an unreserved node, it can only cost a launch attempt that ARM
+// rejects.
+func (in CapacityReservation) IsEligible() bool {
+	if in.ProvisioningState == nil || *in.ProvisioningState == "" {
+		return true
+	}
+	return strings.EqualFold(*in.ProvisioningState, CapacityReservationProvisioningStateSucceeded)
 }
 
 // CapacityReservationGroup is the resolved shape of the Capacity Reservation

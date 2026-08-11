@@ -101,6 +101,60 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		Expect(lo.FromPtr(nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].Quantity)).To(Equal(int32(0)))
 	})
 
+	It("should record each member's provisioning state", func() {
+		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+			creating := fake.NewCapacityReservation(rg, group, "creating", "Standard_D4s_v3", 1, "2")
+			creating.Properties.ProvisioningState = lo.ToPtr("Creating")
+			return []*armcompute.CapacityReservation{
+				fake.NewCapacityReservation(rg, group, "ready", "Standard_D2s_v3", 1, "1"),
+				creating,
+			}, nil
+		}
+
+		_, err := reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+
+		// The unprovisioned member stays listed: an operator authors a NodePool per member
+		// and needs to see why one of them stopped placing.
+		members := nodeClass.Status.CapacityReservationGroup.CapacityReservations
+		Expect(members).To(HaveLen(2))
+		byName := lo.SliceToMap(members, func(m v1beta1.CapacityReservation) (string, v1beta1.CapacityReservation) { return m.Name, m })
+		Expect(lo.FromPtr(byName["ready"].ProvisioningState)).To(Equal("Succeeded"))
+		Expect(byName["ready"].IsEligible()).To(BeTrue())
+		Expect(lo.FromPtr(byName["creating"].ProvisioningState)).To(Equal("Creating"))
+		Expect(byName["creating"].IsEligible()).To(BeFalse())
+	})
+
+	// Otherwise the NodeClass reports Ready while projecting nothing, which reaches the
+	// user as unschedulable pods rather than as a NodeClass problem.
+	It("should reject a group whose members are all unprovisioned", func() {
+		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+			creating := fake.NewCapacityReservation(rg, group, "creating", "Standard_D2s_v3", 1, "1")
+			creating.Properties.ProvisioningState = lo.ToPtr("Creating")
+			return []*armcompute.CapacityReservation{creating}, nil
+		}
+
+		_, err := reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		expectUnready(status.CapacityReservationGroupUnreadyReasonNoEligibleReservations)
+	})
+
+	// ARM documents provisioningState as always present in the response, so an absent
+	// value is treated as usable rather than turning an optional field into an outage.
+	It("should treat a member with no provisioning state as eligible", func() {
+		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+			bare := fake.NewCapacityReservation(rg, group, "bare", "Standard_D2s_v3", 1, "1")
+			bare.Properties = nil
+			return []*armcompute.CapacityReservation{bare}, nil
+		}
+
+		_, err := reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		Expect(nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].ProvisioningState).To(BeNil())
+	})
+
 	It("should resolve a regional group with no zones", func() {
 		azureEnv.CapacityReservationGroupsAPI.GetFunc = func(_ context.Context, rg, name string, _ *armcompute.CapacityReservationGroupsClientGetOptions) (armcompute.CapacityReservationGroupsClientGetResponse, error) {
 			return armcompute.CapacityReservationGroupsClientGetResponse{

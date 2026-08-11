@@ -258,12 +258,19 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // capacityReservationPlacements projects the Capacity Reservation Group resolved in
 // status into the {VM size, placement} pairs its member reservations can back. A nil
 // result means no group is configured, which leaves offerings unrestricted.
+//
+// Ineligible members are skipped rather than dropped from status: an operator authors one
+// NodePool per member, so a member that stops backing offerings has to stay visible with
+// the reason, not disappear.
 func (p *DefaultProvider) capacityReservationPlacements(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) []capacityReservationPlacement {
 	if nodeClass.Spec.CapacityReservationGroupID == nil || nodeClass.Status.CapacityReservationGroup == nil {
 		return nil
 	}
 	placements := []capacityReservationPlacement{}
 	for _, reservation := range nodeClass.Status.CapacityReservationGroup.CapacityReservations {
+		if !reservation.IsEligible() {
+			continue
+		}
 		zone, err := zones.MakeAKSLabelZoneFromARMZones(p.region, lo.ToSlicePtr(reservation.Zones))
 		if err != nil {
 			log.FromContext(ctx).Error(err, "resolving capacity reservation placement", "capacityReservation", reservation.ID)

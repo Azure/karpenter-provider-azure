@@ -58,6 +58,12 @@ type CapacityReservation struct {
 	// reservation can be associated and intentionally overallocated.
 	// +optional
 	Quantity *int32 `json:"quantity,omitempty"`
+	// provisioningState is the ARM provisioning state of the capacity reservation.
+	// Only a reservation reported as Succeeded backs offerings; any other state, such as
+	// Creating, means it is not yet usable. Members that cannot back offerings are still
+	// listed here, so that a NodePool authored against one shows why it stopped placing.
+	// +optional
+	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
 // CapacityReservationGroup is the resolved shape of the Capacity Reservation

@@ -822,6 +822,13 @@ spec:
                           description: name is the name of the capacity reservation
                             within its group.
                           type: string
+                        provisioningState:
+                          description: |-
+                            provisioningState is the ARM provisioning state of the capacity reservation.
+                            Only a reservation reported as Succeeded backs offerings; any other state, such as
+                            Creating, means it is not yet usable. Members that cannot back offerings are still
+                            listed here, so that a NodePool authored against one shows why it stopped placing.
+                          type: string
                         quantity:
                           description: |-
                             quantity is the number of instances reserved. Zero is valid: a zero-quantity
@@ -1797,6 +1804,13 @@ spec:
                         name:
                           description: name is the name of the capacity reservation
                             within its group.
+                          type: string
+                        provisioningState:
+                          description: |-
+                            provisioningState is the ARM provisioning state of the capacity reservation.
+                            Only a reservation reported as Succeeded backs offerings; any other state, such as
+                            Creating, means it is not yet usable. Members that cannot back offerings are still
+                            listed here, so that a NodePool authored against one shows why it stopped placing.
                           type: string
                         quantity:
                           description: |-

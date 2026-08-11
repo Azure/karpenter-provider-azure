@@ -3549,6 +3549,27 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 		})
 
+		It("should not offer a member that is not provisioned", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].ProvisioningState = lo.ToPtr("Creating")
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(BeEmpty(), "an unprovisioned member must back no offerings")
+		})
+
+		It("should offer only the provisioned members of a group", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}), lo.T2("Standard_D4s_v3", []string{"3"}))
+			members := nodeClass.Status.CapacityReservationGroup.CapacityReservations
+			Expect(members).To(HaveLen(2))
+			members[1].ProvisioningState = lo.ToPtr("Creating")
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(lo.Map(instanceTypes, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })).
+				To(ConsistOf(reservedSKU))
+		})
+
 		Context("Launch", func() {
 			provisionVM := func() armcompute.VirtualMachine {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)

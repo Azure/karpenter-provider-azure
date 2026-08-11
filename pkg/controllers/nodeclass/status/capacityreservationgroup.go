@@ -43,11 +43,14 @@ const (
 	// identity has not been granted access to the group's scope. Note that this only
 	// covers read access; permission to associate an instance with the group cannot be
 	// verified until launch.
-	CapacityReservationGroupUnreadyReasonAccessDenied             = "CapacityReservationGroupAccessDenied"
-	CapacityReservationGroupUnreadyReasonRegionMismatch           = "CapacityReservationGroupRegionMismatch"
-	CapacityReservationGroupUnreadyReasonSubscriptionMismatch     = "CapacityReservationGroupSubscriptionMismatch"
-	CapacityReservationGroupUnreadyReasonUnsupportedType          = "CapacityReservationGroupUnsupportedReservationType"
-	CapacityReservationGroupUnreadyReasonNoReservations           = "CapacityReservationGroupNoReservations"
+	CapacityReservationGroupUnreadyReasonAccessDenied         = "CapacityReservationGroupAccessDenied"
+	CapacityReservationGroupUnreadyReasonRegionMismatch       = "CapacityReservationGroupRegionMismatch"
+	CapacityReservationGroupUnreadyReasonSubscriptionMismatch = "CapacityReservationGroupSubscriptionMismatch"
+	CapacityReservationGroupUnreadyReasonUnsupportedType      = "CapacityReservationGroupUnsupportedReservationType"
+	CapacityReservationGroupUnreadyReasonNoReservations       = "CapacityReservationGroupNoReservations"
+	// CapacityReservationGroupUnreadyReasonNoEligibleReservations means the group has
+	// members but none is provisioned, so none can back an offering yet.
+	CapacityReservationGroupUnreadyReasonNoEligibleReservations   = "CapacityReservationGroupNoEligibleReservations"
 	CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode = "CapacityReservationGroupUnsupportedProvisionMode"
 	CapacityReservationGroupUnreadyReasonUnknownError             = "CapacityReservationGroupUnknownError"
 )
@@ -179,6 +182,16 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
 	}
 
+	// Members that are not yet provisioned back no offerings, so a group made up entirely
+	// of them would otherwise report Ready and project nothing, which reaches the user as
+	// unschedulable pods rather than as a NodeClass problem.
+	if !lo.SomeBy(reservations, func(cr v1beta1.CapacityReservation) bool { return cr.IsEligible() }) {
+		nodeClass.Status.CapacityReservationGroup = nil
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNoEligibleReservations,
+			fmt.Sprintf("no capacity reservation in group is provisioned: %s", crgID))
+		return reconcile.Result{RequeueAfter: time.Minute}, nil
+	}
+
 	nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
 		ID:                   lo.FromPtr(group.ID),
 		Location:             lo.FromPtr(group.Location),
@@ -212,12 +225,17 @@ func (r *CapacityReservationGroupReconciler) listReservations(ctx context.Contex
 			if quantity > math.MaxInt32 {
 				quantity = math.MaxInt32
 			}
+			var provisioningState *string
+			if cr.Properties != nil && lo.FromPtr(cr.Properties.ProvisioningState) != "" {
+				provisioningState = cr.Properties.ProvisioningState
+			}
 			reservations = append(reservations, v1beta1.CapacityReservation{
-				ID:       lo.FromPtr(cr.ID),
-				Name:     lo.FromPtr(cr.Name),
-				VMSize:   lo.FromPtr(cr.SKU.Name),
-				Zones:    lo.FilterMap(cr.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
-				Quantity: lo.ToPtr(int32(quantity)),
+				ID:                lo.FromPtr(cr.ID),
+				Name:              lo.FromPtr(cr.Name),
+				VMSize:            lo.FromPtr(cr.SKU.Name),
+				Zones:             lo.FilterMap(cr.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
+				Quantity:          lo.ToPtr(int32(quantity)),
+				ProvisioningState: provisioningState,
 			})
 		}
 	}
