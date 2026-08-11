@@ -81,7 +81,7 @@ type AKSNodeClassSpec struct {
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,AzureContainerLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// fipsMode controls FIPS compliance for the provisioned nodes

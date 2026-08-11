@@ -105,6 +105,7 @@ spec:
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -806,6 +807,10 @@ spec:
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
                 || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
                 : true'
+            - message: artifactStreaming.enabled cannot be true when imageFamily is AzureContainerLinux
+              rule: 'has(self.artifactStreaming) && has(self.artifactStreaming.enabled)
+                && self.artifactStreaming.enabled == true ? !(has(self.imageFamily)
+                && self.imageFamily == ''AzureContainerLinux'') : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
@@ -1031,6 +1036,7 @@ spec:
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -1732,6 +1738,10 @@ spec:
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
                 || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
                 : true'
+            - message: artifactStreaming.enabled cannot be true when imageFamily is AzureContainerLinux
+              rule: 'has(self.artifactStreaming) && has(self.artifactStreaming.enabled)
+                && self.artifactStreaming.enabled == true ? !(has(self.imageFamily)
+                && self.imageFamily == ''AzureContainerLinux'') : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)

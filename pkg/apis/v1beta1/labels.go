@@ -191,10 +191,11 @@ const (
 )
 
 const (
-	UbuntuImageFamily     = "Ubuntu"
-	Ubuntu2204ImageFamily = "Ubuntu2204"
-	Ubuntu2404ImageFamily = "Ubuntu2404"
-	AzureLinuxImageFamily = "AzureLinux"
+	UbuntuImageFamily              = "Ubuntu"
+	Ubuntu2204ImageFamily          = "Ubuntu2204"
+	Ubuntu2404ImageFamily          = "Ubuntu2404"
+	AzureLinuxImageFamily          = "AzureLinux"
+	AzureContainerLinuxImageFamily = "AzureContainerLinux"
 )
 
 const (
@@ -221,10 +222,11 @@ var UbuntuFamilies = sets.New(
 // imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
 // These values match what AKS writes for kubernetes.azure.com/os-sku.
 var imageFamilyToOSSKU = map[string]string{
-	UbuntuImageFamily:     OSSKUUbuntu,
-	Ubuntu2204ImageFamily: OSSKUUbuntu,
-	Ubuntu2404ImageFamily: OSSKUUbuntu,
-	AzureLinuxImageFamily: OSSKUAzureLinux,
+	UbuntuImageFamily:              OSSKUUbuntu,
+	Ubuntu2204ImageFamily:          OSSKUUbuntu,
+	Ubuntu2404ImageFamily:          OSSKUUbuntu,
+	AzureLinuxImageFamily:          OSSKUAzureLinux,
+	AzureContainerLinuxImageFamily: OSSKUAzureLinux,
 }
 
 // GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
