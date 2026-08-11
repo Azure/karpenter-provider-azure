@@ -84,3 +84,7 @@ Examples:
 If it is a scheduling decision, and it is something that can be on by default or represented as a simple capability, make it a well-known label.
 
 If it is a feature, especially a complex feature with many possible values or related settings, make it an `AKSNodeClass` field because the hard-typed API is better.
+
+## Final Note: AKS Precedent
+
+Feature design should generally try to mimic how the same capability works in AKS. AKS behavior is useful precedent because it gives users a familiar model and helps keep provider behavior aligned with the platform. However, it should not be treated as the end-all-be-all; Karpenter may expose a capability differently when scheduling semantics, API ergonomics, or provider constraints justify it.
