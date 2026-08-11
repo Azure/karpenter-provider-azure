@@ -18,6 +18,7 @@ package status_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 const (
@@ -49,16 +51,34 @@ func testCRGID() string {
 		"/providers/Microsoft.Compute/capacityReservationGroups/" + testCRGName
 }
 
+// stubInstanceTypeLister stands in for the instance type projection so that most cases can
+// exercise the reconciler without depending on the fake SKU catalog.
+type stubInstanceTypeLister struct {
+	called        bool
+	received      *v1beta1.AKSNodeClass
+	instanceTypes []*cloudprovider.InstanceType
+	err           error
+}
+
+func (s *stubInstanceTypeLister) List(_ context.Context, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
+	s.called = true
+	s.received = nodeClass.DeepCopy()
+	return s.instanceTypes, s.err
+}
+
 var _ = Describe("CapacityReservationGroupStatus", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	var reconciler *status.CapacityReservationGroupReconciler
+	var lister *stubInstanceTypeLister
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
 		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(testCRGID())
+		lister = &stubInstanceTypeLister{instanceTypes: []*cloudprovider.InstanceType{{Name: "Standard_D2s_v3"}}}
 		reconciler = status.NewCapacityReservationGroupReconciler(
 			azureEnv.CapacityReservationGroupsAPI,
 			azureEnv.CapacityReservationsAPI,
+			lister,
 			testCRGSubscriptionID,
 			testCRGLocation,
 		)
@@ -163,6 +183,156 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
 		Expect(nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].ProvisioningState).To(BeNil())
+	})
+
+	Context("compatibility with the instance type projection", func() {
+		It("should ask the projection about the status it is about to write", func() {
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(lister.called).To(BeTrue())
+			// The prospective status, not the one the object had on entry.
+			Expect(lister.received.Status.CapacityReservationGroup).ToNot(BeNil())
+			Expect(lister.received.Status.CapacityReservationGroup.CapacityReservations).To(HaveLen(1))
+			Expect(lister.received.Spec.CapacityReservationGroupID).To(Equal(nodeClass.Spec.CapacityReservationGroupID))
+		})
+
+		It("should be ready when the projection yields instance types", func() {
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		})
+
+		It("should report no compatible reservations when the projection yields nothing", func() {
+			lister.instanceTypes = nil
+
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal(status.CapacityReservationGroupUnreadyReasonNoCompatibleReservations))
+			// Members stay listed: the operator has to see which sizes were reserved.
+			Expect(nodeClass.Status.CapacityReservationGroup).ToNot(BeNil())
+			Expect(nodeClass.Status.CapacityReservationGroup.CapacityReservations).To(HaveLen(1))
+		})
+
+		// A projection failure says nothing about the group, so it must be retried rather
+		// than reported as the group being unusable.
+		It("should retry a projection error instead of calling it incompatible", func() {
+			lister.err = errors.New("instance types unavailable")
+
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady)
+			Expect(cond.Reason).To(Equal(status.CapacityReservationGroupUnreadyReasonUnknownError))
+			Expect(cond.Reason).ToNot(Equal(status.CapacityReservationGroupUnreadyReasonNoCompatibleReservations))
+			Expect(nodeClass.Status.CapacityReservationGroup).ToNot(BeNil())
+		})
+
+		It("should not consult the projection when no member is eligible", func() {
+			azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+				creating := fake.NewCapacityReservation(rg, group, "creating", "Standard_D2s_v3", 1, "1")
+				creating.Properties.ProvisioningState = lo.ToPtr("Creating")
+				return []*armcompute.CapacityReservation{creating}, nil
+			}
+
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(lister.called).To(BeFalse(), "eligibility must short-circuit before the projection")
+		})
+	})
+
+	// Uses the real projection against the fake SKU catalog, so that compatibility stays
+	// defined by one implementation rather than a restatement of it here.
+	Context("compatibility against the real projection", func() {
+		var realReconciler *status.CapacityReservationGroupReconciler
+
+		regionalCRGID := "/subscriptions/" + testCRGSubscriptionID +
+			"/resourceGroups/" + testCRGResourceGroup +
+			"/providers/Microsoft.Compute/capacityReservationGroups/" + testCRGName
+
+		BeforeEach(func() {
+			nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(regionalCRGID)
+			azureEnv.CapacityReservationGroupsAPI.GetFunc = func(_ context.Context, rg, name string, _ *armcompute.CapacityReservationGroupsClientGetOptions) (armcompute.CapacityReservationGroupsClientGetResponse, error) {
+				return armcompute.CapacityReservationGroupsClientGetResponse{
+					CapacityReservationGroup: armcompute.CapacityReservationGroup{
+						ID:       lo.ToPtr(regionalCRGID),
+						Name:     lo.ToPtr(name),
+						Location: lo.ToPtr(fake.Region),
+						Zones:    []*string{lo.ToPtr("1")},
+					},
+				}, nil
+			}
+			realReconciler = status.NewCapacityReservationGroupReconciler(
+				azureEnv.CapacityReservationGroupsAPI,
+				azureEnv.CapacityReservationsAPI,
+				azureEnv.InstanceTypesProvider,
+				testCRGSubscriptionID,
+				fake.Region,
+			)
+			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+		})
+
+		It("should be ready for a size the region offers", func() {
+			azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+				return []*armcompute.CapacityReservation{
+					fake.NewCapacityReservation(rg, group, "ok", "Standard_D2s_v3", 1, "1"),
+				}, nil
+			}
+
+			_, err := realReconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		})
+
+		It("should reject a size the region does not offer", func() {
+			azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+				return []*armcompute.CapacityReservation{
+					fake.NewCapacityReservation(rg, group, "absent", "Standard_NotARealSize_v9", 1, "1"),
+				}, nil
+			}
+
+			_, err := realReconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal(status.CapacityReservationGroupUnreadyReasonNoCompatibleReservations))
+		})
+
+		It("should reject a size the NodeClass filters out", func() {
+			// LocalDNS needs at least four vCPUs, and the reserved size has two.
+			nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+			azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+				return []*armcompute.CapacityReservation{
+					fake.NewCapacityReservation(rg, group, "small", "Standard_D2s_v3", 1, "1"),
+				}, nil
+			}
+
+			_, err := realReconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal(status.CapacityReservationGroupUnreadyReasonNoCompatibleReservations))
+		})
+
+		// Readiness is about whether the shape is usable at all, not about whether capacity
+		// happens to be available this minute.
+		It("should stay ready when the reserved offering is temporarily unavailable", func() {
+			azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+				return []*armcompute.CapacityReservation{
+					fake.NewCapacityReservation(rg, group, "ok", "Standard_D2s_v3", 1, "1"),
+				}, nil
+			}
+			azureEnv.UnavailableOfferingsCache.ForCapacityReservationGroup(regionalCRGID).MarkUnavailable(
+				ctx, "ZonalAllocationFailure", fake.MakeSKU("Standard_D2s_v3"),
+				fake.Region+"-1", "on-demand")
+
+			_, err := realReconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		})
 	})
 
 	It("should resolve a regional group with no zones", func() {

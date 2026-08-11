@@ -29,6 +29,7 @@ import (
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -50,7 +51,11 @@ const (
 	CapacityReservationGroupUnreadyReasonNoReservations       = "CapacityReservationGroupNoReservations"
 	// CapacityReservationGroupUnreadyReasonNoEligibleReservations means the group has
 	// members but none is provisioned, so none can back an offering yet.
-	CapacityReservationGroupUnreadyReasonNoEligibleReservations   = "CapacityReservationGroupNoEligibleReservations"
+	CapacityReservationGroupUnreadyReasonNoEligibleReservations = "CapacityReservationGroupNoEligibleReservations"
+	// CapacityReservationGroupUnreadyReasonNoCompatibleReservations means every eligible
+	// member reserves something this NodeClass cannot use: a size absent from the region,
+	// or one its own filters exclude.
+	CapacityReservationGroupUnreadyReasonNoCompatibleReservations = "CapacityReservationGroupNoCompatibleReservations"
 	CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode = "CapacityReservationGroupUnsupportedProvisionMode"
 	CapacityReservationGroupUnreadyReasonUnknownError             = "CapacityReservationGroupUnknownError"
 )
@@ -60,6 +65,13 @@ const (
 	capacityReservationGroupResourceType   = "capacityReservationGroups"
 )
 
+// instanceTypeLister is the projection side of the CRG feature, narrowed to what
+// readiness needs. Reusing it keeps a single definition of which SKUs a NodeClass can
+// actually use, rather than a second copy that can drift.
+type instanceTypeLister interface {
+	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+}
+
 // CapacityReservationGroupReconciler resolves spec.capacityReservationGroupID into
 // status.capacityReservationGroup: the group's placement and the member reservations
 // that can back offerings. It deliberately resolves only the static shape of the
@@ -67,6 +79,7 @@ const (
 type CapacityReservationGroupReconciler struct {
 	groupsClient       azapi.CapacityReservationGroupsAPI
 	reservationsClient azapi.CapacityReservationsAPI
+	instanceTypes      instanceTypeLister
 	subscriptionID     string
 	location           string
 }
@@ -74,12 +87,14 @@ type CapacityReservationGroupReconciler struct {
 func NewCapacityReservationGroupReconciler(
 	groupsClient azapi.CapacityReservationGroupsAPI,
 	reservationsClient azapi.CapacityReservationsAPI,
+	instanceTypes instanceTypeLister,
 	subscriptionID string,
 	location string,
 ) *CapacityReservationGroupReconciler {
 	return &CapacityReservationGroupReconciler{
 		groupsClient:       groupsClient,
 		reservationsClient: reservationsClient,
+		instanceTypes:      instanceTypes,
 		subscriptionID:     subscriptionID,
 		location:           location,
 	}
@@ -202,6 +217,25 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
+	// Being provisioned is not the same as being usable: a member can reserve a size this
+	// region does not offer, or one this NodeClass filters out. Rather than restate those
+	// rules here and let the two copies drift, ask the projection itself what it would
+	// produce for the status about to be written. List does not read the Ready condition,
+	// so this is not recursive, and it warms the cache key the launch path uses next.
+	instanceTypes, err := r.instanceTypes.List(ctx, candidateWithResolvedGroup(nodeClass))
+	if err != nil {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
+			CapacityReservationGroupUnreadyReasonUnknownError,
+			fmt.Sprintf("unknown error listing instance types for capacity reservation group: %s", err.Error()))
+		return reconcile.Result{}, fmt.Errorf("listing instance types for capacity reservation group %s: %w", crgID, err)
+	}
+	if len(instanceTypes) == 0 {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
+			CapacityReservationGroupUnreadyReasonNoCompatibleReservations,
+			fmt.Sprintf("no capacity reservation in group reserves a VM size this NodeClass can use: %s", crgID))
+		return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
+	}
+
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeCapacityReservationGroupReady)
 
 	// Periodically revalidate: members and quantities are user-managed and can change
@@ -249,4 +283,11 @@ func (r *CapacityReservationGroupReconciler) listReservations(ctx context.Contex
 func (r *CapacityReservationGroupReconciler) setFalse(nodeClass *v1beta1.AKSNodeClass, reason, message string) {
 	nodeClass.Status.CapacityReservationGroup = nil
 	nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady, reason, message)
+}
+
+// candidateWithResolvedGroup is the NodeClass as it would be once this reconciliation is
+// persisted. The copy keeps the speculative projection from touching the object the rest
+// of the reconcile chain is still working on.
+func candidateWithResolvedGroup(nodeClass *v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
+	return nodeClass.DeepCopy()
 }
