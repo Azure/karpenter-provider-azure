@@ -54,7 +54,7 @@ Examples:
 
 - `topology.kubernetes.io/zone`, because zone is a placement constraint that directly changes which offerings can satisfy a workload.
 - `karpenter.sh/capacity-type`, because workloads may explicitly choose on-demand or spot capacity and the value is a simple scheduling dimension.
-- Ultra SSD support, because it is a simple yes/no capability and directly affects workload scheduling. Although enabling Ultra SSD changes how the VM is configured, pods mounting Ultra SSD volumes will fail if scheduled onto nodes that do not have Ultra SSD enabled, so users need to express it as a scheduling requirement.
+- Ultra SSD support is a simple yes/no node capability that directly affects workload placement. Although enabling Ultra SSD changes the underlying VM configuration, a Pod using an `UltraSSD_LRS` volume cannot attach that volume on a node where Ultra SSD is disabled. Therefore, this capability needs to be represented as a node scheduling requirement so the Pod is only placed on compatible nodes.
 
 ### Prefer `AKSNodeClass` when it is feature configuration
 
