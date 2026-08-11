@@ -268,6 +268,8 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.AzureContainerLinuxImageFamily:
+		return &AzureContainerLinux{Options: parameters}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
