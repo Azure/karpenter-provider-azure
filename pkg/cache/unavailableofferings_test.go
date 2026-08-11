@@ -287,3 +287,28 @@ func TestUnavailableOfferings_CapacityReservationGroupScope(t *testing.T) {
 		}
 	})
 }
+
+// Each member of a group is a separately reserved block, so a failure on one size must not
+// suppress a larger sibling the user has also reserved.
+func TestUnavailableOfferings_CapacityReservationGroupDoesNotWidenByFamily(t *testing.T) {
+	const groupID = "/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+	small := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+	large := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+
+	u := NewUnavailableOfferings()
+	scoped := u.ForCapacityReservationGroup(groupID)
+	scoped.MarkUnavailable(context.TODO(), "test reason", small, "westus-1", karpv1.CapacityTypeOnDemand)
+
+	if !scoped.IsUnavailable(small, "westus-1", karpv1.CapacityTypeOnDemand) {
+		t.Error("expected the failed size to be unavailable within the group")
+	}
+	if scoped.IsUnavailable(large, "westus-1", karpv1.CapacityTypeOnDemand) {
+		t.Error("expected a larger reserved member of the same family to stay available")
+	}
+
+	// Outside a group the widening heuristic is unchanged.
+	u.MarkUnavailable(context.TODO(), "test reason", small, "westus-1", karpv1.CapacityTypeOnDemand)
+	if !u.IsUnavailable(large, "westus-1", karpv1.CapacityTypeOnDemand) {
+		t.Error("expected unreserved capacity to still widen to larger sizes of the family")
+	}
+}

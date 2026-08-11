@@ -182,22 +182,26 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
 	}
 
-	// Members that are not yet provisioned back no offerings, so a group made up entirely
-	// of them would otherwise report Ready and project nothing, which reaches the user as
-	// unschedulable pods rather than as a NodeClass problem.
-	if !lo.SomeBy(reservations, func(cr v1beta1.CapacityReservation) bool { return cr.IsEligible() }) {
-		nodeClass.Status.CapacityReservationGroup = nil
-		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNoEligibleReservations,
-			fmt.Sprintf("no capacity reservation in group is provisioned: %s", crgID))
-		return reconcile.Result{RequeueAfter: time.Minute}, nil
-	}
-
+	// Recorded before eligibility is judged: when nothing can back an offering, the member
+	// names and their states are exactly what the operator needs to see, and a NodePool has
+	// been authored against each of them.
 	nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
 		ID:                   lo.FromPtr(group.ID),
 		Location:             lo.FromPtr(group.Location),
 		Zones:                lo.FilterMap(group.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
 		CapacityReservations: reservations,
 	}
+
+	// Members that are not yet provisioned back no offerings, so a group made up entirely
+	// of them would otherwise report Ready and project nothing, which reaches the user as
+	// unschedulable pods rather than as a NodeClass problem.
+	if !lo.SomeBy(reservations, func(cr v1beta1.CapacityReservation) bool { return cr.IsEligible() }) {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
+			CapacityReservationGroupUnreadyReasonNoEligibleReservations,
+			fmt.Sprintf("no capacity reservation in group is provisioned: %s", crgID))
+		return reconcile.Result{RequeueAfter: time.Minute}, nil
+	}
+
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeCapacityReservationGroupReady)
 
 	// Periodically revalidate: members and quantities are user-managed and can change

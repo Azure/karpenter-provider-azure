@@ -137,7 +137,17 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
-		expectUnready(status.CapacityReservationGroupUnreadyReasonNoEligibleReservations)
+		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsFalse()).To(BeTrue())
+		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).Reason).
+			To(Equal(status.CapacityReservationGroupUnreadyReasonNoEligibleReservations))
+
+		// The members have to survive into status: this is the moment the operator needs
+		// their names and states, because a NodePool was authored against each of them.
+		crg := nodeClass.Status.CapacityReservationGroup
+		Expect(crg).ToNot(BeNil(), "resolved group must remain visible when no member is eligible")
+		Expect(crg.CapacityReservations).To(HaveLen(1))
+		Expect(crg.CapacityReservations[0].Name).To(Equal("creating"))
+		Expect(lo.FromPtr(crg.CapacityReservations[0].ProvisioningState)).To(Equal("Creating"))
 	})
 
 	// ARM documents provisioningState as always present in the response, so an absent

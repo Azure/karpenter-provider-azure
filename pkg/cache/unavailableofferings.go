@@ -250,8 +250,16 @@ func (s *ScopedOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailabl
 	u.singleOfferingCache.Set(singleInstanceKey(s.scope, instanceType, zone, capacityType), struct{}{}, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
 
-	// Also mark the VM family unavailable at this SKU's vCPU count, so larger sizes of the same family are blocked too
-	u.markFamilyUnavailableAtCPUCount(ctx, s.scope, sku, zone, capacityType, ttl)
+	// Widening to larger sizes of the same family is a guess that whatever blocked this
+	// size blocks bigger ones too. That holds for a shared regional pool, but not inside a
+	// capacity reservation group, where each member is a separately reserved block: one
+	// member failing says nothing about a larger sibling, and even quota does not carry
+	// across, because consumption up to a member's reserved quantity is quota-exempt.
+	// Widening there would suppress reserved capacity the user is paying for, for the whole
+	// TTL, on no evidence.
+	if s.scope == "" {
+		u.markFamilyUnavailableAtCPUCount(ctx, s.scope, sku, zone, capacityType, ttl)
+	}
 }
 
 // MarkUnavailable communicates recently observed temporary capacity shortages in the provided offerings
