@@ -70,8 +70,8 @@ func memberName(groupName, vmSize string) string {
 	return groupName + "-" + strings.ToLower(strings.TrimPrefix(vmSize, "Standard_"))
 }
 
-// ExpectCreatedCapacityReservationGroup creates a capacity reservation group with a
-// single member reservation in the node resource group, and returns the group's ARM ID.
+// ExpectCreatedCapacityReservationGroup creates a capacity reservation group and its
+// member reservations in the node resource group, and returns the group's ARM ID.
 //
 // Cleanup goes through the environment tracker rather than DeferCleanup: Azure refuses
 // to delete a reservation that still has instances allocated, and the tracker runs after
@@ -121,7 +121,8 @@ func (env *Environment) ExpectCreatedCapacityReservationGroup(ctx context.Contex
 func (env *Environment) deleteCapacityReservationGroup(groupName string, reservationNames []string) error {
 	ctx := context.Background()
 	// VM deletion is asynchronous and outlives the Kubernetes objects, so both deletes can
-	// be refused with 409 while instances are still releasing the reservation.
+	// be refused with 409 while instances are still releasing the reservation. Re-deleting
+	// a member the previous attempt already removed is safe: ARM answers 204, not 404.
 	return retryOnConflict(ctx, 15*time.Minute, func() error {
 		// Members have to go first; Azure rejects deleting a group that still has any.
 		for _, reservationName := range reservationNames {
