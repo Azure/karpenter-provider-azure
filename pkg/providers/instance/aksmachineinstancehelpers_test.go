@@ -131,6 +131,29 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			})
 		})
 
+		Context("AzureContainerLinux Image Family", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+			})
+
+			It("should configure AzureContainerLinux for supported Kubernetes version", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.34.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(string(*ossku)).To(Equal("AzureContainerLinux"))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should reject AzureContainerLinux for unsupported Kubernetes version", func() {
+				_, _, err := configureOSSKUAndFIPs(nodeClass, "1.33.9")
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("requires Kubernetes version >= 1.34"))
+			})
+		})
+
 		Context("Generic Ubuntu Image Family with FIPS Mode", func() {
 			BeforeEach(func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)

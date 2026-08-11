@@ -40,6 +40,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
 
+const osskuAzureContainerLinux armcontainerservice.OSSKU = "AzureContainerLinux"
+
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
 // May return error whenever required fields are not set (check carefully).
 //
@@ -302,6 +304,11 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 		ossku = armcontainerservice.OSSKUUbuntu2404
 	case v1beta1.AzureLinuxImageFamily:
 		ossku = armcontainerservice.OSSKUAzureLinux
+	case v1beta1.AzureContainerLinuxImageFamily:
+		if !imagefamily.UseAzureContainerLinux(orchestratorVersion) {
+			return nil, nil, fmt.Errorf("imageFamily %q requires Kubernetes version >= 1.34, got %q", v1beta1.AzureContainerLinuxImageFamily, orchestratorVersion)
+		}
+		ossku = osskuAzureContainerLinux
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
