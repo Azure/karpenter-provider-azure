@@ -157,6 +157,53 @@ var _ = Describe("CapacityReservation", func() {
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 	})
 
+	// A regional group is a distinct launch shape rather than a variation on the zonal one:
+	// the VM must carry no zone at all. It is also the case the default offering rank works
+	// against, since it prefers zonal, so the NodePool below deliberately leaves the zone
+	// unconstrained -- a zonal offering winning here would produce a request Azure rejects.
+	It("should launch a node into a regional reserved capacity group", func(ctx SpecContext) {
+		if !env.InClusterController {
+			Skip("requires granting the Karpenter workload identity a role on the capacity reservation group")
+		}
+		if env.IsAKSMachineAPIMode() {
+			Skip("the AKS Machine API cannot pass a capacity reservation group through yet; the NodeClass fails closed instead")
+		}
+
+		By("Reserving capacity in Azure without a zone")
+		groupName := fmt.Sprintf("karpenter-e2e-crg-regional-%d", time.Now().UnixNano())
+		groupID := env.ExpectCreatedCapacityReservationGroup(ctx, azure.CapacityReservationGroupOptions{
+			Name:               groupName,
+			Members:            []azure.CapacityReservationMember{{VMSize: reservedVMSize, Capacity: reservedCapacity}},
+			GrantToPrincipalID: env.GetKarpenterWorkloadIdentity(ctx),
+		})
+
+		By("Pointing a NodeClass at the group")
+		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(groupID)
+		nodePool := env.DefaultNodePool(nodeClass)
+		test.ReplaceRequirements(nodePool,
+			karpv1.NodeSelectorRequirementWithMinValues{Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{reservedVMSize}},
+			karpv1.NodeSelectorRequirementWithMinValues{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+		)
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+
+		expectCapacityReservationGroupCondition(ctx, nodeClass, func(g Gomega, condition *status.Condition) {
+			g.Expect(condition.IsTrue()).To(BeTrue(), "expected the group to resolve, got %s: %s", condition.Reason, condition.Message)
+		})
+
+		By("Waiting for the node to join and the workload to become healthy")
+		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
+		env.EventuallyExpectHealthyDeployment(deployment)
+
+		By("Verifying the launch carried no zone and targeted the group")
+		vm := env.GetVM(nodes[0].Name)
+		expectVMOnReservedCapacity(vm, groupID)
+		Expect(string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))).To(Equal(reservedVMSize))
+		Expect(vm.Zones).To(BeEmpty(), "a regional group requires the VM to carry no zone")
+		Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zones.Regional))
+		Expect(nodes[0].Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
+	})
+
 	It("should keep the NodeClass NotReady when the group cannot be resolved", func(ctx SpecContext) {
 		By("Pointing a NodeClass at a group that was never created")
 		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(fmt.Sprintf(
