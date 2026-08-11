@@ -18,6 +18,7 @@ package azclient
 
 import (
 	"context"
+	"slices"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -190,9 +191,9 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// only applied to the node image versions client.
 	var nodeImageVersionsClientOptions = *opts
 	// Clone the slice to ensure appends here don't mutate opts.PerCallPolicies via a shared backing array.
-	nodeImageVersionsClientOptions.PerCallPolicies = append(nodeImageVersionsClientOptions.PerCallPolicies[:0:0], nodeImageVersionsClientOptions.PerCallPolicies...)
+	nodeImageVersionsClientOptions.PerCallPolicies = slices.Clone(nodeImageVersionsClientOptions.PerCallPolicies)
 	if o.IsSecurityPatchChannel() {
-		log.FromContext(ctx).Info("cluster is on the SecurityPatch node OS upgrade channel; requesting security-patch node images")
+		log.FromContext(ctx).Info("cluster is on the SecurityPatch node OS upgrade channel; configuring client to request security-patch node images")
 		nodeImageVersionsClientOptions.PerCallPolicies = append(nodeImageVersionsClientOptions.PerCallPolicies, &securityPatchOnlyPolicy{})
 	}
 	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, &nodeImageVersionsClientOptions)
