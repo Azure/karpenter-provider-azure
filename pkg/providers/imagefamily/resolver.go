@@ -125,6 +125,15 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily {
+		if !UseAzureContainerLinux(kubernetesVersion) {
+			return nil, fmt.Errorf("imageFamily %q requires Kubernetes version >= 1.34, got %q", v1beta1.AzureContainerLinuxImageFamily, kubernetesVersion)
+		}
+		if nodeClass.IsArtifactStreamingExplicitlyEnabled() {
+			return nil, fmt.Errorf("artifact streaming is not supported with imageFamily %q", v1beta1.AzureContainerLinuxImageFamily)
+		}
+	}
+
 	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), kubernetesVersion, staticParameters)
 	imageID, err := r.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {

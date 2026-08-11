@@ -46,6 +46,15 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 	return version.GE(semver.Version{Major: 1, Minor: 34})
 }
 
+// Azure Container Linux requires Kubernetes 1.34.0 or higher.
+func UseAzureContainerLinux(kubernetesVersion string) bool {
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 34})
+}
+
 // ResolvesToUbuntu2004 returns true if the given image-family + FIPS-mode
 // combination would resolve to the Ubuntu2004 ImageFamily implementation
 // in defaultUbuntu (see resolver.go).
