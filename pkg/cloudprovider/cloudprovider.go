@@ -48,6 +48,7 @@ import (
 
 	"github.com/samber/lo"
 
+	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	cloudproviderevents "github.com/Azure/karpenter-provider-azure/pkg/cloudprovider/events"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -87,6 +88,7 @@ type CloudProvider struct {
 	recorder                   events.Recorder
 	instanceTypeStore          *nodeoverlay.InstanceTypeStore
 	instancePromiseWg          sync.WaitGroup
+	launchFailureTracker       *azurecache.LaunchFailureTracker
 }
 
 func New(
@@ -97,6 +99,7 @@ func New(
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 	store *nodeoverlay.InstanceTypeStore,
+	launchFailureTracker *azurecache.LaunchFailureTracker,
 ) *CloudProvider {
 	return &CloudProvider{
 		instanceTypeProvider:       instanceTypeProvider,
@@ -106,6 +109,7 @@ func New(
 		imageProvider:              imageProvider,
 		recorder:                   recorder,
 		instanceTypeStore:          store,
+		launchFailureTracker:       launchFailureTracker,
 	}
 }
 
@@ -132,6 +136,25 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	// Check if this NodePool is in a launch failure backoff period. This prevents runaway
+	// provisioning when nodes consistently fail (e.g., CSE failures due to network misconfiguration).
+	if nodePoolName := nodeClaim.Labels[karpv1.NodePoolLabelKey]; nodePoolName != "" {
+		if c.launchFailureTracker.IsBackedOff(nodePoolName) {
+			remaining := c.launchFailureTracker.BackoffRemaining(nodePoolName)
+			consecutiveFailures := c.launchFailureTracker.ConsecutiveFailures(nodePoolName)
+			log.FromContext(ctx).Info("provisioning paused due to consecutive launch failures",
+				"nodepool", nodePoolName,
+				"consecutiveFailures", consecutiveFailures,
+				"backoffRemaining", remaining)
+			return nil, cloudprovider.NewCreateError(
+				fmt.Errorf("provisioning paused for NodePool %s: %d consecutive launch failures, backoff remaining %s",
+					nodePoolName, consecutiveFailures, remaining),
+				"LaunchFailureBackoff",
+				fmt.Sprintf("Consecutive launch failures (%d), retrying in %s", consecutiveFailures, remaining.Round(time.Second)),
+			)
+		}
+	}
+
 	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -310,6 +333,11 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 				metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
 				metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
 			})
+		} else {
+			// Launch succeeded (VM created + CSE passed). Clear any backoff for this NodePool.
+			if nodePoolName := nodeClaim.Labels[karpv1.NodePoolLabelKey]; nodePoolName != "" {
+				c.launchFailureTracker.RecordLaunchSuccess(ctx, nodePoolName)
+			}
 		}
 	}()
 	return nil
@@ -317,6 +345,11 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 
 func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, waitErr error) {
 	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, waitErr))
+
+	// Record the launch failure for backoff tracking
+	if nodePoolName := nodeClaim.Labels[karpv1.NodePoolLabelKey]; nodePoolName != "" {
+		c.launchFailureTracker.RecordLaunchFailure(ctx, nodePoolName)
+	}
 
 	// Only log if context is still active to avoid logging after test completes
 	if ctx.Err() == nil {
