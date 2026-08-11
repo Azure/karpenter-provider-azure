@@ -672,18 +672,16 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 }
 
 func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security == nil {
-		return
-	}
+	isAzureContainerLinux := lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily
 
-	if nodeClass.Spec.Security.EncryptionAtHost != nil {
+	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
 		if vmProperties.SecurityProfile == nil {
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
 
-	if nodeClass.IsTrustedLaunchEnabled() {
+	if isAzureContainerLinux || nodeClass.IsTrustedLaunchEnabled() {
 		if vmProperties.SecurityProfile == nil {
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
@@ -694,9 +692,12 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 
 		if vmProperties.SecurityProfile.UefiSettings == nil {
 			vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{
-				SecureBootEnabled: lo.ToPtr(nodeClass.IsSecureBootEnabled()),
-				VTpmEnabled:       lo.ToPtr(nodeClass.IsVTPMEnabled()),
+				SecureBootEnabled: lo.ToPtr(nodeClass.IsSecureBootEnabled() || isAzureContainerLinux),
+				VTpmEnabled:       lo.ToPtr(nodeClass.IsVTPMEnabled() || isAzureContainerLinux),
 			}
+		} else {
+			vmProperties.SecurityProfile.UefiSettings.SecureBootEnabled = lo.ToPtr(nodeClass.IsSecureBootEnabled() || isAzureContainerLinux)
+			vmProperties.SecurityProfile.UefiSettings.VTpmEnabled = lo.ToPtr(nodeClass.IsVTPMEnabled() || isAzureContainerLinux)
 		}
 	}
 }
