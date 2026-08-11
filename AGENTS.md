@@ -29,12 +29,24 @@ The provider supports several provisioning modes, defined in
 
 These fall into two families with materially different implementations:
 
-- **VM-based** — the provider creates and manages Azure VMs, NICs, and extensions directly. See
+- **VM-based** (`aksscriptless`, `bootstrappingclient`) — the provider creates and manages Azure
+  VMs, NICs, and extensions directly. See
   [`pkg/providers/instance/vminstance.go`](./pkg/providers/instance/vminstance.go).
-- **AKS Machine API-based** — the provider creates AKS Machine resources and AKS performs the
-  underlying compute operations. See
+- **AKS Machine API-based** (`aksmachineapi`, `aksmachineapiheaderbatch`) — the provider creates AKS
+  Machine resources and AKS performs the underlying compute operations. See
   [`pkg/providers/instance/aksmachineinstance.go`](./pkg/providers/instance/aksmachineinstance.go)
   and `aksmachineinstancehelpers.go`.
+
+The two AKS Machine API modes are **the same provisioning path**, not separate implementations.
+Both use `DefaultAKSMachineProvider`, the same machine template construction, and the same
+lifecycle, read, update, and delete logic. `aksmachineapiheaderbatch` differs only in how creates
+are dispatched: compatible concurrent creates are accumulated and sent as a single request carrying
+a shared machine template plus a `BatchPutMachine` header describing each machine, then polled
+individually via GET. See
+[`pkg/providers/azclient/aksmachinesheaderbatch/`](./pkg/providers/azclient/aksmachinesheaderbatch/)
+and the create-path branch in `aksmachineinstance.go`. Treat them as one mode with two create
+dispatch strategies — a behavioral change generally applies to both, and batching concerns are
+about grouping, partial failure, and batch limits rather than about a different machine model.
 
 Several files carry explicit `ATTENTION!!!` comments stating that changes there may not take effect
 on AKS machine nodes, and point at the counterpart implementation. Treat those comments as
@@ -42,8 +54,9 @@ authoritative — they mark the exact places where a one-sided change silently b
 
 ## Code Structure
 
-- [`pkg/apis/`](./pkg/apis/) — `AKSNodeClass` API types. Two versions exist, `v1alpha2` and
-  `v1beta1`, plus generated deepcopy code and CRDs under `pkg/apis/crds/`.
+- [`pkg/apis/`](./pkg/apis/) — `AKSNodeClass` API types. `v1beta1` is the current version;
+  `v1alpha2` is deprecated and planned for removal. Also holds generated deepcopy code and CRDs
+  under `pkg/apis/crds/`.
 - [`pkg/cloudprovider/`](./pkg/cloudprovider/) — implementation of the upstream Karpenter
   `CloudProvider` interface (create, delete, get, list, drift).
 - [`pkg/controllers/`](./pkg/controllers/) — provider-specific controllers: nodeclaim
@@ -90,8 +103,8 @@ suite directory under `test/suites/` must also be added to that matrix, as descr
   feature, it fails to create nodes or leaks Azure resources for real clusters.
 - Keep NAP and self-hosted behavior consistent. Losing parity is a trade-off that needs explicit
   justification.
-- Keep provisioning modes consistent. Logic added to one instance implementation usually needs a
-  counterpart in the other.
+- Keep VM-based and AKS Machine API-based provisioning consistent. Logic added to one instance
+  implementation usually needs a counterpart in the other.
 - Preserve backward compatibility of the `AKSNodeClass` API, node labels, and Helm values. Existing
   clusters upgrade in place.
 - Avoid regressions in provisioning latency and in the number of Azure API calls per node.
@@ -106,8 +119,9 @@ suite directory under `test/suites/` must also be added to that matrix, as descr
 
 ### Kubernetes APIs and CRDs
 
-- `AKSNodeClass` exists in both `v1alpha2` and `v1beta1`. Changes to types, constants, and helper
-  methods generally need to be mirrored in both.
+- `v1beta1` is the current `AKSNodeClass` version. `v1alpha2` is deprecated and planned for
+  removal, so new fields and behavior belong in `v1beta1`. Do not add functionality to `v1alpha2`
+  purely for parity.
 - Adding or changing a spec field usually affects defaulting, CEL validation, the nodeclass hash,
   drift detection, and the generated CRDs. Consider all of them together.
 - Generated files (`zz_generated.deepcopy.go`, CRD YAML, chart CRD copies) come from `make verify`.
@@ -132,6 +146,14 @@ Three levels, as described in [CONTRIBUTING.md](./CONTRIBUTING.md):
 - **E2E tests** — Ginkgo, under `test/`, real cluster and real Azure clients.
 
 A test is only useful if it would fail when the intended behavior regresses.
+
+Before adding a test, read the existing tests for the file you changed — usually the sibling
+`_test.go` file, otherwise the suite covering that package. Match what is already there: the same
+setup and teardown, fakes, table or `DescribeTable` structure, naming, and assertion style. Extend
+the established test file rather than starting a disconnected one, and cover the same provisioning
+modes and deployment models the surrounding cases already cover. A test that is correct but
+inconsistent with its neighbors makes the suite harder to maintain and tends to duplicate or
+contradict existing coverage.
 
 ### GitHub Actions
 
@@ -159,8 +181,10 @@ Analyze PRs for these compatibility scenarios.
 **1. Provisioning Mode Compatibility**
 
 - **Context**: The provider supports VM-based and AKS Machine API-based provisioning, with
-  parallel implementations in `pkg/providers/instance/`. Files that only affect one family are
-  marked with `ATTENTION!!!` comments naming the counterpart.
+  separate implementations in `pkg/providers/instance/`. Files that only affect one family are
+  marked with `ATTENTION!!!` comments naming the counterpart. The two AKS Machine API modes are the
+  same path and differ only in create dispatch, so a change to Machine API behavior normally
+  applies to both.
 - **What to check**: Which provisioning modes the change actually affects, and whether the
   counterpart implementation needs the same change.
 - **Breaking signals**:
@@ -170,7 +194,10 @@ Analyze PRs for these compatibility scenarios.
   - A `switch` or `if` over provision mode that gains a new case in one place but not in others
     that switch on the same values.
   - New behavior that silently no-ops in a mode the PR claims to support.
-  - Changes to batching behavior that ignore the batch size limit or the batch idle/max durations.
+  - Machine template changes that break batch grouping, or that add a per-machine field without
+    the matching header entry so it is silently shared across a batch.
+  - Batch handling that ignores the batch size limit or the idle/max accumulation durations, or
+    that treats a partially failed batch as wholly succeeded or wholly failed.
   - Migration and mixed-environment paths (nodes created in one mode, then managed after a mode
     switch) left unhandled.
 
@@ -189,11 +216,11 @@ Analyze PRs for these compatibility scenarios.
 
 **3. AKSNodeClass API and CRD Compatibility**
 
-- **Context**: `v1alpha2` and `v1beta1` coexist, CRDs are generated, and the nodeclass hash feeds
-  drift detection.
-- **What to check**: Version parity, generated artifacts, and upgrade impact on existing objects.
+- **Context**: `v1beta1` is current and `v1alpha2` is deprecated and planned for removal. CRDs are
+  generated, and the nodeclass hash feeds drift detection.
+- **What to check**: Generated artifacts and upgrade impact on objects that already exist.
 - **Breaking signals**:
-  - A field, constant, or helper added to one API version but not the other.
+  - New fields or behavior added to `v1alpha2` rather than `v1beta1`.
   - Hand-edited `zz_generated.deepcopy.go`, CRD YAML, or `charts/karpenter-crd/templates` content.
   - Removing or narrowing a field, tightening CEL validation, or changing a default — existing
     stored objects must remain valid.
@@ -268,11 +295,19 @@ Analyze PRs for these compatibility scenarios.
 
 **9. Test Coverage**
 
-- **What to check**: Whether the tests would actually catch a regression of this change.
+- **What to check**: Whether the tests would actually catch a regression of this change, and
+  whether they are consistent with the existing tests for the files being edited.
 - **Breaking signals**:
   - Behavior changes in `pkg/` with no unit or acceptance test that exercises the new path.
   - Tests that assert the implementation rather than the intended behavior.
   - Only the success path covered, when the change is about failure, retry, or cleanup.
+  - A new test file or suite created alongside an existing one that already covers the changed
+    file, instead of extending it.
+  - Tests that diverge from the conventions of their neighbors — different setup or fakes, a
+    different table or `DescribeTable` structure, or a different assertion style than the
+    surrounding cases.
+  - A changed file whose existing tests cover several provisioning modes or deployment models,
+    where the new case only covers one of them without saying why.
   - A new `test/suites/` directory not added to `.github/workflows/e2e-matrix.yaml`.
   - Helm chart snapshot updates presented as evidence of runtime behavior — they only verify
     template rendering.
@@ -284,12 +319,14 @@ Analyze PRs for these compatibility scenarios.
 **Dependency Tracing**:
 
 1. For each changed file, identify its callers and consumers.
-2. Check whether a parallel implementation exists for another provisioning mode, and whether it
+2. Check whether a separate implementation exists for the other provisioning family, and whether it
    needs the same change. Follow the `ATTENTION!!!` comments.
 3. Trace changed values through to what is actually sent to Azure and what is set on the Node or
    NodeClaim.
 4. For API changes, follow through to defaulting, validation, hashing, drift, and generated CRDs.
 5. Check whether Helm chart values, RBAC, or operator options need a matching change.
+6. Open the existing tests for each changed file and compare the new tests against them for
+   coverage and for consistency of structure and style.
 
 **Historical Context**:
 
@@ -302,6 +339,8 @@ Analyze PRs for these compatibility scenarios.
 - Note whether the changed code has unit, acceptance, or E2E coverage.
 - Flag changes to untested paths as higher risk.
 - Say so when new behavior lacks a corresponding test.
+- Compare new tests against the existing tests for the same file and flag inconsistency in
+  structure, fakes, or assertion style, or a new suite that duplicates one that already exists.
 
 ### Review Output
 

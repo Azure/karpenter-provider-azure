@@ -16,18 +16,22 @@ rather than pattern matching.
 
 ## Always Consider
 
-- **Provisioning modes** — the provider has parallel VM-based and AKS Machine API-based
+- **Provisioning modes** — the provider has separate VM-based and AKS Machine API-based
   implementations in `pkg/providers/instance/`. Determine which modes a change affects and whether
   the counterpart implementation needs the same change. Files with `ATTENTION!!!` comments mark
-  exactly where a one-sided change silently breaks a mode.
+  exactly where a one-sided change silently breaks a mode. The two AKS Machine API modes
+  (`aksmachineapi` and `aksmachineapiheaderbatch`) are the same provisioning path and differ only
+  in how creates are dispatched, so a Machine API behavior change normally applies to both; batch
+  concerns are grouping, per-machine header fields, batch limits, and partial failure.
 - **Deployment models** — the same code runs as the AKS-managed addon (NAP) and as a self-hosted
   deployment. Do not assume configuration, defaults, or AKS-managed behavior that only holds for
   one of them.
 - **Backward compatibility** — existing clusters upgrade in place. `AKSNodeClass` fields, node
   labels, Helm values, and defaults must keep working for objects that already exist.
-- **API versions** — `AKSNodeClass` exists in `pkg/apis/v1alpha2` and `pkg/apis/v1beta1`. Changes
-  usually need to be mirrored, and usually affect defaulting, CEL validation, the nodeclass hash,
-  drift, and the generated CRDs.
+- **API versions** — `v1beta1` is the current `AKSNodeClass` version. `v1alpha2` is deprecated and
+  planned for removal, so new fields and behavior belong in `v1beta1`; do not ask for `v1alpha2`
+  changes purely for parity. Spec changes usually affect defaulting, CEL validation, the nodeclass
+  hash, drift, and the generated CRDs.
 - **Generated files** — `zz_generated.deepcopy.go`, CRD YAML, and `charts/karpenter-crd/templates`
   are produced by `make verify`. Flag hand-edited generated output.
 - **Azure API semantics** — retries, throttling, pagination, long-running operation polling,
@@ -43,10 +47,14 @@ rather than pattern matching.
 - **Public repository hygiene** — flag references in code, comments, docs, commit messages, or PR
   descriptions to systems that external contributors cannot access. Contributions must be
   reviewable from public sources alone.
-- **Test coverage** — ask whether the tests would fail if this behavior regressed. Failure, retry,
-  and cleanup paths need coverage too, not just the success path. A new `test/suites/` directory
-  must be added to `.github/workflows/e2e-matrix.yaml`. Helm chart snapshots verify template
-  rendering only, not runtime behavior.
+- **Test coverage and consistency** — ask whether the tests would fail if this behavior regressed.
+  Failure, retry, and cleanup paths need coverage too, not just the success path. Also check the
+  new tests against the existing tests for each edited file: they should extend the established
+  `_test.go` file or package suite rather than start a parallel one, and should match its setup,
+  fakes, table structure, naming, and assertion style, covering the same provisioning modes and
+  deployment models the neighboring cases cover. A new `test/suites/` directory must be added to
+  `.github/workflows/e2e-matrix.yaml`. Helm chart snapshots verify template rendering only, not
+  runtime behavior.
 
 ## Output
 
