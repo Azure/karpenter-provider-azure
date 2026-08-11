@@ -187,6 +187,21 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
+
+		It("should reject ArtifactStreaming with AzureContainerLinux", func() {
+			enabled := true
+			imageFamily := v1beta1.AzureContainerLinuxImageFamily
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: &imageFamily,
+					ArtifactStreaming: &v1beta1.ArtifactStreaming{
+						Enabled: &enabled,
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
 	})
 
 	Context("LocalDNS", func() {
