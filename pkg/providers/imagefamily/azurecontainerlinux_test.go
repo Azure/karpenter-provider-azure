@@ -43,6 +43,10 @@ func TestAzureContainerLinux(t *testing.T) {
 		g.Expect(images[1].Distro).To(Equal("aks-acl-arm64-gen2-tl"))
 	})
 
+	t.Run("no images without trusted launch", func(t *testing.T) {
+		NewWithT(t).Expect(family.DefaultImages(false, nil, false)).To(BeEmpty())
+	})
+
 	t.Run("FIPS images", func(t *testing.T) {
 		fips := v1beta1.FIPSModeFIPS
 		images := family.DefaultImages(true, &fips, true)

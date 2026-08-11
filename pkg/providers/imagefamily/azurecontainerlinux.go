@@ -47,17 +47,20 @@ func (a AzureContainerLinux) Name() string {
 	return v1beta1.AzureContainerLinuxImageFamily
 }
 
-func (a AzureContainerLinux) DefaultImages(_ bool, fipsMode *v1beta1.FIPSMode, _ bool) []types.DefaultImageOutput {
+func (a AzureContainerLinux) DefaultImages(_ bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		return []types.DefaultImageOutput{
 			azureContainerLinuxImage(AzureContainerLinuxGen2FIPSImageDefinition, "aks-acl-gen2-fips-tl", karpv1.ArchitectureAmd64),
 			azureContainerLinuxImage(AzureContainerLinuxGen2ArmFIPSImageDefinition, "aks-acl-arm64-gen2-fips-tl", karpv1.ArchitectureArm64),
 		}
 	}
-	return []types.DefaultImageOutput{
-		azureContainerLinuxImage(AzureContainerLinuxGen2ImageDefinition, "aks-acl-gen2-tl", karpv1.ArchitectureAmd64),
-		azureContainerLinuxImage(AzureContainerLinuxGen2ArmImageDefinition, "aks-acl-arm64-gen2-tl", karpv1.ArchitectureArm64),
+	if trustedLaunch {
+		return []types.DefaultImageOutput{
+			azureContainerLinuxImage(AzureContainerLinuxGen2ImageDefinition, "aks-acl-gen2-tl", karpv1.ArchitectureAmd64),
+			azureContainerLinuxImage(AzureContainerLinuxGen2ArmImageDefinition, "aks-acl-arm64-gen2-tl", karpv1.ArchitectureArm64),
+		}
 	}
+	return []types.DefaultImageOutput{}
 }
 
 func azureContainerLinuxImage(imageDefinition, distro, architecture string) types.DefaultImageOutput {
