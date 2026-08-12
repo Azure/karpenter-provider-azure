@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -709,6 +710,25 @@ type createResult struct {
 	VM     *armcompute.VirtualMachine
 }
 
+// validateExistingCapacityReservation refuses to adopt a VM left behind by an earlier
+// attempt whose capacity reservation group differs from what the NodeClass asks for now.
+// Adopting it would record the current group on the NodeClaim along with the current
+// NodeClass hash, so the claim would assert an association the VM does not have and drift
+// would never notice. Returning an error instead deletes it, since BeginCreate cleans up
+// the VM and its NIC on a synchronous launch failure.
+func validateExistingCapacityReservation(vm *armcompute.VirtualMachine, nodeClass *v1beta1.AKSNodeClass) error {
+	var actual string
+	if vm.Properties != nil && vm.Properties.CapacityReservation != nil && vm.Properties.CapacityReservation.CapacityReservationGroup != nil {
+		actual = lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)
+	}
+	// ARM echoes resource IDs back with different casing than it was given.
+	if desired := lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID); !strings.EqualFold(actual, desired) {
+		return fmt.Errorf("existing VM %q is associated with capacity reservation group %q, but the NodeClass now specifies %q",
+			lo.FromPtr(vm.Name), actual, desired)
+	}
+	return nil
+}
+
 // createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
 func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*createResult, error) {
 	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
@@ -725,6 +745,9 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	resp, err := p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, opts.VMName, nil)
 	// If status == ok, we want to return the existing vmm
 	if err == nil {
+		if err := validateExistingCapacityReservation(&resp.VirtualMachine, opts.NodeClass); err != nil {
+			return nil, err
+		}
 		return &createResult{VM: &resp.VirtualMachine}, nil
 	}
 	// if status != ok, and for a reason other than we did not find the vm

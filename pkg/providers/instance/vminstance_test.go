@@ -17,6 +17,7 @@ limitations under the License.
 package instance
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -208,6 +209,79 @@ func TestSetVMPropertiesCapacityReservation(t *testing.T) {
 				return
 			}
 			g.Expect(properties.CapacityReservation.CapacityReservationGroup.ID).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestValidateExistingCapacityReservation(t *testing.T) {
+	t.Parallel()
+
+	const groupID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+	const otherGroupID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/other"
+
+	vmInGroup := func(id string) *armcompute.VirtualMachine {
+		vm := &armcompute.VirtualMachine{Name: lo.ToPtr("aks-test"), Properties: &armcompute.VirtualMachineProperties{}}
+		if id != "" {
+			vm.Properties.CapacityReservation = &armcompute.CapacityReservationProfile{
+				CapacityReservationGroup: &armcompute.SubResource{ID: lo.ToPtr(id)},
+			}
+		}
+		return vm
+	}
+
+	tests := []struct {
+		name      string
+		vm        *armcompute.VirtualMachine
+		nodeClass *v1beta1.AKSNodeClass
+		wantErr   bool
+	}{
+		{
+			name:      "neither is reserved",
+			vm:        vmInGroup(""),
+			nodeClass: &v1beta1.AKSNodeClass{},
+		},
+		{
+			name:      "same group",
+			vm:        vmInGroup(groupID),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+		},
+		{
+			name:      "same group, different casing as ARM echoes it",
+			vm:        vmInGroup(strings.ToUpper(groupID)),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+		},
+		{
+			name:      "the NodeClass changed groups since the VM was created",
+			vm:        vmInGroup(groupID),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(otherGroupID)}},
+			wantErr:   true,
+		},
+		{
+			name:      "the NodeClass gained a group since the VM was created",
+			vm:        vmInGroup(""),
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+			wantErr:   true,
+		},
+		{
+			name:      "the NodeClass dropped its group since the VM was created",
+			vm:        vmInGroup(groupID),
+			nodeClass: &v1beta1.AKSNodeClass{},
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			err := validateExistingCapacityReservation(tt.vm, tt.nodeClass)
+
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
 		})
 	}
 }
