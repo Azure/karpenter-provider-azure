@@ -106,7 +106,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		Expect(crg.CapacityReservations).To(HaveLen(1))
 		Expect(crg.CapacityReservations[0].VMSize).To(Equal("Standard_D2s_v3"))
 		Expect(crg.CapacityReservations[0].Zones).To(ConsistOf("1"))
-		Expect(lo.FromPtr(crg.CapacityReservations[0].Quantity)).To(Equal(int32(1)))
+		Expect(lo.FromPtr(crg.CapacityReservations[0].Quantity)).To(Equal(int64(1)))
 	})
 
 	// Azure accepts a zero-quantity reservation; it can be associated and then
@@ -121,7 +121,22 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
-		Expect(lo.FromPtr(nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].Quantity)).To(Equal(int32(0)))
+		Expect(lo.FromPtr(nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].Quantity)).To(Equal(int64(0)))
+	})
+
+	// A reservation of zero is a real, associable reservation, so an unreported quantity
+	// must not be recorded as one.
+	It("should leave the quantity unset when ARM reports none", func() {
+		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+			unreported := fake.NewCapacityReservation(rg, group, "unreported", "Standard_D2s_v3", 0, "1")
+			unreported.SKU.Capacity = nil
+			return []*armcompute.CapacityReservation{unreported}, nil
+		}
+
+		_, err := reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		Expect(nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].Quantity).To(BeNil())
 	})
 
 	It("should record each member's provisioning state", func() {

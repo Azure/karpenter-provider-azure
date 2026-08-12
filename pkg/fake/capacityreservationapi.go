@@ -133,7 +133,7 @@ func (c *CapacityReservationsAPI) Reset() {
 
 // NewCapacityReservation builds a member reservation for tests. Passing no zones
 // produces a regional reservation.
-func NewCapacityReservation(resourceGroupName, groupName, name, vmSize string, capacity int32, zones ...string) *armcompute.CapacityReservation {
+func NewCapacityReservation(resourceGroupName, groupName, name, vmSize string, capacity int64, zones ...string) *armcompute.CapacityReservation {
 	return &armcompute.CapacityReservation{
 		ID: lo.ToPtr(fmt.Sprintf(
 			"/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/capacityReservationGroups/%s/capacityReservations/%s",
@@ -142,7 +142,7 @@ func NewCapacityReservation(resourceGroupName, groupName, name, vmSize string, c
 		Location: lo.ToPtr("eastus"),
 		SKU: &armcompute.SKU{
 			Name:     lo.ToPtr(vmSize),
-			Capacity: lo.ToPtr(int64(capacity)),
+			Capacity: lo.ToPtr(capacity),
 		},
 		Zones: lo.Map(zones, func(z string, _ int) *string { return lo.ToPtr(z) }),
 		Properties: &armcompute.CapacityReservationProperties{

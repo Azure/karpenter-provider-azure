@@ -835,8 +835,9 @@ spec:
                         quantity:
                           description: |-
                             quantity is the number of instances reserved. Zero is valid: a zero-quantity
-                            reservation can be associated and intentionally overallocated.
-                          format: int32
+                            reservation can be associated and intentionally overallocated. Unset means ARM
+                            reported no quantity, which is not the same as a reservation of zero.
+                          format: int64
                           type: integer
                         vmSize:
                           description: vmSize is the VM size reserved by this capacity
@@ -1827,8 +1828,9 @@ spec:
                         quantity:
                           description: |-
                             quantity is the number of instances reserved. Zero is valid: a zero-quantity
-                            reservation can be associated and intentionally overallocated.
-                          format: int32
+                            reservation can be associated and intentionally overallocated. Unset means ARM
+                            reported no quantity, which is not the same as a reservation of zero.
+                          format: int64
                           type: integer
                         vmSize:
                           description: vmSize is the VM size reserved by this capacity

@@ -246,7 +246,7 @@ func (in *CapacityReservation) DeepCopyInto(out *CapacityReservation) {
 	}
 	if in.Quantity != nil {
 		in, out := &in.Quantity, &out.Quantity
-		*out = new(int32)
+		*out = new(int64)
 		**out = **in
 	}
 	if in.ProvisioningState != nil {

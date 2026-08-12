@@ -19,7 +19,6 @@ package status
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -304,13 +303,10 @@ func capacityReservationFromARM(cr *armcompute.CapacityReservation) (v1beta1.Cap
 		lo.FromPtr(cr.ID) == "" || lo.FromPtr(cr.Name) == "" {
 		return v1beta1.CapacityReservation{}, false
 	}
-	// Reserved quantities are small, but the SDK types the field as int64.
-	quantity := lo.FromPtr(cr.SKU.Capacity)
-	if quantity < 0 {
-		quantity = 0
-	}
-	if quantity > math.MaxInt32 {
-		quantity = math.MaxInt32
+	// Copied rather than aliased so status does not retain a pointer into the ARM response.
+	var quantity *int64
+	if cr.SKU.Capacity != nil {
+		quantity = lo.ToPtr(*cr.SKU.Capacity)
 	}
 	var provisioningState *string
 	if cr.Properties != nil && lo.FromPtr(cr.Properties.ProvisioningState) != "" {
@@ -321,7 +317,7 @@ func capacityReservationFromARM(cr *armcompute.CapacityReservation) (v1beta1.Cap
 		Name:              lo.FromPtr(cr.Name),
 		VMSize:            lo.FromPtr(cr.SKU.Name),
 		Zones:             lo.FilterMap(cr.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
-		Quantity:          lo.ToPtr(int32(quantity)),
+		Quantity:          quantity,
 		ProvisioningState: provisioningState,
 	}, true
 }

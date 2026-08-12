@@ -55,9 +55,10 @@ type CapacityReservation struct {
 	// +listType=atomic
 	Zones []string `json:"zones,omitempty"`
 	// quantity is the number of instances reserved. Zero is valid: a zero-quantity
-	// reservation can be associated and intentionally overallocated.
+	// reservation can be associated and intentionally overallocated. Unset means ARM
+	// reported no quantity, which is not the same as a reservation of zero.
 	// +optional
-	Quantity *int32 `json:"quantity,omitempty"`
+	Quantity *int64 `json:"quantity,omitempty"`
 	// provisioningState is the ARM provisioning state of the capacity reservation.
 	// A reservation with an explicit state other than Succeeded does not back offerings;
 	// one reported as Succeeded, or with no state reported, does. Members that cannot back
