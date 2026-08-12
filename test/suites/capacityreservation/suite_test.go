@@ -52,6 +52,11 @@ func TestCapacityReservation(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
+		// Once, before any spec: an assignment can take many minutes to become effective,
+		// and every group these specs create inherits this one.
+		if env.InClusterController {
+			env.ExpectKarpenterCanReadCapacityReservationGroups(env.Context)
+		}
 	})
 	AfterSuite(func() {
 		env.Stop()
@@ -101,10 +106,9 @@ var _ = Describe("CapacityReservation", func() {
 		armZone, expectedNodeZone := reservationPlacement()
 		groupName := fmt.Sprintf("karpenter-e2e-crg-%d", time.Now().UnixNano())
 		groupID := env.ExpectCreatedCapacityReservationGroup(ctx, azure.CapacityReservationGroupOptions{
-			Name:               groupName,
-			Members:            []azure.CapacityReservationMember{{VMSize: reservedVMSize, Capacity: reservedCapacity}},
-			ARMZones:           lo.Ternary(armZone == "", nil, []string{armZone}),
-			GrantToPrincipalID: env.GetKarpenterWorkloadIdentity(ctx),
+			Name:     groupName,
+			Members:  []azure.CapacityReservationMember{{VMSize: reservedVMSize, Capacity: reservedCapacity}},
+			ARMZones: lo.Ternary(armZone == "", nil, []string{armZone}),
 		})
 
 		By("Pointing a NodeClass at the group")
@@ -186,9 +190,8 @@ var _ = Describe("CapacityReservation", func() {
 		By("Reserving capacity in Azure without a zone")
 		groupName := fmt.Sprintf("karpenter-e2e-crg-regional-%d", time.Now().UnixNano())
 		groupID := env.ExpectCreatedCapacityReservationGroup(ctx, azure.CapacityReservationGroupOptions{
-			Name:               groupName,
-			Members:            []azure.CapacityReservationMember{{VMSize: reservedVMSize, Capacity: reservedCapacity}},
-			GrantToPrincipalID: env.GetKarpenterWorkloadIdentity(ctx),
+			Name:    groupName,
+			Members: []azure.CapacityReservationMember{{VMSize: reservedVMSize, Capacity: reservedCapacity}},
 		})
 
 		By("Pointing a NodeClass at the group")
@@ -228,10 +231,10 @@ var _ = Describe("CapacityReservation", func() {
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		By("Verifying the group condition reports why")
-		// ARM will not tell a caller that cannot read a resource whether it exists, so a
-		// name that was never created comes back as 403 rather than 404 unless the identity
-		// happens to hold read rights over the enclosing scope. Both answers mean the same
-		// thing here: the group did not resolve, so nothing may launch.
+		// The suite grants read over the node resource group, so a name that was never
+		// created answers 404. Without that grant ARM does not tell a caller whether a
+		// resource it cannot read exists, and the same request answers 403 instead. Both
+		// mean the group did not resolve, so nothing may launch.
 		expectedReasons := []string{
 			nodeclassstatus.CapacityReservationGroupUnreadyReasonNotFound,
 			nodeclassstatus.CapacityReservationGroupUnreadyReasonAccessDenied,
@@ -280,10 +283,9 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 		armZone, expectedNodeZone := reservationPlacement()
 		groupName := fmt.Sprintf("karpenter-e2e-crg-static-%d", time.Now().UnixNano())
 		groupID := env.ExpectCreatedCapacityReservationGroup(ctx, azure.CapacityReservationGroupOptions{
-			Name:               groupName,
-			Members:            []azure.CapacityReservationMember{{VMSize: reservedVMSize, Capacity: reservedCapacity}},
-			ARMZones:           lo.Ternary(armZone == "", nil, []string{armZone}),
-			GrantToPrincipalID: env.GetKarpenterWorkloadIdentity(ctx),
+			Name:     groupName,
+			Members:  []azure.CapacityReservationMember{{VMSize: reservedVMSize, Capacity: reservedCapacity}},
+			ARMZones: lo.Ternary(armZone == "", nil, []string{armZone}),
 		})
 
 		By("Creating a static NodePool with headroom for a replacement")
@@ -347,8 +349,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 				{VMSize: reservedVMSize, Capacity: reservedCapacity},
 				{VMSize: expensiveReservedVMSize, Capacity: reservedCapacity},
 			},
-			ARMZones:           lo.Ternary(armZone == "", nil, []string{armZone}),
-			GrantToPrincipalID: env.GetKarpenterWorkloadIdentity(ctx),
+			ARMZones: lo.Ternary(armZone == "", nil, []string{armZone}),
 		})
 
 		By("Pricing the expensive size at zero for this NodePool")
@@ -496,10 +497,9 @@ func expectCapacityReservationGroupCondition(ctx SpecContext, nodeClass *v1beta1
 		assert(g, condition)
 		// The group condition gates Ready only when the field is set, so the two must agree.
 		g.Expect(retrieved.StatusConditions().Get(status.ConditionReady).IsTrue()).To(Equal(condition.IsTrue()))
-		// Generous because the role assignment granting read on the group is made moments
-		// earlier, and Azure takes its time making one effective; the reconciler retries every
-		// minute until it does. One run took effect immediately for two groups, four minutes
-		// for a third, and over ten for a fourth, so this is sized for the observed tail
-		// rather than the typical case.
+		// Sized for role assignment propagation. The suite makes its one grant before any
+		// spec runs, but Azure has taken over thirteen minutes to make an assignment
+		// effective, and whichever spec needs it first absorbs whatever is left of that;
+		// the reconciler retries every minute until it takes.
 	}).WithTimeout(20 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }

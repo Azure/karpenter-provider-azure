@@ -57,9 +57,22 @@ type CapacityReservationGroupOptions struct {
 	// ARMZones is the placement of the group and all its members. Empty produces a
 	// regional group, whose consuming VMs must omit zones.
 	ARMZones []string
-	// GrantToPrincipalID, when set, receives Contributor on the group. Leave empty to
-	// exercise the missing-permission path.
-	GrantToPrincipalID string
+}
+
+// ExpectKarpenterCanReadCapacityReservationGroups grants the Karpenter workload identity
+// Contributor on the node resource group, which every group these tests create inherits.
+//
+// Granted once for the suite rather than once per group because the grant is the slow
+// part: within a single run Azure made one assignment effective immediately and another
+// only after thirteen minutes. Paying that once, before any spec runs, is the difference
+// between one readiness wait and five independent chances to exceed it.
+func (env *Environment) ExpectKarpenterCanReadCapacityReservationGroups(ctx context.Context) {
+	GinkgoHelper()
+
+	scope := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", env.SubscriptionID, env.NodeResourceGroup)
+	roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRoleDefinitionID)
+	Expect(env.RBACManager.EnsureRole(ctx, scope, roleDefinitionID, env.GetKarpenterWorkloadIdentity(ctx))).To(Succeed(),
+		"failed to grant Contributor on %s", scope)
 }
 
 // memberName keeps reservation names stable and unique per size within a group.
@@ -92,15 +105,6 @@ func (env *Environment) ExpectCreatedCapacityReservationGroup(ctx context.Contex
 	env.tracker.Add(groupID, func() error {
 		return env.deleteCapacityReservationGroup(opts.Name, memberNames)
 	})
-
-	// Granted before the members are reserved, not after: the grant is the slow part and
-	// Azure has taken over ten minutes to make one effective, so this overlaps that wait
-	// with work the test has to do anyway.
-	if opts.GrantToPrincipalID != "" {
-		roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRoleDefinitionID)
-		Expect(env.RBACManager.EnsureRole(ctx, groupID, roleDefinitionID, opts.GrantToPrincipalID)).To(Succeed(),
-			"failed to grant Contributor on %s", groupID)
-	}
 
 	for _, member := range opts.Members {
 		reservation, err := env.CapacityReservationsClient.BeginCreateOrUpdate(ctx, env.NodeResourceGroup, opts.Name, memberName(opts.Name, member.VMSize), armcompute.CapacityReservation{
