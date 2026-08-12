@@ -86,26 +86,41 @@ than being silently ignored. A member reservation whose quantity is zero is
 valid: it is the documented way to associate VMs before raising the reserved
 quantity.
 
-**Member eligibility.** Only members that have provisioned successfully back
-offerings. A member still being updated keeps its current projection until it
-settles, so a quantity change does not blank out capacity mid-flight; one that
-has never provisioned successfully has no projection to keep and stays
-ineligible until its first success; a member in a terminal failure state is
-dropped from projection. Readiness turns on whether any *eligible* member
-remains, not on the member list being non-empty — otherwise a group of entirely
-unusable members reports Ready and emits no offerings.
+**Member eligibility.** A member with an explicit provisioning state other than
+`Succeeded` is retained in status for diagnostics, so a NodePool authored
+against it shows why it stopped placing, but is omitted from projection. A
+member reported as `Succeeded`, or with no provisioning state reported, is
+eligible. Treating a missing value as ineligible would turn an optional field
+into a provisioning outage, and the field is read-only and has been populated in
+every observed response; at worst, guessing wrong here can cost a launch attempt
+that ARM rejects, and it cannot produce an unassociated VM, because every
+request still targets the group. Readiness turns on whether any *eligible*
+member remains, not on the member list being non-empty — otherwise a group of
+entirely unusable members reports Ready and emits no offerings.
 
-**Permissions.** The Karpenter identity needs to read the group and its member
-reservations, and to deploy into the group —
-`Microsoft.Compute/capacityReservationGroups/deploy/action` is the association
-half. `Contributor` on the group's scope is the known-good grant and is what AKS
-asks users to grant today; the minimal action set has not been confirmed against
-Azure's operation catalog and should be before it is documented as supported. A
-grant is usually required, because groups are commonly pre-created in a capacity
-team's own resource group. Note the asymmetry: readiness can verify read access
-but not deploy, so an identity with read-only access reports Ready and then
-fails every launch. That half surfaces only as a scoped launch failure, which is
-why the failure reason names the group.
+Projection follows current state rather than holding a member at its last good
+shape while it changes: no `Updating` window was observable in probing, a
+rejected quantity change leaves the member `Succeeded` and unchanged, and
+retaining state would make the reconciler stateful for a window nothing has
+demonstrated. Revisit if a successful quantity raise is seen to expose
+`Updating` for a material duration.
+
+**Permissions.** The verified minimum actions at the group's scope are:
+
+- `Microsoft.Compute/capacityReservationGroups/read`
+- `Microsoft.Compute/capacityReservationGroups/capacityReservations/read`
+- `Microsoft.Compute/capacityReservationGroups/deploy/action`
+
+These names were checked against Azure's operation catalog, and a live probe
+using a custom role containing exactly these actions successfully launched VMs
+associated with the group. For simpler setup, the built-in `Contributor` role
+at the group's scope is the known-good alternative, is what AKS asks users to
+grant today, and is what provider E2E tests use. A grant is usually required,
+because groups are commonly pre-created in a capacity team's own resource
+group. Note the asymmetry: readiness can verify read access but not deploy, so
+an identity with read-only access reports Ready and then fails every launch.
+That half surfaces only as a scoped launch failure, which is why the failure
+reason names the group.
 
 **Offerings.** For a configured NodeClass the provider emits only Regular
 offerings backed by a matching member reservation, and only in the group's
@@ -584,7 +599,8 @@ wanting to replace it and the preference becomes stable across price tiers.
 | Cloud environments | Capacity reservations are documented for Azure Cloud, Azure for Government, and Azure in China. A NodeClass configuring a group elsewhere fails readiness with a stable reason. |
 | Placement | A zone-less group is regional and yields only regional offerings; a NodePool or workload requiring a specific zone against a regional group simply has no compatible offering, and never falls back to an unassociated zonal launch. |
 | Unsupported combinations | Spot, proximity placement groups, and Ultra Disk are not supported with Azure capacity reservations, so those offerings are not emitted for a configured NodeClass. |
-| Changing the group | Adding, changing, or removing the ID drifts affected nodes and replaces them through ordinary Karpenter disruption. Nodes are not mutated in place. The same applies when a VM's actual association is changed outside Karpenter: the mismatch between actual and desired is detected and the node is replaced through drift, not reconciled in place. |
+| Changing the group | Adding, changing, or removing the ID drifts affected nodes and replaces them through ordinary Karpenter disruption. Nodes are not mutated in place. |
+| Association changed outside Karpenter | Not detected, and out of scope. Karpenter compares the NodeClass against itself, not against the VM, so a VM whose association is edited directly keeps running and Karpenter does not replace it. This is deliberate: these VMs live in the AKS node resource group, where direct edits are unsupported, are blocked outright by the deny assignment that AKS Automatic preconfigures, and can be blocked on AKS Standard with `--nrg-lockdown-restriction-level ReadOnly`. Reserved-capacity telemetry is the intended way to notice a shortfall, since it reports units paid for against units actually consumed and so covers this alongside every other cause of the same symptom. |
 | Enabling the feature | Setting the field on a NodeClass that already has nodes drifts all of them. This is paced by NodePool disruption budgets, and is worth doing on a new NodeClass when that churn is unwelcome. If the existing node count exceeds the reserved quantity, the nodes beyond it drift into overallocation, carrying ordinary incremental compute cost rather than occupying prepaid units. |
 | No CRG configured | NodeClasses that do not set the field are unaffected in offering projection, pricing, quota preflight, drift, and failure handling. |
 | Scale | Reservation state is refreshed per group on an interval and held in memory. Status carries counts and an observation time, not the allocated VM ID list, which would otherwise grow with the size of the group. |
