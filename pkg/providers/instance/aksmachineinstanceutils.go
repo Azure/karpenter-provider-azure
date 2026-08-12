@@ -108,6 +108,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	labels[karpv1.CapacityTypeLabelKey] = capacityType
 	labels[v1beta1.AKSLabelScaleSetPriority] = KarpCapacityTypeToScaleSetPriorityLabel[capacityType]
 	labels[v1beta1.AKSLabelPriority] = KarpCapacityTypeToPriorityLabel[capacityType]
+	labels[v1beta1.LabelUltraSSD] = ultraSSDLabelFromAKSMachineTemplate(aksMachineTemplate)
 	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
@@ -135,6 +136,10 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	nodeClaim.Status.ImageID = aksMachineNodeImageVersion // ASSUMPTION: this doesn't need to be full image ID (should be fine on core, as the definition of ID is provider agnostic)
 
 	return nodeClaim, nil
+}
+
+func ultraSSDLabelFromAKSMachineTemplate(aksMachineTemplate *armcontainerservice.Machine) string {
+	return fmt.Sprint(aksMachineTemplate != nil && aksMachineTemplate.Properties != nil && aksMachineTemplate.Properties.Hardware != nil && lo.FromPtr(aksMachineTemplate.Properties.Hardware.UltraSsdEnabled))
 }
 
 // Expect AKS machine struct to be fully populated as if it comes from GET.

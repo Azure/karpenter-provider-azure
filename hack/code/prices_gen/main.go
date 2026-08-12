@@ -119,7 +119,7 @@ func generatePricing(filePath string) {
 	fmt.Fprintln(src, `import "time"`)
 	now := time.Now().UTC().Format(time.RFC3339)
 	fmt.Fprintf(src, "// generated at %s\n\n\n", now)
-	fmt.Fprintf(src, "var initialPriceUpdate, _ = time.Parse(time.RFC3339, \"%s\")\n", now)
+	fmt.Fprintf(src, "var InitialPriceUpdate, _ = time.Parse(time.RFC3339, \"%s\")\n", now)
 	fmt.Fprintln(src, "var initialOnDemandPrices = map[string]map[string]float64{}")
 	fmt.Fprintln(src, "func init() {")
 

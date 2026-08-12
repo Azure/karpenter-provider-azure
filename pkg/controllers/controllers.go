@@ -23,6 +23,7 @@ import (
 	"github.com/awslabs/operatorpkg/status"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/clock"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -39,16 +40,19 @@ import (
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	quotacontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	instancetypeprovider "github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 )
 
 func NewControllers(
 	ctx context.Context,
 	mgr manager.Manager,
+	clk clock.Clock,
 	kubeClient client.Client,
 	recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider,
@@ -57,6 +61,7 @@ func NewControllers(
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	instanceTypesProvider instancetypeprovider.Provider,
+	quotaProvider quota.Provider,
 	inClusterKubernetesInterface kubernetes.Interface,
 	managedKubernetesInterface kubernetes.Interface,
 	managedDynamicInterface dynamic.Interface,
@@ -79,6 +84,7 @@ func NewControllers(
 		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")), //nolint:staticcheck // SA1019: will be replaced by mgr.GetEventRecorder once operatorpkg is updated
 
 		instancetypecontroller.NewController(instanceTypesProvider),
+		quotacontroller.NewController(quotaProvider, clk),
 	}
 	return controllers
 }

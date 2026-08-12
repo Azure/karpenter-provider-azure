@@ -45,7 +45,7 @@ var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(localDNSPre
 const (
 	// localDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
 	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred.
-	localDNSPreferredK8sVersionThreshold = "1.36.0"
+	localDNSPreferredK8sVersionThreshold = "1.99.0"
 
 	// konnectivityAgentPolicy{Name,Namespace} identify the AKS-managed
 	// NetworkPolicy that is allow-listed when scanning for conflicting
@@ -192,7 +192,7 @@ func (r *LocalDNSReconciler) meetsStaticRequirements(nc *v1beta1.AKSNodeClass) (
 	if strings.EqualFold(r.networkPlugin, consts.NetworkPluginNone) {
 		return false, nil
 	}
-	if imagefamily.ResolvesToUbuntu2004(nc.Spec.ImageFamily, nc.Spec.FIPSMode) {
+	if imagefamily.ResolvesToUbuntu2004(nc.Spec.ImageFamily, nc.Spec.FIPSMode, nc.IsTrustedLaunchEnabled()) {
 		return false, nil
 	}
 	return true, nil

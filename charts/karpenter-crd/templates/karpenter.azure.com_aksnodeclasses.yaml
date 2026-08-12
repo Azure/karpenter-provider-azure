@@ -753,6 +753,19 @@ spec:
                       https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
+                  trustedLaunch:
+                    description: trustedLaunch specifies Trusted Launch settings for
+                      provisioned nodes.
+                    properties:
+                      secureBoot:
+                        description: secureBoot specifies whether Secure Boot should
+                          be enabled for provisioned nodes.
+                        type: boolean
+                      vtpm:
+                        description: vtpm specifies whether virtual TPM should be
+                          enabled for provisioned nodes.
+                        type: boolean
+                    type: object
                 type: object
               tags:
                 additionalProperties:
@@ -776,9 +789,22 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+            - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
-                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                && self.imageFamily != ''Ubuntu2404'') : true'
+            - message: TrustedLaunch is required for FIPS support with Ubuntu2204
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && (self.imageFamily != ''Ubuntu2204'' || (has(self.security) && has(self.security.trustedLaunch)
+                && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm)
+                || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)))))
+                : true'
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
+                and Ubuntu2204
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
+                && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
                 : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
@@ -1682,6 +1708,19 @@ spec:
                       https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
+                  trustedLaunch:
+                    description: trustedLaunch specifies Trusted Launch settings for
+                      provisioned nodes.
+                    properties:
+                      secureBoot:
+                        description: secureBoot specifies whether Secure Boot should
+                          be enabled for provisioned nodes.
+                        type: boolean
+                      vtpm:
+                        description: vtpm specifies whether virtual TPM should be
+                          enabled for provisioned nodes.
+                        type: boolean
+                    type: object
                 type: object
               tags:
                 additionalProperties:
@@ -1705,9 +1744,22 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+            - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
-                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                && self.imageFamily != ''Ubuntu2404'') : true'
+            - message: TrustedLaunch is required for FIPS support with Ubuntu2204
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && (self.imageFamily != ''Ubuntu2204'' || (has(self.security) && has(self.security.trustedLaunch)
+                && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm)
+                || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)))))
+                : true'
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
+                and Ubuntu2204
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
+                && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
                 : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified

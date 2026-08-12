@@ -58,6 +58,7 @@ on:
         # Limiting to a subset of regions to give a nice dropdown and also
         # ensure the regions are configured to pass with all of our tests (capacity, etc)
         options:
+          - westus # regional-only UltraSSD acceptance
           - westus3
           - southcentralus
           - eastus
@@ -109,7 +110,7 @@ jobs:
       AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID_TEST }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-telemetry: true
           egress-policy: block
@@ -153,7 +154,7 @@ jobs:
             esm.ubuntu.com:443
             169.254.169.254:80
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.git_ref }}
       - if: always() && github.event_name == 'workflow_run'

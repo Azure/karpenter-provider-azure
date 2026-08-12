@@ -51,7 +51,7 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 // in defaultUbuntu (see resolver.go).
 //
 // Today, Ubuntu2004 is reachable only when the legacy/unset Ubuntu image
-// family is selected together with FIPS mode. Callers outside of the
+// family is selected together with FIPS mode and without TrustedLaunch. Callers outside of the
 // resolver use this to make decisions that depend on whether a NodeClass
 // will ultimately be backed by 20.04 (e.g. the LocalDNS state reconciler,
 // since LocalDNS is unsupported on 20.04).
@@ -60,8 +60,8 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 // intentionally not used from defaultUbuntu itself, to keep that function's
 // existing logic flow untouched. If the rule in defaultUbuntu ever changes,
 // update this helper to match.
-func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode) bool {
+func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) bool {
 	family := lo.FromPtr(familyName)
 	isUbuntuLegacyOrUnset := family == "" || family == v1beta1.UbuntuImageFamily
-	return isUbuntuLegacyOrUnset && lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS
+	return isUbuntuLegacyOrUnset && lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS && !trustedLaunch
 }

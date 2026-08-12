@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 	"github.com/Azure/skewer"
@@ -63,6 +64,7 @@ type AZClient struct {
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
 	NetworkSecurityGroupsClient networksecuritygroup.API
 	SubscriptionsClient         zone.SubscriptionsAPI
+	UsageClient                 quota.UsageAPI
 }
 
 func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
@@ -118,6 +120,7 @@ func NewAZClientFromAPI(
 	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
 	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
+	usageClient quota.UsageAPI,
 ) *AZClient {
 	return &AZClient{
 		virtualMachinesClient:          virtualMachinesClient,
@@ -136,6 +139,7 @@ func NewAZClientFromAPI(
 		LoadBalancersClient:            loadBalancersClient,
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 		SubscriptionsClient:            subscriptionsClient,
+		UsageClient:                    usageClient,
 	}
 }
 
@@ -203,6 +207,17 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	diskEncryptionSetsClient, err := armcompute.NewDiskEncryptionSetsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Note that this is the Microsoft.Compute/locations/usages API,
+	// which is different than the Microsoft.Quota API. We use it here because:
+	//   * It is what the portal uses.
+	//   * It doesn't require additional RBAC over and above VM contributor which we already require.
+	//   * It is functionally identical to the Microsoft.Quota API.
+	// See designs/0012-quota-fungibility-reactivity-improvements.md for more details.
+	usageClient, err := armcompute.NewUsageClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -292,5 +307,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		nodeBootstrappingClient,
 		skuClient,
 		subscriptionsClient,
+		usageClient,
 	), nil
 }

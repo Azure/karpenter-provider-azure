@@ -78,7 +78,7 @@ func (e *executor) executeBatch(ctx context.Context, batch *batcher.Batch[aksMac
 		distributeOperationalError(batch, fmt.Errorf("AKS machine properties is nil"))
 		return
 	}
-	template := buildSharedAKSMachineTemplate(*first.machineBody.Properties)
+	template := buildSharedAKSMachineTemplate(first.machineBody)
 
 	successCount, failCount := 0, 0
 	// Note: We discard the SDK poller - callers should use the GET-based poller instead

@@ -4,7 +4,7 @@
 
 ### Making a new E2E test
 
-1. Create your new E2E testing suite `<test-suite-name>` within the `test/suites/` package. See: `test/README.md`
+1. Create your new E2E testing suite `<test-suite-name>` within the `test/suites/` package. See: [test/README.md](../../test/README.md)
 2. Update the `workflows/e2e-matrix.yaml` workflow to include your E2E test case: `suite: [Utilization, GPU, ...]` - add in the name of your folder within the `test/suites/` package to the comma separated list. Casing does not matter.
 
 ### Running the test case
