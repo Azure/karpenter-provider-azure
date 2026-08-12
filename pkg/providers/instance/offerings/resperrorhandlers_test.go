@@ -211,8 +211,10 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		// The assertion also checks that unreserved capacity is left alone, so this
-		// covers both directions of the scoping.
-		newTestCase("Failure launching into a capacity reservation group stays in that group").
+		// covers both directions of the scoping. Only the attempted zone is marked:
+		// another zonal member of the same group is separately reserved capacity, and a
+		// quota this launch exhausted does not govern it.
+		newTestCase("Failure launching into a capacity reservation group stays in that group and zone").
 			withInstanceType(zone2OnDemand, zone3OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withCapacityReservationGroup("/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg").
@@ -221,6 +223,8 @@ func setupTestCases() []responseErrorTestCase {
 			expectReason(SubscriptionQuotaReachedReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+			).
+			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 			).
 			build(),

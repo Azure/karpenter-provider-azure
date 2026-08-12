@@ -70,7 +70,8 @@ type errorHandle func(ctx context.Context, unavailableOfferings *cache.ScopedOff
 // markOfferingsUnavailableForCapacityTypeAndPlacement marks every offering for
 // the attempted capacity type within the attempted placement scope. The zone
 // parameter identifies the selected offering and is used to infer placement
-// scope; for a zonal offering this intentionally includes sibling zones.
+// scope; for a zonal offering this intentionally includes sibling zones, except
+// inside a capacity reservation group, where sibling zones are separate members.
 func markOfferingsUnavailableForCapacityTypeAndPlacement(
 	ctx context.Context,
 	unavailableOfferings *cache.ScopedOfferings,
@@ -86,6 +87,9 @@ func markOfferingsUnavailableForCapacityTypeAndPlacement(
 		if getOfferingCapacityType(offering) != capacityType || zones.PlacementScopeForOffering(offering) != selectedPlacementScope {
 			continue
 		}
+		if unavailableOfferings.IsScoped() && getOfferingZone(offering) != zone {
+			continue
+		}
 		unavailableOfferings.MarkUnavailableWithTTL(ctx, reason, sku, getOfferingZone(offering), capacityType, ttl)
 	}
 }
@@ -93,7 +97,8 @@ func markOfferingsUnavailableForCapacityTypeAndPlacement(
 // markOfferingsUnavailableForPlacementForBothCapacityTypes marks every offering
 // within the attempted placement scope for both capacity types. The zone
 // parameter identifies the selected offering and is used to infer placement
-// scope; for a zonal offering this intentionally includes sibling zones.
+// scope; for a zonal offering this intentionally includes sibling zones, except
+// inside a capacity reservation group, where sibling zones are separate members.
 func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 	ctx context.Context,
 	unavailableOfferings *cache.ScopedOfferings,
@@ -110,6 +115,9 @@ func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 			continue
 		}
 		offeringZone := getOfferingZone(offering)
+		if unavailableOfferings.IsScoped() && offeringZone != zone {
+			continue
+		}
 		zonesToBlock[offeringZone] = struct{}{}
 	}
 	for blockedZone := range zonesToBlock {
@@ -171,6 +179,12 @@ func handleSKUFamilyQuotaError(
 
 	for _, offering := range instanceType.Offerings {
 		if getOfferingCapacityType(offering) != capacityType {
+			continue
+		}
+		// Family quota is regional, so it normally implicates every zone. Not inside a
+		// capacity reservation group: another member's reserved units were paid for when the
+		// reservation was created and are not governed by the quota this launch exhausted.
+		if unavailableOfferings.IsScoped() && getOfferingZone(offering) != zone {
 			continue
 		}
 		// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.

@@ -112,6 +112,13 @@ type ScopedOfferings struct {
 	scope     string
 }
 
+// IsScoped reports whether this view belongs to a capacity reservation group. Callers use
+// it to stop a failure in one placement from implicating another: a group's members are
+// separately prepaid capacity, one VM size in one placement each.
+func (s *ScopedOfferings) IsScoped() bool {
+	return s.scope != ""
+}
+
 // IsUnavailable returns true if the offering appears in the cache within this scope.
 func (s *ScopedOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
 	u := s.offerings
