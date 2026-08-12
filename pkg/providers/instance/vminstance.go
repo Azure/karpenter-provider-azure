@@ -672,11 +672,32 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 }
 
 func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+	if nodeClass.Spec.Security == nil {
+		return
+	}
+
+	if nodeClass.Spec.Security.EncryptionAtHost != nil {
 		if vmProperties.SecurityProfile == nil {
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
+
+	if nodeClass.IsTrustedLaunchEnabled() {
+		if vmProperties.SecurityProfile == nil {
+			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
+		}
+
+		if vmProperties.SecurityProfile.SecurityType == nil {
+			vmProperties.SecurityProfile.SecurityType = lo.ToPtr(armcompute.SecurityTypesTrustedLaunch)
+		}
+
+		if vmProperties.SecurityProfile.UefiSettings == nil {
+			vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{
+				SecureBootEnabled: lo.ToPtr(nodeClass.IsSecureBootEnabled()),
+				VTpmEnabled:       lo.ToPtr(nodeClass.IsVTPMEnabled()),
+			}
+		}
 	}
 }
 
