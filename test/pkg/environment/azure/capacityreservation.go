@@ -93,6 +93,15 @@ func (env *Environment) ExpectCreatedCapacityReservationGroup(ctx context.Contex
 		return env.deleteCapacityReservationGroup(opts.Name, memberNames)
 	})
 
+	// Granted before the members are reserved, not after: the grant is the slow part and
+	// Azure has taken over ten minutes to make one effective, so this overlaps that wait
+	// with work the test has to do anyway.
+	if opts.GrantToPrincipalID != "" {
+		roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRoleDefinitionID)
+		Expect(env.RBACManager.EnsureRole(ctx, groupID, roleDefinitionID, opts.GrantToPrincipalID)).To(Succeed(),
+			"failed to grant Contributor on %s", groupID)
+	}
+
 	for _, member := range opts.Members {
 		reservation, err := env.CapacityReservationsClient.BeginCreateOrUpdate(ctx, env.NodeResourceGroup, opts.Name, memberName(opts.Name, member.VMSize), armcompute.CapacityReservation{
 			Location: lo.ToPtr(env.Region),
@@ -104,12 +113,6 @@ func (env *Environment) ExpectCreatedCapacityReservationGroup(ctx context.Contex
 		// where Azure actually sets the capacity aside.
 		_, err = reservation.PollUntilDone(ctx, nil)
 		Expect(err).ToNot(HaveOccurred(), "failed to reserve %d x %s in %s zones %v", member.Capacity, member.VMSize, env.Region, opts.ARMZones)
-	}
-
-	if opts.GrantToPrincipalID != "" {
-		roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRoleDefinitionID)
-		Expect(env.RBACManager.EnsureRole(ctx, groupID, roleDefinitionID, opts.GrantToPrincipalID)).To(Succeed(),
-			"failed to grant Contributor on %s", groupID)
 	}
 
 	return groupID

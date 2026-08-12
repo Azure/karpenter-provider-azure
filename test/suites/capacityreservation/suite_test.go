@@ -498,6 +498,8 @@ func expectCapacityReservationGroupCondition(ctx SpecContext, nodeClass *v1beta1
 		g.Expect(retrieved.StatusConditions().Get(status.ConditionReady).IsTrue()).To(Equal(condition.IsTrue()))
 		// Generous because the role assignment granting read on the group is made moments
 		// earlier, and Azure takes its time making one effective; the reconciler retries every
-		// minute until it does.
-	}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+		// minute until it does. One run took effect immediately for two groups, four minutes
+		// for a third, and over ten for a fourth, so this is sized for the observed tail
+		// rather than the typical case.
+	}).WithTimeout(20 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
