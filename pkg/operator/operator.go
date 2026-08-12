@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpapis "sigs.k8s.io/karpenter/pkg/apis"
+	karpscheduling "sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -168,6 +169,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 			log.FromContext(ctx).V(1).Info("discovered DNS service IP", "dns-service-ip", kubeDNSIP.String())
 			options.FromContext(ctx).DNSServiceIP = kubeDNSIP.String()
 		}
+	}
+
+	// updating KnownEphemeralTaints here because we're conditionally adding it based on the network dataplane, which we get from options...?
+	if options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium {
+		karpscheduling.KnownEphemeralTaints = karpscheduling.Taints(karpscheduling.KnownEphemeralTaints).Merge(utils.AzureWellKnownEphemeralTaints)
 	}
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
