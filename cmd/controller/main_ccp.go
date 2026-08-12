@@ -102,6 +102,7 @@ func main() {
 			op.AZClient.CapacityReservationsClient(),
 			op.SubscriptionID,
 			op.Location,
+			op.Cloud,
 			options.FromContext(ctx).ParsedDiskEncryptionSetID,
 			options.FromContext(ctx).NetworkPolicy,
 			options.FromContext(ctx).NetworkPlugin,

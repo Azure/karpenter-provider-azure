@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	. "github.com/onsi/ginkgo/v2"
@@ -81,6 +83,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 			lister,
 			testCRGSubscriptionID,
 			testCRGLocation,
+			cloud.AzurePublic,
 		)
 	})
 
@@ -271,6 +274,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 				azureEnv.InstanceTypesProvider,
 				testCRGSubscriptionID,
 				fake.Region,
+				cloud.AzurePublic,
 			)
 			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 		})
@@ -388,6 +392,46 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		Expect(err).ToNot(HaveOccurred())
 		expectUnready(status.CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode)
 	})
+
+	It("should fail closed in a cloud without capacity reservations", func() {
+		// A cloud reachable only through a file-based environment; the known cloud names all
+		// map to clouds that do support capacity reservations.
+		stackCloud := cloud.Configuration{Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+			cloud.ResourceManager: {Endpoint: "https://management.contoso-stack.local/"},
+		}}
+		unsupported := status.NewCapacityReservationGroupReconciler(
+			azureEnv.CapacityReservationGroupsAPI,
+			azureEnv.CapacityReservationsAPI,
+			lister,
+			testCRGSubscriptionID,
+			testCRGLocation,
+			stackCloud,
+		)
+
+		_, err := unsupported.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		expectUnready(status.CapacityReservationGroupUnreadyReasonUnsupportedCloud)
+	})
+
+	DescribeTable("should accept the clouds Azure documents",
+		func(cfg cloud.Configuration) {
+			supported := status.NewCapacityReservationGroupReconciler(
+				azureEnv.CapacityReservationGroupsAPI,
+				azureEnv.CapacityReservationsAPI,
+				lister,
+				testCRGSubscriptionID,
+				testCRGLocation,
+				cfg,
+			)
+
+			_, err := supported.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		},
+		Entry("public", cloud.AzurePublic),
+		Entry("government", cloud.AzureGovernment),
+		Entry("china", cloud.AzureChina),
+	)
 
 	It("should reject a malformed resource ID", func() {
 		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr("not-a-resource-id")
