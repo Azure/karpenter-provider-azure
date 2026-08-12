@@ -315,6 +315,17 @@ func handleRegionalQuotaError(
 	errorCode,
 	errorMessage string,
 ) error {
+	// Regional vCPU quota is subscription-wide, so for unreserved capacity no other size or
+	// zone helps and nothing is worth marking. Inside a capacity reservation group the
+	// attempted member is now known to be full: consumption up to a member's reserved
+	// quantity is quota-exempt, so reaching regional quota means this launch was already an
+	// overallocation. Marking it lets the next attempt reach a sibling member that may still
+	// have reserved headroom. The TTL is short because that headroom returns as soon as one
+	// of the member's nodes is released.
+	if unavailableOfferings.IsScoped() {
+		unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReachedReason, sku, zone, capacityType, LowQuotaTTL)
+	}
+
 	// InsufficientCapacityError is appropriate here because trying any other instance type will not help
 	return corecloudprovider.NewInsufficientCapacityError(
 		fmt.Errorf(

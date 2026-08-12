@@ -313,6 +313,23 @@ func setupTestCases() []responseErrorTestCase {
 			expectError(cloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).
 			build(),
 
+		// Nothing is marked for unreserved capacity above, since regional quota admits no
+		// alternative. Inside a group the attempted member is full and a sibling may not be,
+		// so the bucket is marked to let the next attempt move on.
+		newTestCase("Regional quota exceeded inside a capacity reservation group").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup("/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg").
+			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.RegionalQuotaExceededTerm).
+			expectError(cloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+
 		newTestCase("Unknown error code - no handler matches").
 			withInstanceType(zone2OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
