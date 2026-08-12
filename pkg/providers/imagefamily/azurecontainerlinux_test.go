@@ -65,6 +65,8 @@ func TestAzureContainerLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var localDNS *v1beta1.LocalDNS
 	var artifactStreaming *v1beta1.ArtifactStreaming
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration
+	var vTPMEnabled *bool
+	var secureBootEnabled *bool
 
 	bootstrapper := acl.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -79,6 +81,8 @@ func TestAzureContainerLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
+		vTPMEnabled,
+		secureBootEnabled,
 	)
 
 	g := NewWithT(t)

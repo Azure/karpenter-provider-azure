@@ -46,7 +46,7 @@ func (u AzureContainerLinux) Name() string {
 	return v1beta1.AzureContainerLinuxImageFamily
 }
 
-func (u AzureContainerLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u AzureContainerLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		if !useSIG {
 			return []types.DefaultImageOutput{}
@@ -77,30 +77,33 @@ func (u AzureContainerLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMo
 		}
 	}
 
-	return []types.DefaultImageOutput{
-		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureContainerLinuxGen2TLImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-acl-gen2-tl",
-		},
-		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureContainerLinuxGen2Arm64TLImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-acl-arm64-gen2-tl",
-		},
+	if trustedLaunch {
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureContainerLinuxGen2TLImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-acl-gen2-tl",
+			},
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureContainerLinuxGen2Arm64TLImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-acl-arm64-gen2-tl",
+			},
+		}
 	}
+	return []types.DefaultImageOutput{}
 }
 
 func (u AzureContainerLinux) ScriptlessCustomData(
@@ -154,6 +157,8 @@ func (u AzureContainerLinux) CustomScriptsNodeBootstrapping(
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled *bool,
+	secureBootEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -178,5 +183,7 @@ func (u AzureContainerLinux) CustomScriptsNodeBootstrapping(
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }
