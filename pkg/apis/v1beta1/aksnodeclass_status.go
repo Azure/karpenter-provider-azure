@@ -41,20 +41,20 @@ const (
 type CapacityReservation struct {
 	// id is the ARM resource ID of the capacity reservation.
 	// +required
-	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
-	ID string `json:"id"`
+	// +kubebuilder:validation:MinLength=1
+	ID string `json:"id,omitempty"`
 	// name is the name of the capacity reservation within its group.
 	// +required
-	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
-	Name string `json:"name"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name,omitempty"`
 	// vmSize is the VM size reserved by this capacity reservation.
 	// +required
-	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
-	VMSize string `json:"vmSize"`
+	// +kubebuilder:validation:MinLength=1
+	VMSize string `json:"vmSize,omitempty"`
 	// zones are the ARM availability zones of this capacity reservation. Empty for
 	// a regional reservation.
 	// +optional
-	//nolint:kubeapilinter // ssatags: the list is replaced wholesale on each resolution
+	// +listType=atomic
 	Zones []string `json:"zones,omitempty"`
 	// quantity is the number of instances reserved. Zero is valid: a zero-quantity
 	// reservation can be associated and intentionally overallocated.
@@ -95,20 +95,20 @@ func (in CapacityReservation) IsEligible() bool {
 type CapacityReservationGroup struct {
 	// id is the ARM resource ID of the capacity reservation group.
 	// +required
-	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
-	ID string `json:"id"`
+	// +kubebuilder:validation:MinLength=1
+	ID string `json:"id,omitempty"`
 	// location is the Azure region of the capacity reservation group.
 	// +required
-	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
-	Location string `json:"location"`
+	// +kubebuilder:validation:MinLength=1
+	Location string `json:"location,omitempty"`
 	// zones are the ARM availability zones of the group. An empty list means the
 	// group is regional, and consuming instances must omit zones.
 	// +optional
-	//nolint:kubeapilinter // ssatags: the list is replaced wholesale on each resolution
+	// +listType=atomic
 	Zones []string `json:"zones,omitempty"`
 	// capacityReservations are the resolved member reservations of the group.
 	// +optional
-	//nolint:kubeapilinter // ssatags: the list is replaced wholesale on each resolution
+	// +listType=atomic
 	CapacityReservations []CapacityReservation `json:"capacityReservations,omitempty"`
 }
 

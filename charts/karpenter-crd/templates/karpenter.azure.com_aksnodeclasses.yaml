@@ -817,10 +817,12 @@ spec:
                       properties:
                         id:
                           description: id is the ARM resource ID of the capacity reservation.
+                          minLength: 1
                           type: string
                         name:
                           description: name is the name of the capacity reservation
                             within its group.
+                          minLength: 1
                           type: string
                         provisioningState:
                           description: |-
@@ -839,6 +841,7 @@ spec:
                         vmSize:
                           description: vmSize is the VM size reserved by this capacity
                             reservation.
+                          minLength: 1
                           type: string
                         zones:
                           description: |-
@@ -847,19 +850,23 @@ spec:
                           items:
                             type: string
                           type: array
+                          x-kubernetes-list-type: atomic
                       required:
                       - id
                       - name
                       - vmSize
                       type: object
                     type: array
+                    x-kubernetes-list-type: atomic
                   id:
                     description: id is the ARM resource ID of the capacity reservation
                       group.
+                    minLength: 1
                     type: string
                   location:
                     description: location is the Azure region of the capacity reservation
                       group.
+                    minLength: 1
                     type: string
                   zones:
                     description: |-
@@ -868,6 +875,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                 required:
                 - id
                 - location
@@ -1801,10 +1809,12 @@ spec:
                       properties:
                         id:
                           description: id is the ARM resource ID of the capacity reservation.
+                          minLength: 1
                           type: string
                         name:
                           description: name is the name of the capacity reservation
                             within its group.
+                          minLength: 1
                           type: string
                         provisioningState:
                           description: |-
@@ -1823,6 +1833,7 @@ spec:
                         vmSize:
                           description: vmSize is the VM size reserved by this capacity
                             reservation.
+                          minLength: 1
                           type: string
                         zones:
                           description: |-
@@ -1831,19 +1842,23 @@ spec:
                           items:
                             type: string
                           type: array
+                          x-kubernetes-list-type: atomic
                       required:
                       - id
                       - name
                       - vmSize
                       type: object
                     type: array
+                    x-kubernetes-list-type: atomic
                   id:
                     description: id is the ARM resource ID of the capacity reservation
                       group.
+                    minLength: 1
                     type: string
                   location:
                     description: location is the Azure region of the capacity reservation
                       group.
+                    minLength: 1
                     type: string
                   zones:
                     description: |-
@@ -1852,6 +1867,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                 required:
                 - id
                 - location

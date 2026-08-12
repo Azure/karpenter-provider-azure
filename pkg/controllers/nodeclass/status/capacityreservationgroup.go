@@ -234,7 +234,9 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 	// names and their states are exactly what the operator needs to see, and a NodePool has
 	// been authored against each of them.
 	nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
-		ID:                   lo.FromPtr(group.ID),
+		// Falling back to the requested ID keeps a required field populated; it is the same
+		// group, and ARM may echo it with different casing.
+		ID:                   lo.CoalesceOrEmpty(lo.FromPtr(group.ID), crgID),
 		Location:             lo.FromPtr(group.Location),
 		Zones:                lo.FilterMap(group.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
 		CapacityReservations: reservations,
@@ -285,32 +287,43 @@ func (r *CapacityReservationGroupReconciler) listReservations(ctx context.Contex
 			return nil, err
 		}
 		for _, cr := range page.Value {
-			if cr == nil || cr.SKU == nil || lo.FromPtr(cr.SKU.Name) == "" {
-				continue
+			if reservation, ok := capacityReservationFromARM(cr); ok {
+				reservations = append(reservations, reservation)
 			}
-			// Reserved quantities are small, but the SDK types the field as int64.
-			quantity := lo.FromPtr(cr.SKU.Capacity)
-			if quantity < 0 {
-				quantity = 0
-			}
-			if quantity > math.MaxInt32 {
-				quantity = math.MaxInt32
-			}
-			var provisioningState *string
-			if cr.Properties != nil && lo.FromPtr(cr.Properties.ProvisioningState) != "" {
-				provisioningState = cr.Properties.ProvisioningState
-			}
-			reservations = append(reservations, v1beta1.CapacityReservation{
-				ID:                lo.FromPtr(cr.ID),
-				Name:              lo.FromPtr(cr.Name),
-				VMSize:            lo.FromPtr(cr.SKU.Name),
-				Zones:             lo.FilterMap(cr.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
-				Quantity:          lo.ToPtr(int32(quantity)),
-				ProvisioningState: provisioningState,
-			})
 		}
 	}
 	return reservations, nil
+}
+
+// capacityReservationFromARM converts one member into the shape status records, reporting
+// false for a member that cannot be represented. A member missing a value the status
+// schema requires is skipped rather than written empty, which the API server would reject,
+// taking the whole status update with it.
+func capacityReservationFromARM(cr *armcompute.CapacityReservation) (v1beta1.CapacityReservation, bool) {
+	if cr == nil || cr.SKU == nil || lo.FromPtr(cr.SKU.Name) == "" ||
+		lo.FromPtr(cr.ID) == "" || lo.FromPtr(cr.Name) == "" {
+		return v1beta1.CapacityReservation{}, false
+	}
+	// Reserved quantities are small, but the SDK types the field as int64.
+	quantity := lo.FromPtr(cr.SKU.Capacity)
+	if quantity < 0 {
+		quantity = 0
+	}
+	if quantity > math.MaxInt32 {
+		quantity = math.MaxInt32
+	}
+	var provisioningState *string
+	if cr.Properties != nil && lo.FromPtr(cr.Properties.ProvisioningState) != "" {
+		provisioningState = cr.Properties.ProvisioningState
+	}
+	return v1beta1.CapacityReservation{
+		ID:                lo.FromPtr(cr.ID),
+		Name:              lo.FromPtr(cr.Name),
+		VMSize:            lo.FromPtr(cr.SKU.Name),
+		Zones:             lo.FilterMap(cr.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
+		Quantity:          lo.ToPtr(int32(quantity)),
+		ProvisioningState: provisioningState,
+	}, true
 }
 
 func (r *CapacityReservationGroupReconciler) setFalse(nodeClass *v1beta1.AKSNodeClass, reason, message string) {
