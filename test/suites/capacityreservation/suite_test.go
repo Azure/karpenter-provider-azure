@@ -295,6 +295,15 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 		nodePool.Spec.Limits = karpv1.Limits{"nodes": resource.MustParse("2")}
 		env.ExpectCreated(nodeClass, nodePool)
 
+		// A static pool provisions off the NodeClass rather than off pending pods, so an
+		// unresolved group shows up only as nodes that never appear. Gating here reports the
+		// group's own reason instead, and absorbs the wait for the role assignment to take
+		// effect rather than spending the replica-count budget on it.
+		By("Waiting for the group to resolve and the NodeClass to become Ready")
+		expectCapacityReservationGroupCondition(ctx, nodeClass, func(g Gomega, condition *status.Condition) {
+			g.Expect(condition.IsTrue()).To(BeTrue(), "expected the group to resolve, got %s: %s", condition.Reason, condition.Message)
+		})
+
 		By("Waiting for the pool to reach its replica count")
 		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
 		env.EventuallyExpectInitializedNodeCount("==", 1)
