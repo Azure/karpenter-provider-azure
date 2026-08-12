@@ -32,19 +32,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// capacityReservationRoleName and capacityReservationActions are the least-privilege grant
-// the operator playbook publishes. No built-in role carries these actions -- Virtual
-// Machine Contributor and Network Contributor, which the least-privilege guide already
-// tells operators to grant, carry none of them -- so a custom role is the only alternative
-// to over-granting Contributor. Exercising exactly this set here keeps the published role
-// under test: anything missing fails the launch rather than passing silently.
-const capacityReservationRoleName = "Karpenter Capacity Reservation User (e2e)"
-
-var capacityReservationActions = []string{
-	"Microsoft.Compute/capacityReservationGroups/read",
-	"Microsoft.Compute/capacityReservationGroups/capacityReservations/read",
-	"Microsoft.Compute/capacityReservationGroups/deploy/action",
-}
+const contributorRoleDefinitionID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
 
 // CapacityReservationMember is one reservation within a group. Azure allows only one
 // per VM size per placement.
@@ -69,8 +57,8 @@ type CapacityReservationGroupOptions struct {
 	// ARMZones is the placement of the group and all its members. Empty produces a
 	// regional group, whose consuming VMs must omit zones.
 	ARMZones []string
-	// GrantToPrincipalID, when set, receives the least-privilege capacity reservation role
-	// on the group. Leave empty to exercise the missing-permission path.
+	// GrantToPrincipalID, when set, receives Contributor on the group. Leave empty to
+	// exercise the missing-permission path.
 	GrantToPrincipalID string
 }
 
@@ -119,10 +107,9 @@ func (env *Environment) ExpectCreatedCapacityReservationGroup(ctx context.Contex
 	}
 
 	if opts.GrantToPrincipalID != "" {
-		roleDefinitionID, err := env.RBACManager.EnsureCustomRole(ctx, capacityReservationRoleName, capacityReservationActions)
-		Expect(err).ToNot(HaveOccurred(), "failed to define the capacity reservation role")
+		roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRoleDefinitionID)
 		Expect(env.RBACManager.EnsureRole(ctx, groupID, roleDefinitionID, opts.GrantToPrincipalID)).To(Succeed(),
-			"failed to grant %s on %s", capacityReservationRoleName, groupID)
+			"failed to grant Contributor on %s", groupID)
 	}
 
 	return groupID
