@@ -148,6 +148,20 @@ var _ = Describe("CapacityReservation", func() {
 		}
 		Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(expectedNodeZone))
 
+		By("Verifying the configured group is recorded on the NodeClaim and the Node")
+		// Core copies NodeClaim annotations onto the Node at registration, so the Node picks
+		// this up rather than the launch path setting it twice.
+		Eventually(func(g Gomega) {
+			claims := &karpv1.NodeClaimList{}
+			g.Expect(env.Client.List(ctx, claims, client.MatchingLabels{karpv1.NodePoolLabelKey: nodePool.Name})).To(Succeed())
+			g.Expect(claims.Items).To(HaveLen(1))
+			g.Expect(claims.Items[0].Annotations).To(HaveKeyWithValue(v1beta1.AnnotationCapacityReservationGroupID, groupID))
+
+			node := &corev1.Node{}
+			g.Expect(env.Client.Get(ctx, client.ObjectKey{Name: nodes[0].Name}, node)).To(Succeed())
+			g.Expect(node.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationCapacityReservationGroupID, groupID))
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
 		By("Verifying Azure reports the reservation as consumed")
 		Eventually(func(g Gomega) {
 			allocated := env.ExpectCapacityReservationUtilization(ctx, groupName, reservedVMSize)
