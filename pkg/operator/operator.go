@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -103,6 +105,12 @@ type Operator struct {
 	LoadBalancerProvider      *loadbalancer.Provider
 	QuotaProvider             *quota.DefaultProvider
 	AZClient                  *azclient.AZClient
+
+	// SubscriptionID and Location identify the Azure scope this operator manages.
+	SubscriptionID string
+	Location       string
+	// Cloud is the resolved Azure cloud, which not every feature is available in.
+	Cloud cloud.Configuration
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -293,6 +301,9 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		LoadBalancerProvider:         loadBalancerProvider,
 		QuotaProvider:                quotaProvider,
 		AZClient:                     azClient,
+		SubscriptionID:               azConfig.SubscriptionID,
+		Location:                     azConfig.Location,
+		Cloud:                        env.Cloud,
 	}
 }
 

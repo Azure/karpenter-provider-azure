@@ -19,6 +19,8 @@ package controllers
 import (
 	"context"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+
 	"github.com/awslabs/operatorpkg/controller"
 	"github.com/awslabs/operatorpkg/status"
 	"k8s.io/client-go/dynamic"
@@ -67,13 +69,19 @@ func NewControllers(
 	managedDynamicInterface dynamic.Interface,
 	subnetsClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
+	capacityReservationsClient azapi.CapacityReservationsAPI,
+	subscriptionID string,
+	location string,
+	cloudConfig cloud.Configuration,
 	parsedDiskEncryptionSetID *arm.ResourceID,
 	networkPolicy string,
 	networkPlugin string,
 ) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, managedKubernetesInterface, managedDynamicInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID, networkPolicy, networkPlugin),
+		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, managedKubernetesInterface, managedDynamicInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID, networkPolicy, networkPlugin,
+			nodeclassstatus.NewCapacityReservationGroupReconciler(capacityReservationGroupsClient, capacityReservationsClient, instanceTypesProvider, subscriptionID, location, cloudConfig)),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
