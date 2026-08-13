@@ -1385,7 +1385,7 @@ var _ = Describe("InstanceType Provider", func() {
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin, nil)
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1434,7 +1434,7 @@ var _ = Describe("InstanceType Provider", func() {
 					UseSIG: lo.ToPtr(true),
 				})
 				ctx = options.ToContext(ctx)
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin, nil)
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1466,7 +1466,7 @@ var _ = Describe("InstanceType Provider", func() {
 			)
 			DescribeTable("should select the right image for a given instance type",
 				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin, nil)
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
@@ -2000,7 +2000,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin, nil)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -3388,6 +3388,217 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 			}
 			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+	})
+
+	Context("Capacity Reservation Group", func() {
+		const reservedSKU = "Standard_D2s_v3"
+		var reservedZone string
+
+		// reserve points the NodeClass at a group whose member reservations cover the
+		// given {VM size, ARM zones} pairs. Empty zones mean a regional reservation.
+		reserve := func(placements ...lo.Tuple2[string, []string]) {
+			nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(
+				"/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg")
+			nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
+				ID:       lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID),
+				Location: fake.Region,
+				CapacityReservations: lo.Map(placements, func(p lo.Tuple2[string, []string], i int) v1beta1.CapacityReservation {
+					return v1beta1.CapacityReservation{
+						ID:     fmt.Sprintf("%s/capacityReservations/r%d", lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID), i),
+						Name:   fmt.Sprintf("r%d", i),
+						VMSize: p.A,
+						Zones:  p.B,
+					}
+				}),
+			}
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeCapacityReservationGroupReady)
+		}
+
+		offeringZones := func(instanceTypes corecloudprovider.InstanceTypes) []string {
+			instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == reservedSKU })
+			Expect(found).To(BeTrue(), "expected %s to be offered", reservedSKU)
+			return lo.Map(instanceType.Offerings, func(o *corecloudprovider.Offering, _ int) string {
+				return o.Requirements.Get(v1.LabelTopologyZone).Any()
+			})
+		}
+
+		BeforeEach(func() {
+			reservedZone = fake.Region + "-1"
+		})
+
+		It("should offer only the reserved SKUs", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(lo.Map(instanceTypes, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })).
+				To(ConsistOf(reservedSKU))
+		})
+
+		It("should offer only the reserved zone of a reserved SKU", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
+		})
+
+		It("should offer only the regional placement for a regional reservation", func() {
+			reserve(lo.T2(reservedSKU, []string(nil)))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(zones.Regional))
+		})
+
+		It("should offer every reserved zone of a reserved SKU", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}), lo.T2(reservedSKU, []string{"3"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(fake.Region+"-1", fake.Region+"-3"))
+		})
+
+		It("should not offer spot, because spot cannot consume a reservation", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			for _, instanceType := range instanceTypes {
+				for _, offering := range instanceType.Offerings {
+					Expect(offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Any()).To(Equal(karpv1.CapacityTypeOnDemand))
+				}
+			}
+		})
+
+		It("should not offer UltraSSD, which is incompatible with a reservation", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			for _, instanceType := range instanceTypes {
+				for _, offering := range instanceType.Offerings {
+					Expect(offering.Requirements.Get(v1beta1.LabelUltraSSD).Values()).To(ConsistOf("false"))
+				}
+			}
+		})
+
+		It("should tolerate ARM returning a differently cased VM size", func() {
+			reserve(lo.T2(strings.ToUpper(reservedSKU), []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
+		})
+
+		It("should offer nothing while the group is unresolved, rather than falling back to unreserved capacity", func() {
+			reserve()
+			nodeClass.Status.CapacityReservationGroup = nil
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(BeEmpty())
+		})
+
+		It("should key the instance type cache on the resolved group shape", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
+
+			reserve(lo.T2(reservedSKU, []string{"3"}))
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(fake.Region + "-3"))
+		})
+
+		It("should leave offerings unrestricted when no group is configured", func() {
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(instanceTypes)).To(BeNumerically(">", 1))
+			Expect(offeringZones(instanceTypes)).To(ContainElements(zones.Regional, reservedZone))
+		})
+
+		It("should keep a reserved offering available when the family quota is exhausted", func() {
+			// Creating the reservation already spent the quota, so a user who sizes quota to
+			// their reservation would otherwise never get to use what they are paying for.
+			azureEnv.UsageAPI.Usages.Append(&armcompute.Usage{
+				Name:         &armcompute.UsageName{Value: lo.ToPtr(fake.MakeSKU(reservedSKU).GetFamilyName())},
+				CurrentValue: lo.ToPtr[int32](100),
+				Limit:        lo.ToPtr[int64](100),
+			})
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == reservedSKU })
+			Expect(found).To(BeTrue(), "expected %s to still be offered", reservedSKU)
+			for _, offering := range instanceType.Offerings {
+				Expect(offering.Available).To(BeTrue(), "reserved offering should not be gated on remaining family quota")
+			}
+		})
+
+		It("should keep a reserved offering available when unreserved capacity is exhausted", func() {
+			// The reason to pay for a reservation is to survive exactly this.
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure",
+				fake.MakeSKU(reservedSKU), reservedZone, karpv1.CapacityTypeOnDemand)
+
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool { return it.Name == reservedSKU })
+			Expect(found).To(BeTrue(), "expected %s to still be offered", reservedSKU)
+			for _, offering := range instanceType.Offerings {
+				Expect(offering.Available).To(BeTrue(), "a general capacity shortage should not suppress the reserved offering")
+			}
+		})
+
+		It("should not offer a member that is not provisioned", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].ProvisioningState = lo.ToPtr("Creating")
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(BeEmpty(), "an unprovisioned member must back no offerings")
+		})
+
+		It("should offer only the provisioned members of a group", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}), lo.T2("Standard_D4s_v3", []string{"3"}))
+			members := nodeClass.Status.CapacityReservationGroup.CapacityReservations
+			Expect(members).To(HaveLen(2))
+			members[1].ProvisioningState = lo.ToPtr("Creating")
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(lo.Map(instanceTypes, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })).
+				To(ConsistOf(reservedSKU))
+		})
+
+		Context("Launch", func() {
+			provisionVM := func() armcompute.VirtualMachine {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+				return azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			}
+
+			It("should associate a zonal VM with the group", func() {
+				reserve(lo.T2(reservedSKU, []string{"1"}))
+				vm := provisionVM()
+				Expect(lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)).
+					To(Equal(lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID)))
+				Expect(lo.Map(vm.Zones, func(z *string, _ int) string { return lo.FromPtr(z) })).To(ConsistOf("1"))
+			})
+
+			It("should associate a regional VM with the group and send no zones", func() {
+				reserve(lo.T2(reservedSKU, []string(nil)))
+				vm := provisionVM()
+				Expect(lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)).
+					To(Equal(lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID)))
+				Expect(vm.Zones).To(BeEmpty())
+			})
+
+			It("should not associate a VM when no group is configured", func() {
+				vm := provisionVM()
+				Expect(vm.Properties.CapacityReservation).To(BeNil())
+			})
 		})
 	})
 })
