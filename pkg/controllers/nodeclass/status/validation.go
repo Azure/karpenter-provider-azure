@@ -24,13 +24,16 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	FIPSRequired                 = "FIPSRequired"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -61,6 +64,14 @@ func NewValidationReconciler(
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
+	if options.FromContext(ctx).EnableFIPS && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			FIPSRequired,
+			"AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level",
+		)
+		return reconcile.Result{}, nil
+	}
 
 	// Check BYOK RBAC if DES ID is configured
 	if r.parsedDiskEncryptionSetID != nil {
