@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/Azure/skewer"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 )
 
@@ -53,18 +54,16 @@ func TestSupportsNestedVirtualization(t *testing.T) {
 		{"D2", false},
 	} {
 		t.Run(tc.size, func(t *testing.T) {
+			g := NewWithT(t)
 			sku := &skewer.SKU{Name: lo.ToPtr("Standard_" + tc.size), Size: lo.ToPtr(tc.size)}
-			if got := supportsNestedVirtualization(sku); got != tc.want {
-				t.Errorf("supportsNestedVirtualization(%q) = %v, want %v", tc.size, got, tc.want)
-			}
+			g.Expect(supportsNestedVirtualization(sku)).To(Equal(tc.want))
 		})
 	}
 }
 
 // An unparseable SKU name must not be filtered out — let the server reject it instead.
 func TestSupportsNestedVirtualizationUnparseable(t *testing.T) {
+	g := NewWithT(t)
 	sku := &skewer.SKU{Name: lo.ToPtr("not-a-vm-size"), Size: lo.ToPtr("not-a-vm-size")}
-	if !supportsNestedVirtualization(sku) {
-		t.Error("expected an unparseable SKU name to be allowed through")
-	}
+	g.Expect(supportsNestedVirtualization(sku)).To(BeTrue(), "an unparseable SKU name should be allowed through")
 }

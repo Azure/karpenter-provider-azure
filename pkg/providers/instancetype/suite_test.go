@@ -2491,13 +2491,6 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
 			})
 
-			It("should not narrow the SKU list when Kata is not requested", func() {
-				instanceTypes := listFor(nil)
-
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
-			})
-
 			// Karpenter advertises the Kata node label AKS will stamp so it can scale up for pending
 			// pods that select it.
 			Context("Advertising the Kata node label", func() {
@@ -2850,13 +2843,14 @@ var _ = Describe("InstanceType Provider", func() {
 				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written as part of KUBELET_NODE_LABELS (see above)
 				// or by another process. We're asserting on this distinction currently because it helps clarify who is doing what
 				ExpectedOnNode bool
-				// CoverageOnly excludes the entry from the provisioning DescribeTables below, which drive a
-				// label through a NodePool requirement on the default SKU. The Kata labels don't fit that
-				// shape: they are driven by the AKSNodeClass workloadRuntime field rather than a NodePool
-				// requirement, and requesting Kata narrows the offered SKUs to nested-virt-capable gen-2
-				// ones, which these shared tables cannot express. Such entries exist here purely to satisfy
-				// the "entries should cover every WellKnownLabel" assertion; their provisioning behavior is
-				// covered in the "Filtering by WorkloadRuntime (Kata)" context above and end to end in
+				// CoverageOnly excludes the entry from the provisioning DescribeTables below. A SetupFunc
+				// is not enough for the Kata label: those tables provision through azureEnv, which runs
+				// PROVISION_MODE=aksscriptless, and Kata is deliberately unsupported there (see
+				// options.SupportsWorkloadRuntime). Scheduling succeeds and then the launch fails, so the
+				// entry can only ever assert the wrong thing. Such entries exist here purely to satisfy the
+				// "entries should cover every WellKnownLabel" assertion; their provisioning behavior is
+				// covered in the "Filtering by WorkloadRuntime (Kata)" context above, in
+				// pkg/cloudprovider/suite_aksmachineapi_features_test.go, and end to end in
 				// test/suites/integration/kata_test.go.
 				CoverageOnly bool
 			}

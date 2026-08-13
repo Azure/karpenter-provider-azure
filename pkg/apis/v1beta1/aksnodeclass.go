@@ -712,8 +712,6 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-// v4: workloadRuntime gained a server-side default of OCIContainer, which changes the hash of
-// every AKSNodeClass that previously left the field unset (condition 1 above).
 const AKSNodeClassHashVersion = "v4"
 
 func (in *AKSNodeClass) Hash() string {
