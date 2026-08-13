@@ -10,8 +10,8 @@
 
 Karpenter for Azure has two main places where provider-specific behavior can be exposed to users:
 
-- Well-known labels can be used as scheduling requirements on workloads and NodePools.
-- Strongly typed fields on `AKSNodeClass`, which describe how Azure capacity should be provisioned.
+- [Well-known labels](../pkg/apis/v1beta1/labels.go) can be used as scheduling requirements on workloads and NodePools.
+- Strongly typed fields on [AKSNodeClass](../pkg/apis/v1beta1/aksnodeclass.go), which describe how Azure capacity should be provisioned.
 
 Both surfaces are useful, but they solve different problems. A label is best when the user is making a scheduling decision: they need to express that a workload can run only on nodes with a particular capability, offering, operating mode, or provider-computed property. A NodeClass field is best when the user is configuring a feature: they are choosing how nodes should be created, often with multiple parameters, validation rules, defaults, or drift behavior.
 
