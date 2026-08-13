@@ -48,18 +48,27 @@ import (
 
 var env *azure.Environment
 
+// grantedRoleAssignmentID is the capacity reservation grant this suite created, if any,
+// so AfterSuite can remove it again.
+var grantedRoleAssignmentID string
+
 func TestCapacityReservation(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
 		// Once, before any spec: an assignment can take many minutes to become effective,
-		// and every group these specs create inherits this one.
-		if env.InClusterController {
-			env.ExpectKarpenterCanReadCapacityReservationGroups(env.Context)
+		// and every group these specs create inherits this one. Machine API modes never
+		// resolve a group, so they need no access and must not require the caller to hold
+		// roleAssignments/write.
+		if env.InClusterController && !env.IsAKSMachineAPIMode() {
+			grantedRoleAssignmentID = env.ExpectCapacityReservationAccessGranted(env.Context)
 		}
 	})
 	AfterSuite(func() {
-		env.Stop()
+		defer env.Stop()
+		if grantedRoleAssignmentID != "" {
+			env.ExpectCapacityReservationAccessRevoked(env.Context, grantedRoleAssignmentID)
+		}
 	})
 
 	RunSpecs(t, "CapacityReservation Suite")

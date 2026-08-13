@@ -18,7 +18,9 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
@@ -42,13 +44,23 @@ func NewRBACManager(subscriptionID string, cred azcore.TokenCredential) (*RBACMa
 // EnsureRole assigns roleDefinitionID to principalID at scope if not already present.
 // It lists for the scope and returns nil if a matching assignment exists.
 func (r *RBACManager) EnsureRole(ctx context.Context, scope, roleDefinitionID, principalID string) error {
-	return r.EnsureRoleWithPrincipalType(ctx, scope, roleDefinitionID, principalID, "")
+	_, err := r.EnsureRoleReportingCreate(ctx, scope, roleDefinitionID, principalID, "")
+	return err
 }
 
 // EnsureRoleWithPrincipalType assigns roleDefinitionID to principalID at scope with optional principalType.
 // Setting principalType helps handle replication delays when creating principals and immediately assigning roles.
 // See https://aka.ms/docs-principaltype for more information.
 func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, roleDefinitionID, principalID, principalType string) error {
+	_, err := r.EnsureRoleReportingCreate(ctx, scope, roleDefinitionID, principalID, principalType)
+	return err
+}
+
+// EnsureRoleReportingCreate is EnsureRoleWithPrincipalType, additionally reporting the ID
+// of the assignment it created. The ID is empty when a matching assignment already
+// existed, so a caller that cleans up removes only what it introduced and leaves a
+// standing grant alone.
+func (r *RBACManager) EnsureRoleReportingCreate(ctx context.Context, scope, roleDefinitionID, principalID, principalType string) (string, error) {
 	// Quick scan to avoid duplicates
 	pager := r.client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
 		Filter: lo.ToPtr(fmt.Sprintf("assignedTo('%s')", principalID)),
@@ -56,7 +68,7 @@ func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, ro
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 		for _, ra := range page.Value {
 			if ra.Properties != nil &&
@@ -65,7 +77,7 @@ func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, ro
 				*ra.Properties.PrincipalID == principalID &&
 				*ra.Properties.RoleDefinitionID == roleDefinitionID {
 				// Already assigned
-				return nil
+				return "", nil
 			}
 		}
 	}
@@ -79,8 +91,24 @@ func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, ro
 		properties.PrincipalType = lo.ToPtr(armauthorization.PrincipalType(principalType))
 	}
 
-	_, err := r.client.Create(ctx, scope, name, armauthorization.RoleAssignmentCreateParameters{
+	created, err := r.client.Create(ctx, scope, name, armauthorization.RoleAssignmentCreateParameters{
 		Properties: properties,
 	}, nil)
-	return err
+	if err != nil {
+		return "", err
+	}
+	return lo.FromPtr(created.ID), nil
+}
+
+// DeleteRoleAssignment removes an assignment by ID. One that is already gone is success:
+// deleting the scope it lived on takes the assignment with it.
+func (r *RBACManager) DeleteRoleAssignment(ctx context.Context, roleAssignmentID string) error {
+	if _, err := r.client.DeleteByID(ctx, roleAssignmentID, nil); err != nil {
+		var responseErr *azcore.ResponseError
+		if errors.As(err, &responseErr) && responseErr.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return err
+	}
+	return nil
 }

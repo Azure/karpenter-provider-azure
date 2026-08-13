@@ -59,20 +59,32 @@ type CapacityReservationGroupOptions struct {
 	ARMZones []string
 }
 
-// ExpectKarpenterCanReadCapacityReservationGroups grants the Karpenter workload identity
-// Contributor on the node resource group, which every group these tests create inherits.
+// ExpectCapacityReservationAccessGranted grants the Karpenter workload identity Contributor
+// on the node resource group, which every group these tests create inherits. It returns the
+// ID of the assignment it created, or "" when the identity already held the role.
 //
 // Granted once for the suite rather than once per group because the grant is the slow
 // part: within a single run Azure made one assignment effective immediately and another
 // only after thirteen minutes. Paying that once, before any spec runs, is the difference
 // between one readiness wait and five independent chances to exceed it.
-func (env *Environment) ExpectKarpenterCanReadCapacityReservationGroups(ctx context.Context) {
+func (env *Environment) ExpectCapacityReservationAccessGranted(ctx context.Context) string {
 	GinkgoHelper()
 
 	scope := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", env.SubscriptionID, env.NodeResourceGroup)
 	roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRoleDefinitionID)
-	Expect(env.RBACManager.EnsureRole(ctx, scope, roleDefinitionID, env.GetKarpenterWorkloadIdentity(ctx))).To(Succeed(),
-		"failed to grant Contributor on %s", scope)
+	assignmentID, err := env.RBACManager.EnsureRoleReportingCreate(ctx, scope, roleDefinitionID, env.GetKarpenterWorkloadIdentity(ctx), "")
+	Expect(err).ToNot(HaveOccurred(), "failed to grant Contributor on %s", scope)
+	return assignmentID
+}
+
+// ExpectCapacityReservationAccessRevoked removes a grant made by
+// ExpectCapacityReservationAccessGranted. This matters on a reused cluster, where the
+// node resource group outlives the suite and would otherwise keep the broadened rights.
+func (env *Environment) ExpectCapacityReservationAccessRevoked(ctx context.Context, roleAssignmentID string) {
+	GinkgoHelper()
+
+	Expect(env.RBACManager.DeleteRoleAssignment(ctx, roleAssignmentID)).To(Succeed(),
+		"failed to revoke role assignment %s", roleAssignmentID)
 }
 
 // memberName keeps reservation names stable and unique per size within a group.
