@@ -253,7 +253,6 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
-			//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
 			It("should match expected images for FIPS Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
