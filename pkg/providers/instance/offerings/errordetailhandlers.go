@@ -97,7 +97,9 @@ func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instan
 	for _, handler := range h.HandlerEntries {
 		if handler.match(errorDetail) {
 			errorCode, errorMessage := h.extractErrorCodeAndMessage(errorDetail)
-			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, errorCode, errorMessage)
+			// The AKS Machine API cannot pass a capacity reservation group yet, so these
+			// failures are always unreserved.
+			return handler.handle(ctx, h.UnavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, zone, capacityType, errorCode, errorMessage)
 		}
 	}
 
