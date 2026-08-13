@@ -15,7 +15,7 @@ Karpenter for Azure has two main places where provider-specific behavior can be 
 
 Both surfaces are useful, but they solve different problems. A label is best when the user is making a scheduling decision: they need to express that a workload can run only on nodes with a particular capability, offering, operating mode, or provider-computed property. A NodeClass field is best when the user is configuring a feature: they are choosing how nodes should be created, often with multiple parameters, validation rules, defaults, or drift behavior.
 
-This document is guidance for new features being added to Karpenter for Azure. It defines the rule feature authors should use when deciding whether a new Azure concept belongs in a label or in `AKSNodeClass`.
+This document is guidance for new features being added to Karpenter for Azure. It defines the rules feature authors should use when deciding whether a new Azure concept belongs in a label or in `AKSNodeClass`.
 
 ## Guidance Goals
 
@@ -43,16 +43,15 @@ This usually means the value participates in Karpenter requirements and changes 
 Choose a label when most of these are true:
 
 - The concept is a node capability, offering property, or provider-computed scheduling attribute.
-- Workloads reasonably need to select for it using `nodeSelector`, node affinity, or `NodePool` requirements.
-- The provider can safely expose a default value for all relevant offerings, such as `true` or `false`.
-- Omitting the requirement should preserve normal behavior.
+- Workloads reasonably need to select or spread by it using `nodeSelector`, node affinity, topology spread constraints, or `NodePool` requirements.
 - The value is simple enough to model as a label value without losing important structure.
+- Validation is simple and the feature is largely independent of other features. The feature might restrict VM sizes and other features, but those restrictions are straightforward and easy to understand.
 
 For these cases, labels are the right API because they are part of Kubernetes and Karpenter scheduling semantics. They let users express compatibility without creating extra NodeClasses or encoding workload placement in provisioning configuration.
 
 Examples:
 
-- `topology.kubernetes.io/zone`, because zone is a placement constraint that directly changes which offerings can satisfy a workload.
+- `topology.kubernetes.io/zone`, because zone is a placement constraint that directly changes which offerings can satisfy a workload and pods need to schedule against it/set topology constraints against it.
 - `karpenter.sh/capacity-type`, because workloads may explicitly choose on-demand or spot capacity and the value is a simple scheduling dimension.
 - Ultra SSD support is a simple yes/no node capability that directly affects workload placement. Although enabling Ultra SSD changes the underlying VM configuration, a Pod using an `UltraSSD_LRS` volume cannot attach that volume on a node where Ultra SSD is disabled. Therefore, this capability needs to be represented as a node scheduling requirement so the Pod is only placed on compatible nodes.
 
@@ -66,9 +65,9 @@ This usually means the option is part of the node provisioning contract rather t
 
 Choose `AKSNodeClass` when most of these are true:
 
-- The concept enables or configures a feature rather than only describing compatibility.
-- The feature has multiple fields, modes, or possible values.
-- The setting needs strong typing, defaulting, validation, or clear API documentation.
+- The feature is configuration is complex, including having multiple fields, modes, objects, and other values. For example, a configuration might have nested structure or relationships that do not cleanly fit key-value labels.
+- The setting needs strong typing, defaulting, or clear API documentation, especially when it depends on cluster state or other `AKSNodeClass` fields.
+- Validation is complex. Feature settings require validating against multiple other features, cluster state, NodeClass fields, etc.
 - The value is not useful as a pod-level scheduling constraint.
 
 For these cases, NodeClass is the right API because labels are stringly typed and intentionally limited. A field on `AKSNodeClass` gives us a typed schema, API validation, clearer defaults, and room to evolve the feature without creating many loosely related labels.
@@ -78,6 +77,7 @@ Examples:
 - Disk encryption configuration, because it involves resource IDs, precedence between cluster defaults and NodeClass overrides, mutability, and drift behavior.
 - Networking configuration, because it can include subscriptions, resource groups, subnet names, dataplane choices, and multi-tenancy settings that should not be encoded into string labels.
 - Trusted Launch configuration, because it has related settings such as vTPM and Secure Boot that need typed configuration and validation. It is primarily concerned with how Azure creates the VM and does not describe a pod-level scheduling compatibility requirement.
+- LocalDNS configuration, because it includes modes, nested DNS override objects, forwarding policy, cache settings, and validation that depends on the whole configuration.
 
 ## Rule of Thumb
 
