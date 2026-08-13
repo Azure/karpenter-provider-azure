@@ -46,14 +46,6 @@ This document proposes version control capabilities for AKS Node Auto Provisioni
 
 The intent is to let customers control which node image version their NAP nodes run on: either by pinning to the current version to prevent automatic upgrades, or by rolling back to the previously used version to recover from a bad image release. Additionally, customers can specify a target Kubernetes version on the NodeClass to decouple node Kubernetes version drift detection from the control plane's current version.
 
-Related but separate workstreams are:
-
-1. Long-duration arbitrary node image pinning beyond current and previously used versions.
-2. Prepared image spec support using a full resource ID that maps to an AKS API prepared image field.
-3. Future image version selectors for filtering and ranking available image versions.
-
-These workstreams require independent design and are out of scope here.
-
 ## Background
 
 AKS node images are VHD-based image versions that are updated frequently. Today, NAP users configure selector-style image controls in spec (for example image family), while resolved concrete images are surfaced in status.
@@ -76,8 +68,7 @@ Additionally, a Kubernetes version upgrade also triggers a node image version re
 2. Preserve recently-used version state durably in AKSNodeClass status, including the Kubernetes version paired with the previously used node image.
 3. Keep rollback and pinning operationally safe and predictable. Pinning is limited to the current and previously used versions only, following AKS's current policy.
 4. Provide a `kubernetesVersion` spec field that allows customers to specify the desired Kubernetes version for drift detection, decoupling node k8s version drift from the cluster control plane version.
-5. Surface both the current node image version and the recently used node image version (with its paired Kubernetes version) in AKSNodeClass status.
-6. Keep the API design extensible for future image version selectors.
+5. Keep the API design extensible for future image version selectors.
 
 ## Non-Goals
 
@@ -91,9 +82,9 @@ Additionally, a Kubernetes version upgrade also triggers a node image version re
 ### Definitions
 
 - **Desired Kubernetes version:** `spec.versions.kubernetesVersion` when set; otherwise `status.kubernetesVersion`.
-- **Current effective node Kubernetes version:** `oldSelf.spec.versions.kubernetesVersion` when available for CEL transition checks; otherwise `status.kubernetesVersion`.
+- **Current effective node Kubernetes version:** the last accepted desired node Kubernetes version for the NodeClass, falling back to `status.kubernetesVersion` when no explicit desired version has been set.
 - **Effective image set:** the concrete `status.images` entries currently used for provisioning and drift.
-- **Usable effective image set:** an effective image set that satisfies this design's validation requirements for the current desired version inputs.
+- **Usable effective image set:** an effective image set with at least one concrete resolved image for the current desired version inputs.
 
 ### API Field Grouping and Wrapper Name
 
@@ -127,13 +118,15 @@ The `kubernetesVersion` spec field allows customers to specify a desired Kuberne
 
 **AKS version skew constraint (semantic requirement):**
 
-AKS enforces a version skew policy between the cluster control plane and node pools. Public AKS documentation is not perfectly internally consistent on the exact window: the supported versions FAQ says Kubernetes 1.28+ follows **three minor versions** of skew (N-3), while older agent pool REST descriptions still mention a tighter window. The design assumption here is that Karpenter must satisfy the AKS-supported skew window enforced by the platform and must not allow a node pool version greater than the control plane version.
+AKS enforces Kubernetes version compatibility between control plane and node pools with the following constraints: major versions must match; node pool minor version cannot be greater than the control plane minor version; node pool can be at most three minor versions behind the control plane; and when node pool and control plane are on the same minor, node pool patch version cannot be greater than the control plane patch version.
 
 When `spec.versions.kubernetesVersion` is set, Karpenter must validate that the specified version satisfies this constraint relative to both the current effective node Kubernetes version and the cluster control plane version before provisioning or during drift evaluation. For CEL transition rules, the current effective node Kubernetes version is the previously persisted value from `oldSelf.spec.versions.kubernetesVersion` when that field was already set; otherwise it falls back to the observed control plane version from `status.kubernetesVersion`.
 
-1. The specified version must not be greater than the control plane version.
-2. The specified version must not be lower than the current effective node Kubernetes version, since Kubernetes version downgrade is not supported by this design.
-3. The specified version must remain within the AKS-supported minor-version skew window relative to the control plane version.
+1. The specified major version must match the control plane major version.
+2. The specified minor version must not be greater than the control plane minor version.
+3. The specified minor version must be at most three minors behind the control plane minor version.
+4. When specified and control plane versions share the same minor version, the specified patch version must not be greater than the control plane patch version.
+5. The specified version must not be lower than the current effective node Kubernetes version, since Kubernetes version downgrade is not supported by this design.
 
 Violations should be surfaced as a condition on the NodeClass rather than silently accepted, since AKS is expected to reject machine creation once the requested version falls outside the supported skew window.
 
@@ -182,7 +175,7 @@ Karpenter still derives the image family, architecture, generation, and runtime-
 
 For maintained image families, these resolved Gen1, Gen2, and Arm64 variants are expected to move forward together on the same release version suffix. That makes a single customer-facing `nodeImageVersion` suffix a reasonable v1 API. The design must still tolerate exceptional cases where resolved image definitions for one NodeClass do not share a single suffix, such as frozen variants or other special rollout paths.
 
-This behavior should stay internal to image resolution rather than becoming a customer-facing spec field. If a requested suffix cannot produce a usable effective image set for the NodeClass, Karpenter should avoid publishing rollback/pin-effective `status.images` for that request and instead surface the failure through the existing readiness conditions.
+This behavior should stay internal to image resolution rather than becoming a customer-facing spec field. If at least one concrete image resolves for the requested suffix, Karpenter should publish the matching subset into `status.images`. If no concrete images resolve for the requested suffix, Karpenter should avoid publishing rollback/pin-effective `status.images` for that request and instead surface the failure through the existing readiness conditions.
 
 Behavior:
 
@@ -248,7 +241,7 @@ Semantics:
 4. recentlyUsedVersions should retain a bounded reverse-chronological history rather than a single previous version, so recently validated rollback targets remain visible across more than one image release.
 5. Rollback target selection is explicit: `spec.versions.nodeImageVersion` names the desired historical version, and Karpenter matches that value against `status.recentlyUsedVersions[*].imageVersion`.
 
-Decision for v1: a single AKSNodeClass usually resolves image definitions that share one release version suffix, even when multiple definitions exist for different generations or architectures. A single `status.latestImageVersion` field is sufficient for this design. A requested or latest suffix must resolve to a usable effective image set for the NodeClass before Karpenter publishes it into `status.images`. If it does not, Karpenter should leave the previously effective image set in place and mark the NodeClass unready rather than publishing a partially resolved set. A more granular per-definition latest-version status model is not needed in v1.
+Decision for v1: a single AKSNodeClass usually resolves image definitions that share one release version suffix, even when multiple definitions exist for different generations or architectures. A single `status.latestImageVersion` field is sufficient for this design. A requested or latest suffix is accepted if at least one concrete image resolves for the NodeClass, in which case Karpenter publishes the matching subset into `status.images`. If no concrete images resolve for the requested suffix, Karpenter should leave the previously effective image set in place and mark the NodeClass unready.
 
 ## Reconciliation Design
 
@@ -271,7 +264,7 @@ When `spec.versions.nodeImageVersion` is set to the previously used version:
 3. Validate the currently desired Kubernetes version is compatible with that entry's `kubernetesVersion`. The desired Kubernetes version is `spec.versions.kubernetesVersion` if set, otherwise the observed control plane version from `status.kubernetesVersion`.
 4. If valid, run the normal image `List()` flow for the NodeClass and desired Kubernetes version to resolve the concrete gallery images that are actually available.
 5. Filter the returned images to the matched `recentlyUsedVersions` entry's `imageVersion`.
-6. Publish the filtered images into `status.images` only if the requested version resolves to a usable effective image set for the NodeClass.
+6. Publish the filtered images into `status.images` when at least one concrete image resolves for the requested version.
 
 This means rollback is image-version rollback only. It is not a mechanism for downgrading the node Kubernetes version to match an older image/Kubernetes pairing.
 
@@ -288,14 +281,14 @@ Rollback should preserve this model:
 
 After filtering the `List()` results to the requested version:
 
-1. Karpenter validates that the requested version can produce a usable effective image set for the NodeClass.
-2. If that validation fails, Karpenter does not publish rollback-effective `status.images` and instead marks the NodeClass unready.
+1. Karpenter validates that the requested version resolves at least one concrete image for the NodeClass.
+2. If zero images resolve, Karpenter does not publish rollback-effective `status.images` and instead marks the NodeClass unready.
 
 ### Applying rollback during reconcile
 
 **Decision:** reconcile resolves real images and publishes the filtered effective set into `status.images`.
 
-Karpenter does not synthesize rollback image IDs by rewriting image version suffixes. When `spec.versions.nodeImageVersion` is set, reconcile uses the normal image `List()` flow for the NodeClass and desired Kubernetes version, filters the returned concrete images to the selected effective image version, and publishes the resulting effective image set into `status.images` only when it is valid for use. This keeps provisioning and drift logic simple because all consumers continue to read the already-resolved effective image set from status.
+Karpenter does not synthesize rollback image IDs by rewriting image version suffixes. When `spec.versions.nodeImageVersion` is set, reconcile uses the normal image `List()` flow for the NodeClass and desired Kubernetes version, filters the returned concrete images to the selected effective image version, and publishes the resulting matching subset into `status.images` when at least one concrete image resolves. This keeps provisioning and drift logic simple because all consumers continue to read the already-resolved effective image set from status.
 
 `status.images` always contains the effective image IDs Karpenter will use for provisioning and drift. When `spec.versions.nodeImageVersion` is unset, `status.images` continues to follow the existing image-resolution behavior, which may lag the latest gallery version until maintenance-window logic allows the new version to become effective.
 
@@ -311,7 +304,7 @@ The relevant conditions are:
 |---|---|---|
 | `ValidationSucceeded` | The requested `nodeImageVersion` or `kubernetesVersion` value is invalid for the current object state | NodeClass is unready |
 | `KubernetesVersionReady` | The desired effective Kubernetes version is unsupported or incompatible with the observed control plane version | NodeClass is unready |
-| `ImagesReady` | Karpenter cannot produce a usable effective image set for the selected Kubernetes version and image version | NodeClass is unready |
+| `ImagesReady` | Karpenter cannot resolve any concrete images for the selected Kubernetes version and image version | NodeClass is unready |
 
 `Ready` remains the aggregate root condition derived from these existing readiness-bearing conditions together with the other pre-existing NodeClass readiness checks. This design does not add separate conditions for "rollback active", "pin active", or "Kubernetes version controlled" because those are operating modes derived from spec and status, not independent readiness signals.
 
@@ -331,7 +324,7 @@ Reason names below are recommended for implementation consistency; exact strings
 | `ImagesReady=False` | `SIGRequiredForFIPS` | Existing reason; FIPS requires `UseSIG` |
 | `ImagesReady=False` | `ImagesNotFound` | Existing reason; no images resolved for the NodeClass |
 | `ImagesReady=False` | `KubernetesUpgrade` | Existing transition reason while image readiness is being refreshed after a Kubernetes version move |
-| `ImagesReady=False` | `RequestedNodeImageVersionUnavailable` | Requested pin/rollback version passed object-state validation but image `List()` could not produce a usable effective image set |
+| `ImagesReady=False` | `RequestedNodeImageVersionUnavailable` | Requested pin/rollback version passed object-state validation but image `List()` produced zero concrete matching images |
 
 Transient provider or infrastructure errors should generally not be persisted as one of these `False` reasons unless the design explicitly wants that failure to remain visible in status. For transient lookup failures such as temporary AKS metadata retrieval issues, transient image-list failures, or other retryable provider errors, reconcile should usually return an error and retry instead of setting a sticky `False` condition. Persistent `False` conditions should be reserved for cases where Karpenter has enough information to conclude that the requested state is invalid or unusable.
 
@@ -342,7 +335,7 @@ Transient provider or infrastructure errors should generally not be persisted as
 3. Reconcile performs authoritative checks with fresh lookups where required.
 4. If request semantics are invalid for current object state, reconcile sets `ValidationSucceeded=False` with a specific reason.
 5. If Kubernetes version is unsupported or control-plane incompatible, reconcile sets `KubernetesVersionReady=False`.
-6. If image resolution cannot produce a usable effective image set, reconcile sets `ImagesReady=False` and does not publish the requested new effective image set.
+6. If image resolution produces zero concrete matching images, reconcile sets `ImagesReady=False` and does not publish the requested new effective image set.
 7. If checks pass, reconcile updates status and readiness conditions so aggregate `Ready=True` can be restored.
 
 ### nodeImageVersion and kubernetesVersion Validation
@@ -353,7 +346,7 @@ In addition to rollback-specific validation, the following rules apply to `nodeI
 
 `spec.versions.nodeImageVersion` must equal the current effective image version in `status.images[]` (pin at current), `status.latestImageVersion` (pin at latest), or one of the `imageVersion` values in `status.recentlyUsedVersions` (rollback). All other values are rejected. Authoritative enforcement should happen in reconcile-time validation with clear NodeClass conditions; CEL can only provide best-effort checks where object state is available.
 
-If rollback validation fails because `recentlyUsedVersions` is empty or the requested version is not present in `recentlyUsedVersions`, Karpenter should set `ValidationSucceeded=False` with reason `NodeImageVersionInvalid`. If the matched rollback target's paired Kubernetes version is incompatible with the current desired Kubernetes version, Karpenter should set `ValidationSucceeded=False` with reason `RollbackTargetKubernetesVersionMismatch`. If the requested version passes object-state validation but Karpenter still cannot resolve a usable effective image set through the normal image `List()` flow, it should set `ImagesReady=False` with reason `RequestedNodeImageVersionUnavailable` and avoid publishing the new requested image set into `status.images`. Transient `List()` failures should return an error for retry instead of setting this reason.
+If rollback validation fails because `recentlyUsedVersions` is empty or the requested version is not present in `recentlyUsedVersions`, Karpenter should set `ValidationSucceeded=False` with reason `NodeImageVersionInvalid`. If the matched rollback target's paired Kubernetes version is incompatible with the current desired Kubernetes version, Karpenter should set `ValidationSucceeded=False` with reason `RollbackTargetKubernetesVersionMismatch`. If the requested version passes object-state validation but the normal image `List()` flow produces zero concrete matching images, it should set `ImagesReady=False` with reason `RequestedNodeImageVersionUnavailable` and avoid publishing the new requested image set into `status.images`. If at least one matching image resolves, Karpenter should publish that matching subset. Transient `List()` failures should return an error for retry instead of setting this reason.
 
 **CEL admission validation for `kubernetesVersion`:**
 
@@ -379,7 +372,7 @@ When `spec.versions.nodeImageVersion` changes, it changes the AKSNodeClass hash,
 
 New NodeClaims are provisioned using `status.images` directly, which already contains the effective version.
 
-If resolution cannot produce a usable effective image set for the requested pin or rollback version, scale-up for that request is blocked and the NodeClass condition explains that the requested image version could not be resolved.
+If resolution produces zero concrete matching images for the requested pin or rollback version, scale-up for that request is blocked and the NodeClass condition explains that the requested image version could not be resolved.
 
 ### Drift trigger choice
 
