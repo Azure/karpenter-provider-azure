@@ -32,9 +32,11 @@ import (
 )
 
 const (
-	Ubuntu2204Gen2ImageDefinition    = "2204gen2containerd"
-	Ubuntu2204Gen1ImageDefinition    = "2204containerd"
-	Ubuntu2204Gen2ArmImageDefinition = "2204gen2arm64containerd"
+	Ubuntu2204Gen2ImageDefinition              = "2204gen2containerd"
+	Ubuntu2204Gen1ImageDefinition              = "2204containerd"
+	Ubuntu2204Gen2ArmImageDefinition           = "2204gen2arm64containerd"
+	Ubuntu2204Gen2TrustedLaunchImageDefinition = "2204gen2TLcontainerd"
+	Ubuntu2204Gen2FIPSTLImageDefinition        = "2204gen2fipsTLcontainerd"
 )
 
 type Ubuntu2204 struct {
@@ -45,7 +47,7 @@ func (u Ubuntu2204) Name() string {
 	return v1beta1.Ubuntu2204ImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataEnabled bool) []types.DefaultImageOutput {
+func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
 	// There is no Kata (Pod Sandboxing) image for Ubuntu — only AzureLinux publishes one. Return no
 	// images rather than silently falling back to a standard image without the Kata host stack.
 	// AKSNodeClass CEL validation already rejects this combination; this is defense in depth.
@@ -57,8 +59,38 @@ func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataE
 		if !useSIG {
 			return []types.DefaultImageOutput{}
 		}
+		if trustedLaunch {
+			return []types.DefaultImageOutput{
+				{
+					PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+					GalleryResourceGroup: AKSUbuntuResourceGroup,
+					GalleryName:          AKSUbuntuGalleryName,
+					ImageDefinition:      Ubuntu2204Gen2FIPSTLImageDefinition,
+					Requirements: scheduling.NewRequirements(
+						scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+						scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+					),
+					Distro: "aks-ubuntu-fips-containerd-22.04-tl-gen2",
+				},
+			}
+		}
 		//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
 		return []types.DefaultImageOutput{}
+	}
+	if trustedLaunch {
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2204Gen2TrustedLaunchImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-ubuntu-containerd-22.04-tl-gen2",
+			},
+		}
 	}
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
 	return []types.DefaultImageOutput{
@@ -152,6 +184,8 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled *bool,
+	secureBootEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -177,5 +211,7 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }

@@ -32,11 +32,12 @@ import (
 )
 
 const (
-	AzureLinuxGen2ImageDefinition      = "V2gen2"
-	AzureLinuxGen1ImageDefinition      = "V2"
-	AzureLinuxGen2ArmImageDefinition   = "V2gen2arm64"
-	AzureLinux2Gen2FIPSImageDefinition = "V2gen2fips"
-	AzureLinux2Gen1FIPSImageDefinition = "V2fips"
+	AzureLinuxGen2ImageDefinition               = "V2gen2"
+	AzureLinuxGen1ImageDefinition               = "V2"
+	AzureLinuxGen2ArmImageDefinition            = "V2gen2arm64"
+	AzureLinux2Gen2FIPSImageDefinition          = "V2gen2fips"
+	AzureLinux2Gen1FIPSImageDefinition          = "V2fips"
+	AzureLinux2Gen2TrustedLaunchImageDefinition = "V2gen2TL"
 )
 
 type AzureLinux struct {
@@ -47,7 +48,7 @@ func (u AzureLinux) Name() string {
 	return "AzureLinux2"
 }
 
-func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataEnabled bool) []types.DefaultImageOutput {
+func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
 	// AKS does not publish a Kata (Pod Sandboxing) image for AzureLinux 2, only for AzureLinux 3.
 	// Return no images rather than resolving a distro that was never published: the request surfaces
 	// as ImagesNotFound instead of failing later at launch. Clusters on Kubernetes 1.32 and above
@@ -83,6 +84,21 @@ func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataE
 					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
 				),
 				Distro: "aks-azurelinux-v2-fips",
+			},
+		}
+	}
+	if trustedLaunch {
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureLinux2Gen2TrustedLaunchImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-azurelinux-v2-gen2-tl",
 			},
 		}
 	}
@@ -178,6 +194,8 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled *bool,
+	secureBootEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -203,5 +221,7 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }

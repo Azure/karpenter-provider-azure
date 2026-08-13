@@ -67,6 +67,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var localDNS *v1beta1.LocalDNS                   // to test with nil
 	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
+	var vTPMEnabled *bool                            // to test with nil
+	var secureBootEnabled *bool                      // to test with nil
 
 	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
 
@@ -84,6 +86,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
+		vTPMEnabled,
+		secureBootEnabled,
 	)
 
 	g := NewWithT(t)
@@ -113,6 +117,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.FIPSMode).To(BeNil(), "FIPSMode should be nil when not specified")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(BeNil(), "LocalDNSProfile should be nil when not specified")
 	g.Expect(provisionBootstrapper.LinuxOSConfig).To(BeNil(), "LinuxOSConfig should be nil when not specified")
+	g.Expect(provisionBootstrapper.VTPMEnabled).To(BeNil())
+	g.Expect(provisionBootstrapper.SecureBootEnabled).To(BeNil())
 }
 
 func TestAzureLinux_Name(t *testing.T) {
@@ -126,9 +132,9 @@ func TestAzureLinux_DefaultImages_Kata(t *testing.T) {
 	azureLinux := imagefamily.AzureLinux{}
 
 	// AKS only publishes a Kata image for AzureLinux 3, so AzureLinux 2 offers none.
-	g.Expect(azureLinux.DefaultImages(true, nil, true)).To(BeEmpty())
-	g.Expect(azureLinux.DefaultImages(false, nil, true)).To(BeEmpty())
-	g.Expect(azureLinux.DefaultImages(true, &v1beta1.FIPSModeFIPS, true)).To(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(true, nil, false, true)).To(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(false, nil, false, true)).To(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(true, &v1beta1.FIPSModeFIPS, false, true)).To(BeEmpty())
 
-	g.Expect(azureLinux.DefaultImages(true, nil, false)).ToNot(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(true, nil, false, false)).ToNot(BeEmpty())
 }

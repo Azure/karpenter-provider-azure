@@ -24,7 +24,6 @@ import (
 	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -152,22 +151,12 @@ func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion 
 	if nodeClass.Status.KubernetesVersion != nil {
 		kubernetesVersion = *nodeClass.Status.KubernetesVersion
 	}
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
+	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled(), sigImageVersion, kubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
-	var images []imagefamilytypes.DefaultImageOutput
-	switch imageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
-		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode, false)
-	case v1beta1.AzureLinuxImageFamily:
-		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode, false)
-		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode, false)
-		}
-	}
+func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool, version string, kubernetesVersion string) []imagefamily.NodeImage {
+	images := imagefamily.GetImageFamily(&imageFamily, fipsMode, trustedLaunch, kubernetesVersion, nil).DefaultImages(true, fipsMode, trustedLaunch, kataEnabled)
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{

@@ -26,28 +26,31 @@ import (
 )
 
 func TestResolvesToUbuntu2004(t *testing.T) {
-	cases := []struct {
-		name   string
-		family *string
-		fips   *v1beta1.FIPSMode
-		want   bool
+	cases := map[string]struct {
+		family        *string
+		fips          *v1beta1.FIPSMode
+		trustedLaunch bool
+		want          bool
 	}{
-		{"nil family + nil fips", nil, nil, false},
-		{"nil family + FIPS", nil, lo.ToPtr(v1beta1.FIPSModeFIPS), true},
-		{"nil family + FIPS Disabled", nil, lo.ToPtr(v1beta1.FIPSModeDisabled), false},
-		{"empty family + FIPS", lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), true},
-		{"Ubuntu legacy + FIPS", lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), true},
-		{"Ubuntu legacy + nil fips", lo.ToPtr(v1beta1.UbuntuImageFamily), nil, false},
-		{"Ubuntu legacy + Disabled", lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeDisabled), false},
-		{"Ubuntu2204 + FIPS", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false},
-		{"Ubuntu2404 + FIPS", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false},
-		{"AzureLinux + FIPS", lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false},
+		"nil family + nil fips":                {nil, nil, false, false},
+		"nil family + FIPS":                    {nil, lo.ToPtr(v1beta1.FIPSModeFIPS), false, true},
+		"nil family + FIPS + TrustedLaunch":    {nil, lo.ToPtr(v1beta1.FIPSModeFIPS), true, false},
+		"nil family + FIPS Disabled":           {nil, lo.ToPtr(v1beta1.FIPSModeDisabled), false, false},
+		"empty family + FIPS":                  {lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), false, true},
+		"empty family + FIPS + TrustedLaunch":  {lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), true, false},
+		"Ubuntu legacy + FIPS":                 {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, true},
+		"Ubuntu legacy + FIPS + TrustedLaunch": {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), true, false},
+		"Ubuntu legacy + nil fips":             {lo.ToPtr(v1beta1.UbuntuImageFamily), nil, false, false},
+		"Ubuntu legacy + Disabled":             {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeDisabled), false, false},
+		"Ubuntu2204 + FIPS":                    {lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, false},
+		"Ubuntu2404 + FIPS":                    {lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, false},
+		"AzureLinux + FIPS":                    {lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, false},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := imagefamily.ResolvesToUbuntu2004(tc.family, tc.fips)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := imagefamily.ResolvesToUbuntu2004(tc.family, tc.fips, tc.trustedLaunch)
 			if got != tc.want {
-				t.Fatalf("ResolvesToUbuntu2004(%v, %v) = %v, want %v", lo.FromPtr(tc.family), lo.FromPtr(tc.fips), got, tc.want)
+				t.Fatalf("ResolvesToUbuntu2004(%v, %v, %v) = %v, want %v", lo.FromPtr(tc.family), lo.FromPtr(tc.fips), tc.trustedLaunch, got, tc.want)
 			}
 		})
 	}

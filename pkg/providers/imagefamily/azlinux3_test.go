@@ -67,6 +67,8 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var localDNS *v1beta1.LocalDNS                   // to test with nil
 	var artifactStreaming *v1beta1.ArtifactStreaming // to test with nil
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
+	var vTPMEnabled *bool                            // to test with nil
+	var secureBootEnabled *bool                      // to test with nil
 
 	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
 
@@ -84,6 +86,8 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
+		vTPMEnabled,
+		secureBootEnabled,
 	)
 
 	g := NewWithT(t)
@@ -113,6 +117,8 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.FIPSMode).To(BeNil(), "FIPSMode should be nil when not specified")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(BeNil(), "LocalDNSProfile should be nil when not specified")
 	g.Expect(provisionBootstrapper.LinuxOSConfig).To(BeNil(), "LinuxOSConfig should be nil when not specified")
+	g.Expect(provisionBootstrapper.VTPMEnabled).To(BeNil())
+	g.Expect(provisionBootstrapper.SecureBootEnabled).To(BeNil())
 }
 
 func TestAzureLinux3_Name(t *testing.T) {
@@ -126,14 +132,14 @@ func TestAzureLinux3_DefaultImages_Kata(t *testing.T) {
 	azureLinux3 := imagefamily.AzureLinux3{}
 
 	// Kata: only the dedicated Pod Sandboxing image variant (amd64 + gen2) is returned.
-	kataImages := azureLinux3.DefaultImages(true, nil, true)
+	kataImages := azureLinux3.DefaultImages(true, nil, false, true)
 	g.Expect(kataImages).To(HaveLen(1))
 	g.Expect(kataImages[0].ImageDefinition).To(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
 	g.Expect(kataImages[0].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
 	g.Expect(kataImages[0].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
 
 	// Non-Kata: standard images, and never the Kata variant.
-	stdImages := azureLinux3.DefaultImages(true, nil, false)
+	stdImages := azureLinux3.DefaultImages(true, nil, false, false)
 	for _, img := range stdImages {
 		g.Expect(img.ImageDefinition).ToNot(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
 	}
@@ -141,5 +147,5 @@ func TestAzureLinux3_DefaultImages_Kata(t *testing.T) {
 	// FIPS+Kata is unsatisfiable (no FIPS Kata image): return no images rather than
 	// silently dropping the FIPS guarantee.
 	fipsMode := v1beta1.FIPSModeFIPS
-	g.Expect(azureLinux3.DefaultImages(true, &fipsMode, true)).To(BeEmpty())
+	g.Expect(azureLinux3.DefaultImages(true, &fipsMode, false, true)).To(BeEmpty())
 }

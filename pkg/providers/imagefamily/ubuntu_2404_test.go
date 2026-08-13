@@ -41,7 +41,7 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 
 	t.Run("should return correct default images", func(t *testing.T) {
 		g := NewWithT(t)
-		images := ubuntu.DefaultImages(false, nil, false)
+		images := ubuntu.DefaultImages(false, nil, false, false)
 		g.Expect(images).To(HaveLen(3))
 
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2ImageDefinition))
@@ -54,17 +54,25 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 		g.Expect(images[2].Distro).To(Equal("aks-ubuntu-arm64-containerd-24.04-gen2"))
 	})
 
+	t.Run("should return correct images for TrustedLaunch", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(false, nil, true, false)
+		g.Expect(images).To(HaveLen(1))
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2TrustedLaunchImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-24.04-tl-gen2"))
+	})
+
 	t.Run("should return empty images for FIPS mode without SIG", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
-		images := ubuntu.DefaultImages(false, &fipsMode, false)
+		images := ubuntu.DefaultImages(false, &fipsMode, false, false)
 		g.Expect(images).To(BeEmpty())
 	})
 
 	t.Run("should return empty images for FIPS mode with SIG (not yet supported)", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
-		images := ubuntu.DefaultImages(true, &fipsMode, false)
+		images := ubuntu.DefaultImages(true, &fipsMode, false, false)
 		g.Expect(images).To(BeEmpty())
 	})
 }
@@ -94,7 +102,7 @@ func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
 	}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
-		nil, nil, nil, nil, nil, "test-distro", "Standard_LRS", nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, "test-distro", "Standard_LRS", nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	provisionBootstrapper, ok := bootstrapper.(customscriptsbootstrap.ProvisionClientBootstrap)
 	g.Expect(ok).To(BeTrue(), "Expected ProvisionClientBootstrap type")

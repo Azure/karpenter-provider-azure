@@ -32,9 +32,10 @@ import (
 )
 
 const (
-	Ubuntu2404Gen2ImageDefinition    = "2404gen2containerd"
-	Ubuntu2404Gen1ImageDefinition    = "2404containerd"
-	Ubuntu2404Gen2ArmImageDefinition = "2404gen2arm64containerd"
+	Ubuntu2404Gen2ImageDefinition              = "2404gen2containerd"
+	Ubuntu2404Gen1ImageDefinition              = "2404containerd"
+	Ubuntu2404Gen2ArmImageDefinition           = "2404gen2arm64containerd"
+	Ubuntu2404Gen2TrustedLaunchImageDefinition = "2404gen2TLcontainerd"
 )
 
 type Ubuntu2404 struct {
@@ -45,7 +46,7 @@ func (u Ubuntu2404) Name() string {
 	return v1beta1.Ubuntu2404ImageFamily
 }
 
-func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataEnabled bool) []types.DefaultImageOutput {
+func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
 	// There is no Kata (Pod Sandboxing) image for Ubuntu — only AzureLinux publishes one. Return no
 	// images rather than silently falling back to a standard image without the Kata host stack.
 	// AKSNodeClass CEL validation already rejects this combination; this is defense in depth.
@@ -59,6 +60,21 @@ func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, kataE
 		}
 		//TODO: Fill out when Ubuntu 24.04 with FIPS becomes available
 		return []types.DefaultImageOutput{}
+	}
+	if trustedLaunch {
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2404Gen2TrustedLaunchImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-ubuntu-containerd-24.04-tl-gen2",
+			},
+		}
 	}
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2404Gen2containerd first in the defaultImages
 	return []types.DefaultImageOutput{
@@ -152,6 +168,8 @@ func (u Ubuntu2404) CustomScriptsNodeBootstrapping(
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled *bool,
+	secureBootEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -177,5 +195,7 @@ func (u Ubuntu2404) CustomScriptsNodeBootstrapping(
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }

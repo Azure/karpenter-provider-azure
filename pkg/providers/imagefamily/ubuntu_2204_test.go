@@ -71,6 +71,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		SwapFileSize:               lo.ToPtr("1500Mi"),
 		TransparentHugePageEnabled: lo.ToPtr(v1beta1.TransparentHugePageEnabledMadvise),
 	}
+	vtpmEnabled := lo.ToPtr(true)
+	secureBootEnabled := lo.ToPtr(true)
 
 	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
 
@@ -88,6 +90,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
+		vtpmEnabled,
+		secureBootEnabled,
 	)
 
 	g := NewWithT(t)
@@ -117,6 +121,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.FIPSMode).To(Equal(fipsMode), "FIPSMode field must match the input parameter")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(Equal(localDNS), "LocalDNSProfile field must match the input parameter")
 	g.Expect(provisionBootstrapper.LinuxOSConfig).To(Equal(linuxOSConfig), "LinuxOSConfig field must match the input parameter")
+	g.Expect(provisionBootstrapper.VTPMEnabled).To(Equal(lo.ToPtr(true)))
+	g.Expect(provisionBootstrapper.SecureBootEnabled).To(Equal(lo.ToPtr(true)))
 }
 
 func TestUbuntu2204_Name(t *testing.T) {
