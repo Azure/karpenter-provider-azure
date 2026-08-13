@@ -85,6 +85,12 @@ If it is a scheduling decision, and it is something that can be on by default or
 
 If it is a feature, especially a complex feature with many possible values or related settings, make it an `AKSNodeClass` field because the hard-typed API is better.
 
+## Special Case: Both Labels and NodeClass
+
+Sometimes a feature fits better as `AKSNodeClass` configuration, but workloads still need to make scheduling decisions based on the resulting node property. In those cases, the NodeClass field should remain the source of truth and the label should only expose the derived scheduling value.
+
+This pattern has only a couple of precedents today: `kubernetes.azure.com/os-sku` and `kubernetes.azure.com/fips_enabled`. We generally discourage adding both surfaces because it creates two ways to think about one feature, and should only be used as a last resort when the feature cannot be modeled cleanly as label-only or NodeClass-only.
+
 ## Final Note: AKS Precedent
 
 Feature design should generally try to mimic how the same capability works in AKS. AKS behavior is useful precedent because it gives users a familiar model and helps keep provider behavior aligned with the platform. However, it should not be treated as the end-all-be-all; Karpenter may expose a capability differently when scheduling semantics, API ergonomics, or provider constraints justify it.
