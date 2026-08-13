@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"strings"
 	"time"
@@ -125,7 +124,7 @@ func podLogs(pod *corev1.Pod) string {
 		req := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: pod.Spec.Containers[0].Name,
 		})
-		stream, err := req.Stream(context.Background())
+		stream, err := req.Stream(env.Context)
 		g.Expect(err).To(Succeed())
 		defer stream.Close()
 
