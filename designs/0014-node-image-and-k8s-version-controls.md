@@ -39,6 +39,7 @@ Note: The issue title says "Add support for setting ImageID for nodeClass", but 
    - [Kubernetes version drift](#kubernetes-version-drift)
 9. [Decision Notes](#decision-notes)
 10. [Out of Scope Follow-up Designs](#out-of-scope-follow-up-designs)
+11. [Resources](#resources)
 
 ## Overview
 
@@ -64,10 +65,10 @@ Additionally, a Kubernetes version upgrade also triggers a node image version re
 
 ## Goals
 
-1. Provide a `nodeImageVersion` spec field that allows customers to pin to their current node image version or roll back to the previously used version.
+1. Provide a `nodeImageVersion` spec field that allows customers to pin to a status-backed effective image version or explicitly select a previously used version for rollback.
 2. Preserve recently-used version state durably in AKSNodeClass status, including the Kubernetes version paired with the previously used node image.
-3. Keep rollback and pinning operationally safe and predictable. Pinning is limited to the current and previously used versions only, following AKS's current policy.
-4. Provide a `kubernetesVersion` spec field that allows customers to specify the desired Kubernetes version for drift detection, decoupling node k8s version drift from the cluster control plane version.
+3. Keep rollback and pinning operationally safe and predictable by validating only status-backed version choices and limiting the v1 surface to the current effective image version, the latest resolved image version, and previously used versions.
+4. Provide a `kubernetesVersion` spec field that allows customers to specify the desired Kubernetes version for drift detection, decoupling node k8s version drift from the cluster control plane version while remaining within AKS-supported compatibility rules.
 5. Keep the API design extensible for future image version selectors.
 
 ## Non-Goals
@@ -411,8 +412,16 @@ Rationale:
 
 The following are intentionally deferred and must be designed separately:
 
-1. Long-duration arbitrary node image pinning beyond the current and previously used versions. The `nodeImageVersion` spec field in this design supports pinning to the current or previously used version only. Pinning to arbitrary historical versions, SLA considerations for long-duration pinned clusters, and full image lifecycle management are not covered here.
+1. Long-duration arbitrary node image pinning beyond the current design's status-backed choices. The `nodeImageVersion` spec field in this design supports pinning to the current effective image version, the latest resolved image version, or a previously used version only. Pinning to arbitrary historical versions, SLA considerations for long-duration pinned clusters, and full image lifecycle management are not covered here.
 2. Prepared image spec support that accepts full resource ID and maps to a dedicated AKS API field.
 3. Image version selectors for filtering and ranking available node image versions. This design leaves room for a future `spec.versions.nodeImageSelectors` map of string key/value pairs alongside `nodeImageVersion` and `kubernetesVersion`, but does not specify selector semantics, supported keys, precedence, or whether selectors are mutually exclusive or composable with explicit version fields.
 4. Support-window or stale-image warnings for long-duration pinned images.
 5. **Multi-environment staged rollout across clusters.** This design uses `recentlyUsedVersions` as an array so more than one historical version can be retained, but it does not define staged-rollout guarantees, retention sizing guidance, or a long-horizon lifecycle policy for how many historical versions should be preserved across environments that intentionally lag several releases behind. If downstream clusters need stronger guarantees about how long a validated version remains pinable, that policy should be designed separately.
+
+## Resources
+
+- [Upgrade Node Images in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/upgrade-node-image)
+- [Autoupgrade Node OS Images in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/auto-upgrade-node-os-image)
+- [Use Planned Maintenance to Schedule and Control Upgrades for Azure Kubernetes Service (AKS) Clusters](https://learn.microsoft.com/en-us/azure/aks/planned-maintenance)
+- [Supported Kubernetes Versions in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/supported-kubernetes-versions)
+- [Upgrade an Azure Kubernetes Service (AKS) cluster](https://learn.microsoft.com/en-us/azure/aks/upgrade-aks-cluster)
