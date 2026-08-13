@@ -41,6 +41,30 @@ var _ types.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
 var (
 	nodeImageVersionsSnapshotData = []*armcontainerservice.NodeImageVersion{
 		{
+			FullName: lo.ToPtr("AKSAzureLinux-aclgen2TL-202512.18.0"),
+			OS:       lo.ToPtr("AKSAzureLinux"),
+			SKU:      lo.ToPtr("aclgen2TL"),
+			Version:  lo.ToPtr("202512.18.0"),
+		},
+		{
+			FullName: lo.ToPtr("AKSAzureLinux-aclgen2arm64TL-202512.18.0"),
+			OS:       lo.ToPtr("AKSAzureLinux"),
+			SKU:      lo.ToPtr("aclgen2arm64TL"),
+			Version:  lo.ToPtr("202512.18.0"),
+		},
+		{
+			FullName: lo.ToPtr("AKSAzureLinux-aclgen2fipsTL-202512.18.0"),
+			OS:       lo.ToPtr("AKSAzureLinux"),
+			SKU:      lo.ToPtr("aclgen2fipsTL"),
+			Version:  lo.ToPtr("202512.18.0"),
+		},
+		{
+			FullName: lo.ToPtr("AKSAzureLinux-aclgen2arm64fipsTL-202512.18.0"),
+			OS:       lo.ToPtr("AKSAzureLinux"),
+			SKU:      lo.ToPtr("aclgen2arm64fipsTL"),
+			Version:  lo.ToPtr("202512.18.0"),
+		},
+		{
 			FullName: lo.ToPtr("AKSCBLMariner-V2fips-202512.18.0"),
 			OS:       lo.ToPtr("AKSCBLMariner"),
 			SKU:      lo.ToPtr("V2fips"),

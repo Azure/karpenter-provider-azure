@@ -1,77 +1,71 @@
 #  StandardNCADSA10v4Family:
 standard_nc16ads_a10_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nc32ads_a10_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nc8ads_a10_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  StandardNCADSA100v4Family:
 standard_nc24ads_a100_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nc48ads_a100_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nc96ads_a100_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  StandardNCASv3_T4Family:
 standard_nc16as_t4_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 standard_nc4as_t4_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 standard_nc64as_t4_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 standard_nc8as_t4_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 
 #  StandardNCadsH100v5Family:
 standard_nc40ads_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nc80adis_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  StandardNDASv4_A100Family:
 standard_nd96asr_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
-standard_nd112asr_a100_v4:
-  gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
-standard_nd120asr_a100_v4:
-  gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  StandardNVADSA10v5Family:
 standard_nv12ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nv18ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nv36adms_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nv36ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nv6ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nv72ads_a10_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNCFamily:
 standard_nc6:
@@ -90,16 +84,16 @@ standard_nc24r:
 #  standardNCSv3Family:
 standard_nc12s_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 standard_nc24rs_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 standard_nc24s_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 standard_nc6s_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNCSv2Family:
 standard_nc12s_v2:
@@ -118,27 +112,21 @@ standard_nc6s_v2:
 #  standardNDAMSv4_A100Family:
 standard_nd96amsr_a100_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
-standard_nd112amsr_a100_v4:
-  gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
-standard_nd120amsr_a100_v4:
-  gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNDSH100v5Family:
 standard_nd96isr_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96is_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96is_noib_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96is_flex_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNDSFamily:
 standard_nd6s:
@@ -157,12 +145,12 @@ standard_nd24rs:
 #  standardNDSv2Family:
 standard_nd40rs_v2:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNDSv3Family:
 standard_nd40s_v3:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNVFamily:
 standard_nv12:
@@ -203,29 +191,29 @@ standard_nv6_promo:
 #  standardNDSFH100v5Family:
 standard_nd96isf_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96isrf_h100_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNDAMSv4A100noRDMAFamily:
 standard_nd96ams_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96ams_a100_flex_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96ams_a100_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96amsf_a100_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNDAMSFv4_A100Family:
 standard_nd96amsrf_a100_v4:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNCPromoFamily:
 standard_nc12_promo:
@@ -244,18 +232,18 @@ standard_nc6_promo:
 #  standardNDSH200v5Family:
 standard_nd96isr_h200_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96is_h200_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 #  standardNDSFH200v5Family:
 standard_nd96isf_h200_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 standard_nd96isrf_h200_v5:
   gpu: nvidia
-  os: ["ubuntu", "windows", "azurelinux3"]
+  os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
 
 # standard_ND128 GB200/GB300 family
 standard_nd128isr_ndr_gb200_v6:
@@ -265,36 +253,60 @@ standard_nd128isr_gb300_v6:
   gpu: nvidia
   os: ["ubuntu"]
 
-# StandardNCRTXPRO6000BSEv6Family:
-standard_nc24lds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
+# NC RTX PRO 6000 Blackwell Server Edition v6 family (GRID v20 / 595.x driver, Ubuntu-only)
+# General Purpose (ds) sizes
 standard_nc36ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc36lds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
 standard_nc72ds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
-standard_nc72lds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
 standard_nc144ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc144lds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
 standard_nc288ds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
+# Compute Optimized (lds) sizes
+standard_nc24lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc36lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc72lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc144lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
 standard_nc288lds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
+# Preview sizes (128/256/320 vCPU), renamed to the GA sizes above and no longer
+# deployable, but retained as backward-compat aliases so any existing nodepool
+# still carrying a preview VMSize is consistently recognized as an NVIDIA
+# GRID-v20 GPU SKU by RP validation.
+standard_nc128ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc128lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc256ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc256lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc320ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc320lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
 
-# NVads V710 v5-series (AMD GPU)
+# NVads V710 v5-series
 standard_nv4ads_v710_v5:
   gpu: amd
   os: ["ubuntu"]
@@ -311,7 +323,7 @@ standard_nv28adms_v710_v5:
   gpu: amd
   os: ["ubuntu"]
 
-# ND-MI300X-v5 series (AMD GPU)
+# ND-MI300X-v5 series
 standard_nd96isr_mi300x_v5:
   gpu: amd
   os: ["ubuntu"]

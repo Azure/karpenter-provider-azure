@@ -156,6 +156,10 @@ func (r *defaultResolver) Resolve(
 		vtpmEnabled = nodeClass.Spec.Security.TrustedLaunch.VTPM
 		secureBootEnabled = nodeClass.Spec.Security.TrustedLaunch.SecureBoot
 	}
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily {
+		vtpmEnabled = lo.ToPtr(true)
+		secureBootEnabled = lo.ToPtr(true)
+	}
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
@@ -259,6 +263,8 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.AzureContainerLinuxImageFamily:
+		return &AzureContainerLinux{Options: parameters}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:

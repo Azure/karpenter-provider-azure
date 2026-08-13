@@ -176,6 +176,13 @@ func TestIsAMDEnabledSKU(t *testing.T) {
 	}
 }
 
+func TestAzureContainerLinuxGPUSupport(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nc24ads_a100_v4", "azurecontainerlinux")).To(BeTrue())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nc144ds_xl_rtxpro6000bse_v6", "azurecontainerlinux")).To(BeFalse())
+	g.Expect(IsGPUSKUSupportedOnOS("standard_nv4ads_v710_v5", "azurecontainerlinux")).To(BeFalse())
+}
+
 func TestGetGPUManufacturer(t *testing.T) {
 	tests := []struct {
 		name   string

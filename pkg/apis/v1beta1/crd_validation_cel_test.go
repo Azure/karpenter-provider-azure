@@ -718,12 +718,40 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, true),
 			Entry("generic AzureLinux when TrustedLaunch is enabled should succeed", v1beta1.AzureLinuxImageFamily, nil, true, true),
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, false),
+			Entry("AzureContainerLinux should succeed", v1beta1.AzureContainerLinuxImageFamily, nil, false, true),
+			Entry("AzureContainerLinux with FIPS should succeed", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, true),
+			Entry("AzureContainerLinux with explicit TrustedLaunch should succeed", v1beta1.AzureContainerLinuxImageFamily, nil, true, true),
+			Entry("AzureContainerLinux with FIPS and explicit TrustedLaunch should succeed", v1beta1.AzureContainerLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1beta1.FIPSModeDisabled, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1beta1.FIPSModeFIPS, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1beta1.FIPSModeFIPS, true, true),
 		)
+
+		It("should reject disabled TrustedLaunch for AzureContainerLinux", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					Security: &v1beta1.Security{TrustedLaunch: &v1beta1.TrustedLaunch{
+						VTPM: lo.ToPtr(false),
+					}},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should require a 60 GB OS disk for AzureContainerLinux", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:  lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+					OSDiskSizeGB: lo.ToPtr(int32(59)),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
 	})
 
 	Context("GPU", func() {

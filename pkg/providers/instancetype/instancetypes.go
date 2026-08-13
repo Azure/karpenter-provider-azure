@@ -361,6 +361,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	case imageFamily == v1beta1.AzureLinuxImageFamily:
 		return utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux") ||
 			utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux3")
+	case imageFamily == v1beta1.AzureContainerLinuxImageFamily:
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurecontainerlinux")
 	default:
 		return false
 	}
