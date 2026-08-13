@@ -397,24 +397,21 @@ func TestKataLabels(t *testing.T) {
 		unexpectedLabels []string
 	}{
 		{
-			// Both spellings are stamped so pods selecting either one schedule onto the node,
-			// independent of which spelling AKS itself stamps.
-			name:            "KataVmIsolation stamps both Kata labels",
+			name:            "KataVmIsolation stamps the Kata label",
 			workloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
 			expectedLabels: map[string]string{
-				v1beta1.AKSLabelKataVMIsolation:     "true",
-				v1beta1.AKSLabelKataMshvVMIsolation: "true",
+				v1beta1.AKSLabelKataVMIsolation: "true",
 			},
 		},
 		{
 			name:             "OCIContainer stamps no kata label",
 			workloadRuntime:  lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer),
-			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation, v1beta1.AKSLabelKataMshvVMIsolation},
+			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation},
 		},
 		{
 			name:             "Unset workloadRuntime stamps no kata label",
 			workloadRuntime:  nil,
-			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation, v1beta1.AKSLabelKataMshvVMIsolation},
+			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation},
 		},
 	}
 

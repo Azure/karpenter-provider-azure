@@ -2498,10 +2498,9 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
 			})
 
-			// Karpenter advertises the Kata node labels AKS will stamp so it can scale up for pending
-			// pods that select them. Both spellings are advertised so a pod using either RuntimeClass
-			// name schedules onto the node.
-			Context("Advertising the Kata node labels", func() {
+			// Karpenter advertises the Kata node label AKS will stamp so it can scale up for pending
+			// pods that select it.
+			Context("Advertising the Kata node label", func() {
 				find := func(its corecloudprovider.InstanceTypes, name string) *corecloudprovider.InstanceType {
 					for _, it := range its {
 						if it.Name == name {
@@ -2511,18 +2510,16 @@ var _ = Describe("InstanceType Provider", func() {
 					return nil
 				}
 
-				It("should advertise both Kata labels for KataVmIsolation", func() {
+				It("should advertise the Kata label for KataVmIsolation", func() {
 					it := find(listFor(lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)), "Standard_D2_v5")
 					Expect(it).ToNot(BeNil())
 					Expect(it.Requirements.Get(v1beta1.AKSLabelKataVMIsolation).Has("true")).To(BeTrue())
-					Expect(it.Requirements.Get(v1beta1.AKSLabelKataMshvVMIsolation).Has("true")).To(BeTrue())
 				})
 
-				It("should not advertise any Kata label for OCIContainer", func() {
+				It("should not advertise the Kata label for OCIContainer", func() {
 					it := find(listFor(lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)), "Standard_D2_v5")
 					Expect(it).ToNot(BeNil())
 					Expect(it.Requirements.Get(v1beta1.AKSLabelKataVMIsolation).Has("true")).To(BeFalse())
-					Expect(it.Requirements.Get(v1beta1.AKSLabelKataMshvVMIsolation).Has("true")).To(BeFalse())
 				})
 			})
 		})
@@ -2924,10 +2921,9 @@ var _ = Describe("InstanceType Provider", func() {
 					ExpectedInKubeletLabels: true,
 					ExpectedOnNode:          true,
 				},
-				// Kata / AKS Pod Sandboxing labels — see CoverageOnly above for why these carry no
+				// Kata / AKS Pod Sandboxing label — see CoverageOnly above for why this carries no
 				// provisioning expectations here.
 				{Name: v1beta1.AKSLabelKataVMIsolation, Label: v1beta1.AKSLabelKataVMIsolation, CoverageOnly: true},
-				{Name: v1beta1.AKSLabelKataMshvVMIsolation, Label: v1beta1.AKSLabelKataMshvVMIsolation, CoverageOnly: true},
 				// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
 				// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
 				// the new labels to the old labels for compatibility.

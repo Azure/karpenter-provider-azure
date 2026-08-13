@@ -24,16 +24,14 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
-// TestKataNodeLabelsRegistered guards against the KataNodeLabels source-of-truth drifting from the
-// places it must stay in sync with: the well-known label set and the requirement value domains.
+// TestKataNodeLabelRegistered guards against the Kata label drifting from the places it must stay
+// in sync with: the well-known label set and the requirement value domains.
 // (The CEL allowlist in hack/validation/*.sh is covered by the CEL "well known label exceptions"
 // test + the make-verify CRD regen diff.)
-func TestKataNodeLabelsRegistered(t *testing.T) {
+func TestKataNodeLabelRegistered(t *testing.T) {
 	g := NewWithT(t)
-	for _, label := range v1beta1.KataNodeLabels {
-		g.Expect(v1beta1.AzureWellKnownLabels.Has(label)).To(BeTrue(), "%s must be in AzureWellKnownLabels", label)
-		g.Expect(karpv1.WellKnownValuesForRequirements).To(HaveKey(label), "%s must have a registered value domain", label)
-	}
+	g.Expect(v1beta1.AzureWellKnownLabels.Has(v1beta1.AKSLabelKataVMIsolation)).To(BeTrue(), "%s must be in AzureWellKnownLabels", v1beta1.AKSLabelKataVMIsolation)
+	g.Expect(karpv1.WellKnownValuesForRequirements).To(HaveKey(v1beta1.AKSLabelKataVMIsolation), "%s must have a registered value domain", v1beta1.AKSLabelKataVMIsolation)
 }
 
 func TestGetOSSKUFromImageFamily(t *testing.T) {

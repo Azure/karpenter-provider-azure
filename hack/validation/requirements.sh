@@ -42,7 +42,6 @@ aks_rule=$'self in
         "kubernetes.azure.com/priority",
         "kubernetes.azure.com/fips_enabled",
         "kubernetes.azure.com/kata-vm-isolation",
-        "kubernetes.azure.com/kata-mshv-vm-isolation",
         "kubernetes.azure.com/os-sku",
         "kubernetes.azure.com/cluster",
         "kubernetes.azure.com/sku-cpu",

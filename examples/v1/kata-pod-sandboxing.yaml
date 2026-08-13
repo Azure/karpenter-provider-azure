@@ -14,12 +14,9 @@
 #     scheduling.nodeSelector: kubernetes.azure.com/kata-vm-isolation: "true"
 #     overhead.podFixed.memory: 600Mi
 #   The Kubernetes RuntimeClass admission controller merges that nodeSelector and overhead into your
-#   pod at creation time. Karpenter advertises the Kata node labels on Kata-capable instance types,
+#   pod at creation time. Karpenter advertises the Kata node label on Kata-capable instance types,
 #   so the merged nodeSelector matches and Karpenter scales up a Kata node; the 600Mi overhead is
 #   counted in bin-packing automatically.
-#
-#   Both kubernetes.azure.com/kata-vm-isolation and the legacy kubernetes.azure.com/kata-mshv-vm-isolation
-#   are advertised/applied on every Kata node, so pods using either RuntimeClass schedule onto it.
 ---
 apiVersion: karpenter.sh/v1
 kind: NodePool

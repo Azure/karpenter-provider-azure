@@ -92,12 +92,9 @@ var _ = Describe("Kata (Pod Sandboxing)", func() {
 			"pod kernel matches the host kernel, so it did not run in a Kata sandbox VM")
 	})
 
-	// Karpenter advertises and stamps BOTH the current (kata-vm-isolation) and legacy
-	// (kata-mshv-vm-isolation) labels, but AKS only stamps the label derived from the WorkloadRuntime
-	// enum it receives. If the AKS RP pruned kubernetes.azure.com/* labels it didn't set, the spelling
-	// Karpenter projected but AKS didn't stamp would disappear from the real Node — a mismatch that can
-	// register as drift. This asserts both labels survive on the real Node and that it isn't drifted.
-	It("should keep both kata labels and not flag the node as drifted", func() {
+	// Karpenter projects the kata label onto the Node and AKS stamps it from the WorkloadRuntime enum
+	// it receives. This asserts the label survives on the real Node and that the node isn't drifted.
+	It("should keep the kata label and not flag the node as drifted", func() {
 		deployment := coretest.Deployment(coretest.DeploymentOptions{
 			Replicas: 1,
 			PodOptions: coretest.PodOptions{
@@ -112,7 +109,6 @@ var _ = Describe("Kata (Pod Sandboxing)", func() {
 
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
-		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataMshvVMIsolation, "true"))
 
 		env.ConsistentlyExpectNoDisruptions(1, 2*time.Minute)
 		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeDrifted).IsTrue()).To(BeFalse())

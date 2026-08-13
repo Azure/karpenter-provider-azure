@@ -648,47 +648,40 @@ var _ = Describe("CloudProvider", func() {
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 			})
 
-			It("should provision a Kata node with both labels and the WorkloadRuntime enum set", func() {
+			It("should provision a Kata node with the label and the WorkloadRuntime enum set", func() {
 				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"}})
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 
-				// Both Kata labels are synced onto the Node by Karpenter (projected from the advertised
-				// single-valued requirements), independent of which spelling AKS stamps.
 				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataMshvVMIsolation, "true"))
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
 				Expect(aksMachine.Properties.Kubernetes.WorkloadRuntime).ToNot(BeNil())
 				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.WorkloadRuntime)).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
-				// The kubernetes.azure.com Kata labels are not sent to AKS, like every other AKS-managed label.
+				// The kubernetes.azure.com Kata label is not sent to AKS, like every other AKS-managed label.
 				Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKey(v1beta1.AKSLabelKataVMIsolation))
-				Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKey(v1beta1.AKSLabelKataMshvVMIsolation))
 			})
 
-			// Mirrors what the RuntimeClass admission controller produces for a pod that sets only
-			// `runtimeClassName: kata-mshv-vm-isolation`: the legacy node selector and the 600Mi pod
-			// overhead. The RuntimeClass object is created so the apiserver's overhead validation passes.
-			// This is why we advertise BOTH label spellings even though the spec only accepts
-			// KataVmIsolation — a pod built against the legacy RuntimeClass still scales up a Kata node.
-			It("should scale up for a post-admission legacy-RuntimeClass pod", func() {
+			// Mirrors what the RuntimeClass admission controller produces for a pod that sets
+			// `runtimeClassName: kata-vm-isolation`: the node selector and the 600Mi pod overhead. The
+			// RuntimeClass object is created so the apiserver's overhead validation passes.
+			It("should scale up for a post-admission RuntimeClass pod", func() {
 				ExpectApplied(ctx, env.Client, &nodev1.RuntimeClass{
-					ObjectMeta: metav1.ObjectMeta{Name: "kata-mshv-vm-isolation"},
+					ObjectMeta: metav1.ObjectMeta{Name: "kata-vm-isolation"},
 					Handler:    "kata",
 					Overhead:   &nodev1.Overhead{PodFixed: v1.ResourceList{v1.ResourceMemory: resource.MustParse("600Mi")}},
-					Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{v1beta1.AKSLabelKataMshvVMIsolation: "true"}},
+					Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"}},
 				})
 				pod := coretest.UnschedulablePod(coretest.PodOptions{
-					NodeSelector: map[string]string{v1beta1.AKSLabelKataMshvVMIsolation: "true"},
+					NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"},
 					Overhead:     v1.ResourceList{v1.ResourceMemory: resource.MustParse("600Mi")},
 				})
-				pod.Spec.RuntimeClassName = lo.ToPtr("kata-mshv-vm-isolation")
+				pod.Spec.RuntimeClassName = lo.ToPtr("kata-vm-isolation")
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataMshvVMIsolation, "true"))
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
