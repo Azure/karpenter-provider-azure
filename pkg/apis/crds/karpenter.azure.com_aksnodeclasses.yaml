@@ -105,7 +105,6 @@ spec:
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
-                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -799,22 +798,14 @@ spec:
                 && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm)
                 || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)))))
                 : true'
-            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
-                Ubuntu2204, and AzureContainerLinux
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
+                and Ubuntu2204
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
-                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
-                || self.imageFamily == ''AzureContainerLinux'') : true'
-            - message: AzureContainerLinux requires Secure Boot and vTPM
-              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
-                || !has(self.security) || !has(self.security.trustedLaunch) || ((!has(self.security.trustedLaunch.vtpm)
-                || self.security.trustedLaunch.vtpm) && (!has(self.security.trustedLaunch.secureBoot)
-                || self.security.trustedLaunch.secureBoot))'
-            - message: AzureContainerLinux requires an OS disk of at least 60 GB
-              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
-                || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
+                : true'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)
