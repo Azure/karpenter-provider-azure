@@ -382,6 +382,7 @@ az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	helm repo update
 	# Create the namespace if not extant; NOP otherwise
 	kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+	# We use `helm upgrade --install` to avoid errors if the release already exists, and to allow for upgrades of the release if it does exist.
 	helm upgrade --install --namespace monitoring prometheus prometheus-community/prometheus \
 		--values hack/monitoring/prometheus-values.yaml
 	helm upgrade --install --namespace monitoring pyroscope grafana-charts/pyroscope \
