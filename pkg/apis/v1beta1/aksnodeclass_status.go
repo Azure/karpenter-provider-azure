@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +30,88 @@ const (
 	ConditionTypeSubnetsReady           = "SubnetsReady"
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
 	ConditionTypeLocalDNSReady          = "LocalDNSReady"
+	// ConditionTypeCapacityReservationGroupReady is only a dependent of the Ready
+	// condition when spec.capacityReservationGroupID is set.
+	ConditionTypeCapacityReservationGroupReady = "CapacityReservationGroupReady"
 )
+
+// CapacityReservation is a resolved member reservation of the configured
+// Capacity Reservation Group. Each member reserves one VM size in one
+// placement, which is what makes it eligible to back an offering.
+type CapacityReservation struct {
+	// id is the ARM resource ID of the capacity reservation.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	ID string `json:"id,omitempty"`
+	// name is the name of the capacity reservation within its group.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name,omitempty"`
+	// vmSize is the VM size reserved by this capacity reservation.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	VMSize string `json:"vmSize,omitempty"`
+	// zones are the ARM availability zones of this capacity reservation. Empty for
+	// a regional reservation.
+	// +optional
+	// +listType=atomic
+	Zones []string `json:"zones,omitempty"`
+	// quantity is the number of instances reserved. Zero is valid: a zero-quantity
+	// reservation can be associated and intentionally overallocated. Unset means ARM
+	// reported no quantity, which is not the same as a reservation of zero.
+	// +optional
+	Quantity *int64 `json:"quantity,omitempty"`
+	// provisioningState is the ARM provisioning state of the capacity reservation.
+	// A reservation with an explicit state other than Succeeded does not back offerings;
+	// one reported as Succeeded, or with no state reported, does. Members that cannot back
+	// offerings are still listed here, so that a NodePool authored against one shows why it
+	// stopped placing.
+	// +optional
+	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// CapacityReservationProvisioningStateSucceeded is the only ARM provisioning state in
+// which a member reservation can back an offering.
+const CapacityReservationProvisioningStateSucceeded = "Succeeded"
+
+// IsEligible reports whether this member can currently back offerings.
+//
+// An absent state counts as eligible. The field is read-only and populated in every
+// observed response, so treating a missing value as ineligible would turn an optional
+// field into a hard provisioning outage; and unlike association itself, guessing wrong
+// here cannot launch an unreserved node, it can only cost a launch attempt that ARM
+// rejects.
+func (in CapacityReservation) IsEligible() bool {
+	if in.ProvisioningState == nil || *in.ProvisioningState == "" {
+		return true
+	}
+	return strings.EqualFold(*in.ProvisioningState, CapacityReservationProvisioningStateSucceeded)
+}
+
+// CapacityReservationGroup is the resolved shape of the Capacity Reservation
+// Group named by spec.capacityReservationGroupID. It describes which VM sizes
+// and placements the group can back; it deliberately does not describe how much
+// of the reserved capacity is currently in use, because that is volatile and
+// must not be treated as a per-node guarantee.
+type CapacityReservationGroup struct {
+	// id is the ARM resource ID of the capacity reservation group.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	ID string `json:"id,omitempty"`
+	// location is the Azure region of the capacity reservation group.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Location string `json:"location,omitempty"`
+	// zones are the ARM availability zones of the group. An empty list means the
+	// group is regional, and consuming instances must omit zones.
+	// +optional
+	// +listType=atomic
+	Zones []string `json:"zones,omitempty"`
+	// capacityReservations are the resolved member reservations of the group.
+	// +optional
+	// +listType=atomic
+	CapacityReservations []CapacityReservation `json:"capacityReservations,omitempty"`
+}
 
 // LocalDNSState is the resolved enable/disable decision for LocalDNS on the
 // NodeClass. It represents the current LocalDNS enablement state at the
@@ -92,6 +174,11 @@ type AKSNodeClassStatus struct {
 	// +optional
 	// +kubebuilder:validation:Enum:=Enabled;Disabled
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
+	// capacityReservationGroup is the resolved shape of the capacity reservation
+	// group named by spec.capacityReservationGroupID. It is unset when no group is
+	// configured.
+	// +optional
+	CapacityReservationGroup *CapacityReservationGroup `json:"capacityReservationGroup,omitempty"`
 }
 
 func (in *AKSNodeClass) StatusConditions(opts ...status.ForOption) status.ConditionSet {
@@ -101,6 +188,11 @@ func (in *AKSNodeClass) StatusConditions(opts ...status.ForOption) status.Condit
 		ConditionTypeSubnetsReady,
 		ConditionTypeValidationSucceeded,
 		ConditionTypeLocalDNSReady,
+	}
+	// Only gate readiness on the capacity reservation group when one is configured,
+	// so NodeClasses that do not use the feature are unaffected by it.
+	if in.Spec.CapacityReservationGroupID != nil {
+		conds = append(conds, ConditionTypeCapacityReservationGroupReady)
 	}
 	return status.NewReadyConditions(conds...).For(in, opts...)
 }
