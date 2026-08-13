@@ -28,6 +28,10 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
 func TestGenerateNodeClaimName(t *testing.T) {
@@ -165,6 +169,42 @@ func TestVmInstanceToNodeClaim_PlacementScope(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(nodeClaim.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, tt.expectedZone))
 			g.Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, tt.expectedPlacementScope))
+		})
+	}
+}
+
+func TestSetAdditionalAnnotationsForNewNodeClaim_CapacityReservationGroup(t *testing.T) {
+	groupID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+	tests := []struct {
+		name      string
+		nodeClass *v1beta1.AKSNodeClass
+		expected  string
+	}{
+		{
+			name:      "no annotation when the NodeClass configures no group",
+			nodeClass: &v1beta1.AKSNodeClass{},
+		},
+		{
+			name:      "records the configured group",
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+			expected:  groupID,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			nodeClaim := &karpv1.NodeClaim{}
+			ctx := options.ToContext(context.Background(), test.Options())
+			g.Expect(setAdditionalAnnotationsForNewNodeClaim(ctx, nodeClaim, tt.nodeClass)).To(Succeed())
+
+			actual, found := nodeClaim.Annotations[v1beta1.AnnotationCapacityReservationGroupID]
+			if tt.expected == "" {
+				g.Expect(found).To(BeFalse(), "an unreserved node should carry no capacity reservation annotation")
+				return
+			}
+			g.Expect(actual).To(Equal(tt.expected))
 		})
 	}
 }
