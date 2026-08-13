@@ -90,8 +90,10 @@ type Environment struct {
 	zoneProvider         *zone.Provider
 
 	// Public Clients
-	KeyVaultClient          *armkeyvault.VaultsClient
-	DiskEncryptionSetClient *armcompute.DiskEncryptionSetsClient
+	KeyVaultClient                  *armkeyvault.VaultsClient
+	DiskEncryptionSetClient         *armcompute.DiskEncryptionSetsClient
+	CapacityReservationGroupsClient *armcompute.CapacityReservationGroupsClient
+	CapacityReservationsClient      *armcompute.CapacityReservationsClient
 
 	defaultCredential azcore.TokenCredential
 
@@ -173,6 +175,10 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
+	// Reuses the RBAC-propagation retry options: tests grant a role on the group and then
+	// immediately expect Karpenter to read it.
+	azureEnv.CapacityReservationGroupsClient = lo.Must(armcompute.NewCapacityReservationGroupsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
+	azureEnv.CapacityReservationsClient = lo.Must(armcompute.NewCapacityReservationsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
 	subscriptionsClient := lo.Must(armsubscriptions.NewClient(cred, nil))
 	azureEnv.zoneProvider = zone.NewProvider(subscriptionsClient, clock.RealClock{}, azureEnv.SubscriptionID)
