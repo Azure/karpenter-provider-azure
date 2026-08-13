@@ -120,3 +120,15 @@ func TestAzureLinux_Name(t *testing.T) {
 	azureLinux := imagefamily.AzureLinux{}
 	g.Expect(azureLinux.Name()).To(Equal("AzureLinux2"))
 }
+
+func TestAzureLinux_DefaultImages_Kata(t *testing.T) {
+	g := NewWithT(t)
+	azureLinux := imagefamily.AzureLinux{}
+
+	// AKS only publishes a Kata image for AzureLinux 3, so AzureLinux 2 offers none.
+	g.Expect(azureLinux.DefaultImages(true, nil, true)).To(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(false, nil, true)).To(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(true, &v1beta1.FIPSModeFIPS, true)).To(BeEmpty())
+
+	g.Expect(azureLinux.DefaultImages(true, nil, false)).ToNot(BeEmpty())
+}
