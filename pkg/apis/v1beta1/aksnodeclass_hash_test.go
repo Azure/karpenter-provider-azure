@@ -119,10 +119,27 @@ var _ = Describe("Hash", func() {
 		}
 		Expect(nodeClass.Hash()).To(Equal(otherNodeClass.Hash()))
 	})
+	// workloadRuntime OCIContainer is the default and means "no additional runtime", so it must hash
+	// the same as the field being absent. This is what lets the field carry a server-side default
+	// without bumping AKSNodeClassHashVersion: the default landing on an existing AKSNodeClass, or a
+	// user explicitly writing it, must not drift nodes. Kata must still drift them.
+	It("should not change hash when workloadRuntime is explicitly set to the OCIContainer default", func() {
+		Expect(nodeClass.Spec.WorkloadRuntime).To(BeNil())
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+	})
+	It("should change hash when workloadRuntime is KataVmIsolation", func() {
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+		Expect(nodeClass.Hash()).ToNot(Equal(hash))
+	})
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
 	It("when hashing algorithm updates, we should update the hash version", func() {
-		currentHashVersion := "v4"
+		currentHashVersion := "v3"
 		if nodeClass.Hash() != staticHash {
 			Expect(v1beta1.AKSNodeClassHashVersion).ToNot(Equal(currentHashVersion))
 		} else {

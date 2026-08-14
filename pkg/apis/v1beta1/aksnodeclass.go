@@ -727,10 +727,18 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v4"
+const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
-	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
+	spec := in.Spec
+	// workloadRuntime OCIContainer is the default and means "no additional runtime", so it must hash
+	// identically to the field being absent. Otherwise the server-side default landing on existing
+	// AKSNodeClasses would change their hash and drift every node, and explicitly writing the default
+	// value (a semantic no-op) would do the same.
+	if lo.FromPtr(spec.WorkloadRuntime) == WorkloadRuntimeOCIContainer {
+		spec.WorkloadRuntime = nil
+	}
+	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,
 		ZeroNil:         true,
