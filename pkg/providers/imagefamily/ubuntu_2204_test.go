@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
-	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -131,7 +130,7 @@ func TestUbuntu2204_Name(t *testing.T) {
 
 func TestUbuntu2204_DefaultImages(t *testing.T) {
 	ubuntu := &imagefamily.Ubuntu2204{
-		Options: &template.StaticParameters{},
+		Options: &parameters.StaticParameters{},
 	}
 
 	t.Run("should return correct default images", func(t *testing.T) {
