@@ -79,6 +79,7 @@ type AKSMachinesBehavior struct {
 	AKSMachineGetBehavior              MockedFunction[AKSMachineGetInput, armcontainerservice.MachinesClientGetResponse]
 	AKSMachineNewListPagerBehavior     MockedFunction[AKSMachineListInput, *runtime.Pager[armcontainerservice.MachinesClientListResponse]]
 	AfterPollProvisioningErrorOverride *armcontainerservice.ErrorDetail
+	AfterPollProvisioningErrorFunc     func(armcontainerservice.Machine) *armcontainerservice.ErrorDetail
 
 	// BatchMachineErrorFunc, if set, is called during batch creation to determine per-machine
 	// errors. It receives a machine name and returns an error code and message; if the error code
@@ -270,6 +271,7 @@ func (c *AKSMachinesAPI) Reset() {
 	c.AKSMachineNewListPagerBehavior.Reset()
 	c.aksDataStorage.AKSMachines.Clear()
 	c.AfterPollProvisioningErrorOverride = nil
+	c.AfterPollProvisioningErrorFunc = nil
 	c.BatchMachineErrorFunc = nil
 }
 
@@ -554,12 +556,16 @@ func (c *AKSMachinesAPI) updateExistingAKSMachine(input *AKSMachineCreateOrUpdat
 
 func (c *AKSMachinesAPI) simulateCreateStatusAtAsync(aksMachine armcontainerservice.Machine) (armcontainerservice.Machine, error) {
 	var pollingError error
-	if c.AfterPollProvisioningErrorOverride != nil {
+	provisioningError := c.AfterPollProvisioningErrorOverride
+	if c.AfterPollProvisioningErrorFunc != nil {
+		provisioningError = c.AfterPollProvisioningErrorFunc(aksMachine)
+	}
+	if provisioningError != nil {
 		aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateFailed)
 		if aksMachine.Properties.Status == nil {
 			aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
 		}
-		aksMachine.Properties.Status.ProvisioningError = c.AfterPollProvisioningErrorOverride
+		aksMachine.Properties.Status.ProvisioningError = provisioningError
 		pollingError = AKSMachineAPIErrorAny
 	} else {
 		aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
