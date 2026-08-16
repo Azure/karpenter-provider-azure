@@ -736,6 +736,10 @@ func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *kar
 		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
 		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
 	})
+	// Only when configured, so nodes that never used a reservation carry nothing.
+	if groupID := lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID); groupID != "" {
+		nodeClaim.Annotations[v1beta1.AnnotationCapacityReservationGroupID] = groupID
+	}
 	return nil
 }
 

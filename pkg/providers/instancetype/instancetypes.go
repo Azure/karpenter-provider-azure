@@ -70,6 +70,20 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+	// These two carry only the static shape of the Capacity Reservation Group: which VM
+	// sizes and placements it can back. Reserved quantities and utilization are
+	// deliberately excluded, because they change on every launch and would invalidate the
+	// whole instance-type cache.
+	CapacityReservationGroupID string
+	CapacityReservations       []capacityReservationPlacement
+}
+
+// capacityReservationPlacement is one {VM size, placement} pair that a member reservation
+// of the configured Capacity Reservation Group can back. VMSize is lowercased because ARM
+// is inconsistent about SKU name casing.
+type capacityReservationPlacement struct {
+	VMSize string
+	Zone   string
 }
 
 type Provider interface {
@@ -152,6 +166,9 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+
+		CapacityReservationGroupID: lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID),
+		CapacityReservations:       p.capacityReservationPlacements(ctx, nodeClass),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%d-%d-%d-%016x",
@@ -168,6 +185,8 @@ func (p *DefaultProvider) List(
 
 	// Get Viable offerings
 	// Azure has zones availability directly from SKU info
+	reservedZones := capacityReservationZones(instanceTypeParams)
+	capacityReserved := reservedZones != nil
 	var result []*cloudprovider.InstanceType
 	for _, sku := range p.instanceTypesInfo {
 		vmsize, err := sku.GetVMSize()
@@ -181,7 +200,10 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones), instanceTypeParams, architecture)
+		if capacityReserved {
+			instanceTypeZones = instanceTypeZones.Intersection(reservedZones[strings.ToLower(sku.GetName())])
+		}
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones, instanceTypeParams.CapacityReservationGroupID), instanceTypeParams, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
@@ -235,6 +257,50 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	return sets.New(zones.Regional)
 }
 
+// capacityReservationPlacements projects the Capacity Reservation Group resolved in
+// status into the {VM size, placement} pairs its member reservations can back. A nil
+// result means no group is configured, which leaves offerings unrestricted.
+//
+// Ineligible members are skipped rather than dropped from status: an operator authors one
+// NodePool per member, so a member that stops backing offerings has to stay visible with
+// the reason, not disappear.
+func (p *DefaultProvider) capacityReservationPlacements(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) []capacityReservationPlacement {
+	if nodeClass.Spec.CapacityReservationGroupID == nil || nodeClass.Status.CapacityReservationGroup == nil {
+		return nil
+	}
+	placements := []capacityReservationPlacement{}
+	for _, reservation := range nodeClass.Status.CapacityReservationGroup.CapacityReservations {
+		if !reservation.IsEligible() {
+			continue
+		}
+		zone, err := zones.MakeAKSLabelZoneFromARMZones(p.region, lo.ToSlicePtr(reservation.Zones))
+		if err != nil {
+			log.FromContext(ctx).Error(err, "resolving capacity reservation placement", "capacityReservation", reservation.ID)
+			continue
+		}
+		placements = append(placements, capacityReservationPlacement{VMSize: strings.ToLower(reservation.VMSize), Zone: zone})
+	}
+	// Duplicates would cancel each other out under the cache key's set hashing.
+	return lo.Uniq(placements)
+}
+
+// capacityReservationZones indexes the resolved member reservations by VM size. A nil
+// result means no Capacity Reservation Group is configured; a non-nil but empty result
+// means one is configured that can back nothing, which must yield no offerings at all.
+func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Set[string] {
+	if params.CapacityReservationGroupID == "" {
+		return nil
+	}
+	byVMSize := map[string]sets.Set[string]{}
+	for _, placement := range params.CapacityReservations {
+		if byVMSize[placement.VMSize] == nil {
+			byVMSize[placement.VMSize] = sets.New[string]()
+		}
+		byVMSize[placement.VMSize].Insert(placement.Zone)
+	}
+	return byVMSize
+}
+
 // TODO: review; switch to controller-driven updates
 // createOfferings creates a set of mutually exclusive offerings for a given instance type. This provider maintains an
 // invariant that each offering is mutually exclusive. Specifically, there is an offering for each permutation of zone
@@ -245,8 +311,12 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
+	// Availability is tracked separately per group, so a shortage of unreserved capacity
+	// does not suppress the reserved offering that exists to survive exactly that.
+	capacityReserved := capacityReservationGroupID != ""
+	unavailableOfferings := p.unavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID)
 
 	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)
@@ -265,8 +335,37 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		// Determine allocatability from SKU capabilities.
 		// On-demand is always allocatable if the SKU passed UpdateInstanceTypes filters, we just need to check the
 		// unavailableOfferings cache and per-family quota.
-		availableOnDemand := !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
-			p.quotaProvider.HasQuotaFor(ctx, sku)
+		// Reserved offerings skip the quota preflight: creating the reservation already spent
+		// the family quota, and Azure omits its own quota check for deployments up to the
+		// reserved quantity. Gating on remaining quota here would strand a paid-for reservation.
+		availableOnDemand := !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand) &&
+			(capacityReserved || p.quotaProvider.HasQuotaFor(ctx, sku))
+
+		// Ultra Disk cannot be attached to a VM that consumes a capacity reservation.
+		ultraSSD := ultraSSDOptions(sku, zone)
+		if capacityReserved {
+			ultraSSD = []string{"false"}
+		}
+
+		onDemandOffering := &cloudprovider.Offering{
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
+				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
+				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSD...),
+			),
+			Price:     onDemandPrice,
+			Available: availableOnDemand,
+		}
+		offerings = append(offerings, onDemandOffering)
+
+		// Spot cannot consume a capacity reservation, so a reserved SKU is Regular only.
+		if capacityReserved {
+			continue
+		}
+
 		// Spot is only allocatable if the SKU reports LowPriorityCapable=True and the offering is not in the unavailableOfferings cache.
 		// NOTE:  Quota check applies to on-demand only. Spot VMs do not consume per-family vCPU quota;
 		// they use a single regional "Total Regional Spot vCPUs" (lowPriorityCores) pool shared
@@ -278,20 +377,7 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 		// nice to have the SKUs API fix this. Until it does, we _could_ try to join with spot price here and use the existence of a spot meter as
 		// supporting signal that actually the VM can be allocated as spot at the regional level. This seems an over-optimization for now though,
 		// so not doing it.
-		availableSpot := sku.IsLowPriorityCapable() && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
-
-		onDemandOffering := &cloudprovider.Offering{
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
-				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
-				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular),
-				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
-				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
-				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
-			),
-			Price:     onDemandPrice,
-			Available: availableOnDemand,
-		}
+		availableSpot := sku.IsLowPriorityCapable() && !unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
 		spotOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
@@ -300,13 +386,13 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 				scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 				scheduling.NewRequirement(v1beta1.LabelPlacementScope, corev1.NodeSelectorOpIn, placementScope),
-				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSDOptions(sku, zone)...),
+				scheduling.NewRequirement(v1beta1.LabelUltraSSD, corev1.NodeSelectorOpIn, ultraSSD...),
 			),
 			Price:     spotPrice,
 			Available: availableSpot,
 		}
 
-		offerings = append(offerings, onDemandOffering, spotOffering)
+		offerings = append(offerings, spotOffering)
 
 		/*
 			instanceTypeOfferingAvailable.With(prometheus.Labels{
