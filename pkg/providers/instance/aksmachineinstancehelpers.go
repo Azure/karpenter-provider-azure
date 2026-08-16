@@ -103,7 +103,6 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	priority := configurePriority(capacityType)
 
 	// Tags (to be put on AKS machine and all affiliated resources)
-	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
 	//
 	// BATCH: Tags is a per-machine field (varies per NodeClaim). If you change this,
 	// see batch_field_registry.go — ClearPerMachineFields must cover any new per-machine
