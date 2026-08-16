@@ -68,6 +68,7 @@ type DefaultProvider struct {
 	usages      map[string]*armcompute.Usage
 	cm          *pretty.ChangeMonitor
 	seqNum      uint64
+	reset       bool
 }
 
 func NewProvider(usageClient UsageAPI, location string) *DefaultProvider {
@@ -101,10 +102,11 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.usages = freshUsages
-	if p.cm.HasChanged("quota-usages", freshUsages) {
+	if p.cm.HasChanged("quota-usages", freshUsages) || p.reset {
 		atomic.AddUint64(&p.seqNum, 1)
 		log.FromContext(ctx).V(1).Info("updated quota usages", "familyQuotas", formatFamilyQuotas(freshUsages))
 	}
+	p.reset = false
 	return nil
 }
 
@@ -149,7 +151,12 @@ func (p *DefaultProvider) SeqNum() uint64 {
 func (p *DefaultProvider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if len(p.usages) == 0 {
+		return
+	}
 	p.usages = map[string]*armcompute.Usage{}
+	p.reset = true
+	atomic.AddUint64(&p.seqNum, 1)
 }
 
 // formatFamilyQuotas returns a compact summary of family quotas like "standardDSv3Family: 78/500, standardDv5Family: 20/100".

@@ -72,6 +72,11 @@ type instanceTypeParameters struct {
 	LocalDNSEnabled          bool
 }
 
+type instanceTypesCacheGeneration struct {
+	unavailableOfferings uint64
+	quota                uint64
+}
+
 type Provider interface {
 	LivenessProbe(*http.Request) error
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
@@ -95,15 +100,14 @@ type DefaultProvider struct {
 	unavailableOfferings *kcache.UnavailableOfferings
 	quotaProvider        quota.Provider
 
-	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
-	// Fully initialized Instance Types are also cached based on the set of all instance types,
-	// unavailableOfferings cache, AWSNodeClass, and kubelet configuration from the NodePool
-	instanceTypesCache *cache.Cache
+	// Fully initialized instance types are cached by the parameters that affect their construction.
+	// Source-data generations invalidate the cache as a whole instead of creating unreachable keys.
+	instanceTypesCache           *cache.Cache
+	muInstanceTypesCache         sync.Mutex
+	instanceTypesCacheGeneration instanceTypesCacheGeneration
 
 	cm *pretty.ChangeMonitor
 
-	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
-	instanceTypesSeqNum uint64
 	muInstanceTypesInfo sync.RWMutex
 	instanceTypesInfo   map[string]*skewer.SKU
 }
@@ -125,7 +129,6 @@ func NewDefaultProvider(
 		quotaProvider:        quotaProvider,
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
-		instanceTypesSeqNum:  0,
 	}
 }
 
@@ -154,20 +157,37 @@ func (p *DefaultProvider) List(
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%d-%016x",
-		p.instanceTypesSeqNum,
-		p.unavailableOfferings.SeqNum,
-		p.quotaProvider.SeqNum(),
-		paramsHash,
-	)
-	if item, ok := p.instanceTypesCache.Get(key); ok {
-		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
-		// so that modifications to the ordering of the data don't affect the original
-		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
-	}
+	key := fmt.Sprintf("%016x", paramsHash)
 
-	// Get Viable offerings
-	// Azure has zones availability directly from SKU info
+	p.muInstanceTypesCache.Lock()
+	defer p.muInstanceTypesCache.Unlock()
+
+	for {
+		generation := p.currentInstanceTypesCacheGeneration()
+		if generation != p.instanceTypesCacheGeneration {
+			p.instanceTypesCache.Flush()
+			p.instanceTypesCacheGeneration = generation
+		}
+		if item, ok := p.instanceTypesCache.Get(key); ok {
+			// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
+			// so that modifications to the ordering of the data don't affect the original
+			return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+		}
+
+		result := p.buildInstanceTypes(ctx, instanceTypeParams)
+
+		if generation != p.currentInstanceTypesCacheGeneration() {
+			continue
+		}
+		p.instanceTypesCache.SetDefault(key, result)
+		if generation != p.currentInstanceTypesCacheGeneration() {
+			continue
+		}
+		return result, nil
+	}
+}
+
+func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {
 	var result []*cloudprovider.InstanceType
 	for _, sku := range p.instanceTypesInfo {
 		vmsize, err := sku.GetVMSize()
@@ -181,20 +201,23 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones), params, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
-
-		if !p.isInstanceTypeSupportedByFilters(sku, architecture, instanceTypeParams) {
+		if !p.isInstanceTypeSupportedByFilters(sku, architecture, params) {
 			continue
 		}
-
 		result = append(result, instanceType)
 	}
+	return result
+}
 
-	p.instanceTypesCache.SetDefault(key, result)
-	return result, nil
+func (p *DefaultProvider) currentInstanceTypesCacheGeneration() instanceTypesCacheGeneration {
+	return instanceTypesCacheGeneration{
+		unavailableOfferings: atomic.LoadUint64(&p.unavailableOfferings.SeqNum),
+		quota:                p.quotaProvider.SeqNum(),
+	}
 }
 
 func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
@@ -466,9 +489,9 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	logUnknownSKUFamilies(ctx, instanceTypes)
 
 	if p.cm.HasChanged("instance-types", instanceTypes) {
-		// Only update instanceTypesSeqNum with the instance types have been changed
-		// This is to not create new keys with duplicate instance types option
-		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
+		p.muInstanceTypesCache.Lock()
+		p.instanceTypesCache.Flush()
+		p.muInstanceTypesCache.Unlock()
 		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
 	}
 	p.instanceTypesInfo = instanceTypes
@@ -541,7 +564,9 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesInfo.Lock()
 	defer p.muInstanceTypesInfo.Unlock()
 	p.instanceTypesInfo = map[string]*skewer.SKU{}
-	atomic.StoreUint64(&p.instanceTypesSeqNum, 0)
+	p.muInstanceTypesCache.Lock()
+	p.instanceTypesCache.Flush()
+	p.muInstanceTypesCache.Unlock()
 }
 
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
