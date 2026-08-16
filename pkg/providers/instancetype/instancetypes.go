@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mitchellh/hashstructure/v2"
@@ -215,7 +214,7 @@ func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instan
 
 func (p *DefaultProvider) currentInstanceTypesCacheGeneration() instanceTypesCacheGeneration {
 	return instanceTypesCacheGeneration{
-		unavailableOfferings: atomic.LoadUint64(&p.unavailableOfferings.SeqNum),
+		unavailableOfferings: p.unavailableOfferings.SeqNum(),
 		quota:                p.quotaProvider.SeqNum(),
 	}
 }

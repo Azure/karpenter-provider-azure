@@ -67,7 +67,7 @@ type DefaultProvider struct {
 	mu          sync.RWMutex
 	usages      map[string]*armcompute.Usage
 	cm          *pretty.ChangeMonitor
-	seqNum      uint64
+	seqNum      atomic.Uint64
 	reset       bool
 }
 
@@ -103,7 +103,7 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 	defer p.mu.Unlock()
 	p.usages = freshUsages
 	if p.cm.HasChanged("quota-usages", freshUsages) || p.reset {
-		atomic.AddUint64(&p.seqNum, 1)
+		p.seqNum.Add(1)
 		log.FromContext(ctx).V(1).Info("updated quota usages", "familyQuotas", formatFamilyQuotas(freshUsages))
 	}
 	p.reset = false
@@ -145,7 +145,7 @@ func (p *DefaultProvider) HasQuotaFor(ctx context.Context, sku *skewer.SKU) bool
 }
 
 func (p *DefaultProvider) SeqNum() uint64 {
-	return atomic.LoadUint64(&p.seqNum)
+	return p.seqNum.Load()
 }
 
 func (p *DefaultProvider) Reset() {
@@ -156,7 +156,7 @@ func (p *DefaultProvider) Reset() {
 	}
 	p.usages = map[string]*armcompute.Usage{}
 	p.reset = true
-	atomic.AddUint64(&p.seqNum, 1)
+	p.seqNum.Add(1)
 }
 
 // formatFamilyQuotas returns a compact summary of family quotas like "standardDSv3Family: 78/500, standardDv5Family: 20/100".

@@ -52,20 +52,19 @@ type UnavailableOfferings struct {
 	singleOfferingCache *cache.Cache
 	// key: <skuFamilyName>:<zone>:<capacityType> (lowercase), value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
 	vmFamilyCache *cache.Cache
-	SeqNum        uint64
+	seqNum        atomic.Uint64
 }
 
 func NewUnavailableOfferingsWithCache(singleOfferingCache, vmFamilyCache *cache.Cache) *UnavailableOfferings {
 	uo := &UnavailableOfferings{
 		singleOfferingCache: singleOfferingCache,
 		vmFamilyCache:       vmFamilyCache,
-		SeqNum:              0,
 	}
 	uo.singleOfferingCache.OnEvicted(func(_ string, _ any) {
-		atomic.AddUint64(&uo.SeqNum, 1)
+		uo.seqNum.Add(1)
 	})
 	uo.vmFamilyCache.OnEvicted(func(_ string, _ any) {
-		atomic.AddUint64(&uo.SeqNum, 1)
+		uo.seqNum.Add(1)
 	})
 	return uo
 }
@@ -75,6 +74,10 @@ func NewUnavailableOfferings() *UnavailableOfferings {
 		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
 		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
 	)
+}
+
+func (u *UnavailableOfferings) SeqNum() uint64 {
+	return u.seqNum.Load()
 }
 
 // IsUnavailable returns true if the offering appears in the cache
@@ -165,7 +168,7 @@ func (u *UnavailableOfferings) markFamilyUnavailableAtCPUCountImpl(ctx context.C
 
 	// call Set to update the cache entry, even if it already exists, to extend its TTL
 	u.vmFamilyCache.Set(key, cpuCount, ttl)
-	atomic.AddUint64(&u.SeqNum, 1)
+	u.seqNum.Add(1)
 }
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
@@ -177,7 +180,7 @@ func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, t
 		"capacity-type", capacityType,
 		"ttl", ttl)
 	u.singleOfferingCache.Set(singleInstanceKey("", "", capacityType), struct{}{}, ttl)
-	atomic.AddUint64(&u.SeqNum, 1)
+	u.seqNum.Add(1)
 }
 
 // MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL.
@@ -193,7 +196,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 		"capacity-type", capacityType,
 		"ttl", ttl)
 	u.singleOfferingCache.Set(singleInstanceKey(instanceType, zone, capacityType), struct{}{}, ttl)
-	atomic.AddUint64(&u.SeqNum, 1)
+	u.seqNum.Add(1)
 
 	// Also mark the VM family unavailable at this SKU's vCPU count, so larger sizes of the same family are blocked too
 	u.markFamilyUnavailableAtCPUCount(ctx, sku, zone, capacityType, ttl)
@@ -207,7 +210,7 @@ func (u *UnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableR
 func (u *UnavailableOfferings) Flush() {
 	u.singleOfferingCache.Flush()
 	u.vmFamilyCache.Flush()
-	atomic.AddUint64(&u.SeqNum, 1)
+	u.seqNum.Add(1)
 }
 
 // singleInstanceKey returns the cache singleInstanceKey for all offerings in the cache
