@@ -161,29 +161,31 @@ func (p *DefaultProvider) List(
 	p.muInstanceTypesCache.Lock()
 	defer p.muInstanceTypesCache.Unlock()
 
-	for {
-		generation := p.currentInstanceTypesCacheGeneration()
-		if generation != p.instanceTypesCacheGeneration {
-			p.instanceTypesCache.Flush()
-			p.instanceTypesCacheGeneration = generation
-		}
-		if item, ok := p.instanceTypesCache.Get(key); ok {
-			// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
-			// so that modifications to the ordering of the data don't affect the original
-			return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
-		}
+	generation := p.currentInstanceTypesCacheGeneration()
+	if generation != p.instanceTypesCacheGeneration {
+		p.instanceTypesCache.Flush()
+		p.instanceTypesCacheGeneration = generation
+	}
+	if item, ok := p.instanceTypesCache.Get(key); ok {
+		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
+		// so that modifications to the ordering of the data don't affect the original
+		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+	}
 
-		result := p.buildInstanceTypes(ctx, instanceTypeParams)
-
-		if generation != p.currentInstanceTypesCacheGeneration() {
-			continue
-		}
-		p.instanceTypesCache.SetDefault(key, result)
-		if generation != p.currentInstanceTypesCacheGeneration() {
-			continue
-		}
+	result := p.buildInstanceTypes(ctx, instanceTypeParams)
+	if latest := p.currentInstanceTypesCacheGeneration(); generation != latest {
+		// Availability changed while building; return this snapshot uncached instead of retrying indefinitely.
+		p.instanceTypesCache.Flush()
+		p.instanceTypesCacheGeneration = latest
 		return result, nil
 	}
+
+	p.instanceTypesCache.SetDefault(key, result)
+	if latest := p.currentInstanceTypesCacheGeneration(); generation != latest {
+		p.instanceTypesCache.Flush()
+		p.instanceTypesCacheGeneration = latest
+	}
+	return result, nil
 }
 
 func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {

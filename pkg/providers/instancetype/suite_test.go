@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,6 +59,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/skewer"
+	"github.com/patrickmn/go-cache"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -76,6 +78,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -96,6 +99,29 @@ var cloudProvider, cloudProviderNonZonal, cloudProviderBootstrap *cloudprovider.
 var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 
 var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
+
+type generationChangingQuotaProvider struct {
+	changed atomic.Bool
+	seqNum  atomic.Uint64
+}
+
+var _ quota.Provider = (*generationChangingQuotaProvider)(nil)
+
+func (p *generationChangingQuotaProvider) Update(context.Context) error { return nil }
+func (p *generationChangingQuotaProvider) GetUsage(string) (bool, *armcompute.Usage) {
+	return false, nil
+}
+func (p *generationChangingQuotaProvider) GetTotalRegionalUsage() (bool, *armcompute.Usage) {
+	return false, nil
+}
+func (p *generationChangingQuotaProvider) HasQuotaFor(context.Context, *skewer.SKU) bool {
+	if p.changed.CompareAndSwap(false, true) {
+		p.seqNum.Add(1)
+	}
+	return true
+}
+func (p *generationChangingQuotaProvider) SeqNum() uint64 { return p.seqNum.Load() }
+func (p *generationChangingQuotaProvider) Reset()         {}
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -3194,6 +3220,30 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Quota Filtering", func() {
+		It("should return an uncached snapshot when quota changes during construction", func() {
+			instanceTypeCache := cache.New(time.Hour, time.Hour)
+			quotaProvider := &generationChangingQuotaProvider{}
+			provider := instancetype.NewDefaultProvider(
+				fake.Region,
+				instanceTypeCache,
+				azureEnv.SKUsAPI,
+				azureEnv.PricingProvider,
+				azureEnv.UnavailableOfferingsCache,
+				quotaProvider,
+			)
+			Expect(provider.UpdateInstanceTypes(ctx)).To(Succeed())
+
+			instanceTypes, err := provider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ToNot(BeEmpty())
+			Expect(instanceTypeCache.ItemCount()).To(BeZero())
+
+			instanceTypes, err = provider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ToNot(BeEmpty())
+			Expect(instanceTypeCache.ItemCount()).To(Equal(1))
+		})
+
 		It("should exclude on-demand offering when family quota is exhausted", func() {
 			targetFamily := defaultTestSKU.GetFamilyName()
 			Expect(targetFamily).ToNot(BeEmpty())
