@@ -185,7 +185,8 @@ func (p *DefaultProvider) List(
 		p.instanceTypesCache.Flush()
 		p.instanceTypesCacheGeneration = latest
 	}
-	return result, nil
+	// Return a shallow copy, matching the cache-hit path, so a caller reordering its slice doesn't reorder the cached one.
+	return append([]*cloudprovider.InstanceType{}, result...), nil
 }
 
 func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {

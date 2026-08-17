@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -3242,6 +3243,21 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(instanceTypes).ToNot(BeEmpty())
 			Expect(instanceTypeCache.ItemCount()).To(Equal(1))
+		})
+
+		It("should not let a caller reordering the returned slice affect a later cache hit", func() {
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(instanceTypes)).To(BeNumerically(">", 1))
+			original := append([]*corecloudprovider.InstanceType{}, instanceTypes...)
+
+			// A caller is free to reorder its own returned slice; this must not reorder the cached entry.
+			sort.Slice(instanceTypes, func(i, j int) bool { return instanceTypes[i].Name < instanceTypes[j].Name })
+
+			cached, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(lo.Map(cached, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })).To(
+				Equal(lo.Map(original, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })))
 		})
 
 		It("should exclude on-demand offering when family quota is exhausted", func() {
