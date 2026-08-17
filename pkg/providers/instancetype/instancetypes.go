@@ -71,7 +71,7 @@ type instanceTypeParameters struct {
 	LocalDNSEnabled          bool
 }
 
-type instanceTypesCacheGeneration struct {
+type instanceTypesSourceDataGeneration struct {
 	unavailableOfferings uint64
 	quota                uint64
 }
@@ -103,7 +103,7 @@ type DefaultProvider struct {
 	// Changes in the source data generation invalidate the cache as a whole instead of creating unreachable keys.
 	instanceTypesCache           *cache.Cache
 	muInstanceTypesCache         sync.Mutex
-	instanceTypesCacheGeneration instanceTypesCacheGeneration
+	instanceTypesCacheGeneration instanceTypesSourceDataGeneration
 
 	cm *pretty.ChangeMonitor
 
@@ -161,7 +161,7 @@ func (p *DefaultProvider) List(
 	p.muInstanceTypesCache.Lock()
 	defer p.muInstanceTypesCache.Unlock()
 
-	generation := p.currentInstanceTypesCacheGeneration()
+	generation := p.currentInstanceTypesSourceDataGeneration()
 	if generation != p.instanceTypesCacheGeneration {
 		p.instanceTypesCache.Flush()
 		p.instanceTypesCacheGeneration = generation
@@ -173,7 +173,7 @@ func (p *DefaultProvider) List(
 	}
 
 	result := p.buildInstanceTypes(ctx, instanceTypeParams)
-	if latest := p.currentInstanceTypesCacheGeneration(); generation != latest {
+	if latest := p.currentInstanceTypesSourceDataGeneration(); generation != latest {
 		// Availability changed while building; return this snapshot uncached instead of retrying indefinitely.
 		p.instanceTypesCache.Flush()
 		p.instanceTypesCacheGeneration = latest
@@ -181,7 +181,7 @@ func (p *DefaultProvider) List(
 	}
 
 	p.instanceTypesCache.SetDefault(key, result)
-	if latest := p.currentInstanceTypesCacheGeneration(); generation != latest {
+	if latest := p.currentInstanceTypesSourceDataGeneration(); generation != latest {
 		p.instanceTypesCache.Flush()
 		p.instanceTypesCacheGeneration = latest
 	}
@@ -215,8 +215,8 @@ func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instan
 	return result
 }
 
-func (p *DefaultProvider) currentInstanceTypesCacheGeneration() instanceTypesCacheGeneration {
-	return instanceTypesCacheGeneration{
+func (p *DefaultProvider) currentInstanceTypesSourceDataGeneration() instanceTypesSourceDataGeneration {
+	return instanceTypesSourceDataGeneration{
 		unavailableOfferings: p.unavailableOfferings.SeqNum(),
 		quota:                p.quotaProvider.SeqNum(),
 	}
