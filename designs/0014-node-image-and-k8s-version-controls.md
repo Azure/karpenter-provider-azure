@@ -119,9 +119,7 @@ The `kubernetesVersion` spec field allows customers to specify a desired Kuberne
 
 **AKS version skew constraint (semantic requirement):**
 
-AKS enforces Kubernetes version compatibility between control plane and node pools with the following constraints: major versions must match; node pool minor version cannot be greater than the control plane minor version; node pool can be at most three minor versions behind the control plane; and when node pool and control plane are on the same minor, node pool patch version cannot be greater than the control plane patch version.
-
-When `spec.versions.kubernetesVersion` is set, Karpenter must validate that the specified version satisfies this constraint relative to both the current effective node Kubernetes version and the cluster control plane version before provisioning or during drift evaluation. For CEL transition rules, the current effective node Kubernetes version is the previously persisted value from `oldSelf.spec.versions.kubernetesVersion` when that field was already set; otherwise it falls back to the observed control plane version from `status.kubernetesVersion`.
+When `spec.versions.kubernetesVersion` is set, Karpenter must validate it in accordance with the AKS Kubernetes version policy relative to both the current effective node Kubernetes version and the cluster control plane version before provisioning or during drift evaluation. For CEL transition rules, the current effective node Kubernetes version is the previously persisted value from `oldSelf.spec.versions.kubernetesVersion` when that field was already set; otherwise it falls back to the observed control plane version from `status.kubernetesVersion`.
 
 1. The specified major version must match the control plane major version.
 2. The specified minor version must not be greater than the control plane minor version.
