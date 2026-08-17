@@ -100,7 +100,7 @@ type DefaultProvider struct {
 	quotaProvider        quota.Provider
 
 	// Fully initialized instance types are cached by the parameters that affect their construction.
-	// Source-data generations invalidate the cache as a whole instead of creating unreachable keys.
+	// Changes in the source data generation invalidate the cache as a whole instead of creating unreachable keys.
 	instanceTypesCache           *cache.Cache
 	muInstanceTypesCache         sync.Mutex
 	instanceTypesCacheGeneration instanceTypesCacheGeneration
