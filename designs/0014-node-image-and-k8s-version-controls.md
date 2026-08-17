@@ -136,11 +136,12 @@ Karpenter should use the existing `status.kubernetesVersion` field as the observ
 - **Admission checks:**
 	- `kubernetesVersion` must be full `major.minor.patch` (for example `1.32.5`).
 	- Changing `kubernetesVersion` requires `nodeImageVersion` to be unset first.
-	- No downgrade relative to the current effective node Kubernetes version.
+	- Using the persisted `status.kubernetesVersion`, validate that the requested version has the same major version as the control plane, is not ahead of it, is no more than three minor versions behind it, and does not have a greater patch version when both are on the same minor version.
+	- Reject downgrades relative to the current effective node Kubernetes version, using `oldSelf.spec.versions.kubernetesVersion` when previously set and otherwise falling back to the persisted `status.kubernetesVersion`.
+	- Apply status-based comparisons only when `spec.versions.kubernetesVersion` changes so a later status refresh can record and report an incompatibility without admission rejecting the status update itself.
 - **Change-triggered reconcile checks (on `spec.versions.kubernetesVersion` updates):**
-	- Perform a fresh control plane version lookup.
+	- Perform a fresh control plane version lookup and repeat the compatibility checks against that latest value.
 	- Validate requested patch against AKS-supported version metadata.
-	- Validate compatibility between requested effective node version and latest observed control plane version.
 	- Validate that image resolution can produce a usable effective image set for the requested version.
 - **Periodic checks (existing control-plane refresh interval):**
 	- Re-check compatibility between effective node version and observed control plane version.
