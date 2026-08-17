@@ -68,7 +68,6 @@ type DefaultProvider struct {
 	usages      map[string]*armcompute.Usage
 	cm          *pretty.ChangeMonitor
 	seqNum      atomic.Uint64
-	reset       bool
 }
 
 func NewProvider(usageClient UsageAPI, location string) *DefaultProvider {
@@ -102,11 +101,10 @@ func (p *DefaultProvider) Update(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.usages = freshUsages
-	if p.cm.HasChanged("quota-usages", freshUsages) || p.reset {
+	if p.cm.HasChanged("quota-usages", freshUsages) {
 		p.seqNum.Add(1)
 		log.FromContext(ctx).V(1).Info("updated quota usages", "familyQuotas", formatFamilyQuotas(freshUsages))
 	}
-	p.reset = false
 	return nil
 }
 
@@ -155,7 +153,7 @@ func (p *DefaultProvider) Reset() {
 		return
 	}
 	p.usages = map[string]*armcompute.Usage{}
-	p.reset = true
+	p.cm = pretty.NewChangeMonitor()
 	p.seqNum.Add(1)
 }
 
