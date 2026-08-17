@@ -45,7 +45,7 @@ Choose a label when most of these are true:
 - The concept is a node capability, offering property, or provider-computed scheduling attribute.
 - Workloads reasonably need to select or spread by it using `nodeSelector`, node affinity, topology spread constraints, or `NodePool` requirements.
 - The value is simple enough to model as a label value without losing important structure.
-- Validation is simple and the feature is largely independent of other features. The feature might restrict VM sizes and other features, but those restrictions are straightforward and easy to understand.
+- Validation is simple and the feature is largely independent of other features. The feature might restrict VM sizes and other features, but those restrictions are straightforward and easy to understand. Complicated validation should instead go in AKSNodeClass, as the Label failure mode (no matching instance types) is harder to understand than AKSNodeClass status error.
 
 For these cases, labels are the right API because they are part of Kubernetes and Karpenter scheduling semantics. They let users express compatibility without creating extra NodeClasses or encoding workload placement in provisioning configuration.
 
