@@ -23,7 +23,7 @@ Note: The issue title says "Add support for setting ImageID for nodeClass", but 
    - [API Field Grouping and Wrapper Name](#api-field-grouping-and-wrapper-name)
    - [kubernetesVersion Spec Field](#kubernetesversion-spec-field)
    - [nodeImageVersion Spec Field](#nodeimageversion-spec-field)
-   - [AKSNodeClass status: latestImageVersion and recentlyUsedVersions](#aksnodeclass-status-latestimageversion-and-recentlyusedversions)
+	- [AKSNodeClass status: Kubernetes and image versions](#aksnodeclass-status-kubernetes-and-image-versions)
 6. [Reconciliation Design](#reconciliation-design)
    - [Snapshot point](#snapshot-point)
    - [Rollback path](#rollback-path)
@@ -82,8 +82,9 @@ Additionally, a Kubernetes version upgrade also triggers a node image version re
 
 ### Definitions
 
-- **Desired Kubernetes version:** `spec.versions.kubernetesVersion` when set; otherwise `status.kubernetesVersion`.
-- **Current effective node Kubernetes version:** the last accepted desired node Kubernetes version for the NodeClass, falling back to `status.kubernetesVersion` when no explicit desired version has been set.
+- **Desired Kubernetes version:** `spec.versions.kubernetesVersion` when set; otherwise the observed control plane version from `status.controlPlaneKubernetesVersion`.
+- **Current effective node Kubernetes version:** `status.kubernetesVersion`, the last accepted desired Kubernetes version used for provisioning, image resolution, and drift.
+- **Observed control plane Kubernetes version:** `status.controlPlaneKubernetesVersion`, the latest control plane version observed by the reconciler.
 - **Effective image set:** the concrete `status.images` entries currently used for provisioning and drift.
 - **Usable effective image set:** an effective image set with at least one concrete resolved image for the current desired version inputs.
 
@@ -112,14 +113,14 @@ The `kubernetesVersion` spec field allows customers to specify a desired Kuberne
 
 **Semantics:**
 
-1. **Unset (default):** Karpenter uses the observed control plane Kubernetes version from `status.kubernetesVersion` to determine whether an existing node has a k8s version mismatch. This is the existing behavior.
-2. **Set:** Karpenter uses the specified version as the desired k8s version for nodes referencing this NodeClass. Nodes running a different Kubernetes version are treated as drifted and replaced via normal disruption controls.
+1. **Unset (default):** Karpenter uses the observed control plane Kubernetes version from `status.controlPlaneKubernetesVersion` as the desired version and, after validation, publishes it as the effective node version in `status.kubernetesVersion`. This preserves the existing behavior.
+2. **Set:** Karpenter validates the specified version and, when accepted, publishes it as the effective node version in `status.kubernetesVersion`. Nodes running a different Kubernetes version are treated as drifted and replaced via normal disruption controls.
 3. **Changing `kubernetesVersion`:** Follows AKS semantics. When the k8s version changes, the node image resolution flow refreshes to the effective image set for the new Kubernetes version, typically moving toward the latest compatible image subject to the existing maintenance-window behavior. To prevent conflicts between an explicit `nodeImageVersion` and the new Kubernetes version, CEL admission validation requires `nodeImageVersion` to be unset before `kubernetesVersion` can be changed to a new value.
 4. **Kubernetes version downgrade is not supported:** In accordance with AKS policy, this design does not support user-driven Kubernetes version rollback. Customers can pin or roll back the node image version only within the currently valid desired Kubernetes version. If a previously used image version was recorded with an older Kubernetes version and is no longer compatible with the current desired Kubernetes version, the rollback request is rejected rather than lowering `kubernetesVersion` to match it.
 
 **AKS version skew constraint (semantic requirement):**
 
-When `spec.versions.kubernetesVersion` is set, Karpenter must validate it in accordance with the AKS Kubernetes version policy relative to both the current effective node Kubernetes version and the cluster control plane version before provisioning or during drift evaluation. For CEL transition rules, the current effective node Kubernetes version is the previously persisted value from `oldSelf.spec.versions.kubernetesVersion` when that field was already set; otherwise it falls back to the observed control plane version from `status.kubernetesVersion`.
+When `spec.versions.kubernetesVersion` is set, Karpenter must validate it in accordance with the AKS Kubernetes version policy relative to both the current effective node Kubernetes version and the cluster control plane version before provisioning or during drift evaluation. For CEL transition rules, the current effective node Kubernetes version is the previously persisted value from `oldSelf.status.kubernetesVersion`.
 
 1. The specified major version must match the control plane major version.
 2. The specified minor version must not be greater than the control plane minor version.
@@ -129,15 +130,15 @@ When `spec.versions.kubernetesVersion` is set, Karpenter must validate it in acc
 
 Violations should be surfaced as a condition on the NodeClass rather than silently accepted, since AKS is expected to reject machine creation once the requested version falls outside the supported skew window.
 
-Karpenter should use the existing `status.kubernetesVersion` field as the observed control plane version for skew comparisons and as the fallback desired Kubernetes version when `spec.versions.kubernetesVersion` is unset. Because `status.kubernetesVersion` is a cached last-observed value rather than a synchronous admission-time lookup, reconcile-time enforcement remains the authoritative backstop.
+Karpenter should use `status.controlPlaneKubernetesVersion` for skew comparisons and as the fallback desired Kubernetes version when `spec.versions.kubernetesVersion` is unset. `status.kubernetesVersion` remains the effective node version consumed by provisioning, image resolution, and drift. Because `status.controlPlaneKubernetesVersion` is a cached last-observed value rather than a synchronous admission-time lookup, reconcile-time enforcement remains the authoritative backstop.
 
 **Validation and enforcement summary (details in Validation and Conditions):**
 
 - **Admission checks:**
 	- `kubernetesVersion` must be full `major.minor.patch` (for example `1.32.5`).
 	- Changing `kubernetesVersion` requires `nodeImageVersion` to be unset first.
-	- Using the persisted `status.kubernetesVersion`, validate that the requested version has the same major version as the control plane, is not ahead of it, is no more than three minor versions behind it, and does not have a greater patch version when both are on the same minor version.
-	- Reject downgrades relative to the current effective node Kubernetes version, using `oldSelf.spec.versions.kubernetesVersion` when previously set and otherwise falling back to the persisted `status.kubernetesVersion`.
+	- Using the persisted `status.controlPlaneKubernetesVersion`, validate that the requested version has the same major version as the control plane, is not ahead of it, is no more than three minor versions behind it, and does not have a greater patch version when both are on the same minor version.
+	- Reject downgrades relative to the previously persisted effective node Kubernetes version in `oldSelf.status.kubernetesVersion`.
 	- Apply status-based comparisons only when `spec.versions.kubernetesVersion` changes so a later status refresh can record and report an incompatibility without admission rejecting the status update itself.
 - **Change-triggered reconcile checks (on `spec.versions.kubernetesVersion` updates):**
 	- Perform a fresh control plane version lookup and repeat the compatibility checks against that latest value.
@@ -156,7 +157,7 @@ The `nodeImageVersion` spec field is the unified customer surface for both node 
 **Semantics:**
 
 1. **Unset (default):** Karpenter preserves the existing NAP image-resolution behavior. It resolves the latest gallery image version on every reconcile, updates `status.latestImageVersion`, and publishes the effective image set into `status.images` according to the current maintenance-window logic.
-2. **Set to `status.latestImageVersion`:** Karpenter pins to the latest resolved version. New nodes are provisioned on that version. Automatic node image upgrades are paused — if a newer version becomes available, nodes will not drift until the customer updates or clears the pin.
+2. **Set to the value currently exposed in `status.latestImageVersion`:** Karpenter pins to that specific version string. New nodes are provisioned on that version. Automatic node image upgrades are paused — if `status.latestImageVersion` later advances, nodes will not drift until the customer updates or clears the pin.
 3. **Set to a value in `status.recentlyUsedVersions[*].imageVersion`:** Karpenter rolls back to that previously used version. The rollback validation rules from `status.recentlyUsedVersions` apply: the requested version must match an entry in the array and the Kubernetes version of that entry must be compatible.
 4. **Set to the suffix of `status.images[]`:** Karpenter pins to the current image. This could be the same as `status.latestImageVersion`, or it could differ if the latest image version hasn't yet been picked up by Karpenter nodes.
 5. **Set to any other value:** CEL admission validation rejects the request. The only valid values are the current image version in `status.images[]`, `status.latestImageVersion` (pinning at latest), or a value present in `status.recentlyUsedVersions[*].imageVersion` (rollback to a previous version).
@@ -192,7 +193,7 @@ A boolean field (`rollbackToPrevious: true`) was considered, which would let Kar
 3. If Karpenter later stores multiple previous image versions, a boolean becomes ambiguous without additional API to specify which entry to use.
 4. The explicit version string approach mirrors AKS RP semantics, where `nodeImageVersion` is always a concrete version value.
 
-### AKSNodeClass status: latestImageVersion and recentlyUsedVersions
+### AKSNodeClass status: Kubernetes and image versions
 
 Add a new status section that mirrors the AKS RP recently-used rollback model:
 
@@ -222,6 +223,14 @@ type AKSNodeClassStatus struct {
 	// images contains the current set of images available to use for the NodeClass.
 	// +optional
 	Images []NodeImage `json:"images,omitempty"`
+	// kubernetesVersion is the effective Kubernetes version used for nodes
+	// provisioned for the NodeClass.
+	// +optional
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+	// controlPlaneKubernetesVersion is the latest observed Kubernetes version
+	// of the cluster control plane.
+	// +optional
+	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
 	// latestImageVersion is the latest resolved image version suffix from the gallery,
 	// updated on every reconcile pass regardless of any active pin or rollback.
 	// +optional
@@ -233,7 +242,15 @@ type AKSNodeClassStatus struct {
 }
 ```
 
-Semantics:
+Kubernetes version semantics:
+
+1. `status.kubernetesVersion` is the effective node Kubernetes version and remains the source of truth for provisioning, image resolution, and drift. This preserves the existing field's public meaning and avoids a status-field rename for existing consumers.
+2. `status.controlPlaneKubernetesVersion` is the latest control plane Kubernetes version observed by the reconciler. It is used for skew validation and observability, but is not directly consumed as the node target.
+3. When `spec.versions.kubernetesVersion` is unset, reconcile validates the observed control plane version and copies it into `status.kubernetesVersion` as the effective node version.
+4. When `spec.versions.kubernetesVersion` is set, reconcile updates `status.kubernetesVersion` only after the requested version passes compatibility, supported-version, and image-resolution checks. A failed request leaves the previously effective value in place and marks the NodeClass unready.
+5. A control plane version refresh always updates `status.controlPlaneKubernetesVersion`, even when the effective node version is pinned or becomes incompatible with the new control plane version.
+
+Image version semantics:
 
 1. recentlyUsedVersions is an array of previously active node image versions in reverse chronological order. Each entry captures the version suffix and Kubernetes version that were in use before status.images advanced.
 2. recentlyUsedVersions[*].timestampUsed records when that version was last active, for observability.
@@ -247,13 +264,14 @@ Decision for v1: a single AKSNodeClass usually resolves image definitions that s
 
 ### Snapshot point
 
-NodeImageReconciler in images.go updates `status.latestImageVersion` on every reconcile pass. A snapshot into `status.recentlyUsedVersions` is taken whenever the **effective image version changes**. The three triggers are:
+NodeImageReconciler in images.go updates `status.latestImageVersion` on every reconcile pass. A snapshot into `status.recentlyUsedVersions` is taken whenever the effective image set in `status.images` moves to a different image version suffix. The four triggers are:
 
 - **Gallery advance becomes effective:** a newer gallery version is published into `status.images` while `nodeImageVersion` is unset, according to the existing maintenance-window and `ImagesReady` behavior.
 - **Customer sets `nodeImageVersion`:** effective version changes from what was in `status.images` to the newly requested value.
 - **Customer unsets `nodeImageVersion`:** the NodeClass returns to the normal image-resolution behavior, and a snapshot is taken when that changes the effective image set in `status.images`.
+- **Effective Kubernetes version changes:** image resolution moves `status.images` to the image set for the newly accepted Kubernetes version.
 
-In all cases the snapshot captures the version being left, so each entry in `status.recentlyUsedVersions` represents a previously effective version. `status.recentlyUsedVersions[0].kubernetesVersion` (the most recent entry) reflects `spec.versions.kubernetesVersion` if it was set at snapshot time, otherwise the observed control plane version from `status.kubernetesVersion`.
+In all cases the snapshot captures the image version and effective node Kubernetes version being left, so each entry in `status.recentlyUsedVersions` represents a previously effective pair. Reconcile must validate the requested Kubernetes version and resolve its goal image set first, then snapshot the old `status.images` and `status.kubernetesVersion` values before publishing either new effective value. This ordering ensures that `recentlyUsedVersions[*].kubernetesVersion` records the Kubernetes version with which the historical image was actually used.
 
 ### Rollback path
 
@@ -261,7 +279,7 @@ When `spec.versions.nodeImageVersion` is set to the previously used version:
 
 1. Validate `status.recentlyUsedVersions` is non-empty.
 2. Validate the requested `nodeImageVersion` matches an entry in `status.recentlyUsedVersions[*].imageVersion`.
-3. Validate the currently desired Kubernetes version is compatible with that entry's `kubernetesVersion`. The desired Kubernetes version is `spec.versions.kubernetesVersion` if set, otherwise the observed control plane version from `status.kubernetesVersion`.
+3. Validate the effective node Kubernetes version from `status.kubernetesVersion` exactly matches that entry's `kubernetesVersion`.
 4. If valid, run the normal image `List()` flow for the NodeClass and desired Kubernetes version to resolve the concrete gallery images that are actually available.
 5. Filter the returned images to the matched `recentlyUsedVersions` entry's `imageVersion`.
 6. Publish the filtered images into `status.images` when at least one concrete image resolves for the requested version.
@@ -315,7 +333,7 @@ Reason names below are recommended for implementation consistency; exact strings
 | Condition | Reason | Meaning |
 |---|---|---|
 | `ValidationSucceeded=False` | `NodeImageVersionInvalid` | `spec.versions.nodeImageVersion` is not one of the allowed status-backed choices |
-| `ValidationSucceeded=False` | `RollbackTargetKubernetesVersionMismatch` | Requested rollback target exists, but its paired Kubernetes version is incompatible with the current desired Kubernetes version |
+| `ValidationSucceeded=False` | `RollbackTargetKubernetesVersionMismatch` | Requested rollback target exists, but its paired Kubernetes version does not equal the current effective node Kubernetes version |
 | `ValidationSucceeded=False` | `KubernetesVersionChangeRequiresNodeImageVersionUnset` | User attempted to change `spec.versions.kubernetesVersion` while `spec.versions.nodeImageVersion` is still set |
 | `ValidationSucceeded=False` | `KubernetesVersionDowngradeNotSupported` | Requested `spec.versions.kubernetesVersion` is lower than the current effective node Kubernetes version |
 | `ValidationSucceeded=False` | `KubernetesVersionInvalidFormat` | Requested `spec.versions.kubernetesVersion` is not full `major.minor.patch` |
@@ -346,19 +364,19 @@ In addition to rollback-specific validation, the following rules apply to `nodeI
 
 `spec.versions.nodeImageVersion` must equal the current effective image version in `status.images[]` (pin at current), `status.latestImageVersion` (pin at latest), or one of the `imageVersion` values in `status.recentlyUsedVersions` (rollback). All other values are rejected. Authoritative enforcement should happen in reconcile-time validation with clear NodeClass conditions; CEL can only provide best-effort checks where object state is available.
 
-If rollback validation fails because `recentlyUsedVersions` is empty or the requested version is not present in `recentlyUsedVersions`, Karpenter should set `ValidationSucceeded=False` with reason `NodeImageVersionInvalid`. If the matched rollback target's paired Kubernetes version is incompatible with the current desired Kubernetes version, Karpenter should set `ValidationSucceeded=False` with reason `RollbackTargetKubernetesVersionMismatch`. If the requested version passes object-state validation but the normal image `List()` flow produces zero concrete matching images, it should set `ImagesReady=False` with reason `RequestedNodeImageVersionUnavailable` and avoid publishing the new requested image set into `status.images`. If at least one matching image resolves, Karpenter should publish that matching subset. Transient `List()` failures should return an error for retry instead of setting this reason.
+If rollback validation fails because `recentlyUsedVersions` is empty or the requested version is not present in `recentlyUsedVersions`, Karpenter should set `ValidationSucceeded=False` with reason `NodeImageVersionInvalid`. If the matched rollback target's paired Kubernetes version does not equal the current effective node Kubernetes version, Karpenter should set `ValidationSucceeded=False` with reason `RollbackTargetKubernetesVersionMismatch`. If the requested version passes object-state validation but the normal image `List()` flow produces zero concrete matching images, it should set `ImagesReady=False` with reason `RequestedNodeImageVersionUnavailable` and avoid publishing the new requested image set into `status.images`. If at least one matching image resolves, Karpenter should publish that matching subset. Transient `List()` failures should return an error for retry instead of setting this reason.
 
 **CEL admission validation for `kubernetesVersion`:**
 
 1. Changing `kubernetesVersion` requires `nodeImageVersion` to be unset first — prevents conflicts between a pinned image and a new k8s version.
-2. The specified version must satisfy the AKS-supported skew constraint: it must not be greater than the observed control plane version in `status.kubernetesVersion`, it must not be lower than the current effective node Kubernetes version, and it must remain within the platform-supported minor-version skew window.
-3. For the no-downgrade check, CEL should use `oldSelf.spec.versions.kubernetesVersion` when the field was previously set on the object; otherwise it should fall back to `status.kubernetesVersion`.
+2. The specified version must satisfy the AKS-supported skew constraint relative to the observed control plane version in `status.controlPlaneKubernetesVersion`: it must not be greater than the control plane version and must remain within the platform-supported minor-version skew window.
+3. For the no-downgrade check, CEL should compare the specified version with the previously persisted effective node version in `oldSelf.status.kubernetesVersion`.
 
-Because `status.kubernetesVersion` is populated on the existing reconcile cadence and backed by a cache, CEL can only make a best-effort decision using the last observed control plane version. The authoritative skew check should run in reconcile-time logic, and the NodeClass should surface `KubernetesVersionReady=False` if a previously valid `kubernetesVersion` later becomes invalid after a control plane upgrade.
+Because `status.controlPlaneKubernetesVersion` is populated on the existing reconcile cadence and backed by a cache, CEL can only make a best-effort decision using the last observed control plane version. The authoritative skew check should run in reconcile-time logic, and the NodeClass should surface `KubernetesVersionReady=False` if a previously valid `kubernetesVersion` later becomes invalid after a control plane upgrade.
 
 Example stale-status case: CEL may admit a request based on a last-observed control plane version, and reconcile may later set `KubernetesVersionReady=False` after a fresh lookup observes a newer incompatible control plane version.
 
-At reconcile time, Karpenter should not rely exclusively on the cached control plane version when `spec.versions.kubernetesVersion` changes. It should fetch the latest control plane version, refresh `status.kubernetesVersion` and the cache if that observed value changed, and then evaluate compatibility against the latest observed control plane version. If the requested version is malformed for this workflow, conflicts with a pinned `nodeImageVersion`, or violates a no-downgrade transition rule, Karpenter should set `ValidationSucceeded=False` with reason `KubernetesVersionInvalidFormat`, `KubernetesVersionChangeRequiresNodeImageVersionUnset`, or `KubernetesVersionDowngradeNotSupported` as appropriate. If the requested version is well-formed but unsupported by AKS metadata, Karpenter should set `KubernetesVersionReady=False` with reason `KubernetesVersionUnsupported`. If it is incompatible with the latest observed control plane version or skew window, Karpenter should set `KubernetesVersionReady=False` with reason `KubernetesVersionControlPlaneIncompatible`. Transient control plane or AKS metadata lookup failures should return an error for retry instead of setting those reasons. Separately, the existing periodic control plane version refresh should re-run the compatibility check on its normal interval and set `KubernetesVersionReady=False` with reason `KubernetesVersionControlPlaneIncompatible` if the effective node Kubernetes version and control plane Kubernetes version are no longer compatible. The periodic refresh does not need to re-run the separate requested-patch existence lookup unless the spec field itself changed.
+At reconcile time, Karpenter should not rely exclusively on the cached control plane version when `spec.versions.kubernetesVersion` changes. It should fetch the latest control plane version, refresh `status.controlPlaneKubernetesVersion` and the cache if that observed value changed, and then evaluate compatibility against the latest observed control plane version. If the requested version is malformed for this workflow, conflicts with a pinned `nodeImageVersion`, or violates a no-downgrade transition rule, Karpenter should set `ValidationSucceeded=False` with reason `KubernetesVersionInvalidFormat`, `KubernetesVersionChangeRequiresNodeImageVersionUnset`, or `KubernetesVersionDowngradeNotSupported` as appropriate. If the requested version is well-formed but unsupported by AKS metadata, Karpenter should set `KubernetesVersionReady=False` with reason `KubernetesVersionUnsupported`. If it is incompatible with the latest observed control plane version or skew window, Karpenter should set `KubernetesVersionReady=False` with reason `KubernetesVersionControlPlaneIncompatible`. Only after these checks and image resolution succeed should reconcile publish the accepted target into `status.kubernetesVersion`. Transient control plane or AKS metadata lookup failures should return an error for retry instead of setting those reasons. Separately, the existing periodic control plane version refresh should update `status.controlPlaneKubernetesVersion`, re-run the compatibility check on its normal interval, and set `KubernetesVersionReady=False` with reason `KubernetesVersionControlPlaneIncompatible` if `status.kubernetesVersion` and `status.controlPlaneKubernetesVersion` are no longer compatible. The periodic refresh does not need to re-run the separate requested-patch existence lookup unless the spec field itself changed.
 
 ## Drift and Provisioning Behavior
 
@@ -380,9 +398,9 @@ If resolution produces zero concrete matching images for the requested pin or ro
 
 ### Kubernetes version drift
 
-When `spec.versions.kubernetesVersion` is set, Karpenter uses it as the desired k8s version for drift detection instead of the control plane version. Nodes running a different version are drifted and replaced. New nodes are provisioned with the image compatible with the specified version. If unset, drift falls back to the observed control plane version in `status.kubernetesVersion`. `kubernetesVersion` participates in AKSNodeClass hashing, so changing it triggers NodeClassDrift.
+Karpenter always uses the effective node version in `status.kubernetesVersion` for Kubernetes version drift detection and new-node provisioning. When `spec.versions.kubernetesVersion` is set, reconcile publishes that value into `status.kubernetesVersion` after validation succeeds. When the spec field is unset, reconcile follows the observed control plane version from `status.controlPlaneKubernetesVersion` and publishes the accepted value into `status.kubernetesVersion`. Nodes running a different version are drifted and replaced. `spec.versions.kubernetesVersion` participates in AKSNodeClass hashing, so changing it triggers NodeClassDrift.
 
-If the latest observed control plane version and the effective node Kubernetes version become incompatible, drift should not attempt to converge toward an invalid target. Instead, Karpenter should set the relevant readiness condition false so the NodeClass remains unready until the compatibility issue is resolved.
+If the latest observed control plane version and the effective node Kubernetes version become incompatible, drift should not attempt to converge toward an invalid target. Instead, Karpenter should set the relevant readiness condition false so the NodeClass remains unready until the compatibility issue is resolved. Provisioning and drift consumers must continue to use the existing readiness-gated `GetKubernetesVersion()` path, so `KubernetesVersionReady=False` blocks use of the previously effective `status.kubernetesVersion` rather than allowing new nodes to launch with an invalid target.
 
 ## Decision Notes
 
