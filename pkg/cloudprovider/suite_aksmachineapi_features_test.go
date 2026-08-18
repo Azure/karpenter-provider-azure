@@ -233,6 +233,52 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+		Context("Create - Windows", func() {
+			DescribeTable("should create a Windows AKS Machine with OS-specific configuration",
+				func(imageFamily string, expectedOSSKU armcontainerservice.OSSKU, expectedFIPS bool) {
+					if imageFamily == v1beta1.Windows2025ImageFamily &&
+						!imagefamily.SupportsWindows2025(lo.FromPtr(nodeClass.Status.KubernetesVersion)) {
+						Skip("Windows2025 requires Kubernetes 1.32.0 or newer")
+					}
+
+					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelOSStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{string(v1.Windows)},
+					})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod(coretest.PodOptions{
+						NodeSelector: map[string]string{v1.LabelOSStable: string(v1.Windows)},
+					})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					node := ExpectScheduled(ctx, env.Client, pod)
+
+					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					aksMachine := createInput.AKSMachine
+					Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSType)).To(Equal(armcontainerservice.OSTypeWindows))
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(expectedOSSKU))
+					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.EnableFIPS)).To(Equal(expectedFIPS))
+					Expect(aksMachine.Properties.OperatingSystem.LinuxProfile).To(BeNil())
+					Expect(aksMachine.Properties.LocalDNSProfile).To(BeNil())
+					Expect(aksMachine.Properties.Kubernetes.ArtifactStreamingProfile).To(BeNil())
+
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelOSStable, string(v1.Windows)))
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelArchStable, karpv1.ArchitectureAmd64))
+					Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, v1beta1.GetOSSKUFromImageFamily(imageFamily)))
+					if expectedFIPS {
+						Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
+					}
+				},
+				Entry("Windows2022", v1beta1.Windows2022ImageFamily, armcontainerservice.OSSKUWindows2022, false),
+				Entry("Windows2025", v1beta1.Windows2025ImageFamily, armcontainerservice.OSSKUWindows2025, true),
+			)
+		})
+
 		// Ported from VM test: "GPU Workloads + Nodes"
 		Context("Create - GPU Workloads + Nodes", func() {
 			// Ported from VM test: "should schedule non-GPU pod onto the cheapest non-GPU capable node"

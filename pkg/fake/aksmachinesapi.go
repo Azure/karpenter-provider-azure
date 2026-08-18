@@ -735,14 +735,25 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	// NodeImageVersion is now set directly on the machine template by the caller.
 	// Only apply default if not provided.
 	if machine.Properties.NodeImageVersion == nil {
-		// Default node image version if none provided
-		machine.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+		machine.Properties.NodeImageVersion = lo.ToPtr(defaultAKSMachineNodeImageVersion(machine.Properties))
 	}
 
 	// Set ETag for optimistic concurrency control
 	if machine.Properties.ETag == nil {
 		machine.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
 	}
+}
+
+func defaultAKSMachineNodeImageVersion(properties *armcontainerservice.MachineProperties) string {
+	if properties != nil && properties.OperatingSystem != nil {
+		switch lo.FromPtr(properties.OperatingSystem.OSSKU) {
+		case armcontainerservice.OSSKUWindows2022:
+			return "AKSWindows-2022-containerd-20348.4529.251212"
+		case armcontainerservice.OSSKUWindows2025:
+			return "AKSWindows-2025-26100.7462.251212"
+		}
+	}
+	return "AKSUbuntu-2204gen2containerd-2023.11.15"
 }
 
 // deepCopyMachine returns a fully independent copy of an AKS Machine via JSON

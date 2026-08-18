@@ -259,6 +259,10 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.Windows2022ImageFamily:
+		return &Windows2022{Options: parameters}
+	case v1beta1.Windows2025ImageFamily:
+		return &Windows2025{Options: parameters}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:

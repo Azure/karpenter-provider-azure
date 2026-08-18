@@ -88,6 +88,9 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	if err != nil {
 		return []NodeImage{}, err
 	}
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.Windows2025ImageFamily && !SupportsWindows2025(kubernetesVersion) {
+		return []NodeImage{}, nil
+	}
 
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG, nodeClass.IsTrustedLaunchEnabled())
 
