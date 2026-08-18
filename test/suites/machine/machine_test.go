@@ -117,9 +117,11 @@ var _ = Describe("Machine Tests", func() {
 	})
 
 	It("should auto-size an ephemeral OS disk when osDiskSizeGB is unset", func() {
-		// With osDiskSizeGB unset, Karpenter auto-selects an ephemeral OS disk sized to the SKU and
-		// leaves the size for the AKS machine API to provision. Standard_D64s_v3 has a large cache
-		// disk that supports an ephemeral OS disk well above the 128 GiB auto-sizing threshold.
+		// With osDiskSizeGB unset, Karpenter resolves an ephemeral OS disk sized to the SKU and
+		// sends that resolved size explicitly to the AKS machine API (rather than leaving it for
+		// the API to default), so scheduling and actual provisioning stay consistent. Standard_D64s_v3
+		// has a large cache disk that supports an ephemeral OS disk well above the 128 GiB auto-sizing
+		// threshold.
 		Expect(nodeClass.Spec.OSDiskSizeGB).To(BeNil())
 		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelInstanceTypeStable,
@@ -133,10 +135,13 @@ var _ = Describe("Machine Tests", func() {
 		machine := env.EventuallyExpectCreatedMachineCount("==", 1)[0]
 		env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
-		// Karpenter auto-selects an ephemeral OS disk for this SKU.
+		// Karpenter auto-selects an ephemeral OS disk for this SKU and sends the resolved size
+		// explicitly, rather than leaving it nil for the AKS machine API to default.
 		Expect(machine.Properties.OperatingSystem).ToNot(BeNil())
 		Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
 		Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(containerservice.OSDiskTypeEphemeral))
+		Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+		Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(BeNumerically(">", int32(128)))
 
 		// The advertised ephemeral-storage capacity reflects the auto-sized OS disk (well above the
 		// 128 GiB threshold for this SKU), not the former 128 GiB default.
@@ -145,7 +150,7 @@ var _ = Describe("Machine Tests", func() {
 
 		// The node the AKS machine API actually provisioned backs that advertised capacity with a
 		// real, large ephemeral disk (not a small image default), confirming the advertised size
-		// aligns with what gets provisioned when the size is left unset.
+		// matches what Karpenter told the AKS machine API to provision.
 		actual := env.GetNode(node.Name).Status.Capacity[corev1.ResourceEphemeralStorage]
 		Expect(actual.ScaledValue(resource.Giga)).To(BeNumerically(">", int64(128)))
 	})
