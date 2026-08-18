@@ -1,0 +1,79 @@
+# AKS Pod Sandboxing (Kata Containers) example.
+#
+# Set workloadRuntime: KataVmIsolation on the AKSNodeClass to provision nodes with the Kata host
+# stack installed. Pod Sandboxing is an *additional* runtime: standard OCI containers keep running on
+# the same node, and only pods that ask for the Kata RuntimeClass get a lightweight VM.
+#
+# Requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS (both enforced by CEL
+# validation at admission), and needs a generation-2, nested-virtualization-capable VM size
+# (enforced by instance-type filtering). Only provision modes that can express the workload runtime
+# are supported; on others the AKSNodeClass reports ValidationSucceeded=False with the reason.
+#
+# How scale-up works (no nodeSelector needed on your pod):
+#   The managed kata-vm-isolation RuntimeClass declares
+#     scheduling.nodeSelector: kubernetes.azure.com/kata-vm-isolation: "true"
+#     overhead.podFixed.memory: 600Mi
+#   The Kubernetes RuntimeClass admission controller merges that nodeSelector and overhead into your
+#   pod at creation time. Karpenter advertises the Kata node label on Kata-capable instance types,
+#   so the merged nodeSelector matches and Karpenter scales up a Kata node; the 600Mi overhead is
+#   counted in bin-packing automatically.
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: kata
+  annotations:
+    kubernetes.io/description: "NodePool for AKS Pod Sandboxing (Kata) workloads"
+spec:
+  template:
+    metadata:
+      labels:
+        # required for Karpenter to predict overhead from cilium DaemonSet
+        kubernetes.azure.com/ebpf-dataplane: cilium
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: kata
+      startupTaints:
+      # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+      - key: node.cilium.io/agent-not-ready
+        effect: NoExecute
+        value: "true"
+      expireAfter: Never
+      requirements:
+      # No arch/generation requirement is needed here: requesting Kata on the AKSNodeClass already
+      # narrows the offered instance types to amd64, generation-2, nested-virtualization-capable SKUs.
+      - key: kubernetes.io/os
+        operator: In
+        values: ["linux"]
+      - key: karpenter.sh/capacity-type
+        operator: In
+        values: ["on-demand"]
+---
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: kata
+  annotations:
+    kubernetes.io/description: "AKSNodeClass for AKS Pod Sandboxing (Kata) nodes"
+spec:
+  # Kata requires AzureLinux.
+  imageFamily: AzureLinux
+  workloadRuntime: KataVmIsolation
+---
+# Example workload. Note there is NO nodeSelector here: runtimeClassName is sufficient, because the
+# RuntimeClass admission controller injects the kata node selector (and the 600Mi overhead) for you.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kata-workload
+spec:
+  runtimeClassName: kata-vm-isolation
+  containers:
+  - name: app
+    image: mcr.microsoft.com/oss/nginx/nginx:1.21.6
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi

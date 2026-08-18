@@ -2471,6 +2471,55 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		Context("Filtering by WorkloadRuntime (Kata)", func() {
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			listFor := func(runtime *v1beta1.WorkloadRuntime) corecloudprovider.InstanceTypes {
+				nc := test.AKSNodeClass()
+				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nc.Spec.WorkloadRuntime = runtime
+				ExpectApplied(ctx, env.Client, nc)
+				its, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
+				Expect(err).ToNot(HaveOccurred())
+				return its
+			}
+
+			It("should exclude SKUs that cannot run Pod Sandboxing when Kata is requested", func() {
+				instanceTypes := listFor(lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation))
+
+				// Gen-1-only SKUs cannot run Kata.
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Intel v3 onwards and AMD v5 onwards support nested virtualization.
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+			})
+
+			// Karpenter advertises the Kata node label AKS will stamp so it can scale up for pending
+			// pods that select it.
+			Context("Advertising the Kata node label", func() {
+				find := func(its corecloudprovider.InstanceTypes, name string) *corecloudprovider.InstanceType {
+					for _, it := range its {
+						if it.Name == name {
+							return it
+						}
+					}
+					return nil
+				}
+
+				It("should advertise the Kata label for KataVmIsolation", func() {
+					it := find(listFor(lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)), "Standard_D2_v5")
+					Expect(it).ToNot(BeNil())
+					Expect(it.Requirements.Get(v1beta1.AKSLabelKataVMIsolation).Has("true")).To(BeTrue())
+				})
+
+				It("should not advertise the Kata label for OCIContainer", func() {
+					it := find(listFor(lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)), "Standard_D2_v5")
+					Expect(it).ToNot(BeNil())
+					Expect(it.Requirements.Get(v1beta1.AKSLabelKataVMIsolation).Has("true")).To(BeFalse())
+				})
+			})
+		})
+
 		Context("Offering Availability", func() {
 			var instanceTypes corecloudprovider.InstanceTypes
 
@@ -2818,6 +2867,16 @@ var _ = Describe("InstanceType Provider", func() {
 				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written as part of KUBELET_NODE_LABELS (see above)
 				// or by another process. We're asserting on this distinction currently because it helps clarify who is doing what
 				ExpectedOnNode bool
+				// CoverageOnly excludes the entry from the provisioning DescribeTables below. A SetupFunc
+				// is not enough for the Kata label: those tables provision through azureEnv, which runs
+				// PROVISION_MODE=aksscriptless, and Kata is deliberately unsupported there (see
+				// options.SupportsWorkloadRuntime). Scheduling succeeds and then the launch fails, so the
+				// entry can only ever assert the wrong thing. Such entries exist here purely to satisfy the
+				// "entries should cover every WellKnownLabel" assertion; their provisioning behavior is
+				// covered in the "Filtering by WorkloadRuntime (Kata)" context above, in
+				// pkg/cloudprovider/suite_aksmachineapi_features_test.go, and end to end in
+				// test/suites/integration/kata_test.go.
+				CoverageOnly bool
 			}
 
 			// requireFunc returns a SetupFunc that adds a label requirement to the NodePool
@@ -2880,6 +2939,9 @@ var _ = Describe("InstanceType Provider", func() {
 					ExpectedInKubeletLabels: true,
 					ExpectedOnNode:          true,
 				},
+				// Kata / AKS Pod Sandboxing label — see CoverageOnly above for why this carries no
+				// provisioning expectations here.
+				{Name: v1beta1.AKSLabelKataVMIsolation, Label: v1beta1.AKSLabelKataVMIsolation, CoverageOnly: true},
 				// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
 				// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
 				// the new labels to the old labels for compatibility.
@@ -2930,7 +2992,7 @@ var _ = Describe("InstanceType Provider", func() {
 					entry WellKnownLabelEntry
 				}
 				for _, item := range entries {
-					if item.SetupFunc != nil {
+					if item.SetupFunc != nil || item.CoverageOnly {
 						continue // can't support nonstandard setup here as we're putting all labels on one pod
 					}
 					podDetails = append(podDetails, struct {
@@ -3023,7 +3085,7 @@ var _ = Describe("InstanceType Provider", func() {
 						ExpectKubeletNodeLabelsNotInCustomData(&vm, item.Label, value)
 					}
 				},
-				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
+				lo.Map(lo.Filter(entries, func(item WellKnownLabelEntry, _ int) bool { return !item.CoverageOnly }), func(item WellKnownLabelEntry, _ int) TableEntry {
 					return Entry(item.Name, item)
 				}),
 			)
@@ -3070,7 +3132,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).ToNot(HaveKeyWithValue(item.Label, value))
 					}
 				},
-				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
+				lo.Map(lo.Filter(entries, func(item WellKnownLabelEntry, _ int) bool { return !item.CoverageOnly }), func(item WellKnownLabelEntry, _ int) TableEntry {
 					return Entry(item.Name, item)
 				}),
 			)

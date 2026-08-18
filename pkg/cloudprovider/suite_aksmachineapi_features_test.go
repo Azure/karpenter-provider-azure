@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -624,6 +625,68 @@ var _ = Describe("CloudProvider", func() {
 				// Verify user-specified tags are ignored for Karpenter-managed keys
 				Expect(*aksMachine.Properties.Tags["karpenter.sh_nodepool"]).ToNot(Equal("my-override-nodepool"))
 				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).ToNot(Equal("my-override-cluster"))
+			})
+		})
+
+		// Fake-Azure coverage for the Kata (Pod Sandboxing) workloadRuntime on the AKS Machine API path.
+		// This asserts the wire payload Karpenter sends and the labels it projects onto the Node; it does
+		// not (and cannot, against a fake) verify what AKS does with the enum. The real end-to-end
+		// coverage lives in test/suites/integration/kata_test.go.
+		Context("Create - WorkloadRuntime (Kata Pod Sandboxing)", func() {
+			BeforeEach(func() {
+				// Kata requires AzureLinux + a nested-virt-capable gen-2 SKU; constrain to a known
+				// gen-2 SKU for determinism.
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v5"},
+				})
+				// Re-reconcile so the Kata image variant lands in the NodeClass status.
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			})
+
+			It("should provision a Kata node with the label and the WorkloadRuntime enum set", func() {
+				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"}})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.Kubernetes.WorkloadRuntime).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.WorkloadRuntime)).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
+				// The kubernetes.azure.com Kata label is not sent to AKS, like every other AKS-managed label.
+				Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKey(v1beta1.AKSLabelKataVMIsolation))
+			})
+
+			// Mirrors what the RuntimeClass admission controller produces for a pod that sets
+			// `runtimeClassName: kata-vm-isolation`: the node selector and the 600Mi pod overhead. The
+			// RuntimeClass object is created so the apiserver's overhead validation passes.
+			It("should scale up for a post-admission RuntimeClass pod", func() {
+				ExpectApplied(ctx, env.Client, &nodev1.RuntimeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "kata-vm-isolation"},
+					Handler:    "kata",
+					Overhead:   &nodev1.Overhead{PodFixed: v1.ResourceList{v1.ResourceMemory: resource.MustParse("600Mi")}},
+					Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"}},
+				})
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"},
+					Overhead:     v1.ResourceList{v1.ResourceMemory: resource.MustParse("600Mi")},
+				})
+				pod.Spec.RuntimeClassName = lo.ToPtr("kata-vm-isolation")
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.Kubernetes.WorkloadRuntime).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.WorkloadRuntime)).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
 			})
 		})
 

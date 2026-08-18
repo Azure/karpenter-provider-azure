@@ -46,7 +46,13 @@ func (u Ubuntu2404) Name() string {
 	return v1beta1.Ubuntu2404ImageFamily
 }
 
-func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
+func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
+	// There is no Kata (Pod Sandboxing) image for Ubuntu — only AzureLinux publishes one. Return no
+	// images rather than silently falling back to a standard image without the Kata host stack.
+	// AKSNodeClass CEL validation already rejects this combination; this is defense in depth.
+	if kataEnabled {
+		return []types.DefaultImageOutput{}
+	}
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		if !useSIG {
@@ -158,6 +164,7 @@ func (u Ubuntu2404) CustomScriptsNodeBootstrapping(
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
+	workloadRuntime *v1beta1.WorkloadRuntime,
 	localDNS *v1beta1.LocalDNS,
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
@@ -184,6 +191,7 @@ func (u Ubuntu2404) CustomScriptsNodeBootstrapping(
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404,
 		FIPSMode:                       fipsMode,
+		WorkloadRuntime:                workloadRuntime,
 		LocalDNSProfile:                localDNS,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,

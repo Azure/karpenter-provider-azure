@@ -383,6 +383,44 @@ func TestConstructProvisionValues(t *testing.T) {
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
 				g.Expect(*profile.EnableFIPS).To(BeFalse())
+
+				// WorkloadRuntime is left unset for the default OCIContainer case, so non-Kata
+				// NodeClasses keep their existing wire payload.
+				g.Expect(profile.WorkloadRuntime).To(BeNil())
+			},
+		},
+		{
+			name: "Azure Linux 3 Kata (Pod Sandboxing) configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.32.0",
+				ImageDistro:               "aks-azurelinux-v3-kata-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+				Labels:                    map[string]string{"key": "value"},
+				WorkloadRuntime:           lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v5",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
+				profile := values.ProvisionProfile
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-kata-gen2"))
+				// The RP enum value that installs the Kata host stack.
+				g.Expect(profile.WorkloadRuntime).ToNot(BeNil())
+				g.Expect(*profile.WorkloadRuntime).To(Equal(models.WorkloadRuntimeKataVMIsolation))
 			},
 		},
 		{

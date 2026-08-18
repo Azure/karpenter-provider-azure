@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -69,6 +70,7 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+	KataEnabled              bool
 }
 
 type instanceTypesSourceDataGeneration struct {
@@ -154,6 +156,7 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
@@ -347,7 +350,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
-		p.isInstanceTypeSupportedByTrustedLaunch(sku, params)
+		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
+		p.isInstanceTypeSupportedByKata(sku, architecture, params)
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
@@ -364,6 +368,51 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByKata(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
+	// If a Kata workload runtime is not requested, all instance types are supported.
+	if !params.KataEnabled {
+		return true
+	}
+	// The only Kata image variants AKS publishes today are amd64 (see imagefamily/azlinux3.go).
+	// Advertising an arm64 SKU as Kata-capable would fail late at image resolution instead of
+	// simply not being offered. Drop this condition when an arm64 Kata image ships.
+	if getArchitecture(architecture) != karpv1.ArchitectureAmd64 {
+		return false
+	}
+	// Pod Sandboxing needs a generation-2 SKU that supports nested virtualization.
+	if !sku.IsHyperVGen2Supported() {
+		return false
+	}
+	return supportsNestedVirtualization(sku)
+}
+
+// supportsNestedVirtualization reports whether a SKU's family is known to support nested
+// virtualization, which AKS Pod Sandboxing requires.
+//
+// resourceSkus exposes no nested-virtualization capability, so this mirrors the AKS RP's own
+// static Kata VM-size validation (resourceprovider/.../validation/distro/kata_vmsize_validation.go).
+// It is deliberately a denylist of families known NOT to support it rather than an allowlist, so
+// newly released SKUs are offered by default; the RP still rejects a genuinely unsupported size at
+// create time. See https://github.com/Azure/karpenter-provider-azure/issues/1719.
+func supportsNestedVirtualization(sku *skewer.SKU) bool {
+	vmSize, err := sku.GetVMSize()
+	if err != nil || vmSize == nil {
+		// Unparseable SKU name: don't filter it out, let the server decide.
+		return true
+	}
+	version := utils.ExtractVersionFromVMSize(vmSize)
+	// Intel added nested virtualization in v3; v1 and v2 families do not have it.
+	if version == "1" || version == "2" {
+		return false
+	}
+	// AMD families (the 'a' additive feature, e.g. Dav4/Dasv4/Easv4) only gained nested
+	// virtualization with v5 (Milan/Genoa).
+	if version == "4" && slices.Contains(vmSize.AdditiveFeatures, 'a') {
+		return false
+	}
+	return true
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {
