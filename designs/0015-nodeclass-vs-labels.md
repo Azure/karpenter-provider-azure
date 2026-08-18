@@ -77,7 +77,7 @@ Examples:
 - Disk encryption configuration, because it involves resource IDs, precedence between cluster defaults and NodeClass overrides, mutability, and drift behavior.
 - Networking configuration, because it can include subscriptions, resource groups, subnet names, dataplane choices, and multi-tenancy settings that should not be encoded into string labels.
 - Trusted Launch configuration, because it has related settings such as vTPM and Secure Boot that need typed configuration and validation. It is primarily concerned with how Azure creates the VM and does not describe a pod-level scheduling compatibility requirement.
-- LocalDNS configuration, because it includes modes, nested DNS override objects, forwarding policy, cache settings, and validation that depends on the whole configuration.
+- LocalDNS configuration, because it is complex and includes modes, nested DNS override objects, forwarding policy, cache settings, and validation that depends on the whole configuration.
 
 ## Rule of Thumb
 
