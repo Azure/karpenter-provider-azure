@@ -150,7 +150,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
-	shouldUpdate := imageVersionsUnready(nodeClass)
+	shouldUpdate := imageVersionsUnready(nodeClass) || imageCatalogChanged(options.FromContext(ctx).IsSecurityPatchChannel(), nodeClass.Status.Images)
 	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
 		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
@@ -184,6 +184,55 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
 func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 	return !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()
+}
+
+// imageCatalogChanged reports whether persisted images came from a different node image catalog
+// than the one configured for this controller process. AKSNodeClass status survives a controller
+// restart, so a valid SecurityPatch <-> NodeImage channel transition must force a full refresh even
+// when the node OS maintenance window is closed. Security-patch versions are composite
+// "<baseVersion>-<securityPatchDate>" values; standard node image versions have no patch-date suffix.
+func imageCatalogChanged(wantSecurityPatch bool, images []v1beta1.NodeImage) bool {
+	if len(images) == 0 {
+		return false
+	}
+	for _, image := range images {
+		if isSecurityPatchImageID(image.ID) != wantSecurityPatch {
+			return true
+		}
+	}
+	return false
+}
+
+// isSecurityPatchImageID reports whether an image ID uses the composite
+// "<baseVersion>-<securityPatchDate>" version format returned by the SecurityPatch catalog.
+func isSecurityPatchImageID(imageID string) bool {
+	parts := strings.Split(imageID, "/")
+	if len(parts) < 2 || parts[len(parts)-2] != "versions" {
+		return false
+	}
+	base, patchDate, found := strings.Cut(parts[len(parts)-1], "-")
+	if !found {
+		return false
+	}
+	return isNumericDotVersion(base) && isNumericDotVersion(patchDate)
+}
+
+// isNumericDotVersion reports whether every dot-separated segment is a non-empty decimal number.
+func isNumericDotVersion(version string) bool {
+	if version == "" {
+		return false
+	}
+	for _, segment := range strings.Split(version, ".") {
+		if segment == "" {
+			return false
+		}
+		for _, char := range segment {
+			if char < '0' || char > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Handles case 4: check if the maintenance window is open
