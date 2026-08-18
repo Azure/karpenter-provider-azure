@@ -54,7 +54,7 @@ type UnavailableOfferings struct {
 	singleOfferingCache *cache.Cache
 	// key: <skuFamilyName>:<zone>:<capacityType> (lowercase), value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
 	vmFamilyCache *cache.Cache
-	// seqNum is updated on any material changes to unavailable offerrings cache (not updated on TTL only changes)
+	// seqNum is updated on any material changes to unavailable offerings cache (not updated on TTL only changes)
 	seqNum atomic.Uint64
 }
 
