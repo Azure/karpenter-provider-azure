@@ -127,3 +127,52 @@ func TestUbuntu2204_Name(t *testing.T) {
 	ubuntu := imagefamily.Ubuntu2204{}
 	g.Expect(ubuntu.Name()).To(Equal(v1beta1.Ubuntu2204ImageFamily))
 }
+
+func TestUbuntu2204_DefaultImages(t *testing.T) {
+	ubuntu := &imagefamily.Ubuntu2204{
+		Options: &parameters.StaticParameters{},
+	}
+
+	t.Run("should return correct default images", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(false, nil, false)
+		g.Expect(images).To(HaveLen(3))
+
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2ImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-22.04-gen2"))
+
+		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen1ImageDefinition))
+		g.Expect(images[1].Distro).To(Equal("aks-ubuntu-containerd-22.04"))
+
+		g.Expect(images[2].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2ArmImageDefinition))
+		g.Expect(images[2].Distro).To(Equal("aks-ubuntu-arm64-containerd-22.04-gen2"))
+	})
+
+	t.Run("should return correct images for TrustedLaunch", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(false, nil, true)
+		g.Expect(images).To(HaveLen(1))
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2TrustedLaunchImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-22.04-tl-gen2"))
+	})
+
+	t.Run("should return empty images for FIPS mode without SIG", func(t *testing.T) {
+		g := NewWithT(t)
+		fipsMode := v1beta1.FIPSModeFIPS
+		images := ubuntu.DefaultImages(false, &fipsMode, false)
+		g.Expect(images).To(BeEmpty())
+	})
+
+	t.Run("should return images for FIPS mode with SIG", func(t *testing.T) {
+		g := NewWithT(t)
+		fipsMode := v1beta1.FIPSModeFIPS
+		images := ubuntu.DefaultImages(true, &fipsMode, false)
+		g.Expect(images).To(HaveLen(2))
+
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2FIPSImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04-gen2"))
+
+		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen1FIPSImageDefinition))
+		g.Expect(images[1].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04"))
+	})
+}

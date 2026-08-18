@@ -167,10 +167,10 @@ var (
 			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSUbuntu-2204fipscontainerd-202404.09.0"),
+			FullName: lo.ToPtr("AKSUbuntu-2204fipscontainerd-202512.18.0"),
 			OS:       lo.ToPtr("AKSUbuntu"),
 			SKU:      lo.ToPtr("2204fipscontainerd"),
-			Version:  lo.ToPtr("202404.09.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSWindows-2025-26100.7462.251212"),
@@ -263,10 +263,10 @@ var (
 			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSUbuntu-2204gen2fipscontainerd-202404.09.0"),
+			FullName: lo.ToPtr("AKSUbuntu-2204gen2fipscontainerd-202512.18.0"),
 			OS:       lo.ToPtr("AKSUbuntu"),
 			SKU:      lo.ToPtr("2204gen2fipscontainerd"),
-			Version:  lo.ToPtr("202404.09.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSWindows-2019-containerd-17763.8146.251212"),
