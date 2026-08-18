@@ -338,7 +338,7 @@ func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGi
 
 // ephemeralStorage reports the OS disk size that provisioning will actually use for this SKU.
 func ephemeralStorage(sku *skewer.SKU, params *instanceTypeParameters) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(ResolveOSDiskProfile(sku, params.OSDiskSizeGB).SizeGB), resource.Giga)
+	return resources.Quantity(fmt.Sprintf("%dGi", ResolveOSDiskProfile(sku, params.OSDiskSizeGB).SizeGB))
 }
 
 func pods(params *instanceTypeParameters) *resource.Quantity {

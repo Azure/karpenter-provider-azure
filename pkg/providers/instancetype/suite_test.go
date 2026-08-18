@@ -1064,17 +1064,17 @@ var _ = Describe("InstanceType Provider", func() {
 					for _, it := range instanceTypes {
 						capacityByName[it.Name] = it.Capacity.StorageEphemeral().String()
 					}
-					Expect(capacityByName).To(HaveKeyWithValue("Standard_D64s_v3", "1600G"))   // ephemeral, SKU-supported size
-					Expect(capacityByName).To(HaveKeyWithValue("Standard_D128ds_v6", "2040G")) // ephemeral, capped
-					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2s_v3", "128G"))     // managed, ephemeral below 128GiB
-					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2as_v6", "128G"))    // managed default, <8 vCPUs
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D64s_v3", "1600Gi"))   // ephemeral, SKU-supported size
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D128ds_v6", "2040Gi")) // ephemeral, capped
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2s_v3", "128Gi"))     // managed, ephemeral below 128GiB
+					Expect(capacityByName).To(HaveKeyWithValue("Standard_D2as_v6", "128Gi"))    // managed default, <8 vCPUs
 				})
 				It("should report ephemeral-storage capacity matching the explicit OS disk size", func() {
 					nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
 					instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 					for _, it := range instanceTypes {
-						Expect(it.Capacity.StorageEphemeral().String()).To(Equal("256G"))
+						Expect(it.Capacity.StorageEphemeral().String()).To(Equal("256Gi"))
 					}
 				})
 			})
