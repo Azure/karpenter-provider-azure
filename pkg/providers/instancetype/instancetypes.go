@@ -65,6 +65,7 @@ type instanceTypeParameters struct {
 	OSDiskSizeGB             int32
 	MaxPods                  int32
 	EncryptionAtHost         bool
+	TrustedLaunch            bool
 	GPUMode                  v1beta1.GPUMode
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
@@ -146,6 +147,7 @@ func (p *DefaultProvider) List(
 		OSDiskSizeGB:             lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
+		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
 		GPUMode:                  nodeClass.GetGPUMode(),
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
@@ -329,7 +331,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
-		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params)
+		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
+		p.isInstanceTypeSupportedByTrustedLaunch(sku, params)
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
@@ -355,6 +358,18 @@ func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.
 	}
 	// If EncryptionAtHost is enabled, only include instance types that support it
 	return p.supportsEncryptionAtHost(sku)
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByTrustedLaunch(sku *skewer.SKU, params *instanceTypeParameters) bool {
+	if !params.TrustedLaunch {
+		return true
+	}
+
+	supported, err := sku.IsTrustedLaunchEnabled()
+	if err != nil {
+		return false
+	}
+	return supported
 }
 
 // supportsEncryptionAtHost checks if the SKU supports encryption at host
