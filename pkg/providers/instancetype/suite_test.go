@@ -1187,6 +1187,10 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(2040)))
 				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
 				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
+
+				// The SKU capability label documents the uncapped 7040GiB the SKU supports,
+				// even though the actual OS disk provisioned above is capped at 2040GiB.
+				ExpectKubeletNodeLabelsInCustomData(&vm, v1beta1.LabelSKUStorageEphemeralOSMaxSize, "7040")
 			})
 			It("should auto-size managed disk by vCPU count if osDiskSizeGB is not set and the SKU cannot use ephemeral", func() {
 				// Standard_D2as_v6 (2 vCPUs) does not support ephemeral OS disk
