@@ -410,39 +410,6 @@ func TestConstructProvisionValues(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "Azure Container Linux configuration",
-			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
-				ClusterName:       "test-cluster",
-				KubeletConfig:     &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:          "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
-				Arch:              karpv1.ArchitectureAmd64,
-				ResourceGroup:     "test-rg",
-				KubernetesVersion: "1.34.0",
-				ImageDistro:       "aks-acl-gen2-tl",
-				StorageProfile:    consts.StorageProfileManagedDisks,
-				OSSKU:             customscriptsbootstrap.ImageFamilyOSSKUAzureContainerLinux,
-				Labels:            map[string]string{"key": "value"},
-				VTPMEnabled:       lo.ToPtr(true),
-				SecureBootEnabled: lo.ToPtr(true),
-				InstanceType: &cloudprovider.InstanceType{
-					Name: "Standard_D2s_v5",
-					Capacity: v1.ResourceList{
-						v1.ResourceCPU:    resource.MustParse("2"),
-						v1.ResourceMemory: resource.MustParse("8Gi"),
-					},
-				},
-			},
-			expectError: false,
-			validate: func(t *testing.T, values *models.ProvisionValues) {
-				g := NewWithT(t)
-				profile := values.ProvisionProfile
-				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureContainerLinux))
-				g.Expect(*profile.Distro).To(Equal("aks-acl-gen2-tl"))
-				g.Expect(*profile.SecurityProfile.EnableVTPM).To(BeTrue())
-				g.Expect(*profile.SecurityProfile.EnableSecureBoot).To(BeTrue())
-			},
-		},
-		{
 			name: "GPU instance type",
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:                  "test-cluster",

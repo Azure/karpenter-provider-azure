@@ -36,12 +36,11 @@ import (
 )
 
 const (
-	ImageFamilyOSSKUUbuntu2004          = "Ubuntu2004"
-	ImageFamilyOSSKUUbuntu2204          = "Ubuntu2204"
-	ImageFamilyOSSKUUbuntu2404          = "Ubuntu2404"
-	ImageFamilyOSSKUAzureLinux2         = "AzureLinux2"
-	ImageFamilyOSSKUAzureLinux3         = "AzureLinux3"
-	ImageFamilyOSSKUAzureContainerLinux = "AzureContainerLinux"
+	ImageFamilyOSSKUUbuntu2004  = "Ubuntu2004"
+	ImageFamilyOSSKUUbuntu2204  = "Ubuntu2204"
+	ImageFamilyOSSKUUbuntu2404  = "Ubuntu2404"
+	ImageFamilyOSSKUAzureLinux2 = "AzureLinux2"
+	ImageFamilyOSSKUAzureLinux3 = "AzureLinux3"
 )
 
 type ProvisionClientBootstrap struct {
@@ -156,8 +155,6 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		provisionProfile.OsSku = lo.ToPtr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
 		provisionProfile.OsSku = lo.ToPtr(models.OSSKUAzureLinux)
-	case ImageFamilyOSSKUAzureContainerLinux:
-		provisionProfile.OsSku = lo.ToPtr(models.OSSKUAzureContainerLinux)
 	default:
 		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}
