@@ -2269,9 +2269,12 @@ var _ = Describe("InstanceType Provider", func() {
 					})
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectNotScheduled(ctx, env.Client, pod)
+					cacheEntries := azureEnv.InstanceTypeCache.ItemCount()
+					Expect(cacheEntries).To(BeNumerically(">", 0))
 					// capacity shortage is over - expire the items from the cache and try again
 					azureEnv.UnavailableOfferingsCache.Flush()
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(cacheEntries))
 					node := ExpectScheduled(ctx, env.Client, pod)
 					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
 				},
@@ -2503,6 +2506,8 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 
 			It("should have available offerings for a SKU present in the SKU API but missing from pricing data", func() {
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+
 				// Add a SKU to the fake SKU API that does NOT have pricing in the static pricing data.
 				// This simulates a new SKU appearing in the SKU API before pricing data is available.
 				// Standard_D2_v2_Promo is in known_skus.yaml but has no southcentralus pricing.
@@ -2546,8 +2551,10 @@ var _ = Describe("InstanceType Provider", func() {
 
 				// Re-fetch instance types with the new SKU
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(BeZero())
 				updatedInstanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 
 				// Find the new SKU in the list
 				var promoSKU *corecloudprovider.InstanceType
@@ -2645,6 +2652,23 @@ var _ = Describe("InstanceType Provider", func() {
 				// Prices should be MissingPrice (deprioritized)
 				Expect(onDemandAvailable[0].Price).To(Equal(pricing.MissingPrice))
 				Expect(spotAvailable[0].Price).To(Equal(pricing.MissingPrice))
+			})
+		})
+
+		Context("Caching", func() {
+			It("should isolate cached instance type ordering from caller mutations", func() {
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(instanceTypes)).To(BeNumerically(">", 1))
+				original := append([]*corecloudprovider.InstanceType{}, instanceTypes...)
+
+				// A caller is free to reorder its own returned slice; this must not reorder the cached entry.
+				instanceTypes[0], instanceTypes[1] = instanceTypes[1], instanceTypes[0]
+
+				cached, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(lo.Map(cached, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })).To(
+					Equal(lo.Map(original, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })))
 			})
 		})
 
@@ -3334,6 +3358,7 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should invalidate instance type cache when quota data changes", func() {
 			targetFamily := defaultTestSKU.GetFamilyName()
 			Expect(targetFamily).ToNot(BeEmpty())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(BeZero())
 
 			// First call with plenty of quota
 			azureEnv.UsageAPI.Usages.Append(
@@ -3347,6 +3372,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).To(BeNil())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 			foundFamily := false
 			for _, it := range instanceTypes {
 				sku := fake.MakeSKU(it.Name)
@@ -3375,6 +3401,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Second call should reflect the new quota (cache invalidated by SeqNum change)
 			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).To(BeNil())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 			foundFamily = false
 			for _, it := range instanceTypes {
 				sku := fake.MakeSKU(it.Name)
