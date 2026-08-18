@@ -141,18 +141,18 @@ var _ = Describe("Machine Tests", func() {
 		Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
 		Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(containerservice.OSDiskTypeEphemeral))
 		Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
-		Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(BeNumerically(">", int32(128)))
+		const expectedDiskSizeGB int32 = 1600
+		Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(expectedDiskSizeGB))
 
-		// The advertised ephemeral-storage capacity reflects the auto-sized OS disk (well above the
-		// 128 GiB threshold for this SKU), not the former 128 GiB default.
+		// The advertised ephemeral-storage capacity matches the resolved OS disk size.
 		advertised := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
-		Expect(advertised.ScaledValue(resource.Giga)).To(BeNumerically(">", int64(128)))
+		expectedAdvertised := resource.MustParse(fmt.Sprintf("%dGi", expectedDiskSizeGB))
+		Expect(advertised.Cmp(expectedAdvertised)).To(Equal(0))
 
-		// The node the AKS machine API actually provisioned backs that advertised capacity with a
-		// real, large ephemeral disk (not a small image default), confirming the advertised size
-		// matches what Karpenter told the AKS machine API to provision.
+		// Kubelet reports filesystem capacity, which may be below the nominal disk size.
+		// Require it to exceed the former 128 GiB default.
 		actual := env.GetNode(node.Name).Status.Capacity[corev1.ResourceEphemeralStorage]
-		Expect(actual.ScaledValue(resource.Giga)).To(BeNumerically(">", int64(128)))
+		Expect(actual.Cmp(resource.MustParse("128Gi"))).To(BeNumerically(">", 0))
 	})
 
 	// NOTE: ClusterTests modify the actual cluster itself, which means that performing tests after a cluster test
