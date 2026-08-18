@@ -158,10 +158,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.git_ref }}
+      - name: validate suite configuration
+        env:
+          SUITE: ${{ inputs.suite }}
+          PROVISION_MODE: ${{ inputs.provision_mode }}
+        run: |
+          if [[ "$SUITE" == "Windows" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" ]]; then
+            echo "Windows requires provision_mode aksmachineapi or aksmachineapiheaderbatch; got $PROVISION_MODE" >&2
+            exit 1
+          fi
       - if: always() && github.event_name == 'workflow_run'
         uses: ./.github/actions/commit-status/start
         with:
-          name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
+          name: ${{ github.workflow }} / e2e (${{ inputs.suite }} / ${{ inputs.provision_mode }})
           git_ref: ${{ inputs.git_ref }}
       - uses: ./.github/actions/install-deps
       - name: az login
@@ -177,15 +186,19 @@ jobs:
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}
+          PROVISION_MODE: ${{ inputs.provision_mode }}
         run: |
-          RG_NAME=$(echo karpenter-e2e-"$SUITE"-${{ github.run_id }} | awk '{print tolower($0)}')
+          RESOURCE_CASE=$(printf '%s-%s' "$SUITE" "$PROVISION_MODE" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
+          RG_NAME="karpenter-e2e-${RESOURCE_CASE}-${{ github.run_id }}"
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
         env:
           SUITE: ${{ inputs.suite }}
+          PROVISION_MODE: ${{ inputs.provision_mode }}
         run: |
-          ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
+          RESOURCE_CASE=$(printf '%s%s' "$SUITE" "$PROVISION_MODE" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+          ACR_NAME="${RESOURCE_CASE}acr${{ github.run_id }}"
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: cleanup leftover resources, if any (e.g. from a previous run that failed to clean up)
@@ -218,9 +231,7 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
           k8s_version: ${{ inputs.k8s_version }}
-          # Windows is only provisionable via the AKS Machine API, so force that mode for the Windows
-          # suite regardless of the matrix's provision_mode (it would otherwise skip under aksscriptless).
-          provision_mode: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
+          provision_mode: ${{ inputs.provision_mode }}
           identity_type: ${{ inputs.suite == 'Machine' && 'UserAssigned' || 'SystemAssigned' }}
           azure_vm_size: ${{ inputs.azure_vm_size }}
           # Windows needs a dedicated (non-Cilium) cluster and a machines pool name <= 6 chars.
@@ -235,7 +246,7 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
-          provision_mode: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
+          provision_mode: ${{ inputs.provision_mode }}
           aks_machines_pool_name: ${{ inputs.suite == 'Windows' && 'winmp' || 'mpool' }}
       - name: run the ${{ inputs.suite }} test suite
         env:
@@ -247,7 +258,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID_TEST }}
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
-          PROVISION_MODE: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
+          PROVISION_MODE: ${{ inputs.provision_mode }}
           AKS_MACHINES_POOL_NAME: ${{ inputs.suite == 'Windows' && 'winmp' || 'mpool' }}
         run: |
           make az-creds
@@ -272,5 +283,5 @@ jobs:
       - if: always() && github.event_name == 'workflow_run'
         uses: ./.github/actions/commit-status/end
         with:
-          name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
+          name: ${{ github.workflow }} / e2e (${{ inputs.suite }} / ${{ inputs.provision_mode }})
           git_ref: ${{ inputs.git_ref }}

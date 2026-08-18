@@ -9,11 +9,10 @@
 
 > **Note — suites that need a non-default cluster:** most suites run on the shared CI cluster
 > (`ci-mkcluster-all`, Azure CNI overlay + Cilium, in the matrix's `provision_mode`). The `Windows`
-> suite is special-cased in `workflows/e2e.yaml`: it always runs in `aksmachineapi` mode (Windows is
-> only provisionable via the AKS Machine API) on a dedicated cluster (`ci-mkcluster-all-windows`,
-> `az-mkaks-windows`) because Windows does not support the Cilium dataplane, and it uses a machines
-> pool name `<= 6` chars (`winmp`) to satisfy the Windows machine-name limit. Follow that pattern if a
-> new suite needs its own cluster shape or provisioning mode.
+> suite is a dedicated matrix over both AKS Machine API modes. Each cluster runs the Windows2022 and
+> Windows2025 provisioning specs and uses a non-Cilium cluster (`ci-mkcluster-all-windows`,
+> `az-mkaks-windows`) with a machines pool name `<= 6` chars (`winmp`) to satisfy the Windows
+> machine-name limit. Follow that pattern if a new suite needs its own cluster shape or provisioning mode.
 
 ### Running the test case
 

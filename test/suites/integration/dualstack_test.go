@@ -49,9 +49,27 @@ func expectPodHasIPv4AndIPv6PodIPs(pod *corev1.Pod) {
 }
 
 func hasIPv4AndIPv6PodIPs(podIPs []corev1.PodIP) bool {
-	var hasIPv4, hasIPv6 bool
+	addresses := make([]string, 0, len(podIPs))
 	for _, podIP := range podIPs {
-		addr, err := netip.ParseAddr(podIP.IP)
+		addresses = append(addresses, podIP.IP)
+	}
+	return hasIPv4AndIPv6Addresses(addresses)
+}
+
+func hasIPv4AndIPv6NodeInternalIPs(node *corev1.Node) bool {
+	addresses := make([]string, 0, len(node.Status.Addresses))
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeInternalIP {
+			addresses = append(addresses, address.Address)
+		}
+	}
+	return hasIPv4AndIPv6Addresses(addresses)
+}
+
+func hasIPv4AndIPv6Addresses(addresses []string) bool {
+	var hasIPv4, hasIPv6 bool
+	for _, address := range addresses {
+		addr, err := netip.ParseAddr(address)
 		if err != nil {
 			continue
 		}
@@ -86,7 +104,7 @@ var _ = Describe("IPv6 DualStack", func() {
 		requireDualStackCluster()
 	})
 
-	It("should provision a Linux node and assign IPv4 and IPv6 pod IPs", func() {
+	It("should provision a Linux node with IPv4 and IPv6 node and pod addresses", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelTopologyZone,
 			Operator: corev1.NodeSelectorOpIn,
@@ -117,7 +135,11 @@ var _ = Describe("IPv6 DualStack", func() {
 		expectPodHasIPv4AndIPv6PodIPs(pods[0])
 		env.ExpectCreatedNodeCount("==", 1)
 
-		node := env.GetNode(pods[0].Spec.NodeName)
+		var node *corev1.Node
+		Eventually(func(g Gomega) {
+			node = env.GetNode(pods[0].Spec.NodeName)
+			g.Expect(hasIPv4AndIPv6NodeInternalIPs(node)).To(BeTrue(), "expected node %s to have IPv4 and IPv6 InternalIPs, got %v", node.Name, node.Status.Addresses)
+		}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second)
 		Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Linux)))
 		Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
 	})

@@ -37,16 +37,6 @@ import (
 
 const expectDualStackEnvVar = "E2E_EXPECT_DUAL_STACK"
 
-func requireWindowsMachineAPICluster() {
-	GinkgoHelper()
-	if !env.IsAKSMachineAPIMode() {
-		Skip("Windows node provisioning is only supported in AKS Machine API provision mode")
-	}
-	if env.MachineAgentPoolName != "aksmanagedap" {
-		Skip("Windows machines require the reserved NAP-managed agent pool (aksmanagedap); skipping on custom machine pool")
-	}
-}
-
 func requireDualStackCluster() {
 	GinkgoHelper()
 	if os.Getenv(expectDualStackEnvVar) != "true" {
@@ -60,9 +50,27 @@ func expectPodHasIPv4AndIPv6PodIPs(pod *corev1.Pod) {
 }
 
 func hasIPv4AndIPv6PodIPs(podIPs []corev1.PodIP) bool {
-	var hasIPv4, hasIPv6 bool
+	addresses := make([]string, 0, len(podIPs))
 	for _, podIP := range podIPs {
-		addr, err := netip.ParseAddr(podIP.IP)
+		addresses = append(addresses, podIP.IP)
+	}
+	return hasIPv4AndIPv6Addresses(addresses)
+}
+
+func hasIPv4AndIPv6NodeInternalIPs(node *corev1.Node) bool {
+	addresses := make([]string, 0, len(node.Status.Addresses))
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeInternalIP {
+			addresses = append(addresses, address.Address)
+		}
+	}
+	return hasIPv4AndIPv6Addresses(addresses)
+}
+
+func hasIPv4AndIPv6Addresses(addresses []string) bool {
+	var hasIPv4, hasIPv6 bool
+	for _, address := range addresses {
+		addr, err := netip.ParseAddr(address)
 		if err != nil {
 			continue
 		}
@@ -94,53 +102,65 @@ func TestHasIPv4AndIPv6PodIPs(t *testing.T) {
 
 var _ = Describe("Windows DualStack", func() {
 	BeforeEach(func() {
-		requireWindowsMachineAPICluster()
 		requireDualStackCluster()
 	})
 
-	It("should provision a Windows node and assign IPv4 and IPv6 pod IPs", func() {
-		nodeClass := env.WindowsNodeClass()
-		nodePool := env.WindowsNodePool(nodeClass)
-		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      corev1.LabelTopologyZone,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{zones.Regional},
-		})
+	for _, settings := range windowsImageFamilies() {
+		settings := settings
+		It(fmt.Sprintf("should provision a %s node with IPv4 and IPv6 node and pod addresses", settings.family), func() {
+			requireSupportedWindowsImageFamily(settings)
 
-		deployment := test.Deployment(test.DeploymentOptions{
-			Replicas: 1,
-			PodOptions: test.PodOptions{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "windows-dualstack"},
-				},
-				Image: windowsPauseImage,
-				NodeSelector: map[string]string{
-					corev1.LabelOSStable: string(corev1.Windows),
-				},
-				Tolerations: []corev1.Toleration{{
-					Key:      corev1.LabelOSStable,
-					Operator: corev1.TolerationOpEqual,
-					Value:    string(corev1.Windows),
-					Effect:   corev1.TaintEffectNoSchedule,
-				}},
-				ResourceRequirements: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("500m"),
-						corev1.ResourceMemory: resource.MustParse("256Mi"),
+			nodeClass := env.WindowsNodeClass(settings.family)
+			nodePool := env.WindowsNodePool(nodeClass)
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      corev1.LabelTopologyZone,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{zones.Regional},
+			})
+
+			deployment := test.Deployment(test.DeploymentOptions{
+				Replicas: 1,
+				PodOptions: test.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "windows-dualstack"},
+					},
+					Image:   settings.container,
+					Command: settings.command,
+					NodeSelector: map[string]string{
+						corev1.LabelOSStable: string(corev1.Windows),
+					},
+					Tolerations: []corev1.Toleration{{
+						Key:      corev1.LabelOSStable,
+						Operator: corev1.TolerationOpEqual,
+						Value:    string(corev1.Windows),
+						Effect:   corev1.TaintEffectNoSchedule,
+					}},
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("256Mi"),
+						},
 					},
 				},
-			},
+			})
+
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+
+			pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
+			expectPodHasIPv4AndIPv6PodIPs(pods[0])
+			env.ExpectCreatedNodeCount("==", 1)
+
+			var node *corev1.Node
+			Eventually(func(g Gomega) {
+				node = env.GetNode(pods[0].Spec.NodeName)
+				g.Expect(hasIPv4AndIPv6NodeInternalIPs(node)).To(BeTrue(), "expected node %s to have IPv4 and IPv6 InternalIPs, got %v", node.Name, node.Status.Addresses)
+			}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second)
+			Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Windows)))
+			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, settings.expectedSKU))
+			Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
+			if settings.family == v1beta1.Windows2025ImageFamily {
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
+			}
 		})
-
-		env.ExpectCreated(nodeClass, nodePool, deployment)
-
-		pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
-		expectPodHasIPv4AndIPv6PodIPs(pods[0])
-		env.ExpectCreatedNodeCount("==", 1)
-
-		node := env.GetNode(pods[0].Spec.NodeName)
-		Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Windows)))
-		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, v1beta1.OSSKUWindows2022))
-		Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
-	})
+	}
 })
