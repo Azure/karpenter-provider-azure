@@ -42,7 +42,7 @@ This usually means the value participates in Karpenter requirements and changes 
 
 Choose a label when most of these are true:
 
-- The concept is a node capability, offering property, or provider-computed scheduling attribute.
+- The concept is an offering property, provider-computed scheduling attribute, or an intrinsic property of the instance type.
 - Workloads reasonably need to select or spread by it using `nodeSelector`, node affinity, topology spread constraints, or `NodePool` requirements.
 - The value is simple enough to model as a label value without losing important structure.
 - Validation is simple and the feature is largely independent of other features. The feature might restrict VM sizes and other features, but those restrictions are straightforward and easy to understand. Complicated validation should instead go in AKSNodeClass, as the Label failure mode (no matching instance types) is harder to understand than AKSNodeClass status error.
@@ -53,6 +53,7 @@ Examples:
 
 - `topology.kubernetes.io/zone`, because zone is a placement constraint that directly changes which offerings can satisfy a workload and pods need to schedule against it/set topology constraints against it.
 - `karpenter.sh/capacity-type`, because workloads may explicitly choose on-demand or spot capacity and the value is a simple scheduling dimension.
+- `karpenter.azure.com/sku-storage-premium-capable`, because premium storage support is an intrinsic capability of the VM SKU. Exposing it as a label lets workloads and `NodePool` requirements restrict scheduling to instance types that support premium storage.
 - Ultra SSD support is a simple yes/no node capability that directly affects workload placement. Although enabling Ultra SSD changes the underlying VM configuration, a Pod using an `UltraSSD_LRS` volume cannot attach that volume on a node where Ultra SSD is disabled. Therefore, this capability needs to be represented as a node scheduling requirement so the Pod is only placed on compatible nodes.
 
 ### Prefer `AKSNodeClass` when it is feature configuration
