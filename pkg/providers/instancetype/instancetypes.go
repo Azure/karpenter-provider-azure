@@ -173,18 +173,8 @@ func (p *DefaultProvider) List(
 	}
 
 	result := p.buildInstanceTypes(ctx, instanceTypeParams)
-	if latest := p.currentInstanceTypesSourceDataGeneration(); generation != latest {
-		// Availability changed while building; return this snapshot uncached instead of retrying indefinitely.
-		p.instanceTypesCache.Flush()
-		p.instanceTypesCacheGeneration = latest
-		return result, nil
-	}
 
 	p.instanceTypesCache.SetDefault(key, result)
-	if latest := p.currentInstanceTypesSourceDataGeneration(); generation != latest {
-		p.instanceTypesCache.Flush()
-		p.instanceTypesCacheGeneration = latest
-	}
 	// Return a shallow copy, matching the cache-hit path, so a caller reordering its slice doesn't reorder the cached one.
 	return append([]*cloudprovider.InstanceType{}, result...), nil
 }
