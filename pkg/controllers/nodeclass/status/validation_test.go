@@ -94,13 +94,13 @@ var _ = Describe("Validation Reconciler", func() {
 				} else {
 					Expect(condition.IsFalse()).To(BeTrue())
 					Expect(condition.Reason).To(Equal(status.IncompatibleProvisionMode))
-					Expect(condition.Message).To(ContainSubstring("requires an AKS Machine API provision mode"))
+					Expect(condition.Message).To(ContainSubstring("requires bootstrappingclient or an AKS Machine API provision mode"))
 					Expect(result).To(Equal(reconcile.Result{}))
 				}
 			},
 			Entry("ACL with Machine API", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, true),
 			Entry("ACL with batched Machine API", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
-			Entry("ACL with bootstrapping client", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, false),
+			Entry("ACL with bootstrapping client", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, true),
 			Entry("ACL with local scriptless", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, false),
 			Entry("Ubuntu with bootstrapping client", v1beta1.UbuntuImageFamily, consts.ProvisionModeBootstrappingClient, true),
 			Entry("Azure Linux with local scriptless", v1beta1.AzureLinuxImageFamily, consts.ProvisionModeAKSScriptless, true),
