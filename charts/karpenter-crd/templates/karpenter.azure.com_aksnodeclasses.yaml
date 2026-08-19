@@ -1707,6 +1707,19 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              versions:
+                description: versions controls the Kubernetes and node image versions
+                  for the NodeClass.
+                properties:
+                  kubernetesVersion:
+                    description: kubernetesVersion is the Kubernetes version to use
+                      for nodes provisioned for the NodeClass.
+                    type: string
+                  nodeImageVersion:
+                    description: nodeImageVersion is the status-backed node image
+                      version to use for the NodeClass.
+                    type: string
+                type: object
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -1797,6 +1810,10 @@ spec:
                   - type
                   type: object
                 type: array
+              controlPlaneKubernetesVersion:
+                description: controlPlaneKubernetesVersion is the latest observed
+                  control plane version.
+                type: string
               images:
                 description: |-
                   images contains the current set of images available to use
@@ -1853,6 +1870,10 @@ spec:
                   kubernetesVersion contains the current kubernetes version which should be
                   used for nodes provisioned for the NodeClass
                 type: string
+              latestImageVersion:
+                description: latestImageVersion is the latest node image version resolved
+                  from the gallery.
+                type: string
               localDNSState:
                 description: |-
                   localDNSState is the resolved enable/disable decision for LocalDNS.
@@ -1868,6 +1889,28 @@ spec:
                 - Enabled
                 - Disabled
                 type: string
+              recentlyUsedVersions:
+                description: recentlyUsedVersions contains previously effective node
+                  image versions.
+                items:
+                  description: |-
+                    RecentlyUsedVersion records a previously effective node image version and
+                    the Kubernetes version it was paired with.
+                  properties:
+                    imageVersion:
+                      description: imageVersion is the node image version suffix.
+                      type: string
+                    kubernetesVersion:
+                      description: kubernetesVersion is the Kubernetes version paired
+                        with the image version.
+                      type: string
+                    timestampUsed:
+                      description: timestampUsed is when this image version was last
+                        effective.
+                      format: date-time
+                      type: string
+                  type: object
+                type: array
             type: object
         type: object
     served: true
