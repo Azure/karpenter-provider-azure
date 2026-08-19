@@ -35,7 +35,7 @@ runs:
         if ! command -v trivy &> /dev/null; then
           TRIVY_VERSION="0.69.3"
           TRIVY_SHA256="a484057aafde31089cf2558ca0f79a4bc835125a5ee6834183a5bcf0735af358"
-          wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
+          wget -O /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
           echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
           sudo dpkg -i /tmp/trivy.deb
           rm /tmp/trivy.deb
