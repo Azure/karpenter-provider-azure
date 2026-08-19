@@ -118,7 +118,7 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && !o.IsAKSMachineAPIMode() {
+	if !o.isSupportedProvisionMode() {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	switch o.ProvisionMode {
@@ -127,19 +127,33 @@ func (o *Options) validateProvisionMode() error {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
 		}
 	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
-		if o.AKSMachinesPoolName == "" {
-			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
-		}
-		if !o.UseSIG {
-			return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
-		}
-		if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
-			if err := o.validateBatchOptions(); err != nil {
-				return err
-			}
-		}
+		return o.validateAKSMachineProvisionMode()
+	case consts.ProvisionModeFleet:
+		return o.validateBatchOptions()
 	}
 	return nil
+}
+
+func (o *Options) validateAKSMachineProvisionMode() error {
+	if o.AKSMachinesPoolName == "" {
+		return fmt.Errorf("aks-machines-pool-name is required when provision-mode is %s", o.ProvisionMode)
+	}
+	if !o.UseSIG {
+		return fmt.Errorf("use-sig is required to be true when provision-mode is %s", o.ProvisionMode)
+	}
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+		return o.validateBatchOptions()
+	}
+	return nil
+}
+
+func (o *Options) isSupportedProvisionMode() bool {
+	switch o.ProvisionMode {
+	case consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient, consts.ProvisionModeFleet:
+		return true
+	default:
+		return o.IsAKSMachineAPIMode()
+	}
 }
 
 func (o *Options) validateBatchOptions() error {
