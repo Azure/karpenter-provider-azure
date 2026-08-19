@@ -242,11 +242,18 @@ var _ = Describe("CloudProvider", func() {
 					}
 
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-						Key:      v1.LabelOSStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{string(v1.Windows)},
-					})
+					coretest.ReplaceRequirements(nodePool,
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key:      v1.LabelOSStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{string(v1.Windows)},
+						},
+						karpv1.NodeSelectorRequirementWithMinValues{
+							Key:      v1.LabelInstanceTypeStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{"Standard_D2_v5"},
+						},
+					)
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -259,6 +266,9 @@ var _ = Describe("CloudProvider", func() {
 					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 					createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 					aksMachine := createInput.AKSMachine
+					Expect(createInput.AKSMachineName).To(HaveLen(12))
+					Expect(createInput.UseWindowsGen2VM).To(BeTrue())
+					Expect(createInput.RequestedAKSMachine.Properties.NodeImageVersion).To(BeNil())
 					Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
 					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSType)).To(Equal(armcontainerservice.OSTypeWindows))
 					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(expectedOSSKU))
@@ -1260,6 +1270,68 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(kubeOverride.ServeStaleDurationInSeconds)).To(Equal(int32(45)))
 				Expect(lo.FromPtr(kubeOverride.ServeStale)).To(Equal(armcontainerservice.LocalDNSServeStaleVerify))
 			})
+		})
+	})
+
+	Context("ProvisionMode = AKSMachineAPI", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+				UseSIG:        lo.ToPtr(true),
+			})
+
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+
+			azureEnv = test.NewEnvironment(ctx, env)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+		})
+
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			cluster.Reset()
+			azureEnv.Reset(ctx)
+		})
+
+		It("should send the Gen2 Windows request through the direct Machine API path", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelOSStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{string(v1.Windows)},
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v5"},
+				},
+			)
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{
+				NodeSelector: map[string]string{v1.LabelOSStable: string(v1.Windows)},
+			})
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			aksMachine := createInput.AKSMachine
+			Expect(createInput.AKSMachineName).To(HaveLen(12))
+			Expect(createInput.UseWindowsGen2VM).To(BeTrue())
+			Expect(createInput.RequestedAKSMachine.Properties.NodeImageVersion).To(BeNil())
+			Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+			Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSType)).To(Equal(armcontainerservice.OSTypeWindows))
+			Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(armcontainerservice.OSSKUWindows2022))
 		})
 	})
 })

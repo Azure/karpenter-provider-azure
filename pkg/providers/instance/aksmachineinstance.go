@@ -578,6 +578,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 	if createOptions.useWindowsGen2VM {
 		// Request a Gen2 Windows image from the RP for this create (see shouldUseWindowsGen2VM).
 		ctx = policy.WithHTTPHeader(ctx, http.Header{consts.HeaderUseWindowsGen2VM: []string{"true"}})
+		// Mirror the header for the in-process fake; the real API reads the HTTP header above.
+		ctx = aksmachinesheaderbatch.WithFakeUseWindowsGen2VM(ctx, true)
 	}
 	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {

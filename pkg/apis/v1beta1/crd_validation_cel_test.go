@@ -736,34 +736,50 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("Windows unsupported profiles", func() {
-		It("should reject artifact streaming for Windows", func() {
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1beta1.AKSNodeClassSpec{
-					ImageFamily:       lo.ToPtr(v1beta1.Windows2022ImageFamily),
-					ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)},
-				},
-			}
-			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
-		})
-
-		It("should allow disabled artifact streaming for Windows", func() {
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1beta1.AKSNodeClassSpec{
-					ImageFamily:       lo.ToPtr(v1beta1.Windows2022ImageFamily),
-					ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(false)},
-				},
-			}
-			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-		})
-
-		DescribeTable("should validate LocalDNS mode for Windows",
-			func(mode v1beta1.LocalDNSMode, expected bool) {
+		DescribeTable("should validate artifact streaming for Windows",
+			func(imageFamily string, enabled bool, expected bool) {
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
-						ImageFamily: lo.ToPtr(v1beta1.Windows2022ImageFamily),
+						ImageFamily:       lo.ToPtr(imageFamily),
+						ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(enabled)},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if expected {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).ToNot(Succeed())
+				}
+			},
+			Entry("Windows2022 rejects enabled artifact streaming", v1beta1.Windows2022ImageFamily, true, false),
+			Entry("Windows2022 accepts disabled artifact streaming", v1beta1.Windows2022ImageFamily, false, true),
+			Entry("Windows2025 rejects enabled artifact streaming", v1beta1.Windows2025ImageFamily, true, false),
+			Entry("Windows2025 accepts disabled artifact streaming", v1beta1.Windows2025ImageFamily, false, true),
+		)
+
+		DescribeTable("should reject LinuxOSConfig for Windows",
+			func(imageFamily string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily:   lo.ToPtr(imageFamily),
+						LinuxOSConfig: &v1beta1.LinuxOSConfiguration{SwapFileSize: lo.ToPtr("1500Mi")},
+						Kubelet:       &v1beta1.KubeletConfiguration{FailSwapOn: lo.ToPtr(false)},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			},
+			Entry("Windows2022", v1beta1.Windows2022ImageFamily),
+			Entry("Windows2025", v1beta1.Windows2025ImageFamily),
+		)
+
+		DescribeTable("should validate LocalDNS mode for Windows",
+			func(imageFamily string, mode v1beta1.LocalDNSMode, expected bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(imageFamily),
 						LocalDNS: &v1beta1.LocalDNS{
 							Mode:             mode,
 							VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
@@ -778,9 +794,12 @@ var _ = Describe("CEL/Validation", func() {
 					Expect(err).ToNot(Succeed())
 				}
 			},
-			Entry("Disabled is accepted", v1beta1.LocalDNSModeDisabled, true),
-			Entry("Preferred is rejected", v1beta1.LocalDNSModePreferred, false),
-			Entry("Required is rejected", v1beta1.LocalDNSModeRequired, false),
+			Entry("Windows2022 accepts Disabled", v1beta1.Windows2022ImageFamily, v1beta1.LocalDNSModeDisabled, true),
+			Entry("Windows2022 rejects Preferred", v1beta1.Windows2022ImageFamily, v1beta1.LocalDNSModePreferred, false),
+			Entry("Windows2022 rejects Required", v1beta1.Windows2022ImageFamily, v1beta1.LocalDNSModeRequired, false),
+			Entry("Windows2025 accepts Disabled", v1beta1.Windows2025ImageFamily, v1beta1.LocalDNSModeDisabled, true),
+			Entry("Windows2025 rejects Preferred", v1beta1.Windows2025ImageFamily, v1beta1.LocalDNSModePreferred, false),
+			Entry("Windows2025 rejects Required", v1beta1.Windows2025ImageFamily, v1beta1.LocalDNSModeRequired, false),
 		)
 	})
 

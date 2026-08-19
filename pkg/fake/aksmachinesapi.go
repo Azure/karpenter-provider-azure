@@ -51,12 +51,14 @@ func NewAKSDataStorage() *AKSDataStorage {
 }
 
 type AKSMachineCreateOrUpdateInput struct {
-	ResourceGroupName string
-	ResourceName      string
-	AgentPoolName     string
-	AKSMachineName    string
-	AKSMachine        armcontainerservice.Machine
-	Options           *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions
+	ResourceGroupName   string
+	ResourceName        string
+	AgentPoolName       string
+	AKSMachineName      string
+	AKSMachine          armcontainerservice.Machine
+	RequestedAKSMachine armcontainerservice.Machine
+	Options             *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions
+	UseWindowsGen2VM    bool
 }
 
 type AKSMachineGetInput struct {
@@ -283,12 +285,14 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 	options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions,
 ) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
 	input := &AKSMachineCreateOrUpdateInput{
-		ResourceGroupName: resourceGroupName,
-		ResourceName:      resourceName,
-		AgentPoolName:     agentPoolName,
-		AKSMachineName:    aksMachineName,
-		AKSMachine:        parameters,
-		Options:           options,
+		ResourceGroupName:   resourceGroupName,
+		ResourceName:        resourceName,
+		AgentPoolName:       agentPoolName,
+		AKSMachineName:      aksMachineName,
+		AKSMachine:          parameters,
+		RequestedAKSMachine: parameters,
+		Options:             options,
+		UseWindowsGen2VM:    aksmachinesheaderbatch.FakeUseWindowsGen2VMFromContext(ctx),
 	}
 
 	// Validate parent AgentPool
