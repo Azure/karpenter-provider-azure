@@ -129,17 +129,27 @@ func newInstanceType(
 ) *cloudprovider.InstanceType {
 	opts := options.FromContext(ctx)
 	memoryGiB := lo.Must(sku.Memory())
+	enableNodeHardening := shouldUseNodeHardening(opts.EnableNodeHardening, opts.ProvisionMode)
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(opts, sku, vmsize, architecture, offerings, region, params),
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, params),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), memoryGiB, params.MaxPods, opts.EnableNodeHardening),
-			SystemReserved:    SystemReservedResources(memoryGiB, opts.NetworkPlugin == consts.NetworkPluginAzure, opts.EnableNodeHardening),
-			EvictionThreshold: EvictionThreshold(memoryGiB, opts.EnableNodeHardening),
+			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), memoryGiB, params.MaxPods, enableNodeHardening),
+			SystemReserved:    SystemReservedResources(memoryGiB, opts.NetworkPlugin == consts.NetworkPluginAzure, enableNodeHardening),
+			EvictionThreshold: EvictionThreshold(memoryGiB, enableNodeHardening),
 		},
 	}
+}
+
+func shouldUseNodeHardening(enableNodeHardening bool, provisionMode string) bool {
+	if !enableNodeHardening {
+		return false
+	}
+	return provisionMode == consts.ProvisionModeAKSScriptless ||
+		provisionMode == consts.ProvisionModeAKSMachineAPI ||
+		provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
 func computeRequirements(

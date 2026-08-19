@@ -21,7 +21,33 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
+
+func TestShouldUseNodeHardening(t *testing.T) {
+	tests := []struct {
+		name          string
+		enabled       bool
+		provisionMode string
+		want          bool
+	}{
+		{name: "disabled for scriptless", provisionMode: consts.ProvisionModeAKSScriptless},
+		{name: "enabled for scriptless", enabled: true, provisionMode: consts.ProvisionModeAKSScriptless, want: true},
+		{name: "skipped for bootstrapping client", enabled: true, provisionMode: consts.ProvisionModeBootstrappingClient},
+		{name: "enabled for machine API", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPI, want: true},
+		{name: "enabled for machine API header batch", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, want: true},
+		{name: "skipped for unknown mode", enabled: true, provisionMode: "unknown"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shouldUseNodeHardening(test.enabled, test.provisionMode); got != test.want {
+				t.Fatalf("shouldUseNodeHardening(%t, %q) = %t, want %t", test.enabled, test.provisionMode, got, test.want)
+			}
+		})
+	}
+}
 
 // These cases mirror calculateMemoryReservation(enableNodeHardening=true) in
 // resourceprovider/sharedlib/common/kubereserved/utils.go in the AKS RP.
