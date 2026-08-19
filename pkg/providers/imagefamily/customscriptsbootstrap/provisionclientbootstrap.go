@@ -67,6 +67,8 @@ type ProvisionClientBootstrap struct {
 	LocalDNSProfile                *v1beta1.LocalDNS
 	ArtifactStreaming              *v1beta1.ArtifactStreaming
 	LinuxOSConfig                  *v1beta1.LinuxOSConfiguration
+	VTPMEnabled                    *bool
+	SecureBootEnabled              *bool
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -124,9 +126,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		NodeInitializationTaints: lo.Map(p.StartupTaints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		NodeTaints:               lo.Map(p.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		SecurityProfile: &models.AgentPoolSecurityProfile{
-			SSHAccess: lo.ToPtr(models.SSHAccessLocalUser),
-			// EnableVTPM:       lo.ToPtr(false), // Unsupported as of now (Trusted launch)
-			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
+			SSHAccess:        lo.ToPtr(models.SSHAccessLocalUser),
+			EnableVTPM:       p.VTPMEnabled,
+			EnableSecureBoot: p.SecureBootEnabled,
 		},
 		MaxPods: lo.ToPtr(p.KubeletConfig.MaxPods),
 

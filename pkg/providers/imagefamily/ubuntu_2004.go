@@ -45,7 +45,12 @@ func (u Ubuntu2004) Name() string {
 	return v1beta1.UbuntuImageFamily
 }
 
-func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput {
+	// Trusted Launch is not supported for Ubuntu 20.04
+	if trustedLaunch {
+		return []types.DefaultImageOutput{}
+	}
+
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// Ubuntu2004 doesn't have default node images (only FIPS)
@@ -133,6 +138,8 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 	_ *v1beta1.LocalDNS, // Ubuntu 20.04 does not support LocalDNS
 	artifactStreaming *v1beta1.ArtifactStreaming,
 	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled *bool,
+	secureBootEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -156,5 +163,7 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 		FIPSMode:                       fipsMode,
 		ArtifactStreaming:              artifactStreaming,
 		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
 	}
 }

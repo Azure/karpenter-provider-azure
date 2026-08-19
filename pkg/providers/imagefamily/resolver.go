@@ -91,13 +91,15 @@ type ImageFamily interface {
 		localDNS *v1beta1.LocalDNS,
 		artifactStreaming *v1beta1.ArtifactStreaming,
 		linuxOSConfig *v1beta1.LinuxOSConfiguration,
+		vtpmEnabled *bool,
+		secureBootEnabled *bool,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
-	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
+	// DefaultImages returns supported AKS node image definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
-	// If fipsMode is FIPSModeFIPS, only FIPS-enabled images will be returned
-	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput
+	// If fipsMode is FIPSModeFIPS or trustedLaunch is enabled, only matching feature-specific images will be returned.
+	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
@@ -126,7 +128,7 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
+	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), kubernetesVersion, staticParameters)
 	imageID, err := r.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
@@ -140,7 +142,7 @@ func (r *defaultResolver) Resolve(
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	useSIG := options.FromContext(ctx).UseSIG
-	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
+	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG, nodeClass.IsTrustedLaunchEnabled())
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +153,11 @@ func (r *defaultResolver) Resolve(
 	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
 	if err != nil {
 		return nil, err
+	}
+	var vtpmEnabled, secureBootEnabled *bool
+	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.TrustedLaunch != nil {
+		vtpmEnabled = nodeClass.Spec.Security.TrustedLaunch.VTPM
+		secureBootEnabled = nodeClass.Spec.Security.TrustedLaunch.SecureBoot
 	}
 
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
@@ -177,6 +184,8 @@ func (r *defaultResolver) Resolve(
 			nodeClass.ResolvedLocalDNSForWire(),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
+			vtpmEnabled,
+			secureBootEnabled,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
@@ -206,10 +215,10 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 	return consts.StorageProfileManagedDisks, placement, nil
 }
 
-func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {
+func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool, trustedLaunch bool) (string, error) {
 	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
-	for _, defaultImage := range imageFamily.DefaultImages(useSIG, fipsMode) {
+	for _, defaultImage := range imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch) {
 		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
 			return defaultImage.Distro, nil
 		}
@@ -263,13 +272,13 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool) []types.DefaultImageOutput {
+func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
-	imageFamily := GetImageFamily(familyName, fipsMode, kubernetesVersion, nil)
-	return imageFamily.DefaultImages(useSIG, fipsMode)
+	imageFamily := GetImageFamily(familyName, fipsMode, trustedLaunch, kubernetesVersion, nil)
+	return imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch)
 }
 
-func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
@@ -283,13 +292,20 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
-		return defaultUbuntu(fipsMode, kubernetesVersion, parameters)
+		return defaultUbuntu(fipsMode, trustedLaunch, kubernetesVersion, parameters)
 	}
 }
 
-func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func defaultUbuntu(fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+		if trustedLaunch {
+			return &Ubuntu2204{Options: parameters}
+		}
 		return &Ubuntu2004{Options: parameters}
+	}
+
+	if trustedLaunch {
+		return &Ubuntu2204{Options: parameters}
 	}
 	if UseUbuntu2404(kubernetesVersion) {
 		return &Ubuntu2404{Options: parameters}
