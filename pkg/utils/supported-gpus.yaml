@@ -46,6 +46,12 @@ standard_nc80adis_h100_v5:
 standard_nd96asr_v4:
   gpu: nvidia
   os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
+standard_nd112asr_a100_v4:
+  gpu: nvidia
+  os: ["ubuntu", "windows", "azurelinux3"]
+standard_nd120asr_a100_v4:
+  gpu: nvidia
+  os: ["ubuntu", "windows", "azurelinux3"]
 
 #  StandardNVADSA10v5Family:
 standard_nv12ads_a10_v5:
@@ -113,6 +119,12 @@ standard_nc6s_v2:
 standard_nd96amsr_a100_v4:
   gpu: nvidia
   os: ["ubuntu", "windows", "azurelinux3", "azurecontainerlinux"]
+standard_nd112amsr_a100_v4:
+  gpu: nvidia
+  os: ["ubuntu", "windows", "azurelinux3"]
+standard_nd120amsr_a100_v4:
+  gpu: nvidia
+  os: ["ubuntu", "windows", "azurelinux3"]
 
 #  standardNDSH100v5Family:
 standard_nd96isr_h100_v5:
