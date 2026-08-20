@@ -57,6 +57,21 @@ func TestAKSMachineProvisioningErrorCodeForMetrics(t *testing.T) {
 			want: "OperationPreempted",
 		},
 		{
+			name: "nil detail falls back to top-level code",
+			provisioningError: &armcontainerservice.ErrorDetail{
+				Code:    lo.ToPtr("AllocationFailed"),
+				Details: []*armcontainerservice.ErrorDetail{nil},
+			},
+			want: "AllocationFailed",
+		},
+		{
+			name: "detail without a code uses the bounded fallback",
+			provisioningError: &armcontainerservice.ErrorDetail{
+				Details: []*armcontainerservice.ErrorDetail{{}},
+			},
+			want: "UnknownError",
+		},
+		{
 			name:              "missing codes use the bounded fallback",
 			provisioningError: &armcontainerservice.ErrorDetail{},
 			want:              "UnknownError",

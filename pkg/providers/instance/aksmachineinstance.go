@@ -596,17 +596,17 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 			// Use SDK poller (non-batch case)
 			_, err := poller.PollUntilDone(ctx, defaultPollerOptions()) // This may panic if it is deleted mid-way.
 			if err != nil {
-				// Could be quota error; will be handled with custom logic below
+				// Could be quota error; will be handled with custom logic below.
+				metricErrorCode = ErrorCodeForMetrics(err)
 
-				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-				failedAKSMachine, _ := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
-				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
+				// Get once after begin create to retrieve error details. This is because if the poller returns error, the SDK doesn't let us look at the real results.
+				failedAKSMachine, getErr := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
+				if getErr == nil && failedAKSMachine != nil && failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 					metricErrorCode = aksMachineProvisioningErrorCodeForMetrics(failedAKSMachine.Properties.Status.ProvisioningError)
 					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 					return
 				}
 				// This should not be expected.
-				metricErrorCode = ErrorCodeForMetrics(err)
 				pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO, AKS API returned error: %w", aksMachineName, err)
 				return
 			}
