@@ -1212,6 +1212,112 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		Context("Node hardening", func() {
+			It("should configure hardened reservations and eviction thresholds when enabled", func() {
+				ctx = options.ToContext(
+					ctx,
+					test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}),
+				)
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				customData := ExpectDecodedCustomData(azureEnv)
+
+				expectedFlags := map[string]string{
+					"enforce-node-allocatable":      "pods,kube-reserved,system-reserved",
+					"eviction-max-pod-grace-period": "60",
+				}
+
+				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft="))
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
+				ExpectHardEvictionThresholds(customData, "250Mi")
+				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period="))
+				Expect(kubeletFlags).To(ContainSubstring("memory.available=30s"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree=2m0s"))
+				Expect(kubeletFlags).To(ContainSubstring("pid=1000"))
+			})
+
+			It("should let AKSNodeClass.spec.kubelet overrides win over hardened defaults per key", func() {
+				ctx = options.ToContext(
+					ctx,
+					test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}),
+				)
+				// Customer overrides one key of evictionSoft + evictionSoftGracePeriod
+				// and the pod-grace-period; the other keys should still inherit the
+				// hardening defaults (parity with `az aks nodepool` per-key semantics).
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+					EvictionSoft: map[string]string{
+						"memory.available": "444Mi",
+					},
+					EvictionSoftGracePeriod: map[string]metav1.Duration{
+						"memory.available": {Duration: 45 * time.Second},
+					},
+					EvictionMaxPodGracePeriod: lo.ToPtr[int32](120),
+				}
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				customData := ExpectDecodedCustomData(azureEnv)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				// Customer values win for the keys they set.
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<444Mi"))
+				Expect(kubeletFlags).To(ContainSubstring("memory.available=45s"))
+				Expect(kubeletFlags).To(ContainSubstring("--eviction-max-pod-grace-period=120"))
+				// Non-overridden keys still carry the hardening defaults.
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree=2m0s"))
+			})
+
+			It("should let AKSNodeClass.spec.kubelet override evictionHard and kubeReserved", func() {
+				// Overrides must apply even when node hardening is disabled — this is
+				// the RP-parity path where a customer sets kubelet knobs via the
+				// AKSNodeClass without opting in to hardening.
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+					EvictionHard: map[string]string{
+						"memory.available": "333Mi",
+					},
+					KubeReserved: map[string]string{
+						"cpu":    "250m",
+						"memory": "512Mi",
+					},
+				}
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				customData := ExpectDecodedCustomData(azureEnv)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				// Customer eviction-hard override wins for memory.available; the
+				// unset filesystem/pid signals fall back to Karpenter's baseline.
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<333Mi"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
+				Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
+				// Customer kube-reserved values win per key; pid inherits from
+				// Karpenter's baseline (KubeReservedPIDs).
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi", "pid=1000")
+			})
+		})
+
 		Context("Nodepool with KubeletConfig", func() {
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -1235,7 +1341,6 @@ var _ = Describe("InstanceType Provider", func() {
 				customData := ExpectDecodedCustomData(azureEnv)
 
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"image-gc-high-threshold": "30",
 					"image-gc-low-threshold":  "20",
 					"cpu-cfs-quota":           "true",
@@ -1249,14 +1354,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 		})
 
@@ -1310,7 +1413,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 				customData := ExpectDecodedCustomData(azureEnv)
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"max-pods":                "110",
 					"image-gc-low-threshold":  "20",
 					"image-gc-high-threshold": "30",
@@ -1323,14 +1425,12 @@ var _ = Describe("InstanceType Provider", func() {
 					"pod-max-pids":            "99",
 				}
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -1354,7 +1454,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 				customData := ExpectDecodedCustomData(azureEnv)
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"max-pods":                "15",
 					"image-gc-low-threshold":  "20",
 					"image-gc-high-threshold": "30",
@@ -1368,14 +1467,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 		})
 
@@ -3427,7 +3524,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "140m"
 			expectedMemory := "1638Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3441,7 +3538,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "100m"
 			expectedMemory := "1843Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3455,12 +3552,66 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "120m"
 			expectedMemory := "5611Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
 			Expect(gotCPU.String()).To(Equal(expectedCPU))
 			Expect(gotMemory.String()).To(Equal(expectedMemory))
+		})
+	})
+
+	Context("Node hardening reservations", func() {
+		It("KubeReservedResources scales with maxPods and node capacity", func() {
+			// 8 vCPU, 32 GiB, 110 pods: min(35*110 + max(250, 2%*32768), 25%*32768) = 4505Mi.
+			resources := instancetype.KubeReservedResources(int64(8), 32.0, int32(110), true)
+			cpu := resources[v1.ResourceCPU]
+			mem := resources[v1.ResourceMemory]
+			Expect(cpu.String()).To(Equal("180m"))
+			Expect(mem.String()).To(Equal("4505Mi"))
+		})
+		It("KubeReservedResources is capped at 25% of memory", func() {
+			// Tiny node, very high pod density -> capped at 25% of 8Gi = 2048Mi (= 2Gi).
+			resources := instancetype.KubeReservedResources(int64(2), 8.0, int32(250), true)
+			mem := resources[v1.ResourceMemory]
+			Expect(mem.String()).To(Equal("2Gi"))
+		})
+		It("SystemReservedResources adds the Azure CNI bonus", func() {
+			// 32 GiB Azure CNI: 200 + 100*floor(32/32) + 100 = 400Mi.
+			resources := instancetype.SystemReservedResources(32.0, true, true)
+			cpu := resources[v1.ResourceCPU]
+			mem := resources[v1.ResourceMemory]
+			eph := resources[v1.ResourceEphemeralStorage]
+			pids := resources[v1.ResourceName("pid")]
+			Expect(cpu.String()).To(Equal("100m"))
+			Expect(mem.String()).To(Equal("400Mi"))
+			Expect(eph.String()).To(Equal("1Gi"))
+			Expect(pids.String()).To(Equal("1k"))
+		})
+		It("SystemReservedResources omits the bonus for non-Azure CNI", func() {
+			resources := instancetype.SystemReservedResources(8.0, false, true)
+			mem := resources[v1.ResourceMemory]
+			Expect(mem.String()).To(Equal("200Mi"))
+		})
+		It("EvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
+			small := instancetype.EvictionThreshold(8.0, true)[v1.ResourceMemory]
+			medium := instancetype.EvictionThreshold(16.0, true)[v1.ResourceMemory]
+			large := instancetype.EvictionThreshold(32.0, true)[v1.ResourceMemory]
+			Expect(small.String()).To(Equal("250Mi"))
+			Expect(medium.String()).To(Equal("375Mi"))
+			Expect(large.String()).To(Equal("512Mi"))
+		})
+		It("SoftEvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
+			small := instancetype.SoftEvictionThreshold(8 * 1024)[v1.ResourceMemory]
+			medium := instancetype.SoftEvictionThreshold(16 * 1024)[v1.ResourceMemory]
+			large := instancetype.SoftEvictionThreshold(32 * 1024)[v1.ResourceMemory]
+			Expect(small.String()).To(Equal("500Mi"))
+			Expect(medium.String()).To(Equal("750Mi"))
+			Expect(large.String()).To(Equal("1Gi"))
+		})
+		It("EvictionThreshold is the flat default when hardening is disabled", func() {
+			threshold := instancetype.EvictionThreshold(32.0, false)[v1.ResourceMemory]
+			Expect(threshold.String()).To(Equal("750Mi"))
 		})
 	})
 })
@@ -3472,6 +3623,25 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
 	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
+}
+
+func ExpectHardEvictionThresholds(customData, memory string) {
+	GinkgoHelper()
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	Expect(kubeletFlags).To(ContainSubstring("memory.available<" + memory))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
+	Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
+}
+
+func ExpectKubeReservedResources(customData string, expected ...string) {
+	GinkgoHelper()
+	const prefix = "--kube-reserved="
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	start := strings.Index(kubeletFlags, prefix)
+	Expect(start).ToNot(Equal(-1))
+	value := strings.Fields(kubeletFlags[start+len(prefix):])[0]
+	Expect(strings.Split(value, ",")).To(ConsistOf(expected))
 }
 
 func ExpectKubeletNodeLabelsPassed(customData string) string {

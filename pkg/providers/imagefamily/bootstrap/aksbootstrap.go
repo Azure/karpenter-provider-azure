@@ -405,6 +405,10 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 		return v.Duration.String()
 	}), "=")
 
+	if len(kubeletConfig.EnforceNodeAllocatable) > 0 {
+		args["--enforce-node-allocatable"] = strings.Join(kubeletConfig.EnforceNodeAllocatable, ",")
+	}
+
 	if kubeletConfig.EvictionMaxPodGracePeriod != nil {
 		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.EvictionMaxPodGracePeriod))
 	}
