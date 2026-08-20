@@ -52,6 +52,7 @@ type Template struct {
 	StorageProfileIsEphemeral bool
 	StorageProfilePlacement   armcompute.DiffDiskPlacement
 	StorageProfileSizeGB      int32
+	EncryptionAtHost          *bool
 }
 
 type Provider struct {
