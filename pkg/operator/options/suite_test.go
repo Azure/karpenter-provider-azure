@@ -35,7 +35,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var ctx context.Context
@@ -140,7 +140,7 @@ var _ = Describe("Options", func() {
 			opts.AddFlags(fs)
 			err := opts.Parse(fs)
 			Expect(err).ToNot(HaveOccurred())
-			expectedOpts := test.Options(test.OptionsFields{
+			expectedOpts := common.Options(common.OptionsFields{
 				ClusterName:                    lo.ToPtr("env-cluster"),
 				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),

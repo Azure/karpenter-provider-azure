@@ -94,6 +94,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	nodeClaim := &karpv1.NodeClaim{}
 	labels := map[string]string{}
 	annotations := map[string]string{}
+	cloudProviderStartupTaints := []corev1.Taint{}
 
 	annotations[v1beta1.AnnotationAKSMachineResourceID] = aksMachineResourceID
 	if instanceType != nil {
@@ -119,6 +120,15 @@ func BuildNodeClaimFromAKSMachineTemplate(
 		// This was less of a concern for VM instance as NodeClaim name is always inferable from instance name.
 		nodeClaim.Name = *tag
 	}
+	// add Cilium startup taint and label if the dataplane is Cilium
+	opts := options.FromContext(ctx)
+	if opts != nil {
+		if opts.NetworkDataplane == consts.NetworkDataplaneCilium {
+			cloudProviderStartupTaints = lo.Uniq(append(cloudProviderStartupTaints, utils.TaintCiliumNoSchedule))
+			labels[labelspkg.AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
+		}
+	}
+	nodeClaim.Status.CloudProviderStartupTaints = cloudProviderStartupTaints
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
 

@@ -47,6 +47,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool) {
@@ -595,7 +596,7 @@ func runSharedAKSMachineAPITests() {
 var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = false", func() {
 		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
@@ -634,7 +635,7 @@ var _ = Describe("CloudProvider", func() {
 
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = true", func() {
 		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(true), // should not have any effect
@@ -676,7 +677,7 @@ var _ = Describe("CloudProvider", func() {
 			var existingAKSMachine *armcontainerservice.Machine
 
 			BeforeEach(func() {
-				testOptions = test.Options(test.OptionsFields{
+				testOptions = common.Options(common.OptionsFields{
 					ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless), // Switch to VM mode
 					UseSIG:                    lo.ToPtr(true),
 					ManageExistingAKSMachines: lo.ToPtr(false), // Disable AKS machines management
@@ -807,7 +808,7 @@ var _ = Describe("CloudProvider", func() {
 			var existingAKSMachine *armcontainerservice.Machine
 
 			BeforeEach(func() {
-				testOptions = test.Options(test.OptionsFields{
+				testOptions = common.Options(common.OptionsFields{
 					ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless), // Switch to VM mode
 					UseSIG:                    lo.ToPtr(true),
 					ManageExistingAKSMachines: lo.ToPtr(true), // Enable AKS machines management
@@ -1022,7 +1023,7 @@ var _ = Describe("CloudProvider", func() {
 		var existingVM *armcompute.VirtualMachine
 
 		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
 				UseSIG:        lo.ToPtr(true),
 			})

@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var ctx context.Context
@@ -59,7 +60,7 @@ func TestInPlaceUpdate(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	ctx = options.ToContext(ctx, test.Options())
+	ctx = options.ToContext(ctx, common.Options())
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	azureEnv = test.NewEnvironment(ctx, env)
@@ -110,7 +111,7 @@ var _ = Describe("Unit tests", func() {
 
 	Context("HashFromNodeClaim", func() {
 		It("should not depend on identity ordering", func() {
-			options := test.Options()
+			options := common.Options()
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
@@ -141,7 +142,7 @@ var _ = Describe("Unit tests", func() {
 		})
 
 		It("should include both AdditionalTags and AKSNodeClass.Spec.Tags in hash calculation", func() {
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"global-tag": "global-value",
 			}
@@ -173,7 +174,7 @@ var _ = Describe("Unit tests", func() {
 		})
 
 		It("should prioritize NodeClass tags over AdditionalTags", func() {
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"priority-tag": "additional-value",
 			}
@@ -194,7 +195,7 @@ var _ = Describe("Unit tests", func() {
 		})
 
 		It("should produce different hashes for AKS machines vs VMs", func() {
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"test-tag": "test-value",
 			}
@@ -228,7 +229,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"test-tag": "my-tag",
 			}
@@ -260,7 +261,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"test-tag": "my-tag",
 			}
@@ -285,7 +286,7 @@ var _ = Describe("Unit tests", func() {
 				Properties: nil,
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"test-tag": "my-tag",
 			}
@@ -313,7 +314,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"new-tag": "new-value",
 			}
@@ -337,7 +338,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"conflict-tag": "additional-value",
 			}
@@ -538,7 +539,7 @@ var _ = Describe("Unit tests", func() {
 
 	Context("calculateVMPatch", func() {
 		It("should add missing identities when there are no existing identities", func() {
-			options := test.Options()
+			options := common.Options()
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
@@ -557,7 +558,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 			}
@@ -577,7 +578,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
@@ -595,7 +596,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
@@ -609,7 +610,7 @@ var _ = Describe("Unit tests", func() {
 				"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"test-tag": "my-tag",
 			}
@@ -630,7 +631,7 @@ var _ = Describe("Unit tests", func() {
 				"compute.aks.billing":         lo.ToPtr("linux"),
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"test-tag": "my-tag",
 			}
@@ -651,7 +652,7 @@ var _ = Describe("Unit tests", func() {
 				"compute.aks.billing":         lo.ToPtr("linux"),
 			}
 
-			options := test.Options()
+			options := common.Options()
 			nodeClass.Spec.Tags = map[string]string{
 				"nodeclass-tag": "nodeclass-value",
 			}
@@ -673,7 +674,7 @@ var _ = Describe("Unit tests", func() {
 				"test-tag":                    lo.ToPtr("my-tag"),
 			}
 
-			options := test.Options()
+			options := common.Options()
 			options.AdditionalTags = map[string]string{
 				"test-tag": "my-tag",
 			}
@@ -699,7 +700,7 @@ var _ = Describe("Unit tests", func() {
 				"test-tag":                    lo.ToPtr("my-tag"),
 			}
 
-			options := test.Options()
+			options := common.Options()
 			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
 
 			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
@@ -781,7 +782,7 @@ var _ = Describe("In Place Update Controller", func() {
 			// Apply the nodeClass to the test environment
 			ExpectApplied(ctx, env.Client, nodeClass)
 
-			ctx = options.ToContext(ctx, test.Options())
+			ctx = options.ToContext(ctx, common.Options())
 
 			azureEnv.Reset(ctx)
 		})
@@ -865,8 +866,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 				ctx = options.ToContext(
 					ctx,
-					test.Options(
-						test.OptionsFields{
+					common.Options(
+						common.OptionsFields{
 							NodeIdentities: []string{
 								"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 							},
@@ -902,8 +903,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 				ctx = options.ToContext(
 					ctx,
-					test.Options(
-						test.OptionsFields{
+					common.Options(
+						common.OptionsFields{
 							NodeIdentities: []string{
 								"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 							},
@@ -929,8 +930,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 				ctx = options.ToContext(
 					ctx,
-					test.Options(
-						test.OptionsFields{
+					common.Options(
+						common.OptionsFields{
 							NodeIdentities: []string{
 								"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 							},
@@ -966,8 +967,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 				ctx = options.ToContext(
 					ctx,
-					test.Options(
-						test.OptionsFields{
+					common.Options(
+						common.OptionsFields{
 							AdditionalTags: map[string]string{
 								"test-tag": "my-tag",
 							},
@@ -1045,8 +1046,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 				ctx = options.ToContext(
 					ctx,
-					test.Options(
-						test.OptionsFields{
+					common.Options(
+						common.OptionsFields{
 							AdditionalTags: map[string]string{
 								"test-tag": "my-tag",
 							},

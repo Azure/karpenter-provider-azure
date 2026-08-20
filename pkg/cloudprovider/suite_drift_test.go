@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var _ = Describe("CloudProvider", func() {
@@ -45,7 +46,7 @@ var _ = Describe("CloudProvider", func() {
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
 	Context("ProvisionMode = AKSScriptless", func() {
 		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSScriptless),
 			})
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
@@ -73,7 +74,7 @@ var _ = Describe("CloudProvider", func() {
 
 			BeforeEach(func() {
 				// Set up VM provisioning mode environment for drift testing
-				testOptions = test.Options()
+				testOptions = common.Options()
 				ctx = coreoptions.ToContext(ctx, coretest.Options())
 				ctx = options.ToContext(ctx, testOptions)
 				azureEnv = test.NewEnvironment(ctx, env)
@@ -97,7 +98,7 @@ var _ = Describe("CloudProvider", func() {
 
 				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
 				// Context must have same kubelet client id
-				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				ctx = options.ToContext(ctx, common.Options(common.OptionsFields{
 					KubeletIdentityClientID: lo.ToPtr(node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]),
 				}))
 
@@ -270,7 +271,7 @@ var _ = Describe("CloudProvider", func() {
 				})
 
 				It("should trigger drift if node kubelet client ID doesn't match options", func() {
-					ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					ctx = options.ToContext(ctx, common.Options(common.OptionsFields{
 						KubeletIdentityClientID: lo.ToPtr("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
 					}))
 

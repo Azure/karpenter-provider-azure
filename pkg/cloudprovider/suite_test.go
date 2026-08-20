@@ -56,6 +56,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var ctx context.Context
@@ -282,7 +283,7 @@ var _ = Describe("CloudProvider", func() {
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
 	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = false", func() {
 		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
 				ManageExistingAKSMachines: lo.ToPtr(false),
 			})
@@ -398,7 +399,7 @@ var _ = Describe("CloudProvider", func() {
 
 	Context("ProvisionMode = AKSScriptless, ManageExistingAKSMachines = true", func() {
 		BeforeEach(func() {
-			testOptions = test.Options(test.OptionsFields{
+			testOptions = common.Options(common.OptionsFields{
 				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSScriptless),
 				ManageExistingAKSMachines: lo.ToPtr(true),
 			})

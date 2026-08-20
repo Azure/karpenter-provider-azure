@@ -33,8 +33,14 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -105,12 +111,36 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 						launchtemplate.NodePoolTagKey:                     lo.ToPtr("test-nodepool"),
 						launchtemplate.KarpenterAKSMachineNodeClaimTagKey: lo.ToPtr("test-nodeclaim"),
 					},
+					Kubernetes: &armcontainerservice.MachineKubernetesProfile{
+						NodeLabels: map[string]*string{},
+					},
 				},
 			}
 		})
 
-		It("should build NodeClaim successfully from AKS machine", func() {
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+		It("should build NodeClaim successfully from AKS machine with Cilium dataplane", func() {
+
+			aksTestOptions := common.Options(common.OptionsFields{
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneCilium),
+			})
+			aksCtx := coreoptions.ToContext(ctx, coretest.Options())
+			aksCtx = options.ToContext(aksCtx, aksTestOptions)
+
+			Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(BeNil())
+			Expect(options.FromContext(aksCtx).NetworkDataplane).To(Equal(consts.NetworkDataplaneCilium))
+
+			// we'll simulate setting the Cilium label on the machine (i.e. we assume MachineAPI works as expected)
+			// but we should still be passing back the label on the NodeClaim to Karpenter Core based on the dataplane regardless
+			aksMachine.Properties.Kubernetes.NodeLabels[labelspkg.AKSLabelEBPFDataplane] = lo.ToPtr(consts.NetworkDataplaneCilium)
+			Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(Not(BeNil()))
+			Expect(aksMachine.Properties.Kubernetes.NodeLabels).To(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, lo.ToPtr(consts.NetworkDataplaneCilium)))
+
+			// assume the Cilium startup taint isn't on the Machine yet (i.e. the DaemonPod hasn't scheduled...)
+			Expect(aksMachine.Properties.Kubernetes.NodeInitializationTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNoSchedule.ToString())))
+
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(aksCtx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
@@ -127,6 +157,50 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
+
+			// Check that the Cilium label and startup taint is on the NodeClaim we pass back to Karpenter Core
+			Expect(nodeClaim.Labels).Should(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, consts.NetworkDataplaneCilium))
+			Expect(nodeClaim.Status.CloudProviderStartupTaints).To(ContainElement(utils.TaintCiliumNoSchedule))
+		})
+
+		It("should build NodeClaim successfully from AKS machine without Cilium dataplane", func() {
+
+			aksTestOptions := common.Options(common.OptionsFields{
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
+			})
+			aksCtx := coreoptions.ToContext(ctx, coretest.Options())
+			aksCtx = options.ToContext(aksCtx, aksTestOptions)
+
+			Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(BeNil())
+			Expect(options.FromContext(aksCtx).NetworkDataplane).ToNot(Equal(consts.NetworkDataplaneCilium))
+
+			// expect that the Cilium label and startup taint is not on the Machine
+			Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, lo.ToPtr(consts.NetworkDataplaneCilium)))
+			Expect(aksMachine.Properties.Kubernetes.NodeInitializationTaints).ToNot(ContainElement(lo.ToPtr(utils.TaintCiliumNoSchedule.ToString())))
+
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(aksCtx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaim).ToNot(BeNil())
+			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
+			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPriorityRegular))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelPriority, v1beta1.PriorityRegular))
+			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
+			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
+			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
+			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
+			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
+			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
+
+			// Check that the Cilium label and startup taint are not on the NodeClaim we pass back to Karpenter Core
+			Expect(nodeClaim.Status.CloudProviderStartupTaints).ToNot(ContainElement(utils.TaintCiliumNoSchedule))
+			Expect(nodeClaim.Labels).ShouldNot(HaveKeyWithValue(labelspkg.AKSLabelEBPFDataplane, consts.NetworkDataplaneCilium))
 		})
 
 		It("should handle missing zone gracefully", func() {
