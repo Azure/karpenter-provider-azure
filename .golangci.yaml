@@ -12,6 +12,7 @@ linters:
     - goheader
     - gosec
     - kubeapilinter
+    - makezero
     - misspell
     - nilerr
     - nolintlint
