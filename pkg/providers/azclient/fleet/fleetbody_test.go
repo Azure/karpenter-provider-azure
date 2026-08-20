@@ -279,7 +279,7 @@ func TestBuildFleetBody_ExtensionsViaProfile(t *testing.T) {
 			Name: lo.ToPtr("ext2"),
 			Properties: &armcompute.VirtualMachineExtensionProperties{
 				Publisher: lo.ToPtr("Microsoft.Compute"),
-				Type:     lo.ToPtr("BGInfo"),
+				Type:      lo.ToPtr("BGInfo"),
 			},
 		},
 	}
