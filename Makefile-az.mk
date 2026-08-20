@@ -32,9 +32,9 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= testmpool
 # pre-pull base images for skaffold/ko build, as a workaround for https://github.com/GoogleContainerTools/skaffold/issues/10106
-KO_BASE_IMAGE ?= mcr.microsoft.com/azurelinux/distroless/base:3.0@sha256:3dcd23ead3035173915ddf670ea28d48cdcb6208025c8f31ce66e185053e8444
-KO_BASE_IMAGE_AMD64 ?= mcr.microsoft.com/azurelinux/distroless/base@sha256:bb76539f6856d94275e938f1c5e0852de689372e988ec48db794b780b5b1eb13
-KO_BASE_IMAGE_ARM64 ?= mcr.microsoft.com/azurelinux/distroless/base@sha256:816150854ac89244ceecdca9731fde57352f673213797e3e9db822188da12855
+KO_BASE_IMAGE ?= mcr.microsoft.com/azurelinux/distroless/base:3.0@sha256:178f25fadf466549d31e234b3091bf815161159f2f2bc98720bbf39f7368aff4
+KO_BASE_IMAGE_AMD64 ?= mcr.microsoft.com/azurelinux/distroless/base@sha256:d36923fbe5d85f981d84855f450d539017cb1005767f3f472f7b83d0d31a5c1a
+KO_BASE_IMAGE_ARM64 ?= mcr.microsoft.com/azurelinux/distroless/base@sha256:02ae850a01c91d6583334d6b337a6de8c087ad3d19da0e9781018e768af6784f
 export KOCACHE ?= $(or $(RUNNER_TEMP),/tmp)/ko-cache
 
 .DEFAULT_GOAL := help	# make without arguments will show help
