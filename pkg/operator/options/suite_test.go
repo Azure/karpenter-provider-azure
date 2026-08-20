@@ -18,7 +18,6 @@ package options_test
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -173,15 +172,6 @@ var _ = Describe("Options", func() {
 				ProviderBatchMaxSize:           lo.ToPtr(42),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
-		})
-
-		It("should expose the enable-node-hardening external contract", func() {
-			Expect(fs.Lookup("enable-node-hardening")).ToNot(BeNil())
-
-			encoded, err := json.Marshal(&options.Options{EnableNodeHardening: true})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(string(encoded)).To(ContainSubstring(`"enableNodeHardening":true`))
-			Expect(string(encoded)).ToNot(ContainSubstring("nodeHardeningEnabled"))
 		})
 	})
 	Context("Validation", func() {

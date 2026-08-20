@@ -213,8 +213,6 @@ func TestKubeletConfigMap(t *testing.T) {
 func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
 	g := NewWithT(t)
 
-	// Node hardening on: emit the AKS RP hardening signal; AgentBaker owns the
-	// kube-reserved and system-reserved cgroup paths.
 	hardened := kubeletConfigToMap(&KubeletConfiguration{
 		KubeReserved:           map[string]string{"pid": "1000"},
 		SystemReserved:         map[string]string{"pid": "1000"},
@@ -227,10 +225,13 @@ func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
 	_, hasSystemReservedCgroup := hardened["--system-reserved-cgroup"]
 	g.Expect(hasKubeReservedCgroup).To(BeFalse(), "--kube-reserved-cgroup is owned by AgentBaker")
 	g.Expect(hasSystemReservedCgroup).To(BeFalse(), "--system-reserved-cgroup is owned by AgentBaker")
+}
 
-	// Node hardening off: the enforcement flag is not emitted, so kubelet defaults remain in place.
-	disabled := kubeletConfigToMap(&KubeletConfiguration{})
-	_, ok := disabled["--enforce-node-allocatable"]
+func TestKubeletConfigMapEmptyConfigurationOmitsEnforceNodeAllocatable(t *testing.T) {
+	g := NewWithT(t)
+
+	configuration := kubeletConfigToMap(&KubeletConfiguration{})
+	_, ok := configuration["--enforce-node-allocatable"]
 	g.Expect(ok).To(BeFalse())
 }
 

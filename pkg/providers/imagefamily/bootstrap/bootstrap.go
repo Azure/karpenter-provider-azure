@@ -44,7 +44,7 @@ type KubeletConfiguration struct {
 	EvictionMaxPodGracePeriod *int32
 	// EnforceNodeAllocatable is the list of node-allocatable enforcement scopes passed to
 	// --enforce-node-allocatable (e.g. pods, kube-reserved, system-reserved). When empty the
-	// kubelet default ("pods") is left in place.
+	// default is the kubelet default ("pods")
 	EnforceNodeAllocatable []string
 }
 
