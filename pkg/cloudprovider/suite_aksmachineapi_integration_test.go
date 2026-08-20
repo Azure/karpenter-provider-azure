@@ -434,6 +434,41 @@ func runSharedAKSMachineAPITests() {
 			expectAKSMachineMetricSeriesCounts(2, 1)
 		})
 
+		It("preserves the initial GET error code during header-batch polling", func() {
+			requireAKSMachineAPIProvisionMode(consts.ProvisionModeAKSMachineAPIHeaderBatch, "cache polling applies only to header-batch mode")
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).ToNot(HaveOccurred())
+
+			promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(promise).ToNot(BeNil())
+
+			const pollerErrorCode = "InternalOperationError"
+			azureEnv.AKSMachineCache.InvalidateAll()
+			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(&azcore.ResponseError{
+				ErrorCode:  pollerErrorCode,
+				StatusCode: http.StatusInternalServerError,
+			})
+			Expect(promise.Wait()).ToNot(Succeed())
+
+			labels := map[string]string{
+				providermetrics.ImageLabel:        aksMachineMetricImageID(lo.FromPtr(promise.AKSMachineTemplate.Properties.NodeImageVersion)),
+				providermetrics.SizeLabel:         promise.InstanceType.Name,
+				providermetrics.ZoneLabel:         promise.Zone,
+				providermetrics.CapacityTypeLabel: promise.CapacityType,
+				providermetrics.NodePoolLabel:     nodePool.Name,
+			}
+			expectNoAKSMachineCreateFailures(labels, "sync")
+			asyncFailureLabels := providermetrics.FailureMetricLabels(labels, "async", map[string]string{providermetrics.ErrorCodeLabel: pollerErrorCode})
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", asyncFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+			expectAKSMachineMetricSeriesCounts(1, 1)
+		})
+
 		It("preserves the poller error code when the diagnostic GET fails", func() {
 			requireAKSMachineAPIProvisionMode(consts.ProvisionModeAKSMachineAPI, "SDK poller diagnostics apply only to direct mode")
 
