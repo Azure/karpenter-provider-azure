@@ -102,6 +102,7 @@ env:
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
+    if: ${{ inputs.suite != 'Windows' || inputs.provision_mode == 'aksmachineapi' || inputs.provision_mode == 'aksmachineapiheaderbatch' }}
     runs-on: karpenter-ci-1es-pool
     permissions:
       contents: read
@@ -158,15 +159,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.git_ref }}
-      - name: validate suite configuration
-        env:
-          SUITE: ${{ inputs.suite }}
-          PROVISION_MODE: ${{ inputs.provision_mode }}
-        run: |
-          if [[ "$SUITE" == "Windows" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" ]]; then
-            echo "Windows requires provision_mode aksmachineapi or aksmachineapiheaderbatch; got $PROVISION_MODE" >&2
-            exit 1
-          fi
       - if: always() && github.event_name == 'workflow_run'
         uses: ./.github/actions/commit-status/start
         with:
@@ -234,9 +226,11 @@ jobs:
           provision_mode: ${{ inputs.provision_mode }}
           identity_type: ${{ inputs.suite == 'Machine' && 'UserAssigned' || 'SystemAssigned' }}
           azure_vm_size: ${{ inputs.azure_vm_size }}
-          # Windows needs a dedicated (non-Cilium) cluster and a machines pool name <= 6 chars.
+          # Windows needs a dedicated (non-Cilium) cluster. The shared mpool name already
+          # satisfies the Windows machines-pool limit of six characters.
           windows: ${{ inputs.suite == 'Windows' }}
-          aks_machines_pool_name: ${{ inputs.suite == 'Windows' && 'winmp' || 'mpool' }}
+          dual_stack: ${{ inputs.suite == 'Integration' || inputs.suite == 'Windows' }}
+          aks_machines_pool_name: mpool
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
@@ -247,7 +241,7 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
           provision_mode: ${{ inputs.provision_mode }}
-          aks_machines_pool_name: ${{ inputs.suite == 'Windows' && 'winmp' || 'mpool' }}
+          aks_machines_pool_name: mpool
       - name: run the ${{ inputs.suite }} test suite
         env:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
@@ -259,7 +253,8 @@ jobs:
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
           PROVISION_MODE: ${{ inputs.provision_mode }}
-          AKS_MACHINES_POOL_NAME: ${{ inputs.suite == 'Windows' && 'winmp' || 'mpool' }}
+          E2E_EXPECT_DUAL_STACK: ${{ (inputs.suite == 'Integration' || inputs.suite == 'Windows') && 'true' || 'false' }}
+          AKS_MACHINES_POOL_NAME: mpool
         run: |
           make az-creds
           make e2etests

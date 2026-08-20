@@ -51,6 +51,7 @@ jobs:
           - Storage
           - Subnet
           - Utilization
+          - Windows
     permissions:
       contents: read
       statuses: write
@@ -60,28 +61,6 @@ jobs:
       suite: ${{ matrix.suite }}
       location: ${{ inputs.location }}
       provision_mode: ${{ inputs.provision_mode || 'aksscriptless' }}
-      k8s_version: ${{ inputs.k8s_version }}
-      azure_vm_size: ${{ inputs.azure_vm_size }}
-    secrets:
-      E2E_CLIENT_ID_TEST: ${{ secrets.E2E_CLIENT_ID_TEST }}
-      E2E_SUBSCRIPTION_ID_TEST: ${{ secrets.E2E_SUBSCRIPTION_ID_TEST }}
-
-  windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        provision_mode:
-          - aksmachineapi
-          - aksmachineapiheaderbatch
-    permissions:
-      contents: read
-      statuses: write
-    uses: ./.github/workflows/e2e.yaml
-    with:
-      git_ref: ${{ inputs.git_ref }}
-      suite: Windows
-      location: ${{ inputs.location }}
-      provision_mode: ${{ matrix.provision_mode }}
       k8s_version: ${{ inputs.k8s_version }}
       azure_vm_size: ${{ inputs.azure_vm_size }}
     secrets:

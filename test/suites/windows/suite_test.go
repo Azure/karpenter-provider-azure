@@ -23,9 +23,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -33,42 +37,45 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var env *azure.Environment
 
-const windowsPauseImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
-const windows2025Image = "mcr.microsoft.com/windows/servercore:ltsc2025"
+const windowsServicePort int32 = 8080
 
 type windowsImageSettings struct {
-	family      string
-	container   string
-	command     []string
-	expectedSKU string
+	family               string
+	expectedSKU          string
+	expectedImagePattern string
+	expectedFIPS         bool
 }
 
 func windowsImageFamilies() []windowsImageSettings {
 	return []windowsImageSettings{
 		{
-			family:      v1beta1.Windows2022ImageFamily,
-			container:   windowsPauseImage,
-			expectedSKU: v1beta1.OSSKUWindows2022,
+			family:               v1beta1.Windows2022ImageFamily,
+			expectedSKU:          v1beta1.OSSKUWindows2022,
+			expectedImagePattern: `^AKSWindows-2022-`,
 		},
 		{
-			family:      v1beta1.Windows2025ImageFamily,
-			container:   windows2025Image,
-			command:     []string{"cmd", "/S", "/C", "ping -t 127.0.0.1"},
-			expectedSKU: v1beta1.OSSKUWindows2025,
+			family:               v1beta1.Windows2025ImageFamily,
+			expectedSKU:          v1beta1.OSSKUWindows2025,
+			expectedImagePattern: `^AKSWindows-2025-`,
+			expectedFIPS:         true,
 		},
 	}
 }
 
 func requireWindowsMachineAPICluster() {
 	GinkgoHelper()
-	Expect(env.IsMachineModeOrNPS()).To(BeTrue(), "Windows node provisioning requires AKS Machine API or managed NAP")
-	Expect(env.MachineAgentPoolName == "aksmanagedap" || len(env.MachineAgentPoolName) <= 6).To(BeTrue(),
-		"Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
-		env.MachineAgentPoolName, len(env.MachineAgentPoolName))
+	if !env.IsMachineModeOrNPS() {
+		Skip("Windows node provisioning requires AKS Machine API or managed NAP")
+	}
+	if env.MachineAgentPoolName != "aksmanagedap" && len(env.MachineAgentPoolName) > 6 {
+		Skip(fmt.Sprintf("Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
+			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
+	}
 }
 
 func requireSupportedWindowsImageFamily(settings windowsImageSettings) {
@@ -98,63 +105,152 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Windows", func() {
 	for _, settings := range windowsImageFamilies() {
-		settings := settings
-		It(fmt.Sprintf("should provision a %s node and run a Windows pod", settings.family), func() {
+		It(fmt.Sprintf("should provision %s, serve Windows traffic, and report image and FIPS state", settings.family), func() {
 			requireSupportedWindowsImageFamily(settings)
 
-			nodeClass := env.WindowsNodeClass(settings.family)
+			nodeClass := windowsNodeClass(settings)
 			nodePool := env.WindowsNodePool(nodeClass)
-			// Keep the test as simple and portable as possible: pin to the regional (zoneless)
-			// offering so it provisions in subscriptions/regions without availability-zone support.
-			// The SKU itself is intentionally left unconstrained: in AKS Machine API mode Karpenter
-			// requests a Gen2 Windows image (UseWindowsGen2VM) whenever the selected SKU supports it,
-			// so Windows provisions on any Hyper-V generation, including Gen2-only sizes.
-			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				Key:      corev1.LabelTopologyZone,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{zones.Regional},
-			})
+			configureRegionalWindowsNodePool(nodePool)
 
-			deployment := test.Deployment(test.DeploymentOptions{
-				Replicas: 1,
-				PodOptions: test.PodOptions{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"app": "windows-inflate"},
-					},
-					Image:   settings.container,
-					Command: settings.command,
-					NodeSelector: map[string]string{
-						corev1.LabelOSStable: string(corev1.Windows),
-					},
-					// Tolerate the OS taint Karpenter may surface during Windows node registration.
-					Tolerations: []corev1.Toleration{{
-						Key:      corev1.LabelOSStable,
-						Operator: corev1.TolerationOpEqual,
-						Value:    string(corev1.Windows),
-						Effect:   corev1.TaintEffectNoSchedule,
-					}},
-					ResourceRequirements: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
-						},
-					},
-				},
-			})
+			deployment := windowsServerDeployment("windows-service", 1)
+			service := serviceForWindowsDeployment(deployment)
+			clientPod := windowsServiceClient(service)
 
-			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.ExpectCreated(nodeClass, nodePool, deployment, service, clientPod)
 
 			// Windows nodes take noticeably longer to provision and pull images than Linux.
 			pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
+			env.EventuallyExpectHealthyWithTimeout(25*time.Minute, clientPod)
 			env.ExpectCreatedNodeCount("==", 1)
 
-			node := env.GetNode(pods[0].Spec.NodeName)
-			Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Windows)))
-			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, settings.expectedSKU))
-			Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
-			if settings.family == v1beta1.Windows2025ImageFamily {
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
-			}
+			expectWindowsProvisioningRelationships(settings, nodePool, append(pods, clientPod), 1)
 		})
 	}
+
+	It("should scale Windows2022 across two nodes", func() {
+		settings := windowsImageFamilies()[0]
+		nodeClass := windowsNodeClass(settings)
+		nodePool := env.WindowsNodePool(nodeClass)
+		configureRegionalWindowsNodePool(nodePool)
+
+		deployment := test.Deployment(test.DeploymentOptions{
+			Replicas: 2,
+			PodOptions: windowsPodOptions(map[string]string{
+				"app": "windows-scale-out",
+			}),
+		})
+		deployment.Spec.Template.Spec.Containers[0].Command = []string{"/agnhost", "pause"}
+		deployment.Spec.Template.Spec.Affinity = &corev1.Affinity{
+			PodAntiAffinity: &corev1.PodAntiAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+					LabelSelector: deployment.Spec.Selector,
+					TopologyKey:   corev1.LabelHostname,
+				}},
+			},
+		}
+
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+
+		pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
+		selector := labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels)
+		env.EventuallyExpectUniqueNodeNames(selector, 2)
+		env.ExpectCreatedNodeCount("==", 2)
+		expectWindowsProvisioningRelationships(settings, nodePool, pods, 2)
+	})
 })
+
+func windowsNodeClass(settings windowsImageSettings) *v1beta1.AKSNodeClass {
+	nodeClass := env.WindowsNodeClass(settings.family)
+	if settings.expectedFIPS {
+		nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+	}
+	return nodeClass
+}
+
+func configureRegionalWindowsNodePool(nodePool *karpv1.NodePool) {
+	// Keep the test portable across subscriptions and regions without availability-zone support.
+	// The SKU is intentionally unconstrained: AKS Machine API requests a Gen2 Windows image when
+	// the selected SKU supports it, including for Gen2-only sizes.
+	test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+		Key:      corev1.LabelTopologyZone,
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{zones.Regional},
+	})
+}
+
+func windowsServerDeployment(app string, replicas int32) *appsv1.Deployment {
+	options := windowsPodOptions(map[string]string{"app": app})
+	options.Command = common.NetexecCommand(windowsServicePort)
+	options.ReadinessProbe = common.TCPReadinessProbe(windowsServicePort)
+	return test.Deployment(test.DeploymentOptions{
+		Replicas:   replicas,
+		PodOptions: options,
+	})
+}
+
+func windowsPodOptions(podLabels map[string]string) test.PodOptions {
+	return test.PodOptions{
+		ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
+		Image:      common.AgnHostTestImage,
+		NodeSelector: map[string]string{
+			corev1.LabelOSStable: string(corev1.Windows),
+		},
+		Tolerations: windowsTolerations(),
+		ResourceRequirements: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("500m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		},
+	}
+}
+
+func serviceForWindowsDeployment(deployment *appsv1.Deployment) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: test.NamespacedObjectMeta(),
+		Spec: corev1.ServiceSpec{
+			Selector: deployment.Spec.Selector.MatchLabels,
+			Ports: []corev1.ServicePort{{
+				Name:       "http",
+				Protocol:   corev1.ProtocolTCP,
+				Port:       windowsServicePort,
+				TargetPort: intstr.FromInt32(windowsServicePort),
+			}},
+		},
+	}
+}
+
+func windowsServiceClient(service *corev1.Service) *corev1.Pod {
+	return env.Pod(test.PodOptions{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{"app": "windows-service-client"},
+		},
+		Image:   common.AgnHostTestImage,
+		Command: []string{"/agnhost", "pause"},
+		InitContainers: []corev1.Container{{
+			Image: common.AgnHostTestImage,
+			Command: []string{
+				"/agnhost", "connect", "--timeout=30s", fmt.Sprintf("%s:%d", service.Name, windowsServicePort),
+			},
+		}},
+		NodeSelector: map[string]string{
+			corev1.LabelOSStable: string(corev1.Windows),
+		},
+		Tolerations: windowsTolerations(),
+		ResourceRequirements: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		},
+	})
+}
+
+func windowsTolerations() []corev1.Toleration {
+	return []corev1.Toleration{{
+		Key:      corev1.LabelOSStable,
+		Operator: corev1.TolerationOpEqual,
+		Value:    string(corev1.Windows),
+		Effect:   corev1.TaintEffectNoSchedule,
+	}}
+}

@@ -26,13 +26,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 const expectDualStackEnvVar = "E2E_EXPECT_DUAL_STACK"
@@ -106,45 +103,16 @@ var _ = Describe("Windows DualStack", func() {
 	})
 
 	for _, settings := range windowsImageFamilies() {
-		settings := settings
-		It(fmt.Sprintf("should provision a %s node with IPv4 and IPv6 node and pod addresses", settings.family), func() {
+		It(fmt.Sprintf("should provision %s with functional IPv4 and IPv6 networking", settings.family), func() {
 			requireSupportedWindowsImageFamily(settings)
 
-			nodeClass := env.WindowsNodeClass(settings.family)
+			nodeClass := windowsNodeClass(settings)
 			nodePool := env.WindowsNodePool(nodeClass)
-			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				Key:      corev1.LabelTopologyZone,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{zones.Regional},
-			})
+			configureRegionalWindowsNodePool(nodePool)
+			deployment := windowsServerDeployment("windows-dualstack", 1)
+			service := common.DualStackServiceForDeployment(deployment, windowsServicePort)
 
-			deployment := test.Deployment(test.DeploymentOptions{
-				Replicas: 1,
-				PodOptions: test.PodOptions{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"app": "windows-dualstack"},
-					},
-					Image:   settings.container,
-					Command: settings.command,
-					NodeSelector: map[string]string{
-						corev1.LabelOSStable: string(corev1.Windows),
-					},
-					Tolerations: []corev1.Toleration{{
-						Key:      corev1.LabelOSStable,
-						Operator: corev1.TolerationOpEqual,
-						Value:    string(corev1.Windows),
-						Effect:   corev1.TaintEffectNoSchedule,
-					}},
-					ResourceRequirements: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
-						},
-					},
-				},
-			})
-
-			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.ExpectCreated(nodeClass, nodePool, deployment, service)
 
 			pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
 			expectPodHasIPv4AndIPv6PodIPs(pods[0])
@@ -154,13 +122,19 @@ var _ = Describe("Windows DualStack", func() {
 			Eventually(func(g Gomega) {
 				node = env.GetNode(pods[0].Spec.NodeName)
 				g.Expect(hasIPv4AndIPv6NodeInternalIPs(node)).To(BeTrue(), "expected node %s to have IPv4 and IPv6 InternalIPs, got %v", node.Name, node.Status.Addresses)
-			}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second)
+			}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 			Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Windows)))
 			Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, settings.expectedSKU))
 			Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
-			if settings.family == v1beta1.Windows2025ImageFamily {
-				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
-			}
+
+			env.EventuallyExpectDualStackServiceConnectivity(
+				service,
+				pods[0],
+				windowsServicePort,
+				10*time.Minute,
+				windowsPodOptions(map[string]string{"app": "dualstack-service-probe-windows"}),
+			)
+			expectWindowsProvisioningRelationships(settings, nodePool, pods, 1)
 		})
 	}
 })

@@ -32,9 +32,13 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
-const expectDualStackEnvVar = "E2E_EXPECT_DUAL_STACK"
+const (
+	expectDualStackEnvVar = "E2E_EXPECT_DUAL_STACK"
+	dualStackServicePort  = int32(8080)
+)
 
 func requireDualStackCluster() {
 	GinkgoHelper()
@@ -104,7 +108,7 @@ var _ = Describe("IPv6 DualStack", func() {
 		requireDualStackCluster()
 	})
 
-	It("should provision a Linux node with IPv4 and IPv6 node and pod addresses", func() {
+	It("should provision a Linux node with functional IPv4 and IPv6 networking", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelTopologyZone,
 			Operator: corev1.NodeSelectorOpIn,
@@ -117,6 +121,9 @@ var _ = Describe("IPv6 DualStack", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"app": "linux-dualstack"},
 				},
+				Image:          common.AgnHostTestImage,
+				Command:        common.NetexecCommand(dualStackServicePort),
+				ReadinessProbe: common.TCPReadinessProbe(dualStackServicePort),
 				NodeSelector: map[string]string{
 					corev1.LabelOSStable: string(corev1.Linux),
 				},
@@ -128,8 +135,9 @@ var _ = Describe("IPv6 DualStack", func() {
 				},
 			},
 		})
+		service := common.DualStackServiceForDeployment(deployment, dualStackServicePort)
 
-		env.ExpectCreated(nodeClass, nodePool, deployment)
+		env.ExpectCreated(nodeClass, nodePool, deployment, service)
 
 		pods := env.EventuallyExpectHealthyDeploymentWithTimeout(15*time.Minute, deployment)
 		expectPodHasIPv4AndIPv6PodIPs(pods[0])
@@ -139,8 +147,10 @@ var _ = Describe("IPv6 DualStack", func() {
 		Eventually(func(g Gomega) {
 			node = env.GetNode(pods[0].Spec.NodeName)
 			g.Expect(hasIPv4AndIPv6NodeInternalIPs(node)).To(BeTrue(), "expected node %s to have IPv4 and IPv6 InternalIPs, got %v", node.Name, node.Status.Addresses)
-		}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second)
+		}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Linux)))
 		Expect(node.Labels).To(HaveKeyWithValue(karpv1.NodePoolLabelKey, nodePool.Name))
+
+		env.EventuallyExpectDualStackServiceConnectivity(service, pods[0], dualStackServicePort, 10*time.Minute)
 	})
 })

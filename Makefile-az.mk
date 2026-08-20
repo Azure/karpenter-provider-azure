@@ -31,6 +31,11 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 
 PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= mpool
+AKS_DUAL_STACK ?= false
+AKS_DUAL_STACK_ARGS :=
+ifeq ($(AKS_DUAL_STACK),true)
+  AKS_DUAL_STACK_ARGS := --ip-families IPv4,IPv6 --pod-cidrs 10.244.0.0/16,fd12:3456:789a::/64 --service-cidrs 10.0.0.0/16,fd12:3456:789a:1::/108
+endif
 # pre-pull base images for skaffold/ko build, as a workaround for https://github.com/GoogleContainerTools/skaffold/issues/10106
 KO_BASE_IMAGE ?= mcr.microsoft.com/azurelinux/distroless/base:3.0@sha256:178f25fadf466549d31e234b3091bf815161159f2f2bc98720bbf39f7368aff4
 KO_BASE_IMAGE_AMD64 ?= mcr.microsoft.com/azurelinux/distroless/base@sha256:d36923fbe5d85f981d84855f450d539017cb1005767f3f472f7b83d0d31a5c1a
@@ -128,9 +133,9 @@ ci-mkcluster-all-userassigned: az-create-workload-msi az-mkaks-cilium-userassign
 
 # Windows e2e needs a dedicated cluster: Windows does not support the Cilium dataplane used by the
 # default CI cluster, so this uses az-mkaks-windows (Azure CNI overlay + windowsProfile). The Windows
-# suite only provisions via the AKS Machine API, so invoke with PROVISION_MODE=aksmachineapi (which
-# pulls the machine perms + machines pool into AZ_ALL_PERMS) and AKS_MACHINES_POOL_NAME set to a name
-# <= 6 chars (Windows machine-name budget for a custom pool).
+# suite only provisions in AKS Machine API modes, so preserve the caller-selected direct or header-batch
+# PROVISION_MODE (which pulls the machine permissions and pool into AZ_ALL_PERMS) and use an
+# AKS_MACHINES_POOL_NAME <= 6 chars (Windows machine-name budget for a custom pool).
 ci-mkcluster-all-windows:      az-create-workload-msi az-mkaks-windows             az-create-federated-cred $(AZ_ALL_PERMS)
 
 ci-install: az-configure-values az-build az-run
@@ -202,6 +207,7 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			$(AKS_DUAL_STACK_ARGS) \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
@@ -253,6 +259,7 @@ az-mkaks-windows: az-mkacr ## Create a Windows-capable test AKS cluster (Azure C
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-plugin azure --network-plugin-mode overlay \
+			$(AKS_DUAL_STACK_ARGS) \
 			--windows-admin-username $(WINDOWS_ADMIN_USERNAME) --windows-admin-password '$(WINDOWS_ADMIN_PASSWORD)' \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
