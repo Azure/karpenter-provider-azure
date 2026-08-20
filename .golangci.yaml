@@ -15,14 +15,13 @@ linters:
     - misspell
     - nilerr
     - nolintlint
+    - prealloc
     - revive
     - staticcheck
     - tparallel
     - unconvert
     - unparam
     - whitespace
-  disable:
-    - prealloc
   settings:
     dupl:
       threshold: 100
