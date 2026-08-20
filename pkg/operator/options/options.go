@@ -66,10 +66,9 @@ type Options struct {
 	ClusterName             string  `json:"clusterName,omitempty"`
 	ClusterEndpoint         string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
 	VMMemoryOverheadPercent float64 `json:"vmMemoryOverheadPercent,omitempty"`
-	// EnableNodeHardening mirrors the cluster-level enableNodeHardening setting
-	// in the AKS RP. Keep this option synchronized with the RP so Karpenter's
-	// scheduling simulation and rendered kubelet configuration match the node.
-	// Remove it when node hardening becomes unconditional in AKS.
+	// EnableNodeHardening is a temporary preview only flag on ManagedCluster.
+	// Will remove this option when AKS defaults node hardening for new nodes based on Kubernetes version
+	// (expected 1.39+) and removes the corresponding field from the preview API.
 	EnableNodeHardening            bool   `json:"enableNodeHardening,omitempty"`
 	KubeletClientTLSBootstrapToken string `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
 	LinuxAdminUsername             string `json:"-"`
