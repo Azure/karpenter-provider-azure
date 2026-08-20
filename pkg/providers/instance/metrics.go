@@ -17,6 +17,9 @@ limitations under the License.
 package instance
 
 import (
+	"maps"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -55,11 +58,62 @@ var (
 		},
 		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel, metrics.PhaseLabel, metrics.ErrorCodeLabel},
 	)
+
+	// AKSMachineCreateStartMetric tracks when AKS Machine creation starts.
+	//
+	// STABILITY: ALPHA - This metric may change or be removed without notice.
+	AKSMachineCreateStartMetric = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metrics.Namespace,
+			Subsystem: instanceSubsystem,
+			Name:      "aks_machine_create_start_total",
+			Help:      "Total number of AKS Machine creation operations started.",
+		},
+		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
+	)
+
+	// AKSMachineCreateFailureMetric tracks AKS Machine creation failures, regardless of phase.
+	//
+	// STABILITY: ALPHA - This metric may change or be removed without notice.
+	AKSMachineCreateFailureMetric = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metrics.Namespace,
+			Subsystem: instanceSubsystem,
+			Name:      "aks_machine_create_failure_total",
+			Help:      "Total number of AKS Machine creation failures.",
+		},
+		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel, metrics.PhaseLabel, metrics.ErrorCodeLabel},
+	)
 )
 
 func init() {
 	crmetrics.Registry.MustRegister(
 		VMCreateStartMetric,
 		VMCreateFailureMetric,
+		AKSMachineCreateStartMetric,
+		AKSMachineCreateFailureMetric,
 	)
+}
+
+func recordAKSMachineCreateFailure(labels prometheus.Labels, phase, errorCode string) {
+	failureLabels := maps.Clone(labels)
+	failureLabels[metrics.PhaseLabel] = phase
+	if errorCode == "" {
+		errorCode = "UnknownError"
+	}
+	failureLabels[metrics.ErrorCodeLabel] = errorCode
+	AKSMachineCreateFailureMetric.With(failureLabels).Inc()
+}
+
+func aksMachineProvisioningErrorCodeForMetrics(provisioningError *armcontainerservice.ErrorDetail) string {
+	if provisioningError == nil {
+		return "UnknownError"
+	}
+	if len(provisioningError.Details) > 0 && provisioningError.Details[0] != nil && provisioningError.Details[0].Code != nil && *provisioningError.Details[0].Code != "" {
+		return *provisioningError.Details[0].Code
+	}
+	if provisioningError.Code != nil && *provisioningError.Code != "" {
+		return *provisioningError.Code
+	}
+	return "UnknownError"
 }

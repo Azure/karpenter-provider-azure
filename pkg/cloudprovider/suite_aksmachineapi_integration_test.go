@@ -18,6 +18,11 @@ package cloudprovider
 
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
@@ -26,6 +31,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
@@ -43,7 +49,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	providermetrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	instancemetrics "github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -58,9 +66,343 @@ func validateAKSMachineNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.N
 	Expect(nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
 }
 
+func aksMachineBeginError(errorCode string) *azcore.ResponseError {
+	return &azcore.ResponseError{
+		ErrorCode:  errorCode,
+		StatusCode: http.StatusBadRequest,
+		RawResponse: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Status:     "400 Bad Request",
+			Body:       io.NopCloser(strings.NewReader(`{"code":"` + errorCode + `","message":"simulated begin create failure"}`)),
+		},
+	}
+}
+
+func aksMachineMetricLabelsFromCreateInput(input *fake.AKSMachineCreateOrUpdateInput, nodePoolName string) map[string]string {
+	labels := map[string]string{
+		providermetrics.NodePoolLabel: nodePoolName,
+	}
+	if input == nil || input.AKSMachine.Properties == nil {
+		return labels
+	}
+
+	properties := input.AKSMachine.Properties
+	zone, err := zones.MakeAKSLabelZoneFromARMZones(fake.Region, input.AKSMachine.Zones)
+	Expect(err).ToNot(HaveOccurred())
+
+	capacityType := karpv1.CapacityTypeOnDemand
+	if lo.FromPtr(properties.Priority) == armcontainerservice.ScaleSetPrioritySpot {
+		capacityType = karpv1.CapacityTypeSpot
+	}
+
+	return lo.Assign(labels, map[string]string{
+		providermetrics.ImageLabel:        lo.FromPtr(properties.NodeImageVersion),
+		providermetrics.SizeLabel:         lo.FromPtr(properties.Hardware.VMSize),
+		providermetrics.ZoneLabel:         zone,
+		providermetrics.CapacityTypeLabel: capacityType,
+	})
+}
+
 // runSharedAKSMachineAPITests contains the common test cases that should be run
 // for both ManageExistingAKSMachines = true and false configurations
 func runSharedAKSMachineAPITests() {
+	Context("metrics integration", func() {
+		BeforeEach(func() {
+			instancemetrics.AKSMachineCreateStartMetric.Reset()
+			instancemetrics.AKSMachineCreateFailureMetric.Reset()
+		})
+
+		It("records AKS Machine create start metric during successful launch", func() {
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+
+			createdNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdNodeClaim).ToNot(BeNil())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := aksMachineMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", labels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "sync"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("does not record a create attempt when reusing an existing AKS Machine", func() {
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			createdNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdNodeClaim).ToNot(BeNil())
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := aksMachineMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			instancemetrics.AKSMachineCreateStartMetric.Reset()
+			instancemetrics.AKSMachineCreateFailureMetric.Reset()
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+
+			reusedNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(reusedNodeClaim).ToNot(BeNil())
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", labels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "sync"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("records AKS Machine create sync failure metric when Azure rejects the request", func() {
+			beginErr := aksMachineBeginError("OperationNotAllowed")
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(beginErr)
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+
+			createdNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(createdNodeClaim).To(BeNil())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := aksMachineMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", labels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			syncFailureLabels := providermetrics.FailureMetricLabels(labels, "sync", map[string]string{providermetrics.ErrorCodeLabel: beginErr.ErrorCode})
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", syncFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("records UnknownError for local create dispatch failures", func() {
+			const errorMessage = "local failure containing a per-request identifier"
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.BeginError.Set(errors.New(errorMessage))
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+
+			createdNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(createdNodeClaim).To(BeNil())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := aksMachineMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			unknownFailureLabels := providermetrics.FailureMetricLabels(labels, "sync", map[string]string{providermetrics.ErrorCodeLabel: "UnknownError"})
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", unknownFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			messageFailureLabels := providermetrics.FailureMetricLabels(labels, "sync", map[string]string{providermetrics.ErrorCodeLabel: errorMessage})
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", messageFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("records AKS Machine create sync failure metric when the initial GET sees failed provisioning", func() {
+			provisioningError := fake.AKSMachineAPIProvisioningErrorLowPriorityCoresQuota(fake.Region)
+			azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = provisioningError
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+
+			createdNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(createdNodeClaim).To(BeNil())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := aksMachineMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", labels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			syncFailureLabels := providermetrics.FailureMetricLabels(labels, "sync", map[string]string{providermetrics.ErrorCodeLabel: "OperationNotAllowed"})
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", syncFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("records one failure for a partial header-batch failure", func() {
+			if testOptions.ProvisionMode != consts.ProvisionModeAKSMachineAPIHeaderBatch {
+				Skip("partial failure applies only to header-batch mode")
+			}
+
+			const (
+				successfulMachineName = "metric-success"
+				failedMachineName     = "metric-failure"
+			)
+			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(machineName string) (string, string) {
+				if machineName == failedMachineName {
+					return "InvalidParameter", "simulated per-machine rejection"
+				}
+				return "", ""
+			}
+
+			newMetricNodeClaim := func(name string) *karpv1.NodeClaim {
+				return coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   name,
+						Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+							Name:  nodeClass.Name,
+						},
+						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+							{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v3"}},
+							{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1}},
+							{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
+						},
+					},
+				})
+			}
+
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).ToNot(HaveOccurred())
+			type createResult struct {
+				name    string
+				promise *instancemetrics.AKSMachinePromise
+				err     error
+			}
+			results := make(chan createResult, 2)
+			var successfulPromise *instancemetrics.AKSMachinePromise
+			for _, name := range []string{successfulMachineName, failedMachineName} {
+				claim := newMetricNodeClaim(name)
+				go func() {
+					promise, createErr := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, claim, instanceTypes)
+					results <- createResult{name: name, promise: promise, err: createErr}
+				}()
+			}
+
+			for range 2 {
+				result := <-results
+				if result.name == failedMachineName {
+					Expect(result.err).To(HaveOccurred())
+					Expect(result.promise).To(BeNil())
+					continue
+				}
+				Expect(result.err).ToNot(HaveOccurred())
+				Expect(result.promise).ToNot(BeNil())
+				Expect(result.promise.Wait()).To(Succeed())
+				successfulPromise = result.promise
+			}
+
+			Expect(successfulPromise).ToNot(BeNil())
+			labels := map[string]string{
+				providermetrics.ImageLabel:        lo.FromPtr(successfulPromise.AKSMachineTemplate.Properties.NodeImageVersion),
+				providermetrics.SizeLabel:         successfulPromise.InstanceType.Name,
+				providermetrics.ZoneLabel:         successfulPromise.Zone,
+				providermetrics.CapacityTypeLabel: successfulPromise.CapacityType,
+				providermetrics.NodePoolLabel:     nodePool.Name,
+			}
+
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", labels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 2))
+
+			syncFailureLabels := providermetrics.FailureMetricLabels(labels, "sync", map[string]string{providermetrics.ErrorCodeLabel: "InvalidParameter"})
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", syncFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("records AKS Machine create async failure metric when provisioning fails", func() {
+			isHeaderBatch := testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+			expectedErrorCode := "InternalOperationError"
+			if isHeaderBatch {
+				expectedErrorCode = "OperationNotAllowed"
+				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.SetCustomTransformer(func(input *fake.AKSMachineCreateOrUpdateInput) error {
+					machineID := fake.MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
+					machine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+					Expect(ok).To(BeTrue())
+					machine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateCreating)
+					if machine.Properties.Status == nil {
+						machine.Properties.Status = &armcontainerservice.MachineStatus{}
+					}
+					machine.Properties.Status.ProvisioningError = nil
+					azureEnv.AKSDataStorage.AKSMachines.Store(machineID, machine)
+					return nil
+				})
+			} else {
+				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Set(aksMachineBeginError(expectedErrorCode))
+			}
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			createdNodeClaim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdNodeClaim).ToNot(BeNil())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := aksMachineMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			if isHeaderBatch {
+				machineID := fake.MkMachineID(createInput.ResourceGroupName, createInput.ResourceName, createInput.AgentPoolName, createInput.AKSMachineName)
+				machine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(machineID)
+				Expect(ok).To(BeTrue())
+				machine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateFailed)
+				machine.Properties.Status.ProvisioningError = fake.AKSMachineAPIProvisioningErrorLowPriorityCoresQuota(fake.Region)
+				azureEnv.AKSDataStorage.AKSMachines.Store(machineID, machine)
+				azureEnv.AKSMachineCache.InvalidateAll()
+			}
+
+			freshNodeClaim := &karpv1.NodeClaim{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClaim), freshNodeClaim)).To(Succeed())
+			freshNodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+			Expect(env.Client.Status().Update(ctx, freshNodeClaim)).To(Succeed())
+			cloudProvider.WaitForInstancePromises()
+
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", labels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "sync"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).To(BeNil())
+
+			asyncFailureLabels := providermetrics.FailureMetricLabels(labels, "async", map[string]string{providermetrics.ErrorCodeLabel: expectedErrorCode})
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", asyncFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+		})
+	})
+
 	It("should be able to handle basic operations", func() {
 		ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 
@@ -288,13 +630,14 @@ func runSharedAKSMachineAPITests() {
 				// not this test which assumes provisioning succeeds then List fails afterward.
 				Skip("Batch provisioning depends on List to work")
 			}
-			// Set up error to occur during the NextPage call
-			azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.Error.Set(fake.AKSMachineAPIErrorAny)
-
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
 			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
+
+			// Force the next List through the API instead of serving the freshly created machine from cache.
+			azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.Error.Set(fake.AKSMachineAPIErrorAny)
+			azureEnv.AKSMachineCache.InvalidateAll()
 
 			// Verify the list API was called but failed
 			azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Reset()
@@ -400,13 +743,8 @@ func runSharedAKSMachineAPITests() {
 
 			// Verify the AKS machine was reused successfully
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			// With cache enabled, the GET is served from cache rather than hitting the API directly.
-			if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
-				// With cache enabled, the pre-create GET is served from cache — no API call recorded
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(0))
-			} else {
-				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
-			}
+			// Both Machine API modes share the same provider cache, so a fresh pre-create GET avoids an API call.
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(0))
 
 			// Since no new machine was created, verify the machine in the fake store matches original config.
 			aksMachineName := firstNodeClaim.Name
@@ -593,10 +931,10 @@ func runSharedAKSMachineAPITests() {
 }
 
 var _ = Describe("CloudProvider", func() {
-	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = false", func() {
+	Context("ProvisionMode = AKSMachineAPI, ManageExistingAKSMachines = false", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
 			})
