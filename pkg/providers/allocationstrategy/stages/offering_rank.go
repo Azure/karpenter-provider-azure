@@ -23,21 +23,28 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
+	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type defaultOfferingRankStage struct{}
+type defaultOfferingRankStage struct {
+	// zoneLoad is the number of NodeClaims the NodePool already has in each zone. It is nil when the
+	// load is unknown, in which case zone selection stays uniformly random.
+	zoneLoad map[string]int
+}
 
-func NewDefaultOfferingRankStage() Stage {
-	return &defaultOfferingRankStage{}
+func NewDefaultOfferingRankStage(zoneLoad map[string]int) Stage {
+	return &defaultOfferingRankStage{zoneLoad: zoneLoad}
 }
 
 func (s *defaultOfferingRankStage) Process(_ context.Context, instanceOfferings []InstanceOffering) []InstanceOffering {
 	for idx := range instanceOfferings {
-		rankOfferings(instanceOfferings[idx].Offerings)
+		rankOfferings(instanceOfferings[idx].Offerings, s.zoneLoad)
 	}
 
+	// Zone load intentionally does not participate here: it breaks ties between zones of a single
+	// instance type, not between instance types.
 	sort.Slice(instanceOfferings, func(i, j int) bool {
 		comparison := compareOfferings(firstOffering(instanceOfferings[i]), firstOffering(instanceOfferings[j]))
 		if comparison == 0 {
@@ -48,16 +55,27 @@ func (s *defaultOfferingRankStage) Process(_ context.Context, instanceOfferings 
 	return instanceOfferings
 }
 
-func rankOfferings(offerings corecloudprovider.Offerings) {
+func rankOfferings(offerings corecloudprovider.Offerings, zoneLoad map[string]int) {
 	// Shuffle before the stable sort so that offerings tied on every comparison
-	// dimension (price, capacity type, placement scope) end up in random order.
-	// This avoids concentrating launches in the lexically first zone when zonal
+	// dimension (price, capacity type, placement scope, zone load) end up in random
+	// order. This avoids concentrating launches in the lexically first zone when zonal
 	// offerings are otherwise equivalent. Non-cryptographic randomness is
 	// intentional here.
 	rand.Shuffle(len(offerings), func(i, j int) { offerings[i], offerings[j] = offerings[j], offerings[i] })
 	sort.SliceStable(offerings, func(i, j int) bool {
-		return compareOfferings(offerings[i], offerings[j]) < 0
+		if comparison := compareOfferings(offerings[i], offerings[j]); comparison != 0 {
+			return comparison < 0
+		}
+		// Prefer the zone the NodePool has the fewest NodeClaims in, so launches even out over time.
+		return zoneLoadOf(offerings[i], zoneLoad) < zoneLoadOf(offerings[j], zoneLoad)
 	})
+}
+
+func zoneLoadOf(offering *corecloudprovider.Offering, zoneLoad map[string]int) int {
+	if offering == nil || len(zoneLoad) == 0 {
+		return 0
+	}
+	return zoneLoad[offering.Requirements.Get(corev1.LabelTopologyZone).Any()]
 }
 
 func firstOffering(instanceOffering InstanceOffering) *corecloudprovider.Offering {
@@ -72,9 +90,9 @@ func firstOffering(instanceOffering InstanceOffering) *corecloudprovider.Offerin
 // with spot preferred over on-demand, then placement scope with zonal preferred
 // over regional. Since capacity type is evaluated before placement scope,
 // regional spot is preferred over zonal on-demand when their prices are equal.
-// Zones are intentionally not compared here; rankOfferings shuffles before
-// stable sorting so otherwise equivalent offerings are spread across zones over
-// time.
+// Zones are intentionally not compared here; rankOfferings orders otherwise
+// equivalent offerings by zone load, shuffling beforehand so equally loaded
+// zones are picked at random.
 func compareOfferings(i, j *corecloudprovider.Offering) int {
 	if i == nil && j == nil {
 		return 0
