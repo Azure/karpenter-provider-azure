@@ -94,7 +94,8 @@ func metricLabelsContain(metric *dto.Metric, expected map[string]string) bool {
 		actual[label.GetName()] = label.GetValue()
 	}
 	for name, value := range expected {
-		if actual[name] != value {
+		actualValue, ok := actual[name]
+		if !ok || actualValue != value {
 			return false
 		}
 	}
