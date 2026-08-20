@@ -105,6 +105,25 @@ func aksMachineMetricLabelsFromCreateInput(input *fake.AKSMachineCreateOrUpdateI
 
 // runSharedAKSMachineAPITests contains the common test cases that should be run
 // for both ManageExistingAKSMachines = true and false configurations
+func expectNoAKSMachineCreateFailures(labels map[string]string, phase string) {
+	metrics, err := providermetrics.FindMetricsWithLabelSubset(
+		"karpenter_instance_aks_machine_create_failure_total",
+		providermetrics.FailureMetricLabels(labels, phase),
+	)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(metrics).To(BeEmpty())
+}
+
+func expectAKSMachineMetricSeriesCounts(start, failure int) {
+	startMetrics, err := providermetrics.FindMetricsWithLabelSubset("karpenter_instance_aks_machine_create_start_total", nil)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(startMetrics).To(HaveLen(start))
+
+	failureMetrics, err := providermetrics.FindMetricsWithLabelSubset("karpenter_instance_aks_machine_create_failure_total", nil)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(failureMetrics).To(HaveLen(failure))
+}
+
 func runSharedAKSMachineAPITests() {
 	Context("metrics integration", func() {
 		BeforeEach(func() {
@@ -129,13 +148,9 @@ func runSharedAKSMachineAPITests() {
 			Expect(metric).ToNot(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "sync"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(metric).To(BeNil())
-
-			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(metric).To(BeNil())
+			expectNoAKSMachineCreateFailures(labels, "sync")
+			expectNoAKSMachineCreateFailures(labels, "async")
+			expectAKSMachineMetricSeriesCounts(1, 0)
 		})
 
 		It("does not record a create attempt when reusing an existing AKS Machine", func() {
@@ -160,9 +175,32 @@ func runSharedAKSMachineAPITests() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(metric).To(BeNil())
 
-			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "sync"))
+			expectNoAKSMachineCreateFailures(labels, "sync")
+			expectNoAKSMachineCreateFailures(labels, "async")
+			expectAKSMachineMetricSeriesCounts(0, 0)
+		})
+
+		It("does not record create metrics for AKS Machine update or delete", func() {
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			createdNodeClaim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(metric).To(BeNil())
+			Expect(createdNodeClaim).ToNot(BeNil())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			machine, err := azureEnv.AKSMachineProvider.Get(ctx, createInput.AKSMachineName)
+			Expect(err).ToNot(HaveOccurred())
+
+			instancemetrics.AKSMachineCreateStartMetric.Reset()
+			instancemetrics.AKSMachineCreateFailureMetric.Reset()
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
+
+			Expect(azureEnv.AKSMachineProvider.Update(ctx, createInput.AKSMachineName, *machine, machine.Properties.ETag)).To(Succeed())
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			expectAKSMachineMetricSeriesCounts(0, 0)
+
+			Expect(azureEnv.AKSMachineProvider.Delete(ctx, createInput.AKSMachineName)).To(Succeed())
+			expectAKSMachineMetricSeriesCounts(0, 0)
 		})
 
 		It("records AKS Machine create sync failure metric when Azure rejects the request", func() {
@@ -189,9 +227,8 @@ func runSharedAKSMachineAPITests() {
 			Expect(metric).ToNot(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(metric).To(BeNil())
+			expectNoAKSMachineCreateFailures(labels, "async")
+			expectAKSMachineMetricSeriesCounts(1, 1)
 		})
 
 		It("records UnknownError for local create dispatch failures", func() {
@@ -217,6 +254,9 @@ func runSharedAKSMachineAPITests() {
 			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", messageFailureLabels)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(metric).To(BeNil())
+
+			expectNoAKSMachineCreateFailures(labels, "async")
+			expectAKSMachineMetricSeriesCounts(1, 1)
 		})
 
 		It("records AKS Machine create sync failure metric when the initial GET sees failed provisioning", func() {
@@ -243,9 +283,8 @@ func runSharedAKSMachineAPITests() {
 			Expect(metric).ToNot(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(metric).To(BeNil())
+			expectNoAKSMachineCreateFailures(labels, "async")
+			expectAKSMachineMetricSeriesCounts(1, 1)
 		})
 
 		It("records one failure for a partial header-batch failure", func() {
@@ -257,6 +296,7 @@ func runSharedAKSMachineAPITests() {
 				successfulMachineName = "metric-success"
 				failedMachineName     = "metric-failure"
 			)
+			failedZone := zones.MakeAKSLabelZoneFromARMZone(fake.Region, "2")
 			azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(machineName string) (string, string) {
 				if machineName == failedMachineName {
 					return "InvalidParameter", "simulated per-machine rejection"
@@ -264,7 +304,7 @@ func runSharedAKSMachineAPITests() {
 				return "", ""
 			}
 
-			newMetricNodeClaim := func(name string) *karpv1.NodeClaim {
+			newMetricNodeClaim := func(name, zone string) *karpv1.NodeClaim {
 				return coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:   name,
@@ -278,15 +318,20 @@ func runSharedAKSMachineAPITests() {
 						},
 						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 							{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v3"}},
-							{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1}},
+							{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}},
 							{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeOnDemand}},
 						},
 					},
 				})
 			}
 
-			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			allInstanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
 			Expect(err).ToNot(HaveOccurred())
+			instanceType, ok := lo.Find(allInstanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == "Standard_D2_v3"
+			})
+			Expect(ok).To(BeTrue())
+			instanceTypes := []*corecloudprovider.InstanceType{instanceType}
 			type createResult struct {
 				name    string
 				promise *instancemetrics.AKSMachinePromise
@@ -294,12 +339,19 @@ func runSharedAKSMachineAPITests() {
 			}
 			results := make(chan createResult, 2)
 			var successfulPromise *instancemetrics.AKSMachinePromise
-			for _, name := range []string{successfulMachineName, failedMachineName} {
-				claim := newMetricNodeClaim(name)
-				go func() {
+			requests := []struct {
+				name string
+				zone string
+			}{
+				{name: successfulMachineName, zone: fakeZone1},
+				{name: failedMachineName, zone: failedZone},
+			}
+			for _, request := range requests {
+				claim := newMetricNodeClaim(request.name, request.zone)
+				go func(name string, claim *karpv1.NodeClaim) {
 					promise, createErr := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, claim, instanceTypes)
 					results <- createResult{name: name, promise: promise, err: createErr}
-				}()
+				}(request.name, claim)
 			}
 
 			for range 2 {
@@ -316,28 +368,44 @@ func runSharedAKSMachineAPITests() {
 			}
 
 			Expect(successfulPromise).ToNot(BeNil())
-			labels := map[string]string{
+			Expect(azureEnv.AKSMachinesAPI.BatchCreateSizes.Len()).To(Equal(1))
+			batchSize := azureEnv.AKSMachinesAPI.BatchCreateSizes.Pop()
+			Expect(batchSize).ToNot(BeNil())
+			Expect(*batchSize).To(Equal(2))
+
+			successfulLabels := map[string]string{
 				providermetrics.ImageLabel:        lo.FromPtr(successfulPromise.AKSMachineTemplate.Properties.NodeImageVersion),
 				providermetrics.SizeLabel:         successfulPromise.InstanceType.Name,
 				providermetrics.ZoneLabel:         successfulPromise.Zone,
 				providermetrics.CapacityTypeLabel: successfulPromise.CapacityType,
 				providermetrics.NodePoolLabel:     nodePool.Name,
 			}
+			failedLabels := make(map[string]string, len(successfulLabels))
+			for name, value := range successfulLabels {
+				failedLabels[name] = value
+			}
+			failedLabels[providermetrics.ZoneLabel] = failedZone
 
-			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", labels)
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", successfulLabels)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(metric).ToNot(BeNil())
-			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 2))
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			syncFailureLabels := providermetrics.FailureMetricLabels(labels, "sync", map[string]string{providermetrics.ErrorCodeLabel: "InvalidParameter"})
+			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_start_total", failedLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			syncFailureLabels := providermetrics.FailureMetricLabels(failedLabels, "sync", map[string]string{providermetrics.ErrorCodeLabel: "InvalidParameter"})
 			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", syncFailureLabels)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(metric).ToNot(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "async"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(metric).To(BeNil())
+			expectNoAKSMachineCreateFailures(successfulLabels, "sync")
+			expectNoAKSMachineCreateFailures(successfulLabels, "async")
+			expectNoAKSMachineCreateFailures(failedLabels, "async")
+			expectAKSMachineMetricSeriesCounts(2, 1)
 		})
 
 		It("records AKS Machine create async failure metric when provisioning fails", func() {
@@ -391,15 +459,14 @@ func runSharedAKSMachineAPITests() {
 			Expect(metric).ToNot(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", providermetrics.FailureMetricLabels(labels, "sync"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(metric).To(BeNil())
+			expectNoAKSMachineCreateFailures(labels, "sync")
 
 			asyncFailureLabels := providermetrics.FailureMetricLabels(labels, "async", map[string]string{providermetrics.ErrorCodeLabel: expectedErrorCode})
 			metric, err = providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", asyncFailureLabels)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(metric).ToNot(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+			expectAKSMachineMetricSeriesCounts(1, 1)
 		})
 	})
 

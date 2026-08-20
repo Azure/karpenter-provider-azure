@@ -44,6 +44,28 @@ func FindMetricWithLabelValues(metricName string, labels map[string]string) (*dt
 	return nil, nil
 }
 
+// FindMetricsWithLabelSubset locates every metric whose labels contain the requested name-value pairs.
+// An empty label map returns every series in the metric family.
+func FindMetricsWithLabelSubset(metricName string, labels map[string]string) ([]*dto.Metric, error) {
+	metricFamilies, err := crmetrics.Registry.Gather()
+	if err != nil {
+		return nil, err
+	}
+
+	var matches []*dto.Metric
+	for _, mf := range metricFamilies {
+		if mf.GetName() != metricName {
+			continue
+		}
+		for _, metric := range mf.GetMetric() {
+			if metricLabelsContain(metric, labels) {
+				matches = append(matches, metric)
+			}
+		}
+	}
+	return matches, nil
+}
+
 // FailureMetricLabels produces a failure metric label set by merging the provided base labels with
 // the phase label and any additional label maps. Later maps override earlier values when conflicts occur.
 func FailureMetricLabels(base map[string]string, phase string, extra ...map[string]string) map[string]string {
@@ -64,4 +86,17 @@ func metricLabelsEqual(metric *dto.Metric, expected map[string]string) bool {
 	}
 
 	return maps.Equal(snapshot, expected)
+}
+
+func metricLabelsContain(metric *dto.Metric, expected map[string]string) bool {
+	actual := make(map[string]string, len(metric.GetLabel()))
+	for _, label := range metric.GetLabel() {
+		actual[label.GetName()] = label.GetValue()
+	}
+	for name, value := range expected {
+		if actual[name] != value {
+			return false
+		}
+	}
+	return true
 }
