@@ -78,8 +78,9 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 
-	conditions := []opstatus.Condition{}
-	for _, condition := range nodeClass.GetConditions() {
+	nodeClassConditions := nodeClass.GetConditions()
+	conditions := make([]opstatus.Condition, 0, len(nodeClassConditions))
+	for _, condition := range nodeClassConditions {
 		// Using the magic number 1, as it appears the Generation is always equal to 1 on the NodeClass in testing. If that appears to not be the case,
 		// than we should add some function for allows bumps as needed to match.
 		condition.ObservedGeneration = 1
@@ -157,7 +158,7 @@ func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion 
 
 func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	images := imagefamily.GetImageFamily(&imageFamily, fipsMode, trustedLaunch, kubernetesVersion, nil).DefaultImages(true, fipsMode, trustedLaunch)
-	nodeImages := []imagefamily.NodeImage{}
+	nodeImages := make([]imagefamily.NodeImage, 0, len(images))
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{
 			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),

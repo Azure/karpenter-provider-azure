@@ -262,7 +262,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
 func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
-	offerings := []*cloudprovider.Offering{}
+	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
 
 	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)
