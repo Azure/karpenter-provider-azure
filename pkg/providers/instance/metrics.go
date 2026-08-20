@@ -105,15 +105,26 @@ func recordAKSMachineCreateFailure(labels prometheus.Labels, phase, errorCode st
 	AKSMachineCreateFailureMetric.With(failureLabels).Inc()
 }
 
-func aksMachineProvisioningErrorCodeForMetrics(provisioningError *armcontainerservice.ErrorDetail) string {
+func aksMachineProvisioningErrorCode(provisioningError *armcontainerservice.ErrorDetail) (string, bool) {
 	if provisioningError == nil {
-		return "UnknownError"
+		return "", false
 	}
 	if len(provisioningError.Details) > 0 && provisioningError.Details[0] != nil && provisioningError.Details[0].Code != nil && *provisioningError.Details[0].Code != "" {
-		return *provisioningError.Details[0].Code
+		return *provisioningError.Details[0].Code, true
 	}
 	if provisioningError.Code != nil && *provisioningError.Code != "" {
-		return *provisioningError.Code
+		return *provisioningError.Code, true
 	}
-	return "UnknownError"
+	return "", false
+}
+
+func aksMachineProvisioningErrorCodeOrFallback(provisioningError *armcontainerservice.ErrorDetail, fallback string) string {
+	if errorCode, ok := aksMachineProvisioningErrorCode(provisioningError); ok {
+		return errorCode
+	}
+	return fallback
+}
+
+func aksMachineProvisioningErrorCodeForMetrics(provisioningError *armcontainerservice.ErrorDetail) string {
+	return aksMachineProvisioningErrorCodeOrFallback(provisioningError, "UnknownError")
 }

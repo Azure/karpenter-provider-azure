@@ -124,6 +124,12 @@ func expectAKSMachineMetricSeriesCounts(start, failure int) {
 	Expect(failureMetrics).To(HaveLen(failure))
 }
 
+func requireAKSMachineAPIProvisionMode(expected, skipMessage string) {
+	if testOptions.ProvisionMode != expected {
+		Skip(skipMessage)
+	}
+}
+
 func runSharedAKSMachineAPITests() {
 	Context("metrics integration", func() {
 		BeforeEach(func() {
@@ -298,9 +304,7 @@ func runSharedAKSMachineAPITests() {
 		})
 
 		It("records one failure for a partial header-batch failure", func() {
-			if testOptions.ProvisionMode != consts.ProvisionModeAKSMachineAPIHeaderBatch {
-				Skip("partial failure applies only to header-batch mode")
-			}
+			requireAKSMachineAPIProvisionMode(consts.ProvisionModeAKSMachineAPIHeaderBatch, "partial failure applies only to header-batch mode")
 
 			const (
 				successfulMachineName = "metric-success"
@@ -419,9 +423,7 @@ func runSharedAKSMachineAPITests() {
 		})
 
 		It("preserves the poller error code when the diagnostic GET fails", func() {
-			if testOptions.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
-				Skip("SDK poller diagnostics apply only to direct mode")
-			}
+			requireAKSMachineAPIProvisionMode(consts.ProvisionModeAKSMachineAPI, "SDK poller diagnostics apply only to direct mode")
 
 			const pollerErrorCode = "InternalOperationError"
 			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Set(&azcore.ResponseError{
@@ -440,6 +442,45 @@ func runSharedAKSMachineAPITests() {
 				ErrorCode:  "DiagnosticGetFailed",
 				StatusCode: http.StatusInternalServerError,
 			})
+			Expect(promise.Wait()).ToNot(Succeed())
+
+			labels := map[string]string{
+				providermetrics.ImageLabel:        lo.FromPtr(promise.AKSMachineTemplate.Properties.NodeImageVersion),
+				providermetrics.SizeLabel:         promise.InstanceType.Name,
+				providermetrics.ZoneLabel:         promise.Zone,
+				providermetrics.CapacityTypeLabel: promise.CapacityType,
+				providermetrics.NodePoolLabel:     nodePool.Name,
+			}
+			expectNoAKSMachineCreateFailures(labels, "sync")
+			asyncFailureLabels := providermetrics.FailureMetricLabels(labels, "async", map[string]string{providermetrics.ErrorCodeLabel: pollerErrorCode})
+			metric, err := providermetrics.FindMetricWithLabelValues("karpenter_instance_aks_machine_create_failure_total", asyncFailureLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metric).ToNot(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+			expectAKSMachineMetricSeriesCounts(1, 1)
+		})
+
+		It("preserves the poller error code when diagnostic provisioning details are uncoded", func() {
+			requireAKSMachineAPIProvisionMode(consts.ProvisionModeAKSMachineAPI, "SDK poller diagnostics apply only to direct mode")
+
+			const pollerErrorCode = "InternalOperationError"
+			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Set(&azcore.ResponseError{
+				ErrorCode:  pollerErrorCode,
+				StatusCode: http.StatusInternalServerError,
+			})
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).ToNot(HaveOccurred())
+
+			promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(promise).ToNot(BeNil())
+
+			machine, ok := azureEnv.AKSDataStorage.AKSMachines.Load(promise.AKSMachineID)
+			Expect(ok).To(BeTrue())
+			machine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateFailed)
+			machine.Properties.Status.ProvisioningError = &armcontainerservice.ErrorDetail{}
+			azureEnv.AKSDataStorage.AKSMachines.Store(promise.AKSMachineID, machine)
 			Expect(promise.Wait()).ToNot(Succeed())
 
 			labels := map[string]string{

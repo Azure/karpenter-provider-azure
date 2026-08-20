@@ -600,10 +600,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 				metricErrorCode = ErrorCodeForMetrics(err)
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the SDK doesn't let us look at the real results.
-				failedAKSMachine, getErr := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
-				if getErr == nil && failedAKSMachine != nil && failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
-					metricErrorCode = aksMachineProvisioningErrorCodeForMetrics(failedAKSMachine.Properties.Status.ProvisioningError)
-					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
+				if provisioningError := p.getProvisioningErrorAfterPollFailure(ctx, aksMachineName); provisioningError != nil {
+					metricErrorCode = aksMachineProvisioningErrorCodeOrFallback(provisioningError, metricErrorCode)
+					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, instanceType, zone, capacityType, provisioningError)
 					return
 				}
 				// This should not be expected.
@@ -737,6 +736,14 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		existingAKSMachineVMResourceID,
 		existingAKSMachineCreationTimestamp,
 	), nil
+}
+
+func (p *DefaultAKSMachineProvider) getProvisioningErrorAfterPollFailure(ctx context.Context, aksMachineName string) *armcontainerservice.ErrorDetail {
+	failedAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
+	if err != nil || failedAKSMachine == nil || failedAKSMachine.Properties == nil || failedAKSMachine.Properties.Status == nil {
+		return nil
+	}
+	return failedAKSMachine.Properties.Status.ProvisioningError
 }
 
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, metricLabels prometheus.Labels) (*armcontainerservice.Machine, error) {
