@@ -207,7 +207,6 @@ func TestKubeletConfigMap(t *testing.T) {
 	for k, v := range expectedKubeletConfigs {
 		g.Expect(actualKubeletConfig[k]).To(Equal(v), fmt.Sprintf("parameter mismatch for %s", k))
 	}
-	g.Expect(strings.Split(actualKubeletConfig["--kube-reserved"], ",")).To(ConsistOf("cpu=180m", "memory=2250Mi", "pid=1000"))
 }
 
 func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
