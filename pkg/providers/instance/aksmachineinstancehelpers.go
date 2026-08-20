@@ -50,7 +50,7 @@ import (
 //     system knows to move it to the per-machine header.
 //   - If the field is the same for all NodeClaims in a NodePool+NodeClass (like VMSize),
 //     no action needed — it's automatically part of the shared template and batch grouping hash.
-func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, placementScope string, zone string, ultraSSD bool, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
+func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, vmImageID string, capacityType string, placementScope string, zone string, ultraSSD bool, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) {
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
 	}
@@ -63,10 +63,6 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 
 	// NodeImageVersion
 	// E.g., "AKSUbuntu-2204gen2containerd-2023.11.15"
-	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
-	}
 	nodeImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(vmImageID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert VM image ID to NodeImageVersion: %w", err)

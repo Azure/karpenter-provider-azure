@@ -78,6 +78,18 @@ func aksMachineBeginError(errorCode string) *azcore.ResponseError {
 	}
 }
 
+func aksMachineMetricImageID(nodeImageVersion string) string {
+	for _, image := range nodeClass.Status.Images {
+		resolvedNodeImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(image.ID)
+		Expect(err).ToNot(HaveOccurred())
+		if resolvedNodeImageVersion == nodeImageVersion {
+			return image.ID
+		}
+	}
+	Fail("failed to find resolved image ID for AKS Machine NodeImageVersion " + nodeImageVersion)
+	return ""
+}
+
 func aksMachineMetricLabelsFromCreateInput(input *fake.AKSMachineCreateOrUpdateInput, nodePoolName string) map[string]string {
 	labels := map[string]string{
 		providermetrics.NodePoolLabel: nodePoolName,
@@ -96,7 +108,7 @@ func aksMachineMetricLabelsFromCreateInput(input *fake.AKSMachineCreateOrUpdateI
 	}
 
 	return lo.Assign(labels, map[string]string{
-		providermetrics.ImageLabel:        lo.FromPtr(properties.NodeImageVersion),
+		providermetrics.ImageLabel:        aksMachineMetricImageID(lo.FromPtr(properties.NodeImageVersion)),
 		providermetrics.SizeLabel:         lo.FromPtr(properties.Hardware.VMSize),
 		providermetrics.ZoneLabel:         zone,
 		providermetrics.CapacityTypeLabel: capacityType,
@@ -388,7 +400,7 @@ func runSharedAKSMachineAPITests() {
 			Expect(*batchSize).To(Equal(2))
 
 			successfulLabels := map[string]string{
-				providermetrics.ImageLabel:        lo.FromPtr(successfulPromise.AKSMachineTemplate.Properties.NodeImageVersion),
+				providermetrics.ImageLabel:        aksMachineMetricImageID(lo.FromPtr(successfulPromise.AKSMachineTemplate.Properties.NodeImageVersion)),
 				providermetrics.SizeLabel:         successfulPromise.InstanceType.Name,
 				providermetrics.ZoneLabel:         successfulPromise.Zone,
 				providermetrics.CapacityTypeLabel: successfulPromise.CapacityType,
@@ -445,7 +457,7 @@ func runSharedAKSMachineAPITests() {
 			Expect(promise.Wait()).ToNot(Succeed())
 
 			labels := map[string]string{
-				providermetrics.ImageLabel:        lo.FromPtr(promise.AKSMachineTemplate.Properties.NodeImageVersion),
+				providermetrics.ImageLabel:        aksMachineMetricImageID(lo.FromPtr(promise.AKSMachineTemplate.Properties.NodeImageVersion)),
 				providermetrics.SizeLabel:         promise.InstanceType.Name,
 				providermetrics.ZoneLabel:         promise.Zone,
 				providermetrics.CapacityTypeLabel: promise.CapacityType,
@@ -484,7 +496,7 @@ func runSharedAKSMachineAPITests() {
 			Expect(promise.Wait()).ToNot(Succeed())
 
 			labels := map[string]string{
-				providermetrics.ImageLabel:        lo.FromPtr(promise.AKSMachineTemplate.Properties.NodeImageVersion),
+				providermetrics.ImageLabel:        aksMachineMetricImageID(lo.FromPtr(promise.AKSMachineTemplate.Properties.NodeImageVersion)),
 				providermetrics.SizeLabel:         promise.InstanceType.Name,
 				providermetrics.ZoneLabel:         promise.Zone,
 				providermetrics.CapacityTypeLabel: promise.CapacityType,

@@ -446,7 +446,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	ultraSSD := resolveUltraSSDRequested(nodeClaim)
 
 	// Build the AKS machine template
-	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, placementScope, zone, ultraSSD, nodeClass, nodeClaim)
+	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build AKS machine template from template: failed to resolve VM image ID: %w", err)
+	}
+	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, vmImageID, capacityType, placementScope, zone, ultraSSD, nodeClass, nodeClaim)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
@@ -457,7 +461,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	metricLabels := prometheus.Labels{
-		providermetrics.ImageLabel:        lo.FromPtr(aksMachineTemplate.Properties.NodeImageVersion),
+		providermetrics.ImageLabel:        vmImageID,
 		providermetrics.SizeLabel:         lo.FromPtr(aksMachineTemplate.Properties.Hardware.VMSize),
 		providermetrics.ZoneLabel:         zone,
 		providermetrics.CapacityTypeLabel: capacityType,
