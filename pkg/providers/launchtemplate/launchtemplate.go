@@ -198,6 +198,7 @@ func (p *Provider) getStaticParameters(
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
+		NodeHardeningEnabled:           options.FromContext(ctx).NodeHardeningEnabled,
 	}, nil
 }
 
