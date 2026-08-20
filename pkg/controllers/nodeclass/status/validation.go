@@ -24,6 +24,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/samber/lo"
@@ -64,12 +65,14 @@ func NewValidationReconciler(
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
+	provisionOptions := options.FromContext(ctx)
 	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily &&
-		!options.FromContext(ctx).IsAKSMachineAPIMode() {
+		provisionOptions.ProvisionMode != consts.ProvisionModeBootstrappingClient &&
+		!provisionOptions.IsAKSMachineAPIMode() {
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeValidationSucceeded,
 			IncompatibleProvisionMode,
-			"AzureContainerLinux requires an AKS Machine API provision mode",
+			"AzureContainerLinux requires bootstrappingclient or an AKS Machine API provision mode",
 		)
 		return reconcile.Result{}, nil
 	}

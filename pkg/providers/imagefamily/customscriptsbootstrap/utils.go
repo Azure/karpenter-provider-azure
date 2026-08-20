@@ -17,7 +17,12 @@ limitations under the License.
 package customscriptsbootstrap
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
 	"math"
 	"strings"
 
@@ -36,9 +41,70 @@ func hydrateBootstrapTokenIfNeeded(customDataDehydratable string, cseDehydratabl
 		return "", "", err
 	}
 	decodedCustomDataHydrated := strings.ReplaceAll(string(decodedCustomDataDehydratableInBytes), "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken)
+	decodedCustomDataHydrated, err = hydrateIgnitionFiles(decodedCustomDataHydrated, bootstrapToken)
+	if err != nil {
+		return "", "", err
+	}
 	customDataHydrated := base64.StdEncoding.EncodeToString([]byte(decodedCustomDataHydrated))
 
 	return customDataHydrated, cseHydrated, nil
+}
+
+func hydrateIgnitionFiles(customData string, bootstrapToken string) (string, error) {
+	var ignition map[string]any
+	if err := json.Unmarshal([]byte(customData), &ignition); err != nil || ignition["ignition"] == nil {
+		return customData, nil
+	}
+	storage, _ := ignition["storage"].(map[string]any)
+	files, _ := storage["files"].([]any)
+
+	for i, rawFile := range files {
+		file, _ := rawFile.(map[string]any)
+		contents, _ := file["contents"].(map[string]any)
+		source, _ := contents["source"].(string)
+		compression, _ := contents["compression"].(string)
+		const prefix = "data:;base64,"
+		if !strings.HasPrefix(source, prefix) {
+			continue
+		}
+		payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(source, prefix))
+		if err != nil {
+			return "", fmt.Errorf("decode Ignition file %d: %w", i, err)
+		}
+		if compression == "gzip" {
+			reader, err := gzip.NewReader(bytes.NewReader(payload))
+			if err != nil {
+				return "", fmt.Errorf("decompress Ignition file %d: %w", i, err)
+			}
+			payload, err = io.ReadAll(reader)
+			if closeErr := reader.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil {
+				return "", fmt.Errorf("read Ignition file %d: %w", i, err)
+			}
+		}
+
+		hydrated := []byte(strings.ReplaceAll(string(payload), "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken))
+		if compression == "gzip" {
+			var compressed bytes.Buffer
+			writer := gzip.NewWriter(&compressed)
+			if _, err := writer.Write(hydrated); err != nil {
+				return "", fmt.Errorf("compress Ignition file %d: %w", i, err)
+			}
+			if err := writer.Close(); err != nil {
+				return "", fmt.Errorf("close Ignition file %d compressor: %w", i, err)
+			}
+			hydrated = compressed.Bytes()
+		}
+		contents["source"] = prefix + base64.StdEncoding.EncodeToString(hydrated)
+	}
+
+	hydrated, err := json.Marshal(ignition)
+	if err != nil {
+		return "", fmt.Errorf("marshal hydrated Ignition: %w", err)
+	}
+	return string(hydrated), nil
 }
 
 func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory float64) float64 {

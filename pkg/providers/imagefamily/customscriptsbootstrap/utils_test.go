@@ -17,9 +17,14 @@ limitations under the License.
 package customscriptsbootstrap
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -160,6 +165,13 @@ func TestConvertPodMaxPids(t *testing.T) {
 }
 
 func TestHydrateBootstrapTokenIfNeeded(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, err := writer.Write([]byte("nested-{{.TokenID}}.{{.TokenSecret}}-value"))
+	NewWithT(t).Expect(err).ToNot(HaveOccurred())
+	NewWithT(t).Expect(writer.Close()).To(Succeed())
+	ignition := `{"ignition":{"version":"3.4.0"},"storage":{"files":[{"path":"/nested","contents":{"compression":"gzip","source":"data:;base64,` + base64.StdEncoding.EncodeToString(compressed.Bytes()) + `"}}]},"preserve":{"value":true}}`
+
 	tests := []struct {
 		name                   string
 		customDataDehydratable string
@@ -169,6 +181,14 @@ func TestHydrateBootstrapTokenIfNeeded(t *testing.T) {
 		expectedCSE            string
 		expectError            bool
 	}{
+		{
+			name:                   "Nested Ignition gzip token replacement",
+			customDataDehydratable: base64.StdEncoding.EncodeToString([]byte(ignition)),
+			cseDehydratable:        "cse-without-token-placeholder",
+			bootstrapToken:         "abc.123456",
+			expectedCSE:            "cse-without-token-placeholder",
+			expectError:            false,
+		},
 		{
 			name:                   "Valid token replacement",
 			customDataDehydratable: base64.StdEncoding.EncodeToString([]byte("custom-data-with-{{.TokenID}}.{{.TokenSecret}}-placeholder")),
@@ -207,8 +227,27 @@ func TestHydrateBootstrapTokenIfNeeded(t *testing.T) {
 			}
 
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(customData).To(Equal(tt.expectedCustomData))
+			if tt.expectedCustomData != "" {
+				g.Expect(customData).To(Equal(tt.expectedCustomData))
+			}
 			g.Expect(cse).To(Equal(tt.expectedCSE))
+			if tt.name == "Nested Ignition gzip token replacement" {
+				decoded, err := base64.StdEncoding.DecodeString(customData)
+				g.Expect(err).ToNot(HaveOccurred())
+				var doc map[string]any
+				g.Expect(json.Unmarshal(decoded, &doc)).To(Succeed())
+				g.Expect(doc).To(HaveKey("preserve"))
+				files := doc["storage"].(map[string]any)["files"].([]any)
+				source := files[0].(map[string]any)["contents"].(map[string]any)["source"].(string)
+				payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(source, "data:;base64,"))
+				g.Expect(err).ToNot(HaveOccurred())
+				reader, err := gzip.NewReader(bytes.NewReader(payload))
+				g.Expect(err).ToNot(HaveOccurred())
+				hydrated, err := io.ReadAll(reader)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(reader.Close()).To(Succeed())
+				g.Expect(string(hydrated)).To(Equal("nested-abc.123456-value"))
+			}
 		})
 	}
 }
