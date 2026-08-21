@@ -100,6 +100,8 @@ type Options struct {
 	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
 	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
 
+	ComputeRecommendationMode string `json:"computeRecommendationMode,omitempty"` // Controls compute recommendation API behavior: "disabled" (default), "log", or "enabled".
+
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
 }
@@ -132,6 +134,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.DurationVar(&o.ProviderBatchIdleDuration, "provider-batch-idle-duration", env.WithDefaultDuration("PROVIDER_BATCH_IDLE_DURATION", time.Second), "Idle duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
 	fs.DurationVar(&o.ProviderBatchMaxDuration, "provider-batch-max-duration", env.WithDefaultDuration("PROVIDER_BATCH_MAX_DURATION", 5*time.Second), "Maximum duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
 	fs.IntVar(&o.ProviderBatchMaxSize, "provider-batch-max-size", env.WithDefaultInt("PROVIDER_BATCH_MAX_SIZE", consts.AKSMachineAPIHeaderBatchMaxSize), fmt.Sprintf("Maximum number of machines per provider batch (AKS API limit is %d). Only used on provision mode aksmachineapiheaderbatch.", consts.AKSMachineAPIHeaderBatchMaxSize))
+	fs.StringVar(&o.ComputeRecommendationMode, "compute-recommendation-mode", env.WithDefaultString("COMPUTE_RECOMMENDATION_MODE", consts.ComputeRecommendationModeDisabled), "Controls compute recommendation API behavior: 'disabled' (no API calls), 'log' (call and log only), or 'enabled' (use for allocation).")
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {

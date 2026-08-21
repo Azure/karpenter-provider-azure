@@ -206,6 +206,12 @@ settings:
   # -- Disable cluster state metrics and events.
   disableClusterStateObservability: false
 
+  # -- Controls compute recommendation API behavior.
+  # "disabled" (default): No API calls are made to the compute recommendation API.
+  # "log": API is called and results are logged, but local ranking is used for allocation.
+  # "enabled": API results actively influence allocation decisions.
+  computeRecommendationMode: "disabled"
+
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
