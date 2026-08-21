@@ -1235,10 +1235,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 				kubeletFlags := ExpectKubeletFlagsPassed(customData)
-				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft="))
-				Expect(kubeletFlags).To(ContainSubstring("memory.available<"))
-				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
-				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
+				ExpectSoftEvictionThresholds(customData, "500Mi")
 				ExpectHardEvictionThresholds(customData, "250Mi")
 				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period="))
 				Expect(kubeletFlags).To(ContainSubstring("memory.available=30s"))
@@ -3509,6 +3506,14 @@ func ExpectHardEvictionThresholds(customData, memory string) {
 	Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
 	Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
 	Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
+}
+
+func ExpectSoftEvictionThresholds(customData, memory string) {
+	GinkgoHelper()
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	Expect(kubeletFlags).To(ContainSubstring("memory.available<" + memory))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
 }
 
 func ExpectKubeReservedResources(customData string, expected ...string) {
