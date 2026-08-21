@@ -128,7 +128,7 @@ func newInstanceType(
 	architecture string,
 ) *cloudprovider.InstanceType {
 	opts := options.FromContext(ctx)
-	memoryGiB := lo.Must(sku.Memory())
+	totalMemoryMiB := memoryMiB(sku)
 	enableNodeHardening := shouldUseNodeHardening(opts.EnableNodeHardening, opts.ProvisionMode)
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
@@ -136,9 +136,9 @@ func newInstanceType(
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, params),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), memoryGiB, params.MaxPods, enableNodeHardening),
-			SystemReserved:    SystemReservedResources(memoryGiB, opts.NetworkPlugin, enableNodeHardening),
-			EvictionThreshold: EvictionThreshold(memoryGiB, enableNodeHardening),
+			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening),
+			SystemReserved:    SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
+			EvictionThreshold: EvictionThreshold(totalMemoryMiB, enableNodeHardening),
 		},
 	}
 }
@@ -356,7 +356,7 @@ func pods(params *instanceTypeParameters) *resource.Quantity {
 	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
-func SystemReservedResources(memoryGiB float64, networkPlugin string, enableNodeHardening bool) corev1.ResourceList {
+func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableNodeHardening bool) corev1.ResourceList {
 	if !enableNodeHardening {
 		return corev1.ResourceList{
 			corev1.ResourceCPU:    resource.Quantity{},
@@ -365,17 +365,17 @@ func SystemReservedResources(memoryGiB float64, networkPlugin string, enableNode
 	}
 	return corev1.ResourceList{
 		corev1.ResourceCPU:              *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
-		corev1.ResourceMemory:           *resource.NewQuantity(systemReservedMemoryMiB(memoryGiB, networkPlugin == consts.NetworkPluginAzure)*bytesPerMiB, resource.BinarySI),
+		corev1.ResourceMemory:           *resource.NewQuantity(systemReservedMemoryMiB(totalMemoryMiB, networkPlugin == consts.NetworkPluginAzure)*bytesPerMiB, resource.BinarySI),
 		corev1.ResourceEphemeralStorage: resource.MustParse(systemReservedEphemeralStorage),
 	}
 }
 
-func KubeReservedResources(vcpus int64, memoryGiB float64, maxPods int32, enableNodeHardening bool) corev1.ResourceList {
-	reservedMemoryMiB := int64(1024 * reservedMemoryTaxGi.Calculate(memoryGiB))
+func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool) corev1.ResourceList {
+	reservedMemoryMiB := int64(1024 * reservedMemoryTaxGi.Calculate(float64(totalMemoryMiB)/1024))
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
 
 	if enableNodeHardening {
-		reservedMemoryMiB = hardenedKubeReservedMemoryMiB(maxPods, int64(math.Floor(memoryGiB*1024)))
+		reservedMemoryMiB = hardenedKubeReservedMemoryMiB(maxPods, totalMemoryMiB)
 	}
 
 	resources := corev1.ResourceList{
@@ -386,9 +386,9 @@ func KubeReservedResources(vcpus int64, memoryGiB float64, maxPods int32, enable
 	return resources
 }
 
-func EvictionThreshold(memoryGiB float64, enableNodeHardening bool) corev1.ResourceList {
+func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool) corev1.ResourceList {
 	if enableNodeHardening {
-		_, hardMemoryMiB := evictionMemoryLadder(int64(math.Floor(memoryGiB * 1024)))
+		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
 		return corev1.ResourceList{
 			corev1.ResourceMemory: *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI),
 		}

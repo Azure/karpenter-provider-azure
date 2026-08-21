@@ -17,7 +17,6 @@ limitations under the License.
 package instancetype
 
 import (
-	"math"
 	"time"
 )
 
@@ -75,11 +74,11 @@ func hardenedKubeReservedMemoryMiB(maxPods int32, totalMemoryMiB int64) int64 {
 
 // systemReservedMemoryMiB returns the hardened system-reserved memory in MiB:
 //
-//	200 + 100*floor(memGiB/32) (+100 when Azure CNI)
+//	200 + 100*floor(totalMemoryMiB/(32*1024)) (+100 when Azure CNI)
 //
 // Mirrors the hardened system-reserved memory calculation in the AKS RP.
-func systemReservedMemoryMiB(memoryGiB float64, isAzureCNI bool) int64 {
-	steps := int64(math.Floor(memoryGiB / float64(systemReservedStepGiB)))
+func systemReservedMemoryMiB(totalMemoryMiB int64, isAzureCNI bool) int64 {
+	steps := totalMemoryMiB / (systemReservedStepGiB * 1024)
 	mem := systemReservedBaseMiB + steps*systemReservedPerStepMiB
 	if isAzureCNI {
 		mem += systemReservedCNIBonusMiB

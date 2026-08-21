@@ -3450,7 +3450,7 @@ var _ = Describe("Tax Calculator", func() {
 	Context("KubeReservedResources", func() {
 		It("should have 4 cores, 7GiB", func() {
 			cpus := int64(4) // 4 cores
-			memory := 7.0    // 7 GiB
+			memory := int64(7 * 1024)
 			expectedCPU := "140m"
 			expectedMemory := "1638Mi"
 
@@ -3464,7 +3464,7 @@ var _ = Describe("Tax Calculator", func() {
 
 		It("should have 2 cores, 8GiB", func() {
 			cpus := int64(2) // 2 cores
-			memory := 8.0    // 8 GiB
+			memory := int64(8 * 1024)
 			expectedCPU := "100m"
 			expectedMemory := "1843Mi"
 
@@ -3478,7 +3478,7 @@ var _ = Describe("Tax Calculator", func() {
 
 		It("should have 3 cores, 64GiB", func() {
 			cpus := int64(3) // 3 cores
-			memory := 64.0   // 64 GiB
+			memory := int64(64 * 1024)
 			expectedCPU := "120m"
 			expectedMemory := "5611Mi"
 
@@ -3494,7 +3494,7 @@ var _ = Describe("Tax Calculator", func() {
 	Context("Node hardening reservations", func() {
 		It("KubeReservedResources scales with maxPods and node capacity", func() {
 			// 8 vCPU, 32 GiB, 110 pods: min(35*110 + max(250, 2%*32768), 25%*32768) = 4505Mi.
-			resources := instancetype.KubeReservedResources(int64(8), 32.0, int32(110), true)
+			resources := instancetype.KubeReservedResources(int64(8), 32*1024, int32(110), true)
 			cpu := resources[v1.ResourceCPU]
 			mem := resources[v1.ResourceMemory]
 			Expect(cpu.String()).To(Equal("180m"))
@@ -3502,13 +3502,13 @@ var _ = Describe("Tax Calculator", func() {
 		})
 		It("KubeReservedResources is capped at 25% of memory", func() {
 			// Tiny node, very high pod density -> capped at 25% of 8Gi = 2048Mi (= 2Gi).
-			resources := instancetype.KubeReservedResources(int64(2), 8.0, int32(250), true)
+			resources := instancetype.KubeReservedResources(int64(2), 8*1024, int32(250), true)
 			mem := resources[v1.ResourceMemory]
 			Expect(mem.String()).To(Equal("2Gi"))
 		})
 		It("SystemReservedResources adds the Azure CNI bonus", func() {
 			// 32 GiB Azure CNI: 200 + 100*floor(32/32) + 100 = 400Mi.
-			resources := instancetype.SystemReservedResources(32.0, consts.NetworkPluginAzure, true)
+			resources := instancetype.SystemReservedResources(32*1024, consts.NetworkPluginAzure, true)
 			cpu := resources[v1.ResourceCPU]
 			mem := resources[v1.ResourceMemory]
 			eph := resources[v1.ResourceEphemeralStorage]
@@ -3517,14 +3517,14 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(eph.String()).To(Equal("1Gi"))
 		})
 		It("SystemReservedResources omits the bonus for non-Azure CNI", func() {
-			resources := instancetype.SystemReservedResources(8.0, consts.NetworkPluginNone, true)
+			resources := instancetype.SystemReservedResources(8*1024, consts.NetworkPluginNone, true)
 			mem := resources[v1.ResourceMemory]
 			Expect(mem.String()).To(Equal("200Mi"))
 		})
 		It("EvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
-			small := instancetype.EvictionThreshold(8.0, true)[v1.ResourceMemory]
-			medium := instancetype.EvictionThreshold(16.0, true)[v1.ResourceMemory]
-			large := instancetype.EvictionThreshold(32.0, true)[v1.ResourceMemory]
+			small := instancetype.EvictionThreshold(8*1024, true)[v1.ResourceMemory]
+			medium := instancetype.EvictionThreshold(16*1024, true)[v1.ResourceMemory]
+			large := instancetype.EvictionThreshold(32*1024, true)[v1.ResourceMemory]
 			Expect(small.String()).To(Equal("250Mi"))
 			Expect(medium.String()).To(Equal("375Mi"))
 			Expect(large.String()).To(Equal("512Mi"))
@@ -3538,7 +3538,7 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(large.String()).To(Equal("1Gi"))
 		})
 		It("EvictionThreshold is the flat default when hardening is disabled", func() {
-			threshold := instancetype.EvictionThreshold(32.0, false)[v1.ResourceMemory]
+			threshold := instancetype.EvictionThreshold(32*1024, false)[v1.ResourceMemory]
 			Expect(threshold.String()).To(Equal("750Mi"))
 		})
 	})

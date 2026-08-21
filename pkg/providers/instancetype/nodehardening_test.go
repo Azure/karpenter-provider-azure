@@ -19,6 +19,7 @@ package instancetype
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -42,9 +43,8 @@ func TestShouldUseNodeHardening(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := shouldUseNodeHardening(test.enabled, test.provisionMode); got != test.want {
-				t.Fatalf("shouldUseNodeHardening(%t, %q) = %t, want %t", test.enabled, test.provisionMode, got, test.want)
-			}
+			g := NewWithT(t)
+			g.Expect(shouldUseNodeHardening(test.enabled, test.provisionMode)).To(Equal(test.want))
 		})
 	}
 }
@@ -54,25 +54,24 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 	tests := []struct {
 		name          string
 		vcpus         int64
-		memoryGiB     float64
+		memoryMiB     int64
 		maxPods       int32
 		wantMemoryMiB int64
 	}{
-		{name: "7 GiB with 30 pods", vcpus: 4, memoryGiB: 7, maxPods: 30, wantMemoryMiB: 1300},
-		{name: "8 GiB with 110 pods is capped", vcpus: 2, memoryGiB: 8, maxPods: 110, wantMemoryMiB: 2048},
-		{name: "32 GiB with 110 pods", vcpus: 8, memoryGiB: 32, maxPods: 110, wantMemoryMiB: 4505},
-		{name: "64 GiB with 110 pods", vcpus: 8, memoryGiB: 64, maxPods: 110, wantMemoryMiB: 5160},
-		{name: "128 GiB with 250 pods", vcpus: 16, memoryGiB: 128, maxPods: 250, wantMemoryMiB: 11371},
+		{name: "7 GiB with 30 pods", vcpus: 4, memoryMiB: 7 * 1024, maxPods: 30, wantMemoryMiB: 1300},
+		{name: "8 GiB with 110 pods is capped", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 110, wantMemoryMiB: 2048},
+		{name: "32 GiB with 110 pods", vcpus: 8, memoryMiB: 32 * 1024, maxPods: 110, wantMemoryMiB: 4505},
+		{name: "64 GiB with 110 pods", vcpus: 8, memoryMiB: 64 * 1024, maxPods: 110, wantMemoryMiB: 5160},
+		{name: "128 GiB with 250 pods", vcpus: 16, memoryMiB: 128 * 1024, maxPods: 250, wantMemoryMiB: 11371},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resources := KubeReservedResources(test.vcpus, test.memoryGiB, test.maxPods, true)
+			g := NewWithT(t)
+			resources := KubeReservedResources(test.vcpus, test.memoryMiB, test.maxPods, true)
 			memory := resources[corev1.ResourceMemory]
 			wantMemory := *resource.NewQuantity(test.wantMemoryMiB*bytesPerMiB, resource.BinarySI)
-			if memory.Cmp(wantMemory) != 0 {
-				t.Fatalf("resources = memory=%s; want memory=%s", memory.String(), wantMemory.String())
-			}
+			g.Expect(memory.Cmp(wantMemory)).To(Equal(0))
 		})
 	}
 }
@@ -81,42 +80,45 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 	tests := []struct {
 		name          string
-		memoryGiB     float64
+		memoryMiB     int64
 		networkPlugin string
 		wantMemoryMiB int64
 	}{
-		{name: "7 GiB without Azure CNI", memoryGiB: 7, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 200},
-		{name: "7 GiB with Azure CNI", memoryGiB: 7, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 300},
-		{name: "32 GiB without Azure CNI", memoryGiB: 32, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 300},
-		{name: "32 GiB with Azure CNI", memoryGiB: 32, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 400},
-		{name: "64 GiB without Azure CNI", memoryGiB: 64, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 400},
-		{name: "128 GiB with Azure CNI", memoryGiB: 128, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 700},
+		{name: "7 GiB without Azure CNI", memoryMiB: 7 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 200},
+		{name: "7 GiB with Azure CNI", memoryMiB: 7 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 300},
+		{name: "32 GiB without Azure CNI", memoryMiB: 32 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 300},
+		{name: "32 GiB with Azure CNI", memoryMiB: 32 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 400},
+		{name: "64 GiB without Azure CNI", memoryMiB: 64 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 400},
+		{name: "128 GiB with Azure CNI", memoryMiB: 128 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 700},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resources := SystemReservedResources(test.memoryGiB, test.networkPlugin, true)
+			g := NewWithT(t)
+			resources := SystemReservedResources(test.memoryMiB, test.networkPlugin, true)
 			cpu := resources[corev1.ResourceCPU]
 			memory := resources[corev1.ResourceMemory]
 			ephemeralStorage := resources[corev1.ResourceEphemeralStorage]
 			wantCPU := *resource.NewMilliQuantity(systemReservedCPUMillicores, resource.DecimalSI)
 			wantMemory := *resource.NewQuantity(test.wantMemoryMiB*bytesPerMiB, resource.BinarySI)
 
-			if cpu.Cmp(wantCPU) != 0 || memory.Cmp(wantMemory) != 0 || ephemeralStorage.String() != systemReservedEphemeralStorage {
-				t.Fatalf("resources = cpu=%s,memory=%s,ephemeral-storage=%s; want cpu=%s,memory=%s,ephemeral-storage=%s",
-					cpu.String(), memory.String(), ephemeralStorage.String(), wantCPU.String(), wantMemory.String(), systemReservedEphemeralStorage)
-			}
+			g.Expect(cpu.Cmp(wantCPU)).To(Equal(0))
+			g.Expect(memory.Cmp(wantMemory)).To(Equal(0))
+			g.Expect(ephemeralStorage.String()).To(Equal(systemReservedEphemeralStorage))
 		})
 	}
 }
 
 func TestSystemReservedResourcesDisabledPreservesLegacyValues(t *testing.T) {
-	resources := SystemReservedResources(64, consts.NetworkPluginAzure, false)
+	g := NewWithT(t)
+	resources := SystemReservedResources(64*1024, consts.NetworkPluginAzure, false)
 	cpu, hasCPU := resources[corev1.ResourceCPU]
 	memory, hasMemory := resources[corev1.ResourceMemory]
-	if len(resources) != 2 || !hasCPU || !hasMemory || !cpu.IsZero() || !memory.IsZero() {
-		t.Fatalf("resources = %#v, want exactly zero-valued CPU and memory", resources)
-	}
+	g.Expect(resources).To(HaveLen(2))
+	g.Expect(hasCPU).To(BeTrue())
+	g.Expect(hasMemory).To(BeTrue())
+	g.Expect(cpu.IsZero()).To(BeTrue())
+	g.Expect(memory.IsZero()).To(BeTrue())
 }
 
 func TestEvictionMemoryLadder(t *testing.T) {
@@ -135,10 +137,10 @@ func TestEvictionMemoryLadder(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			softMiB, hardMiB := evictionMemoryLadder(test.memoryMiB)
-			if softMiB != test.wantSoftMiB || hardMiB != test.wantHardMiB {
-				t.Fatalf("evictionMemoryLadder(%d) = (%d, %d), want (%d, %d)", test.memoryMiB, softMiB, hardMiB, test.wantSoftMiB, test.wantHardMiB)
-			}
+			g.Expect(softMiB).To(Equal(test.wantSoftMiB))
+			g.Expect(hardMiB).To(Equal(test.wantHardMiB))
 		})
 	}
 }
