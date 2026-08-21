@@ -31,3 +31,7 @@ func (o *Options) IsCiliumNodeSubnet() bool {
 func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
+
+func (o *Options) IsAzureCNIPodSubnet() bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && o.PodSubnetID != ""
+}

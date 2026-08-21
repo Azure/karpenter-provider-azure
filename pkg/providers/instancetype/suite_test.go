@@ -1708,12 +1708,13 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		DescribeTable("Azure CNI node labels and agentbaker network plugin", func(
-			networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
+			networkPlugin, networkPluginMode, networkDataplane, podSubnetID, expectedAgentBakerNetPlugin string,
 			expectedNodeLabels sets.Set[string]) {
 			options := test.Options(test.OptionsFields{
 				NetworkPlugin:     lo.ToPtr(networkPlugin),
 				NetworkPluginMode: lo.ToPtr(networkPluginMode),
 				NetworkDataplane:  lo.ToPtr(networkDataplane),
+				PodSubnetID:       lo.ToPtr(podSubnetID),
 			})
 			ctx = options.ToContext(ctx)
 
@@ -1730,10 +1731,10 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 		},
 			Entry("Azure CNI V1",
-				"azure", "", "",
+				"azure", "", "", "",
 				"azure", sets.New[string]()),
 			Entry("Azure CNI w Overlay",
-				"azure", "overlay", "",
+				"azure", "overlay", "", "",
 				"none",
 				sets.New(
 					"kubernetes.azure.com/azure-cni-overlay=true",
@@ -1742,10 +1743,10 @@ var _ = Describe("InstanceType Provider", func() {
 					"kubernetes.azure.com/podnetwork-type=overlay",
 				)),
 			Entry("Network Plugin none",
-				"none", "", "", "none",
+				"none", "", "", "", "none",
 				sets.New[string]()),
 			Entry("Azure CNI w Overlay w Cilium",
-				"azure", "overlay", "cilium",
+				"azure", "overlay", "cilium", "",
 				"none",
 				sets.New(
 					"kubernetes.azure.com/azure-cni-overlay=true",
@@ -1755,9 +1756,25 @@ var _ = Describe("InstanceType Provider", func() {
 					"kubernetes.azure.com/ebpf-dataplane=cilium",
 				)),
 			Entry("Cilium w feature flag Microsoft.ContainerService/EnableCiliumNodeSubnet",
-				"azure", "", "cilium",
+				"azure", "", "cilium", "",
 				"none",
 				sets.New("kubernetes.azure.com/ebpf-dataplane=cilium")),
+			Entry("Azure CNI w Pod Subnet",
+				"azure", "", "", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/podsubnet",
+				"none",
+				sets.New(
+					"kubernetes.azure.com/network-name=aks-vnet-12345678",
+					"kubernetes.azure.com/network-resourcegroup=test-resourceGroup",
+					"kubernetes.azure.com/network-subnet=aks-subnet",
+					"kubernetes.azure.com/network-subscription=12345678-1234-1234-1234-123456789012",
+					"kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
+					"kubernetes.azure.com/podnetwork-type=vnet",
+					"kubernetes.azure.com/podnetwork-delegationguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
+					"kubernetes.azure.com/podnetwork-name=aks-vnet-12345678",
+					"kubernetes.azure.com/podnetwork-resourcegroup=test-resourceGroup",
+					"kubernetes.azure.com/podnetwork-subnet=podsubnet",
+					"kubernetes.azure.com/podnetwork-subscription=12345678-1234-1234-1234-123456789012",
+				)),
 		)
 
 		Context("LoadBalancer", func() {

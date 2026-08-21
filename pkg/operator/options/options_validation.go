@@ -42,6 +42,7 @@ func (o *Options) Validate() error {
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
+		o.validatePodSubnetID(),
 		o.validateProvisionMode(),
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
@@ -98,6 +99,43 @@ func (o *Options) validateVnetSubnetID() error {
 		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
 	}
 	return nil
+}
+
+func (o *Options) validatePodSubnetID() error {
+	if o.PodSubnetID == "" {
+		return nil
+	}
+	podSubnet, err := utils.GetVnetSubnetIDComponents(o.PodSubnetID)
+	if err != nil {
+		return fmt.Errorf("pod-subnet-id is invalid: %w", err)
+	}
+	if o.NetworkPlugin != consts.NetworkPluginAzure {
+		return fmt.Errorf("pod-subnet-id is only supported with network-plugin 'azure', got '%s'", o.NetworkPlugin)
+	}
+	if o.NetworkPluginMode == consts.NetworkPluginModeOverlay {
+		return fmt.Errorf("pod-subnet-id is not supported with network-plugin-mode '%s'", consts.NetworkPluginModeOverlay)
+	}
+	// AKS machine nodes do not carry the bootstrap pod network labels, and the AKS API rejects PodSubnetID
+	if o.IsAKSMachineAPIMode() {
+		return fmt.Errorf("pod-subnet-id is not supported with provision-mode '%s'", o.ProvisionMode)
+	}
+	// Skip the cross-check when the node subnet does not parse; validateVnetSubnetID reports that
+	if nodeSubnet, nodeSubnetErr := utils.GetVnetSubnetIDComponents(o.SubnetID); nodeSubnetErr == nil {
+		if !isSameVNETFold(nodeSubnet, podSubnet) {
+			return fmt.Errorf("pod-subnet-id must be in the same virtual network as vnet-subnet-id")
+		}
+	}
+	if strings.EqualFold(o.PodSubnetID, o.SubnetID) {
+		return fmt.Errorf("pod-subnet-id must be different from vnet-subnet-id")
+	}
+	return nil
+}
+
+// isSameVNETFold compares the VNet of two subnets, case-insensitively as ARM resource IDs are
+func isSameVNETFold(a, b utils.VnetSubnetResource) bool {
+	return strings.EqualFold(a.SubscriptionID, b.SubscriptionID) &&
+		strings.EqualFold(a.ResourceGroupName, b.ResourceGroupName) &&
+		strings.EqualFold(a.VNetName, b.VNetName)
 }
 
 func (o *Options) validateEndpoint() error {

@@ -525,6 +525,35 @@ var _ = Describe("VMInstanceProvider", func() {
 
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(11))
 		})
+		It("should include 1 ip config for Azure CNI Pod Subnet", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
+					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+					PodSubnetID:       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/podsubnet"),
+				}))
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Pod subnet allocates pod ips from that subnet rather than from
+			// secondary ips on the nic.
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
+			customData := ExpectDecodedCustomData(azureEnv)
+			expectedFlags := map[string]string{
+				"max-pods": "250",
+			}
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+		})
 	})
 
 	It("should create VM and NIC with valid ARM tags", func() {

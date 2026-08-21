@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
@@ -568,6 +569,142 @@ func TestLabelsGet(t *testing.T) {
 			}
 
 			labelMap, err := labels.Get(ctx, nodeClass, tc.arch)
+			g.Expect(err).ToNot(HaveOccurred())
+			for key, expectedValue := range tc.expectedLabels {
+				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)
+			}
+			for _, key := range tc.unexpectedLabels {
+				g.Expect(labelMap).ToNot(HaveKey(key), "label %s should not exist", key)
+			}
+		})
+	}
+}
+
+func TestNetworkLabels(t *testing.T) {
+	const (
+		nodeSubnetID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/nodesubnet"
+		podSubnetID  = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/podsubnet"
+		vnetGUID     = "433b6913-62be-411e-bcbb-165e551deefd"
+	)
+
+	testCases := []struct {
+		name              string
+		networkPlugin     string
+		networkPluginMode string
+		podSubnetID       string
+		kubernetesVersion string
+		expectedLabels    map[string]string
+		unexpectedLabels  []string
+	}{
+		{
+			name:              "Azure CNI pod subnet emits the podnetwork labels DNC keys off",
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeNone,
+			podSubnetID:       podSubnetID,
+			kubernetesVersion: "1.35.0",
+			expectedLabels: map[string]string{
+				labels.AKSLabelNetworkName:              "test-vnet",
+				labels.AKSLabelNetworkResourceGroup:     "test-rg",
+				labels.AKSLabelSubnetName:               "nodesubnet",
+				labels.AKSLabelNetworkSubscription:      "12345678-1234-1234-1234-123456789012",
+				labels.AKSLabelVNetGUID:                 vnetGUID,
+				labels.AKSLabelPodNetworkType:           consts.PodNetworkTypeVNet,
+				labels.AKSLabelPodNetworkDelegationGUID: vnetGUID,
+				labels.AKSLabelPodNetworkName:           "test-vnet",
+				labels.AKSLabelPodNetworkResourceGroup:  "test-rg",
+				labels.AKSLabelPodNetworkSubnet:         "podsubnet",
+				labels.AKSLabelPodNetworkSubscription:   "12345678-1234-1234-1234-123456789012",
+				labels.AKSLabelNetworkStatelessCNI:      "true",
+			},
+			unexpectedLabels: []string{labels.AKSLabelAzureCNIOverlay},
+		},
+		{
+			name:              "Azure CNI pod subnet with k8s < 1.34 disables stateless CNI",
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeNone,
+			podSubnetID:       podSubnetID,
+			kubernetesVersion: "1.33.9",
+			expectedLabels: map[string]string{
+				labels.AKSLabelPodNetworkType:      consts.PodNetworkTypeVNet,
+				labels.AKSLabelNetworkStatelessCNI: "false",
+			},
+		},
+		{
+			name:              "Azure CNI overlay is unchanged by pod subnet support",
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeOverlay,
+			kubernetesVersion: "1.35.0",
+			expectedLabels: map[string]string{
+				labels.AKSLabelSubnetName:          "nodesubnet",
+				labels.AKSLabelVNetGUID:            vnetGUID,
+				labels.AKSLabelAzureCNIOverlay:     "true",
+				labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
+				labels.AKSLabelNetworkStatelessCNI: "true",
+			},
+			unexpectedLabels: []string{
+				labels.AKSLabelPodNetworkDelegationGUID,
+				labels.AKSLabelPodNetworkName,
+				labels.AKSLabelPodNetworkResourceGroup,
+				labels.AKSLabelPodNetworkSubnet,
+				labels.AKSLabelPodNetworkSubscription,
+			},
+		},
+		{
+			name:              "Azure CNI node subnet without a pod subnet emits no network labels",
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeNone,
+			kubernetesVersion: "1.35.0",
+			unexpectedLabels: []string{
+				labels.AKSLabelSubnetName,
+				labels.AKSLabelVNetGUID,
+				labels.AKSLabelAzureCNIOverlay,
+				labels.AKSLabelPodNetworkType,
+				labels.AKSLabelPodNetworkSubnet,
+				labels.AKSLabelNetworkStatelessCNI,
+			},
+		},
+		{
+			name:              "network plugin none ignores a stray pod subnet",
+			networkPlugin:     consts.NetworkPluginNone,
+			networkPluginMode: consts.NetworkPluginModeNone,
+			podSubnetID:       podSubnetID,
+			kubernetesVersion: "1.35.0",
+			unexpectedLabels: []string{
+				labels.AKSLabelPodNetworkType,
+				labels.AKSLabelPodNetworkSubnet,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := options.ToContext(context.Background(), &options.Options{
+				NodeResourceGroup:       "test-rg",
+				KubeletIdentityClientID: "test-client-id",
+				NetworkPlugin:           tc.networkPlugin,
+				NetworkPluginMode:       tc.networkPluginMode,
+				SubnetID:                nodeSubnetID,
+				PodSubnetID:             tc.podSubnetID,
+				VnetGUID:                vnetGUID,
+			})
+
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Status: v1beta1.AKSNodeClassStatus{
+					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
+					Conditions: []status.Condition{
+						{
+							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
+							Status: metav1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
 			g.Expect(err).ToNot(HaveOccurred())
 			for key, expectedValue := range tc.expectedLabels {
 				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)
