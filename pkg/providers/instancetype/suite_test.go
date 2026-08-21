@@ -3491,57 +3491,6 @@ var _ = Describe("Tax Calculator", func() {
 		})
 	})
 
-	Context("Node hardening reservations", func() {
-		It("KubeReservedResources scales with maxPods and node capacity", func() {
-			// 8 vCPU, 32 GiB, 110 pods: min(35*110 + max(250, 2%*32768), 25%*32768) = 4505Mi.
-			resources := instancetype.KubeReservedResources(int64(8), 32*1024, int32(110), true)
-			cpu := resources[v1.ResourceCPU]
-			mem := resources[v1.ResourceMemory]
-			Expect(cpu.String()).To(Equal("180m"))
-			Expect(mem.String()).To(Equal("4505Mi"))
-		})
-		It("KubeReservedResources is capped at 25% of memory", func() {
-			// Tiny node, very high pod density -> capped at 25% of 8Gi = 2048Mi (= 2Gi).
-			resources := instancetype.KubeReservedResources(int64(2), 8*1024, int32(250), true)
-			mem := resources[v1.ResourceMemory]
-			Expect(mem.String()).To(Equal("2Gi"))
-		})
-		It("SystemReservedResources adds the Azure CNI bonus", func() {
-			// 32 GiB Azure CNI: 200 + 100*floor(32/32) + 100 = 400Mi.
-			resources := instancetype.SystemReservedResources(32*1024, consts.NetworkPluginAzure, true)
-			cpu := resources[v1.ResourceCPU]
-			mem := resources[v1.ResourceMemory]
-			eph := resources[v1.ResourceEphemeralStorage]
-			Expect(cpu.String()).To(Equal("100m"))
-			Expect(mem.String()).To(Equal("400Mi"))
-			Expect(eph.String()).To(Equal("1Gi"))
-		})
-		It("SystemReservedResources omits the bonus for non-Azure CNI", func() {
-			resources := instancetype.SystemReservedResources(8*1024, consts.NetworkPluginNone, true)
-			mem := resources[v1.ResourceMemory]
-			Expect(mem.String()).To(Equal("200Mi"))
-		})
-		It("EvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
-			small := instancetype.EvictionThreshold(8*1024, true)[v1.ResourceMemory]
-			medium := instancetype.EvictionThreshold(16*1024, true)[v1.ResourceMemory]
-			large := instancetype.EvictionThreshold(32*1024, true)[v1.ResourceMemory]
-			Expect(small.String()).To(Equal("250Mi"))
-			Expect(medium.String()).To(Equal("375Mi"))
-			Expect(large.String()).To(Equal("512Mi"))
-		})
-		It("SoftEvictionThreshold follows the VM-size ladder when hardening is enabled", func() {
-			small := instancetype.SoftEvictionThreshold(8 * 1024)[v1.ResourceMemory]
-			medium := instancetype.SoftEvictionThreshold(16 * 1024)[v1.ResourceMemory]
-			large := instancetype.SoftEvictionThreshold(32 * 1024)[v1.ResourceMemory]
-			Expect(small.String()).To(Equal("500Mi"))
-			Expect(medium.String()).To(Equal("750Mi"))
-			Expect(large.String()).To(Equal("1Gi"))
-		})
-		It("EvictionThreshold is the flat default when hardening is disabled", func() {
-			threshold := instancetype.EvictionThreshold(32*1024, false)[v1.ResourceMemory]
-			Expect(threshold.String()).To(Equal("750Mi"))
-		})
-	})
 })
 
 func createSDKErrorBody(code, message string) io.ReadCloser {

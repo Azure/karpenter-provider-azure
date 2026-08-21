@@ -56,21 +56,25 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 		vcpus         int64
 		memoryMiB     int64
 		maxPods       int32
+		wantCPUMilli  int64
 		wantMemoryMiB int64
 	}{
-		{name: "7 GiB with 30 pods", vcpus: 4, memoryMiB: 7 * 1024, maxPods: 30, wantMemoryMiB: 1300},
-		{name: "8 GiB with 110 pods is capped", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 110, wantMemoryMiB: 2048},
-		{name: "32 GiB with 110 pods", vcpus: 8, memoryMiB: 32 * 1024, maxPods: 110, wantMemoryMiB: 4505},
-		{name: "64 GiB with 110 pods", vcpus: 8, memoryMiB: 64 * 1024, maxPods: 110, wantMemoryMiB: 5160},
-		{name: "128 GiB with 250 pods", vcpus: 16, memoryMiB: 128 * 1024, maxPods: 250, wantMemoryMiB: 11371},
+		{name: "7 GiB with 30 pods", vcpus: 4, memoryMiB: 7 * 1024, maxPods: 30, wantCPUMilli: 140, wantMemoryMiB: 1300},
+		{name: "8 GiB with 110 pods is capped", vcpus: 2, memoryMiB: 8 * 1024, maxPods: 110, wantCPUMilli: 100, wantMemoryMiB: 2048},
+		{name: "32 GiB with 110 pods", vcpus: 8, memoryMiB: 32 * 1024, maxPods: 110, wantCPUMilli: 180, wantMemoryMiB: 4505},
+		{name: "64 GiB with 110 pods", vcpus: 8, memoryMiB: 64 * 1024, maxPods: 110, wantCPUMilli: 180, wantMemoryMiB: 5160},
+		{name: "128 GiB with 250 pods", vcpus: 16, memoryMiB: 128 * 1024, maxPods: 250, wantCPUMilli: 260, wantMemoryMiB: 11371},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
 			resources := KubeReservedResources(test.vcpus, test.memoryMiB, test.maxPods, true)
+			cpu := resources[corev1.ResourceCPU]
 			memory := resources[corev1.ResourceMemory]
+			wantCPU := *resource.NewMilliQuantity(test.wantCPUMilli, resource.DecimalSI)
 			wantMemory := *resource.NewQuantity(test.wantMemoryMiB*bytesPerMiB, resource.BinarySI)
+			g.Expect(cpu.Cmp(wantCPU)).To(Equal(0))
 			g.Expect(memory.Cmp(wantMemory)).To(Equal(0))
 		})
 	}
@@ -141,6 +145,48 @@ func TestEvictionMemoryLadder(t *testing.T) {
 			softMiB, hardMiB := evictionMemoryLadder(test.memoryMiB)
 			g.Expect(softMiB).To(Equal(test.wantSoftMiB))
 			g.Expect(hardMiB).To(Equal(test.wantHardMiB))
+		})
+	}
+}
+
+func TestEvictionThreshold(t *testing.T) {
+	tests := []struct {
+		name                string
+		memoryMiB           int64
+		enableNodeHardening bool
+		want                string
+	}{
+		{name: "small hardened node", memoryMiB: 8 * 1024, enableNodeHardening: true, want: "250Mi"},
+		{name: "medium hardened node", memoryMiB: 16 * 1024, enableNodeHardening: true, want: "375Mi"},
+		{name: "large hardened node", memoryMiB: 32 * 1024, enableNodeHardening: true, want: "512Mi"},
+		{name: "hardening disabled", memoryMiB: 32 * 1024, want: DefaultMemoryAvailable},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			threshold := EvictionThreshold(test.memoryMiB, test.enableNodeHardening)[corev1.ResourceMemory]
+			g.Expect(threshold.String()).To(Equal(test.want))
+		})
+	}
+}
+
+func TestSoftEvictionThreshold(t *testing.T) {
+	tests := []struct {
+		name      string
+		memoryMiB int64
+		want      string
+	}{
+		{name: "small node", memoryMiB: 8 * 1024, want: "500Mi"},
+		{name: "medium node", memoryMiB: 16 * 1024, want: "750Mi"},
+		{name: "large node", memoryMiB: 32 * 1024, want: "1Gi"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			threshold := SoftEvictionThreshold(test.memoryMiB)[corev1.ResourceMemory]
+			g.Expect(threshold.String()).To(Equal(test.want))
 		})
 	}
 }
