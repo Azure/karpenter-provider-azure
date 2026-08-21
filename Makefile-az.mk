@@ -308,6 +308,9 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
+	# VM Contributor is needed at the subscription scope for the SKU Split API.
+	# TODO: This should change before we GA the feature and we should be able to remove this as the API will either move to RG scope (so VM contributor at RG scope will work) OR will move to be like the SKUs API where it doesnt require RBAC.
+	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID) --role "Virtual Machine Contributor"
 	@echo Consider "make az-configure-values"!
 
 az-perm-aksmachine: ## Create role assignments for AKS machine API operations
