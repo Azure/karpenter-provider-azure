@@ -44,7 +44,7 @@ func TestShouldUseNodeHardening(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(shouldUseNodeHardening(test.enabled, test.provisionMode)).To(Equal(test.want))
+			g.Expect(ShouldUseNodeHardening(test.enabled, test.provisionMode)).To(Equal(test.want))
 		})
 	}
 }

@@ -29,11 +29,12 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 )
 
-func prepareTestKubeletConfiguration(enableNodeHardening bool) *bootstrap.KubeletConfiguration {
+func prepareTestKubeletConfiguration(enableNodeHardening bool, provisionMode string) *bootstrap.KubeletConfiguration {
 	instanceType := &cloudprovider.InstanceType{
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, "32768"),
@@ -45,13 +46,16 @@ func prepareTestKubeletConfiguration(enableNodeHardening bool) *bootstrap.Kubele
 		},
 	}
 	nodeClass := &v1beta1.AKSNodeClass{}
-	ctx := options.ToContext(context.Background(), &options.Options{EnableNodeHardening: enableNodeHardening})
+	ctx := options.ToContext(context.Background(), &options.Options{
+		EnableNodeHardening: enableNodeHardening,
+		ProvisionMode:       provisionMode,
+	})
 	return prepareKubeletConfiguration(ctx, instanceType, nodeClass)
 }
 
 func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
 	g := NewWithT(t)
-	configuration := prepareTestKubeletConfiguration(true)
+	configuration := prepareTestKubeletConfiguration(true, consts.ProvisionModeAKSScriptless)
 
 	expectedHardThresholds := map[string]string{
 		"memory.available":  "512Mi",
@@ -85,7 +89,7 @@ func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
 
 func TestPrepareKubeletConfigurationSoftEvictionDisabled(t *testing.T) {
 	g := NewWithT(t)
-	configuration := prepareTestKubeletConfiguration(false)
+	configuration := prepareTestKubeletConfiguration(false, consts.ProvisionModeAKSScriptless)
 
 	expectedHardThresholds := map[string]string{
 		"memory.available":  "512Mi",
@@ -100,4 +104,15 @@ func TestPrepareKubeletConfigurationSoftEvictionDisabled(t *testing.T) {
 	g.Expect(configuration.EnforceNodeAllocatable).To(BeNil())
 	g.Expect(configuration.SystemReserved).ToNot(HaveKey("pid"))
 	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("pid", "1000"))
+}
+
+func TestPrepareKubeletConfigurationSoftEvictionDisabledForBootstrappingClient(t *testing.T) {
+	g := NewWithT(t)
+	configuration := prepareTestKubeletConfiguration(true, consts.ProvisionModeBootstrappingClient)
+
+	g.Expect(configuration.EvictionSoft).To(BeNil())
+	g.Expect(configuration.EvictionSoftGracePeriod).To(BeNil())
+	g.Expect(configuration.EvictionMaxPodGracePeriod).To(BeNil())
+	g.Expect(configuration.EnforceNodeAllocatable).To(BeNil())
+	g.Expect(configuration.SystemReserved).ToNot(HaveKey("pid"))
 }

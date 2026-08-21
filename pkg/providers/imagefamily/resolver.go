@@ -248,7 +248,9 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		instancetype.PIDAvailable:     instancetype.HardEvictionPIDAvailable,
 	}
 
-	if options.FromContext(ctx).EnableNodeHardening {
+	opts := options.FromContext(ctx)
+	enableNodeHardening := instancetype.ShouldUseNodeHardening(opts.EnableNodeHardening, opts.ProvisionMode)
+	if enableNodeHardening {
 		kubeletConfig.SystemReserved["pid"] = instancetype.SystemReservedPIDs
 		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
 		softEvictionThreshold := instancetype.SoftEvictionThreshold(totalMemoryMiB)
