@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/blang/semver/v4"
@@ -367,9 +368,12 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nodeclaimKubeletConfig := kubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
 
-	// stringify kubelet flags (including taints)
-	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
-		return fmt.Sprintf("%s=%s", k, v)
+	// stringify kubelet flags (including taints); sort by flag name so ordering is
+	// deterministic in the rendered customData.
+	flagNames := lo.Keys(kubeletFlags)
+	sort.Strings(flagNames)
+	nbv.KubeletFlags = strings.Join(lo.Map(flagNames, func(k string, _ int) string {
+		return fmt.Sprintf("%s=%s", k, kubeletFlags[k])
 	}), " ")
 }
 
@@ -404,6 +408,10 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	JoinParameterArgsToMap(args, "--eviction-soft-grace-period", lo.MapValues(kubeletConfig.EvictionSoftGracePeriod, func(v metav1.Duration, _ string) string {
 		return v.Duration.String()
 	}), "=")
+
+	if len(kubeletConfig.EnforceNodeAllocatable) > 0 {
+		args["--enforce-node-allocatable"] = strings.Join(kubeletConfig.EnforceNodeAllocatable, ",")
+	}
 
 	if kubeletConfig.EvictionMaxPodGracePeriod != nil {
 		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.EvictionMaxPodGracePeriod))
