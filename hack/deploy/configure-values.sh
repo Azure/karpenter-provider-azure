@@ -43,27 +43,35 @@ SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
 
 
 get_vnet_json() {
-    local resource_group=$1
-    local aks_json=$2
+    local node_subnet_id=$1
+    local resource_group=$2
 
-    local vnet_json
-    vnet_json=$(az network vnet list --resource-group "$resource_group" --output json | jq -r ".[0]")
-
-    if [[ -z "$vnet_json" || "$vnet_json" == "null" ]]; then
-        local subnet_id
-        subnet_id=$(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$aks_json")
-        local vnet_id
-        vnet_id=${subnet_id%/subnets/*}
-        vnet_json=$(az network vnet show --ids "$vnet_id" --output json)
+    # Resolve the VNet owning the node subnet, so VNET_GUID always matches VNET_SUBNET_ID
+    if [[ -n "$node_subnet_id" ]]; then
+        az network vnet show --ids "${node_subnet_id%/subnets/*}" --output json
+        return
     fi
 
-    echo "$vnet_json"
+    az network vnet list --resource-group "$resource_group" --output json | jq -r ".[0]"
 }
 
-# Retrieve VNET JSON
-VNET_JSON=$(get_vnet_json "$AZURE_RESOURCE_GROUP_MC" "$AKS_JSON")
-# Extract all properties from vnet json
-VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
+# AKS reports the node subnet for BYO VNet clusters. Managed VNets leave it null and hold one subnet
+VNET_SUBNET_ID=$(jq -r ".agentPoolProfiles[0].vnetSubnetId // empty" <<< "$AKS_JSON")
+VNET_JSON=$(get_vnet_json "$VNET_SUBNET_ID" "$AZURE_RESOURCE_GROUP_MC")
+if [[ -z "$VNET_SUBNET_ID" ]]; then
+    VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
+fi
+# Set only on clusters using Azure CNI with pod subnet. Not supported on AKS machine API modes
+POD_SUBNET_ID=""
+if [[ "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" ]]; then
+    POD_SUBNET_ID=$(jq -r ".agentPoolProfiles[0].podSubnetId // empty" <<< "$AKS_JSON")
+fi
+# Static Block pools also report podSubnetId, but need a different pod network type
+POD_IP_ALLOCATION_MODE=$(jq -r ".agentPoolProfiles[0].podIpAllocationMode // empty" <<< "$AKS_JSON")
+if [[ -n "$POD_SUBNET_ID" && "$POD_IP_ALLOCATION_MODE" == "StaticBlock" ]]; then
+    echo "Error: pod IP allocation mode 'StaticBlock' is not supported. Only dynamic pod subnet allocation is."
+    exit 1
+fi
 VNET_GUID=$(jq -r ".resourceGuid // empty" <<< "$VNET_JSON")
 
 # The // empty ensures that if the files is 'null' or not present jq will output nothing
@@ -87,7 +95,7 @@ if [[ "${PROVISION_MODE:-}" == "aksmachineapi" || "${PROVISION_MODE:-}" == "aksm
 fi
 
 export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
-    CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES AZURE_SUBSCRIPTION_ID NETWORK_PLUGIN NETWORK_PLUGIN_MODE NETWORK_POLICY NETWORK_DATAPLANE \
+    CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID POD_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES AZURE_SUBSCRIPTION_ID NETWORK_PLUGIN NETWORK_PLUGIN_MODE NETWORK_POLICY NETWORK_DATAPLANE \
     LOG_LEVEL VNET_GUID KUBELET_IDENTITY_CLIENT_ID ENABLE_AZURE_SDK_LOGGING PROVISION_MODE USE_SIG AZURE_SIG_SUBSCRIPTION_ID AKS_MACHINES_POOL_NAME
 
 # get karpenter-values-template.yaml, if not already present (e.g. outside of repo context)
