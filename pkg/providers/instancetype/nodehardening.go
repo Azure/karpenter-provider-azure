@@ -16,7 +16,10 @@ limitations under the License.
 
 package instancetype
 
-import "math"
+import (
+	"math"
+	"time"
+)
 
 // Node-hardening reservation formulas.
 //
@@ -57,6 +60,9 @@ const (
 	HardEvictionPIDAvailable             = "2000"
 	SoftEvictionNodeFSAvailable          = "12%"
 	SoftEvictionNodeFSInodesFree         = "7%"
+	SoftEvictionMemoryGracePeriod        = 30 * time.Second
+	SoftEvictionNodeFSGracePeriod        = 2 * time.Minute
+	SoftEvictionNodeFSInodesGracePeriod  = 2 * time.Minute
 	SoftEvictionMaxPodGracePeriodSeconds = int32(60)
 	KubeReservedPIDs                     = "1000"
 	SystemReservedPIDs                   = "1000"

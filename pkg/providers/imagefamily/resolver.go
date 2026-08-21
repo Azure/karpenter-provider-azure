@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -259,9 +258,9 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 			instancetype.NodeFSInodesFree: instancetype.SoftEvictionNodeFSInodesFree,
 		}
 		kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{
-			instancetype.MemoryAvailable:  {Duration: 30 * time.Second},
-			instancetype.NodeFSAvailable:  {Duration: 2 * time.Minute},
-			instancetype.NodeFSInodesFree: {Duration: 2 * time.Minute},
+			instancetype.MemoryAvailable:  {Duration: instancetype.SoftEvictionMemoryGracePeriod},
+			instancetype.NodeFSAvailable:  {Duration: instancetype.SoftEvictionNodeFSGracePeriod},
+			instancetype.NodeFSInodesFree: {Duration: instancetype.SoftEvictionNodeFSInodesGracePeriod},
 		}
 		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(instancetype.SoftEvictionMaxPodGracePeriodSeconds)
 
