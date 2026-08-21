@@ -58,6 +58,19 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 	return a != nil && a.Enabled != nil && *a.Enabled
 }
 
+// Versions controls the Kubernetes and node image versions used by the NodeClass.
+// If omitted, nodes follow the observed control plane version and automatic latest node image selection.
+type Versions struct {
+	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+	// If omitted, the observed control plane version is used.
+	// +optional
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+	// nodeImageVersion is the status-backed node image version to use for the NodeClass.
+	// If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+	// +optional
+	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
@@ -65,6 +78,10 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
+	// versions controls the Kubernetes and node image versions for the NodeClass.
+	// If omitted, both versions follow their automatic defaults.
+	// +optional
+	Versions *Versions `json:"versions,omitempty"`
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
