@@ -26,19 +26,12 @@ import (
 // When node hardening is enabled (a cluster-level AKS feature, surfaced to
 // Karpenter via options.Options.EnableNodeHardening) the kube-reserved,
 // system-reserved and eviction values that Karpenter uses for scheduling
-// simulation and kubelet configuration must match what the AKS RP /
-// NodeProvisioner configures. Otherwise the bin-packing
-// simulation (allocatable = capacity - overhead) diverges from reality and
-// nodes are over- or under-provisioned.
+// simulation and kubelet configuration must match what AKS configures on the
+// node. Otherwise the bin-packing simulation (allocatable = capacity -
+// overhead) diverges from reality and nodes are over- or under-provisioned.
 //
-// The AKS RP is the source of truth; keep the formulas below in sync with the
-// go.goms.io/aks/rp repository:
-//   - kube-reserved memory: resourceprovider/sharedlib/common/kubereserved/utils.go
-//     (calculateMemoryReservation, enableNodeHardening = true)
-//   - system-reserved:      resourceprovider/sharedlib/common/kubereserved/utils.go
-//     (calculateSystemReservedMemoryMiB / buildSystemReserved)
-//   - eviction memory ladder: resourceprovider/server/microsoft.com/containerservice/
-//     server/validation/eviction/eviction.go (MemoryLadder)
+// The AKS RP is the source of truth; keep the formulas below in sync with its
+// node-hardening behavior.
 const (
 	// Hardened system-reserved memory (Linux):
 	//   200 + 100*floor(memGiB/32) (+100 when Azure CNI)
@@ -47,6 +40,7 @@ const (
 	systemReservedStepGiB       int64 = 32
 	systemReservedCNIBonusMiB   int64 = 100
 	systemReservedCPUMillicores int64 = 100
+	bytesPerMiB                 int64 = 1024 * 1024
 
 	// systemReservedEphemeralStorage mirrors the RP's fixed 1Gi ephemeral-storage
 	// system reservation on hardened nodes.
@@ -68,16 +62,11 @@ const (
 	SystemReservedPIDs                   = "1000"
 )
 
-// mibToBytes converts a MiB quantity to bytes.
-func mibToBytes(mib int64) int64 {
-	return mib * 1024 * 1024
-}
-
 // hardenedKubeReservedMemoryMiB returns the hardened kube-reserved memory in MiB:
 //
 //	min(35*maxPods + max(250, 2% of totalMemoryMiB), 25% of totalMemoryMiB)
 //
-// Mirrors calculateMemoryReservation(enableNodeHardening=true) in the AKS RP.
+// Mirrors the hardened kube-reserved memory calculation in the AKS RP.
 func hardenedKubeReservedMemoryMiB(maxPods int32, totalMemoryMiB int64) int64 {
 	capMiB := totalMemoryMiB / 4 // 25%
 	reservedMiB := 35*int64(maxPods) + max(totalMemoryMiB*2/100, 250)
@@ -88,7 +77,7 @@ func hardenedKubeReservedMemoryMiB(maxPods int32, totalMemoryMiB int64) int64 {
 //
 //	200 + 100*floor(memGiB/32) (+100 when Azure CNI)
 //
-// Mirrors calculateSystemReservedMemoryMiB in the AKS RP.
+// Mirrors the hardened system-reserved memory calculation in the AKS RP.
 func systemReservedMemoryMiB(memoryGiB float64, isAzureCNI bool) int64 {
 	steps := int64(math.Floor(memoryGiB / float64(systemReservedStepGiB)))
 	mem := systemReservedBaseMiB + steps*systemReservedPerStepMiB
@@ -105,7 +94,7 @@ func systemReservedMemoryMiB(memoryGiB float64, isAzureCNI bool) int64 {
 //	> 8 & < 32 GiB:  soft=750,  hard=375
 //	>= 32 GiB:       soft=1024, hard=512
 //
-// Mirrors eviction.MemoryLadder in the AKS RP.
+// Mirrors the hardened eviction memory ladder in the AKS RP.
 func evictionMemoryLadder(totalMemoryMiB int64) (softMiB, hardMiB int64) {
 	switch {
 	case totalMemoryMiB >= 32*1024:

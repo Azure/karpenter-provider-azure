@@ -49,8 +49,7 @@ func TestShouldUseNodeHardening(t *testing.T) {
 	}
 }
 
-// These cases mirror calculateMemoryReservation(enableNodeHardening=true) in
-// resourceprovider/sharedlib/common/kubereserved/utils.go in the AKS RP.
+// These cases mirror the hardened kube-reserved memory calculation in the AKS RP.
 func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -70,7 +69,7 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			resources := KubeReservedResources(test.vcpus, test.memoryGiB, test.maxPods, true)
 			memory := resources[corev1.ResourceMemory]
-			wantMemory := *resource.NewQuantity(mibToBytes(test.wantMemoryMiB), resource.BinarySI)
+			wantMemory := *resource.NewQuantity(test.wantMemoryMiB*bytesPerMiB, resource.BinarySI)
 			if memory.Cmp(wantMemory) != 0 {
 				t.Fatalf("resources = memory=%s; want memory=%s", memory.String(), wantMemory.String())
 			}
@@ -78,31 +77,30 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 	}
 }
 
-// These cases mirror calculateSystemReservedMemoryMiB and buildSystemReserved
-// in resourceprovider/sharedlib/common/kubereserved/utils.go in the AKS RP.
+// These cases mirror the hardened system-reserved calculation in the AKS RP.
 func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 	tests := []struct {
 		name          string
 		memoryGiB     float64
-		isAzureCNI    bool
+		networkPlugin string
 		wantMemoryMiB int64
 	}{
-		{name: "7 GiB without Azure CNI", memoryGiB: 7, wantMemoryMiB: 200},
-		{name: "7 GiB with Azure CNI", memoryGiB: 7, isAzureCNI: true, wantMemoryMiB: 300},
-		{name: "32 GiB without Azure CNI", memoryGiB: 32, wantMemoryMiB: 300},
-		{name: "32 GiB with Azure CNI", memoryGiB: 32, isAzureCNI: true, wantMemoryMiB: 400},
-		{name: "64 GiB without Azure CNI", memoryGiB: 64, wantMemoryMiB: 400},
-		{name: "128 GiB with Azure CNI", memoryGiB: 128, isAzureCNI: true, wantMemoryMiB: 700},
+		{name: "7 GiB without Azure CNI", memoryGiB: 7, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 200},
+		{name: "7 GiB with Azure CNI", memoryGiB: 7, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 300},
+		{name: "32 GiB without Azure CNI", memoryGiB: 32, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 300},
+		{name: "32 GiB with Azure CNI", memoryGiB: 32, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 400},
+		{name: "64 GiB without Azure CNI", memoryGiB: 64, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 400},
+		{name: "128 GiB with Azure CNI", memoryGiB: 128, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 700},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resources := SystemReservedResources(test.memoryGiB, test.isAzureCNI, true)
+			resources := SystemReservedResources(test.memoryGiB, test.networkPlugin, true)
 			cpu := resources[corev1.ResourceCPU]
 			memory := resources[corev1.ResourceMemory]
 			ephemeralStorage := resources[corev1.ResourceEphemeralStorage]
 			wantCPU := *resource.NewMilliQuantity(systemReservedCPUMillicores, resource.DecimalSI)
-			wantMemory := *resource.NewQuantity(mibToBytes(test.wantMemoryMiB), resource.BinarySI)
+			wantMemory := *resource.NewQuantity(test.wantMemoryMiB*bytesPerMiB, resource.BinarySI)
 
 			if cpu.Cmp(wantCPU) != 0 || memory.Cmp(wantMemory) != 0 || ephemeralStorage.String() != systemReservedEphemeralStorage {
 				t.Fatalf("resources = cpu=%s,memory=%s,ephemeral-storage=%s; want cpu=%s,memory=%s,ephemeral-storage=%s",
@@ -113,7 +111,7 @@ func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 }
 
 func TestSystemReservedResourcesDisabledPreservesLegacyValues(t *testing.T) {
-	resources := SystemReservedResources(64, true, false)
+	resources := SystemReservedResources(64, consts.NetworkPluginAzure, false)
 	cpu, hasCPU := resources[corev1.ResourceCPU]
 	memory, hasMemory := resources[corev1.ResourceMemory]
 	if len(resources) != 2 || !hasCPU || !hasMemory || !cpu.IsZero() || !memory.IsZero() {

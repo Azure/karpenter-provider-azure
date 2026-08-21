@@ -3508,7 +3508,7 @@ var _ = Describe("Tax Calculator", func() {
 		})
 		It("SystemReservedResources adds the Azure CNI bonus", func() {
 			// 32 GiB Azure CNI: 200 + 100*floor(32/32) + 100 = 400Mi.
-			resources := instancetype.SystemReservedResources(32.0, true, true)
+			resources := instancetype.SystemReservedResources(32.0, consts.NetworkPluginAzure, true)
 			cpu := resources[v1.ResourceCPU]
 			mem := resources[v1.ResourceMemory]
 			eph := resources[v1.ResourceEphemeralStorage]
@@ -3517,7 +3517,7 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(eph.String()).To(Equal("1Gi"))
 		})
 		It("SystemReservedResources omits the bonus for non-Azure CNI", func() {
-			resources := instancetype.SystemReservedResources(8.0, false, true)
+			resources := instancetype.SystemReservedResources(8.0, consts.NetworkPluginNone, true)
 			mem := resources[v1.ResourceMemory]
 			Expect(mem.String()).To(Equal("200Mi"))
 		})

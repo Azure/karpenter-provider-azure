@@ -18,10 +18,10 @@ package imagefamily
 
 import (
 	"context"
-	"reflect"
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,6 +50,7 @@ func prepareTestKubeletConfiguration(enableNodeHardening bool) *bootstrap.Kubele
 }
 
 func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
+	g := NewWithT(t)
 	configuration := prepareTestKubeletConfiguration(true)
 
 	expectedHardThresholds := map[string]string{
@@ -58,43 +59,32 @@ func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
 		"nodefs.inodesFree": "5%",
 		"pid.available":     "2000",
 	}
-	if !reflect.DeepEqual(configuration.EvictionHard, expectedHardThresholds) {
-		t.Fatalf("hard eviction thresholds = %#v, want %#v", configuration.EvictionHard, expectedHardThresholds)
-	}
+	g.Expect(configuration.EvictionHard).To(Equal(expectedHardThresholds))
 
 	expectedThresholds := map[string]string{
 		"memory.available":  "1Gi",
 		"nodefs.available":  "12%",
 		"nodefs.inodesFree": "7%",
 	}
-	if !reflect.DeepEqual(configuration.EvictionSoft, expectedThresholds) {
-		t.Fatalf("soft eviction thresholds = %#v, want %#v", configuration.EvictionSoft, expectedThresholds)
-	}
+	g.Expect(configuration.EvictionSoft).To(Equal(expectedThresholds))
 
 	expectedGracePeriods := map[string]metav1.Duration{
 		"memory.available":  {Duration: 30 * time.Second},
 		"nodefs.available":  {Duration: 2 * time.Minute},
 		"nodefs.inodesFree": {Duration: 2 * time.Minute},
 	}
-	if !reflect.DeepEqual(configuration.EvictionSoftGracePeriod, expectedGracePeriods) {
-		t.Fatalf("soft eviction grace periods = %#v, want %#v", configuration.EvictionSoftGracePeriod, expectedGracePeriods)
-	}
-	if configuration.EvictionMaxPodGracePeriod == nil || *configuration.EvictionMaxPodGracePeriod != 60 {
-		t.Fatalf("max pod grace period = %v, want 60", configuration.EvictionMaxPodGracePeriod)
-	}
+	g.Expect(configuration.EvictionSoftGracePeriod).To(Equal(expectedGracePeriods))
+	g.Expect(configuration.EvictionMaxPodGracePeriod).ToNot(BeNil())
+	g.Expect(*configuration.EvictionMaxPodGracePeriod).To(Equal(int32(60)))
+
 	expectedEnforcement := []string{"pods", "kube-reserved", "system-reserved"}
-	if !reflect.DeepEqual(configuration.EnforceNodeAllocatable, expectedEnforcement) {
-		t.Fatalf("node allocatable enforcement = %#v, want %#v", configuration.EnforceNodeAllocatable, expectedEnforcement)
-	}
-	if configuration.SystemReserved["pid"] != "1000" {
-		t.Fatalf("system reserved pid = %q, want %q", configuration.SystemReserved["pid"], "1000")
-	}
-	if configuration.KubeReserved["pid"] != "1000" {
-		t.Fatalf("kube reserved pid = %q, want %q", configuration.KubeReserved["pid"], "1000")
-	}
+	g.Expect(configuration.EnforceNodeAllocatable).To(Equal(expectedEnforcement))
+	g.Expect(configuration.SystemReserved).To(HaveKeyWithValue("pid", "1000"))
+	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("pid", "1000"))
 }
 
 func TestPrepareKubeletConfigurationSoftEvictionDisabled(t *testing.T) {
+	g := NewWithT(t)
 	configuration := prepareTestKubeletConfiguration(false)
 
 	expectedHardThresholds := map[string]string{
@@ -103,26 +93,11 @@ func TestPrepareKubeletConfigurationSoftEvictionDisabled(t *testing.T) {
 		"nodefs.inodesFree": "5%",
 		"pid.available":     "2000",
 	}
-	if !reflect.DeepEqual(configuration.EvictionHard, expectedHardThresholds) {
-		t.Fatalf("hard eviction thresholds = %#v, want %#v", configuration.EvictionHard, expectedHardThresholds)
-	}
-
-	if configuration.EvictionSoft != nil {
-		t.Fatalf("soft eviction thresholds = %#v, want nil", configuration.EvictionSoft)
-	}
-	if configuration.EvictionSoftGracePeriod != nil {
-		t.Fatalf("soft eviction grace periods = %#v, want nil", configuration.EvictionSoftGracePeriod)
-	}
-	if configuration.EvictionMaxPodGracePeriod != nil {
-		t.Fatalf("max pod grace period = %v, want nil", configuration.EvictionMaxPodGracePeriod)
-	}
-	if configuration.EnforceNodeAllocatable != nil {
-		t.Fatalf("node allocatable enforcement = %#v, want nil", configuration.EnforceNodeAllocatable)
-	}
-	if _, ok := configuration.SystemReserved["pid"]; ok {
-		t.Fatalf("system reserved pid should not be set when hardening is disabled")
-	}
-	if configuration.KubeReserved["pid"] != "1000" {
-		t.Fatalf("kube reserved pid = %q, want %q", configuration.KubeReserved["pid"], "1000")
-	}
+	g.Expect(configuration.EvictionHard).To(Equal(expectedHardThresholds))
+	g.Expect(configuration.EvictionSoft).To(BeNil())
+	g.Expect(configuration.EvictionSoftGracePeriod).To(BeNil())
+	g.Expect(configuration.EvictionMaxPodGracePeriod).To(BeNil())
+	g.Expect(configuration.EnforceNodeAllocatable).To(BeNil())
+	g.Expect(configuration.SystemReserved).ToNot(HaveKey("pid"))
+	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("pid", "1000"))
 }
