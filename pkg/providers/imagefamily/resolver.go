@@ -240,6 +240,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
+	// KubeReservedResources only calculates CPU and memory, instanceType.Overhead.KubeReserved does not contain a PID reservation.
 	kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable:  instanceType.Overhead.EvictionThreshold.Memory().String(),
