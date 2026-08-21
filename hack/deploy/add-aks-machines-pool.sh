@@ -25,7 +25,7 @@ URL="https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourc
 REQUEST_BODY=$(cat <<EOF
 {
   "properties": {
-    "mode": "Machines",
+    "mode": "Machines"
   }
 }
 EOF

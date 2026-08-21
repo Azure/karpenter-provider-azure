@@ -203,7 +203,7 @@ func (p *Provider) getStaticParameters(
 
 func getAgentbakerNetworkPlugin(ctx context.Context) string {
 	opts := options.FromContext(ctx)
-	if opts.IsAzureCNIOverlay() || opts.IsCiliumNodeSubnet() || opts.IsNetworkPluginNone() {
+	if opts.IsAzureCNIOverlay() || opts.IsCiliumNodeSubnet() || opts.IsNetworkPluginNone() || opts.IsAzureCNIPodSubnet() {
 		return consts.NetworkPluginNone
 	}
 	return consts.NetworkPluginAzure

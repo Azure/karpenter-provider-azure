@@ -40,6 +40,7 @@ type OptionsFields struct {
 	EnableNodeHardening            *bool
 	NodeIdentities                 []string
 	SubnetID                       *string
+	PodSubnetID                    *string
 	NodeResourceGroup              *string
 	ProvisionMode                  *string
 	NodeBootstrappingServerURL     *string
@@ -85,6 +86,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		EnableNodeHardening:            lo.FromPtrOr(options.EnableNodeHardening, false),
 		NodeIdentities:                 options.NodeIdentities,
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"),
+		PodSubnetID:                    lo.FromPtrOr(options.PodSubnetID, ""),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
 		NodeBootstrappingServerURL:     lo.FromPtrOr(options.NodeBootstrappingServerURL, ""),

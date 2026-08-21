@@ -147,7 +147,7 @@ curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}
 # use configure-values.sh to generate karpenter-values.yaml
 # (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/hack/deploy/configure-values.sh
-chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
+chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false
 ```
 
 Check the `karpenter-values.yaml` file was created:
