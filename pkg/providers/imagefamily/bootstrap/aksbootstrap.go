@@ -364,6 +364,15 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlags = lo.Assign(kubeletFlags, map[string]string{"--register-with-taints": strings.Join(taintStrs, ",")})
 	}
 
+	// Node hardening:
+	// This hardened `enforce-node-allocatable` value is the signal AgentBaker uses to
+	// activate cgroup-level enforcement of `kube-reserved`/`system-reserved`.
+	// AgentBaker creates the `kubereserved` and `system` slices and assigns them to
+	// `--kube-reserved-cgroup` and `--system-reserved-cgroup`, respectively.
+	if a.NodeHardeningEnabled {
+		kubeletFlags["--enforce-node-allocatable"] = "pods,kube-reserved,system-reserved"
+	}
+
 	nodeclaimKubeletConfig := kubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
 
