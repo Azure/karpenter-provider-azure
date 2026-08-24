@@ -59,7 +59,7 @@ func TestWaitForInstancePromiseAddsDeadline(t *testing.T) {
 		},
 	}
 
-	g.Expect(waitForInstancePromise(context.Background(), promise)).To(Succeed())
+	g.Expect(waitForInstancePromise(t.Context(), promise)).To(Succeed())
 }
 
 func TestGenerateNodeClaimName(t *testing.T) {
