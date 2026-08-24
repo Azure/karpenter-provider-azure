@@ -45,6 +45,38 @@ func TestValidateNodeClassRejectsNonFIPSBeforeStatusReconciliation(t *testing.T)
 	g.Expect(err).To(MatchError(ContainSubstring("spec.fipsMode must be set to FIPS")))
 }
 
+type testInstancePromise struct {
+	waitFunc func(context.Context) error
+}
+
+func (p *testInstancePromise) Cleanup(context.Context) error {
+	return nil
+}
+
+func (p *testInstancePromise) Wait(ctx context.Context) error {
+	return p.waitFunc(ctx)
+}
+
+func (p *testInstancePromise) GetInstanceName() string {
+	return "test-instance"
+}
+
+func TestWaitForInstancePromiseAddsDeadline(t *testing.T) {
+	g := NewWithT(t)
+	start := time.Now()
+	promise := &testInstancePromise{
+		waitFunc: func(ctx context.Context) error {
+			deadline, ok := ctx.Deadline()
+			g.Expect(ok).To(BeTrue())
+			g.Expect(deadline).To(BeTemporally(">=", start.Add(instancePromiseTimeout-time.Second)))
+			g.Expect(deadline).To(BeTemporally("<=", start.Add(instancePromiseTimeout+time.Second)))
+			return nil
+		},
+	}
+
+	g.Expect(waitForInstancePromise(context.Background(), promise)).To(Succeed())
+}
+
 func TestGenerateNodeClaimName(t *testing.T) {
 	tests := []struct {
 		name     string
