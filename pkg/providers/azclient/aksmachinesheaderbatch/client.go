@@ -25,6 +25,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/batcher"
 )
 
+// CreateOptions contains AKS Machine create settings represented by HTTP headers instead of
+// fields on the Machine body. UseWindowsGen2VM is an explicit RP opt-in because Windows2022
+// defaults to a Gen1 image for compatibility even when the selected SKU also supports Gen2.
+type CreateOptions struct {
+	UseWindowsGen2VM bool
+}
+
 type AKSMachinesHeaderBatchAPI interface {
 	// BeginCreateWithBatch submits a single machine creation into the batch system.
 	// Returns:
@@ -37,7 +44,7 @@ type AKSMachinesHeaderBatchAPI interface {
 	//   API errors, but nothing else).
 	// - The fact that HandlableError is considered one of the "expected" states in this
 	//   context, just not ideal. Operational error, on the other hand, is more of a bug.
-	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine) (*offerings.HandlableError, error)
+	BeginCreateWithBatch(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, machine *armcontainerservice.Machine, options CreateOptions) (*offerings.HandlableError, error)
 }
 
 // We don't need the rest of machine API interface. Just create.
@@ -76,6 +83,7 @@ func (c *Client) BeginCreateWithBatch(
 	agentPoolName string,
 	machineName string,
 	machine *armcontainerservice.Machine,
+	options CreateOptions,
 ) (*offerings.HandlableError, error) {
 	responseChan, err := c.b.Enqueue(aksMachineCreatePayload{
 		resourceGroupName: resourceGroupName,
@@ -83,6 +91,7 @@ func (c *Client) BeginCreateWithBatch(
 		agentPoolName:     agentPoolName,
 		machineName:       machineName,
 		machineBody:       machine,
+		options:           options,
 	})
 	if err != nil {
 		return nil, err

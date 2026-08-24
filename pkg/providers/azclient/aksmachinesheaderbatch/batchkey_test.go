@@ -132,6 +132,24 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 	g.Expect(item1.machineBody.Properties.ResourceID).ToNot(gomega.BeNil())
 }
 
+func TestMachineKeyFunc_UseWindowsGen2VMSeparatesBatches(t *testing.T) {
+	t.Parallel()
+	g := gomega.NewWithT(t)
+
+	vmSize := "Standard_D2s_v3"
+	body := func() *armcontainerservice.Machine {
+		return &armcontainerservice.Machine{Properties: &armcontainerservice.MachineProperties{
+			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+		}}
+	}
+	gen1 := aksMachineCreatePayload{machineBody: body(), options: CreateOptions{UseWindowsGen2VM: false}}
+	gen2 := aksMachineCreatePayload{machineBody: body(), options: CreateOptions{UseWindowsGen2VM: true}}
+
+	g.Expect(mustDetermineBatchKey(t, &gen2)).ToNot(gomega.Equal(mustDetermineBatchKey(t, &gen1)),
+		"machines requesting different Windows image generations must not share a batch")
+	g.Expect(mustDetermineBatchKey(t, &gen2)).To(gomega.HaveSuffix("/gen2=true"))
+}
+
 // realisticMachineProps returns a fully-populated MachineProperties matching
 // production templates built by buildAKSMachineTemplate.
 func realisticMachineProps(vmSize, nodeClaimName string) *armcontainerservice.MachineProperties {

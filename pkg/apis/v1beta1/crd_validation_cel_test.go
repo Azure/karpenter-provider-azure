@@ -718,11 +718,88 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, false, true),
 			Entry("generic AzureLinux when TrustedLaunch is enabled should succeed", v1beta1.AzureLinuxImageFamily, nil, true, true),
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should fail", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, true, false),
+			Entry("Windows2022 when FIPSMode is explicitly Disabled should succeed", v1beta1.Windows2022ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
+			Entry("Windows2022 when FIPSMode is not explicitly set should succeed", v1beta1.Windows2022ImageFamily, nil, false, true),
+			Entry("Windows2022 when FIPSMode is explicitly FIPS should fail", v1beta1.Windows2022ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("Windows2022 when TrustedLaunch is enabled should fail", v1beta1.Windows2022ImageFamily, nil, true, false),
+			Entry("Windows2025 when FIPSMode is explicitly Disabled should fail", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeDisabled, false, false),
+			Entry("Windows2025 when FIPSMode is not explicitly set should succeed", v1beta1.Windows2025ImageFamily, nil, false, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, false, true),
+			Entry("Windows2025 when TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, nil, true, true),
+			Entry("Windows2025 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Windows2025ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1beta1.FIPSModeDisabled, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1beta1.FIPSModeFIPS, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1beta1.FIPSModeFIPS, true, true),
+		)
+	})
+
+	Context("Windows unsupported profiles", func() {
+		DescribeTable("should validate artifact streaming for Windows",
+			func(imageFamily string, enabled bool, expected bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily:       lo.ToPtr(imageFamily),
+						ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(enabled)},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if expected {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).ToNot(Succeed())
+				}
+			},
+			Entry("Windows2022 rejects enabled artifact streaming", v1beta1.Windows2022ImageFamily, true, false),
+			Entry("Windows2022 accepts disabled artifact streaming", v1beta1.Windows2022ImageFamily, false, true),
+			Entry("Windows2025 rejects enabled artifact streaming", v1beta1.Windows2025ImageFamily, true, false),
+			Entry("Windows2025 accepts disabled artifact streaming", v1beta1.Windows2025ImageFamily, false, true),
+		)
+
+		DescribeTable("should reject LinuxOSConfig for Windows",
+			func(imageFamily string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily:   lo.ToPtr(imageFamily),
+						LinuxOSConfig: &v1beta1.LinuxOSConfiguration{SwapFileSize: lo.ToPtr("1500Mi")},
+						Kubelet:       &v1beta1.KubeletConfiguration{FailSwapOn: lo.ToPtr(false)},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			},
+			Entry("Windows2022", v1beta1.Windows2022ImageFamily),
+			Entry("Windows2025", v1beta1.Windows2025ImageFamily),
+		)
+
+		DescribeTable("should validate LocalDNS mode for Windows",
+			func(imageFamily string, mode v1beta1.LocalDNSMode, expected bool) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(imageFamily),
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode:             mode,
+							VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+							KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if expected {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).ToNot(Succeed())
+				}
+			},
+			Entry("Windows2022 accepts Disabled", v1beta1.Windows2022ImageFamily, v1beta1.LocalDNSModeDisabled, true),
+			Entry("Windows2022 rejects Preferred", v1beta1.Windows2022ImageFamily, v1beta1.LocalDNSModePreferred, false),
+			Entry("Windows2022 rejects Required", v1beta1.Windows2022ImageFamily, v1beta1.LocalDNSModeRequired, false),
+			Entry("Windows2025 accepts Disabled", v1beta1.Windows2025ImageFamily, v1beta1.LocalDNSModeDisabled, true),
+			Entry("Windows2025 rejects Preferred", v1beta1.Windows2025ImageFamily, v1beta1.LocalDNSModePreferred, false),
+			Entry("Windows2025 rejects Required", v1beta1.Windows2025ImageFamily, v1beta1.LocalDNSModeRequired, false),
 		)
 	})
 

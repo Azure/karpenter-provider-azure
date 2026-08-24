@@ -239,10 +239,13 @@ spec:
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.nodeSelector }}
+      {{- /* The Karpenter controller is a Linux-only component. Always pin it to Linux
+             nodes so it is never scheduled onto Windows nodes in hybrid clusters, while
+             still honoring any additional user-provided nodeSelector entries. */}}
       nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- $nodeSelector := merge (dict) (.Values.nodeSelector | default dict) }}
+        {{- $_ := set $nodeSelector "kubernetes.io/os" "linux" }}
+        {{- toYaml $nodeSelector | nindent 8 }}
       {{- with .Values.affinity }}
       # The template below patches the .Values.affinity to add a default label selector where not specified
       {{- $_ := include "karpenter.patchAffinity" $ }}

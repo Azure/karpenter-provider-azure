@@ -152,7 +152,7 @@ func (p *DefaultProvider) List(
 		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
 		GPUMode:                  nodeClass.GetGPUMode(),
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
-		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
+		FIPSMode:                 lo.Ternary(nodeClass.IsFIPSEnabled(), v1beta1.FIPSModeFIPS, v1beta1.FIPSModeDisabled),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
@@ -342,12 +342,17 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 // isInstanceTypeSupportedByFilters consolidates all per-NodeClass instance type
 // filters into a single call to keep the List() method's cyclomatic complexity low.
 func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
-	return p.isInstanceTypeSupportedByImageFamily(sku.GetName(), params.ImageFamily) &&
+	return isArchitectureSupportedByImageFamily(architecture, params.ImageFamily) &&
+		p.isInstanceTypeSupportedByImageFamily(sku.GetName(), params.ImageFamily) &&
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
 		p.isInstanceTypeSupportedByTrustedLaunch(sku, params)
+}
+
+func isArchitectureSupportedByImageFamily(architecture, imageFamily string) bool {
+	return !v1beta1.IsWindowsImageFamily(imageFamily) || getArchitecture(architecture) == karpv1.ArchitectureAmd64
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
