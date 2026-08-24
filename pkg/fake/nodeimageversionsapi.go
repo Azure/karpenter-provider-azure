@@ -371,6 +371,12 @@ var (
 			Version:  lo.ToPtr("26100.7462.251212"),
 		},
 		{
+			FullName: lo.ToPtr("AKSWindows-2025-gen2-tl-26100.7462.251212"),
+			OS:       lo.ToPtr("AKSWindows"),
+			SKU:      lo.ToPtr("windows-2025-gen2-tl"),
+			Version:  lo.ToPtr("26100.7462.251212"),
+		},
+		{
 			FullName: lo.ToPtr("AKSAzureLinux-V2gen2TL-202512.18.0"),
 			OS:       lo.ToPtr("AKSAzureLinux"),
 			SKU:      lo.ToPtr("V2gen2TL"),

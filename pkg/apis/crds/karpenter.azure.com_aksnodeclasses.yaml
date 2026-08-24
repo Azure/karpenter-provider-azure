@@ -1031,6 +1031,8 @@ spec:
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - Windows2022
+                - Windows2025
                 type: string
               kubelet:
                 description: |-
@@ -1724,14 +1726,35 @@ spec:
                 && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm)
                 || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)))))
                 : true'
-            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
-                and Ubuntu2204
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
+                Ubuntu2204, and Windows2025
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
-                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
-                : true'
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
+                || self.imageFamily == ''Windows2025'') : true'
+            - message: FIPS is not supported for Windows2022
+              rule: '!has(self.fipsMode) || self.fipsMode != ''FIPS'' || !has(self.imageFamily)
+                || self.imageFamily != ''Windows2022'''
+            - message: fipsMode must be FIPS or omitted for Windows2025
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2025''
+                || !has(self.fipsMode) || self.fipsMode == ''FIPS'''
+            - message: TrustedLaunch is not supported for Windows2022
+              rule: '!has(self.imageFamily) || self.imageFamily != ''Windows2022''
+                || !has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))'
+            - message: linuxOSConfig is not supported for Windows image families
+              rule: '!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily
+                in [''Windows2022'',''Windows2025''])'
+            - message: artifactStreaming is not supported for Windows image families
+              rule: '!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled)
+                || self.artifactStreaming.enabled == false || !has(self.imageFamily)
+                || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
+            - message: localDNS is not supported for Windows image families
+              rule: '!has(self.localDNS) || self.localDNS.mode == ''Disabled'' ||
+                !has(self.imageFamily) || !(self.imageFamily in [''Windows2022'',''Windows2025''])'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)

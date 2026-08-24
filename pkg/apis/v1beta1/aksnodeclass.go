@@ -62,7 +62,13 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
 // +kubebuilder:validation:XValidation:message="TrustedLaunch is required for FIPS support with Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && (self.imageFamily != 'Ubuntu2204' || (has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))))) : true"
-// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu, Ubuntu2204, and Windows2025",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204' || self.imageFamily == 'Windows2025') : true"
+// +kubebuilder:validation:XValidation:message="FIPS is not supported for Windows2022",rule="!has(self.fipsMode) || self.fipsMode != 'FIPS' || !has(self.imageFamily) || self.imageFamily != 'Windows2022'"
+// +kubebuilder:validation:XValidation:message="fipsMode must be FIPS or omitted for Windows2025",rule="!has(self.imageFamily) || self.imageFamily != 'Windows2025' || !has(self.fipsMode) || self.fipsMode == 'FIPS'"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch is not supported for Windows2022",rule="!has(self.imageFamily) || self.imageFamily != 'Windows2022' || !has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))"
+// +kubebuilder:validation:XValidation:message="linuxOSConfig is not supported for Windows image families",rule="!has(self.linuxOSConfig) || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="artifactStreaming is not supported for Windows image families",rule="!has(self.artifactStreaming) || !has(self.artifactStreaming.enabled) || self.artifactStreaming.enabled == false || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
+// +kubebuilder:validation:XValidation:message="localDNS is not supported for Windows image families",rule="!has(self.localDNS) || self.localDNS.mode == 'Disabled' || !has(self.imageFamily) || !(self.imageFamily in ['Windows2022','Windows2025'])"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -81,7 +87,7 @@ type AKSNodeClassSpec struct {
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,Windows2022,Windows2025}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// fipsMode controls FIPS compliance for the provisioned nodes
@@ -751,6 +757,13 @@ func (in *AKSNodeClass) IsSecureBootEnabled() bool {
 // IsTrustedLaunchEnabled returns whether any Trusted Launch-backed setting is enabled.
 func (in *AKSNodeClass) IsTrustedLaunchEnabled() bool {
 	return in.IsVTPMEnabled() || in.IsSecureBootEnabled()
+}
+
+// IsFIPSEnabled returns the effective FIPS setting. Windows2025 requires FIPS in AKS,
+// so it is enabled even when fipsMode is omitted from the NodeClass.
+func (in *AKSNodeClass) IsFIPSEnabled() bool {
+	return lo.FromPtr(in.Spec.ImageFamily) == Windows2025ImageFamily ||
+		lo.FromPtr(in.Spec.FIPSMode) == FIPSModeFIPS
 }
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.

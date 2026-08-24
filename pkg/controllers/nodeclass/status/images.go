@@ -114,9 +114,8 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	logger := log.FromContext(ctx)
 
 	// validate FIPS + useSIG
-	fipsMode := nodeClass.Spec.FIPSMode
 	useSIG := options.FromContext(ctx).UseSIG
-	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS && !useSIG {
+	if nodeClass.IsFIPSEnabled() && !useSIG {
 		nodeClass.Status.Images = nil
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "SIGRequiredForFIPS", "FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)")
 		logger.Info("FIPS images require SIG", "error", fmt.Errorf("FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)"))

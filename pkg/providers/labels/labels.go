@@ -114,7 +114,7 @@ func Get(
 	labels[v1beta1.AKSLabelPriority] = v1beta1.PriorityRegular
 	// Add os-sku label based on imageFamily
 	labels[v1beta1.AKSLabelOSSKU] = v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))
-	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+	if nodeClass.IsFIPSEnabled() {
 		labels[v1beta1.AKSLabelFIPSEnabled] = "true"
 	}
 

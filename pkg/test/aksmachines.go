@@ -130,8 +130,14 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 
 	// Set NodeImageVersion - matching setDefaultMachineValues default
 	if options.Properties.NodeImageVersion == nil {
-		// Default node image version if none provided
-		options.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+		switch lo.FromPtr(options.Properties.OperatingSystem.OSSKU) {
+		case armcontainerservice.OSSKUWindows2022:
+			options.Properties.NodeImageVersion = lo.ToPtr("AKSWindows-2022-containerd-20348.4529.251212")
+		case armcontainerservice.OSSKUWindows2025:
+			options.Properties.NodeImageVersion = lo.ToPtr("AKSWindows-2025-26100.7462.251212")
+		default:
+			options.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+		}
 	}
 
 	if options.NodepoolName == "" {
