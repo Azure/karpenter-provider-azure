@@ -161,3 +161,24 @@ define newline
 
 
 endef
+
+# Announce all explicit targets as they run to allow easier tracing of issues
+# 
+# Every target is preceded by a blank line and a header like this:
+# ----- <target> ----
+#
+# NOTE: This block must be at the very end of the entrypoint Makefile so it's parsed last
+
+ANNOUNCED_TARGETS := $(filter-out FORCE .PHONY,$(shell awk -F: \
+    '/^[a-zA-Z0-9_.\/-]+([[:space:]]+[a-zA-Z0-9_.\/-]+)*[[:space:]]*:/ \
+    { print $$1 }' $(MAKEFILE_LIST)))
+
+.PHONY: FORCE
+
+$(ANNOUNCED_TARGETS): %: | .announce-%
+
+.announce-%: FORCE
+	@printf '\n----- %s -----\n' '$*'
+
+FORCE:
+
