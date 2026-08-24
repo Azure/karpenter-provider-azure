@@ -43,6 +43,7 @@ func (o *Options) Validate() error {
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
 		o.validateProvisionMode(),
+		o.validateNodeOSUpgradeChannel(),
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
 		o.validateAdditionalTags(),
@@ -140,6 +141,24 @@ func (o *Options) validateProvisionMode() error {
 		}
 	}
 	return nil
+}
+
+func (o *Options) validateNodeOSUpgradeChannel() error {
+	switch o.NodeOSUpgradeChannel {
+	case "",
+		consts.NodeOSUpgradeChannelNodeImage:
+		return nil
+	case consts.NodeOSUpgradeChannelSecurityPatch:
+		if !o.UseSIG {
+			return fmt.Errorf("use-sig is required to be true when node-os-upgrade-channel is %s", o.NodeOSUpgradeChannel)
+		}
+		if !o.IsAKSMachineAPIMode() {
+			return fmt.Errorf("provision-mode must be an AKS Machine API mode when node-os-upgrade-channel is %s", o.NodeOSUpgradeChannel)
+		}
+		return nil
+	default:
+		return fmt.Errorf("node-os-upgrade-channel is invalid: %s", o.NodeOSUpgradeChannel)
+	}
 }
 
 func (o *Options) validateBatchOptions() error {

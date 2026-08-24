@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -215,6 +216,48 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 				readyCondition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
 				Expect(readyCondition.IsFalse()).To(BeTrue())
+			})
+		})
+
+		Context("image catalog transitions", func() {
+			It("refreshes persisted SecurityPatch images when switching to NodeImage", func() {
+				testCtx := test.Options(test.OptionsFields{
+					ProvisionMode:        lo.ToPtr("aksmachineapi"),
+					UseSIG:               lo.ToPtr(true),
+					NodeOSUpgradeChannel: lo.ToPtr("NodeImage"),
+				}).ToContext(ctx)
+				imageReconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+				for i := range nodeClass.Status.Images {
+					nodeClass.Status.Images[i].ID += "-2026.06.13"
+				}
+
+				_, err := imageReconciler.Reconcile(testCtx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				for _, image := range nodeClass.Status.Images {
+					Expect(image.ID).ToNot(ContainSubstring("-2026.06.13"))
+				}
+			})
+
+			It("refreshes persisted NodeImage images when switching to SecurityPatch", func() {
+				testCtx := test.Options(test.OptionsFields{
+					ProvisionMode:        lo.ToPtr("aksmachineapi"),
+					UseSIG:               lo.ToPtr(true),
+					NodeOSUpgradeChannel: lo.ToPtr("SecurityPatch"),
+				}).ToContext(ctx)
+				imageReconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+				azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
+					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
+					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2arm64containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
+				}
+				before := append([]v1beta1.NodeImage(nil), nodeClass.Status.Images...)
+
+				_, err := imageReconciler.Reconcile(testCtx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.Status.Images).ToNot(Equal(before))
+				for _, image := range nodeClass.Status.Images {
+					Expect(image.ID).To(ContainSubstring("202606.08.1-2026.06.13"))
+				}
 			})
 		})
 

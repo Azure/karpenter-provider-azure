@@ -46,6 +46,10 @@ const (
 	ProvisionModeAKSMachineAPI            = "aksmachineapi"
 	ProvisionModeAKSMachineAPIHeaderBatch = "aksmachineapiheaderbatch"
 
+	// AKS-managed node OS upgrade channels surfaced to Karpenter.
+	NodeOSUpgradeChannelSecurityPatch = "SecurityPatch"
+	NodeOSUpgradeChannelNodeImage     = "NodeImage"
+
 	AKSMachineAPIHeaderBatchMaxSize = 50
 
 	// Provisioning states for AKS Machine objects.

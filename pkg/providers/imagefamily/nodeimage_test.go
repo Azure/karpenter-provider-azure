@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -80,6 +81,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 	var (
 		testOptions               *options.Options
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
+		nodeImageVersionsAPI      *fake.NodeImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
 		nodeClass         *v1beta1.AKSNodeClass
@@ -94,7 +96,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
-		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
+		nodeImageVersionsAPI = &fake.NodeImageVersionsAPI{}
 		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
@@ -555,6 +557,37 @@ var _ = Describe("NodeImageProvider tests", func() {
 	})
 
 	Context("Caching tests", func() {
+		It("should refresh cached SIG images when the image catalog changes", func() {
+			standardCtx := test.Options(test.OptionsFields{
+				UseSIG:               lo.ToPtr(true),
+				ProvisionMode:        lo.ToPtr("aksmachineapi"),
+				NodeOSUpgradeChannel: lo.ToPtr("NodeImage"),
+			}).ToContext(ctx)
+			test.ApplyDefaultStatus(nodeClass, env, true)
+
+			standardImages, err := nodeImageProvider.List(standardCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(standardImages).ToNot(BeEmpty())
+
+			nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
+				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2arm64containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
+			}
+			securityPatchCtx := test.Options(test.OptionsFields{
+				UseSIG:               lo.ToPtr(true),
+				ProvisionMode:        lo.ToPtr("aksmachineapi"),
+				NodeOSUpgradeChannel: lo.ToPtr("SecurityPatch"),
+			}).ToContext(ctx)
+
+			securityPatchImages, err := nodeImageProvider.List(securityPatchCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(securityPatchImages).ToNot(Equal(standardImages))
+			for _, image := range securityPatchImages {
+				Expect(image.ID).To(ContainSubstring("202606.08.1-2026.06.13"))
+			}
+		})
+
 		It("should ensure List images uses cached data", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
