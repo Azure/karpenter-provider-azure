@@ -34,6 +34,7 @@ import (
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
@@ -1003,3 +1004,30 @@ var _ = Describe("Options", func() {
 		})
 	})
 })
+
+func TestShouldUseNodeHardening(t *testing.T) {
+	tests := []struct {
+		name          string
+		enabled       bool
+		provisionMode string
+		want          bool
+	}{
+		{name: "disabled for scriptless", provisionMode: consts.ProvisionModeAKSScriptless},
+		{name: "enabled for scriptless", enabled: true, provisionMode: consts.ProvisionModeAKSScriptless, want: true},
+		{name: "skipped for bootstrapping client", enabled: true, provisionMode: consts.ProvisionModeBootstrappingClient},
+		{name: "enabled for machine API", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPI, want: true},
+		{name: "enabled for machine API header batch", enabled: true, provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, want: true},
+		{name: "skipped for unknown mode", enabled: true, provisionMode: "unknown"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			opts := &options.Options{
+				EnableNodeHardening: test.enabled,
+				ProvisionMode:       test.provisionMode,
+			}
+			g.Expect(opts.ShouldUseNodeHardening()).To(Equal(test.want))
+		})
+	}
+}

@@ -129,7 +129,7 @@ func newInstanceType(
 ) *cloudprovider.InstanceType {
 	opts := options.FromContext(ctx)
 	totalMemoryMiB := memoryMiB(sku)
-	enableNodeHardening := ShouldUseNodeHardening(opts.EnableNodeHardening, opts.ProvisionMode)
+	enableNodeHardening := opts.ShouldUseNodeHardening()
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(opts, sku, vmsize, architecture, offerings, region, params),
@@ -142,17 +142,6 @@ func newInstanceType(
 		},
 	}
 }
-
-// ShouldUseNodeHardening returns whether node hardening applies to the configured provisioning mode.
-func ShouldUseNodeHardening(enableNodeHardening bool, provisionMode string) bool {
-	if !enableNodeHardening {
-		return false
-	}
-	return provisionMode == consts.ProvisionModeAKSScriptless ||
-		provisionMode == consts.ProvisionModeAKSMachineAPI ||
-		provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
-}
-
 func computeRequirements(
 	opts *options.Options,
 	sku *skewer.SKU,

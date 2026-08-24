@@ -250,7 +250,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	}
 
 	opts := options.FromContext(ctx)
-	enableNodeHardening := instancetype.ShouldUseNodeHardening(opts.EnableNodeHardening, opts.ProvisionMode)
+	enableNodeHardening := opts.ShouldUseNodeHardening()
 	if enableNodeHardening {
 		kubeletConfig.SystemReserved["pid"] = instancetype.SystemReservedPIDs
 		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
