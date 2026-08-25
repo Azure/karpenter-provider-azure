@@ -242,7 +242,7 @@ var _ = Describe("Options", func() {
 			Expect(err).To(MatchError(ContainSubstring("compute-recommendation-mode \"invalid-mode\" is invalid")))
 		})
 		It("should accept valid compute-recommendation-mode values", func() {
-			for _, mode := range []string{"disabled"} { // TODO: Add other modes in the future , "log", "enabled"
+			for _, mode := range []string{"disabled"} { // TODO: Add other modes in the future, "log-only", "enabled"
 				err := opts.Parse(
 					fs,
 					"--cluster-name", "my-name",

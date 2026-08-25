@@ -208,7 +208,7 @@ settings:
 
   # -- Controls compute recommendation API behavior.
   # "disabled" (default): No API calls are made to the compute recommendation API.
-  # "log": API is called and results are logged, but local ranking is used for allocation.
+  # "log-only": API is called and results are logged, but local ranking is used for allocation.
   # "enabled": API results actively influence allocation decisions.
   computeRecommendationMode: "disabled"
 

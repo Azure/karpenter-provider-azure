@@ -50,7 +50,7 @@ const (
 
 	// Compute recommendation mode values.
 	ComputeRecommendationModeDisabled = "disabled"
-	ComputeRecommendationModeLog      = "log"
+	ComputeRecommendationModeLog      = "log-only"
 	ComputeRecommendationModeEnabled  = "enabled"
 
 	// Provisioning states for AKS Machine objects.

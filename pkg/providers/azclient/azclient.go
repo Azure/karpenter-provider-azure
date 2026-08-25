@@ -67,7 +67,7 @@ type AZClient struct {
 	NetworkSecurityGroupsClient networksecuritygroup.API
 	SubscriptionsClient         zone.SubscriptionsAPI
 	UsageClient                 quota.UsageAPI
-	SkuMixPlacementClient       capacityrecommendation.SKUMixPlacementScoresAPI
+	SKUMixPlacementClient       capacityrecommendation.SKUMixPlacementScoresAPI
 }
 
 func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
@@ -144,7 +144,7 @@ func NewAZClientFromAPI(
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 		SubscriptionsClient:            subscriptionsClient,
 		UsageClient:                    usageClient,
-		SkuMixPlacementClient:          skuMixPlacementClient,
+		SKUMixPlacementClient:          skuMixPlacementClient,
 	}
 }
 

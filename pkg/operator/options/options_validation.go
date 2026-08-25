@@ -295,6 +295,6 @@ func (o *Options) validateComputeRecommendationMode() error {
 		consts.ComputeRecommendationModeEnabled:
 		return nil
 	default:
-		return fmt.Errorf("compute-recommendation-mode %q is invalid, must be one of 'disabled', 'log', or 'enabled'", o.ComputeRecommendationMode)
+		return fmt.Errorf("compute-recommendation-mode %q is invalid, must be one of 'disabled', 'log-only', or 'enabled'", o.ComputeRecommendationMode)
 	}
 }
