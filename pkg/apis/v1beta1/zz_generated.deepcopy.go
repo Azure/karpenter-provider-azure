@@ -93,6 +93,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.PodSubnetID != nil {
+		in, out := &in.PodSubnetID, &out.PodSubnetID
+		*out = new(string)
+		**out = **in
+	}
 	if in.OSDiskSizeGB != nil {
 		in, out := &in.OSDiskSizeGB, &out.OSDiskSizeGB
 		*out = new(int32)

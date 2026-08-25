@@ -588,13 +588,14 @@ func TestNetworkLabels(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name              string
-		networkPlugin     string
-		networkPluginMode string
-		podSubnetID       string
-		kubernetesVersion string
-		expectedLabels    map[string]string
-		unexpectedLabels  []string
+		name               string
+		networkPlugin      string
+		networkPluginMode  string
+		podSubnetID        string
+		nodeClassPodSubnet string
+		kubernetesVersion  string
+		expectedLabels     map[string]string
+		unexpectedLabels   []string
 	}{
 		{
 			name:              "Azure CNI pod subnet emits the podnetwork labels DNC keys off",
@@ -664,6 +665,19 @@ func TestNetworkLabels(t *testing.T) {
 			},
 		},
 		{
+			name:               "NodeClass podSubnetID overrides the cluster default",
+			networkPlugin:      consts.NetworkPluginAzure,
+			networkPluginMode:  consts.NetworkPluginModeNone,
+			podSubnetID:        podSubnetID,
+			nodeClassPodSubnet: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/other-podsubnet",
+			kubernetesVersion:  "1.35.0",
+			expectedLabels: map[string]string{
+				labels.AKSLabelPodNetworkSubnet: "other-podsubnet",
+				labels.AKSLabelPodNetworkType:   consts.PodNetworkTypeVNet,
+				labels.AKSLabelSubnetName:       "nodesubnet",
+			},
+		},
+		{
 			name:              "network plugin none ignores a stray pod subnet",
 			networkPlugin:     consts.NetworkPluginNone,
 			networkPluginMode: consts.NetworkPluginModeNone,
@@ -702,6 +716,9 @@ func TestNetworkLabels(t *testing.T) {
 						},
 					},
 				},
+			}
+			if tc.nodeClassPodSubnet != "" {
+				nodeClass.Spec.PodSubnetID = lo.ToPtr(tc.nodeClassPodSubnet)
 			}
 
 			labelMap, err := labels.Get(ctx, nodeClass, "amd64")

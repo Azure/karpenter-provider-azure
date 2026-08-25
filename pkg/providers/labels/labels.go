@@ -132,7 +132,7 @@ func Get(
 	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), kubernetesVersion, nil)
 	labels[v1beta1.AKSLabelOSSKUEffective] = imageFamily.Name()
 
-	if err := setNetworkLabels(ctx, labels, subnetID, kubernetesVersion); err != nil {
+	if err := setNetworkLabels(ctx, labels, nodeClass, subnetID, kubernetesVersion); err != nil {
 		return nil, err
 	}
 	if opts.NetworkDataplane == consts.NetworkDataplaneCilium {
@@ -162,9 +162,10 @@ func Get(
 }
 
 // setNetworkLabels adds the labels describing the node and pod networks, for the CNI modes that need them
-func setNetworkLabels(ctx context.Context, labels map[string]string, subnetID, kubernetesVersion string) error {
+func setNetworkLabels(ctx context.Context, labels map[string]string, nodeClass *v1beta1.AKSNodeClass, subnetID, kubernetesVersion string) error {
 	opts := options.FromContext(ctx)
-	if !opts.IsAzureCNIOverlay() && !opts.IsAzureCNIPodSubnet() {
+	podSubnetID := nodeClass.GetPodSubnetID(opts.PodSubnetID)
+	if !opts.IsAzureCNIOverlay() && !opts.IsAzureCNIPodSubnetFor(podSubnetID) {
 		return nil
 	}
 
@@ -187,7 +188,7 @@ func setNetworkLabels(ctx context.Context, labels map[string]string, subnetID, k
 	}
 
 	// The Delegated Network Controller keys off these labels to allocate pod subnet IPs for the node
-	podSubnetComponents, err := utils.GetVnetSubnetIDComponents(opts.PodSubnetID)
+	podSubnetComponents, err := utils.GetVnetSubnetIDComponents(podSubnetID)
 	if err != nil {
 		return err
 	}

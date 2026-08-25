@@ -194,16 +194,17 @@ func (p *Provider) getStaticParameters(
 		RouteTableName:                 routeTableName,
 		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
-		NetworkPlugin:                  getAgentbakerNetworkPlugin(ctx),
+		NetworkPlugin:                  getAgentbakerNetworkPlugin(ctx, nodeClass),
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
 	}, nil
 }
 
-func getAgentbakerNetworkPlugin(ctx context.Context) string {
+func getAgentbakerNetworkPlugin(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) string {
 	opts := options.FromContext(ctx)
-	if opts.IsAzureCNIOverlay() || opts.IsCiliumNodeSubnet() || opts.IsNetworkPluginNone() || opts.IsAzureCNIPodSubnet() {
+	podSubnetID := nodeClass.GetPodSubnetID(opts.PodSubnetID)
+	if opts.IsAzureCNIOverlay() || opts.IsCiliumNodeSubnet() || opts.IsNetworkPluginNone() || opts.IsAzureCNIPodSubnetFor(podSubnetID) {
 		return consts.NetworkPluginNone
 	}
 	return consts.NetworkPluginAzure
