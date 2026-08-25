@@ -19,6 +19,7 @@ package cloudprovider
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/awslabs/operatorpkg/object"
 	corestatus "github.com/awslabs/operatorpkg/status"
@@ -33,10 +34,12 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
+	nodeclaimlifecycle "sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/lifecycle"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/nodepoolhealth"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
@@ -965,5 +968,152 @@ var _ = Describe("CloudProvider", func() {
 			})
 		})
 
+	})
+
+	Context("ProvisionMode = AKSMachineAPIHeaderBatch with short accumulation windows", func() {
+		BeforeEach(func() {
+			testOptions = test.Options(test.OptionsFields{
+				ProvisionMode:             lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:                    lo.ToPtr(true),
+				ProviderBatchIdleDuration: lo.ToPtr(time.Millisecond),
+				ProviderBatchMaxDuration:  lo.ToPtr(time.Millisecond),
+			})
+
+			ctx = coreoptions.ToContext(ctx, coretest.Options())
+			ctx = options.ToContext(ctx, testOptions)
+
+			azureEnv = test.NewEnvironment(ctx, env)
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+		})
+
+		AfterEach(func() {
+			cloudProvider.WaitForInstancePromises()
+			cluster.Reset()
+			azureEnv.Reset(ctx)
+		})
+
+		Context("NodeClaim instance type limits", func() {
+			It("should create a new NodeClaim with different instance types after exhausting the capped set", func() {
+				// Construct a synthetic set of SKUs as the default test instance type provider doesn't return enough SKUs for our purposes
+				baseSKU, found := lo.Find(fake.ResourceSkus[fake.Region], func(sku compute.ResourceSku) bool {
+					return lo.FromPtr(sku.Name) == "Standard_D2_v3"
+				})
+				Expect(found).To(BeTrue())
+				syntheticSKUNames := make([]string, 0, 2*consts.MaxInstanceTypes+1)
+				for i := range 2*consts.MaxInstanceTypes + 1 {
+					family := string(rune('A' + i/9))
+					version := i%9 + 1
+					syntheticSKU := baseSKU
+					syntheticSKU.Name = lo.ToPtr(fmt.Sprintf("Standard_X%s2s_v%d", family, version))
+					syntheticSKU.Size = lo.ToPtr(fmt.Sprintf("X%s2s_v%d", family, version))
+					syntheticSKU.Family = lo.ToPtr(fmt.Sprintf("standardX%ssv%dFamily", family, version))
+					azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, syntheticSKU)
+					syntheticSKUNames = append(syntheticSKUNames, lo.FromPtr(syntheticSKU.Name))
+				}
+				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+
+				coretest.ReplaceRequirements(nodePool,
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   syntheticSKUNames,
+					},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{karpv1.CapacityTypeOnDemand},
+					},
+				)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				allInstanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(allInstanceTypes)).To(BeNumerically(">", 2*consts.MaxInstanceTypes))
+
+				pod := coretest.UnschedulablePod()
+				ExpectApplied(ctx, env.Client, pod)
+
+				results, err := coreProvisioner.Schedule(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results.NewNodeClaims).To(HaveLen(1))
+				nodeClaims := ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+				Expect(nodeClaims).To(HaveLen(1))
+				firstNodeClaim := nodeClaims[0]
+
+				instanceTypesFor := func(nodeClaim *karpv1.NodeClaim) sets.Set[string] {
+					requirement, found := lo.Find(nodeClaim.Spec.Requirements, func(requirement karpv1.NodeSelectorRequirementWithMinValues) bool {
+						return requirement.Key == v1.LabelInstanceTypeStable
+					})
+					Expect(found).To(BeTrue())
+					return sets.New(requirement.Values...)
+				}
+
+				firstInstanceTypes := instanceTypesFor(firstNodeClaim)
+				Expect(firstInstanceTypes.Len()).To(Equal(consts.MaxInstanceTypes))
+
+				batchAttempts := 0
+				azureEnv.AKSMachinesAPI.BatchMachineErrorFunc = func(string) (string, string) {
+					batchAttempts++
+					return "VMSizeNotSupported", "synthetic VM size is not supported for subscription"
+				}
+				lifecycleController := nodeclaimlifecycle.NewController(
+					fakeClock,
+					env.Client,
+					cloudProvider,
+					events.NewRecorder(&record.FakeRecorder{}),
+					nodepoolhealth.NewState(),
+					nil,
+				)
+
+				attemptedInstanceTypes := sets.New[string]()
+				for range consts.MaxInstanceTypes {
+					// Batch errors don't expose the per-machine template through CalledWithInput,
+					// so infer the attempted instance type from the offering removed by this retry.
+					remainingBefore, err := cloudProvider.resolveInstanceTypes(ctx, firstNodeClaim, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					remainingBeforeNames := sets.New(lo.Map(remainingBefore, func(instanceType *corecloudprovider.InstanceType, _ int) string {
+						return instanceType.Name
+					})...)
+
+					err = ExpectObjectReconcileFailed(ctx, env.Client, lifecycleController, firstNodeClaim)
+					Expect(err).To(HaveOccurred())
+
+					remainingAfter, err := cloudProvider.resolveInstanceTypes(ctx, firstNodeClaim, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					remainingAfterNames := sets.New(lo.Map(remainingAfter, func(instanceType *corecloudprovider.InstanceType, _ int) string {
+						return instanceType.Name
+					})...)
+					removedInstanceTypes := remainingBeforeNames.Difference(remainingAfterNames)
+					Expect(removedInstanceTypes).To(HaveLen(1))
+					attemptedInstanceType := removedInstanceTypes.UnsortedList()[0]
+					Expect(firstInstanceTypes.Has(attemptedInstanceType)).To(BeTrue())
+					Expect(attemptedInstanceTypes.Has(attemptedInstanceType)).To(BeFalse())
+					attemptedInstanceTypes.Insert(attemptedInstanceType)
+				}
+				Expect(attemptedInstanceTypes.Equal(firstInstanceTypes)).To(BeTrue())
+				Expect(batchAttempts).To(Equal(consts.MaxInstanceTypes))
+
+				// All candidates attached to the NodeClaim are now unavailable.
+				// ICE marks the NodeClaim for deletion without another Azure request.
+				ExpectObjectReconciled(ctx, env.Client, lifecycleController, firstNodeClaim)
+				Expect(batchAttempts).To(Equal(consts.MaxInstanceTypes))
+				// A second reconcile removes the termination finalizer.
+				ExpectObjectReconciled(ctx, env.Client, lifecycleController, firstNodeClaim)
+				ExpectNotFound(ctx, env.Client, firstNodeClaim)
+
+				results, err = coreProvisioner.Schedule(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results.NewNodeClaims).To(HaveLen(1))
+				nodeClaims = ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+				Expect(nodeClaims).To(HaveLen(1))
+				secondInstanceTypes := instanceTypesFor(nodeClaims[0])
+				// We should have another 60 instance types and they should be disjoint from the first 60.
+				Expect(secondInstanceTypes.Len()).To(Equal(consts.MaxInstanceTypes))
+				Expect(secondInstanceTypes.Intersection(firstInstanceTypes)).To(BeEmpty())
+			})
+		})
 	})
 })

@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpapis "sigs.k8s.io/karpenter/pkg/apis"
+	corescheduling "sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -75,6 +76,7 @@ import (
 
 func init() {
 	zones.RegisterCSIZoneNormalization()
+	corescheduling.MaxInstanceTypes = consts.MaxInstanceTypes
 }
 
 type Operator struct {

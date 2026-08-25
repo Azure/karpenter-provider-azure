@@ -27,6 +27,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	corescheduling "sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
@@ -54,6 +55,7 @@ import (
 
 func init() {
 	zones.RegisterCSIZoneNormalization()
+	corescheduling.MaxInstanceTypes = consts.MaxInstanceTypes
 
 	// Configuring this here because it's commonly imported and has an init already
 	gomegaformat.CharactersAroundMismatchToInclude = 40

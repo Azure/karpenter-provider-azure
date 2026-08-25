@@ -26,6 +26,7 @@ import (
 
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	corescheduling "sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -51,6 +52,7 @@ import (
 
 func init() {
 	zones.RegisterCSIZoneNormalization()
+	corescheduling.MaxInstanceTypes = consts.MaxInstanceTypes
 	coretest.DefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
 }
 

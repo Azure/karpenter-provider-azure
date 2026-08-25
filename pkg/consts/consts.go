@@ -40,6 +40,7 @@ const (
 	DefaultOverlayMaxPods       = 250
 	DefaultNodeSubnetMaxPods    = 30
 	DefaultKubernetesMaxPods    = 110
+	MaxInstanceTypes            = 60
 
 	ProvisionModeAKSScriptless            = "aksscriptless"
 	ProvisionModeBootstrappingClient      = "bootstrappingclient"

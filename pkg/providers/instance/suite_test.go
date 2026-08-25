@@ -33,20 +33,25 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/dynamicresources/deviceallocation"
+	nodeclaimlifecycle "sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/lifecycle"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/nodepoolhealth"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -1329,6 +1334,120 @@ var _ = Describe("VMInstanceProvider", func() {
 			secondPools := secondNIC.Interface.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools
 			secondPoolIDs := lo.Map(secondPools, func(p *armnetwork.BackendAddressPool, _ int) string { return lo.FromPtr(p.ID) })
 			Expect(secondPoolIDs).ToNot(ContainElement(deletedPoolID))
+		})
+	})
+
+	Context("NodeClaim instance type limits", func() {
+		It("should create a new NodeClaim with different instance types after exhausting the capped set", func() {
+			// Construct a synthetic set of SKUs as the default test instance type provider doesn't return enough SKUs for our purposes
+			baseSKU, found := lo.Find(fake.ResourceSkus[fake.Region], func(sku compute.ResourceSku) bool {
+				return lo.FromPtr(sku.Name) == "Standard_D2_v3"
+			})
+			Expect(found).To(BeTrue())
+			syntheticSKUNames := make([]string, 0, 2*consts.MaxInstanceTypes+1)
+			for i := range 2*consts.MaxInstanceTypes + 1 {
+				family := string(rune('A' + i/9))
+				version := i%9 + 1
+				syntheticSKU := baseSKU
+				syntheticSKU.Name = lo.ToPtr(fmt.Sprintf("Standard_X%s2s_v%d", family, version))
+				syntheticSKU.Size = lo.ToPtr(fmt.Sprintf("X%s2s_v%d", family, version))
+				syntheticSKU.Family = lo.ToPtr(fmt.Sprintf("standardX%ssv%dFamily", family, version))
+				azureEnv.SKUsAPI.AdditionalSKUs = append(azureEnv.SKUsAPI.AdditionalSKUs, syntheticSKU)
+				syntheticSKUNames = append(syntheticSKUNames, lo.FromPtr(syntheticSKU.Name))
+			}
+			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+
+			coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   syntheticSKUNames,
+				},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand},
+				},
+			)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			allInstanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(allInstanceTypes)).To(BeNumerically(">", 2*consts.MaxInstanceTypes))
+
+			pod := coretest.UnschedulablePod()
+			ExpectApplied(ctx, env.Client, pod)
+
+			results, err := coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results.NewNodeClaims).To(HaveLen(1))
+			nodeClaims := ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			Expect(nodeClaims).To(HaveLen(1))
+			firstNodeClaim := nodeClaims[0]
+
+			instanceTypesFor := func(nodeClaim *karpv1.NodeClaim) sets.Set[string] {
+				requirement, found := lo.Find(nodeClaim.Spec.Requirements, func(requirement karpv1.NodeSelectorRequirementWithMinValues) bool {
+					return requirement.Key == v1.LabelInstanceTypeStable
+				})
+				Expect(found).To(BeTrue())
+				return sets.New(requirement.Values...)
+			}
+
+			firstInstanceTypes := instanceTypesFor(firstNodeClaim)
+			Expect(firstInstanceTypes.Len()).To(Equal(consts.MaxInstanceTypes))
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.OperationNotAllowed,
+					RawResponse: &http.Response{
+						Body: fake.CreateSDKErrorBody(
+							sdkerrors.OperationNotAllowed,
+							"Operation could not be completed as it results in exceeding approved Synthetic Family Cores quota. Additional details - Current Limit: 0, Current Usage: 0, Additional Required: 2.",
+						),
+					},
+				},
+				fake.MaxCalls(0), // Fails forever
+			)
+			fakeClock.SetTime(time.Now())
+			lifecycleController := nodeclaimlifecycle.NewController(
+				fakeClock,
+				env.Client,
+				cloudProvider,
+				events.NewRecorder(&record.FakeRecorder{}),
+				nodepoolhealth.NewState(),
+				nil,
+			)
+
+			attemptedInstanceTypes := sets.New[string]()
+			for range consts.MaxInstanceTypes {
+				err := ExpectObjectReconcileFailed(ctx, env.Client, lifecycleController, firstNodeClaim)
+				Expect(err).To(HaveOccurred())
+				createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				attemptedInstanceType := string(lo.FromPtr(createInput.VM.Properties.HardwareProfile.VMSize))
+				Expect(firstInstanceTypes.Has(attemptedInstanceType)).To(BeTrue())
+				Expect(attemptedInstanceTypes.Has(attemptedInstanceType)).To(BeFalse())
+				attemptedInstanceTypes.Insert(attemptedInstanceType)
+			}
+			Expect(attemptedInstanceTypes.Equal(firstInstanceTypes)).To(BeTrue())
+
+			// All candidates attached to the NodeClaim are now unavailable.
+			// ICE marks the NodeClaim for deletion without another Azure request.
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+			ExpectObjectReconciled(ctx, env.Client, lifecycleController, firstNodeClaim)
+			// A second reconcile removes the termination finalizer.
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+			ExpectObjectReconciled(ctx, env.Client, lifecycleController, firstNodeClaim)
+			ExpectNotFound(ctx, env.Client, firstNodeClaim)
+
+			results, err = coreProvisioner.Schedule(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results.NewNodeClaims).To(HaveLen(1))
+			nodeClaims = ExpectScheduledNodeClaimsCreated(ctx, env.Client, coreProvisioner, results.NewNodeClaims...)
+			Expect(nodeClaims).To(HaveLen(1))
+			secondInstanceTypes := instanceTypesFor(nodeClaims[0])
+			// We should have another 60 instance types and they should be disjoint from the first 60.
+			Expect(secondInstanceTypes.Len()).To(Equal(consts.MaxInstanceTypes))
+			Expect(secondInstanceTypes.Intersection(firstInstanceTypes)).To(BeEmpty())
 		})
 	})
 })
