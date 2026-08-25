@@ -78,6 +78,7 @@ var _ = Describe("Options", func() {
 		"PROVIDER_BATCH_IDLE_DURATION",
 		"PROVIDER_BATCH_MAX_DURATION",
 		"PROVIDER_BATCH_MAX_SIZE",
+		"COMPUTE_RECOMMENDATION_MODE",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -226,6 +227,34 @@ var _ = Describe("Options", func() {
 				"--kubelet-identity-client-id", "not-a-uuid",
 			)
 			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+		It("should fail when compute-recommendation-mode is invalid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--compute-recommendation-mode", "invalid-mode",
+			)
+			Expect(err).To(MatchError(ContainSubstring("compute-recommendation-mode \"invalid-mode\" is invalid")))
+		})
+		It("should accept valid compute-recommendation-mode values", func() {
+			for _, mode := range []string{"disabled"} { // TODO: Add other modes in the future, "log-only", "enabled"
+				err := opts.Parse(
+					fs,
+					"--cluster-name", "my-name",
+					"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+					"--kubelet-bootstrap-token", "flag-bootstrap-token",
+					"--ssh-public-key", "flag-ssh-public-key",
+					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+					"--node-resource-group", "my-node-rg",
+					"--compute-recommendation-mode", mode,
+				)
+				Expect(err).ToNot(HaveOccurred(), "mode %q should be valid", mode)
+			}
 		})
 		It("should fail when vnet guid is not a uuid", func() {
 			errMsg := "vnet-guid null is malformed"
