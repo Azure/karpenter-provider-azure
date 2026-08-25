@@ -220,10 +220,12 @@ func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
 	g.Expect(hardened["--kube-reserved"]).To(Equal("pid=1000"))
 	g.Expect(hardened["--system-reserved"]).To(Equal("pid=1000"))
 	g.Expect(hardened["--enforce-node-allocatable"]).To(Equal("pods,kube-reserved,system-reserved"))
-	_, hasKubeReservedCgroup := hardened["--kube-reserved-cgroup"]
-	_, hasSystemReservedCgroup := hardened["--system-reserved-cgroup"]
-	g.Expect(hasKubeReservedCgroup).To(BeFalse(), "--kube-reserved-cgroup is owned by AgentBaker")
-	g.Expect(hasSystemReservedCgroup).To(BeFalse(), "--system-reserved-cgroup is owned by AgentBaker")
+	g.Expect(hardened["--kube-reserved-cgroup"]).To(Equal("/kubereserved.slice"))
+	g.Expect(hardened["--system-reserved-cgroup"]).To(Equal("/system.slice"))
+
+	nonHardened := kubeletConfigToMap(&KubeletConfiguration{EnforceNodeAllocatable: []string{"pods"}})
+	g.Expect(nonHardened).ToNot(HaveKey("--kube-reserved-cgroup"))
+	g.Expect(nonHardened).ToNot(HaveKey("--system-reserved-cgroup"))
 }
 
 func TestKubeletConfigMapEmptyConfigurationOmitsEnforceNodeAllocatable(t *testing.T) {

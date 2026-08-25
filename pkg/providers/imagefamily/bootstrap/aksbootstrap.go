@@ -52,6 +52,11 @@ type AKS struct {
 
 var _ Bootstrapper = (*AKS)(nil) // assert AKS implements Bootstrapper
 
+const (
+	nodeHardeningKubeReservedCgroup   = "/kubereserved.slice"
+	nodeHardeningSystemReservedCgroup = "/system.slice"
+)
+
 func (a AKS) Script() (string, error) {
 	bootstrapScript, err := a.aksBootstrapScript()
 	if err != nil {
@@ -411,6 +416,10 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 
 	if len(kubeletConfig.EnforceNodeAllocatable) > 0 {
 		args["--enforce-node-allocatable"] = strings.Join(kubeletConfig.EnforceNodeAllocatable, ",")
+		if lo.Contains(kubeletConfig.EnforceNodeAllocatable, "kube-reserved") && lo.Contains(kubeletConfig.EnforceNodeAllocatable, "system-reserved") {
+			args["--kube-reserved-cgroup"] = nodeHardeningKubeReservedCgroup
+			args["--system-reserved-cgroup"] = nodeHardeningSystemReservedCgroup
+		}
 	}
 
 	if kubeletConfig.EvictionMaxPodGracePeriod != nil {
