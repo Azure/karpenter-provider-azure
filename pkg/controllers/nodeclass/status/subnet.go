@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -28,6 +29,7 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -58,8 +60,90 @@ const (
 )
 
 func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	// TODO: Handle podSubnetID readiness here as well
+	if result, err := r.validatePodSubnetID(ctx, nodeClass); err != nil || !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady).IsTrue() {
+		return result, err
+	}
 	return r.validateVNETSubnetID(ctx, nodeClass)
+}
+
+// validatePodSubnetID checks a nodeclass-level pod subnet against the same rules the cluster-wide
+// --pod-subnet-id option is validated against at startup
+func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	if nodeClass.Spec.PodSubnetID == nil {
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
+		return reconcile.Result{}, nil
+	}
+	opts := options.FromContext(ctx)
+	podSubnetID := lo.FromPtr(nodeClass.Spec.PodSubnetID)
+	logger := log.FromContext(ctx).WithName(subnetReconcilerName).WithValues("podSubnetID", podSubnetID)
+
+	podSubnetComponents, err := utils.GetVnetSubnetIDComponents(podSubnetID)
+	if err != nil {
+		logger.Error(err, "failed to parse podSubnetID")
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeSubnetsReady,
+			SubnetUnreadyReasonIDInvalid,
+			fmt.Sprintf("Failed to parse podSubnetID %s", podSubnetID),
+		)
+		return reconcile.Result{}, nil
+	}
+	if msg := podSubnetConfigError(opts, nodeClass, podSubnetID, podSubnetComponents); msg != "" {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeSubnetsReady, SubnetUnreadyReasonIDInvalid, msg)
+		return reconcile.Result{}, nil
+	}
+
+	_, err = r.subnetClient.Get(ctx, podSubnetComponents.ResourceGroupName, podSubnetComponents.VNetName, podSubnetComponents.SubnetName, nil)
+	if err != nil {
+		azErr := sdkerrors.IsResponseError(err)
+		if azErr != nil && (azErr.StatusCode == http.StatusNotFound) {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeSubnetsReady,
+				SubnetUnreadyReasonNotFound,
+				fmt.Sprintf("resource not found: %s", podSubnetID),
+			)
+			return reconcile.Result{RequeueAfter: time.Minute}, err
+		}
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeSubnetsReady,
+			SubnetUnreadyReasonUnknownError,
+			fmt.Sprintf("unknown error getting pod subnet: %s", err.Error()),
+		)
+		logger.Error(err, "getting pod subnet failed during reconciliation with unknown error")
+		return reconcile.Result{}, err
+	}
+
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
+	return reconcile.Result{}, nil
+}
+
+// podSubnetConfigError returns why a nodeclass pod subnet cannot be used with the current cluster
+// configuration, or an empty string when it is valid
+func podSubnetConfigError(opts *options.Options, nodeClass *v1beta1.AKSNodeClass, podSubnetID string, podSubnet utils.VnetSubnetResource) string {
+	// The cluster-level pod subnet drives startup wiring like the VNet GUID the pod network labels
+	// carry, so a nodeclass may only override it, not turn pod subnet on by itself
+	if opts.PodSubnetID == "" {
+		return "podSubnetID requires the cluster-level --pod-subnet-id to be set"
+	}
+	if opts.NetworkPluginMode == consts.NetworkPluginModeOverlay || opts.NetworkPlugin != consts.NetworkPluginAzure {
+		return "podSubnetID is only supported with Azure CNI without overlay"
+	}
+	// AKS machine nodes do not carry the bootstrap pod network labels, and the AKS API rejects PodSubnetID
+	if opts.IsAKSMachineAPIMode() {
+		return fmt.Sprintf("podSubnetID is not supported with provision-mode %s", opts.ProvisionMode)
+	}
+	// Skip the cross-check when the node subnet does not parse; validateVNETSubnetID reports that
+	nodeSubnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), opts.SubnetID)
+	nodeSubnet, err := utils.GetVnetSubnetIDComponents(nodeSubnetID)
+	if err != nil {
+		return ""
+	}
+	if !nodeSubnet.IsSameVNETFold(podSubnet) {
+		return fmt.Sprintf("podSubnetID must be in the same virtual network as the node subnet: %s", podSubnetID)
+	}
+	if strings.EqualFold(podSubnetID, nodeSubnetID) {
+		return "podSubnetID must be different from the node subnet"
+	}
+	return ""
 }
 
 func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {

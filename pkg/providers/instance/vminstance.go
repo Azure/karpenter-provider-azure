@@ -816,7 +816,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-	podSubnetID := options.FromContext(ctx).PodSubnetID
+	podSubnetID := nodeClass.GetPodSubnetID(options.FromContext(ctx).PodSubnetID)
 
 	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
 	if err != nil {

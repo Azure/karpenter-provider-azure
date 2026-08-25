@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -34,6 +35,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
@@ -219,6 +221,151 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(cond.IsFalse()).To(BeTrue())
 			Expect(cond.Reason).To(Equal("SubnetUnknownError"))
 			Expect(cond.Message).To(ContainSubstring(errString))
+		})
+	})
+
+	Context("PodSubnetID", func() {
+		const (
+			nodeSubnetID     = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet/subnets/nodesubnet"
+			podSubnetID      = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet/subnets/podsubnet"
+			otherVNetSubnet  = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/other-vnet/subnets/podsubnet"
+			clusterPodSubnet = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet/subnets/clusterpodsubnet"
+		)
+
+		var (
+			reconciler   *status.SubnetReconciler
+			podSubnetCtx context.Context
+		)
+
+		BeforeEach(func() {
+			reconciler = status.NewSubnetReconciler(azureEnv.SubnetsAPI)
+			nodeClass = test.AKSNodeClass()
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr(nodeSubnetID)
+			podSubnetCtx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				SubnetID:          lo.ToPtr(nodeSubnetID),
+				PodSubnetID:       lo.ToPtr(clusterPodSubnet),
+				NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+			}))
+			azureEnv.SubnetsAPI.GetFunc = func(_ context.Context, _ string, _ string, _ string, _ *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+				return armnetwork.SubnetsClientGetResponse{
+					Subnet: armnetwork.Subnet{
+						Properties: &armnetwork.SubnetPropertiesFormat{AddressPrefix: lo.ToPtr("10.0.0.0/16")},
+					},
+				}, nil
+			}
+		})
+
+		It("should mark nodeclass as ready and look up the pod subnet when podSubnetID is valid", func() {
+			nodeClass.Spec.PodSubnetID = lo.ToPtr(podSubnetID)
+			lookedUp := sets.New[string]()
+			azureEnv.SubnetsAPI.GetFunc = func(_ context.Context, _ string, virtualNetworkName string, subnetName string, _ *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+				Expect(virtualNetworkName).To(Equal("byo-vnet"))
+				lookedUp.Insert(subnetName)
+				return armnetwork.SubnetsClientGetResponse{
+					Subnet: armnetwork.Subnet{
+						Properties: &armnetwork.SubnetPropertiesFormat{AddressPrefix: lo.ToPtr("10.0.0.0/16")},
+					},
+				}, nil
+			}
+
+			_, err := reconciler.Reconcile(podSubnetCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Both the pod subnet and the node subnet must be validated, not just the node subnet
+			Expect(lookedUp.UnsortedList()).To(ConsistOf("podsubnet", "nodesubnet"))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady).IsTrue()).To(BeTrue())
+		})
+
+		It("should mark nodeclass as not ready when podSubnetID is in a different VNet than the node subnet", func() {
+			nodeClass.Spec.PodSubnetID = lo.ToPtr(otherVNetSubnet)
+
+			result, err := reconciler.Reconcile(podSubnetCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal("SubnetIDInvalid"))
+			Expect(cond.Message).To(ContainSubstring("same virtual network as the node subnet"))
+		})
+
+		It("should mark nodeclass as not ready when podSubnetID matches the node subnet", func() {
+			nodeClass.Spec.PodSubnetID = lo.ToPtr(nodeSubnetID)
+
+			result, err := reconciler.Reconcile(podSubnetCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Message).To(ContainSubstring("must be different from the node subnet"))
+		})
+
+		It("should mark nodeclass as not ready when podSubnetID is set with overlay", func() {
+			nodeClass.Spec.PodSubnetID = lo.ToPtr(podSubnetID)
+			overlayCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+				SubnetID:          lo.ToPtr(nodeSubnetID),
+				PodSubnetID:       lo.ToPtr(clusterPodSubnet),
+				NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeOverlay),
+			}))
+
+			result, err := reconciler.Reconcile(overlayCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Message).To(ContainSubstring("only supported with Azure CNI without overlay"))
+		})
+
+		// AKS machine nodes never get the pod network labels, so maxPods must not jump to the pod subnet default
+		It("should mark nodeclass as not ready when podSubnetID is set in an AKS machine API mode", func() {
+			nodeClass.Spec.PodSubnetID = lo.ToPtr(podSubnetID)
+			machineAPICtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+				SubnetID:          lo.ToPtr(nodeSubnetID),
+				PodSubnetID:       lo.ToPtr(clusterPodSubnet),
+				NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+				ProvisionMode:     lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+			}))
+
+			result, err := reconciler.Reconcile(machineAPICtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Message).To(ContainSubstring(consts.ProvisionModeAKSMachineAPI))
+		})
+
+		It("should mark nodeclass as not ready when podSubnetID is set without a cluster-level pod subnet", func() {
+			nodeClass.Spec.PodSubnetID = lo.ToPtr(podSubnetID)
+			noClusterDefaultCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+				SubnetID:          lo.ToPtr(nodeSubnetID),
+				NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+			}))
+
+			result, err := reconciler.Reconcile(noClusterDefaultCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Message).To(ContainSubstring("requires the cluster-level --pod-subnet-id"))
+		})
+
+		It("should not require a pod subnet lookup when podSubnetID is unset", func() {
+			azureEnv.SubnetsAPI.GetFunc = func(_ context.Context, _ string, _ string, subnetName string, _ *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+				Expect(subnetName).To(Equal("nodesubnet"))
+				return armnetwork.SubnetsClientGetResponse{
+					Subnet: armnetwork.Subnet{
+						Properties: &armnetwork.SubnetPropertiesFormat{AddressPrefix: lo.ToPtr("10.0.0.0/16")},
+					},
+				}, nil
+			}
+
+			_, err := reconciler.Reconcile(podSubnetCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady).IsTrue()).To(BeTrue())
 		})
 	})
 })

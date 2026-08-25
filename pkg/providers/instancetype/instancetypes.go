@@ -147,7 +147,7 @@ func (p *DefaultProvider) List(
 	instanceTypeParams := &instanceTypeParameters{
 		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
 		OSDiskSizeGB:             lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
-		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode, options.FromContext(ctx).PodSubnetID),
+		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode, nodeClass.GetPodSubnetID(options.FromContext(ctx).PodSubnetID)),
 		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
 		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
 		GPUMode:                  nodeClass.GetGPUMode(),

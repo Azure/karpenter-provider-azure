@@ -122,7 +122,7 @@ func (o *Options) validatePodSubnetID() error {
 	}
 	// Skip the cross-check when the node subnet does not parse; validateVnetSubnetID reports that
 	if nodeSubnet, nodeSubnetErr := utils.GetVnetSubnetIDComponents(o.SubnetID); nodeSubnetErr == nil {
-		if !isSameVNETFold(nodeSubnet, podSubnet) {
+		if !nodeSubnet.IsSameVNETFold(podSubnet) {
 			return fmt.Errorf("pod-subnet-id must be in the same virtual network as vnet-subnet-id")
 		}
 	}
@@ -130,13 +130,6 @@ func (o *Options) validatePodSubnetID() error {
 		return fmt.Errorf("pod-subnet-id must be different from vnet-subnet-id")
 	}
 	return nil
-}
-
-// isSameVNETFold compares the VNet of two subnets, case-insensitively as ARM resource IDs are
-func isSameVNETFold(a, b utils.VnetSubnetResource) bool {
-	return strings.EqualFold(a.SubscriptionID, b.SubscriptionID) &&
-		strings.EqualFold(a.ResourceGroupName, b.ResourceGroupName) &&
-		strings.EqualFold(a.VNetName, b.VNetName)
 }
 
 func (o *Options) validateEndpoint() error {
