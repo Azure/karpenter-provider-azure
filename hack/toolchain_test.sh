@@ -5,8 +5,11 @@ SCRIPT_DIR=$(dirname "$(realpath "$0")")
 REPO_ROOT=$(dirname "$SCRIPT_DIR")
 TOOLCHAIN_SCRIPT="$SCRIPT_DIR/toolchain.sh"
 GO_TOOL_PATH_SCRIPT="$SCRIPT_DIR/go-tool-path.sh"
+GOLANGCI_CACHE_PATH_SCRIPT="$SCRIPT_DIR/golangci-cache-path.sh"
+GOLANGCI_LINT_SCRIPT="$SCRIPT_DIR/golangci-lint.sh"
 ACTION_FILE="$REPO_ROOT/.github/actions/install-deps/action.yaml"
 MAKEFILE="$REPO_ROOT/Makefile"
+PRECOMMIT_FILE="$REPO_ROOT/.pre-commit-config.yaml"
 EXPECTED_GINKGO_VERSION="v9.8.7"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -506,3 +509,107 @@ EOF
 }
 
 run_kubebuilder_125_path_case
+
+[[ -x "$GOLANGCI_CACHE_PATH_SCRIPT" ]] || fail "missing executable $GOLANGCI_CACHE_PATH_SCRIPT"
+[[ -x "$GOLANGCI_LINT_SCRIPT" ]] || fail "missing executable $GOLANGCI_LINT_SCRIPT"
+
+git_test_root="$TEMP_DIR/git-cache-paths"
+main_repo="$git_test_root/repo-\$HOME with space"
+linked_repo="$git_test_root/linked worktree"
+git init -q "$main_repo"
+global_hooks="$git_test_root/global-hooks"
+empty_hooks="$git_test_root/empty-hooks"
+git_config="$git_test_root/global-gitconfig"
+mkdir -p "$global_hooks" "$empty_hooks"
+printf '#!/usr/bin/env bash\nexit 77\n' > "$global_hooks/prepare-commit-msg"
+chmod +x "$global_hooks/prepare-commit-msg"
+git config --file "$git_config" core.hooksPath "$global_hooks"
+mkdir -p "$main_repo/nested module"
+printf 'module example.com/root\n\ngo 1.26.6\n' > "$main_repo/go.mod"
+printf 'module example.com/nested\n\ngo 1.26.6\n' > "$main_repo/nested module/go.mod"
+git -C "$main_repo" add go.mod "nested module/go.mod"
+GIT_CONFIG_GLOBAL="$git_config" git -C "$main_repo" -c core.hooksPath="$empty_hooks" \
+    -c user.name=Test -c user.email=test@example.com -c commit.gpgSign=false \
+    commit -q --no-gpg-sign --no-verify -m initial
+GIT_CONFIG_GLOBAL="$git_config" git -C "$main_repo" -c core.hooksPath="$empty_hooks" \
+    worktree add -q -b linked "$linked_repo"
+for repo in "$main_repo" "$linked_repo"; do
+    mkdir "$repo/hack"
+    cp "$GOLANGCI_CACHE_PATH_SCRIPT" "$GOLANGCI_LINT_SCRIPT" "$repo/hack/"
+done
+mkdir "$git_test_root/bin"
+cat > "$git_test_root/bin/golangci-lint-custom" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+{
+    printf 'cache=%s\n' "$GOLANGCI_LINT_CACHE"
+    printf 'pwd=%s\n' "$PWD"
+    printf 'args='
+    printf '%s ' "$@"
+    printf '\n'
+} >> "$LINT_RECORD"
+exit "${LINT_EXIT:-0}"
+EOF
+chmod +x "$git_test_root/bin/golangci-lint-custom"
+
+run_fake_linter() {
+    local repo="$1"
+    local record="$2"
+    local expected_cache="$3"
+    : > "$record"
+    GOLANGCI_LINT_CACHE=/tmp/ambient-shared-cache LINT_RECORD="$record" \
+        PATH="$git_test_root/bin:$PATH" "$repo/hack/golangci-lint.sh" run --new-from-rev HEAD --fix
+    grep -Fqx "cache=$expected_cache" "$record" || fail "wrapper used the wrong cache for $repo"
+    grep -Fqx "pwd=$repo" "$record" || fail "wrapper did not execute from $repo"
+    grep -Fqx 'args=run --new-from-rev HEAD --fix ' "$record" || fail "wrapper changed linter arguments"
+}
+
+expected_main="$(git -C "$main_repo" rev-parse --absolute-git-dir)/golangci-lint-cache"
+expected_linked="$(git -C "$linked_repo" rev-parse --absolute-git-dir)/golangci-lint-cache"
+[[ "$expected_main" != "$expected_linked" ]] || fail "main and linked worktrees share a linter cache"
+run_fake_linter "$main_repo" "$git_test_root/main-record" "$expected_main"
+run_fake_linter "$linked_repo" "$git_test_root/linked-record" "$expected_linked"
+
+all_modules_record="$git_test_root/all-modules-record"
+: > "$all_modules_record"
+LINT_RECORD="$all_modules_record" PATH="$git_test_root/bin:$PATH" \
+    "$main_repo/hack/golangci-lint.sh" --all-modules run
+[[ "$(grep -Fxc "cache=$expected_main" "$all_modules_record")" == 2 ]] || fail "nested modules did not share the worktree-local cache"
+grep -Fqx "pwd=$main_repo" "$all_modules_record" || fail "root module was not linted from its directory"
+grep -Fqx "pwd=$main_repo/nested module" "$all_modules_record" || fail "nested module was not linted from its directory"
+[[ "$(grep -Fxc 'args=run ' "$all_modules_record")" == 2 ]] || fail "nested module lint arguments changed"
+
+if GOLANGCI_LINT_CACHE=/tmp/ambient-shared-cache LINT_RECORD="$git_test_root/failure-record" LINT_EXIT=73 \
+    PATH="$git_test_root/bin:$PATH" "$main_repo/hack/golangci-lint.sh" run; then
+    fail "wrapper did not propagate linter failure"
+else
+    [[ "$?" == 73 ]] || fail "wrapper changed linter failure code"
+fi
+
+nongit_repo="$git_test_root/not-a-git-repository"
+mkdir -p "$nongit_repo/hack" "$nongit_repo/fallback-cache"
+cp "$GOLANGCI_CACHE_PATH_SCRIPT" "$GOLANGCI_LINT_SCRIPT" "$nongit_repo/hack/"
+rm -f "$git_test_root/nongit-record"
+if GOLANGCI_LINT_CACHE="$nongit_repo/fallback-cache" LINT_RECORD="$git_test_root/nongit-record" \
+    PATH="$git_test_root/bin:$PATH" "$nongit_repo/hack/golangci-lint.sh" run; then
+    fail "wrapper ran outside a Git worktree"
+fi
+[[ ! -e "$git_test_root/nongit-record" ]] || fail "linter executed after cache resolution failed"
+
+grep -Fq './hack/golangci-lint.sh $(GOLANGCI_LINT_CACHE_FLAG) --all-modules run' "$MAKEFILE" || fail "Make lint bypasses the isolated all-module wrapper"
+make -s -C "$REPO_ROOT" --dry-run tidy | grep -Fq 'go mod tidy' || fail "tidy no longer visits non-test Go modules"
+make -s -C "$REPO_ROOT" --dry-run download | grep -Fq 'go mod download' || fail "download no longer visits non-test Go modules"
+actual_repo_cache=$(bash -c 'cd "$1" && ./hack/golangci-cache-path.sh' _ "$REPO_ROOT")
+ambient_record="$git_test_root/make-ambient-record"
+: > "$ambient_record"
+env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES GOLANGCI_LINT_CACHE=/tmp/ambient-shared-cache LINT_RECORD="$ambient_record" \
+    PATH="$git_test_root/bin:$PATH" make -e -s -C "$REPO_ROOT" lint
+[[ "$(<"$ambient_record")" == *"cache=$actual_repo_cache"* ]] || fail "make -e ambient cache bypassed isolation"
+explicit_cache="$git_test_root/explicit-\$HOME cache"
+explicit_record="$git_test_root/make-explicit-record"
+: > "$explicit_record"
+env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES LINT_RECORD="$explicit_record" PATH="$git_test_root/bin:$PATH" \
+    make -s -C "$REPO_ROOT" "GOLANGCI_LINT_CACHE=$explicit_cache" lint
+[[ "$(<"$explicit_record")" == *"cache=$explicit_cache"* ]] || fail "explicit Make cache override was not preserved literally"
+precommit_entry=$(yq eval '.repos[] | select(.repo == "https://github.com/golangci/golangci-lint") | .hooks[] | select(.id == "golangci-lint") | .entry' "$PRECOMMIT_FILE")
+[[ "$precommit_entry" == './hack/golangci-lint.sh run --new-from-rev HEAD --fix' ]] || fail "pre-commit bypasses the isolated linter wrapper"

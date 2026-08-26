@@ -6,6 +6,15 @@ LDFLAGS ?= -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=$(shell git de
 GOFLAGS ?= $(LDFLAGS)
 GINKGO := $(shell ./hack/go-tool-path.sh ginkgo)
 
+ifeq ($(origin GOLANGCI_LINT_CACHE),command line)
+override GOLANGCI_LINT_CACHE := $(value GOLANGCI_LINT_CACHE)
+export GOLANGCI_LINT_CACHE
+override GOLANGCI_LINT_CACHE_FLAG := --use-env-cache
+else
+unexport GOLANGCI_LINT_CACHE
+override GOLANGCI_LINT_CACHE_FLAG :=
+endif
+
 # # CR for local builds of Karpenter
 KARPENTER_NAMESPACE ?= kube-system
 
@@ -33,6 +42,9 @@ presubmit: verify test ## Run all steps in the developer loop
 ci-test: test coverage ## Runs tests and submits coverage
 
 ci-non-test: verify licenses vulncheck ## Runs checks other than tests
+
+lint: ## Run linters
+	./hack/golangci-lint.sh $(GOLANGCI_LINT_CACHE_FLAG) --all-modules run
 
 test: ## Run tests
 	"$(GINKGO)" -vv \
@@ -104,7 +116,7 @@ verify: tidy download ## Verify code. Includes dependencies, linting, formatting
 	hack/mutation/kubectl_get_ux.sh
 	cp $(addprefix pkg/apis/crds/,$(SUPPORTED_CRDS)) charts/karpenter-crd/templates
 	hack/github/dependabot.sh
-	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint-custom run $(newline))
+	./hack/golangci-lint.sh $(GOLANGCI_LINT_CACHE_FLAG) --all-modules run
 	@git diff --quiet ||\
 		{ echo "New file modification detected in the Git working tree. Please check in before commit."; git --no-pager diff --name-only | uniq | awk '{print "  - " $$0}'; \
 		if [ "${CI}" = true ]; then\
@@ -157,7 +169,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen codegen-pricing codegen-locations codegen-skugen codegen-allazureskus snapshot release toolchain tidy download
+.PHONY: help presubmit ci-test ci-non-test lint test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen codegen-pricing codegen-locations codegen-skugen codegen-allazureskus snapshot release toolchain tidy download
 
 define newline
 
