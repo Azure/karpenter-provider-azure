@@ -4,6 +4,7 @@ include Makefile-az.mk
 LDFLAGS ?= -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=$(shell git describe --tags --always | cut -d"v" -f2)
 
 GOFLAGS ?= $(LDFLAGS)
+GINKGO := $(shell ./hack/go-tool-path.sh ginkgo)
 
 # # CR for local builds of Karpenter
 KARPENTER_NAMESPACE ?= kube-system
@@ -34,7 +35,7 @@ ci-test: test coverage ## Runs tests and submits coverage
 ci-non-test: verify licenses vulncheck ## Runs checks other than tests
 
 test: ## Run tests
-	ginkgo -vv \
+	"$(GINKGO)" -vv \
 		-cover -coverprofile=coverage.out -output-dir=. -coverpkg=./pkg/... \
 		--focus="${FOCUS}" \
 		--randomize-all \
@@ -44,7 +45,7 @@ deflake: ## Run randomized, racing, code-covered tests to deflake failures
 	for i in $(shell seq 1 5); do make test || exit 1; done
 
 deflake-until-it-fails: ## Run randomized, racing tests until the test fails to catch flakes
-	ginkgo \
+	"$(GINKGO)" \
 		--race \
 		--focus="${FOCUS}" \
 		--randomize-all \
@@ -92,6 +93,7 @@ coverage:
 
 verify: tidy download ## Verify code. Includes dependencies, linting, formatting, etc
 	SKIP_INSTALLED=true make toolchain
+	hack/toolchain_test.sh
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh

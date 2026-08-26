@@ -7,18 +7,14 @@ KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 # Default SKIP_INSTALLED to false if not set
 SKIP_INSTALLED="${SKIP_INSTALLED:=false}"
 
-# Find the path where this script is found
+# Find the repository and the effective directory used by go install.
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
-
-# Define go install will put things
-TOOL_DEST="$(go env GOPATH)/bin"
+REPO_ROOT=$(dirname "$SCRIPT_DIR")
+TOOL_DEST=$("$SCRIPT_DIR/go-tool-path.sh")
 
 if [ "$SKIP_INSTALLED" == true ]; then
     echo "[INF] Skipping tools already installed."
 fi
-
-# This is where go install will put things
-TOOL_DEST="$(go env GOPATH)/bin"
 
 main() {
     crosscompilers
@@ -54,6 +50,34 @@ go-install() {
     go install "$2"
 }
 
+# Ginkgo's CLI must match the library imported by this repository. Unlike other
+# tools, an existing binary is skipped only when its version matches go.mod.
+install-ginkgo() {
+    local module="github.com/onsi/ginkgo/v2"
+    local expected_version
+    if ! expected_version=$(GOWORK=off go -C "$REPO_ROOT" list -m -f '{{ .Version }}' "$module"); then
+        echo "failed to resolve Ginkgo version from $REPO_ROOT/go.mod" >&2
+        return 1
+    fi
+    if [[ -z "$expected_version" ]]; then
+        echo "resolved an empty Ginkgo version from $REPO_ROOT/go.mod" >&2
+        return 1
+    fi
+
+    if should-skip ginkgo; then
+        local installed_version
+        if ! installed_version=$("$TOOL_DEST/ginkgo" version 2>/dev/null | awk '$1 == "Ginkgo" && $2 == "Version" { print "v" $3; exit }'); then
+            installed_version=""
+        fi
+        if [[ "$installed_version" == "$expected_version" ]]; then
+            return
+        fi
+    fi
+
+    echo "[INF] Installing ginkgo $expected_version"
+    go install "$module/ginkgo@$expected_version"
+}
+
 crosscompilers() {
     # Install CGO cross-compilation toolchains for multi-arch builds
     if ! command -v aarch64-linux-gnu-gcc &> /dev/null || ! command -v x86_64-linux-gnu-gcc &> /dev/null; then
@@ -71,7 +95,7 @@ tools() {
     go-install cosign github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
     go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.1.4
-    go-install ginkgo github.com/onsi/ginkgo/v2/ginkgo@latest
+    install-ginkgo
     go-install actionlint github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go-install goveralls github.com/mattn/goveralls@v0.0.12
     go-install crane github.com/google/go-containerregistry/cmd/crane@v0.20.2
