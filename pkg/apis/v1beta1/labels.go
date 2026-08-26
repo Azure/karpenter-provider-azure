@@ -139,7 +139,7 @@ var (
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
-	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // calculated as max(sku.CachedDiskBytes, sku.MaxResourceVolumeMB)
+	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // largest eligible cache, resource, or NVMe Ephemeral OS capacity in GiB
 	LabelUltraSSD                     = Group + "/sku-storage-ultra-ssd"           // sku.IsUltraSSD
 
 	// GPU labels
