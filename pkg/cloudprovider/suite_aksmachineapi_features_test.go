@@ -404,6 +404,34 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*machine.Properties.Security.EnableSecureBoot).To(BeTrue())
 			})
 
+			It("should use ephemeral disk when Trusted Launch has one GiB of headroom", func() {
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1599)
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)},
+				}
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(1599)))
+				Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
+				Expect(machine.Properties.Security.EnableVTPM).ToNot(BeNil())
+				Expect(*machine.Properties.Security.EnableVTPM).To(BeTrue())
+				Expect(machine.Properties.Security.EnableSecureBoot).ToNot(BeNil())
+				Expect(*machine.Properties.Security.EnableSecureBoot).To(BeTrue())
+			})
+
 			// Ported from VM test: "should fail to provision if ephemeral disk ask for is too large"
 			It("should fail to provision if ephemeral disk ask for is too large", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{

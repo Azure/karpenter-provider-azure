@@ -97,6 +97,26 @@ var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 
 var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
+func withEphemeralDiskCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
+	clone := *sku
+	capabilities := append([]compute.ResourceSkuCapabilities(nil), (*sku.Capabilities)...)
+	for i := range capabilities {
+		if lo.FromPtr(capabilities[i].Name) == name {
+			capability := capabilities[i]
+			capability.Value = lo.ToPtr(value)
+			capabilities[i] = capability
+			clone.Capabilities = &capabilities
+			return &clone
+		}
+	}
+	capabilities = append(capabilities, compute.ResourceSkuCapabilities{
+		Name:  lo.ToPtr(name),
+		Value: lo.ToPtr(value),
+	})
+	clone.Capabilities = &capabilities
+	return &clone
+}
+
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
@@ -1009,19 +1029,23 @@ var _ = Describe("InstanceType Provider", func() {
 					Entry("Nil SKU", nil, int64(0), nil),
 				)
 			})
-			DescribeTable("should reserve one GiB of local storage for Trusted Launch",
-				func(trustedLaunch *v1beta1.TrustedLaunch, expected bool) {
+			DescribeTable("should reserve exactly one GiB of local storage for Trusted Launch",
+				func(sku *skewer.SKU, sizeGiB int32, trustedLaunch *v1beta1.TrustedLaunch, expected bool) {
 					testNodeClass := test.AKSNodeClass()
-					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1600)
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(sizeGiB)
 					testNodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: trustedLaunch}
 
-					Expect(instancetype.UseEphemeralDisk(fake.MakeSKU("Standard_D64s_v3"), testNodeClass)).To(Equal(expected))
+					Expect(instancetype.UseEphemeralDisk(sku, testNodeClass)).To(Equal(expected))
 				},
-				Entry("without Trusted Launch", nil, true),
-				Entry("with vTPM", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
-				Entry("with Secure Boot", &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, false),
-				Entry("with vTPM and Secure Boot", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}, false),
-				Entry("with both features explicitly disabled", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, true),
+				Entry("cache exact fit without Trusted Launch", fake.MakeSKU("Standard_D64s_v3"), int32(1600), nil, true),
+				Entry("cache exact fit with vTPM", fake.MakeSKU("Standard_D64s_v3"), int32(1600), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
+				Entry("cache one-GiB headroom with Secure Boot", fake.MakeSKU("Standard_D64s_v3"), int32(1599), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
+				Entry("cache one-GiB headroom with both features", fake.MakeSKU("Standard_D64s_v3"), int32(1599), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}, true),
+				Entry("cache exact fit with both features disabled", fake.MakeSKU("Standard_D64s_v3"), int32(1600), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, true),
+				Entry("resource exact fit with vTPM", withEphemeralDiskCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(512), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
+				Entry("resource one-GiB headroom with vTPM", withEphemeralDiskCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(511), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, true),
+				Entry("NVMe exact fit with Secure Boot", withEphemeralDiskCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(128), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, false),
+				Entry("NVMe one-GiB headroom with Secure Boot", withEphemeralDiskCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(127), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
 			)
 			Context("Placement", func() {
 				It("should prefer NVMe disk if supported for ephemeral", func() {
@@ -1096,6 +1120,31 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
 					Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(1600)))
 					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+					Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+					Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+				})
+				It("should use ephemeral cache disk when Trusted Launch has one GiB of headroom", func() {
+					nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1599)
+					nodeClass.Spec.Security = &v1beta1.Security{
+						TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)},
+					}
+					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D64s_v3"},
+					})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+					Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
 					Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
 					Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
 				})
