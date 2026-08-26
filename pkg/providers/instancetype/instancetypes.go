@@ -626,9 +626,12 @@ func FindEphemeralOSDiskPlacement(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeCla
 	if requestedGiB > maxEphemeralOSDiskSizeGiB {
 		return nil
 	}
-	requestedBytes := requestedGiB * int64(units.GiB)
+	requiredBytes := requestedGiB * int64(units.GiB)
+	if nodeClass.IsTrustedLaunchEnabled() {
+		requiredBytes += int64(units.GiB)
+	}
 	for _, candidate := range ephemeralOSDiskCandidates(sku) {
-		if requestedBytes <= candidate.sizeBytes {
+		if requiredBytes <= candidate.sizeBytes {
 			return lo.ToPtr(candidate.placement)
 		}
 	}
