@@ -11,7 +11,8 @@ ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
 else
-  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1 | tr -d '+')
+  # generate a unique suffix based on the user's email
+  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1 | tr -cd '[:alnum:]')
   AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)$(NAME_SUFFIX)
   AZURE_ACR_NAME ?= $(COMMON_NAME)$(NAME_SUFFIX)
 endif
@@ -379,18 +380,20 @@ az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	helm repo add grafana-charts https://grafana.github.io/helm-charts
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
-	kubectl create namespace monitoring || true
-	helm install --namespace monitoring prometheus prometheus-community/prometheus \
+	# Create the namespace if not extant; NOP otherwise
+	kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+	# We use `helm upgrade --install` to avoid errors if the release already exists, and to allow for upgrades of the release if it does exist.
+	helm upgrade --install --namespace monitoring prometheus prometheus-community/prometheus \
 		--values hack/monitoring/prometheus-values.yaml
-	helm install --namespace monitoring pyroscope grafana-charts/pyroscope \
+	helm upgrade --install --namespace monitoring pyroscope grafana-charts/pyroscope \
 		--set pyroscope.extraArgs.'usage-stats\.enabled'=false
-	helm install --namespace monitoring grafana grafana-charts/grafana \
+	helm upgrade --install --namespace monitoring grafana grafana-charts/grafana \
 		--values hack/monitoring/grafana-values.yaml \
 		--set env.GF_AUTH_ANONYMOUS_ENABLED=true \
 		--set env.GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
 
 az-mon-access: ## Get Grafana admin password and forward port
-	@echo Consider running port forward outside of codespace ...
+	@echo "Consider running port forward outside of codespace ..."
 	$(eval POD_NAME=$(shell kubectl get pods --namespace monitoring -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=grafana" -o jsonpath="{.items[0].metadata.name}"))
 	kubectl port-forward --namespace monitoring $(POD_NAME) 3000
 

@@ -42,6 +42,10 @@ type KubeletConfiguration struct {
 	// EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use when terminating pods in
 	// response to soft eviction thresholds being met.
 	EvictionMaxPodGracePeriod *int32
+	// EnforceNodeAllocatable is the list of node-allocatable enforcement scopes passed to
+	// --enforce-node-allocatable (e.g. pods, kube-reserved, system-reserved). When empty the
+	// default is the kubelet default ("pods")
+	EnforceNodeAllocatable []string
 }
 
 // Options is the node bootstrapping parameters passed from Karpenter to the provisioning node
