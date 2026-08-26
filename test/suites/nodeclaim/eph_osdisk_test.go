@@ -56,7 +56,24 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelInstanceTypeStable,
 			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D4ds_v4"},
+			// Every candidate supports both placements with less than 128 GiB of cache
+			// and at least 128 GiB on the resource disk. Multiple families tolerate
+			// subscription-specific SKU restrictions without weakening the boundary.
+			Values: []string{
+				"Standard_B16ms",
+				"Standard_B20ms",
+				"Standard_D4ds_v4",
+				"Standard_D4pds_v5",
+				"Standard_D4plds_v5",
+				"Standard_DC2ds_v3",
+				"Standard_E4-2ds_v4",
+				"Standard_E4ds_v4",
+				"Standard_E4pds_v5",
+				"Standard_HC44-16rs",
+				"Standard_HC44-32rs",
+				"Standard_HC44rs",
+				"Standard_NV8as_v4",
+			},
 		})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
