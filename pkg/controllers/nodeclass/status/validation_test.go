@@ -25,8 +25,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -64,7 +66,7 @@ var _ = Describe("Validation Reconciler", func() {
 	var emptyDiskEncryptionSetID *arm.ResourceID
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: consts.ProvisionModeBootstrappingClient})
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
 
 		reconciler = status.NewValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
@@ -75,6 +77,34 @@ var _ = Describe("Validation Reconciler", func() {
 			},
 			Spec: v1beta1.AKSNodeClassSpec{},
 		}
+	})
+
+	Context("provision mode compatibility", func() {
+		DescribeTable("validates image family compatibility",
+			func(imageFamily, provisionMode string, valid bool) {
+				ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: provisionMode})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if valid {
+					Expect(condition.IsTrue()).To(BeTrue())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal(status.IncompatibleProvisionMode))
+					Expect(condition.Message).To(ContainSubstring("requires bootstrappingclient or an AKS Machine API provision mode"))
+					Expect(result).To(Equal(reconcile.Result{}))
+				}
+			},
+			Entry("ACL with Machine API", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, true),
+			Entry("ACL with batched Machine API", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+			Entry("ACL with bootstrapping client", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, true),
+			Entry("ACL with local scriptless", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, false),
+			Entry("Ubuntu with local scriptless", v1beta1.UbuntuImageFamily, consts.ProvisionModeAKSScriptless, true),
+			Entry("Azure Linux with local scriptless", v1beta1.AzureLinuxImageFamily, consts.ProvisionModeAKSScriptless, true),
+		)
 	})
 
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.
