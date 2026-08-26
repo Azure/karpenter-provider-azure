@@ -28,6 +28,13 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
+// Both SKUs expose a 50-GiB cache and a 16-GiB resource disk, preserving
+// the exact Trusted Launch boundary while tolerating subscription availability.
+var trustedLaunchBoundaryInstanceTypes = []string{
+	"Standard_D2s_v3",
+	"Standard_D2as_v4",
+}
+
 var _ = Describe("Ephemeral OS Disk", func() {
 	It("should use a node with an ephemeral os disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -73,7 +80,7 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelInstanceTypeStable,
 			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D2s_v3"},
+			Values:   trustedLaunchBoundaryInstanceTypes,
 		})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
 		nodeClass.Spec.Security = &v1beta1.Security{
@@ -96,7 +103,7 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelInstanceTypeStable,
 			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D2s_v3"},
+			Values:   trustedLaunchBoundaryInstanceTypes,
 		})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](49)
 		nodeClass.Spec.Security = &v1beta1.Security{
