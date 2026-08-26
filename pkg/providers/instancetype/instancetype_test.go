@@ -158,8 +158,8 @@ func TestEvictionThresholdEphemeralStorage(t *testing.T) {
 		capacity      string
 		expectedBytes int64
 	}{
-		{name: "128 decimal gigabytes", capacity: "128G", expectedBytes: 12_800_000_000},
-		{name: "128 binary gibibytes", capacity: "128Gi", expectedBytes: 13_743_895_347},
+		{name: "128 decimal gigabytes", capacity: "128G", expectedBytes: 12_800_000_190},
+		{name: "128 binary gibibytes", capacity: "128Gi", expectedBytes: 13_743_895_552},
 		{name: "odd bytes floor", capacity: "101", expectedBytes: 10},
 	}
 	for _, test := range tests {
@@ -174,7 +174,7 @@ func TestEvictionThresholdEphemeralStorage(t *testing.T) {
 	capacity := resource.MustParse("128G")
 	eviction := EvictionThreshold(32*1024, capacity, true)[corev1.ResourceEphemeralStorage]
 	system := SystemReservedResources(32*1024, consts.NetworkPluginAzure, true)[corev1.ResourceEphemeralStorage]
-	g.Expect(eviction.Value()).To(Equal(int64(12_800_000_000)))
+	g.Expect(eviction.Value()).To(Equal(int64(12_800_000_190)))
 	g.Expect(system.String()).To(Equal("1Gi"))
 }
 

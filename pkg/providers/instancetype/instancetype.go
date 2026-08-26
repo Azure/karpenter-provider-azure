@@ -388,10 +388,13 @@ func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Q
 		memory = *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI)
 	}
 
-	storageBytes := ephemeralStorageCapacity.Value() * hardEvictionNodeFSAvailablePercent / 100
+	// Kubelet parses percentage eviction thresholds as float32, converts them
+	// to float64 for multiplication, and truncates the result to bytes.
+	storagePercentage := float32(hardEvictionNodeFSAvailablePercent) / 100
+	storageBytes := int64(float64(ephemeralStorageCapacity.Value()) * float64(storagePercentage))
 	return corev1.ResourceList{
 		corev1.ResourceMemory:           memory,
-		corev1.ResourceEphemeralStorage: *resource.NewQuantity(storageBytes, resource.DecimalSI),
+		corev1.ResourceEphemeralStorage: *resource.NewQuantity(storageBytes, resource.BinarySI),
 	}
 }
 
