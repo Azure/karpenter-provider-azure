@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -44,6 +45,14 @@ import (
 )
 
 var env *azure.Environment
+
+func shouldSkipDiskEncryptionOverride(provisionMode string, inClusterController bool) bool {
+	if !inClusterController {
+		return false
+	}
+	return provisionMode == consts.ProvisionModeAKSMachineAPI ||
+		provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
 
 func TestBYOK(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -68,8 +77,8 @@ var _ = Describe("BYOK", func() {
 	It("should provision a VM with customer-managed key disk encryption", func(ctx SpecContext) {
 		var diskEncryptionSetID string
 
-		if env.IsAKSMachineAPIMode() {
-			Skip("Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID env setting, so overriding it below doesn't do anything and the test will fail")
+		if shouldSkipDiskEncryptionOverride(env.ProvisionMode, env.InClusterController) {
+			Skip("In-cluster Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID override")
 		}
 
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
@@ -122,8 +131,8 @@ var _ = Describe("BYOK", func() {
 	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func(ctx SpecContext) {
 		var diskEncryptionSetID string
 
-		if env.IsAKSMachineAPIMode() {
-			Skip("Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID env setting, so overriding it below doesn't do anything and the test will fail")
+		if shouldSkipDiskEncryptionOverride(env.ProvisionMode, env.InClusterController) {
+			Skip("In-cluster Machine mode doesn't use the NODE_OSDISK_DISKENCRYPTIONSET_ID override")
 		}
 
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
