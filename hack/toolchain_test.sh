@@ -259,3 +259,250 @@ run_action_lookup value v1.2.3
 run_action_lookup empty v9.8.7
 run_action_lookup fail v9.8.7
 run_action_lookup value-fail v9.8.7
+
+run_kubebuilder_asset_case() {
+    local mode="$1"
+    local expected_result="$2"
+    local case_dir="$TEMP_DIR/kubebuilder-$mode"
+    local source_dir="$case_dir/source dir"
+    local target_dir="$case_dir/target"
+    local call_record="$case_dir/setup-envtest-call"
+    local error_record="$case_dir/error"
+    mkdir -p "$case_dir/bin" "$source_dir" "$target_dir"
+
+    case "$mode" in
+        valid|missing-binary|directory-binary|destination-directory|destination-symlink-directory|link-failure|output-fail)
+            for binary in kube-apiserver kubectl etcd; do
+                if [[ "$mode" == "missing-binary" && "$binary" == "etcd" ]]; then
+                    continue
+                fi
+                printf '#!/usr/bin/env bash\nexit 0\n' > "$source_dir/$binary"
+                chmod +x "$source_dir/$binary"
+            done
+            ;;
+    esac
+    if [[ "$mode" == "directory-binary" ]]; then
+        rm "$source_dir/etcd"
+        mkdir "$source_dir/etcd"
+    elif [[ "$mode" == "destination-directory" ]]; then
+        mkdir "$target_dir/kubectl"
+    elif [[ "$mode" == "destination-symlink-directory" ]]; then
+        mkdir "$case_dir/collision-dir"
+        ln -s "$case_dir/collision-dir" "$target_dir/kubectl"
+    elif [[ "$mode" == "link-failure" ]]; then
+        mkdir "$case_dir/old-assets"
+        for binary in kube-apiserver kubectl etcd; do
+            printf 'old-%s\n' "$binary" > "$case_dir/old-assets/$binary"
+            ln -s "$case_dir/old-assets/$binary" "$target_dir/$binary"
+        done
+        cat > "$case_dir/bin/ln" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+count=0
+[[ -f "$LN_CALL_COUNT" ]] && count=$(<"$LN_CALL_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" > "$LN_CALL_COUNT"
+if [[ "$count" == 2 ]]; then
+    exit 73
+fi
+exec /usr/bin/ln "$@"
+EOF
+        chmod +x "$case_dir/bin/ln"
+    fi
+
+    cat > "$case_dir/bin/setup-envtest" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" > "$SETUP_ENVTEST_CALL"
+case "$SETUP_ENVTEST_MODE" in
+    valid|missing-binary|directory-binary|destination-directory|destination-symlink-directory|link-failure) printf '%s\n' "$SETUP_ENVTEST_SOURCE" ;;
+    output-fail) printf '%s\n' "$SETUP_ENVTEST_SOURCE"; exit 42 ;;
+    empty) ;;
+    fail) exit 42 ;;
+    non-directory) printf '%s\n' "$SETUP_ENVTEST_SOURCE/not-a-directory" ;;
+    root) printf '/\n' ;;
+    *) exit 90 ;;
+esac
+EOF
+    chmod +x "$case_dir/bin/setup-envtest"
+    grep -v '^main "\$@"$' "$TOOLCHAIN_SCRIPT" > "$case_dir/toolchain-library.sh"
+    before_links=$(find "$target_dir" -maxdepth 1 -type l -printf '%f -> %l\n' | sort)
+
+    if (
+        export KUBEBUILDER_ASSETS="$target_dir" K8S_VERSION="1.29.x"
+        export SETUP_ENVTEST_BIN="$case_dir/bin/setup-envtest"
+        export SETUP_ENVTEST_CALL="$call_record" SETUP_ENVTEST_MODE="$mode" SETUP_ENVTEST_SOURCE="$source_dir"
+        export LN_CALL_COUNT="$case_dir/ln-count" PATH="$case_dir/bin:$PATH"
+        # shellcheck source=/dev/null
+        source "$case_dir/toolchain-library.sh"
+        link-kubebuilder-assets amd64
+    ) 2>"$error_record"; then
+        [[ "$expected_result" == "success" ]] || fail "$mode setup-envtest unexpectedly succeeded"
+    else
+        [[ "$expected_result" == "failure" ]] || fail "$mode setup-envtest unexpectedly failed"
+    fi
+
+    expected_call=$'use\n-p\npath\n1.29.x\n--arch=amd64\n'"--bin-dir=$target_dir"
+    [[ "$(<"$call_record")" == "$expected_call" ]] || fail "$mode used unexpected setup-envtest argument boundaries"
+    after_links=$(find "$target_dir" -maxdepth 1 -type l -printf '%f -> %l\n' | sort)
+    if [[ "$expected_result" == "success" ]]; then
+        [[ "$(printf '%s\n' "$after_links" | grep -c -- ' -> ')" == 3 ]] || fail "$mode did not create exactly 3 symlinks"
+        for binary in kube-apiserver kubectl etcd; do
+            [[ "$(readlink "$target_dir/$binary")" == "$source_dir/$binary" ]] || fail "$mode linked $binary to the wrong target"
+        done
+    else
+        [[ "$after_links" == "$before_links" ]] || fail "$mode changed destination links after failure"
+    fi
+    if [[ "$mode" == "root" ]]; then
+        grep -Fq 'invalid asset directory: /' "$error_record" || fail "root path was rejected only incidentally"
+    fi
+}
+
+run_kubebuilder_asset_case valid success
+run_kubebuilder_asset_case empty failure
+run_kubebuilder_asset_case fail failure
+run_kubebuilder_asset_case output-fail failure
+run_kubebuilder_asset_case non-directory failure
+run_kubebuilder_asset_case root failure
+run_kubebuilder_asset_case missing-binary failure
+run_kubebuilder_asset_case directory-binary failure
+run_kubebuilder_asset_case destination-directory failure
+run_kubebuilder_asset_case destination-symlink-directory failure
+run_kubebuilder_asset_case link-failure failure
+
+write_fake_curl() {
+    local path="$1"
+    cat > "$path" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" > "$CURL_CALLS"
+output=""
+while (( $# )); do
+    if [[ "$1" == "--output" ]]; then
+        output="$2"
+        break
+    fi
+    shift
+done
+[[ -n "$output" ]] || exit 88
+if [[ "$CURL_MODE" == "success" ]]; then
+    cat > "$output" <<'SCRIPT'
+#!/usr/bin/env bash
+if [[ -n "${SETUP_ENVTEST_CALL:-}" ]]; then
+    printf '%s\n' "$@" > "$SETUP_ENVTEST_CALL"
+fi
+printf '%s\n' "$SETUP_ENVTEST_SOURCE"
+SCRIPT
+else
+    printf 'partial' > "$output"
+    exit 18
+fi
+EOF
+    chmod +x "$path"
+}
+
+run_setup_envtest_download_case() {
+    local mode="$1"
+    local case_dir="$TEMP_DIR/setup-download-$mode"
+    local destination="$case_dir/existing-setup-envtest"
+    local calls="$case_dir/curl-calls"
+    mkdir -p "$case_dir/bin"
+    printf 'sentinel' > "$destination"
+    cat > "$case_dir/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+exec "$@"
+EOF
+    chmod +x "$case_dir/bin/sudo"
+    if [[ "$mode" == "install-failure" ]]; then
+        cat > "$case_dir/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+destination=${!#}
+printf 'partial-install' > "$destination"
+exit 153
+EOF
+        chmod +x "$case_dir/bin/install"
+    fi
+    write_fake_curl "$case_dir/bin/curl"
+    grep -v '^main "\$@"$' "$TOOLCHAIN_SCRIPT" > "$case_dir/toolchain-library.sh"
+
+    if (
+        export SETUP_ENVTEST_BIN="$destination" CURL_CALLS="$calls"
+        [[ "$mode" == "failure" ]] && export CURL_MODE=failure || export CURL_MODE=success
+        export PATH="$case_dir/bin:$PATH"
+        # shellcheck source=/dev/null
+        source "$case_dir/toolchain-library.sh"
+        install-setup-envtest linux amd64
+    ); then
+        [[ "$mode" == "success" ]] || fail "$mode setup-envtest installation unexpectedly succeeded"
+    else
+        [[ "$mode" != "success" ]] || fail "setup-envtest download unexpectedly failed"
+    fi
+
+    mapfile -t curl_args < "$calls"
+    expected_prefix=(
+        --fail --silent --show-error --location --retry 3 --retry-delay 2 --retry-all-errors
+        --retry-max-time 180 --connect-timeout 20 --max-time 120
+        https://github.com/kubernetes-sigs/controller-runtime/releases/download/v0.22.3/setup-envtest-linux-amd64
+        --output
+    )
+    [[ "${#curl_args[@]}" == $((${#expected_prefix[@]} + 1)) ]] || fail "curl received an unexpected argument count"
+    for i in "${!expected_prefix[@]}"; do
+        [[ "${curl_args[$i]}" == "${expected_prefix[$i]}" ]] || fail "curl argument $i differs: ${curl_args[$i]}"
+    done
+    temp_download=${curl_args[$((${#curl_args[@]} - 1))]}
+    [[ "$temp_download" != "$destination" && ! -e "$temp_download" ]] || fail "temporary setup-envtest download was not cleaned"
+    if [[ "$mode" == "success" ]]; then
+        [[ -x "$destination" && "$(<"$destination")" != "sentinel" ]] || fail "successful setup-envtest download was not installed"
+    else
+        [[ "$(<"$destination")" == "sentinel" ]] || fail "$mode replaced the existing setup-envtest"
+    fi
+    [[ -z "$(find "$case_dir" -maxdepth 1 -name '.setup-envtest.*' -print -quit)" ]] || fail "$mode left a staged setup-envtest file"
+}
+
+run_setup_envtest_download_case success
+run_setup_envtest_download_case failure
+run_setup_envtest_download_case install-failure
+
+run_kubebuilder_125_path_case() {
+    local case_dir="$TEMP_DIR/kubebuilder-125"
+    local source_dir="$case_dir/source"
+    local target_dir="$case_dir/target dir"
+    mkdir -p "$case_dir/bin" "$source_dir" "$target_dir"
+    for binary in kube-apiserver kubectl etcd; do
+        printf '#!/usr/bin/env bash\nexit 0\n' > "$source_dir/$binary"
+        chmod +x "$source_dir/$binary"
+    done
+    cat > "$case_dir/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+exec "$@"
+EOF
+    cat > "$case_dir/bin/wget" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" == 3 && "$1" == "-P" ]] || exit 88
+name=${3##*/}
+printf '#!/usr/bin/env bash\nexit 0\n' > "$2/$name"
+EOF
+    chmod +x "$case_dir/bin/sudo" "$case_dir/bin/wget"
+    export SETUP_ENVTEST_SOURCE="$source_dir" SETUP_ENVTEST_CALL="$case_dir/setup-envtest-call"
+    export CURL_CALLS="$case_dir/curl-calls" CURL_MODE=success
+    write_fake_curl "$case_dir/bin/curl"
+    grep -v '^main "\$@"$' "$TOOLCHAIN_SCRIPT" > "$case_dir/toolchain-library.sh"
+    (
+        export KUBEBUILDER_ASSETS="$target_dir" K8S_VERSION="1.25.x"
+        export SETUP_ENVTEST_BIN="$case_dir/installed-setup-envtest"
+        export PATH="$case_dir/bin:$PATH"
+        # shellcheck source=/dev/null
+        source "$case_dir/toolchain-library.sh"
+        kubebuilder
+    ) >/dev/null
+    expected_arch=$(go env GOARCH)
+    expected_call=$'use\n-p\npath\n1.25.x\n'"--arch=$expected_arch"$'\n'"--bin-dir=$target_dir"
+    [[ "$(<"$SETUP_ENVTEST_CALL")" == "$expected_call" ]] || fail "1.25 setup-envtest arguments split the spaced path"
+    [[ -f "$target_dir/kube-apiserver" && -x "$target_dir/kube-apiserver" ]] || fail "1.25 kube-apiserver replacement failed with spaced path"
+    [[ -f "$target_dir/kubectl" && -x "$target_dir/kubectl" ]] || fail "1.25 kubectl replacement failed with spaced path"
+    [[ -L "$target_dir/etcd" ]] || fail "1.25 etcd setup was lost"
+}
+
+run_kubebuilder_125_path_case
