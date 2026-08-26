@@ -1009,6 +1009,20 @@ var _ = Describe("InstanceType Provider", func() {
 					Entry("Nil SKU", nil, int64(0), nil),
 				)
 			})
+			DescribeTable("should reserve one GiB of local storage for Trusted Launch",
+				func(trustedLaunch *v1beta1.TrustedLaunch, expected bool) {
+					testNodeClass := test.AKSNodeClass()
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1600)
+					testNodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: trustedLaunch}
+
+					Expect(instancetype.UseEphemeralDisk(fake.MakeSKU("Standard_D64s_v3"), testNodeClass)).To(Equal(expected))
+				},
+				Entry("without Trusted Launch", nil, true),
+				Entry("with vTPM", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
+				Entry("with Secure Boot", &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, false),
+				Entry("with vTPM and Secure Boot", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}, false),
+				Entry("with both features explicitly disabled", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, true),
+			)
 			Context("Placement", func() {
 				It("should prefer NVMe disk if supported for ephemeral", func() {
 					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1059,6 +1073,31 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(vm).NotTo(BeNil())
 					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
 					Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
+				})
+				It("should use managed disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+					nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1600)
+					nodeClass.Spec.Security = &v1beta1.Security{
+						TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+					}
+					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D64s_v3"},
+					})
+
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+					statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+					Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
+					Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(1600)))
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+					Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+					Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
 				})
 				It("should select managed disk if cache disk is too small but temp disk supports ephemeral and fits osDiskSizeGB to have parity with the AKS Nodepool API", func() {
 					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{

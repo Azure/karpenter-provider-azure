@@ -378,6 +378,32 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
 			})
 
+			It("should use managed disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1600)
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)},
+				}
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(1600)))
+				Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeManaged))
+				Expect(machine.Properties.Security.EnableSecureBoot).ToNot(BeNil())
+				Expect(*machine.Properties.Security.EnableSecureBoot).To(BeTrue())
+			})
+
 			// Ported from VM test: "should fail to provision if ephemeral disk ask for is too large"
 			It("should fail to provision if ephemeral disk ask for is too large", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
