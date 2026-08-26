@@ -56,7 +56,7 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelInstanceTypeStable,
 			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"Standard_B20ms"},
+			Values:   []string{"Standard_D4ds_v4"},
 		})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
