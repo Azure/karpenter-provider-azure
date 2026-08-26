@@ -576,8 +576,8 @@ func ephemeralOSDiskPlacementEligibility(sku *skewer.SKU, cacheBytes, resourceBy
 	resource = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementResourceDisk))
 	nvme = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementNvmeDisk))
 	if !cache && !resource && !nvme {
-		// Older SKUs may not advertise placement capability. Preserve the legacy
-		// cache/resource size fallback; NVMe always requires explicit support.
+		// Match AKS legacy inference when the capability is absent or contains no
+		// recognized placement. NVMe always requires explicit support.
 		return cacheBytes > 0, resourceBytes > 0, false
 	}
 	return cache, resource, nvme
