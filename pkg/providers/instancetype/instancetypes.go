@@ -571,6 +571,18 @@ type ephemeralOSDiskCandidate struct {
 	sizeBytes int64
 }
 
+func ephemeralOSDiskPlacementEligibility(sku *skewer.SKU, cacheBytes, resourceBytes int64) (cache, resource, nvme bool) {
+	cache = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementCacheDisk))
+	resource = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementResourceDisk))
+	nvme = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementNvmeDisk))
+	if !cache && !resource && !nvme {
+		// Older SKUs may not advertise placement capability. Preserve the legacy
+		// cache/resource size fallback; NVMe always requires explicit support.
+		return cacheBytes > 0, resourceBytes > 0, false
+	}
+	return cache, resource, nvme
+}
+
 func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
 	if sku == nil || !sku.IsEphemeralOSDiskSupported() {
 		return nil
@@ -583,15 +595,7 @@ func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
 	resourceBytes := max(resourceMiB, 0) * int64(units.MiB)
 	nvmeBytes := max(nvmeMiB, 0) * int64(units.MiB)
 
-	cacheSupported := sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementCacheDisk))
-	resourceSupported := sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementResourceDisk))
-	nvmeSupported := sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementNvmeDisk))
-	if !cacheSupported && !resourceSupported && !nvmeSupported {
-		// Older SKUs may not advertise placement capability. Preserve the legacy
-		// cache/resource size fallback; NVMe always requires explicit support.
-		cacheSupported = cacheBytes > 0
-		resourceSupported = resourceBytes > 0
-	}
+	cacheSupported, resourceSupported, nvmeSupported := ephemeralOSDiskPlacementEligibility(sku, cacheBytes, resourceBytes)
 
 	candidates := []ephemeralOSDiskCandidate{}
 	if cacheSupported && cacheBytes > 0 {
