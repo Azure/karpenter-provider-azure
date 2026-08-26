@@ -5,11 +5,11 @@ build:
     - image: controller
       ko:
         main: github.com/Azure/karpenter-provider-azure/cmd/controller
+        flags: ['-tags', 'ccp']
         dependencies:
           paths:
             - '**/*.go'
             - '**/*.gtpl'
-            #flags: ['-tags', 'ccp']
 manifests:
   helm:
     releases:
