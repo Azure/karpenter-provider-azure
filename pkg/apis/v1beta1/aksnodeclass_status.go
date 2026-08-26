@@ -21,7 +21,6 @@ import (
 
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -66,20 +65,6 @@ type NodeImage struct {
 	Requirements []corev1.NodeSelectorRequirement `json:"requirements"`
 }
 
-// RecentlyUsedVersion records a previously effective node image version and
-// the Kubernetes version it was paired with.
-type RecentlyUsedVersion struct {
-	// timestampUsed is when this image version was last effective.
-	// +optional
-	TimestampUsed metav1.Time `json:"timestampUsed,omitempty"`
-	// imageVersion is the node image version suffix.
-	// +optional
-	ImageVersion string `json:"imageVersion,omitempty"`
-	// kubernetesVersion is the Kubernetes version paired with the image version.
-	// +optional
-	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
-}
-
 // AKSNodeClassStatus contains the resolved state of the AKSNodeClass
 type AKSNodeClassStatus struct {
 	// images contains the current set of images available to use
@@ -91,15 +76,6 @@ type AKSNodeClassStatus struct {
 	// used for nodes provisioned for the NodeClass
 	// +optional
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
-	// controlPlaneKubernetesVersion is the latest observed control plane version.
-	// +optional
-	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
-	// latestImageVersion is the latest node image version resolved from the gallery.
-	// +optional
-	LatestImageVersion string `json:"latestImageVersion,omitempty"`
-	// recentlyUsedVersions contains previously effective node image versions.
-	// +optional
-	RecentlyUsedVersions []RecentlyUsedVersion `json:"recentlyUsedVersions,omitempty"`
 	// conditions contains signals for health and readiness
 	// +optional
 	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility
