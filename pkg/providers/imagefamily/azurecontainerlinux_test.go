@@ -21,6 +21,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	. "github.com/onsi/gomega"
 )
@@ -55,11 +56,15 @@ func TestAzureContainerLinux(t *testing.T) {
 
 	t.Run("scriptless bootstrap is unsupported", func(t *testing.T) {
 		_, err := family.ScriptlessCustomData(nil, nil, nil, nil, nil).Script()
-		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("requires an AKS Machine API provision mode")))
+		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("requires bootstrappingclient or an AKS Machine API provision mode")))
 	})
+}
 
-	t.Run("custom scripts bootstrap is unsupported", func(t *testing.T) {
-		_, _, err := family.CustomScriptsNodeBootstrapping(nil, nil, nil, nil, nil, "", "", nil, nil, nil, nil, nil, nil, nil).GetCustomDataAndCSE(t.Context())
-		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("requires an AKS Machine API provision mode")))
-	})
+func TestAzureContainerLinuxCustomScriptsNodeBootstrapping(t *testing.T) {
+	family := &imagefamily.AzureContainerLinux{Options: &template.StaticParameters{}}
+	bootstrapper := family.CustomScriptsNodeBootstrapping(nil, nil, nil, nil, nil, "aks-acl-gen2-tl", "Managed", nil, nil, nil, nil, nil, nil, nil)
+	provisionBootstrapper, ok := bootstrapper.(customscriptsbootstrap.ProvisionClientBootstrap)
+	g := NewWithT(t)
+	g.Expect(ok).To(BeTrue())
+	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUAzureContainerLinux))
 }

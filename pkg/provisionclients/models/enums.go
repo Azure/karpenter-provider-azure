@@ -25,12 +25,13 @@ const (
 )
 
 const (
-	OSSKUUnspecified   int32 = 0
-	OSSKUUbuntu        int32 = 1
-	OSSKUAzureLinux    int32 = 7
-	OSSKUWindows2019   int32 = 3
-	OSSKUWindows2022   int32 = 4
-	OSSKUWindowsAnnual int32 = 8
+	OSSKUUnspecified         int32 = 0
+	OSSKUUbuntu              int32 = 1
+	OSSKUAzureLinux          int32 = 7
+	OSSKUWindows2019         int32 = 3
+	OSSKUWindows2022         int32 = 4
+	OSSKUWindowsAnnual       int32 = 8
+	OSSKUAzureContainerLinux int32 = 16
 )
 
 const (

@@ -17,7 +17,6 @@ limitations under the License.
 package imagefamily
 
 import (
-	"context"
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
@@ -78,13 +77,7 @@ func azureContainerLinuxImage(imageDefinition, distro, architecture string) type
 type unsupportedScriptlessBootstrap struct{}
 
 func (unsupportedScriptlessBootstrap) Script() (string, error) {
-	return "", fmt.Errorf("AzureContainerLinux requires an AKS Machine API provision mode")
-}
-
-type unsupportedCustomScriptsBootstrap struct{}
-
-func (unsupportedCustomScriptsBootstrap) GetCustomDataAndCSE(context.Context) (string, string, error) {
-	return "", "", fmt.Errorf("AzureContainerLinux requires an AKS Machine API provision mode")
+	return "", fmt.Errorf("AzureContainerLinux requires bootstrappingclient or an AKS Machine API provision mode")
 }
 
 func (a AzureContainerLinux) ScriptlessCustomData(
@@ -98,20 +91,45 @@ func (a AzureContainerLinux) ScriptlessCustomData(
 }
 
 func (a AzureContainerLinux) CustomScriptsNodeBootstrapping(
-	_ *bootstrap.KubeletConfiguration,
-	_ []v1.Taint,
-	_ []v1.Taint,
-	_ map[string]string,
-	_ *cloudprovider.InstanceType,
-	_ string,
-	_ string,
-	_ types.NodeBootstrappingAPI,
-	_ *v1beta1.FIPSMode,
-	_ *v1beta1.LocalDNS,
-	_ *v1beta1.ArtifactStreaming,
-	_ *v1beta1.LinuxOSConfiguration,
-	_ *bool,
-	_ *bool,
+	kubeletConfig *bootstrap.KubeletConfiguration,
+	taints []v1.Taint,
+	startupTaints []v1.Taint,
+	labels map[string]string,
+	instanceType *cloudprovider.InstanceType,
+	imageDistro string,
+	storageProfile string,
+	nodeBootstrappingClient types.NodeBootstrappingAPI,
+	fipsMode *v1beta1.FIPSMode,
+	localDNS *v1beta1.LocalDNS,
+	artifactStreaming *v1beta1.ArtifactStreaming,
+	linuxOSConfig *v1beta1.LinuxOSConfiguration,
+	vtpmEnabled *bool,
+	secureBootEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
-	return unsupportedCustomScriptsBootstrap{}
+	return customscriptsbootstrap.ProvisionClientBootstrap{
+		ClusterName:                    a.Options.ClusterName,
+		KubeletConfig:                  kubeletConfig,
+		Taints:                         taints,
+		StartupTaints:                  startupTaints,
+		Labels:                         labels,
+		SubnetID:                       a.Options.SubnetID,
+		Arch:                           a.Options.Arch,
+		SubscriptionID:                 a.Options.SubscriptionID,
+		ResourceGroup:                  a.Options.ResourceGroup,
+		KubeletClientTLSBootstrapToken: a.Options.KubeletClientTLSBootstrapToken,
+		KubernetesVersion:              a.Options.KubernetesVersion,
+		ImageDistro:                    imageDistro,
+		InstanceType:                   instanceType,
+		StorageProfile:                 storageProfile,
+		ClusterResourceGroup:           a.Options.ClusterResourceGroup,
+		GPUDriverInstallationEnabled:   a.Options.GPUDriverInstallationEnabled,
+		NodeBootstrappingProvider:      nodeBootstrappingClient,
+		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureContainerLinux,
+		FIPSMode:                       fipsMode,
+		LocalDNSProfile:                localDNS,
+		ArtifactStreaming:              artifactStreaming,
+		LinuxOSConfig:                  linuxOSConfig,
+		VTPMEnabled:                    vtpmEnabled,
+		SecureBootEnabled:              secureBootEnabled,
+	}
 }
