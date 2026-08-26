@@ -561,44 +561,82 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesCache.Unlock()
 }
 
-func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
-	if sku == nil {
-		return 0, nil
-	}
+const (
+	ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
+	maxEphemeralOSDiskSizeGiB          = int64(2040)
+)
 
-	if !sku.IsEphemeralOSDiskSupported() {
-		return 0, nil // ephemeral OS disk is not supported by this SKU
-	}
-
-	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
-
-	// Check NVMe disk first (highest priority)
-	if maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku) {
-		return maxNVMeMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
-	}
-
-	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
-	if maxCacheDiskBytes > 0 {
-		return maxCacheDiskBytes / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
-	}
-
-	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
-	if maxResourceDiskMiB > 0 {
-		return maxResourceDiskMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
-	}
-
-	return 0, nil
+type ephemeralOSDiskCandidate struct {
+	placement armcompute.DiffDiskPlacement
+	sizeBytes int64
 }
 
-func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
-	const ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
-	const nvme = "NvmeDisk"
-	return sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, nvme)
+func ephemeralOSDiskPlacementEligibility(sku *skewer.SKU, cacheBytes, resourceBytes int64) (cache, resource, nvme bool) {
+	cache = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementCacheDisk))
+	resource = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementResourceDisk))
+	nvme = sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, string(armcompute.DiffDiskPlacementNvmeDisk))
+	if !cache && !resource && !nvme {
+		// Match AKS legacy inference when the capability is absent or contains no
+		// recognized placement. NVMe always requires explicit support.
+		return cacheBytes > 0, resourceBytes > 0, false
+	}
+	return cache, resource, nvme
+}
+
+func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
+	if sku == nil || !sku.IsEphemeralOSDiskSupported() {
+		return nil
+	}
+
+	cacheBytes, _ := sku.MaxCachedDiskBytes()
+	resourceMiB, _ := sku.MaxResourceVolumeMB() // MaxResourceVolumeMB is actually in MiB
+	nvmeMiB, _ := nvmeDiskSizeInMiB(sku)
+	cacheBytes = max(cacheBytes, 0)
+	resourceBytes := max(resourceMiB, 0) * int64(units.MiB)
+	nvmeBytes := max(nvmeMiB, 0) * int64(units.MiB)
+
+	cacheSupported, resourceSupported, nvmeSupported := ephemeralOSDiskPlacementEligibility(sku, cacheBytes, resourceBytes)
+
+	candidates := []ephemeralOSDiskCandidate{}
+	if cacheSupported && cacheBytes > 0 {
+		candidates = append(candidates, ephemeralOSDiskCandidate{placement: armcompute.DiffDiskPlacementCacheDisk, sizeBytes: cacheBytes})
+	}
+	if resourceSupported && resourceBytes > 0 {
+		candidates = append(candidates, ephemeralOSDiskCandidate{placement: armcompute.DiffDiskPlacementResourceDisk, sizeBytes: resourceBytes})
+	}
+	if nvmeSupported && nvmeBytes > 0 {
+		candidates = append(candidates, ephemeralOSDiskCandidate{placement: armcompute.DiffDiskPlacementNvmeDisk, sizeBytes: nvmeBytes})
+	}
+	return candidates
+}
+
+func FindMaxEphemeralSizeGiB(sku *skewer.SKU) int64 {
+	var maxBytes int64
+	for _, candidate := range ephemeralOSDiskCandidates(sku) {
+		maxBytes = max(maxBytes, candidate.sizeBytes)
+	}
+	return maxBytes / int64(units.GiB)
+}
+
+func FindEphemeralOSDiskPlacement(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) *armcompute.DiffDiskPlacement {
+	if nodeClass == nil || nodeClass.Spec.OSDiskSizeGB == nil {
+		return nil
+	}
+	requestedGiB := int64(*nodeClass.Spec.OSDiskSizeGB)
+	if requestedGiB > maxEphemeralOSDiskSizeGiB {
+		return nil
+	}
+	requestedBytes := requestedGiB * int64(units.GiB)
+	for _, candidate := range ephemeralOSDiskCandidates(sku) {
+		if requestedBytes <= candidate.sizeBytes {
+			return lo.ToPtr(candidate.placement)
+		}
+	}
+	return nil
 }
 
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
-	return int64(*nodeClass.Spec.OSDiskSizeGB) <= sizeGB // use ephemeral disk if it is large enough
+	return FindEphemeralOSDiskPlacement(sku, nodeClass) != nil
 }
 
 func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {

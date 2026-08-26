@@ -17,6 +17,8 @@ limitations under the License.
 package nodeclaim_test
 
 import (
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -49,6 +51,23 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		// We should be specifying os disk placement now
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
 		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
+	})
+	It("should select resource disk when cache is too small and resource disk fits", func() {
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"Standard_B20ms"},
+		})
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		vm := env.GetVM(pods[0].Spec.NodeName)
+
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 	})
 	It("should provision VM with SKU that does not support ephemeral OS disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
