@@ -189,7 +189,7 @@ install-setup-envtest() {
     local arch="$2"
     local download
     download=$(mktemp)
-    if ! sudo curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --retry-all-errors \
+    if ! curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --retry-all-errors \
         --retry-max-time 180 --connect-timeout 20 --max-time 120 \
         "https://github.com/kubernetes-sigs/controller-runtime/releases/download/v0.22.3/setup-envtest-${os}-${arch}" \
         --output "$download"; then
