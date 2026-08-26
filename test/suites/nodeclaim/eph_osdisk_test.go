@@ -69,6 +69,23 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
 		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
 	})
+	It("should select resource disk when cache is too small and resource disk fits", func() {
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"Standard_D4ds_v4"},
+		})
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		vm := env.GetVM(pods[0].Spec.NodeName)
+
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+	})
 	It("should use managed disk when Trusted Launch consumes exact-fit local storage", func() {
 		requireTrustedLaunchBoundaryInstanceType()
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)

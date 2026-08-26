@@ -58,6 +58,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/skewer"
+	"github.com/alecthomas/units"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -97,7 +98,7 @@ var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 
 var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
-func withEphemeralDiskCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
+func withSKUCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
 	clone := *sku
 	capabilities := append([]compute.ResourceSkuCapabilities(nil), (*sku.Capabilities)...)
 	for i := range capabilities {
@@ -979,55 +980,56 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
-			Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
-				// B20ms:
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 32212254720 -> 32.21225472 GB .. we should select this as the ephemeral disk size
-				// placement == CacheDisk
-				// MaxResourceVolumeMB == 163840 MiB -> 171.80 GB,
-				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
-				// and this is greater than 0, so we select 7559, placement == NvmeDisk
-				// Standard_D16plds_v5:
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 429496729600 -> 429.4967296, this is greater than zero, so we select this as the ephemeral disk size
-				// placement == CacheDisk and size == 429.4967296 GB
-				// MaxResourceVolumeMB == 614400 MiB
-				// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
-				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
-				// and this is greater than 0, so we select 7559, placement == NvmeDisk
-				// Standard_NC24ads_A100_v4:
-				// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
-				// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacements == NvmeDisk so we move to cache disk
-				// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
-				// MaxResourceVolumeMB == 65536 MiB
-				// Standard_D64s_v3:
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 1717986918400 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
-				// placement == CacheDisk and size == 1717 GB
-				// Standard_A0
-				// NvmeDiskSizeInMiB == 0
-				// CacheDiskBytes == 0, this is zero
-				// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk
-				DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
-					func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
-						sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
-						Expect(sizeGB).To(Equal(expectedSize))
-						Expect(placement).To(Equal(expectedPlacement))
-					}, Entry("Standard_B20ms", fake.MakeSKU("Standard_B20ms"), int64(32), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_D128ds_v6", fake.MakeSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
-					Entry("Standard_D16plds_v5", fake.MakeSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_D2as_v6", fake.MakeSKU("Standard_D2as_v6"), int64(0), nil), // does not support ephemeral
-					Entry("Standard_NC24ads_A100_v4", fake.MakeSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_D64s_v3", fake.MakeSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_A0", fake.MakeSKU("Standard_A0"), int64(0), nil),       // does not support ephemeral
-					Entry("Standard_D2_v2", fake.MakeSKU("Standard_D2_v2"), int64(0), nil), // does not support ephemeral
-					// TODO: codegen
-					// Entry("Standard_D2pls_v5", fake.MakeSKU("Standard_D2pls_v5"), int64(0), nil), // does not support ephemeral
-					// Entry("Standard_D2lds_v5", fake.MakeSKU("Standard_D2lds_v5"), int64(80), armcompute.DiffDiskPlacementResourceDisk),
-					Entry("Nil SKU", nil, int64(0), nil),
+			Context("FindMaxEphemeralSizeGiB", func() {
+				DescribeTable("should return the largest eligible raw ephemeral OS capacity in GiB",
+					func(sku *skewer.SKU, expectedSizeGiB int64) {
+						Expect(instancetype.FindMaxEphemeralSizeGiB(sku)).To(Equal(expectedSizeGiB))
+					},
+					Entry("Standard_B20ms", fake.MakeSKU("Standard_B20ms"), int64(160)),
+					Entry("Standard_D128ds_v6", fake.MakeSKU("Standard_D128ds_v6"), int64(7040)),
+					Entry("Standard_D16plds_v5", fake.MakeSKU("Standard_D16plds_v5"), int64(600)),
+					Entry("Standard_D2as_v6", fake.MakeSKU("Standard_D2as_v6"), int64(0)),
+					Entry("Standard_NC24ads_A100_v4", fake.MakeSKU("Standard_NC24ads_A100_v4"), int64(256)),
+					Entry("Standard_D64s_v3", fake.MakeSKU("Standard_D64s_v3"), int64(1600)),
+					Entry("Standard_A0", fake.MakeSKU("Standard_A0"), int64(0)),
+					Entry("Standard_D2_v2", fake.MakeSKU("Standard_D2_v2"), int64(0)),
+					Entry("nil SKU", nil, int64(0)),
 				)
+			})
+			DescribeTable("should enforce the global ephemeral OS disk size limit",
+				func(sizeGiB int32, expectEphemeral bool) {
+					testNodeClass := test.AKSNodeClass()
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(sizeGiB)
+					Expect(instancetype.UseEphemeralDisk(fake.MakeSKU("Standard_D128ds_v6"), testNodeClass)).To(Equal(expectEphemeral))
+				},
+				Entry("2040 GiB", int32(2040), true),
+				Entry("2041 GiB", int32(2041), false),
+			)
+			DescribeTable("should select only eligible placements in AKS order",
+				func(placements string, expected armcompute.DiffDiskPlacement) {
+					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", placements)
+					sku = withSKUCapability(sku, "NvmeDiskSizeInMiB", strconv.FormatInt(2048*int64(units.GiB)/int64(units.MiB), 10))
+					testNodeClass := test.AKSNodeClass()
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+
+					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
+					Expect(placement).ToNot(BeNil())
+					Expect(*placement).To(Equal(expected))
+				},
+				Entry("cache only", "CacheDisk", armcompute.DiffDiskPlacementCacheDisk),
+				Entry("resource only", "ResourceDisk", armcompute.DiffDiskPlacementResourceDisk),
+				Entry("NVMe only", "NvmeDisk", armcompute.DiffDiskPlacementNvmeDisk),
+				Entry("all placements prefer cache", "CacheDisk,ResourceDisk,NvmeDisk", armcompute.DiffDiskPlacementCacheDisk),
+				Entry("unknown-only capability uses legacy cache/resource fallback", "FutureDisk", armcompute.DiffDiskPlacementCacheDisk),
+			)
+			It("should calculate raw maximum from eligible placements only", func() {
+				sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "ResourceDisk")
+				Expect(instancetype.FindMaxEphemeralSizeGiB(sku)).To(Equal(int64(512)))
+			})
+			It("should ignore a malformed eligible placement capacity", func() {
+				sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "CacheDisk")
+				sku = withSKUCapability(sku, "CachedDiskBytes", "invalid")
+				Expect(instancetype.FindMaxEphemeralSizeGiB(sku)).To(BeZero())
 			})
 			DescribeTable("should reserve exactly one GiB of local storage for Trusted Launch",
 				func(sku *skewer.SKU, sizeGiB int32, trustedLaunch *v1beta1.TrustedLaunch, expected bool) {
@@ -1042,10 +1044,10 @@ var _ = Describe("InstanceType Provider", func() {
 				Entry("cache one-GiB headroom with Secure Boot", fake.MakeSKU("Standard_D64s_v3"), int32(1599), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
 				Entry("cache one-GiB headroom with both features", fake.MakeSKU("Standard_D64s_v3"), int32(1599), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}, true),
 				Entry("cache exact fit with both features disabled", fake.MakeSKU("Standard_D64s_v3"), int32(1600), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, true),
-				Entry("resource exact fit with vTPM", withEphemeralDiskCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(512), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
-				Entry("resource one-GiB headroom with vTPM", withEphemeralDiskCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(511), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, true),
-				Entry("NVMe exact fit with Secure Boot", withEphemeralDiskCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(128), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, false),
-				Entry("NVMe one-GiB headroom with Secure Boot", withEphemeralDiskCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(127), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
+				Entry("resource exact fit with vTPM", withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(512), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, false),
+				Entry("resource one-GiB headroom with vTPM", withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "CachedDiskBytes", "0"), int32(511), &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, true),
+				Entry("NVMe exact fit with Secure Boot", withSKUCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(128), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, false),
+				Entry("NVMe one-GiB headroom with Secure Boot", withSKUCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(127), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
 			)
 			Context("Placement", func() {
 				It("should prefer NVMe disk if supported for ephemeral", func() {
@@ -1148,7 +1150,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
 					Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
 				})
-				It("should select managed disk if cache disk is too small but temp disk supports ephemeral and fits osDiskSizeGB to have parity with the AKS Nodepool API", func() {
+				It("should select resource disk when cache is too small and resource disk fits", func() {
 					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
@@ -1161,7 +1163,8 @@ var _ = Describe("InstanceType Provider", func() {
 
 					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 					Expect(vm).NotTo(BeNil())
-					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+					Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 				})
 			})
 			It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
@@ -2957,7 +2960,7 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1beta1.LabelSKUFamily, Label: v1beta1.LabelSKUFamily, ValueFunc: func() string { return "N" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUSeries, Label: v1beta1.LabelSKUSeries, ValueFunc: func() string { return "NCads_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUVersion, Label: v1beta1.LabelSKUVersion, ValueFunc: func() string { return "4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "429" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "256" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUAcceleratedNetworking, Label: v1beta1.LabelSKUAcceleratedNetworking, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUStoragePremiumCapable, Label: v1beta1.LabelSKUStoragePremiumCapable, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelUltraSSD, Label: v1beta1.LabelUltraSSD, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},

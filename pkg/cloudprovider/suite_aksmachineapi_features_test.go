@@ -378,6 +378,25 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
 			})
 
+			It("should use ephemeral disk when resource disk fits the default size", func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_B20ms"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				machine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(128)))
+				Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeEphemeral))
+			})
+
 			It("should use managed disk when Trusted Launch consumes an exact-fit cache boundary", func() {
 				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](1600)
 				nodeClass.Spec.Security = &v1beta1.Security{
