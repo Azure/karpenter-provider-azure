@@ -164,10 +164,10 @@ func TestEvictionThresholdEphemeralStorage(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			g := NewWithT(t)
+			caseG := NewWithT(t)
 			threshold := EvictionThreshold(32*1024, resource.MustParse(test.capacity), false)
 			storage := threshold[corev1.ResourceEphemeralStorage]
-			g.Expect(storage.Value()).To(Equal(test.expectedBytes))
+			caseG.Expect(storage.Value()).To(Equal(test.expectedBytes))
 		})
 	}
 
