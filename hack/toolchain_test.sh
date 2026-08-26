@@ -466,6 +466,9 @@ EOF
 run_setup_envtest_download_case success
 run_setup_envtest_download_case failure
 run_setup_envtest_download_case install-failure
+if grep -Fq 'sudo curl' "$TOOLCHAIN_SCRIPT"; then
+    fail "setup-envtest download must run as the user that owns the temporary file"
+fi
 
 run_kubebuilder_125_path_case() {
     local case_dir="$TEMP_DIR/kubebuilder-125"
