@@ -49,6 +49,7 @@ const (
 	NodeFSInodesFree                     = "nodefs.inodesFree"
 	PIDAvailable                         = "pid.available"
 	HardEvictionNodeFSAvailable          = "10%"
+	hardEvictionNodeFSAvailablePercent   = int64(10)
 	HardEvictionNodeFSInodesFree         = "5%"
 	HardEvictionPIDAvailable             = "2000"
 	SoftEvictionNodeFSAvailable          = "12%"
