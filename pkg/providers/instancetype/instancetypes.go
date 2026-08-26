@@ -27,7 +27,6 @@ import (
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 
-	"github.com/blang/semver/v4"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -386,10 +385,6 @@ func (p *DefaultProvider) isInstanceTypeSupportedByAzureContainerLinux(sku *skew
 		return true
 	}
 
-	if !useAzureContainerLinux(params.KubernetesVersion) {
-		return false
-	}
-
 	if !supportsTrustedLaunch(sku) {
 		return false
 	}
@@ -443,14 +438,6 @@ func isCobaltV6SKU(skuName string) bool {
 func hasNVMeDisk(sku *skewer.SKU) bool {
 	nvmeMiB, err := nvmeDiskSizeInMiB(sku)
 	return err == nil && nvmeMiB > 0
-}
-
-func useAzureContainerLinux(kubernetesVersion string) bool {
-	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
-	if err != nil {
-		return false
-	}
-	return version.GE(semver.Version{Major: 1, Minor: 34})
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {

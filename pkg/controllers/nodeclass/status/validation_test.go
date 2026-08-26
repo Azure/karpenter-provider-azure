@@ -107,6 +107,35 @@ var _ = Describe("Validation Reconciler", func() {
 		)
 	})
 
+	Context("Kubernetes version compatibility", func() {
+		DescribeTable("validates AzureContainerLinux against cluster Kubernetes version",
+			func(imageFamily, k8sVersion string, valid bool) {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(k8sVersion)
+				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if valid {
+					Expect(condition.IsTrue()).To(BeTrue())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal(status.IncompatibleKubernetesVersion))
+					Expect(condition.Message).To(ContainSubstring("requires Kubernetes 1.34"))
+					Expect(result).To(Equal(reconcile.Result{}))
+				}
+			},
+			Entry("ACL on 1.33", v1beta1.AzureContainerLinuxImageFamily, "1.33.5", false),
+			Entry("ACL on 1.30", v1beta1.AzureContainerLinuxImageFamily, "1.30.0", false),
+			Entry("ACL on 1.34", v1beta1.AzureContainerLinuxImageFamily, "1.34.0", true),
+			Entry("ACL on 1.35", v1beta1.AzureContainerLinuxImageFamily, "1.35.2", true),
+			Entry("Ubuntu on 1.30", v1beta1.UbuntuImageFamily, "1.30.0", true),
+			Entry("Azure Linux on 1.30", v1beta1.AzureLinuxImageFamily, "1.30.0", true),
+		)
+	})
+
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.
 	// The ValidationReconciler is a skeleton for future runtime validations that cannot be
 	// expressed in the CRD schema (e.g., external API calls, cross-resource checks, etc.).

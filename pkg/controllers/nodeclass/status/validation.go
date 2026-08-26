@@ -19,6 +19,7 @@ package status
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -27,14 +28,18 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
-	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
-	IncompatibleProvisionMode    = "IncompatibleProvisionMode"
+	DiskEncryptionSetRBACMissing  = "DiskEncryptionSetRBACMissing"
+	IncompatibleProvisionMode     = "IncompatibleProvisionMode"
+	IncompatibleKubernetesVersion = "IncompatibleKubernetesVersion"
+	// AzureContainerLinuxMinKubernetesMinor is the minimum Kubernetes minor version supporting AzureContainerLinux.
+	AzureContainerLinuxMinKubernetesMinor uint64 = 34
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -76,6 +81,22 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 			"AzureContainerLinux requires bootstrappingclient or an AKS Machine API provision mode",
 		)
 		return reconcile.Result{}, nil
+	}
+
+	// ACL requires Kubernetes 1.34+ (per AKS ACL support matrix).
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily {
+		k8sVersion, err := nodeClass.GetKubernetesVersion()
+		if err == nil && k8sVersion != "" {
+			parsed, parseErr := semver.ParseTolerant(strings.TrimPrefix(k8sVersion, "v"))
+			if parseErr == nil && parsed.LT(semver.Version{Major: 1, Minor: AzureContainerLinuxMinKubernetesMinor}) {
+				nodeClass.StatusConditions().SetFalse(
+					v1beta1.ConditionTypeValidationSucceeded,
+					IncompatibleKubernetesVersion,
+					fmt.Sprintf("AzureContainerLinux requires Kubernetes 1.%d or later, cluster is at %s", AzureContainerLinuxMinKubernetesMinor, k8sVersion),
+				)
+				return reconcile.Result{}, nil
+			}
+		}
 	}
 
 	// Check BYOK RBAC if DES ID is configured
