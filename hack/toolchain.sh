@@ -2,7 +2,8 @@
 set -euo pipefail
 
 K8S_VERSION="${K8S_VERSION:="1.29.x"}"
-KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
+KUBEBUILDER_ASSETS="${KUBEBUILDER_ASSETS:=/usr/local/kubebuilder/bin}"
+SETUP_ENVTEST_BIN="${SETUP_ENVTEST_BIN:=/usr/local/bin/setup-envtest}"
 
 # Default SKIP_INSTALLED to false if not set
 SKIP_INSTALLED="${SKIP_INSTALLED:=false}"
@@ -118,24 +119,118 @@ tools() {
     fi
 }
 
+link-kubebuilder-assets() {
+    local arch="$1"
+    local asset_dir
+    if ! asset_dir=$("$SETUP_ENVTEST_BIN" use -p path "$K8S_VERSION" --arch="$arch" --bin-dir="$KUBEBUILDER_ASSETS"); then
+        echo "setup-envtest failed to resolve Kubernetes $K8S_VERSION assets" >&2
+        return 1
+    fi
+    if [[ -z "$asset_dir" || "$asset_dir" != /* || "$asset_dir" == "/" || ! -d "$asset_dir" ]]; then
+        echo "setup-envtest returned an invalid asset directory: ${asset_dir:-<empty>}" >&2
+        return 1
+    fi
+    if [[ ! -d "$KUBEBUILDER_ASSETS" ]]; then
+        echo "kubebuilder asset destination does not exist: $KUBEBUILDER_ASSETS" >&2
+        return 1
+    fi
+
+    local -a required_binaries=(kube-apiserver kubectl etcd)
+    local -a destinations=()
+    local -a old_targets=()
+    local -a old_exists=()
+    local binary source destination
+    for binary in "${required_binaries[@]}"; do
+        source="$asset_dir/$binary"
+        destination="$KUBEBUILDER_ASSETS/$binary"
+        if [[ ! -f "$source" || ! -x "$source" ]]; then
+            echo "setup-envtest asset is missing regular executable $binary: $source" >&2
+            return 1
+        fi
+        if [[ -e "$destination" && ! -L "$destination" ]]; then
+            echo "refusing to replace non-symlink kubebuilder asset: $destination" >&2
+            return 1
+        fi
+        if [[ -L "$destination" && -d "$destination" ]]; then
+            echo "refusing to replace symlink to directory: $destination" >&2
+            return 1
+        fi
+        destinations+=("$destination")
+        if [[ -L "$destination" ]]; then
+            old_targets+=("$(readlink "$destination")")
+            old_exists+=(1)
+        else
+            old_targets+=("")
+            old_exists+=(0)
+        fi
+    done
+
+    local i j
+    for i in "${!required_binaries[@]}"; do
+        source="$asset_dir/${required_binaries[$i]}"
+        destination="${destinations[$i]}"
+        if ! ln -sfnT -- "$source" "$destination"; then
+            echo "failed to link kubebuilder asset: $destination" >&2
+            for ((j = 0; j <= i; j++)); do
+                if [[ "${old_exists[$j]}" == 1 ]]; then
+                    ln -sfnT -- "${old_targets[$j]}" "${destinations[$j]}" || \
+                        echo "failed to roll back kubebuilder asset: ${destinations[$j]}" >&2
+                else
+                    rm -f -- "${destinations[$j]}"
+                fi
+            done
+            return 1
+        fi
+    done
+}
+
+install-setup-envtest() {
+    local os="$1"
+    local arch="$2"
+    local download
+    download=$(mktemp)
+    if ! curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --retry-all-errors \
+        --retry-max-time 180 --connect-timeout 20 --max-time 120 \
+        "https://github.com/kubernetes-sigs/controller-runtime/releases/download/v0.22.3/setup-envtest-${os}-${arch}" \
+        --output "$download"; then
+        rm -f -- "$download"
+        return 1
+    fi
+    local install_dir staged
+    install_dir=$(dirname "$SETUP_ENVTEST_BIN")
+    if ! staged=$(sudo mktemp "$install_dir/.setup-envtest.XXXXXX"); then
+        rm -f -- "$download"
+        return 1
+    fi
+    if ! sudo install -m 0755 "$download" "$staged"; then
+        rm -f -- "$download"
+        sudo rm -f -- "$staged"
+        return 1
+    fi
+    if ! sudo mv -fT -- "$staged" "$SETUP_ENVTEST_BIN"; then
+        rm -f -- "$download"
+        sudo rm -f -- "$staged"
+        return 1
+    fi
+    rm -f -- "$download"
+}
+
 kubebuilder() {
     echo "[INF] Setting up kubebuilder binaries for Kubernetes ${K8S_VERSION}"
     sudo mkdir -p "${KUBEBUILDER_ASSETS}"
     sudo chown "${USER}" "${KUBEBUILDER_ASSETS}"
     arch=$(go env GOARCH)
     os=$(go env GOOS)
-    sudo curl -sL "https://github.com/kubernetes-sigs/controller-runtime/releases/download/v0.22.3/setup-envtest-${os}-${arch}" --output /usr/local/bin/setup-envtest
-    sudo chmod +x /usr/local/bin/setup-envtest
-
-    ln -sf "$(setup-envtest use -p path "${K8S_VERSION}" --arch="${arch}" --bin-dir="${KUBEBUILDER_ASSETS}")"/* "${KUBEBUILDER_ASSETS}"
-    find "$KUBEBUILDER_ASSETS"
+    install-setup-envtest "$os" "$arch"
+    link-kubebuilder-assets "$arch"
+    find "$KUBEBUILDER_ASSETS" -maxdepth 2
 
     # Install latest binaries for 1.25.x (contains CEL fix)
     if [[ "${K8S_VERSION}" = "1.25.x" ]] && [[ "$OSTYPE" == "linux"* ]]; then
         for binary in 'kube-apiserver' 'kubectl'; do
-            rm $KUBEBUILDER_ASSETS/$binary
-            wget -P $KUBEBUILDER_ASSETS https://dl.k8s.io/v1.25.16/bin/linux/"${arch}"/${binary}
-            chmod +x $KUBEBUILDER_ASSETS/$binary
+            rm -- "$KUBEBUILDER_ASSETS/$binary"
+            wget -P "$KUBEBUILDER_ASSETS" "https://dl.k8s.io/v1.25.16/bin/linux/${arch}/${binary}"
+            chmod +x "$KUBEBUILDER_ASSETS/$binary"
         done
     fi
 }
