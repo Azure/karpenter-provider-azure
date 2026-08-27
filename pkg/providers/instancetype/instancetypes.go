@@ -600,21 +600,32 @@ func (p OSDiskProfile) IsEphemeral() bool {
 	return p.Placement != nil
 }
 
-// ResolveOSDiskProfileFromSKU resolves the OS disk size and type for the given SKU: an explicit
-// requestedOSDiskSizeGB is used as-is (ephemeral when it fits); nil auto-sizes to an ephemeral disk at
-// the SKU-supported size, or a vCPU-based managed default below the ephemeral threshold.
+// ResolveOSDiskProfileFromSKU resolves the usable OS disk size and type for the given SKU.
+// A requested OS disk size is always honored.
 func ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32) OSDiskProfile {
 	skuMaxEphemeralOSDiskSizeGB, skuDefaultPlacement := FindMaxEphemeralSizeGBAndPlacement(sku)
 	skuMaxEphemeralOSDiskSizeGB = min(skuMaxEphemeralOSDiskSizeGB, maxEphemeralOSDiskSizeGB)
+
 	if requestedOSDiskSizeGB != nil {
+		// Use ephemeral storage when the requested size fits; otherwise use a managed disk.
 		if skuMaxEphemeralOSDiskSizeGB > 0 && int64(*requestedOSDiskSizeGB) <= skuMaxEphemeralOSDiskSizeGB {
-			return OSDiskProfile{SizeGB: *requestedOSDiskSizeGB, Placement: skuDefaultPlacement}
+			return OSDiskProfile{
+				SizeGB:    *requestedOSDiskSizeGB,
+				Placement: skuDefaultPlacement,
+			}
 		}
 		return OSDiskProfile{SizeGB: *requestedOSDiskSizeGB}
 	}
+
+	// With no requested size, prefer the SKU-supported ephemeral size above AKS's threshold.
 	if skuMaxEphemeralOSDiskSizeGB >= minEphemeralOSDiskSizeGB {
-		return OSDiskProfile{SizeGB: int32(skuMaxEphemeralOSDiskSizeGB), Placement: skuDefaultPlacement} //nolint:gosec // G115: value bounded to [128,2040], safe int32 conversion
+		return OSDiskProfile{
+			SizeGB:    int32(skuMaxEphemeralOSDiskSizeGB), //nolint:gosec // G115: value bounded to [128,2040], safe int32 conversion
+			Placement: skuDefaultPlacement,
+		}
 	}
+
+	// Otherwise use AKS's vCPU-based managed disk default.
 	return OSDiskProfile{SizeGB: defaultManagedOSDiskSizeGB(sku)}
 }
 
