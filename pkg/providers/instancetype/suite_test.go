@@ -995,6 +995,49 @@ var _ = Describe("InstanceType Provider", func() {
 					Entry("Standard_D2_v2", fake.MakeSKU("Standard_D2_v2"), int64(0)),
 					Entry("nil SKU", nil, int64(0)),
 				)
+				It("should preserve the existing public label while using GiB for internal capacity", func() {
+					Expect(instancetype.FindMaxEphemeralSizeGiB(fake.MakeSKU("Standard_D2s_v3"))).To(Equal(int64(50)))
+
+					instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					var instanceType *corecloudprovider.InstanceType
+					for _, candidate := range instanceTypes {
+						if candidate.Name == "Standard_D2s_v3" {
+							instanceType = candidate
+							break
+						}
+					}
+					Expect(instanceType).ToNot(BeNil())
+					Expect(instanceType.Requirements.Get(v1beta1.LabelSKUStorageEphemeralOSMaxSize).Values()).To(ConsistOf("53"))
+				})
+				DescribeTable("should preserve historical public label size and placement semantics",
+					func(skuName string, expectedSizeGB int64, expectedPlacement armcompute.DiffDiskPlacement) {
+						sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(fake.MakeSKU(skuName))
+						Expect(sizeGB).To(Equal(expectedSizeGB))
+						Expect(placement).ToNot(BeNil())
+						Expect(*placement).To(Equal(expectedPlacement))
+					},
+					Entry("D2s v3 decimal cache capacity", "Standard_D2s_v3", int64(53), armcompute.DiffDiskPlacementCacheDisk),
+					Entry("B20ms keeps cache priority over larger resource disk", "Standard_B20ms", int64(32), armcompute.DiffDiskPlacementCacheDisk),
+					Entry("D16plds v5 keeps cache priority over larger resource disk", "Standard_D16plds_v5", int64(429), armcompute.DiffDiskPlacementCacheDisk),
+					Entry("NC24ads A100 v4 decimal cache capacity", "Standard_NC24ads_A100_v4", int64(274), armcompute.DiffDiskPlacementCacheDisk),
+				)
+				DescribeTable("should keep fit boundaries independent from legacy label values",
+					func(skuName string, maxSizeGiB int32, expectedPlacement armcompute.DiffDiskPlacement) {
+						testNodeClass := test.AKSNodeClass()
+						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(maxSizeGiB)
+						placement := instancetype.FindEphemeralOSDiskPlacement(fake.MakeSKU(skuName), testNodeClass)
+						Expect(placement).ToNot(BeNil())
+						Expect(*placement).To(Equal(expectedPlacement))
+
+						testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr(maxSizeGiB + 1)
+						Expect(instancetype.FindEphemeralOSDiskPlacement(fake.MakeSKU(skuName), testNodeClass)).To(BeNil())
+					},
+					Entry("D2s v3 fits 50 GiB but not 51 GiB", "Standard_D2s_v3", int32(50), armcompute.DiffDiskPlacementCacheDisk),
+					Entry("B20ms fits 160 GiB but not 161 GiB", "Standard_B20ms", int32(160), armcompute.DiffDiskPlacementResourceDisk),
+					Entry("D16plds v5 fits 600 GiB but not 601 GiB", "Standard_D16plds_v5", int32(600), armcompute.DiffDiskPlacementResourceDisk),
+					Entry("NC24ads A100 v4 fits 256 GiB but not 257 GiB", "Standard_NC24ads_A100_v4", int32(256), armcompute.DiffDiskPlacementCacheDisk),
+				)
 			})
 			DescribeTable("should enforce the global ephemeral OS disk size limit",
 				func(sizeGiB int32, expectEphemeral bool) {
@@ -2977,7 +3020,7 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1beta1.LabelSKUFamily, Label: v1beta1.LabelSKUFamily, ValueFunc: func() string { return "N" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUSeries, Label: v1beta1.LabelSKUSeries, ValueFunc: func() string { return "NCads_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUVersion, Label: v1beta1.LabelSKUVersion, ValueFunc: func() string { return "4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-				{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "256" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "429" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUAcceleratedNetworking, Label: v1beta1.LabelSKUAcceleratedNetworking, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelSKUStoragePremiumCapable, Label: v1beta1.LabelSKUStoragePremiumCapable, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.LabelUltraSSD, Label: v1beta1.LabelUltraSSD, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
