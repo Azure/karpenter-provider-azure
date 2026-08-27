@@ -22,11 +22,41 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 var _ = Describe("Ephemeral OS Disk", func() {
+	It("should auto-size an ephemeral OS disk when osDiskSizeGB is unset", func() {
+		Expect(nodeClass.Spec.OSDiskSizeGB).To(BeNil())
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"Standard_D64s_v3"},
+		})
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+		env.ExpectCreatedNodeCount("==", 1)
+
+		vm := env.GetVM(pods[0].Spec.NodeName)
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
+
+		const expectedDiskSizeGB int32 = 1600
+		Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiskSizeGB)).To(Equal(expectedDiskSizeGB))
+
+		advertised := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
+		Expect(advertised.Cmp(resource.MustParse("1600Gi"))).To(Equal(0))
+
+		actual := env.GetNode(pods[0].Spec.NodeName).Status.Capacity[corev1.ResourceEphemeralStorage]
+		Expect(actual.Cmp(resource.MustParse("128Gi"))).To(BeNumerically(">", 0))
+	})
+
 	It("should use a node with an ephemeral os disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,

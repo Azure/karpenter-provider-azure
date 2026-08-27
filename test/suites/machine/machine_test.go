@@ -116,45 +116,6 @@ var _ = Describe("Machine Tests", func() {
 		}))
 	})
 
-	It("should auto-size an ephemeral OS disk when osDiskSizeGB is unset", func() {
-		// With osDiskSizeGB unset, Karpenter resolves an ephemeral OS disk sized to the SKU and
-		// sends that resolved size explicitly to the AKS machine API (rather than leaving it for
-		// the API to default), so scheduling and actual provisioning stay consistent. Standard_D64s_v3
-		// has a large cache disk that supports an ephemeral OS disk well above the 128 GiB auto-sizing
-		// threshold.
-		Expect(nodeClass.Spec.OSDiskSizeGB).To(BeNil())
-		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      corev1.LabelInstanceTypeStable,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D64s_v3"},
-		})
-
-		env.ExpectCreated(nodeClass, nodePool, dep)
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
-		machine := env.EventuallyExpectCreatedMachineCount("==", 1)[0]
-		env.EventuallyExpectHealthyPodCount(selector, int(numPods))
-
-		// Karpenter auto-selects an ephemeral OS disk for this SKU and sends the resolved size
-		// explicitly, rather than leaving it nil for the AKS machine API to default.
-		Expect(machine.Properties.OperatingSystem).ToNot(BeNil())
-		Expect(machine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
-		Expect(*machine.Properties.OperatingSystem.OSDiskType).To(Equal(containerservice.OSDiskTypeEphemeral))
-		Expect(machine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
-		const expectedDiskSizeGB int32 = 1600
-		Expect(*machine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(expectedDiskSizeGB))
-
-		// The advertised ephemeral-storage capacity matches the resolved OS disk size.
-		advertised := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
-		expectedAdvertised := resource.MustParse(fmt.Sprintf("%dGi", expectedDiskSizeGB))
-		Expect(advertised.Cmp(expectedAdvertised)).To(Equal(0))
-
-		// Kubelet reports filesystem capacity, which may be below the nominal disk size.
-		// Require it to exceed the former 128 GiB default.
-		actual := env.GetNode(node.Name).Status.Capacity[corev1.ResourceEphemeralStorage]
-		Expect(actual.Cmp(resource.MustParse("128Gi"))).To(BeNumerically(">", 0))
-	})
-
 	// NOTE: ClusterTests modify the actual cluster itself, which means that performing tests after a cluster test
 	// might not have a clean environment, and might produce unexpected results. Ordering of cluster tests is important.
 	// The cluster modification is safe in CI as each test runs in its own cluster.
