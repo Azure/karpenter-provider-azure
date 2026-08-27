@@ -223,9 +223,9 @@ func computeRequirements(
 }
 
 func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
-	sizeGiB := FindMaxEphemeralSizeGiB(sku)
-	if sizeGiB > 0 {
-		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(sizeGiB))
+	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+	if sizeGB > 0 {
+		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(sizeGB))
 	}
 }
 
