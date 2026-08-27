@@ -56,7 +56,9 @@ import (
 const (
 	InstanceTypesCacheTTL = 23 * time.Hour
 
-	// maxEphemeralOSDiskSizeGB is the maximum size (in GB) Azure supports for ephemeral OS disks.
+	// AKS accepts osDiskSizeGB values up to 2048, while Azure Compute limits ephemeral
+	// OS disks to 2040 GiB. Use the Compute limit for effective provisioning capacity.
+	// https://learn.microsoft.com/rest/api/aks/agent-pools/create-or-update
 	// https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks
 	maxEphemeralOSDiskSizeGB = 2040
 	// minEphemeralOSDiskSizeGB is AKS's threshold for auto-selecting an ephemeral OS disk;
