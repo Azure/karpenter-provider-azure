@@ -50,6 +50,35 @@ func (c *recordingCredential) GetToken(_ context.Context, options policy.TokenRe
 	return azcore.AccessToken{Token: "token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
+func TestValidateRPIngressRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		host    string
+		wantErr bool
+	}{
+		{name: "exact HTTPS origin", url: "https://" + rpIngressHost + "/resource"},
+		{name: "explicit HTTPS port", url: "https://" + rpIngressHost + ":443/resource"},
+		{name: "plaintext downgrade", url: "http://" + rpIngressHost + "/resource", wantErr: true},
+		{name: "alternate logical port", url: "https://" + rpIngressHost + ":444/resource", wantErr: true},
+		{name: "off-origin URL", url: "https://management.azure.com/resource", wantErr: true},
+		{name: "overridden Host header", url: "https://" + rpIngressHost + "/resource", host: "management.azure.com", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodGet, tt.url, nil)
+			if err != nil {
+				t.Fatalf("create request: %v", err)
+			}
+			request.Host = tt.host
+			err = validateRPIngressRequest(request, rpIngressHost)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validation error = %v, wantErr %t", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestContainerServiceClientOptions(t *testing.T) {
 	const rpHost = "rp.e2e.ig.e2e-aks.azure.com"
 
@@ -181,15 +210,33 @@ func TestContainerServiceClientOptions(t *testing.T) {
 		if !ok {
 			t.Fatalf("transport client type = %T, want *http.Client", options.Transport)
 		}
-		transport, ok := transportClient.Transport.(*http.Transport)
+		originTransport, ok := transportClient.Transport.(*rpIngressTransport)
 		if !ok {
-			t.Fatalf("transport type = %T, want *http.Transport", transportClient.Transport)
+			t.Fatalf("transport type = %T, want *rpIngressTransport", transportClient.Transport)
+		}
+		transport, ok := originTransport.base.(*http.Transport)
+		if !ok {
+			t.Fatalf("base transport type = %T, want *http.Transport", originTransport.base)
 		}
 		if transport.Proxy != nil {
 			t.Fatal("RP ingress transport inherited an ambient proxy")
 		}
 		if _, err := transport.DialContext(context.Background(), "tcp", "management.azure.com:443"); err == nil || !strings.Contains(err.Error(), "refusing off-origin RP ingress dial") {
 			t.Fatalf("off-origin dial error = %v, want fail-closed error", err)
+		}
+		connection, err := transport.DialContext(context.Background(), "tcp", rpHost+":444")
+		if connection != nil {
+			_ = connection.Close()
+		}
+		if err == nil || !strings.Contains(err.Error(), "refusing off-origin RP ingress dial") {
+			t.Fatalf("alternate-port dial error = %v, want fail-closed error", err)
+		}
+		redirectRequest, err := http.NewRequest(http.MethodGet, "http://"+rpHost+"/redirect", nil)
+		if err != nil {
+			t.Fatalf("create redirect request: %v", err)
+		}
+		if transportClient.CheckRedirect == nil || transportClient.CheckRedirect(redirectRequest, nil) == nil {
+			t.Fatal("plaintext redirect was not rejected")
 		}
 		if got, want := options.Cloud.Services[cloud.ResourceManager].Endpoint, "https://"+rpHost; got != want {
 			t.Fatalf("logical endpoint = %q, want %q", got, want)
