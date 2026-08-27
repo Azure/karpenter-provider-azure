@@ -164,14 +164,18 @@ func NewEnvironment(t *testing.T) *Environment {
 			Cloud: azureEnv.CloudConfig,
 		},
 	}
+	containerServiceOptions, err := containerServiceClientOptions(azureEnv.CloudConfig)
+	if err != nil {
+		t.Fatalf("build ContainerService client options: %v", err)
+	}
 	byokRetryOptions := azureEnv.ClientOptionsForRBACPropagation()
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, clientOptions))
-	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, clientOptions))
-	azureEnv.agentPoolClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, clientOptions))
-	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, containerServiceOptions))
+	azureEnv.agentPoolClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, containerServiceOptions))
+	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, containerServiceOptions))
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
@@ -184,13 +188,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	if azureEnv.ProvisionMode == "" {
 		azureEnv.ProvisionMode = consts.ProvisionModeAKSScriptless
 	}
-	// Default to reserved managed machine agentpool name for NAP
-	azureEnv.MachineAgentPoolName = "aksmanagedap"
-	if azureEnv.InClusterController {
-		// Self-hosted machines pool name; matches AKS_MACHINES_POOL_NAME used at deploy time.
-		// Note: Windows machines require an agent pool name <= 6 characters, so keep this short.
-		azureEnv.MachineAgentPoolName = lo.Ternary(os.Getenv("AKS_MACHINES_POOL_NAME") == "", "mpool", os.Getenv("AKS_MACHINES_POOL_NAME"))
-	}
+	azureEnv.MachineAgentPoolName = machineAgentPoolName(azureEnv.InClusterController)
 	// Confirm we have a machine pool
 	if azureEnv.InClusterController && azureEnv.IsAKSMachineAPIMode() {
 		azureEnv.ExpectMachinesAgentPoolExists()
