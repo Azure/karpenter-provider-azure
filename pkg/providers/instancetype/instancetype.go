@@ -220,10 +220,9 @@ func computeRequirements(
 }
 
 func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
-	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacementForAKS(sku)
 	if sizeGB > 0 {
-		// Cap the advertised size at Azure's ephemeral OS disk limit to match provisioning.
-		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(min(sizeGB, maxEphemeralOSDiskSizeGB)))
+		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(sizeGB))
 	}
 }
 

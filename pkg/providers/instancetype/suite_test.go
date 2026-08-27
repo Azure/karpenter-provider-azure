@@ -959,7 +959,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 			})
 
-			Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
+			Context("FindMaxEphemeralSizeGBAndPlacementForAKS(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
 				// B20ms:
 				// NvmeDiskSizeInMiB == 0
 				// CacheDiskBytes == 32212254720 -> 30 GiB .. we should select this as the ephemeral disk size
@@ -967,7 +967,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// MaxResourceVolumeMB == 163840 MiB -> 160 GiB,
 				// Standard_D128ds_v6:
 				// NvmeDiskSizeInMiB == 7208960 -> 7040 GiB // SupportedEphemeralOSDiskPlacements == NvmeDisk
-				// and this is greater than 0, so we select 7040, placement == NvmeDisk
+				// AKS caps the raw 7040 GiB capacity at 2040 GiB, placement == NvmeDisk
 				// Standard_D16plds_v5:
 				// NvmeDiskSizeInMiB == 0
 				// CacheDiskBytes == 429496729600 -> 400 GiB, this is greater than zero, so we select this as the ephemeral disk size
@@ -987,13 +987,13 @@ var _ = Describe("InstanceType Provider", func() {
 				// NvmeDiskSizeInMiB == 0
 				// CacheDiskBytes == 0, this is zero
 				// MaxResourceVolumeMB == 20480 MiB -> 20 GiB. Note that this sku doesnt support ephemeral os disk
-				DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
+				DescribeTable("should return the AKS maximum ephemeral disk size for a given instance type",
 					func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
-						sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+						sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacementForAKS(sku)
 						Expect(sizeGB).To(Equal(expectedSize))
 						Expect(placement).To(Equal(expectedPlacement))
 					}, Entry("Standard_B20ms", fake.MakeSKU("Standard_B20ms"), int64(30), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-					Entry("Standard_D128ds_v6", fake.MakeSKU("Standard_D128ds_v6"), int64(7040), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
+					Entry("Standard_D128ds_v6", fake.MakeSKU("Standard_D128ds_v6"), int64(2040), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
 					Entry("Standard_D16plds_v5", fake.MakeSKU("Standard_D16plds_v5"), int64(400), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 					Entry("Standard_D2as_v6", fake.MakeSKU("Standard_D2as_v6"), int64(0), nil), // does not support ephemeral
 					Entry("Standard_NC24ads_A100_v4", fake.MakeSKU("Standard_NC24ads_A100_v4"), int64(256), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),

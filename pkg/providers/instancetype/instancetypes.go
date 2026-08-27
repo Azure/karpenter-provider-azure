@@ -553,9 +553,9 @@ func (p *DefaultProvider) Reset() {
 	atomic.StoreUint64(&p.instanceTypesSeqNum, 0)
 }
 
-// FindMaxEphemeralSizeGBAndPlacement returns the SKU's maximum ephemeral OS disk size in GiB
-// (despite Azure's "GB" naming), uncapped by maxEphemeralOSDiskSizeGB.
-func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
+// FindMaxEphemeralSizeGBAndPlacementForAKS returns the maximum ephemeral OS disk size in GiB
+// and placement that AKS can use for the SKU.
+func FindMaxEphemeralSizeGBAndPlacementForAKS(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	if sku == nil {
 		return 0, nil
 	}
@@ -565,23 +565,22 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	}
 
 	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
-
-	// Check NVMe disk first (highest priority)
-	if maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku) {
-		return maxNVMeMiB * int64(units.MiB) / int64(units.GiB), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
-	}
-
 	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
-	if maxCacheDiskBytes > 0 {
-		return maxCacheDiskBytes / int64(units.GiB), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
-	}
-
 	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
-	if maxResourceDiskMiB > 0 {
-		return maxResourceDiskMiB * int64(units.MiB) / int64(units.GiB), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
+
+	switch {
+	case maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku):
+		sizeGB = maxNVMeMiB * int64(units.MiB) / int64(units.GiB)
+		placement = lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
+	case maxCacheDiskBytes > 0:
+		sizeGB = maxCacheDiskBytes / int64(units.GiB)
+		placement = lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
+	case maxResourceDiskMiB > 0:
+		sizeGB = maxResourceDiskMiB * int64(units.MiB) / int64(units.GiB)
+		placement = lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
 	}
 
-	return 0, nil
+	return min(sizeGB, maxEphemeralOSDiskSizeGB), placement
 }
 
 func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
@@ -606,8 +605,7 @@ func (p OSDiskProfile) IsEphemeral() bool {
 // ResolveOSDiskProfileFromSKU resolves the usable OS disk size and type for the given SKU.
 // A requested OS disk size is always honored.
 func ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32) OSDiskProfile {
-	skuMaxEphemeralOSDiskSizeGB, skuDefaultPlacement := FindMaxEphemeralSizeGBAndPlacement(sku)
-	skuMaxEphemeralOSDiskSizeGB = min(skuMaxEphemeralOSDiskSizeGB, maxEphemeralOSDiskSizeGB)
+	skuMaxEphemeralOSDiskSizeGB, skuDefaultPlacement := FindMaxEphemeralSizeGBAndPlacementForAKS(sku)
 
 	if requestedOSDiskSizeGB != nil {
 		// Use ephemeral storage when the requested size fits; otherwise use a managed disk.
