@@ -118,6 +118,9 @@ Add to **`v1beta1` only**. `v1alpha2` is deprecated; do not add parity fields th
 
 ### Defaults: match the AKS AgentPool API
 
+The default behavior for any added feature in Karpenter should, where possible, match the defaults in the AKS Agentpool API.
+Also for Azure features, the Karpenter path should expose similar control to the AKS Agentpool API. 
+
 > **Worked failure — artifact streaming changed its default three times in two weeks.**
 >
 > | PR | Merged | Signature | Default |
