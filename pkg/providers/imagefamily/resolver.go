@@ -146,7 +146,7 @@ func (r *defaultResolver) Resolve(
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
 
-	osDiskProfile, err := instancetype.ResolveOSDiskProfileFor(ctx, r.instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB)
+	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(ctx, r.instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB)
 	if err != nil {
 		return nil, err
 	}

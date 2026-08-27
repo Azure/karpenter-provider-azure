@@ -1006,10 +1006,10 @@ var _ = Describe("InstanceType Provider", func() {
 					Entry("Nil SKU", nil, int64(0), nil),
 				)
 			})
-			Context("ResolveOSDiskProfile(sku *skewer.SKU, osDiskSizeGB *int32) -> OSDiskProfile", func() {
+			Context("ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32) -> OSDiskProfile", func() {
 				DescribeTable("should resolve OS disk size and type",
-					func(sku *skewer.SKU, osDiskSizeGB *int32, expected instancetype.OSDiskProfile) {
-						Expect(instancetype.ResolveOSDiskProfile(sku, osDiskSizeGB)).To(Equal(expected))
+					func(sku *skewer.SKU, requestedOSDiskSizeGB *int32, expected instancetype.OSDiskProfile) {
+						Expect(instancetype.ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB)).To(Equal(expected))
 					},
 					// explicit size: used as-is; ephemeral if it fits within the SKU-supported size
 					Entry("explicit size fitting ephemeral", fake.MakeSKU("Standard_D64s_v3"), lo.ToPtr[int32](128),
@@ -1044,7 +1044,7 @@ var _ = Describe("InstanceType Provider", func() {
 								{Name: lo.ToPtr(skewer.VCPUs), Value: lo.ToPtr(strconv.Itoa(vcpus))},
 							},
 						}
-						Expect(instancetype.ResolveOSDiskProfile(sku, nil)).To(Equal(instancetype.OSDiskProfile{SizeGB: expectedSizeGB}))
+						Expect(instancetype.ResolveOSDiskProfileFromSKU(sku, nil)).To(Equal(instancetype.OSDiskProfile{SizeGB: expectedSizeGB}))
 					},
 					Entry("2 vCPUs -> 128GB", 2, int32(128)),
 					Entry("7 vCPUs -> 128GB", 7, int32(128)),

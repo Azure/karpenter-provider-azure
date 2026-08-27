@@ -600,31 +600,31 @@ func (p OSDiskProfile) IsEphemeral() bool {
 	return p.Placement != nil
 }
 
-// ResolveOSDiskProfile resolves the OS disk size and type for the given SKU: an explicit
-// osDiskSizeGB is used as-is (ephemeral when it fits); nil auto-sizes to an ephemeral disk at
+// ResolveOSDiskProfileFromSKU resolves the OS disk size and type for the given SKU: an explicit
+// requestedOSDiskSizeGB is used as-is (ephemeral when it fits); nil auto-sizes to an ephemeral disk at
 // the SKU-supported size, or a vCPU-based managed default below the ephemeral threshold.
-func ResolveOSDiskProfile(sku *skewer.SKU, osDiskSizeGB *int32) OSDiskProfile {
-	maxEphemeralSizeGB, placement := FindMaxEphemeralSizeGBAndPlacement(sku)
-	maxEphemeralSizeGB = min(maxEphemeralSizeGB, maxEphemeralOSDiskSizeGB)
-	if osDiskSizeGB != nil {
-		if maxEphemeralSizeGB > 0 && int64(*osDiskSizeGB) <= maxEphemeralSizeGB {
-			return OSDiskProfile{SizeGB: *osDiskSizeGB, Placement: placement}
+func ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32) OSDiskProfile {
+	skuMaxEphemeralOSDiskSizeGB, skuDefaultPlacement := FindMaxEphemeralSizeGBAndPlacement(sku)
+	skuMaxEphemeralOSDiskSizeGB = min(skuMaxEphemeralOSDiskSizeGB, maxEphemeralOSDiskSizeGB)
+	if requestedOSDiskSizeGB != nil {
+		if skuMaxEphemeralOSDiskSizeGB > 0 && int64(*requestedOSDiskSizeGB) <= skuMaxEphemeralOSDiskSizeGB {
+			return OSDiskProfile{SizeGB: *requestedOSDiskSizeGB, Placement: skuDefaultPlacement}
 		}
-		return OSDiskProfile{SizeGB: *osDiskSizeGB}
+		return OSDiskProfile{SizeGB: *requestedOSDiskSizeGB}
 	}
-	if maxEphemeralSizeGB >= minEphemeralOSDiskSizeGB {
-		return OSDiskProfile{SizeGB: int32(maxEphemeralSizeGB), Placement: placement} //nolint:gosec // G115: value bounded to [128,2040], safe int32 conversion
+	if skuMaxEphemeralOSDiskSizeGB >= minEphemeralOSDiskSizeGB {
+		return OSDiskProfile{SizeGB: int32(skuMaxEphemeralOSDiskSizeGB), Placement: skuDefaultPlacement} //nolint:gosec // G115: value bounded to [128,2040], safe int32 conversion
 	}
 	return OSDiskProfile{SizeGB: defaultManagedOSDiskSizeGB(sku)}
 }
 
-// ResolveOSDiskProfileFor resolves the OS disk profile for the named instance type.
-func ResolveOSDiskProfileFor(ctx context.Context, provider Provider, instanceTypeName string, osDiskSizeGB *int32) (OSDiskProfile, error) {
+// ResolveOSDiskProfileFromInstanceType resolves the OS disk profile for the named instance type.
+func ResolveOSDiskProfileFromInstanceType(ctx context.Context, provider Provider, instanceTypeName string, requestedOSDiskSizeGB *int32) (OSDiskProfile, error) {
 	sku, err := provider.Get(ctx, instanceTypeName)
 	if err != nil {
 		return OSDiskProfile{}, err
 	}
-	return ResolveOSDiskProfile(sku, osDiskSizeGB), nil
+	return ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB), nil
 }
 
 // defaultManagedOSDiskSizeGB returns the managed OS disk size by vCPU count, mirroring AKS defaulting.
