@@ -41,6 +41,48 @@ import (
 	"github.com/samber/lo"
 )
 
+func latestKubernetesUpgradeVersion(upgrades []*containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem) (string, error) {
+	if len(upgrades) == 0 {
+		return "", fmt.Errorf("managed cluster has no available Kubernetes upgrades")
+	}
+	var latestVersion semver.Version
+	latestVersionString := ""
+	for i, upgrade := range upgrades {
+		if upgrade == nil || upgrade.KubernetesVersion == nil {
+			return "", fmt.Errorf("managed cluster upgrade %d has no Kubernetes version", i)
+		}
+		version, err := semver.Parse(*upgrade.KubernetesVersion)
+		if err != nil {
+			return "", fmt.Errorf("parse managed cluster upgrade %d Kubernetes version %q: %w", i, *upgrade.KubernetesVersion, err)
+		}
+		if latestVersionString == "" || version.GT(latestVersion) {
+			latestVersion = version
+			latestVersionString = *upgrade.KubernetesVersion
+		}
+	}
+	return latestVersionString, nil
+}
+
+func hasCompatibleNetworkSettings(inClusterController bool, getSettings func() []corev1.EnvVar) bool {
+	if !inClusterController {
+		// Managed NAP configures Azure CNI overlay and Cilium outside the customer
+		// cluster; its Karpenter Deployment is not visible through this kubeconfig.
+		return true
+	}
+	settings := getSettings()
+	checkEnvVar := func(envName, expectedValue string) bool {
+		for _, env := range settings {
+			if env.Name == envName {
+				return env.Value == expectedValue
+			}
+		}
+		return true
+	}
+	return checkEnvVar("NETWORK_PLUGIN", consts.NetworkPluginAzure) &&
+		lo.Contains(settings, corev1.EnvVar{Name: "NETWORK_PLUGIN_MODE", Value: consts.NetworkPluginModeOverlay}) &&
+		checkEnvVar("NETWORK_DATAPLANE", consts.NetworkDataplaneCilium)
+}
+
 var _ = Describe("Machine Tests", func() {
 	var dep *appsv1.Deployment
 	var selector labels.Selector
@@ -72,26 +114,9 @@ var _ = Describe("Machine Tests", func() {
 	})
 
 	It("should have networking labels applied by machine api", func() {
-		// Check if networking settings are compatible with this test
-		// NETWORK_PLUGIN_MODE must be overlay, but NETWORK_PLUGIN and NETWORK_DATAPLANE
-		// can be unset (using defaults) or set to expected values (but not set to different values)
-		settings := env.ExpectSettings()
-
-		// Helper function to check if env var is unset or set to expected value
-		checkEnvVar := func(envName, expectedValue string) bool {
-			for _, env := range settings {
-				if env.Name == envName {
-					return env.Value == expectedValue
-				}
-			}
-			return true // Not set is acceptable
-		}
-
-		usingCompatiblePlugin := checkEnvVar("NETWORK_PLUGIN", consts.NetworkPluginAzure)
-		usingExpectedPluginMode := lo.Contains(settings, corev1.EnvVar{Name: "NETWORK_PLUGIN_MODE", Value: consts.NetworkPluginModeOverlay})
-		usingCompatibleDataplane := checkEnvVar("NETWORK_DATAPLANE", consts.NetworkDataplaneCilium)
-
-		if !usingCompatiblePlugin || !usingExpectedPluginMode || !usingCompatibleDataplane {
+		// Self-hosted runs inspect their in-cluster Karpenter Deployment. Managed
+		// NAP supplies the equivalent overlay/Cilium fixture outside this cluster.
+		if !hasCompatibleNetworkSettings(env.InClusterController, env.ExpectSettings) {
 			Skip("TODO: generalize test for any networking configuration. Skipping as not in expected config for the test")
 		}
 
@@ -163,12 +188,8 @@ var _ = Describe("Machine Tests", func() {
 			By("getting the original kubelet identity")
 			originalKubeletIdentity := env.GetKubeletIdentity(env.Context)
 
-			By("creating a new managed identity for testing")
 			newIdentityName := test.RandomName("karpenter-test-identity")
-			newIdentity := env.ExpectCreatedManagedIdentity(env.Context, newIdentityName)
-
-			By("granting ACR access to the new kubelet identity")
-			env.ExpectGrantedACRAccess(env.Context, newIdentity)
+			newIdentity := env.ExpectPreparedKubeletIdentity(env.Context, newIdentityName)
 
 			By("updating the kubelet identity on the managed cluster")
 			poller := env.ExpectUpdatedManagedClusterKubeletIdentityAsync(env.Context, newIdentity)
@@ -211,7 +232,7 @@ var _ = Describe("Machine Tests", func() {
 			env.EventuallyExpectCreatedMachineCount("==", 3)
 		})
 
-		It("should be able to scale machines during an ongoing managed cluster operation", func() {
+		It("should accept and reconcile machine scaling changes submitted during an ongoing managed cluster operation", func() {
 			// Create two NodePools: one for scale-up, one for scale-down
 			scaleUpNodePool := coretest.ReplaceRequirements(env.DefaultNodePool(nodeClass),
 				karpv1.NodeSelectorRequirementWithMinValues{
@@ -309,13 +330,18 @@ var _ = Describe("Machine Tests", func() {
 
 			By("Performing a K8s upgrade")
 			availableKubernetesUpgrades := env.ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster()
-			kubernetesUpgradeVersion := *lo.MaxBy(availableKubernetesUpgrades, func(a, b *containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem) bool {
-				aK8sVersion := lo.Must(semver.Parse(*a.KubernetesVersion))
-				bK8sVersion := lo.Must(semver.Parse(*b.KubernetesVersion))
-				return aK8sVersion.GT(bK8sVersion)
-			}).KubernetesVersion
+			kubernetesUpgradeVersion, upgradeVersionErr := latestKubernetesUpgradeVersion(availableKubernetesUpgrades)
+			Expect(upgradeVersionErr).ToNot(HaveOccurred(), "test requires an available Kubernetes upgrade")
 
 			poller := env.ExpectUpgradeOfManagedCluster(kubernetesUpgradeVersion)
+			By("Waiting for the managed cluster operation to enter Upgrading before scaling")
+			Eventually(func() string {
+				managedCluster := env.ExpectGetManagedCluster()
+				if managedCluster.Properties == nil || managedCluster.Properties.ProvisioningState == nil {
+					return ""
+				}
+				return *managedCluster.Properties.ProvisioningState
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Equal("Upgrading"))
 
 			By("Scaling up the scale-up deployment to create new nodes")
 			scaleUpPodCount = 4
@@ -327,6 +353,9 @@ var _ = Describe("Machine Tests", func() {
 			scaleDownDep.Spec.Replicas = &scaleDownPodCount
 			env.ExpectUpdated(scaleDownDep)
 
+			By("Confirming the managed cluster operation is still active after submitting scaling changes")
+			env.ExpectClusterProvisioningState("Upgrading")
+
 			env.EventuallyExpectNodeCountWithSelector("==", 2, scaleUpNodeSelector)
 			env.EventuallyExpectNodeCountWithSelector("==", 0, scaleDownNodeSelector)
 			env.EventuallyExpectRegisteredNodeClaimCountWithSelector("==", 2, scaleUpNodeSelector)
@@ -334,8 +363,6 @@ var _ = Describe("Machine Tests", func() {
 			env.EventuallyExpectCreatedMachineCount("==", 2)
 			env.EventuallyExpectHealthyPodCount(scaleUpSelector, int(scaleUpPodCount))
 			env.EventuallyExpectHealthyPodCount(scaleDownSelector, int(scaleDownPodCount))
-
-			env.ExpectClusterProvisioningState("Upgrading")
 
 			By("Removing do-not-disrupt annotations to allow Karpenter to update the nodes the pods are on")
 			scaleUpPods := env.ExpectPodsMatchingSelector(scaleUpSelector)
