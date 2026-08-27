@@ -51,10 +51,13 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiskSizeGB)).To(Equal(expectedDiskSizeGB))
 
 		advertised := nodeClaim.Status.Capacity[corev1.ResourceEphemeralStorage]
-		Expect(advertised.Cmp(resource.MustParse("1600Gi"))).To(Equal(0))
+		expectedAdvertised := resource.MustParse("1600Gi")
+		Expect(advertised.Cmp(expectedAdvertised)).To(Equal(0))
 
 		actual := env.GetNode(pods[0].Spec.NodeName).Status.Capacity[corev1.ResourceEphemeralStorage]
-		Expect(actual.Cmp(resource.MustParse("128Gi"))).To(BeNumerically(">", 0))
+		expectedBytes := expectedAdvertised.Value()
+		// Allow 10% for filesystem formatting and node-image overhead.
+		Expect(actual.Value()).To(BeNumerically("~", expectedBytes, expectedBytes/10))
 	})
 
 	It("should use a node with an ephemeral os disk", func() {
