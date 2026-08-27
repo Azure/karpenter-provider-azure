@@ -45,6 +45,39 @@ type refererPolicy struct {
 	value string
 }
 
+type rpIngressTransport struct {
+	base http.RoundTripper
+	host string
+}
+
+func (t *rpIngressTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if err := validateRPIngressRequest(request, t.host); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(request)
+}
+
+func validateRPIngressRequest(request *http.Request, rpHost string) error {
+	if request == nil || request.URL == nil {
+		return fmt.Errorf("RP ingress request URL is nil")
+	}
+	if request.URL.Scheme != "https" || request.URL.User != nil || request.URL.Opaque != "" || !rpIngressAuthorityMatches(request.URL.Host, rpHost) {
+		return fmt.Errorf("refusing RP ingress request to non-exact origin %q", request.URL.String())
+	}
+	if request.Host != "" && !rpIngressAuthorityMatches(request.Host, rpHost) {
+		return fmt.Errorf("refusing RP ingress request with Host %q", request.Host)
+	}
+	return nil
+}
+
+func rpIngressAuthorityMatches(authority, rpHost string) bool {
+	if strings.EqualFold(authority, rpHost) {
+		return true
+	}
+	host, port, err := net.SplitHostPort(authority)
+	return err == nil && strings.EqualFold(host, rpHost) && port == "443"
+}
+
 func (p *refererPolicy) Do(request *policy.Request) (*http.Response, error) {
 	request.Raw().Header.Set("Referer", p.value)
 	return request.Next()
@@ -115,8 +148,8 @@ func containerServiceClientOptions(baseCloud cloud.Configuration) (*arm.ClientOp
 	// receive the logical host instead and bypass the address mapping below.
 	transport.Proxy = nil
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, _, splitErr := net.SplitHostPort(address)
-		if splitErr != nil || !strings.EqualFold(host, rpHost) {
+		host, port, splitErr := net.SplitHostPort(address)
+		if splitErr != nil || !strings.EqualFold(host, rpHost) || port != "443" {
 			return nil, fmt.Errorf("refusing off-origin RP ingress dial to %q", address)
 		}
 		return baseDialContext(ctx, network, physicalAddress)
@@ -128,10 +161,16 @@ func containerServiceClientOptions(baseCloud cloud.Configuration) (*arm.ClientOp
 		ServerName:   rpHost,
 	}
 
+	transportClient := &http.Client{
+		Transport: &rpIngressTransport{base: transport, host: rpHost},
+		CheckRedirect: func(request *http.Request, _ []*http.Request) error {
+			return validateRPIngressRequest(request, rpHost)
+		},
+	}
 	return &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud:           rpCloud,
-			Transport:       &http.Client{Transport: transport},
+			Transport:       transportClient,
 			PerCallPolicies: []policy.Policy{&refererPolicy{value: "https://" + rpHost}},
 		},
 		DisableRPRegistration: true,
