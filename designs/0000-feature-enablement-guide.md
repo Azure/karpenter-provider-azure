@@ -55,7 +55,7 @@ Answer these before writing code. Each maps to a question a reviewer has actuall
    From #1704: *"'prove' that Karpenter obliges it... so that we can avoid provisioning
    time failures or accidentally having to support what AKS doesn't."*
 
-6. **What does it cost or tradeoffs in enabling this feature?** 
+6. **What are the costs or tradeoffs of enabling this feature?**
    Flag or test for any potential regression scenarios. State the measured effect on provisioning latency and per-node Azure API calls, or state why there is none.
 
 7. **What is the removal cost?** From #1676: a label used only on the
@@ -529,8 +529,7 @@ Rules reviewers apply:
   evidence.
 * Ask: **would this test fail if the behavior regressed?**
 
-> `CONTRIBUTING.md` says E2E suites live under `test/pkg/suites`. The actual path is
-> `test/suites/`. Worth a drive-by fix.
+> E2E suites live under `test/suites/` (the `test/pkg/` tree contains shared E2E environment and helper code).
 
 ---
 
