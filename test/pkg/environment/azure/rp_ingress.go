@@ -83,53 +83,92 @@ func (p *refererPolicy) Do(request *policy.Request) (*http.Response, error) {
 	return request.Next()
 }
 
-func containerServiceClientOptions(baseCloud cloud.Configuration) (*arm.ClientOptions, error) {
-	rpURLValue, rpURLSet := os.LookupEnv(rpURLEnv)
-	rpHostValue, rpHostSet := os.LookupEnv(rpHostEnv)
-	certPathValue, certPathSet := os.LookupEnv(rpClientCertPathEnv)
-	caCertPathValue, caCertPathSet := os.LookupEnv(rpServerCACertPathEnv)
-	if !rpURLSet && !rpHostSet && !certPathSet && !caCertPathSet {
-		return &arm.ClientOptions{ClientOptions: policy.ClientOptions{Cloud: baseCloud}}, nil
-	}
-	rpURL := strings.TrimSpace(rpURLValue)
-	rpHost := strings.TrimSpace(rpHostValue)
-	certPath := strings.TrimSpace(certPathValue)
-	caCertPath := strings.TrimSpace(caCertPathValue)
-	if !rpURLSet || !rpHostSet || !certPathSet || !caCertPathSet || rpURL == "" || rpHost == "" || certPath == "" || caCertPath == "" {
-		return nil, fmt.Errorf("%s, %s, %s, and %s must all be configured with non-empty values", rpURLEnv, rpHostEnv, rpClientCertPathEnv, rpServerCACertPathEnv)
-	}
+type rpIngressClientConfig struct {
+	host            string
+	physicalAddress string
+	clientCert      tls.Certificate
+	serverCAs       *x509.CertPool
+}
 
-	physicalURL, err := url.Parse(rpURL)
+type rpIngressEnvironmentValue struct {
+	value string
+	set   bool
+}
+
+func readRPIngressEnvironment() (map[string]rpIngressEnvironmentValue, bool, error) {
+	names := []string{rpURLEnv, rpHostEnv, rpClientCertPathEnv, rpServerCACertPathEnv}
+	values := make(map[string]rpIngressEnvironmentValue, len(names))
+	configured := false
+	for _, name := range names {
+		value, set := os.LookupEnv(name)
+		values[name] = rpIngressEnvironmentValue{value: strings.TrimSpace(value), set: set}
+		configured = configured || set
+	}
+	if !configured {
+		return values, false, nil
+	}
+	for _, name := range names {
+		if value := values[name]; !value.set || value.value == "" {
+			return nil, false, fmt.Errorf("%s, %s, %s, and %s must all be configured with non-empty values", rpURLEnv, rpHostEnv, rpClientCertPathEnv, rpServerCACertPathEnv)
+		}
+	}
+	return values, true, nil
+}
+
+func parseRPIngressPhysicalAddress(value string) (string, error) {
+	physicalURL, err := url.Parse(value)
 	if err != nil || physicalURL.Scheme != "https" || physicalURL.Hostname() == "" ||
 		physicalURL.User != nil || (physicalURL.EscapedPath() != "" && physicalURL.EscapedPath() != "/") ||
 		physicalURL.RawQuery != "" || physicalURL.ForceQuery || physicalURL.Fragment != "" {
-		return nil, fmt.Errorf("invalid %s %q: expected an origin-only HTTPS URL", rpURLEnv, rpURL)
+		return "", fmt.Errorf("invalid %s %q: expected an origin-only HTTPS URL", rpURLEnv, value)
 	}
-	physicalAddress := physicalURL.Host
 	if physicalURL.Port() == "" {
-		physicalAddress = net.JoinHostPort(physicalURL.Hostname(), "443")
+		return net.JoinHostPort(physicalURL.Hostname(), "443"), nil
 	}
-	if rpHost != rpIngressHost {
-		return nil, fmt.Errorf("invalid %s %q: expected %q", rpHostEnv, rpHost, rpIngressHost)
-	}
+	return physicalURL.Host, nil
+}
 
-	certData, err := os.ReadFile(certPath)
+func loadRPIngressCertificates(clientPath, caPath string) (tls.Certificate, *x509.CertPool, error) {
+	certData, err := os.ReadFile(clientPath)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", rpClientCertPathEnv, err)
+		return tls.Certificate{}, nil, fmt.Errorf("read %s: %w", rpClientCertPathEnv, err)
 	}
 	clientCert, err := tls.X509KeyPair(certData, certData)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", rpClientCertPathEnv, err)
+		return tls.Certificate{}, nil, fmt.Errorf("parse %s: %w", rpClientCertPathEnv, err)
 	}
-	caCertData, err := os.ReadFile(caCertPath)
+	caCertData, err := os.ReadFile(caPath)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", rpServerCACertPathEnv, err)
+		return tls.Certificate{}, nil, fmt.Errorf("read %s: %w", rpServerCACertPathEnv, err)
 	}
 	serverCAs := x509.NewCertPool()
 	if !serverCAs.AppendCertsFromPEM(caCertData) {
-		return nil, fmt.Errorf("parse %s: no certificates found", rpServerCACertPathEnv)
+		return tls.Certificate{}, nil, fmt.Errorf("parse %s: no certificates found", rpServerCACertPathEnv)
 	}
+	return clientCert, serverCAs, nil
+}
 
+func loadRPIngressClientConfig() (*rpIngressClientConfig, bool, error) {
+	values, configured, err := readRPIngressEnvironment()
+	if err != nil || !configured {
+		return nil, configured, err
+	}
+	host := values[rpHostEnv].value
+	if host != rpIngressHost {
+		return nil, false, fmt.Errorf("invalid %s %q: expected %q", rpHostEnv, host, rpIngressHost)
+	}
+	physicalAddress, err := parseRPIngressPhysicalAddress(values[rpURLEnv].value)
+	if err != nil {
+		return nil, false, err
+	}
+	clientCert, serverCAs, err := loadRPIngressCertificates(values[rpClientCertPathEnv].value, values[rpServerCACertPathEnv].value)
+	if err != nil {
+		return nil, false, err
+	}
+	return &rpIngressClientConfig{host: host, physicalAddress: physicalAddress, clientCert: clientCert, serverCAs: serverCAs}, true, nil
+}
+
+func cloudWithRPIngressEndpoint(baseCloud cloud.Configuration, host string) (cloud.Configuration, error) {
 	rpCloud := baseCloud
 	rpCloud.Services = make(map[cloud.ServiceName]cloud.ServiceConfiguration, len(baseCloud.Services))
 	for name, service := range baseCloud.Services {
@@ -137,11 +176,14 @@ func containerServiceClientOptions(baseCloud cloud.Configuration) (*arm.ClientOp
 	}
 	resourceManager, ok := rpCloud.Services[cloud.ResourceManager]
 	if !ok {
-		return nil, fmt.Errorf("base cloud does not define the ResourceManager service")
+		return cloud.Configuration{}, fmt.Errorf("base cloud does not define the ResourceManager service")
 	}
-	resourceManager.Endpoint = "https://" + rpHost
+	resourceManager.Endpoint = "https://" + host
 	rpCloud.Services[cloud.ResourceManager] = resourceManager
+	return rpCloud, nil
+}
 
+func newRPIngressHTTPClient(config *rpIngressClientConfig) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	baseDialContext := transport.DialContext
 	// RP_URL is the direct physical ingress destination. An ambient proxy would
@@ -149,29 +191,42 @@ func containerServiceClientOptions(baseCloud cloud.Configuration) (*arm.ClientOp
 	transport.Proxy = nil
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, splitErr := net.SplitHostPort(address)
-		if splitErr != nil || !strings.EqualFold(host, rpHost) || port != "443" {
+		if splitErr != nil || !strings.EqualFold(host, config.host) || port != "443" {
 			return nil, fmt.Errorf("refusing off-origin RP ingress dial to %q", address)
 		}
-		return baseDialContext(ctx, network, physicalAddress)
+		return baseDialContext(ctx, network, config.physicalAddress)
 	}
 	transport.TLSClientConfig = &tls.Config{
 		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{clientCert},
-		RootCAs:      serverCAs,
-		ServerName:   rpHost,
+		Certificates: []tls.Certificate{config.clientCert},
+		RootCAs:      config.serverCAs,
+		ServerName:   config.host,
 	}
-
-	transportClient := &http.Client{
-		Transport: &rpIngressTransport{base: transport, host: rpHost},
+	return &http.Client{
+		Transport: &rpIngressTransport{base: transport, host: config.host},
 		CheckRedirect: func(request *http.Request, _ []*http.Request) error {
-			return validateRPIngressRequest(request, rpHost)
+			return validateRPIngressRequest(request, config.host)
 		},
+	}
+}
+
+func containerServiceClientOptions(baseCloud cloud.Configuration) (*arm.ClientOptions, error) {
+	config, configured, err := loadRPIngressClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	if !configured {
+		return &arm.ClientOptions{ClientOptions: policy.ClientOptions{Cloud: baseCloud}}, nil
+	}
+	rpCloud, err := cloudWithRPIngressEndpoint(baseCloud, config.host)
+	if err != nil {
+		return nil, err
 	}
 	return &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud:           rpCloud,
-			Transport:       transportClient,
-			PerCallPolicies: []policy.Policy{&refererPolicy{value: "https://" + rpHost}},
+			Transport:       newRPIngressHTTPClient(config),
+			PerCallPolicies: []policy.Policy{&refererPolicy{value: "https://" + config.host}},
 		},
 		DisableRPRegistration: true,
 	}, nil
