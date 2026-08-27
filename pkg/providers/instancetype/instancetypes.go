@@ -57,6 +57,7 @@ const (
 	InstanceTypesCacheTTL = 23 * time.Hour
 
 	// maxEphemeralOSDiskSizeGB is the maximum size (in GB) Azure supports for ephemeral OS disks.
+	// https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks
 	maxEphemeralOSDiskSizeGB = 2040
 	// minEphemeralOSDiskSizeGB is AKS's threshold for auto-selecting an ephemeral OS disk;
 	// below it, auto-sizing falls back to vCPU-based managed defaults.
@@ -639,6 +640,7 @@ func ResolveOSDiskProfileFromInstanceType(ctx context.Context, provider Provider
 }
 
 // defaultManagedOSDiskSizeGB returns the managed OS disk size by vCPU count, mirroring AKS defaulting.
+// https://learn.microsoft.com/azure/aks/concepts-storage#default-os-disk-sizing
 func defaultManagedOSDiskSizeGB(sku *skewer.SKU) int32 {
 	if sku == nil {
 		return 128
