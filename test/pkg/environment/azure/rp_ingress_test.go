@@ -23,6 +23,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -79,6 +80,7 @@ func TestValidateRPIngressRequest(t *testing.T) {
 	}
 }
 
+//nolint:gocyclo // Independent contract subtests intentionally share one mTLS fixture.
 func TestContainerServiceClientOptions(t *testing.T) {
 	const rpHost = "rp.e2e.ig.e2e-aks.azure.com"
 
@@ -172,7 +174,14 @@ func TestContainerServiceClientOptions(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			if requestNumber == 1 {
 				nextLink := fmt.Sprintf("https://%s%s&$skiptoken=next", rpHost, r.URL.RequestURI())
-				_, _ = fmt.Fprintf(w, `{"value":[{"id":"cluster","name":"cluster","type":"Microsoft.ContainerService/managedClusters","location":"eastus2","properties":{}}],"nextLink":%q}`, nextLink)
+				if err := json.NewEncoder(w).Encode(map[string]any{
+					"value": []map[string]any{{
+						"id": "cluster", "name": "cluster", "type": "Microsoft.ContainerService/managedClusters", "location": "eastus2", "properties": map[string]any{},
+					}},
+					"nextLink": nextLink,
+				}); err != nil {
+					t.Errorf("encode first page: %v", err)
+				}
 				return
 			}
 			if got := r.URL.Query().Get("$skiptoken"); got != "next" {
@@ -374,7 +383,7 @@ func serverTLSConfig(t *testing.T, dnsName string) (*tls.Config, []byte) {
 	if err != nil {
 		t.Fatalf("parse server certificate: %v", err)
 	}
-	return &tls.Config{ //nolint:gosec // test server validates client-certificate presence only
+	return &tls.Config{
 		Certificates: []tls.Certificate{certificate},
 		ClientAuth:   tls.RequireAnyClientCert,
 	}, certPEM
