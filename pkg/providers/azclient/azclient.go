@@ -227,7 +227,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
-	skuMixPlacementClient, err := armrecommender.NewSKUMixPlacementScoresClient(cfg.SubscriptionID, cred, skuMixPlacementClientOptions(opts))
+	skuMixPlacementClient, err := armrecommender.NewSKUMixPlacementScoresClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
