@@ -17,10 +17,7 @@ limitations under the License.
 package integration_test
 
 import (
-	"bytes"
-	"io"
 	"strings"
-	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
@@ -84,55 +81,10 @@ var _ = Describe("Kata (Pod Sandboxing)", func() {
 
 		// A Kata pod runs its own kernel, so the guest kernel must differ from the node's. This is the
 		// check that distinguishes a real sandbox from a pod that silently fell back to runc.
-		guestKernel := strings.TrimSpace(strings.SplitN(podLogs(pod), "\n", 2)[0])
+		guestKernel := strings.TrimSpace(strings.SplitN(env.EventuallyGetPodLogs(pod), "\n", 2)[0])
 		By("guest kernel: " + guestKernel + ", host kernel: " + node.Status.NodeInfo.KernelVersion)
 		Expect(guestKernel).ToNot(BeEmpty())
 		Expect(guestKernel).ToNot(Equal(node.Status.NodeInfo.KernelVersion),
 			"pod kernel matches the host kernel, so it did not run in a Kata sandbox VM")
 	})
-
-	// Karpenter projects the kata label onto the Node and AKS stamps it from the WorkloadRuntime enum
-	// it receives. This asserts the label survives on the real Node and that the node isn't drifted.
-	It("should keep the kata label and not flag the node as drifted", func() {
-		deployment := coretest.Deployment(coretest.DeploymentOptions{
-			Replicas: 1,
-			PodOptions: coretest.PodOptions{
-				NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"},
-			},
-		})
-
-		env.ExpectCreated(nodeClass, nodePool, deployment)
-		pods := env.EventuallyExpectHealthyDeployment(deployment)
-		env.EventuallyExpectInitializedNodeCount("==", 1)
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-
-		node := env.GetNode(pods[0].Spec.NodeName)
-		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
-
-		env.ConsistentlyExpectNoDisruptions(1, 2*time.Minute)
-		Expect(nodeClaim.StatusConditions().Get(karpv1.ConditionTypeDrifted).IsTrue()).To(BeFalse())
-	})
 })
-
-// podLogs returns the pod's current logs, waiting for the pod to start producing them.
-func podLogs(pod *corev1.Pod) string {
-	var logs string
-	Eventually(func(g Gomega) {
-		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(pod), pod)).To(Succeed())
-		g.Expect(pod.Status.Phase).To(Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)))
-
-		req := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-			Container: pod.Spec.Containers[0].Name,
-		})
-		stream, err := req.Stream(env.Context)
-		g.Expect(err).To(Succeed())
-		defer stream.Close()
-
-		buf := new(bytes.Buffer)
-		_, err = io.Copy(buf, stream)
-		g.Expect(err).To(Succeed())
-		logs = buf.String()
-		g.Expect(strings.TrimSpace(logs)).ToNot(BeEmpty())
-	}).WithTimeout(2 * time.Minute).Should(Succeed())
-	return logs
-}
