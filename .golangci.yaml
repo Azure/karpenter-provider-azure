@@ -7,6 +7,7 @@ linters:
     - asciicheck
     - bidichk
     - copyloopvar
+    - durationcheck
     - errorlint
     - gocyclo
     - goheader
