@@ -50,10 +50,9 @@ func TestGetRecommendations_ReturnsRecommendations(t *testing.T) {
 			Count:        5,
 		})
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{{
-		VMSize: "Standard_D4s_v5", Zone: "2", CapacityType: karpv1.CapacityTypeOnDemand,
-		Score: 9, ID: "choice-id", Count: 5,
-	}}))
+	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+		recommendation("Standard_D4s_v5", "2", "choice-id", 9, 5),
+	}))
 	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
 
 	input := client.PostBehavior.CalledWithInput.Pop()
@@ -183,12 +182,27 @@ func TestGetRecommendations_InvalidResponseErrorIsReturned(t *testing.T) {
 	g.Expect(recommendations).To(BeNil())
 }
 
+func TestGetRecommendations_MissingResponseIDReturnsEmptyRecommendationID(t *testing.T) {
+	g := NewWithT(t)
+	client := &fake.SKUMixPlacementScoresAPI{}
+	response := recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D4s_v5", "2")
+	response.ID = nil
+	client.PostBehavior.Output.Set(response)
+	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
+
+	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+		recommendation("Standard_D4s_v5", "2", "", 9, 5),
+	}))
+}
+
 func TestGetRecommendations_ExpandsOneChoiceIntoSizeZoneEntries(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(
 		placementResponse(
-			placementChoice("123", 9,
+			placementChoice(9,
 				placementSplit("Standard_D8s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 2),
 				placementSplit("Standard_D8s_v5", "2", armrecommender.SKUMixPlacementPriorityRegular, 2),
 				placementSplit("Standard_D8s_v5", "3", armrecommender.SKUMixPlacementPriorityRegular, 1),
@@ -200,9 +214,9 @@ func TestGetRecommendations_ExpandsOneChoiceIntoSizeZoneEntries(t *testing.T) {
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D8s_v5", "1", "123", 9, 2),
-		recommendation("Standard_D8s_v5", "2", "123", 9, 2),
-		recommendation("Standard_D8s_v5", "3", "123", 9, 1),
+		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
+		recommendation("Standard_D8s_v5", "2", "response-id", 9, 2),
+		recommendation("Standard_D8s_v5", "3", "response-id", 9, 1),
 	}))
 }
 
@@ -211,12 +225,12 @@ func TestGetRecommendations_CombinesUniqueEntriesFromChoices(t *testing.T) {
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(
 		placementResponse(
-			placementChoice("456", 9,
+			placementChoice(9,
 				placementSplit("Standard_D8s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 1),
 				placementSplit("Standard_D8s_v5", "2", armrecommender.SKUMixPlacementPriorityRegular, 1),
 				placementSplit("Standard_E8s_v5", "3", armrecommender.SKUMixPlacementPriorityRegular, 1),
 			),
-			placementChoice("123", 9,
+			placementChoice(9,
 				placementSplit("Standard_D8s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 2),
 				placementSplit("Standard_D8s_v5", "2", armrecommender.SKUMixPlacementPriorityRegular, 2),
 				placementSplit("Standard_D8s_v6", "3", armrecommender.SKUMixPlacementPriorityRegular, 1),
@@ -231,10 +245,10 @@ func TestGetRecommendations_CombinesUniqueEntriesFromChoices(t *testing.T) {
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D8s_v5", "1", "123", 9, 2),
-		recommendation("Standard_D8s_v5", "2", "123", 9, 2),
-		recommendation("Standard_D8s_v6", "3", "123", 9, 1),
-		recommendation("Standard_E8s_v5", "3", "456", 9, 1),
+		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
+		recommendation("Standard_D8s_v5", "2", "response-id", 9, 2),
+		recommendation("Standard_D8s_v6", "3", "response-id", 9, 1),
+		recommendation("Standard_E8s_v5", "3", "response-id", 9, 1),
 	}))
 }
 
@@ -243,10 +257,10 @@ func TestGetRecommendations_KeepsHighestScoringEntryForDuplicateKey(t *testing.T
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(
 		placementResponse(
-			placementChoice("lower", 4,
+			placementChoice(4,
 				placementSplit("Standard_D8s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 5),
 			),
-			placementChoice("higher", 9,
+			placementChoice(9,
 				placementSplit("Standard_D8s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 2),
 			),
 		),
@@ -256,7 +270,7 @@ func TestGetRecommendations_KeepsHighestScoringEntryForDuplicateKey(t *testing.T
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D8s_v5", "1", "higher", 9, 2),
+		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
 	}))
 }
 
@@ -264,7 +278,7 @@ func TestGetRecommendations_TreatsCapacityTypeAsPartOfRecommendationIdentity(t *
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(placementResponse(
-		placementChoice("choice", 9,
+		placementChoice(9,
 			// Note: It is not actually possible to get a regular + spot in the same response right now, but
 			// we're just testing here to ensure that if/when that is supported we can handle it correctly.
 			placementSplit("Standard_D8s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 1),
@@ -276,8 +290,8 @@ func TestGetRecommendations_TreatsCapacityTypeAsPartOfRecommendationIdentity(t *
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D8s_v5", "1", "choice", 9, 1),
-		{VMSize: "Standard_D8s_v5", Zone: "1", CapacityType: karpv1.CapacityTypeSpot, Score: 9, ID: "choice", Count: 2},
+		recommendation("Standard_D8s_v5", "1", "response-id", 9, 1),
+		{VMSize: "Standard_D8s_v5", Zone: "1", CapacityType: karpv1.CapacityTypeSpot, Score: 9, ID: "response-id", Count: 2},
 	}))
 }
 
@@ -285,10 +299,10 @@ func TestGetRecommendations_PreservesAPIReturnOrderForCompleteChoiceTie(t *testi
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(placementResponse(
-		placementChoice("first", 9,
+		placementChoice(9,
 			placementSplit("Standard_D2s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 1),
 		),
-		placementChoice("second", 9,
+		placementChoice(9,
 			placementSplit("Standard_D2s_v5", "1", armrecommender.SKUMixPlacementPriorityRegular, 1),
 		),
 	))
@@ -297,7 +311,7 @@ func TestGetRecommendations_PreservesAPIReturnOrderForCompleteChoiceTie(t *testi
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D2s_v5", "1", "first", 9, 1),
+		recommendation("Standard_D2s_v5", "1", "response-id", 9, 1),
 	}))
 }
 
@@ -305,7 +319,7 @@ func TestGetRecommendations_ReturnsErrorIfSplitAPIMissingPriorityInResponse(t *t
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(placementResponse(
-		placementChoice("choice", 9, &armrecommender.SKUMixPlacementItem{
+		placementChoice(9, &armrecommender.SKUMixPlacementItem{
 			Name: to.Ptr("Standard_D2s_v5"), Zone: to.Ptr("1"), Capacity: to.Ptr(int32(1)),
 		}),
 	))
@@ -321,10 +335,10 @@ func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIRetur
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
 		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ID:         to.Ptr("response-id"),
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
-					ID:    to.Ptr("first-choice"),
 					Score: to.Ptr(int32(4)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D2s_v5"), Capacity: to.Ptr(int32(5)), Zone: to.Ptr("1")},
@@ -332,7 +346,6 @@ func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIRetur
 				},
 				// Second in order (bug in recommendation API) but higher score, should be selected
 				{
-					ID:    to.Ptr("selected-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D4s_v5"), Capacity: to.Ptr(int32(3)), Zone: to.Ptr("2")},
@@ -347,9 +360,9 @@ func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIRetur
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D4s_v5", "2", "selected-choice", 9, 3),
-		recommendation("Standard_D8s_v5", "3", "selected-choice", 9, 2),
-		recommendation("Standard_D2s_v5", "1", "first-choice", 4, 5),
+		recommendation("Standard_D4s_v5", "2", "response-id", 9, 3),
+		recommendation("Standard_D8s_v5", "3", "response-id", 9, 2),
+		recommendation("Standard_D2s_v5", "1", "response-id", 4, 5),
 	}))
 }
 
@@ -358,10 +371,10 @@ func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
 		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ID:         to.Ptr("response-id"),
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
-					ID:    to.Ptr("d2-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D2s_v3"), Capacity: to.Ptr(int32(2)), Zone: to.Ptr("1")},
@@ -370,7 +383,6 @@ func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 					},
 				},
 				{
-					ID:    to.Ptr("d8-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D8s_v5"), Capacity: to.Ptr(int32(2)), Zone: to.Ptr("1")},
@@ -379,7 +391,6 @@ func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 					},
 				},
 				{
-					ID:    to.Ptr("mixed-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D8s_v5"), Capacity: to.Ptr(int32(1)), Zone: to.Ptr("1")},
@@ -398,13 +409,13 @@ func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D8s_v5", "1", "d8-choice", 9, 2),
-		recommendation("Standard_D8s_v5", "2", "d8-choice", 9, 2),
-		recommendation("Standard_D8s_v5", "3", "d8-choice", 9, 1),
-		recommendation("Standard_E2s_v3", "3", "mixed-choice", 9, 3),
-		recommendation("Standard_D2s_v3", "1", "d2-choice", 9, 2),
-		recommendation("Standard_D2s_v3", "2", "d2-choice", 9, 2),
-		recommendation("Standard_D2s_v3", "3", "d2-choice", 9, 1),
+		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
+		recommendation("Standard_D8s_v5", "2", "response-id", 9, 2),
+		recommendation("Standard_D8s_v5", "3", "response-id", 9, 1),
+		recommendation("Standard_E2s_v3", "3", "response-id", 9, 3),
+		recommendation("Standard_D2s_v3", "1", "response-id", 9, 2),
+		recommendation("Standard_D2s_v3", "2", "response-id", 9, 2),
+		recommendation("Standard_D2s_v3", "3", "response-id", 9, 1),
 	}))
 }
 
@@ -413,10 +424,10 @@ func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *te
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
 		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ID:         to.Ptr("response-id"),
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
-					ID:    to.Ptr("first-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_E2s_v3"), Capacity: to.Ptr(int32(2)), Zone: to.Ptr("1")},
@@ -425,7 +436,6 @@ func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *te
 					},
 				},
 				{
-					ID:    to.Ptr("selected-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D8s_v5"), Capacity: to.Ptr(int32(2)), Zone: to.Ptr("1")},
@@ -444,10 +454,10 @@ func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *te
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D8s_v5", "1", "selected-choice", 9, 2),
-		recommendation("Standard_D8s_v5", "2", "selected-choice", 9, 1),
-		recommendation("Standard_E2s_v3", "3", "selected-choice", 9, 2),
-		recommendation("Standard_E2s_v3", "1", "first-choice", 9, 2),
+		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
+		recommendation("Standard_D8s_v5", "2", "response-id", 9, 1),
+		recommendation("Standard_E2s_v3", "3", "response-id", 9, 2),
+		recommendation("Standard_E2s_v3", "1", "response-id", 9, 2),
 	}))
 }
 
@@ -456,10 +466,10 @@ func TestGetRecommendations_UsesOverallZoneCoverageAfterPerSKUTie(t *testing.T) 
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
 		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ID:         to.Ptr("response-id"),
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
-					ID:    to.Ptr("two-zone-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D8s_v5"), Capacity: to.Ptr(int32(1)), Zone: to.Ptr("1")},
@@ -469,7 +479,6 @@ func TestGetRecommendations_UsesOverallZoneCoverageAfterPerSKUTie(t *testing.T) 
 					},
 				},
 				{
-					ID:    to.Ptr("three-zone-choice"),
 					Score: to.Ptr(int32(9)),
 					SKUSplit: []*armrecommender.SKUMixPlacementItem{
 						{Name: to.Ptr("Standard_D8s_v5"), Capacity: to.Ptr(int32(1)), Zone: to.Ptr("1")},
@@ -490,11 +499,11 @@ func TestGetRecommendations_UsesOverallZoneCoverageAfterPerSKUTie(t *testing.T) 
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
-		recommendation("Standard_D8s_v5", "1", "three-zone-choice", 9, 1),
-		recommendation("Standard_D8s_v5", "2", "three-zone-choice", 9, 1),
-		recommendation("Standard_E2s_v3", "2", "three-zone-choice", 9, 1),
-		recommendation("Standard_E2s_v3", "3", "three-zone-choice", 9, 1),
-		recommendation("Standard_E2s_v3", "1", "two-zone-choice", 9, 1),
+		recommendation("Standard_D8s_v5", "1", "response-id", 9, 1),
+		recommendation("Standard_D8s_v5", "2", "response-id", 9, 1),
+		recommendation("Standard_E2s_v3", "2", "response-id", 9, 1),
+		recommendation("Standard_E2s_v3", "3", "response-id", 9, 1),
+		recommendation("Standard_E2s_v3", "1", "response-id", 9, 1),
 	}))
 }
 
@@ -611,9 +620,8 @@ func placementSplit(name, zone string, priority armrecommender.SKUMixPlacementPr
 	}
 }
 
-func placementChoice(id string, score int32, splits ...*armrecommender.SKUMixPlacementItem) *armrecommender.SKUMixPlacementDeploymentChoice {
+func placementChoice(score int32, splits ...*armrecommender.SKUMixPlacementItem) *armrecommender.SKUMixPlacementDeploymentChoice {
 	return &armrecommender.SKUMixPlacementDeploymentChoice{
-		ID:       to.Ptr(id),
 		Score:    to.Ptr(score),
 		SKUSplit: splits,
 	}
@@ -622,6 +630,7 @@ func placementChoice(id string, score int32, splits ...*armrecommender.SKUMixPla
 func placementResponse(choices ...*armrecommender.SKUMixPlacementDeploymentChoice) *armrecommender.SKUMixPlacementScoresClientPostResponse {
 	return &armrecommender.SKUMixPlacementScoresClientPostResponse{
 		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ID:               to.Ptr("response-id"),
 			ValidUntil:       to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: choices,
 		},
@@ -658,10 +667,10 @@ func recommendationResponseWithSplits(validUntil time.Time, id string, splits ..
 	}
 	return withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
 		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ID:         to.Ptr(id),
 			ValidUntil: to.Ptr(validUntil),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
-					ID:       to.Ptr(id),
 					Score:    to.Ptr(int32(9)),
 					SKUSplit: items,
 				},

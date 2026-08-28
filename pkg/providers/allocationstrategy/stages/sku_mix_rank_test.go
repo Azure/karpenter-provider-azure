@@ -190,10 +190,10 @@ func newTestCapacityProvider() (*fake.SKUMixPlacementScoresAPI, capacityrecommen
 func skuMixResponse(splits ...*armrecommender.SKUMixPlacementItem) *armrecommender.SKUMixPlacementScoresClientPostResponse {
 	return &armrecommender.SKUMixPlacementScoresClientPostResponse{
 		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+			ID:         to.Ptr("recommendation-1"),
 			ValidUntil: to.Ptr(time.Now().Add(2 * time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
-					ID:       to.Ptr("recommendation-1"),
 					Score:    to.Ptr(int32(9)),
 					SKUSplit: splits,
 				},

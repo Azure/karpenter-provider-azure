@@ -157,7 +157,7 @@ func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *
 			"placementChoice", placementChoiceJSON(response.PlacementChoices[0]),
 		)
 	}
-	result, err := recommendationsFromChoices(choices)
+	result, err := recommendationsFromChoices(lo.FromPtr(response.ID), choices)
 	if err != nil {
 		return nil, err
 	}
@@ -255,15 +255,15 @@ type recommendationKey struct {
 	capacityType string
 }
 
-func recommendationsFromChoices(choices []*armrecommender.SKUMixPlacementDeploymentChoice) ([]Recommendation, error) {
+func recommendationsFromChoices(responseID string, choices []*armrecommender.SKUMixPlacementDeploymentChoice) ([]Recommendation, error) {
 	seen := sets.New[recommendationKey]()
 	result := make([]Recommendation, 0)
 	for _, choice := range choices {
-		if choice.ID == nil || choice.Score == nil || choice.SKUSplit == nil {
-			return nil, fmt.Errorf("SKU Mix Placement response for ID: %s contained an invalid placement choice", lo.FromPtr(choice.ID))
+		if choice.Score == nil || choice.SKUSplit == nil {
+			return nil, fmt.Errorf("SKU Mix Placement response for ID: %s contained an invalid placement choice", responseID)
 		}
 		for _, split := range choice.SKUSplit {
-			recommendation, err := recommendationFromSplit(choice, split)
+			recommendation, err := recommendationFromSplit(responseID, choice, split)
 			if err != nil {
 				return nil, err
 			}
@@ -283,9 +283,9 @@ func recommendationsFromChoices(choices []*armrecommender.SKUMixPlacementDeploym
 	return result, nil
 }
 
-func recommendationFromSplit(choice *armrecommender.SKUMixPlacementDeploymentChoice, split *armrecommender.SKUMixPlacementItem) (Recommendation, error) {
+func recommendationFromSplit(responseID string, choice *armrecommender.SKUMixPlacementDeploymentChoice, split *armrecommender.SKUMixPlacementItem) (Recommendation, error) {
 	if split == nil || split.Name == nil || split.Capacity == nil || split.Priority == nil {
-		return Recommendation{}, fmt.Errorf("SKU Mix Placement response for ID: %s contained an invalid SKU split", lo.FromPtr(choice.ID))
+		return Recommendation{}, fmt.Errorf("SKU Mix Placement response for ID: %s contained an invalid SKU split", responseID)
 	}
 	capacityType, ok := capacityTypeForPriority(*split.Priority)
 	if !ok {
@@ -296,7 +296,7 @@ func recommendationFromSplit(choice *armrecommender.SKUMixPlacementDeploymentCho
 		Zone:         lo.FromPtr(split.Zone),
 		CapacityType: capacityType,
 		Score:        lo.FromPtr(choice.Score),
-		ID:           lo.FromPtr(choice.ID),
+		ID:           responseID,
 		Count:        lo.FromPtr(split.Capacity),
 	}, nil
 }
