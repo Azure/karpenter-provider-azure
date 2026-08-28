@@ -1,6 +1,6 @@
 ---
 name: analyze-sku-mix-placement
-description: 'Analyze raw Karpenter integration or E2E logs for SKU Mix Placement and capacity recommendation behavior. Use when asked to inspect test.log, capacityrecommendation/capacity_recommendation.go logs, placement API response ordering, filtered VM SKUs or zones, or sku_mix_rank.go local-versus-recommended rankings and produce a summarized per-call Markdown report.'
+description: 'Analyze raw Karpenter integration or E2E logs for SKU Mix Placement and capacity recommendation behavior. Use when asked to inspect test.log, capacityrecommendation/capacity_recommendation.go logs, placement API response ordering, filtered VM SKUs or zones, or stages/sku_mix_rank.go local-versus-recommended rankings and produce a summarized per-call Markdown report.'
 argument-hint: '<raw-log-path> [report-path]'
 ---
 
@@ -15,6 +15,20 @@ python3 .github/skills/analyze-sku-mix-placement/scripts/analyze.py <raw-log-pat
 
 Use an output path supplied by the user; otherwise write `sku-mix-placement-report.md` beside the
 input log. Omit `--output` only when the user asks for the report inline or on stdout.
+
+## Current Log Schema
+
+Recognize records by the exact `message` value; timestamps, stream prefixes, log levels, and caller
+line numbers may vary:
+
+- `received SKU Mix Placement API response` from
+  `capacityrecommendation/capacity_recommendation.go`, with the raw body in `response`.
+- `sorted non-first SKU Mix Placement choice first` from
+  `capacityrecommendation/capacity_recommendation.go`, with the locally preferred choice in
+  `ourChoice` and the API's first choice in `placementChoice`.
+- `compared SKU Mix Placement recommendations with local ranking` from
+  `stages/sku_mix_rank.go`, with `capacityType`, `placementScope`, `splitID`, `localRanking`, and
+  `recommendedRanking`.
 
 ## Interpretation
 
@@ -52,8 +66,8 @@ For each individual call:
      ordering error was observed but the raw order was not emitted again.
    - When that error exists, state the API's first choice and the locally expected top choice. Include
      the full, pretty-printed body from the associated `received SKU Mix Placement API response` record.
-   - Accept both historical field names (`topChoice`, `firstChoice`) and current field names
-     (`ourChoice`, `placementChoice`).
+   - Read the locally expected choice from `ourChoice` and the API's first choice from
+     `placementChoice`.
 3. Report local-versus-recommended results separately for every observed capacity type and scope.
    - Compare `localRanking` and `recommendedRanking` directly; do not rely only on `differences`.
   - Immediately after every differing comparison, include a compact JSON block copied from the

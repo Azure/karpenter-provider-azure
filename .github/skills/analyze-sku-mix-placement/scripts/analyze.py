@@ -381,8 +381,8 @@ def render_call(call: Call, number: int) -> str:
 
     for index, response in enumerate(failures, 1):
         error = response.order_error.data
-        expected = error.get("ourChoice", error.get("topChoice"))
-        actual = error.get("placementChoice", error.get("firstChoice"))
+        expected = error.get("ourChoice")
+        actual = error.get("placementChoice")
         lines.append(f"#### Ordering failure {index}: {scope_label(response.comparison)}")
         lines.append("")
         lines.append(f"The API returned **{choice_summary(actual)}** first; local priority selected **{choice_summary(expected)}**.")
@@ -435,8 +435,8 @@ def render_summary(calls: list[Call]) -> str:
             if response.order_error is None:
                 continue
             error = response.order_error.data
-            expected = error.get("ourChoice", error.get("topChoice"))
-            actual = error.get("placementChoice", error.get("firstChoice"))
+            expected = error.get("ourChoice")
+            actual = error.get("placementChoice")
             key = (scope_label(response.comparison), choice_skus(actual), choice_skus(expected))
             ordering_groups[key].append((number, call, response))
 
