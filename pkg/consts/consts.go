@@ -48,6 +48,11 @@ const (
 
 	AKSMachineAPIHeaderBatchMaxSize = 50
 
+	// Compute recommendation mode values.
+	ComputeRecommendationModeDisabled = "disabled"
+	ComputeRecommendationModeLog      = "log-only"
+	ComputeRecommendationModeEnabled  = "enabled"
+
 	// Provisioning states for AKS Machine objects.
 	// The SDK's Machine.Properties.ProvisioningState is typed as *string (no typed constants).
 	// Suggestion: find a constant from azure-sdk-for-go if one becomes available.

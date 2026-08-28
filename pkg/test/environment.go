@@ -85,6 +85,7 @@ type Environment struct {
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
 	UsageAPI                    *fake.UsageAPI
+	SKUMixPlacementScoresAPI    *fake.SKUMixPlacementScoresAPI
 	DynamicInterface            dynamic.Interface
 
 	// Fake data stores for the APIs
@@ -154,6 +155,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
 	usageAPI := &fake.UsageAPI{}
+	skuMixPlacementScoresAPI := &fake.SKUMixPlacementScoresAPI{}
 
 	aksDataStorage := fake.NewAKSDataStorage()
 	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(aksDataStorage)
@@ -235,6 +237,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 		usageAPI,
+		skuMixPlacementScoresAPI,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider(allocationstrategy.NewZoneLoadTracker(env.Client))
 	vmInstanceProvider := instance.NewDefaultVMProvider(
@@ -322,6 +325,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
 		UsageAPI:                    usageAPI,
+		SKUMixPlacementScoresAPI:    skuMixPlacementScoresAPI,
 		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
