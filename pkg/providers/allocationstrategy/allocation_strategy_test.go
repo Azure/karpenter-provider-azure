@@ -435,8 +435,8 @@ func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
 func TestFilterInstanceOfferings_InvokesComputeRecommendationStageInLogMode(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(&armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+	client.PostBehavior.Output.Set(&capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil: to.Ptr(time.Now().Add(2 * time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{

@@ -31,7 +31,7 @@ type SKUMixPlacementScoresPostInput struct {
 }
 
 type SKUMixPlacementScoresBehavior struct {
-	PostBehavior MockedFunction[SKUMixPlacementScoresPostInput, armrecommender.SKUMixPlacementScoresClientPostResponse]
+	PostBehavior MockedFunction[SKUMixPlacementScoresPostInput, capacityrecommendation.SKUMixPlacementScoresClientPostResponse]
 }
 
 var _ capacityrecommendation.SKUMixPlacementScoresAPI = &SKUMixPlacementScoresAPI{}
@@ -40,14 +40,14 @@ type SKUMixPlacementScoresAPI struct {
 	SKUMixPlacementScoresBehavior
 }
 
-func (f *SKUMixPlacementScoresAPI) Post(_ context.Context, location string, request armrecommender.SKUMixPlacementRequest, options *armrecommender.SKUMixPlacementScoresClientPostOptions) (armrecommender.SKUMixPlacementScoresClientPostResponse, error) {
+func (f *SKUMixPlacementScoresAPI) Post(_ context.Context, location string, request armrecommender.SKUMixPlacementRequest, options *armrecommender.SKUMixPlacementScoresClientPostOptions) (capacityrecommendation.SKUMixPlacementScoresClientPostResponse, error) {
 	input := &SKUMixPlacementScoresPostInput{
 		Location: location,
 		Request:  request,
 		Options:  options,
 	}
-	return f.PostBehavior.Invoke(input, func(*SKUMixPlacementScoresPostInput) (armrecommender.SKUMixPlacementScoresClientPostResponse, error) {
-		return armrecommender.SKUMixPlacementScoresClientPostResponse{}, nil
+	return f.PostBehavior.Invoke(input, func(*SKUMixPlacementScoresPostInput) (capacityrecommendation.SKUMixPlacementScoresClientPostResponse, error) {
+		return capacityrecommendation.SKUMixPlacementScoresClientPostResponse{}, nil
 	})
 }
 

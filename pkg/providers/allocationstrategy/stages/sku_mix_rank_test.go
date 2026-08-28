@@ -187,9 +187,9 @@ func newTestCapacityProvider() (*fake.SKUMixPlacementScoresAPI, capacityrecommen
 	return client, provider
 }
 
-func skuMixResponse(splits ...*armrecommender.SKUMixPlacementItem) *armrecommender.SKUMixPlacementScoresClientPostResponse {
-	return &armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+func skuMixResponse(splits ...*armrecommender.SKUMixPlacementItem) *capacityrecommendation.SKUMixPlacementScoresClientPostResponse {
+	return &capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil: to.Ptr(time.Now().Add(2 * time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{

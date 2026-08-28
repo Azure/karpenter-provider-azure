@@ -19,10 +19,16 @@ package capacityrecommendation_test
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	azcorefake "github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	armrecommender "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
 	. "github.com/onsi/gomega"
@@ -33,6 +39,56 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 )
+
+type transportFunc func(*http.Request) (*http.Response, error)
+
+func (f transportFunc) Do(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestSKUMixPlacementScoresClientPost_DecodesCapacityLimits(t *testing.T) {
+	g := NewWithT(t)
+	const responseBody = `{
+		"capacityLimits":[{"limit":5,"name":"Standard_D4s_v5","priority":"Spot","reason":"None","zone":"1"}],
+		"id":"f5d3a7cf-6b12-418b-a8f7-aebd6ff219f8",
+		"partialFulfillmentReason":"None",
+		"placementChoices":[{"id":"choice-id","score":9,"skuSplit":[{"capacity":2,"name":"Standard_D4s_v5","priority":"Spot","zone":"1"}]}],
+		"validUntil":"2026-08-28T20:14:47.9763294+00:00"
+	}`
+	transport := transportFunc(func(request *http.Request) (*http.Response, error) {
+		g.Expect(request.Method).To(Equal(http.MethodPost))
+		g.Expect(request.URL.Path).To(Equal("/subscriptions/subscription-id/providers/Microsoft.Compute/locations/eastus/skuMixPlacementScores/recommendations/generate"))
+		g.Expect(request.URL.Query().Get("api-version")).To(Equal("2026-05-05-preview"))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(responseBody)),
+			Request:    request,
+		}, nil
+	})
+	client, err := capacityrecommendation.NewSKUMixPlacementScoresClient(
+		"subscription-id",
+		&azcorefake.TokenCredential{},
+		&arm.ClientOptions{ClientOptions: policy.ClientOptions{Transport: transport}},
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	response, err := client.Post(context.Background(), "eastus", armrecommender.SKUMixPlacementRequest{}, nil)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(response.CapacityLimits).To(HaveLen(1))
+	g.Expect(response.CapacityLimits[0]).To(Equal(&capacityrecommendation.SKUMixPlacementCapacityLimit{
+		Limit:    to.Ptr(int32(5)),
+		Name:     to.Ptr("Standard_D4s_v5"),
+		Priority: to.Ptr(armrecommender.SKUMixPlacementPrioritySpot),
+		Reason:   to.Ptr("None"),
+		Zone:     to.Ptr("1"),
+	}))
+	g.Expect(response.ID).NotTo(BeNil())
+	g.Expect(*response.ID).To(Equal("f5d3a7cf-6b12-418b-a8f7-aebd6ff219f8"))
+	g.Expect(response.PlacementChoices).To(HaveLen(1))
+	g.Expect(response.ValidUntil).NotTo(BeNil())
+	g.Expect(*response.ValidUntil).To(BeTemporally("==", time.Date(2026, 8, 28, 20, 14, 47, 976329400, time.UTC)))
+}
 
 func TestGetRecommendations_ReturnsRecommendations(t *testing.T) {
 	g := NewWithT(t)
@@ -175,7 +231,7 @@ func TestGetRecommendations_InvalidInputErrorIsReturned(t *testing.T) {
 func TestGetRecommendations_InvalidResponseErrorIsReturned(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(&armrecommender.SKUMixPlacementScoresClientPostResponse{})
+	client.PostBehavior.Output.Set(&capacityrecommendation.SKUMixPlacementScoresClientPostResponse{})
 	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
@@ -319,8 +375,8 @@ func TestGetRecommendations_ReturnsErrorIfSplitAPIMissingPriorityInResponse(t *t
 func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIReturnsOutOfOrder(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+	client.PostBehavior.Output.Set(withRegularPriority(&capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
@@ -356,8 +412,8 @@ func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIRetur
 func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+	client.PostBehavior.Output.Set(withRegularPriority(&capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
@@ -411,8 +467,8 @@ func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+	client.PostBehavior.Output.Set(withRegularPriority(&capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
@@ -454,8 +510,8 @@ func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *te
 func TestGetRecommendations_UsesOverallZoneCoverageAfterPerSKUTie(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+	client.PostBehavior.Output.Set(withRegularPriority(&capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil: to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{
@@ -619,16 +675,16 @@ func placementChoice(id string, score int32, splits ...*armrecommender.SKUMixPla
 	}
 }
 
-func placementResponse(choices ...*armrecommender.SKUMixPlacementDeploymentChoice) *armrecommender.SKUMixPlacementScoresClientPostResponse {
-	return &armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+func placementResponse(choices ...*armrecommender.SKUMixPlacementDeploymentChoice) *capacityrecommendation.SKUMixPlacementScoresClientPostResponse {
+	return &capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil:       to.Ptr(time.Now().Add(time.Minute)),
 			PlacementChoices: choices,
 		},
 	}
 }
 
-func withRegularPriority(response *armrecommender.SKUMixPlacementScoresClientPostResponse) *armrecommender.SKUMixPlacementScoresClientPostResponse {
+func withRegularPriority(response *capacityrecommendation.SKUMixPlacementScoresClientPostResponse) *capacityrecommendation.SKUMixPlacementScoresClientPostResponse {
 	for _, choice := range response.PlacementChoices {
 		for _, split := range choice.SKUSplit {
 			if split.Priority == nil {
@@ -639,7 +695,7 @@ func withRegularPriority(response *armrecommender.SKUMixPlacementScoresClientPos
 	return response
 }
 
-func recommendationResponse(validUntil time.Time, score int32, name string, zone string) *armrecommender.SKUMixPlacementScoresClientPostResponse {
+func recommendationResponse(validUntil time.Time, score int32, name string, zone string) *capacityrecommendation.SKUMixPlacementScoresClientPostResponse {
 	response := recommendationResponseWithSplits(validUntil, "choice-id",
 		armrecommender.SKUMixPlacementItem{
 			Name:     to.Ptr(name),
@@ -651,13 +707,13 @@ func recommendationResponse(validUntil time.Time, score int32, name string, zone
 	return response
 }
 
-func recommendationResponseWithSplits(validUntil time.Time, id string, splits ...armrecommender.SKUMixPlacementItem) *armrecommender.SKUMixPlacementScoresClientPostResponse {
+func recommendationResponseWithSplits(validUntil time.Time, id string, splits ...armrecommender.SKUMixPlacementItem) *capacityrecommendation.SKUMixPlacementScoresClientPostResponse {
 	items := make([]*armrecommender.SKUMixPlacementItem, 0, len(splits))
 	for i := range splits {
 		items = append(items, &splits[i])
 	}
-	return withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
-		SKUMixPlacementResponse: armrecommender.SKUMixPlacementResponse{
+	return withRegularPriority(&capacityrecommendation.SKUMixPlacementScoresClientPostResponse{
+		SKUMixPlacementResponse: capacityrecommendation.SKUMixPlacementResponse{
 			ValidUntil: to.Ptr(validUntil),
 			PlacementChoices: []*armrecommender.SKUMixPlacementDeploymentChoice{
 				{

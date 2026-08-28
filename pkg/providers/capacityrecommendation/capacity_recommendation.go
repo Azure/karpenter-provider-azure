@@ -48,7 +48,7 @@ type SKUMixPlacementScoresAPI interface {
 		location string,
 		skuMixPlacementRequest armrecommender.SKUMixPlacementRequest,
 		options *armrecommender.SKUMixPlacementScoresClientPostOptions,
-	) (armrecommender.SKUMixPlacementScoresClientPostResponse, error)
+	) (SKUMixPlacementScoresClientPostResponse, error)
 }
 
 // Provider supplies capacity-aware VM placement recommendations.
@@ -235,7 +235,7 @@ func toSKUMixPlacementRequest(input *RankingInput) armrecommender.SKUMixPlacemen
 // sortedPlacementChoices ensures that choices follow the order we believe is best in the presence of score ties.
 // Today the API can return choices in an order that differs from this comparison, so sort a copy while preserving
 // API order for complete ties.
-func sortedPlacementChoices(response armrecommender.SKUMixPlacementScoresClientPostResponse, input *RankingInput) []*armrecommender.SKUMixPlacementDeploymentChoice {
+func sortedPlacementChoices(response SKUMixPlacementScoresClientPostResponse, input *RankingInput) []*armrecommender.SKUMixPlacementDeploymentChoice {
 	choices := make([]*armrecommender.SKUMixPlacementDeploymentChoice, 0, len(response.PlacementChoices))
 	for _, choice := range response.PlacementChoices {
 		if choice == nil {
@@ -328,7 +328,7 @@ func placementChoiceJSON(choice *armrecommender.SKUMixPlacementDeploymentChoice)
 	return string(value)
 }
 
-func skuMixPlacementResponseJSON(response armrecommender.SKUMixPlacementScoresClientPostResponse) string {
+func skuMixPlacementResponseJSON(response SKUMixPlacementScoresClientPostResponse) string {
 	value, err := json.Marshal(response.SKUMixPlacementResponse)
 	if err != nil {
 		return fmt.Sprintf("<failed to marshal SKU Mix Placement response: %s>", err)
