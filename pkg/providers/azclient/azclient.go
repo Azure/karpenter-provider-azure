@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	armrecommender "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -32,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
@@ -65,6 +67,7 @@ type AZClient struct {
 	NetworkSecurityGroupsClient networksecuritygroup.API
 	SubscriptionsClient         zone.SubscriptionsAPI
 	UsageClient                 quota.UsageAPI
+	SKUMixPlacementClient       capacityrecommendation.SKUMixPlacementScoresAPI
 }
 
 func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
@@ -121,6 +124,7 @@ func NewAZClientFromAPI(
 	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
 	usageClient quota.UsageAPI,
+	skuMixPlacementClient capacityrecommendation.SKUMixPlacementScoresAPI,
 ) *AZClient {
 	return &AZClient{
 		virtualMachinesClient:          virtualMachinesClient,
@@ -140,6 +144,7 @@ func NewAZClientFromAPI(
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 		SubscriptionsClient:            subscriptionsClient,
 		UsageClient:                    usageClient,
+		SKUMixPlacementClient:          skuMixPlacementClient,
 	}
 }
 
@@ -218,6 +223,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	//   * It is functionally identical to the Microsoft.Quota API.
 	// See designs/0012-quota-fungibility-reactivity-improvements.md for more details.
 	usageClient, err := armcompute.NewUsageClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	skuMixPlacementClient, err := armrecommender.NewSKUMixPlacementScoresClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -308,5 +318,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		skuClient,
 		subscriptionsClient,
 		usageClient,
+		skuMixPlacementClient,
 	), nil
 }

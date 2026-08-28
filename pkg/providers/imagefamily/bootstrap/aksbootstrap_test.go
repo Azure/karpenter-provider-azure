@@ -18,6 +18,7 @@ package bootstrap
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,7 +166,9 @@ func TestKubeletConfigMap(t *testing.T) {
 			"cpu": "200m",
 		},
 		KubeReserved: map[string]string{
-			"cpu": "400m",
+			"cpu":    "180m",
+			"memory": "2250Mi",
+			"pid":    "1000",
 		},
 		EvictionHard: map[string]string{
 			"memory.available": "100Mi",
@@ -192,7 +195,6 @@ func TestKubeletConfigMap(t *testing.T) {
 		"--container-log-max-size":        "42Mi",
 		"--pod-max-pids":                  "99",
 		"--system-reserved":               "cpu=200m",               // TODO: test multiple resource
-		"--kube-reserved":                 "cpu=400m",               // TODO: test multiple resource
 		"--eviction-hard":                 "memory.available<100Mi", // TODO: test multiple resource
 		"--eviction-soft":                 "memory.available<99Mi",  // TODO: test multiple resource
 		"--eviction-soft-grace-period":    "memory.available=1m30s",
@@ -205,4 +207,81 @@ func TestKubeletConfigMap(t *testing.T) {
 	for k, v := range expectedKubeletConfigs {
 		g.Expect(actualKubeletConfig[k]).To(Equal(v), fmt.Sprintf("parameter mismatch for %s", k))
 	}
+}
+
+func TestKubeletConfigMapEnforceNodeAllocatable(t *testing.T) {
+	g := NewWithT(t)
+
+	hardened := kubeletConfigToMap(&KubeletConfiguration{
+		KubeReserved:           map[string]string{"pid": "1000"},
+		SystemReserved:         map[string]string{"pid": "1000"},
+		EnforceNodeAllocatable: []string{"pods", "kube-reserved", "system-reserved"},
+	})
+	g.Expect(hardened["--kube-reserved"]).To(Equal("pid=1000"))
+	g.Expect(hardened["--system-reserved"]).To(Equal("pid=1000"))
+	g.Expect(hardened["--enforce-node-allocatable"]).To(Equal("pods,kube-reserved,system-reserved"))
+	g.Expect(hardened["--kube-reserved-cgroup"]).To(Equal("/kubereserved.slice"))
+	g.Expect(hardened["--system-reserved-cgroup"]).To(Equal("/system.slice"))
+
+	nonHardened := kubeletConfigToMap(&KubeletConfiguration{EnforceNodeAllocatable: []string{"pods"}})
+	g.Expect(nonHardened).ToNot(HaveKey("--kube-reserved-cgroup"))
+	g.Expect(nonHardened).ToNot(HaveKey("--system-reserved-cgroup"))
+}
+
+func TestKubeletConfigMapEmptyConfigurationOmitsEnforceNodeAllocatable(t *testing.T) {
+	g := NewWithT(t)
+
+	configuration := kubeletConfigToMap(&KubeletConfiguration{})
+	_, ok := configuration["--enforce-node-allocatable"]
+	g.Expect(ok).To(BeFalse())
+}
+
+func TestKubeletConfigMapNodeHardeningSoftEviction(t *testing.T) {
+	g := NewWithT(t)
+	configuration := &KubeletConfiguration{
+		EvictionSoft: map[string]string{
+			"memory.available":  "1Gi",
+			"nodefs.available":  "12%",
+			"nodefs.inodesFree": "7%",
+		},
+		EvictionSoftGracePeriod: map[string]metav1.Duration{
+			"memory.available":  {Duration: 30 * time.Second},
+			"nodefs.available":  {Duration: 2 * time.Minute},
+			"nodefs.inodesFree": {Duration: 2 * time.Minute},
+		},
+		EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
+	}
+
+	flags := kubeletConfigToMap(configuration)
+	g.Expect(strings.Split(flags["--eviction-soft"], ",")).To(ConsistOf(
+		"memory.available<1Gi",
+		"nodefs.available<12%",
+		"nodefs.inodesFree<7%",
+	))
+	g.Expect(strings.Split(flags["--eviction-soft-grace-period"], ",")).To(ConsistOf(
+		"memory.available=30s",
+		"nodefs.available=2m0s",
+		"nodefs.inodesFree=2m0s",
+	))
+	g.Expect(flags["--eviction-max-pod-grace-period"]).To(Equal("60"))
+}
+
+func TestKubeletConfigMapHardEviction(t *testing.T) {
+	g := NewWithT(t)
+	configuration := &KubeletConfiguration{
+		EvictionHard: map[string]string{
+			"memory.available":  "512Mi",
+			"nodefs.available":  "10%",
+			"nodefs.inodesFree": "5%",
+			"pid.available":     "2000",
+		},
+	}
+
+	flags := kubeletConfigToMap(configuration)
+	g.Expect(strings.Split(flags["--eviction-hard"], ",")).To(ConsistOf(
+		"memory.available<512Mi",
+		"nodefs.available<10%",
+		"nodefs.inodesFree<5%",
+		"pid.available<2000",
+	))
 }
