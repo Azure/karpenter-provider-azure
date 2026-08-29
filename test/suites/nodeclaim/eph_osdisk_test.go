@@ -29,8 +29,7 @@ import (
 
 func requireTrustedLaunchBoundaryInstanceType() {
 	GinkgoHelper()
-	// The maximum eligible Ephemeral OS placement is 50 GiB. The compatibility
-	// label reports that binary capacity as 53 decimal GB. Trusted Launch therefore
+	// The maximum eligible Ephemeral OS placement is 50 GiB. Trusted Launch
 	// makes a 50-GiB disk too large and leaves exactly enough room for 49 GiB.
 	test.ReplaceRequirements(nodePool,
 		karpv1.NodeSelectorRequirementWithMinValues{
@@ -40,7 +39,7 @@ func requireTrustedLaunchBoundaryInstanceType() {
 		karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
 			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"53"},
+			Values:   []string{"50"},
 		},
 	)
 }

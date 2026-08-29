@@ -1089,6 +1089,17 @@ var _ = Describe("InstanceType Provider", func() {
 				Entry("NVMe exact fit with Secure Boot", withSKUCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(128), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, false),
 				Entry("NVMe one-GiB headroom with Secure Boot", withSKUCapability(fake.MakeSKU("Standard_D128ds_v6"), "NvmeDiskSizeInMiB", "131072"), int32(127), &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, true),
 			)
+			It("should continue to resource disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+				testNodeClass := test.AKSNodeClass()
+				testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
+				testNodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+				}
+
+				placement := instancetype.FindEphemeralOSDiskPlacement(fake.MakeSKU("Standard_B20ms"), testNodeClass)
+				Expect(placement).ToNot(BeNil())
+				Expect(*placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+			})
 			Context("Placement", func() {
 				It("should prefer NVMe disk if supported for ephemeral", func() {
 					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
