@@ -53,6 +53,10 @@ var _ = Describe("Ephemeral OS Disk", func() {
 	})
 	It("should select resource disk when cache is too small and resource disk fits", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelSKUFamily,
+			Operator: corev1.NodeSelectorOpExists,
+		})
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelInstanceTypeStable,
 			Operator: corev1.NodeSelectorOpIn,
 			// Every candidate supports both placements with less than 128 GiB of cache
