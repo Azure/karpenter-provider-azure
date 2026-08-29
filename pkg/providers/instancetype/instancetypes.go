@@ -561,33 +561,24 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesCache.Unlock()
 }
 
+// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk size in GiB, capped at the Compute limit.
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
-	if sku == nil {
+	candidates := ephemeralOSDiskCandidates(sku)
+	if len(candidates) == 0 {
 		return 0, nil
 	}
 
-	if !sku.IsEphemeralOSDiskSupported() {
-		return 0, nil // ephemeral OS disk is not supported by this SKU
+	largest := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate.sizeBytes > largest.sizeBytes {
+			largest = candidate
+		}
 	}
-
-	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
-
-	// Check NVMe disk first (highest priority)
-	if maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku) {
-		return maxNVMeMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
+	sizeGB = min(largest.sizeBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+	if sizeGB == 0 {
+		return 0, nil
 	}
-
-	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
-	if maxCacheDiskBytes > 0 {
-		return maxCacheDiskBytes / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
-	}
-
-	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
-	if maxResourceDiskMiB > 0 {
-		return maxResourceDiskMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
-	}
-
-	return 0, nil
+	return sizeGB, lo.ToPtr(largest.placement)
 }
 
 func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
