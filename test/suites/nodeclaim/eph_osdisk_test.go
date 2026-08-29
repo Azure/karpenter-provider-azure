@@ -121,6 +121,38 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
 		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
 	})
+	It("should select resource disk when Trusted Launch consumes an exact-fit cache boundary", func() {
+		test.ReplaceRequirements(nodePool,
+			karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
+			},
+			karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      corev1.LabelInstanceTypeStable,
+				Operator: corev1.NodeSelectorOpIn,
+				// Each candidate has a 50-GiB CacheDisk and 75-GiB ResourceDisk.
+				Values: []string{"Standard_D2ds_v4", "Standard_DC1ds_v3", "Standard_E2ds_v4"},
+			},
+		)
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
+		nodeClass.Spec.Security = &v1beta1.Security{
+			TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+		}
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		vm := env.GetVM(pods[0].Spec.NodeName)
+
+		Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(50)))
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).ToNot(BeNil())
+		Expect(*vm.Properties.SecurityProfile.SecurityType).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+	})
 	It("should use an ephemeral disk when Trusted Launch has one GiB of headroom", func() {
 		requireTrustedLaunchBoundaryInstanceType()
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](49)
