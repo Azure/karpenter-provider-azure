@@ -207,10 +207,11 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 	}
 
 	placement = instancetype.FindEphemeralOSDiskPlacement(sku, nodeClass)
+
 	if placement != nil {
 		return consts.StorageProfileEphemeral, placement, nil
 	}
-	return consts.StorageProfileManagedDisks, nil, nil
+	return consts.StorageProfileManagedDisks, placement, nil
 }
 
 func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool, trustedLaunch bool) (string, error) {
