@@ -130,11 +130,11 @@ var _ = Describe("Ephemeral OS Disk", func() {
 			karpv1.NodeSelectorRequirementWithMinValues{
 				Key:      corev1.LabelInstanceTypeStable,
 				Operator: corev1.NodeSelectorOpIn,
-				// Each candidate has a 50-GiB CacheDisk and 75-GiB ResourceDisk.
-				Values: []string{"Standard_D2ds_v4", "Standard_DC1ds_v3", "Standard_E2ds_v4"},
+				// Each candidate has a 30-GiB CacheDisk and a larger ResourceDisk.
+				Values: []string{"Standard_B4ms", "Standard_B8ms", "Standard_B12ms"},
 			},
 		)
-		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
 		nodeClass.Spec.Security = &v1beta1.Security{
 			TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
 		}
@@ -145,7 +145,7 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		vm := env.GetVM(pods[0].Spec.NodeName)
 
 		Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).ToNot(BeNil())
-		Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(50)))
+		Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(30)))
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
 		Expect(*vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
