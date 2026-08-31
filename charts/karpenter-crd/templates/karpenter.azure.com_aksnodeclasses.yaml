@@ -791,12 +791,13 @@ spec:
                 default: OCIContainer
                 description: |-
                   workloadRuntime determines the additional workload runtime a node can run.
-                  OCIContainer (the default) runs standard OCI containers only. KataVmIsolation enables AKS
-                  Pod Sandboxing alongside standard containers, so pods with runtimeClassName: kata-vm-isolation
+                  OCIContainer (the default) runs standard OCI containers only.
+                  KataVmIsolation enables AKS Pod Sandboxing alongside standard containers,
+                  so pods with runtimeClassName: kata-vm-isolation
                   run in lightweight VMs while other pods on the same node keep running as normal containers.
-                  Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS, and
-                  needs a generation-2, nested-virtualization-capable VM size.
-                  See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
+                  Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS and Trusted Launch, and
+                  requires a generation-2, nested-virtualization-capable VM size.
+                  See https://learn.microsoft.com/azure/aks/use-pod-sandboxing for more details.
                 enum:
                 - OCIContainer
                 - KataVmIsolation
@@ -833,6 +834,11 @@ spec:
                 FIPS
               rule: 'has(self.workloadRuntime) && self.workloadRuntime == ''KataVmIsolation''
                 ? (!has(self.fipsMode) || self.fipsMode != ''FIPS'') : true'
+            - message: workloadRuntime KataVmIsolation is not supported with TrustedLaunch
+              rule: 'has(self.workloadRuntime) && self.workloadRuntime == ''KataVmIsolation''
+                ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))) : true'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
@@ -1739,12 +1745,13 @@ spec:
                 default: OCIContainer
                 description: |-
                   workloadRuntime determines the additional workload runtime a node can run.
-                  OCIContainer (the default) runs standard OCI containers only. KataVmIsolation enables AKS
-                  Pod Sandboxing alongside standard containers, so pods with runtimeClassName: kata-vm-isolation
+                  OCIContainer (the default) runs standard OCI containers only.
+                  KataVmIsolation enables AKS Pod Sandboxing alongside standard containers,
+                  so pods with runtimeClassName: kata-vm-isolation
                   run in lightweight VMs while other pods on the same node keep running as normal containers.
-                  Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS, and
-                  needs a generation-2, nested-virtualization-capable VM size.
-                  See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
+                  Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS and Trusted Launch, and
+                  requires a generation-2, nested-virtualization-capable VM size.
+                  See https://learn.microsoft.com/azure/aks/use-pod-sandboxing for more details.
                 enum:
                 - OCIContainer
                 - KataVmIsolation
@@ -1781,6 +1788,11 @@ spec:
                 FIPS
               rule: 'has(self.workloadRuntime) && self.workloadRuntime == ''KataVmIsolation''
                 ? (!has(self.fipsMode) || self.fipsMode != ''FIPS'') : true'
+            - message: workloadRuntime KataVmIsolation is not supported with TrustedLaunch
+              rule: 'has(self.workloadRuntime) && self.workloadRuntime == ''KataVmIsolation''
+                ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm)
+                && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
+                && self.security.trustedLaunch.secureBoot))) : true'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:

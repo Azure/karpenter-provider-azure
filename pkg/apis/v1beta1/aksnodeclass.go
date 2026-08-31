@@ -32,6 +32,7 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+// +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation}
 type WorkloadRuntime string
 
 const (
@@ -73,6 +74,7 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with TrustedLaunch",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))) : true"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -98,14 +100,14 @@ type AKSNodeClassSpec struct {
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
 	// workloadRuntime determines the additional workload runtime a node can run.
-	// OCIContainer (the default) runs standard OCI containers only. KataVmIsolation enables AKS
-	// Pod Sandboxing alongside standard containers, so pods with runtimeClassName: kata-vm-isolation
+	// OCIContainer (the default) runs standard OCI containers only.
+	// KataVmIsolation enables AKS Pod Sandboxing alongside standard containers,
+	// so pods with runtimeClassName: kata-vm-isolation
 	// run in lightweight VMs while other pods on the same node keep running as normal containers.
-	// Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS, and
-	// needs a generation-2, nested-virtualization-capable VM size.
-	// See https://learn.microsoft.com/en-us/azure/aks/use-pod-sandboxing
+	// Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS and Trusted Launch, and
+	// requires a generation-2, nested-virtualization-capable VM size.
+	// See https://learn.microsoft.com/azure/aks/use-pod-sandboxing for more details.
 	// +default="OCIContainer"
-	// +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation}
 	// +optional
 	WorkloadRuntime *WorkloadRuntime `json:"workloadRuntime,omitempty"`
 	// tags to be applied on Azure resources like instances.

@@ -777,6 +777,30 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("FIPS with OCIContainer should succeed", &v1alpha2.FIPSModeFIPS, lo.ToPtr(v1alpha2.WorkloadRuntimeOCIContainer), true),
 			Entry("FIPS with unset workloadRuntime should succeed", &v1alpha2.FIPSModeFIPS, nil, true),
 		)
+
+		DescribeTable("should reject KataVmIsolation combined with TrustedLaunch", func(trustedLaunch *v1alpha2.TrustedLaunch, workloadRuntime *v1alpha2.WorkloadRuntime, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1alpha2.AzureLinuxImageFamily),
+					WorkloadRuntime: workloadRuntime,
+				},
+			}
+			if trustedLaunch != nil {
+				nodeClass.Spec.Security = &v1alpha2.Security{TrustedLaunch: trustedLaunch}
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("vTPM with KataVmIsolation should fail", &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)}, lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation), false),
+			Entry("Secure Boot with KataVmIsolation should fail", &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation), false),
+			Entry("disabled TrustedLaunch with KataVmIsolation should succeed", &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation), true),
+			Entry("unset TrustedLaunch with KataVmIsolation should succeed", nil, lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation), true),
+			Entry("vTPM with OCIContainer should succeed", &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)}, lo.ToPtr(v1alpha2.WorkloadRuntimeOCIContainer), true),
+		)
 	})
 
 	Context("GPU", func() {

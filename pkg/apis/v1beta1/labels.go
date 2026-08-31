@@ -159,16 +159,12 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
-	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
-	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
-	AKSLabelPriority                = AKSLabelDomain + "/priority"         // "spot" or "regular".
-	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
-	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
-
-	// Kata (AKS Pod Sandboxing) label. Keep this in sync with AzureWellKnownLabels,
-	// WellKnownValuesForRequirements (see init), and the CEL allowlist in
-	// hack/validation/{labels,requirements}.sh (regenerate CRDs after changes).
-	AKSLabelKataVMIsolation = AKSLabelDomain + "/kata-vm-isolation" // "true" or not specified
+	AKSLabelMode                    = AKSLabelDomain + "/mode"              // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority"  // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelPriority                = AKSLabelDomain + "/priority"          // "spot" or "regular".
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"            // "Ubuntu" or "AzureLinux"
+	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"      // "true" or not specified
+	AKSLabelKataVMIsolation         = AKSLabelDomain + "/kata-vm-isolation" // "true" or not specified
 
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
 	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)

@@ -26,6 +26,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -46,6 +48,9 @@ const (
 	// KataPodSandboxingUnsupportedProvisionMode is the condition reason set when a NodeClass requests a
 	// Kata workloadRuntime but the provision mode cannot provision the Kata host stack.
 	KataPodSandboxingUnsupportedProvisionMode = "KataPodSandboxingUnsupportedProvisionMode"
+	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
+	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
+	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
 )
 
 type ValidationReconciler struct {
@@ -78,6 +83,20 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
 		)
 		return reconcile.Result{}, nil
+	}
+	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
+		}
+		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				KataRequiresAzureLinux3,
+				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
+			)
+			return reconcile.Result{}, nil
+		}
 	}
 
 	// Check BYOK RBAC if DES ID is configured
