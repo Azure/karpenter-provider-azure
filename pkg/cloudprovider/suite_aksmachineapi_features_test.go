@@ -634,15 +634,12 @@ var _ = Describe("CloudProvider", func() {
 		// coverage lives in test/suites/integration/kata_test.go.
 		Context("Create - WorkloadRuntime (Kata Pod Sandboxing)", func() {
 			BeforeEach(func() {
-				// Kata requires AzureLinux + a nested-virt-capable gen-2 SKU; constrain to a known
-				// gen-2 SKU for determinism.
+				kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
+				if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+					Skip("Kata requires Azure Linux 3")
+				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 				nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
-				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1.LabelInstanceTypeStable,
-					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D2_v5"},
-				})
 				// Re-reconcile so the Kata image variant lands in the NodeClass status.
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
