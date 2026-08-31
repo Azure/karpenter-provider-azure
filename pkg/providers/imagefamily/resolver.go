@@ -272,46 +272,41 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		kubeletConfig.EnforceNodeAllocatable = []string{"pods", "kube-reserved", "system-reserved"}
 	}
 
-	// Overlay per-key customer overrides from AKSNodeClass.spec.kubelet on top of the
-	// baseline + hardening defaults, matching AKS RP per-key semantics for KubeletConfig.
-	if nodeClass.Spec.Kubelet != nil {
-		if len(nodeClass.Spec.Kubelet.KubeReserved) > 0 {
-			if kubeletConfig.KubeReserved == nil {
-				kubeletConfig.KubeReserved = map[string]string{}
-			}
-			for k, v := range nodeClass.Spec.Kubelet.KubeReserved {
-				kubeletConfig.KubeReserved[k] = v
-			}
+	overlayKubeletConfiguration(kubeletConfig, nodeClass.Spec.Kubelet)
+	return kubeletConfig
+}
+
+func overlayKubeletConfiguration(kubeletConfig *bootstrap.KubeletConfiguration, overrides *v1beta1.KubeletConfiguration) {
+	if overrides == nil {
+		return
+	}
+	kubeletConfig.KubeReserved = mergeStringMap(kubeletConfig.KubeReserved, overrides.KubeReserved)
+	kubeletConfig.EvictionHard = mergeStringMap(kubeletConfig.EvictionHard, overrides.EvictionHard)
+	kubeletConfig.EvictionSoft = mergeStringMap(kubeletConfig.EvictionSoft, overrides.EvictionSoft)
+	if len(overrides.EvictionSoftGracePeriod) > 0 {
+		if kubeletConfig.EvictionSoftGracePeriod == nil {
+			kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{}
 		}
-		if len(nodeClass.Spec.Kubelet.EvictionHard) > 0 {
-			if kubeletConfig.EvictionHard == nil {
-				kubeletConfig.EvictionHard = map[string]string{}
-			}
-			for k, v := range nodeClass.Spec.Kubelet.EvictionHard {
-				kubeletConfig.EvictionHard[k] = v
-			}
-		}
-		if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 {
-			if kubeletConfig.EvictionSoft == nil {
-				kubeletConfig.EvictionSoft = map[string]string{}
-			}
-			for k, v := range nodeClass.Spec.Kubelet.EvictionSoft {
-				kubeletConfig.EvictionSoft[k] = v
-			}
-		}
-		if len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 {
-			if kubeletConfig.EvictionSoftGracePeriod == nil {
-				kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{}
-			}
-			for k, v := range nodeClass.Spec.Kubelet.EvictionSoftGracePeriod {
-				kubeletConfig.EvictionSoftGracePeriod[k] = v
-			}
-		}
-		if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
-			kubeletConfig.EvictionMaxPodGracePeriod = nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod
+		for key, value := range overrides.EvictionSoftGracePeriod {
+			kubeletConfig.EvictionSoftGracePeriod[key] = value
 		}
 	}
-	return kubeletConfig
+	if overrides.EvictionMaxPodGracePeriod != nil {
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(*overrides.EvictionMaxPodGracePeriod)
+	}
+}
+
+func mergeStringMap(base, overrides map[string]string) map[string]string {
+	if len(overrides) == 0 {
+		return base
+	}
+	if base == nil {
+		base = map[string]string{}
+	}
+	for key, value := range overrides {
+		base[key] = value
+	}
+	return base
 }
 
 func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool) []types.DefaultImageOutput {

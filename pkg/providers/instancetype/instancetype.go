@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/Azure/skewer"
 	"github.com/samber/lo"
@@ -136,9 +138,9 @@ func newInstanceType(
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, params),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening),
+			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening, params.KubeReserved),
 			SystemReserved:    SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
-			EvictionThreshold: EvictionThreshold(totalMemoryMiB, enableNodeHardening),
+			EvictionThreshold: EvictionThreshold(totalMemoryMiB, enableNodeHardening, params.EvictionHard),
 		},
 	}
 }
@@ -360,7 +362,7 @@ func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableN
 	}
 }
 
-func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool) corev1.ResourceList {
+func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
 	reservedMemoryMiB := int64(1024 * reservedMemoryTaxGi.Calculate(float64(totalMemoryMiB)/1024))
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
 
@@ -372,11 +374,33 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
 		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMiB*bytesPerMiB, resource.BinarySI),
 	}
+	if len(overrides) > 0 {
+		for _, resourceName := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+			if value, ok := overrides[0][string(resourceName)]; ok {
+				if quantity, err := resource.ParseQuantity(value); err == nil {
+					resources[resourceName] = quantity
+				}
+			}
+		}
+	}
 
 	return resources
 }
 
-func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool) corev1.ResourceList {
+func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
+	if len(overrides) > 0 {
+		if value, ok := overrides[0][MemoryAvailable]; ok {
+			if strings.HasSuffix(value, "%") {
+				if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil {
+					return corev1.ResourceList{
+						corev1.ResourceMemory: *resource.NewQuantity(int64(float64(totalMemoryMiB)*percentage/100)*bytesPerMiB, resource.BinarySI),
+					}
+				}
+			} else if quantity, err := resource.ParseQuantity(value); err == nil {
+				return corev1.ResourceList{corev1.ResourceMemory: quantity}
+			}
+		}
+	}
 	if enableNodeHardening {
 		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
 		return corev1.ResourceList{

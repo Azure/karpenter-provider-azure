@@ -19,12 +19,14 @@ package instance
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -109,6 +111,10 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// see batch_field_registry.go — ClearPerMachineFields must cover any new per-machine
 	// MachineProperties field so batch grouping and header extraction stay correct.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
+	kubeletConfig, err := configureKubeletConfig(nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("configuring kubelet for AKS Machine API: %w", err)
+	}
 
 	return &armcontainerservice.Machine{
 		// BATCH: Zones is a per-machine field (selected from instance type offerings).
@@ -153,7 +159,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeLabels:          nodeLabels,
 				OrchestratorVersion: lo.ToPtr(orchestratorVersion),
 				// KubeletDiskType:          "",
-				KubeletConfig:            configureKubeletConfig(nodeClass),
+				KubeletConfig:            kubeletConfig,
 				NodeInitializationTaints: nodeInitializationTaints,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
@@ -386,11 +392,11 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 }
 
 //nolint:gocyclo // borderline complexity violation, code is not hard to read
-func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.KubeletConfig {
+func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) (*armcontainerservice.KubeletConfig, error) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
 
 	if nodeClass == nil || nodeClass.Spec.Kubelet == nil {
-		return nil
+		return nil, nil
 	}
 
 	kubeletConfig := &armcontainerservice.KubeletConfig{}
@@ -431,7 +437,72 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 
 	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
 
-	return kubeletConfig
+	if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 || len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 || nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
+		return nil, fmt.Errorf("soft eviction overrides are not supported by the AKS Machine API")
+	}
+
+	if len(nodeClass.Spec.Kubelet.KubeReserved) > 0 {
+		kubeReserved, err := configureAKSMachineKubeReserved(nodeClass.Spec.Kubelet.KubeReserved)
+		if err != nil {
+			return nil, err
+		}
+		kubeletConfig.KubeReserved = kubeReserved
+	}
+	if len(nodeClass.Spec.Kubelet.EvictionHard) > 0 {
+		hardEvictionThreshold, err := configureAKSMachineHardEviction(nodeClass.Spec.Kubelet.EvictionHard)
+		if err != nil {
+			return nil, err
+		}
+		kubeletConfig.HardEvictionThreshold = hardEvictionThreshold
+	}
+
+	return kubeletConfig, nil
+}
+
+func configureAKSMachineKubeReserved(overrides map[string]string) (*armcontainerservice.KubeReserved, error) {
+	result := &armcontainerservice.KubeReserved{}
+	for key, value := range overrides {
+		quantity, err := resource.ParseQuantity(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid kubeReserved[%q] value %q: %w", key, value, err)
+		}
+		switch key {
+		case string(v1.ResourceCPU):
+			milliValue := quantity.MilliValue()
+			if milliValue < math.MinInt32 || milliValue > math.MaxInt32 || quantity.Cmp(*resource.NewMilliQuantity(milliValue, resource.DecimalSI)) != 0 {
+				return nil, fmt.Errorf("kubeReserved[%q] value %q cannot be represented as whole millicores", key, value)
+			}
+			result.CPUMillicores = lo.ToPtr(int32(milliValue))
+		case string(v1.ResourceMemory):
+			bytes := quantity.Value()
+			const bytesPerMiB = int64(1024 * 1024)
+			memoryMiB := bytes / bytesPerMiB
+			if bytes%bytesPerMiB != 0 || memoryMiB < math.MinInt32 || memoryMiB > math.MaxInt32 {
+				return nil, fmt.Errorf("kubeReserved[%q] value %q cannot be represented as whole MiB", key, value)
+			}
+			result.MemoryMB = lo.ToPtr(int32(memoryMiB))
+		default:
+			return nil, fmt.Errorf("kubeReserved[%q] is not supported by the AKS Machine API", key)
+		}
+	}
+	return result, nil
+}
+
+func configureAKSMachineHardEviction(overrides map[string]string) (*armcontainerservice.HardEvictionThreshold, error) {
+	result := &armcontainerservice.HardEvictionThreshold{}
+	for key, value := range overrides {
+		switch key {
+		case instancetype.MemoryAvailable:
+			result.MemoryAvailable = lo.ToPtr(value)
+		case instancetype.NodeFSAvailable:
+			result.NodeFsAvailable = lo.ToPtr(value)
+		case instancetype.NodeFSInodesFree:
+			result.NodeFsInodesFree = lo.ToPtr(value)
+		default:
+			return nil, fmt.Errorf("evictionHard[%q] is not supported by the AKS Machine API", key)
+		}
+	}
+	return result, nil
 }
 
 // convertContainerLogMaxSizeToMB converts string size to MB integer

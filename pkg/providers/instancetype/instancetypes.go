@@ -19,6 +19,7 @@ package instancetype
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -69,6 +70,8 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+	KubeReserved             map[string]string
+	EvictionHard             map[string]string
 }
 
 type instanceTypesSourceDataGeneration struct {
@@ -154,6 +157,10 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+	}
+	if nodeClass.Spec.Kubelet != nil {
+		instanceTypeParams.KubeReserved = maps.Clone(nodeClass.Spec.Kubelet.KubeReserved)
+		instanceTypeParams.EvictionHard = maps.Clone(nodeClass.Spec.Kubelet.EvictionHard)
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
