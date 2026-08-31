@@ -391,9 +391,9 @@ func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides
 	if len(overrides) > 0 {
 		if value, ok := overrides[0][MemoryAvailable]; ok {
 			if strings.HasSuffix(value, "%") {
-				if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil {
+				if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
 					return corev1.ResourceList{
-						corev1.ResourceMemory: *resource.NewQuantity(int64(float64(totalMemoryMiB)*percentage/100)*bytesPerMiB, resource.BinarySI),
+						corev1.ResourceMemory: *resource.NewQuantity(int64(math.Ceil(float64(totalMemoryMiB)*percentage/100))*bytesPerMiB, resource.BinarySI),
 					}
 				}
 			} else if quantity, err := resource.ParseQuantity(value); err == nil {

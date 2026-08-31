@@ -18,10 +18,12 @@ package instance
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -694,12 +696,14 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should reject overrides unsupported by the AKS Machine API", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				EvictionSoft: map[string]string{"memory.available": "444Mi"},
+				EvictionSoft:              map[string]string{"memory.available": "444Mi"},
+				EvictionSoftGracePeriod:   map[string]metav1.Duration{"memory.available": {Duration: time.Minute}},
+				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 			}
 
 			_, err := configureKubeletConfig(nodeClass)
 
-			Expect(err).To(MatchError("soft eviction overrides are not supported by the AKS Machine API"))
+			Expect(err).To(MatchError("kubelet overrides evictionSoft, evictionSoftGracePeriod, evictionMaxPodGracePeriod are not supported by the AKS Machine API; supported override fields are kubeReserved and evictionHard"))
 		})
 	})
 

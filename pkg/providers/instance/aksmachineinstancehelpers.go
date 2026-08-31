@@ -437,8 +437,18 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) (*armcontainerservi
 
 	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
 
-	if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 || len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 || nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
-		return nil, fmt.Errorf("soft eviction overrides are not supported by the AKS Machine API")
+	unsupportedFields := []string{}
+	if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 {
+		unsupportedFields = append(unsupportedFields, "evictionSoft")
+	}
+	if len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 {
+		unsupportedFields = append(unsupportedFields, "evictionSoftGracePeriod")
+	}
+	if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
+		unsupportedFields = append(unsupportedFields, "evictionMaxPodGracePeriod")
+	}
+	if len(unsupportedFields) > 0 {
+		return nil, fmt.Errorf("kubelet overrides %s are not supported by the AKS Machine API; supported override fields are kubeReserved and evictionHard", strings.Join(unsupportedFields, ", "))
 	}
 
 	if len(nodeClass.Spec.Kubelet.KubeReserved) > 0 {

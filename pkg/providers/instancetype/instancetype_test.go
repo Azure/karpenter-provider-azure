@@ -170,7 +170,12 @@ func TestEvictionThresholdOverrides(t *testing.T) {
 	g.Expect(absolute.String()).To(Equal("333Mi"))
 
 	percentage := EvictionThreshold(8192, true, map[string]string{MemoryAvailable: "5%"})[corev1.ResourceMemory]
-	g.Expect(percentage.Value()).To(Equal(409 * bytesPerMiB))
+	g.Expect(percentage.Value()).To(Equal(410 * bytesPerMiB))
+
+	for _, value := range []string{"-1%", "101%", "NaN%"} {
+		threshold := EvictionThreshold(8192, true, map[string]string{MemoryAvailable: value})[corev1.ResourceMemory]
+		g.Expect(threshold.String()).To(Equal("250Mi"))
+	}
 }
 
 func TestSoftEvictionThreshold(t *testing.T) {
