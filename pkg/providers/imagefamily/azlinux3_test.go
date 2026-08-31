@@ -135,6 +135,7 @@ func TestAzureLinux3_DefaultImages_Kata(t *testing.T) {
 	kataImages := azureLinux3.DefaultImages(true, nil, false, true)
 	g.Expect(kataImages).To(HaveLen(1))
 	g.Expect(kataImages[0].ImageDefinition).To(Equal(imagefamily.AzureLinux3Gen2KataImageDefinition))
+	g.Expect(kataImages[0].Distro).To(Equal("aks-azurelinux-v3-gen2-kata"))
 	g.Expect(kataImages[0].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
 	g.Expect(kataImages[0].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
 

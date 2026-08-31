@@ -398,7 +398,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				Arch:                      karpv1.ArchitectureAmd64,
 				ResourceGroup:             "test-rg",
 				KubernetesVersion:         "1.32.0",
-				ImageDistro:               "aks-azurelinux-v3-kata-gen2",
+				ImageDistro:               "aks-azurelinux-v3-gen2-kata",
 				IsWindows:                 false,
 				StorageProfile:            consts.StorageProfileManagedDisks,
 				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
@@ -417,7 +417,7 @@ func TestConstructProvisionValues(t *testing.T) {
 			validate: func(t *testing.T, values *models.ProvisionValues) {
 				g := NewWithT(t)
 				profile := values.ProvisionProfile
-				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-kata-gen2"))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-gen2-kata"))
 				// The RP enum value that installs the Kata host stack.
 				g.Expect(profile.WorkloadRuntime).ToNot(BeNil())
 				g.Expect(*profile.WorkloadRuntime).To(Equal(models.WorkloadRuntimeKataVMIsolation))

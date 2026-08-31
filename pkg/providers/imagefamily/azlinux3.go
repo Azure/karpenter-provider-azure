@@ -75,7 +75,7 @@ func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trus
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 				),
-				Distro: "aks-azurelinux-v3-kata-gen2",
+				Distro: "aks-azurelinux-v3-gen2-kata",
 			},
 		}
 	}
