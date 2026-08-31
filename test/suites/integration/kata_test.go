@@ -24,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -48,11 +47,6 @@ var _ = Describe("Kata (Pod Sandboxing)", func() {
 		// for determinism and to keep cost predictable.
 		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
-		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      corev1.LabelInstanceTypeStable,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D4s_v5"},
-		})
 	})
 
 	// The point of the feature: a pod that asks for the Kata RuntimeClass must actually run inside a
