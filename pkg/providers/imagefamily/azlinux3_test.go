@@ -69,8 +69,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var linuxOSConfig *v1beta1.LinuxOSConfiguration  // to test with nil
 	var vTPMEnabled *bool                            // to test with nil
 	var secureBootEnabled *bool                      // to test with nil
-
-	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
+	var workloadRuntime *v1beta1.WorkloadRuntime     // default OCIContainer
 
 	bootstrapper := azureLinux3.CustomScriptsNodeBootstrapping(
 		kubeletConfig,

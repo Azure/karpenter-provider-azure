@@ -4,10 +4,9 @@
 # stack installed. Pod Sandboxing is an *additional* runtime: standard OCI containers keep running on
 # the same node, and only pods that ask for the Kata RuntimeClass get a lightweight VM.
 #
-# Requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS (both enforced by CEL
+# Using Kata requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS (both enforced by CEL
 # validation at admission), and needs a generation-2, nested-virtualization-capable VM size
-# (enforced by instance-type filtering). Only provision modes that can express the workload runtime
-# are supported; on others the AKSNodeClass reports ValidationSucceeded=False with the reason.
+# (enforced by instance-type filtering).
 #
 # How scale-up works (no nodeSelector needed on your pod):
 #   The managed kata-vm-isolation RuntimeClass declares

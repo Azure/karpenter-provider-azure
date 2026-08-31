@@ -47,9 +47,7 @@ func (u Ubuntu2404) Name() string {
 }
 
 func (u Ubuntu2404) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
-	// There is no Kata (Pod Sandboxing) image for Ubuntu — only AzureLinux publishes one. Return no
-	// images rather than silently falling back to a standard image without the Kata host stack.
-	// AKSNodeClass CEL validation already rejects this combination; this is defense in depth.
+	// There is no Kata (Pod Sandboxing) image for Ubuntu — only AzureLinux publishes one.
 	if kataEnabled {
 		return []types.DefaultImageOutput{}
 	}
