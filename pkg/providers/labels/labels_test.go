@@ -389,67 +389,6 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
 }
 
-func TestKataLabels(t *testing.T) {
-	testCases := []struct {
-		name             string
-		workloadRuntime  *v1beta1.WorkloadRuntime
-		expectedLabels   map[string]string
-		unexpectedLabels []string
-	}{
-		{
-			name:            "KataVmIsolation stamps the Kata label",
-			workloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
-			expectedLabels: map[string]string{
-				v1beta1.AKSLabelKataVMIsolation: "true",
-			},
-		},
-		{
-			name:             "OCIContainer stamps no kata label",
-			workloadRuntime:  lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer),
-			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation},
-		},
-		{
-			name:             "Unset workloadRuntime stamps no kata label",
-			workloadRuntime:  nil,
-			unexpectedLabels: []string{v1beta1.AKSLabelKataVMIsolation},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			ctx := options.ToContext(context.Background(), &options.Options{
-				NodeResourceGroup:       "test-rg",
-				KubeletIdentityClientID: "test-client-id",
-				SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
-			})
-
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
-				Spec: v1beta1.AKSNodeClassSpec{
-					ImageFamily:     lo.ToPtr(v1beta1.AzureLinuxImageFamily),
-					WorkloadRuntime: tc.workloadRuntime,
-				},
-				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: lo.ToPtr("1.32.0"),
-					Conditions: []status.Condition{
-						{Type: v1beta1.ConditionTypeKubernetesVersionReady, Status: metav1.ConditionTrue},
-					},
-				},
-			}
-
-			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
-			g.Expect(err).ToNot(HaveOccurred())
-			for key, expectedValue := range tc.expectedLabels {
-				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)
-			}
-			for _, key := range tc.unexpectedLabels {
-				g.Expect(labelMap).ToNot(HaveKey(key), "label %s should not exist", key)
-			}
-		})
-	}
-}
-
 func TestLabelsGet(t *testing.T) {
 	testCases := []struct {
 		name              string
@@ -457,6 +396,7 @@ func TestLabelsGet(t *testing.T) {
 		kubernetesVersion string
 		arch              string
 		artifactStreaming *v1beta1.ArtifactStreaming
+		workloadRuntime   *v1beta1.WorkloadRuntime
 		expectedLabels    map[string]string
 		unexpectedLabels  []string
 	}{
@@ -548,6 +488,32 @@ func TestLabelsGet(t *testing.T) {
 				v1beta1.AKSLabelOSSKUEffective: "AzureLinux3",
 			},
 		},
+		// KATA label test cases
+		{
+			name:              "KataVmIsolation stamps the Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			workloadRuntime:   lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelKataVMIsolation: "true",
+			},
+		},
+		{
+			name:              "OCIContainer stamps no Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			workloadRuntime:   lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer),
+			unexpectedLabels:  []string{v1beta1.AKSLabelKataVMIsolation},
+		},
+		{
+			name:              "Unset workloadRuntime stamps no Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			unexpectedLabels:  []string{v1beta1.AKSLabelKataVMIsolation},
+		},
 		// Artifact streaming label cases
 		{
 			name:              "AMD64 with nil artifact streaming (default) should NOT have label",
@@ -616,6 +582,7 @@ func TestLabelsGet(t *testing.T) {
 				Spec: v1beta1.AKSNodeClassSpec{
 					ImageFamily:       &imageFamily,
 					ArtifactStreaming: tc.artifactStreaming,
+					WorkloadRuntime:   tc.workloadRuntime,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
 					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
