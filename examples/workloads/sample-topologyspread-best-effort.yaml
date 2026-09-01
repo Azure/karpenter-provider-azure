@@ -1,0 +1,35 @@
+# Best-effort topology spread across zones.
+# Use case: you'd LIKE even spread across 3 zones, but you don't want the workload blocked
+# if only 1-2 zones currently have capacity (common during scale-up).
+#
+# Key: whenUnsatisfiable: ScheduleAnyway => SOFT constraint.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-topologyspread-best-effort
+spec:
+  replicas: 9
+  selector:
+    matchLabels:
+      app: sample-topologyspread-best-effort
+  template:
+    metadata:
+      labels:
+        app: sample-topologyspread-best-effort
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        # Spread across zones (AKS typically labels nodes with topology.kubernetes.io/zone).
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway  # SOFT: place pods even if perfect spread isn't possible
+        labelSelector:
+          matchLabels:
+            app: sample-topologyspread-best-effort
+
+      containers:
+      - name: app
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "128Mi"

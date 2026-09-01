@@ -1,0 +1,42 @@
+# AI/ML GPU workload with taints/tolerations and GPU requests.
+# Use case: run only on GPU nodes that are tainted to prevent general workloads from landing there.
+#
+# Typical patterns:
+# - GPU node pool has a taint like: nvidia.com/gpu=present:NoSchedule (or similar)
+# - Pods request GPU resource: nvidia.com/gpu: "1"
+#
+# Tradeoff: Hard requirements can make jobs Pending until GPU capacity exists.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sample-aiml-gpu-hard
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: sample-aiml-gpu-hard
+    spec:
+      restartPolicy: Never
+
+      # Tolerate GPU taint so the pod can land on GPU nodes.
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+
+      # Optionally constrain explicitly to GPU nodes if you label them.
+      nodeSelector:
+        kubernetes.io/os: linux
+        # example.com/accelerator: nvidia
+
+      containers:
+      - name: trainer
+        image: mcr.microsoft.com/azuredocs/samples-tf-mnist-demo:gpu
+        args: ["--max_steps", "200"]
+        resources:
+          limits:
+            nvidia.com/gpu: "1"   # Request/limit 1 GPU (device plugin must be installed)
+          requests:
+            cpu: "1"
+            memory: "2Gi"
