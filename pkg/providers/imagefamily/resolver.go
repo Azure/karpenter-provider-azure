@@ -240,19 +240,15 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
-	// KubeReservedResources only calculates CPU and memory, instanceType.Overhead.KubeReserved does not contain a PID reservation.
-	kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable:  instanceType.Overhead.EvictionThreshold.Memory().String(),
 		instancetype.NodeFSAvailable:  instancetype.HardEvictionNodeFSAvailable,
 		instancetype.NodeFSInodesFree: instancetype.HardEvictionNodeFSInodesFree,
-		instancetype.PIDAvailable:     instancetype.HardEvictionPIDAvailable,
 	}
 
 	opts := options.FromContext(ctx)
 	enableNodeHardening := opts.ShouldUseNodeHardening()
 	if enableNodeHardening {
-		kubeletConfig.SystemReserved["pid"] = instancetype.SystemReservedPIDs
 		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
 		softEvictionThreshold := instancetype.SoftEvictionThreshold(totalMemoryMiB)
 		kubeletConfig.EvictionSoft = map[string]string{
@@ -270,6 +266,10 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		// Signal node hardening to AgentBaker, which owns the reserved-cgroup paths.
 		// Mirrors nodeAllocatableEnforcementHardened in the AKS RP.
 		kubeletConfig.EnforceNodeAllocatable = []string{"pods", "kube-reserved", "system-reserved"}
+	} else {
+		// KubeReservedResources only calculates CPU and memory, instanceType.Overhead.KubeReserved does not contain a PID reservation.
+		kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
+		kubeletConfig.EvictionHard[instancetype.PIDAvailable] = instancetype.HardEvictionPIDAvailable
 	}
 	return kubeletConfig
 }
