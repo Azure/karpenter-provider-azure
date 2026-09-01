@@ -245,13 +245,24 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
 			})
 
-			It("should match expected images for FIPS when using generic Ubuntu", func() {
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
-				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2004{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
-				Expect(foundImages).To(Equal(expectedImages))
-			})
+			DescribeTable("should match expected FIPS images when using generic Ubuntu",
+				func(kubernetesVersion string, trustedLaunch bool, fam imagefamily.ImageFamily) {
+					nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+					nodeClass.Status.KubernetesVersion = lo.ToPtr(kubernetesVersion)
+					if trustedLaunch {
+						nodeClass.Spec.Security = &v1beta1.Security{
+							TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+						}
+					}
+					foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
+					Expect(foundImages).To(Equal(expectedImages))
+				},
+				Entry("for Kubernetes < 1.35", "1.34.0", false, &imagefamily.Ubuntu2004{}),
+				Entry("for Kubernetes >= 1.35", "1.35.0", false, &imagefamily.Ubuntu2204{}),
+				Entry("for Kubernetes < 1.35 with Trusted Launch", "1.34.0", true, &imagefamily.Ubuntu2204{}),
+			)
 
 			It("should match expected images for FIPS Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
