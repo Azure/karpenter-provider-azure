@@ -267,7 +267,6 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		// Mirrors nodeAllocatableEnforcementHardened in the AKS RP.
 		kubeletConfig.EnforceNodeAllocatable = []string{"pods", "kube-reserved", "system-reserved"}
 	} else {
-		// KubeReservedResources only calculates CPU and memory, instanceType.Overhead.KubeReserved does not contain a PID reservation.
 		kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
 		kubeletConfig.EvictionHard[instancetype.PIDAvailable] = instancetype.HardEvictionPIDAvailable
 	}
