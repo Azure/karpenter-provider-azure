@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -126,19 +127,21 @@ func newInstanceType(
 	params *instanceTypeParameters,
 	architecture string,
 ) *cloudprovider.InstanceType {
+	opts := options.FromContext(ctx)
+	totalMemoryMiB := memoryMiB(sku)
+	enableNodeHardening := opts.ShouldUseNodeHardening()
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
-		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, params),
+		Requirements: computeRequirements(opts, sku, vmsize, architecture, offerings, region, params),
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, params),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
-			SystemReserved:    SystemReservedResources(),
-			EvictionThreshold: EvictionThreshold(),
+			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening),
+			SystemReserved:    SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
+			EvictionThreshold: EvictionThreshold(totalMemoryMiB, enableNodeHardening),
 		},
 	}
 }
-
 func computeRequirements(
 	opts *options.Options,
 	sku *skewer.SKU,
@@ -350,29 +353,53 @@ func pods(params *instanceTypeParameters) *resource.Quantity {
 	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
-func SystemReservedResources() corev1.ResourceList {
-	// AKS does not set system-reserved values and only CPU and memory are considered
-	// https://learn.microsoft.com/en-us/azure/aks/concepts-clusters-workloads#resource-reservations
+func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableNodeHardening bool) corev1.ResourceList {
+	if !enableNodeHardening {
+		return corev1.ResourceList{
+			corev1.ResourceCPU:    resource.Quantity{},
+			corev1.ResourceMemory: resource.Quantity{},
+		}
+	}
 	return corev1.ResourceList{
-		corev1.ResourceCPU:    resource.Quantity{},
-		corev1.ResourceMemory: resource.Quantity{},
+		corev1.ResourceCPU:              *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
+		corev1.ResourceMemory:           *resource.NewQuantity(systemReservedMemoryMiB(totalMemoryMiB, networkPlugin == consts.NetworkPluginAzure)*bytesPerMiB, resource.BinarySI),
+		corev1.ResourceEphemeralStorage: resource.MustParse(systemReservedEphemeralStorage),
 	}
 }
 
-func KubeReservedResources(vcpus int64, memoryGib float64) corev1.ResourceList {
-	reservedMemoryMi := int64(1024 * reservedMemoryTaxGi.Calculate(memoryGib))
+func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool) corev1.ResourceList {
+	reservedMemoryMiB := int64(1024 * reservedMemoryTaxGi.Calculate(float64(totalMemoryMiB)/1024))
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
+
+	if enableNodeHardening {
+		reservedMemoryMiB = hardenedKubeReservedMemoryMiB(maxPods, totalMemoryMiB)
+	}
 
 	resources := corev1.ResourceList{
 		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
-		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
+		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMiB*bytesPerMiB, resource.BinarySI),
 	}
 
 	return resources
 }
 
-func EvictionThreshold() corev1.ResourceList {
+func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool) corev1.ResourceList {
+	if enableNodeHardening {
+		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
+		return corev1.ResourceList{
+			corev1.ResourceMemory: *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI),
+		}
+	}
 	return corev1.ResourceList{
 		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
+	}
+}
+
+// SoftEvictionThreshold returns the hardened soft-eviction memory threshold
+// for the VM's total memory using the AKS RP memory ladder.
+func SoftEvictionThreshold(totalMemoryMiB int64) corev1.ResourceList {
+	softMemoryMiB, _ := evictionMemoryLadder(totalMemoryMiB)
+	return corev1.ResourceList{
+		corev1.ResourceMemory: *resource.NewQuantity(softMemoryMiB*bytesPerMiB, resource.BinarySI),
 	}
 }

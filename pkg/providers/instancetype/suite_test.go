@@ -1212,6 +1212,39 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		Context("Node hardening", func() {
+			It("should configure hardened reservations and eviction thresholds when enabled", func() {
+				ctx = options.ToContext(
+					ctx,
+					test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}),
+				)
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				customData := ExpectDecodedCustomData(azureEnv)
+
+				expectedFlags := map[string]string{
+					"enforce-node-allocatable":      "pods,kube-reserved,system-reserved",
+					"eviction-max-pod-grace-period": "60",
+				}
+
+				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				ExpectSoftEvictionThresholds(customData, "500Mi")
+				ExpectHardEvictionThresholds(customData, "250Mi")
+				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period="))
+				Expect(kubeletFlags).To(ContainSubstring("memory.available=30s"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree=2m0s"))
+				Expect(kubeletFlags).To(ContainSubstring("pid=1000"))
+			})
+		})
+
 		Context("Nodepool with KubeletConfig", func() {
 			It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -1235,7 +1268,6 @@ var _ = Describe("InstanceType Provider", func() {
 				customData := ExpectDecodedCustomData(azureEnv)
 
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"image-gc-high-threshold": "30",
 					"image-gc-low-threshold":  "20",
 					"cpu-cfs-quota":           "true",
@@ -1249,14 +1281,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 		})
 
@@ -1310,7 +1340,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 				customData := ExpectDecodedCustomData(azureEnv)
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"max-pods":                "110",
 					"image-gc-low-threshold":  "20",
 					"image-gc-high-threshold": "30",
@@ -1323,14 +1352,12 @@ var _ = Describe("InstanceType Provider", func() {
 					"pod-max-pids":            "99",
 				}
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -1354,7 +1381,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 				customData := ExpectDecodedCustomData(azureEnv)
 				expectedFlags := map[string]string{
-					"eviction-hard":           "memory.available<750Mi",
 					"max-pods":                "15",
 					"image-gc-low-threshold":  "20",
 					"image-gc-high-threshold": "30",
@@ -1368,14 +1394,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+				ExpectHardEvictionThresholds(customData, "750Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
-					ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-					ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-				))
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
 			})
 		})
 
@@ -2269,9 +2293,12 @@ var _ = Describe("InstanceType Provider", func() {
 					})
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectNotScheduled(ctx, env.Client, pod)
+					cacheEntries := azureEnv.InstanceTypeCache.ItemCount()
+					Expect(cacheEntries).To(BeNumerically(">", 0))
 					// capacity shortage is over - expire the items from the cache and try again
 					azureEnv.UnavailableOfferingsCache.Flush()
 					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(cacheEntries))
 					node := ExpectScheduled(ctx, env.Client, pod)
 					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
 				},
@@ -2552,6 +2579,8 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 
 			It("should have available offerings for a SKU present in the SKU API but missing from pricing data", func() {
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
+
 				// Add a SKU to the fake SKU API that does NOT have pricing in the static pricing data.
 				// This simulates a new SKU appearing in the SKU API before pricing data is available.
 				// Standard_D2_v2_Promo is in known_skus.yaml but has no southcentralus pricing.
@@ -2595,8 +2624,10 @@ var _ = Describe("InstanceType Provider", func() {
 
 				// Re-fetch instance types with the new SKU
 				Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(BeZero())
 				updatedInstanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 
 				// Find the new SKU in the list
 				var promoSKU *corecloudprovider.InstanceType
@@ -2694,6 +2725,23 @@ var _ = Describe("InstanceType Provider", func() {
 				// Prices should be MissingPrice (deprioritized)
 				Expect(onDemandAvailable[0].Price).To(Equal(pricing.MissingPrice))
 				Expect(spotAvailable[0].Price).To(Equal(pricing.MissingPrice))
+			})
+		})
+
+		Context("Caching", func() {
+			It("should isolate cached instance type ordering from caller mutations", func() {
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(instanceTypes)).To(BeNumerically(">", 1))
+				original := append([]*corecloudprovider.InstanceType{}, instanceTypes...)
+
+				// A caller is free to reorder its own returned slice; this must not reorder the cached entry.
+				instanceTypes[0], instanceTypes[1] = instanceTypes[1], instanceTypes[0]
+
+				cached, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(lo.Map(cached, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })).To(
+					Equal(lo.Map(original, func(it *corecloudprovider.InstanceType, _ int) string { return it.Name })))
 			})
 		})
 
@@ -3396,6 +3444,7 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should invalidate instance type cache when quota data changes", func() {
 			targetFamily := defaultTestSKU.GetFamilyName()
 			Expect(targetFamily).ToNot(BeEmpty())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(BeZero())
 
 			// First call with plenty of quota
 			azureEnv.UsageAPI.Usages.Append(
@@ -3409,6 +3458,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).To(BeNil())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 			foundFamily := false
 			for _, it := range instanceTypes {
 				sku := fake.MakeSKU(it.Name)
@@ -3437,6 +3487,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Second call should reflect the new quota (cache invalidated by SeqNum change)
 			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).To(BeNil())
+			Expect(azureEnv.InstanceTypeCache.ItemCount()).To(Equal(1))
 			foundFamily = false
 			for _, it := range instanceTypes {
 				sku := fake.MakeSKU(it.Name)
@@ -3458,11 +3509,11 @@ var _ = Describe("Tax Calculator", func() {
 	Context("KubeReservedResources", func() {
 		It("should have 4 cores, 7GiB", func() {
 			cpus := int64(4) // 4 cores
-			memory := 7.0    // 7 GiB
+			memory := int64(7 * 1024)
 			expectedCPU := "140m"
 			expectedMemory := "1638Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3472,11 +3523,11 @@ var _ = Describe("Tax Calculator", func() {
 
 		It("should have 2 cores, 8GiB", func() {
 			cpus := int64(2) // 2 cores
-			memory := 8.0    // 8 GiB
+			memory := int64(8 * 1024)
 			expectedCPU := "100m"
 			expectedMemory := "1843Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3486,11 +3537,11 @@ var _ = Describe("Tax Calculator", func() {
 
 		It("should have 3 cores, 64GiB", func() {
 			cpus := int64(3) // 3 cores
-			memory := 64.0   // 64 GiB
+			memory := int64(64 * 1024)
 			expectedCPU := "120m"
 			expectedMemory := "5611Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3498,6 +3549,7 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(gotMemory.String()).To(Equal(expectedMemory))
 		})
 	})
+
 })
 
 func createSDKErrorBody(code, message string) io.ReadCloser {
@@ -3507,6 +3559,33 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
 	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
+}
+
+func ExpectHardEvictionThresholds(customData, memory string) {
+	GinkgoHelper()
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	Expect(kubeletFlags).To(ContainSubstring("memory.available<" + memory))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
+	Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
+}
+
+func ExpectSoftEvictionThresholds(customData, memory string) {
+	GinkgoHelper()
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	Expect(kubeletFlags).To(ContainSubstring("memory.available<" + memory))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
+	Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
+}
+
+func ExpectKubeReservedResources(customData string, expected ...string) {
+	GinkgoHelper()
+	const prefix = "--kube-reserved="
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	start := strings.Index(kubeletFlags, prefix)
+	Expect(start).ToNot(Equal(-1))
+	value := strings.Fields(kubeletFlags[start+len(prefix):])[0]
+	Expect(strings.Split(value, ",")).To(ConsistOf(expected))
 }
 
 func ExpectKubeletNodeLabelsPassed(customData string) string {
