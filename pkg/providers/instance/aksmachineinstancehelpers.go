@@ -265,7 +265,7 @@ func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[stri
 // explicitly (not left for the AKS machine API to default) so it matches the value Karpenter
 // uses for scheduling and the reported ephemeral-storage capacity in the VM path.
 func configureOSDisk(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*int32, *armcontainerservice.OSDiskType, error) {
-	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(ctx, instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB)
+	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(ctx, instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB, nodeClass.IsTrustedLaunchEnabled())
 	if err != nil {
 		return nil, nil, err
 	}

@@ -19,8 +19,10 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -146,7 +148,7 @@ func (r *defaultResolver) Resolve(
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
 
-	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(ctx, r.instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB)
+	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(ctx, r.instanceTypeProvider, instanceType.Name, nodeClass.Spec.OSDiskSizeGB, nodeClass.IsTrustedLaunchEnabled())
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +223,37 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
-	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	// KubeReservedResources only calculates CPU and memory, instanceType.Overhead.KubeReserved does not contain a PID reservation.
+	kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
+	kubeletConfig.EvictionHard = map[string]string{
+		instancetype.MemoryAvailable:  instanceType.Overhead.EvictionThreshold.Memory().String(),
+		instancetype.NodeFSAvailable:  instancetype.HardEvictionNodeFSAvailable,
+		instancetype.NodeFSInodesFree: instancetype.HardEvictionNodeFSInodesFree,
+		instancetype.PIDAvailable:     instancetype.HardEvictionPIDAvailable,
+	}
+
+	opts := options.FromContext(ctx)
+	enableNodeHardening := opts.ShouldUseNodeHardening()
+	if enableNodeHardening {
+		kubeletConfig.SystemReserved["pid"] = instancetype.SystemReservedPIDs
+		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
+		softEvictionThreshold := instancetype.SoftEvictionThreshold(totalMemoryMiB)
+		kubeletConfig.EvictionSoft = map[string]string{
+			instancetype.MemoryAvailable:  softEvictionThreshold.Memory().String(),
+			instancetype.NodeFSAvailable:  instancetype.SoftEvictionNodeFSAvailable,
+			instancetype.NodeFSInodesFree: instancetype.SoftEvictionNodeFSInodesFree,
+		}
+		kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{
+			instancetype.MemoryAvailable:  {Duration: instancetype.SoftEvictionMemoryGracePeriod},
+			instancetype.NodeFSAvailable:  {Duration: instancetype.SoftEvictionNodeFSGracePeriod},
+			instancetype.NodeFSInodesFree: {Duration: instancetype.SoftEvictionNodeFSInodesGracePeriod},
+		}
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(instancetype.SoftEvictionMaxPodGracePeriodSeconds)
+
+		// Signal node hardening to AgentBaker, which owns the reserved-cgroup paths.
+		// Mirrors nodeAllocatableEnforcementHardened in the AKS RP.
+		kubeletConfig.EnforceNodeAllocatable = []string{"pods", "kube-reserved", "system-reserved"}
+	}
 	return kubeletConfig
 }
 

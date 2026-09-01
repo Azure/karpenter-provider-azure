@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mitchellh/hashstructure/v2"
@@ -60,10 +59,10 @@ const (
 	// OS disks to 2040 GiB. Use the Compute limit for effective provisioning capacity.
 	// https://learn.microsoft.com/rest/api/aks/agent-pools/create-or-update
 	// https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks
-	maxEphemeralOSDiskSizeGB = 2040
-	// minEphemeralOSDiskSizeGB is AKS's threshold for auto-selecting an ephemeral OS disk;
-	// below it, auto-sizing falls back to vCPU-based managed defaults.
-	minEphemeralOSDiskSizeGB = 128
+	maxEphemeralOSDiskSizeGiB = int64(2040)
+	// minEphemeralOSDiskSizeGiB is AKS's raw-capacity threshold for auto-selecting an
+	// ephemeral OS disk; below it, auto-sizing falls back to vCPU-based managed defaults.
+	minEphemeralOSDiskSizeGiB = int64(128)
 )
 
 // instanceTypeParameters contains the resolved set of AKSNodeClass fields that affect
@@ -79,6 +78,11 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+}
+
+type instanceTypesSourceDataGeneration struct {
+	unavailableOfferings uint64
+	quota                uint64
 }
 
 type Provider interface {
@@ -104,15 +108,14 @@ type DefaultProvider struct {
 	unavailableOfferings *kcache.UnavailableOfferings
 	quotaProvider        quota.Provider
 
-	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
-	// Fully initialized Instance Types are also cached based on the set of all instance types,
-	// unavailableOfferings cache, AWSNodeClass, and kubelet configuration from the NodePool
-	instanceTypesCache *cache.Cache
+	// Fully initialized instance types are cached by the parameters that affect their construction.
+	// Changes in the source data generation invalidate the cache as a whole instead of creating unreachable keys.
+	instanceTypesCache           *cache.Cache
+	muInstanceTypesCache         sync.Mutex
+	instanceTypesCacheGeneration instanceTypesSourceDataGeneration
 
 	cm *pretty.ChangeMonitor
 
-	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
-	instanceTypesSeqNum uint64
 	muInstanceTypesInfo sync.RWMutex
 	instanceTypesInfo   map[string]*skewer.SKU
 }
@@ -134,7 +137,6 @@ func NewDefaultProvider(
 		quotaProvider:        quotaProvider,
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
-		instanceTypesSeqNum:  0,
 	}
 }
 
@@ -163,20 +165,30 @@ func (p *DefaultProvider) List(
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%d-%016x",
-		p.instanceTypesSeqNum,
-		p.unavailableOfferings.SeqNum,
-		p.quotaProvider.SeqNum(),
-		paramsHash,
-	)
+	key := fmt.Sprintf("%016x", paramsHash)
+
+	p.muInstanceTypesCache.Lock()
+	defer p.muInstanceTypesCache.Unlock()
+
+	generation := p.currentInstanceTypesSourceDataGeneration()
+	if generation != p.instanceTypesCacheGeneration {
+		p.instanceTypesCache.Flush()
+		p.instanceTypesCacheGeneration = generation
+	}
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
 		// so that modifications to the ordering of the data don't affect the original
 		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
 	}
 
-	// Get Viable offerings
-	// Azure has zones availability directly from SKU info
+	result := p.buildInstanceTypes(ctx, instanceTypeParams)
+
+	p.instanceTypesCache.SetDefault(key, result)
+	// Return a shallow copy, matching the cache-hit path, so a caller reordering its slice doesn't reorder the cached one.
+	return append([]*cloudprovider.InstanceType{}, result...), nil
+}
+
+func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {
 	var result []*cloudprovider.InstanceType
 	for _, sku := range p.instanceTypesInfo {
 		vmsize, err := sku.GetVMSize()
@@ -190,20 +202,23 @@ func (p *DefaultProvider) List(
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones), instanceTypeParams, architecture)
+		instanceType := newInstanceType(ctx, sku, vmsize, p.region, p.createOfferings(ctx, sku, instanceTypeZones), params, architecture)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
-
-		if !p.isInstanceTypeSupportedByFilters(sku, architecture, instanceTypeParams) {
+		if !p.isInstanceTypeSupportedByFilters(sku, architecture, params) {
 			continue
 		}
-
 		result = append(result, instanceType)
 	}
+	return result
+}
 
-	p.instanceTypesCache.SetDefault(key, result)
-	return result, nil
+func (p *DefaultProvider) currentInstanceTypesSourceDataGeneration() instanceTypesSourceDataGeneration {
+	return instanceTypesSourceDataGeneration{
+		unavailableOfferings: p.unavailableOfferings.SeqNum(),
+		quota:                p.quotaProvider.SeqNum(),
+	}
 }
 
 func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
@@ -475,9 +490,9 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	logUnknownSKUFamilies(ctx, instanceTypes)
 
 	if p.cm.HasChanged("instance-types", instanceTypes) {
-		// Only update instanceTypesSeqNum with the instance types have been changed
-		// This is to not create new keys with duplicate instance types option
-		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
+		p.muInstanceTypesCache.Lock()
+		p.instanceTypesCache.Flush()
+		p.muInstanceTypesCache.Unlock()
 		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
 	}
 	p.instanceTypesInfo = instanceTypes
@@ -550,93 +565,166 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesInfo.Lock()
 	defer p.muInstanceTypesInfo.Unlock()
 	p.instanceTypesInfo = map[string]*skewer.SKU{}
-	atomic.StoreUint64(&p.instanceTypesSeqNum, 0)
+	p.muInstanceTypesCache.Lock()
+	p.instanceTypesCache.Flush()
+	p.muInstanceTypesCache.Unlock()
 }
 
-// FindMaxEphemeralSizeGBAndPlacementForAKS returns the maximum ephemeral OS disk size in GiB
-// and placement that AKS can use for the SKU.
-func FindMaxEphemeralSizeGBAndPlacementForAKS(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
-	if sku == nil {
+// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk size in GiB, capped at the Compute limit.
+func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGiB int64, placement *armcompute.DiffDiskPlacement) {
+	largest, ok := largestEphemeralOSDiskCandidate(sku)
+	if !ok {
 		return 0, nil
 	}
 
-	if !sku.IsEphemeralOSDiskSupported() {
-		return 0, nil // ephemeral OS disk is not supported by this SKU
+	sizeGiB = min(largest.sizeBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+	if sizeGiB == 0 {
+		return 0, nil
 	}
-
-	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
-	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
-	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
-
-	switch {
-	case maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku):
-		sizeGB = maxNVMeMiB * int64(units.MiB) / int64(units.GiB)
-		placement = lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
-	case maxCacheDiskBytes > 0:
-		sizeGB = maxCacheDiskBytes / int64(units.GiB)
-		placement = lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
-	case maxResourceDiskMiB > 0:
-		sizeGB = maxResourceDiskMiB * int64(units.MiB) / int64(units.GiB)
-		placement = lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
-	}
-
-	return min(sizeGB, maxEphemeralOSDiskSizeGB), placement
+	return sizeGiB, lo.ToPtr(largest.placement)
 }
 
-func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
-	const ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
-	const nvme = "NvmeDisk"
-	return sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, nvme)
+func supportedEphemeralOSDiskPlacements(sku *skewer.SKU) (cache, resource, nvme bool) {
+	const capability = "SupportedEphemeralOSDiskPlacements"
+	value, err := sku.GetCapabilityString(capability)
+	if err != nil {
+		return false, false, false
+	}
+	for _, placement := range strings.Split(value, ",") {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(placement), string(armcompute.DiffDiskPlacementCacheDisk)):
+			cache = true
+		case strings.EqualFold(strings.TrimSpace(placement), string(armcompute.DiffDiskPlacementResourceDisk)):
+			resource = true
+		case strings.EqualFold(strings.TrimSpace(placement), string(armcompute.DiffDiskPlacementNvmeDisk)):
+			nvme = true
+		}
+	}
+	return cache, resource, nvme
 }
 
-// OSDiskProfile is the OS disk configuration resolved for a SKU; all provisioning paths and
-// capacity reporting consume it.
+type ephemeralOSDiskCandidate struct {
+	placement armcompute.DiffDiskPlacement
+	sizeBytes int64
+}
+
+func appendEphemeralOSDiskCandidate(candidates []ephemeralOSDiskCandidate, supported bool, placement armcompute.DiffDiskPlacement, sizeBytes int64) []ephemeralOSDiskCandidate {
+	if supported && sizeBytes > 0 {
+		return append(candidates, ephemeralOSDiskCandidate{placement: placement, sizeBytes: sizeBytes})
+	}
+	return candidates
+}
+
+func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
+	if sku == nil || !sku.IsEphemeralOSDiskSupported() {
+		return nil
+	}
+
+	cacheBytes, _ := sku.MaxCachedDiskBytes()
+	resourceMiB, _ := sku.MaxResourceVolumeMB()
+	nvmeMiB, _ := nvmeDiskSizeInMiB(sku)
+
+	// Keep one GiB above the Compute disk-size limit so a capped 2040-GiB Trusted
+	// Launch disk can still prove that its guest-state reservation fits.
+	maxCandidateBytes := (maxEphemeralOSDiskSizeGiB + 1) * int64(units.GiB)
+	maxCandidateMiB := maxCandidateBytes / int64(units.MiB)
+	cacheBytes = min(max(cacheBytes, 0), maxCandidateBytes)
+	resourceBytes := min(max(resourceMiB, 0), maxCandidateMiB) * int64(units.MiB)
+	nvmeBytes := min(max(nvmeMiB, 0), maxCandidateMiB) * int64(units.MiB)
+
+	cacheSupported, resourceSupported, nvmeSupported := supportedEphemeralOSDiskPlacements(sku)
+	if !cacheSupported && !resourceSupported && !nvmeSupported {
+		cacheSupported = cacheBytes > 0
+		resourceSupported = resourceBytes > 0
+	}
+
+	var candidates []ephemeralOSDiskCandidate
+	candidates = appendEphemeralOSDiskCandidate(candidates, cacheSupported, armcompute.DiffDiskPlacementCacheDisk, cacheBytes)
+	candidates = appendEphemeralOSDiskCandidate(candidates, resourceSupported, armcompute.DiffDiskPlacementResourceDisk, resourceBytes)
+	candidates = appendEphemeralOSDiskCandidate(candidates, nvmeSupported, armcompute.DiffDiskPlacementNvmeDisk, nvmeBytes)
+	return candidates
+}
+
+func largestEphemeralOSDiskCandidate(sku *skewer.SKU) (ephemeralOSDiskCandidate, bool) {
+	candidates := ephemeralOSDiskCandidates(sku)
+	if len(candidates) == 0 {
+		return ephemeralOSDiskCandidate{}, false
+	}
+
+	largest := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate.sizeBytes > largest.sizeBytes {
+			largest = candidate
+		}
+	}
+	return largest, true
+}
+
+// FindEphemeralOSDiskPlacement returns the first eligible placement that fits the requested size.
+func FindEphemeralOSDiskPlacement(sku *skewer.SKU, requestedOSDiskSizeGB *int32, trustedLaunch bool) *armcompute.DiffDiskPlacement {
+	if requestedOSDiskSizeGB == nil {
+		return nil
+	}
+	requestedGiB := int64(*requestedOSDiskSizeGB)
+	if requestedGiB < 0 || requestedGiB > maxEphemeralOSDiskSizeGiB {
+		return nil
+	}
+
+	requiredBytes := requestedGiB * int64(units.GiB)
+	if trustedLaunch {
+		requiredBytes += int64(units.GiB)
+	}
+	for _, candidate := range ephemeralOSDiskCandidates(sku) {
+		if requiredBytes <= candidate.sizeBytes {
+			return lo.ToPtr(candidate.placement)
+		}
+	}
+	return nil
+}
+
+// OSDiskProfile is the per-SKU OS disk configuration consumed by every provisioning path and capacity model.
 type OSDiskProfile struct {
 	SizeGB int32
-	// Placement is the ephemeral OS disk placement; nil when the OS disk is managed.
+	// Placement is nil when the resolved OS disk is managed.
 	Placement *armcompute.DiffDiskPlacement
 }
 
-// IsEphemeral reports whether the resolved OS disk is ephemeral.
 func (p OSDiskProfile) IsEphemeral() bool {
 	return p.Placement != nil
 }
 
-// ResolveOSDiskProfileFromSKU resolves the usable OS disk size and type for the given SKU.
-// A requested OS disk size is always honored.
-func ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32) OSDiskProfile {
-	skuMaxEphemeralOSDiskSizeGB, skuDefaultPlacement := FindMaxEphemeralSizeGBAndPlacementForAKS(sku)
-
+// ResolveOSDiskProfileFromSKU resolves disk size, type, and placement for one SKU.
+func ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32, trustedLaunch bool) OSDiskProfile {
 	if requestedOSDiskSizeGB != nil {
-		// Use ephemeral storage when the requested size fits; otherwise use a managed disk.
-		if skuMaxEphemeralOSDiskSizeGB > 0 && int64(*requestedOSDiskSizeGB) <= skuMaxEphemeralOSDiskSizeGB {
-			return OSDiskProfile{
-				SizeGB:    *requestedOSDiskSizeGB,
-				Placement: skuDefaultPlacement,
+		placement := FindEphemeralOSDiskPlacement(sku, requestedOSDiskSizeGB, trustedLaunch)
+		return OSDiskProfile{SizeGB: *requestedOSDiskSizeGB, Placement: placement}
+	}
+
+	largest, ok := largestEphemeralOSDiskCandidate(sku)
+	if ok {
+		rawSizeGiB := min(largest.sizeBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+		if rawSizeGiB >= minEphemeralOSDiskSizeGiB {
+			usableBytes := largest.sizeBytes
+			if trustedLaunch {
+				usableBytes = max(0, usableBytes-int64(units.GiB))
+			}
+			resolvedSizeGiB := min(usableBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+			resolvedSize := int32(resolvedSizeGiB) //nolint:gosec // G115: value is bounded to [0,2040]
+			if placement := FindEphemeralOSDiskPlacement(sku, lo.ToPtr(resolvedSize), trustedLaunch); placement != nil {
+				return OSDiskProfile{SizeGB: resolvedSize, Placement: placement}
 			}
 		}
-		return OSDiskProfile{SizeGB: *requestedOSDiskSizeGB}
 	}
 
-	// With no requested size, prefer the SKU-supported ephemeral size above AKS's threshold.
-	if skuMaxEphemeralOSDiskSizeGB >= minEphemeralOSDiskSizeGB {
-		return OSDiskProfile{
-			SizeGB:    int32(skuMaxEphemeralOSDiskSizeGB), //nolint:gosec // G115: value bounded to [128,2040], safe int32 conversion
-			Placement: skuDefaultPlacement,
-		}
-	}
-
-	// Otherwise use AKS's vCPU-based managed disk default.
 	return OSDiskProfile{SizeGB: defaultManagedOSDiskSizeGB(sku)}
 }
 
-// ResolveOSDiskProfileFromInstanceType resolves the OS disk profile for the named instance type.
-func ResolveOSDiskProfileFromInstanceType(ctx context.Context, provider Provider, instanceTypeName string, requestedOSDiskSizeGB *int32) (OSDiskProfile, error) {
+func ResolveOSDiskProfileFromInstanceType(ctx context.Context, provider Provider, instanceTypeName string, requestedOSDiskSizeGB *int32, trustedLaunch bool) (OSDiskProfile, error) {
 	sku, err := provider.Get(ctx, instanceTypeName)
 	if err != nil {
 		return OSDiskProfile{}, err
 	}
-	return ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB), nil
+	return ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB, trustedLaunch), nil
 }
 
 // defaultManagedOSDiskSizeGB returns the managed OS disk size by vCPU count, mirroring AKS defaulting.
