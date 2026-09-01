@@ -84,6 +84,7 @@ import (
 )
 
 var ctx context.Context
+var ctxBootstrap context.Context
 var testOptions *options.Options
 var stop context.CancelFunc
 var env *coretest.Environment
@@ -105,7 +106,7 @@ func TestAzure(t *testing.T) {
 	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118: stop is called in AfterSuite
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
-	ctxBootstrap := options.ToContext(ctx, test.Options(test.OptionsFields{
+	ctxBootstrap = options.ToContext(ctx, test.Options(test.OptionsFields{
 		ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
 	}))
 
@@ -2877,11 +2878,19 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 
 			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
+			type WellKnownLabelTestEnvironment struct {
+				Context         context.Context
+				Cluster         *state.Cluster
+				CloudProvider   *cloudprovider.CloudProvider
+				CoreProvisioner *provisioning.Provisioner
+				AzureEnv        *test.Environment
+			}
 			type WellKnownLabelEntry struct {
-				Name      string
-				Label     string
-				ValueFunc func() string
-				SetupFunc func()
+				Name        string
+				Label       string
+				ValueFunc   func() string
+				SetupFunc   func()
+				Environment *WellKnownLabelTestEnvironment
 				// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
 				// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
 				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written by another process.
@@ -2892,16 +2901,6 @@ var _ = Describe("InstanceType Provider", func() {
 				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written as part of KUBELET_NODE_LABELS (see above)
 				// or by another process. We're asserting on this distinction currently because it helps clarify who is doing what
 				ExpectedOnNode bool
-				// CoverageOnly excludes the entry from the provisioning DescribeTables below. A SetupFunc
-				// is not enough for the Kata label: those tables provision through azureEnv, which runs
-				// PROVISION_MODE=aksscriptless, and Kata is deliberately unsupported there (see
-				// options.SupportsWorkloadRuntime). Scheduling succeeds and then the launch fails, so the
-				// entry can only ever assert the wrong thing. Such entries exist here purely to satisfy the
-				// "entries should cover every WellKnownLabel" assertion; their provisioning behavior is
-				// covered in the "Filtering by WorkloadRuntime (Kata)" context above, in
-				// pkg/cloudprovider/suite_aksmachineapi_features_test.go, and end to end in
-				// test/suites/integration/kata_test.go.
-				CoverageOnly bool
 			}
 
 			// requireFunc returns a SetupFunc that adds a label requirement to the NodePool
@@ -2964,9 +2963,34 @@ var _ = Describe("InstanceType Provider", func() {
 					ExpectedInKubeletLabels: true,
 					ExpectedOnNode:          true,
 				},
-				// Kata / AKS Pod Sandboxing label — see CoverageOnly above for why this carries no
-				// provisioning expectations here.
-				{Name: v1beta1.AKSLabelKataVMIsolation, Label: v1beta1.AKSLabelKataVMIsolation, CoverageOnly: true},
+				{
+					Name:  v1beta1.AKSLabelKataVMIsolation,
+					Label: v1beta1.AKSLabelKataVMIsolation,
+					// Needs special setup because it only works with Bootstrap or Machine API
+					SetupFunc: func() {
+						kubernetesVersion := lo.Must(azureEnvBootstrap.KubernetesVersionProvider.KubeServerVersion(ctx))
+						if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+							Skip("Kata requires Azure Linux 3")
+						}
+
+						nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+						nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "Test", "force image refresh")
+						imageReconciler := status.NewNodeImageReconciler(azureEnvBootstrap.ImageProvider, env.KubernetesInterface)
+						_, err := imageReconciler.Reconcile(ctx, nodeClass)
+						Expect(err).ToNot(HaveOccurred())
+					},
+					ValueFunc: func() string { return "true" },
+					Environment: &WellKnownLabelTestEnvironment{
+						Context:         ctxBootstrap,
+						Cluster:         clusterBootstrap,
+						CloudProvider:   cloudProviderBootstrap,
+						CoreProvisioner: coreProvisionerBootstrap,
+						AzureEnv:        azureEnvBootstrap,
+					},
+					ExpectedInKubeletLabels: true,
+					ExpectedOnNode:          true,
+				},
 				// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
 				// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
 				// the new labels to the old labels for compatibility.
@@ -3017,7 +3041,7 @@ var _ = Describe("InstanceType Provider", func() {
 					entry WellKnownLabelEntry
 				}
 				for _, item := range entries {
-					if item.SetupFunc != nil || item.CoverageOnly {
+					if item.SetupFunc != nil {
 						continue // can't support nonstandard setup here as we're putting all labels on one pod
 					}
 					podDetails = append(podDetails, struct {
@@ -3071,6 +3095,17 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually)",
 				func(item WellKnownLabelEntry) {
+					testEnvironment := &WellKnownLabelTestEnvironment{
+						Context:         ctx,
+						Cluster:         cluster,
+						CloudProvider:   cloudProvider,
+						CoreProvisioner: coreProvisioner,
+						AzureEnv:        azureEnv,
+					}
+					if item.Environment != nil {
+						testEnvironment = item.Environment
+					}
+					ctx = testEnvironment.Context
 					if item.SetupFunc != nil {
 						item.SetupFunc()
 					}
@@ -3091,7 +3126,14 @@ var _ = Describe("InstanceType Provider", func() {
 							Expect(lo.Values(results[i].Bindings)[0].Node.Name).To(Equal(lo.Values(results[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
-					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					ExpectProvisionedAndWaitForPromises(
+						ctx,
+						env.Client,
+						testEnvironment.Cluster,
+						testEnvironment.CloudProvider,
+						testEnvironment.CoreProvisioner,
+						testEnvironment.AzureEnv,
+						pod)
 					node := ExpectScheduled(ctx, env.Client, pod)
 
 					if item.ExpectedOnNode {
@@ -3100,9 +3142,21 @@ var _ = Describe("InstanceType Provider", func() {
 						Expect(node.Labels).ToNot(HaveKey(item.Label))
 					}
 
+					// Some tests only work in bootstrapping client, for those ensure we check the bootstrap API input too.
+					if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeBootstrappingClient {
+						Expect(testEnvironment.AzureEnv.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
+						bootstrapInput := testEnvironment.AzureEnv.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
+						if item.ExpectedInKubeletLabels {
+							Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).To(HaveKeyWithValue(item.Label, value))
+						} else {
+							Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).ToNot(HaveKeyWithValue(item.Label, value))
+						}
+						return
+					}
+
 					// Get the VM creation input and decode custom data
-					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-					vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					Expect(testEnvironment.AzureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					vmInput := testEnvironment.AzureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 					vm := vmInput.VM
 					if item.ExpectedInKubeletLabels {
 						ExpectKubeletNodeLabelsInCustomData(&vm, item.Label, value)
@@ -3110,7 +3164,7 @@ var _ = Describe("InstanceType Provider", func() {
 						ExpectKubeletNodeLabelsNotInCustomData(&vm, item.Label, value)
 					}
 				},
-				lo.Map(lo.Filter(entries, func(item WellKnownLabelEntry, _ int) bool { return !item.CoverageOnly }), func(item WellKnownLabelEntry, _ int) TableEntry {
+				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
 					return Entry(item.Name, item)
 				}),
 			)
@@ -3118,6 +3172,7 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually) on bootstrap API",
 				func(item WellKnownLabelEntry) {
+					ctx = ctxBootstrap
 					if item.SetupFunc != nil {
 						item.SetupFunc()
 					}
@@ -3157,7 +3212,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).ToNot(HaveKeyWithValue(item.Label, value))
 					}
 				},
-				lo.Map(lo.Filter(entries, func(item WellKnownLabelEntry, _ int) bool { return !item.CoverageOnly }), func(item WellKnownLabelEntry, _ int) TableEntry {
+				lo.Map(entries, func(item WellKnownLabelEntry, _ int) TableEntry {
 					return Entry(item.Name, item)
 				}),
 			)
