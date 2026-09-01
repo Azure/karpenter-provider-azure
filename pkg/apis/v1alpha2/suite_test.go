@@ -48,16 +48,16 @@ func TestAPIs(t *testing.T) {
 
 func TestV1Alpha2IsUnserved(t *testing.T) {
 	g := NewWithT(t)
-	var v1alpha2 *apiextensionsv1.CustomResourceDefinitionVersion
+	found := false
 	for _, crd := range apis.CRDs {
 		for i := range crd.Spec.Versions {
 			if crd.Spec.Versions[i].Name == "v1alpha2" {
-				v1alpha2 = &crd.Spec.Versions[i]
+				found = true
+				g.Expect(crd.Spec.Versions[i].Served).To(BeFalse())
 			}
 		}
 	}
-	g.Expect(v1alpha2).ToNot(BeNil())
-	g.Expect(v1alpha2.Served).To(BeFalse())
+	g.Expect(found).To(BeTrue())
 }
 
 var _ = BeforeSuite(func() {
