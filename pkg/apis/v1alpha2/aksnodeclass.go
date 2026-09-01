@@ -88,7 +88,7 @@ type AKSNodeClassSpec struct {
 	// so pods with runtimeClassName: kata-vm-isolation
 	// run in lightweight VMs while other pods on the same node keep running as normal containers.
 	// Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS and Trusted Launch, and
-	// requires a generation-2, nested-virtualization-capable VM size.
+	// requires a nested-virtualization-capable VM size.
 	// See https://learn.microsoft.com/azure/aks/use-pod-sandboxing for more details.
 	// +default="OCIContainer"
 	// +optional

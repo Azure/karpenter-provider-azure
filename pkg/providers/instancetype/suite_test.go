@@ -2513,7 +2513,8 @@ var _ = Describe("InstanceType Provider", func() {
 
 				// Gen-1-only SKUs cannot run Kata.
 				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
-				// Intel v3 onwards and AMD v5 onwards support nested virtualization.
+				// Include supported families whose version alone does not determine nested virtualization.
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_F16s_v2"))))
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
 			})
