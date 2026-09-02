@@ -302,6 +302,8 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 		ossku = armcontainerservice.OSSKUUbuntu2404
 	case v1beta1.AzureLinuxImageFamily:
 		ossku = armcontainerservice.OSSKUAzureLinux
+	case v1beta1.AzureContainerLinuxImageFamily:
+		ossku = armcontainerservice.OSSKUAzureContainerLinux
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:

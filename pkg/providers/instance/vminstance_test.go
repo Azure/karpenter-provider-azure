@@ -19,6 +19,7 @@ package instance
 import (
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -28,6 +29,21 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
+
+func TestAzureContainerLinuxSecurityProfile(t *testing.T) {
+	properties := &armcompute.VirtualMachineProperties{}
+	nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{
+		ImageFamily: lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily),
+	}}
+
+	setVMPropertiesSecurityProfile(properties, nodeClass)
+
+	g := NewWithT(t)
+	g.Expect(properties.SecurityProfile).ToNot(BeNil())
+	g.Expect(lo.FromPtr(properties.SecurityProfile.SecurityType)).To(Equal(armcompute.SecurityTypesTrustedLaunch))
+	g.Expect(lo.FromPtr(properties.SecurityProfile.UefiSettings.SecureBootEnabled)).To(BeTrue())
+	g.Expect(lo.FromPtr(properties.SecurityProfile.UefiSettings.VTpmEnabled)).To(BeTrue())
+}
 
 func TestResolveUltraSSDRequested(t *testing.T) {
 	t.Parallel()
