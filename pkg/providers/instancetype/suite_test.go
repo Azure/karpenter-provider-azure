@@ -1092,14 +1092,14 @@ var _ = Describe("InstanceType Provider", func() {
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
-					Expect(instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)).To(BeNil())
+					Expect(instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass.Spec.OSDiskSizeGB, testNodeClass.IsTrustedLaunchEnabled())).To(BeNil())
 				})
 				It("should retain legacy placement inference when placement metadata is absent", func() {
 					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
-					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
+					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass.Spec.OSDiskSizeGB, testNodeClass.IsTrustedLaunchEnabled())
 					Expect(placement).ToNot(BeNil())
 					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
 				})
