@@ -119,27 +119,17 @@ func TestPrepareKubeletConfigurationSoftEvictionDisabledForBootstrappingClient(t
 
 func TestOverlayKubeletConfiguration(t *testing.T) {
 	g := NewWithT(t)
-	gracePeriod := int32(120)
 	configuration := &bootstrap.KubeletConfiguration{
 		KubeReserved: map[string]string{"cpu": "100m", "memory": "1Gi"},
 		EvictionHard: map[string]string{"memory.available": "750Mi", "nodefs.available": "10%"},
 	}
 	overrides := &v1beta1.KubeletConfiguration{
-		KubeReserved: map[string]string{"cpu": "250m"},
-		EvictionHard: map[string]string{"memory.available": "333Mi"},
-		EvictionSoft: map[string]string{"memory.available": "444Mi"},
-		EvictionSoftGracePeriod: map[string]metav1.Duration{
-			"memory.available": {Duration: 45 * time.Second},
-		},
-		EvictionMaxPodGracePeriod: &gracePeriod,
+		KubeReserved: map[string]v1beta1.KubeReservedValue{"cpu": "250m"},
+		EvictionHard: map[string]v1beta1.EvictionHardValue{"memory.available": "333Mi"},
 	}
 
 	overlayKubeletConfiguration(configuration, overrides)
 
 	g.Expect(configuration.KubeReserved).To(Equal(map[string]string{"cpu": "250m", "memory": "1Gi"}))
 	g.Expect(configuration.EvictionHard).To(Equal(map[string]string{"memory.available": "333Mi", "nodefs.available": "10%"}))
-	g.Expect(configuration.EvictionSoft).To(Equal(overrides.EvictionSoft))
-	g.Expect(configuration.EvictionSoftGracePeriod).To(Equal(overrides.EvictionSoftGracePeriod))
-	g.Expect(configuration.EvictionMaxPodGracePeriod).ToNot(BeIdenticalTo(overrides.EvictionMaxPodGracePeriod))
-	g.Expect(*configuration.EvictionMaxPodGracePeriod).To(Equal(gracePeriod))
 }

@@ -72,6 +72,24 @@ func TestKubeReservedResourcesOverrides(t *testing.T) {
 	g.Expect(resources).ToNot(HaveKey(corev1.ResourceName("pid")))
 }
 
+func TestCopySelectedValues(t *testing.T) {
+	g := NewWithT(t)
+	selected := copySelectedValues(map[string]string{
+		"cpu":               "250m",
+		"memory":            "512Mi",
+		"pid":               "1000",
+		"memory.available":  "333Mi",
+		"nodefs.available":  "12%",
+		"nodefs.inodesFree": "7%",
+	}, "cpu", "memory", "memory.available")
+
+	g.Expect(selected).To(Equal(map[string]string{
+		"cpu":              "250m",
+		"memory":           "512Mi",
+		"memory.available": "333Mi",
+	}))
+}
+
 // These cases mirror the hardened system-reserved calculation in the AKS RP.
 func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 	tests := []struct {

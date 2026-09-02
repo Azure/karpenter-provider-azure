@@ -282,21 +282,9 @@ func overlayKubeletConfiguration(kubeletConfig *bootstrap.KubeletConfiguration, 
 	}
 	kubeletConfig.KubeReserved = mergeStringMap(kubeletConfig.KubeReserved, overrides.KubeReserved)
 	kubeletConfig.EvictionHard = mergeStringMap(kubeletConfig.EvictionHard, overrides.EvictionHard)
-	kubeletConfig.EvictionSoft = mergeStringMap(kubeletConfig.EvictionSoft, overrides.EvictionSoft)
-	if len(overrides.EvictionSoftGracePeriod) > 0 {
-		if kubeletConfig.EvictionSoftGracePeriod == nil {
-			kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{}
-		}
-		for key, value := range overrides.EvictionSoftGracePeriod {
-			kubeletConfig.EvictionSoftGracePeriod[key] = value
-		}
-	}
-	if overrides.EvictionMaxPodGracePeriod != nil {
-		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(*overrides.EvictionMaxPodGracePeriod)
-	}
 }
 
-func mergeStringMap(base, overrides map[string]string) map[string]string {
+func mergeStringMap[T ~string](base map[string]string, overrides map[string]T) map[string]string {
 	if len(overrides) == 0 {
 		return base
 	}
@@ -304,7 +292,7 @@ func mergeStringMap(base, overrides map[string]string) map[string]string {
 		base = map[string]string{}
 	}
 	for key, value := range overrides {
-		base[key] = value
+		base[key] = string(value)
 	}
 	return base
 }

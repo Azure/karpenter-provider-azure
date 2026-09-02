@@ -1082,32 +1082,26 @@ spec:
                     type: string
                   evictionHard:
                     additionalProperties:
+                      maxLength: 20
+                      pattern: ^([0-9]+(Ki|Mi|Gi)?|([0-9]|[1-9][0-9]|100)%)$
                       type: string
                     description: |-
-                      EvictionHard maps eviction signals (for example, `memory.available`) to quantities and overrides Karpenter's defaults per key.
+                      EvictionHard maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to quantities and overrides Karpenter's defaults per key.
                       It matches AKS `kubeletConfig.hardEvictionThreshold`.
+                    maxProperties: 3
                     type: object
-                  evictionMaxPodGracePeriod:
-                    description: |-
-                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when
-                      terminating pods for soft eviction. Matches AKS `kubeletConfig.evictionMaxPodGracePeriodInSeconds`.
-                    format: int32
-                    minimum: 0
-                    type: integer
-                  evictionSoft:
-                    additionalProperties:
-                      type: string
-                    description: |-
-                      EvictionSoft maps eviction signals to quantities and overrides Karpenter's soft eviction thresholds per key.
-                      It matches AKS `kubeletConfig.softEvictionThreshold`.
-                    type: object
-                  evictionSoftGracePeriod:
-                    additionalProperties:
-                      type: string
-                    description: |-
-                      EvictionSoftGracePeriod maps eviction signals to grace periods and overrides Karpenter's defaults per key.
-                      It matches AKS `kubeletConfig.softEvictionGracePeriod`.
-                    type: object
+                    x-kubernetes-validations:
+                    - message: evictionHard supports only memory.available, nodefs.available,
+                        and nodefs.inodesFree
+                      rule: self.all(key, key == 'memory.available' || key == 'nodefs.available'
+                        || key == 'nodefs.inodesFree')
+                    - message: memory.available and nodefs.available must be integer
+                        Ki, Mi, or Gi quantities or percentages; nodefs.inodesFree
+                        must be an integer count or percentage
+                      rule: 'self.all(key, key == ''nodefs.inodesFree'' ? !self[key].endsWith(''Ki'')
+                        && !self[key].endsWith(''Mi'') && !self[key].endsWith(''Gi'')
+                        : self[key].endsWith(''Ki'') || self[key].endsWith(''Mi'')
+                        || self[key].endsWith(''Gi'') || self[key].endsWith(''%''))'
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
@@ -1138,11 +1132,22 @@ spec:
                     type: integer
                   kubeReserved:
                     additionalProperties:
+                      maxLength: 20
+                      pattern: ^([1-9][0-9]*m|[1-9][0-9]*(Mi|Gi)?)$
                       type: string
                     description: |-
-                      KubeReserved maps resource names (`cpu`, `memory`, `pid`) to reserved values and overrides Karpenter's computed defaults per key.
+                      KubeReserved maps supported resource names (`cpu`, `memory`) to reserved values and overrides Karpenter's computed defaults per key.
                       It matches AKS `kubeletConfig.cpuReserved` and `memoryReserved`.
+                    maxProperties: 2
                     type: object
+                    x-kubernetes-validations:
+                    - message: kubeReserved supports only cpu and memory
+                      rule: self.all(key, key == 'cpu' || key == 'memory')
+                    - message: kubeReserved cpu must be positive whole cores or millicores
+                        and memory must be positive whole MiB or GiB
+                      rule: 'self.all(key, key == ''cpu'' ? !self[key].endsWith(''Mi'')
+                        && !self[key].endsWith(''Gi'') : self[key].endsWith(''Mi'')
+                        || self[key].endsWith(''Gi''))'
                   podPidsLimit:
                     description: |-
                       podPidsLimit is the maximum number of PIDs in any pod.

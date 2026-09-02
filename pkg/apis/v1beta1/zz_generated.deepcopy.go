@@ -22,8 +22,7 @@ package v1beta1
 
 import (
 	"github.com/awslabs/operatorpkg/status"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -303,36 +302,17 @@ func (in *KubeletConfiguration) DeepCopyInto(out *KubeletConfiguration) {
 	}
 	if in.KubeReserved != nil {
 		in, out := &in.KubeReserved, &out.KubeReserved
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string]KubeReservedValue, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
 	}
 	if in.EvictionHard != nil {
 		in, out := &in.EvictionHard, &out.EvictionHard
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string]EvictionHardValue, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
-	}
-	if in.EvictionSoft != nil {
-		in, out := &in.EvictionSoft, &out.EvictionSoft
-		*out = make(map[string]string, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
-	}
-	if in.EvictionSoftGracePeriod != nil {
-		in, out := &in.EvictionSoftGracePeriod, &out.EvictionSoftGracePeriod
-		*out = make(map[string]v1.Duration, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
-	}
-	if in.EvictionMaxPodGracePeriod != nil {
-		in, out := &in.EvictionMaxPodGracePeriod, &out.EvictionMaxPodGracePeriod
-		*out = new(int32)
-		**out = **in
 	}
 }
 
@@ -459,7 +439,7 @@ func (in *NodeImage) DeepCopyInto(out *NodeImage) {
 	*out = *in
 	if in.Requirements != nil {
 		in, out := &in.Requirements, &out.Requirements
-		*out = make([]corev1.NodeSelectorRequirement, len(*in))
+		*out = make([]v1.NodeSelectorRequirement, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

@@ -18,12 +18,10 @@ package instance
 
 import (
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -676,8 +674,8 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should configure supported reservation and hard eviction overrides", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				KubeReserved: map[string]string{"cpu": "250m", "memory": "512Mi"},
-				EvictionHard: map[string]string{
+				KubeReserved: map[string]v1beta1.KubeReservedValue{"cpu": "250m", "memory": "512Mi"},
+				EvictionHard: map[string]v1beta1.EvictionHardValue{
 					"memory.available":  "333Mi",
 					"nodefs.available":  "12%",
 					"nodefs.inodesFree": "7%",
@@ -694,17 +692,6 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
 		})
 
-		It("should reject overrides unsupported by the AKS Machine API", func() {
-			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				EvictionSoft:              map[string]string{"memory.available": "444Mi"},
-				EvictionSoftGracePeriod:   map[string]metav1.Duration{"memory.available": {Duration: time.Minute}},
-				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
-			}
-
-			_, err := configureKubeletConfig(nodeClass)
-
-			Expect(err).To(MatchError("kubelet overrides evictionSoft, evictionSoftGracePeriod, evictionMaxPodGracePeriod are not supported by the AKS Machine API; supported override fields are kubeReserved and evictionHard"))
-		})
 	})
 
 	Context("parseVMImageID", func() {

@@ -1244,53 +1244,15 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("pid=1000"))
 			})
 
-			It("should let AKSNodeClass.spec.kubelet overrides win over hardened defaults per key", func() {
-				ctx = options.ToContext(
-					ctx,
-					test.Options(test.OptionsFields{
-						EnableNodeHardening: lo.ToPtr(true),
-					}),
-				)
-				// Customer overrides one key of evictionSoft + evictionSoftGracePeriod
-				// and the pod-grace-period; the other keys should still inherit the
-				// hardening defaults (parity with `az aks nodepool` per-key semantics).
-				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					EvictionSoft: map[string]string{
-						"memory.available": "444Mi",
-					},
-					EvictionSoftGracePeriod: map[string]metav1.Duration{
-						"memory.available": {Duration: 45 * time.Second},
-					},
-					EvictionMaxPodGracePeriod: lo.ToPtr[int32](120),
-				}
-
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				customData := ExpectDecodedCustomData(azureEnv)
-				kubeletFlags := ExpectKubeletFlagsPassed(customData)
-				// Customer values win for the keys they set.
-				Expect(kubeletFlags).To(ContainSubstring("memory.available<444Mi"))
-				Expect(kubeletFlags).To(ContainSubstring("memory.available=45s"))
-				Expect(kubeletFlags).To(ContainSubstring("--eviction-max-pod-grace-period=120"))
-				// Non-overridden keys still carry the hardening defaults.
-				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<12%"))
-				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<7%"))
-				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
-				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree=2m0s"))
-			})
-
 			It("should let AKSNodeClass.spec.kubelet override evictionHard and kubeReserved", func() {
 				// Overrides must apply even when node hardening is disabled — this is
 				// the RP-parity path where a customer sets kubelet knobs via the
 				// AKSNodeClass without opting in to hardening.
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					EvictionHard: map[string]string{
+					EvictionHard: map[string]v1beta1.EvictionHardValue{
 						"memory.available": "333Mi",
 					},
-					KubeReserved: map[string]string{
+					KubeReserved: map[string]v1beta1.KubeReservedValue{
 						"cpu":    "250m",
 						"memory": "512Mi",
 					},

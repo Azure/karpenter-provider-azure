@@ -437,20 +437,6 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) (*armcontainerservi
 
 	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
 
-	unsupportedFields := []string{}
-	if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 {
-		unsupportedFields = append(unsupportedFields, "evictionSoft")
-	}
-	if len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 {
-		unsupportedFields = append(unsupportedFields, "evictionSoftGracePeriod")
-	}
-	if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
-		unsupportedFields = append(unsupportedFields, "evictionMaxPodGracePeriod")
-	}
-	if len(unsupportedFields) > 0 {
-		return nil, fmt.Errorf("kubelet overrides %s are not supported by the AKS Machine API; supported override fields are kubeReserved and evictionHard", strings.Join(unsupportedFields, ", "))
-	}
-
 	if len(nodeClass.Spec.Kubelet.KubeReserved) > 0 {
 		kubeReserved, err := configureAKSMachineKubeReserved(nodeClass.Spec.Kubelet.KubeReserved)
 		if err != nil {
@@ -469,10 +455,10 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) (*armcontainerservi
 	return kubeletConfig, nil
 }
 
-func configureAKSMachineKubeReserved(overrides map[string]string) (*armcontainerservice.KubeReserved, error) {
+func configureAKSMachineKubeReserved(overrides map[string]v1beta1.KubeReservedValue) (*armcontainerservice.KubeReserved, error) {
 	result := &armcontainerservice.KubeReserved{}
 	for key, value := range overrides {
-		quantity, err := resource.ParseQuantity(value)
+		quantity, err := resource.ParseQuantity(string(value))
 		if err != nil {
 			return nil, fmt.Errorf("invalid kubeReserved[%q] value %q: %w", key, value, err)
 		}
@@ -498,16 +484,16 @@ func configureAKSMachineKubeReserved(overrides map[string]string) (*armcontainer
 	return result, nil
 }
 
-func configureAKSMachineHardEviction(overrides map[string]string) (*armcontainerservice.HardEvictionThreshold, error) {
+func configureAKSMachineHardEviction(overrides map[string]v1beta1.EvictionHardValue) (*armcontainerservice.HardEvictionThreshold, error) {
 	result := &armcontainerservice.HardEvictionThreshold{}
 	for key, value := range overrides {
 		switch key {
 		case instancetype.MemoryAvailable:
-			result.MemoryAvailable = lo.ToPtr(value)
+			result.MemoryAvailable = lo.ToPtr(string(value))
 		case instancetype.NodeFSAvailable:
-			result.NodeFsAvailable = lo.ToPtr(value)
+			result.NodeFsAvailable = lo.ToPtr(string(value))
 		case instancetype.NodeFSInodesFree:
-			result.NodeFsInodesFree = lo.ToPtr(value)
+			result.NodeFsInodesFree = lo.ToPtr(string(value))
 		default:
 			return nil, fmt.Errorf("evictionHard[%q] is not supported by the AKS Machine API", key)
 		}

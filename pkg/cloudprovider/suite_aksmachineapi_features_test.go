@@ -480,6 +480,12 @@ var _ = Describe("CloudProvider", func() {
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					FailSwapOn:                  lo.ToPtr(false),
+					KubeReserved:                map[string]v1beta1.KubeReservedValue{"cpu": "250m", "memory": "512Mi"},
+					EvictionHard: map[string]v1beta1.EvictionHardValue{
+						"memory.available":  "333Mi",
+						"nodefs.available":  "12%",
+						"nodefs.inodesFree": "7%",
+					},
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
@@ -535,6 +541,11 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcHighThreshold).To(Equal(int32(85)))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcLowThreshold).To(Equal(int32(80)))
 				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.KubeletConfig.FailSwapOn)).To(BeFalse())
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.CPUMillicores).To(Equal(int32(250)))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.MemoryMB).To(Equal(int32(512)))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
 
 				// Verify image family configuration
 				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))

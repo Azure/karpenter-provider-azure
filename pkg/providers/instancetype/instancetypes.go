@@ -19,7 +19,6 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -159,8 +158,8 @@ func (p *DefaultProvider) List(
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 	}
 	if nodeClass.Spec.Kubelet != nil {
-		instanceTypeParams.KubeReserved = maps.Clone(nodeClass.Spec.Kubelet.KubeReserved)
-		instanceTypeParams.EvictionHard = maps.Clone(nodeClass.Spec.Kubelet.EvictionHard)
+		instanceTypeParams.KubeReserved = copySelectedValues(nodeClass.Spec.Kubelet.KubeReserved, string(corev1.ResourceCPU), string(corev1.ResourceMemory))
+		instanceTypeParams.EvictionHard = copySelectedValues(nodeClass.Spec.Kubelet.EvictionHard, MemoryAvailable)
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
@@ -184,6 +183,16 @@ func (p *DefaultProvider) List(
 	p.instanceTypesCache.SetDefault(key, result)
 	// Return a shallow copy, matching the cache-hit path, so a caller reordering its slice doesn't reorder the cached one.
 	return append([]*cloudprovider.InstanceType{}, result...), nil
+}
+
+func copySelectedValues[T ~string](values map[string]T, keys ...string) map[string]string {
+	selected := map[string]string{}
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			selected[key] = string(value)
+		}
+	}
+	return selected
 }
 
 func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {
