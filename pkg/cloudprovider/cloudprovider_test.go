@@ -18,6 +18,7 @@ package cloudprovider
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,7 +29,29 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
+
+type countingInstancePromise struct {
+	waitCalls atomic.Int32
+}
+
+func (p *countingInstancePromise) Cleanup(context.Context) error { return nil }
+func (p *countingInstancePromise) Wait() error {
+	p.waitCalls.Add(1)
+	return nil
+}
+func (p *countingInstancePromise) GetInstanceName() string { return "test-instance" }
+
+func TestHandleInstancePromiseWaitsOnceForStandaloneNodeClaim(t *testing.T) {
+	g := NewWithT(t)
+	cloudProvider := &CloudProvider{}
+	promise := &countingInstancePromise{}
+
+	g.Expect(cloudProvider.handleInstancePromise(context.Background(), promise, &karpv1.NodeClaim{})).To(Succeed())
+	cloudProvider.WaitForInstancePromises()
+	g.Expect(promise.waitCalls.Load()).To(Equal(int32(1)))
+}
 
 func TestGenerateNodeClaimName(t *testing.T) {
 	tests := []struct {
