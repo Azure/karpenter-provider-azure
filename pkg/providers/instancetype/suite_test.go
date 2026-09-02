@@ -1006,13 +1006,24 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(sizeGB).To(Equal(int64(107)))
 					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)))
 				})
-				It("should retain cache and resource fallback when placement metadata is unknown", func() {
-					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "NvmeDiskV2")
-					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(200*int64(units.GiB), 10))
-					sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(100*int64(units.GiB)/int64(units.MiB), 10))
+				DescribeTable("should reject capacity when placement metadata has no recognized tokens",
+					func(placements string) {
+						sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", placements)
+						sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(200*int64(units.GiB), 10))
+						sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(100*int64(units.GiB)/int64(units.MiB), 10))
+
+						sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+						Expect(sizeGB).To(BeZero())
+						Expect(placement).To(BeNil())
+					},
+					Entry("unknown token", "NvmeDiskV2"),
+					Entry("empty value", ""),
+				)
+				It("should retain cache and resource fallback when placement metadata is absent", func() {
+					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
 
 					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
-					Expect(sizeGB).To(Equal(int64(214)))
+					Expect(sizeGB).To(Equal(int64(1717)))
 					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)))
 				})
 				It("should ignore unknown placement tokens alongside a known placement", func() {
@@ -1075,9 +1086,23 @@ var _ = Describe("InstanceType Provider", func() {
 					Entry("resource only", "ResourceDisk", armcompute.DiffDiskPlacementResourceDisk),
 					Entry("NVMe only", "NvmeDisk", armcompute.DiffDiskPlacementNvmeDisk),
 					Entry("all placements prefer cache", "CacheDisk,ResourceDisk,NvmeDisk", armcompute.DiffDiskPlacementCacheDisk),
-					Entry("unknown-only capability uses legacy cache/resource fallback", "FutureDisk", armcompute.DiffDiskPlacementCacheDisk),
-					Entry("future NVMe token does not match current NVMe placement", "NvmeDiskV2", armcompute.DiffDiskPlacementCacheDisk),
 				)
+				It("should reject present placement metadata with no recognized tokens", func() {
+					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "NvmeDiskV2")
+					testNodeClass := test.AKSNodeClass()
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+
+					Expect(instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)).To(BeNil())
+				})
+				It("should retain legacy placement inference when placement metadata is absent", func() {
+					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
+					testNodeClass := test.AKSNodeClass()
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+
+					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
+					Expect(placement).ToNot(BeNil())
+					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
+				})
 				It("should prefer resource disk over NVMe when cache does not fit", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_B20ms"), "SupportedEphemeralOSDiskPlacements", "CacheDisk,ResourceDisk,NvmeDisk")
 					sku = withSKUCapability(sku, "NvmeDiskSizeInMiB", strconv.FormatInt(2048*int64(units.GiB)/int64(units.MiB), 10))
@@ -3857,6 +3882,15 @@ func withSKUCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
 	capabilities = append(capabilities, compute.ResourceSkuCapabilities{
 		Name:  lo.ToPtr(name),
 		Value: lo.ToPtr(value),
+	})
+	clone.Capabilities = &capabilities
+	return &clone
+}
+
+func withoutSKUCapability(sku *skewer.SKU, name string) *skewer.SKU {
+	clone := *sku
+	capabilities := lo.Filter(append([]compute.ResourceSkuCapabilities(nil), (*sku.Capabilities)...), func(capability compute.ResourceSkuCapabilities, _ int) bool {
+		return !strings.EqualFold(lo.FromPtr(capability.Name), name)
 	})
 	clone.Capabilities = &capabilities
 	return &clone

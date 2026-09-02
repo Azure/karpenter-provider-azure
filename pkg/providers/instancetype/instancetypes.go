@@ -18,6 +18,7 @@ package instancetype
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -587,11 +588,12 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	return sizeGB, lo.ToPtr(largest.placement)
 }
 
-func supportedEphemeralOSDiskPlacements(sku *skewer.SKU) (cache, resource, nvme bool) {
+func supportedEphemeralOSDiskPlacements(sku *skewer.SKU) (cache, resource, nvme, metadataPresent bool) {
 	const capability = "SupportedEphemeralOSDiskPlacements"
 	value, err := sku.GetCapabilityString(capability)
 	if err != nil {
-		return false, false, false
+		var notFound *skewer.ErrCapabilityNotFound
+		return false, false, false, !errors.As(err, &notFound)
 	}
 	for _, placement := range strings.Split(value, ",") {
 		switch {
@@ -603,7 +605,7 @@ func supportedEphemeralOSDiskPlacements(sku *skewer.SKU) (cache, resource, nvme 
 			nvme = true
 		}
 	}
-	return cache, resource, nvme
+	return cache, resource, nvme, true
 }
 
 type ephemeralOSDiskCandidate struct {
@@ -631,8 +633,10 @@ func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
 	resourceBytes := min(max(resourceMiB, 0), maxMiBWithoutOverflow) * int64(units.MiB)
 	nvmeBytes := min(max(nvmeMiB, 0), maxMiBWithoutOverflow) * int64(units.MiB)
 
-	cacheSupported, resourceSupported, nvmeSupported := supportedEphemeralOSDiskPlacements(sku)
-	if !cacheSupported && !resourceSupported && !nvmeSupported {
+	cacheSupported, resourceSupported, nvmeSupported, placementMetadataPresent := supportedEphemeralOSDiskPlacements(sku)
+	if !placementMetadataPresent {
+		// Older SKU payloads omit placement metadata. Preserve their historical
+		// CacheDisk/ResourceDisk inference, but never override explicit metadata.
 		cacheSupported = cacheBytes > 0
 		resourceSupported = resourceBytes > 0
 	}
