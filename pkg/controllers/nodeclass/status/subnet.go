@@ -66,15 +66,14 @@ func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKS
 	return r.validateVNETSubnetID(ctx, nodeClass)
 }
 
-// validatePodSubnetID checks a nodeclass-level pod subnet against the same rules the cluster-wide
-// --pod-subnet-id option is validated against at startup
+// validatePodSubnetID checks the effective pod subnet against the cluster-wide configuration.
 func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	if nodeClass.Spec.PodSubnetID == nil {
+	opts := options.FromContext(ctx)
+	podSubnetID := nodeClass.GetPodSubnetID(opts.PodSubnetID)
+	if podSubnetID == "" {
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
 		return reconcile.Result{}, nil
 	}
-	opts := options.FromContext(ctx)
-	podSubnetID := lo.FromPtr(nodeClass.Spec.PodSubnetID)
 	logger := log.FromContext(ctx).WithName(subnetReconcilerName).WithValues("podSubnetID", podSubnetID)
 
 	podSubnetComponents, err := utils.GetVnetSubnetIDComponents(podSubnetID)
@@ -116,8 +115,7 @@ func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v
 	return reconcile.Result{}, nil
 }
 
-// podSubnetConfigError returns why a nodeclass pod subnet cannot be used with the current cluster
-// configuration, or an empty string when it is valid
+// podSubnetConfigError returns why a pod subnet cannot be used with the current cluster configuration.
 func podSubnetConfigError(opts *options.Options, nodeClass *v1beta1.AKSNodeClass, podSubnetID string, podSubnet utils.VnetSubnetResource) string {
 	// The cluster-level pod subnet drives startup wiring like the VNet GUID the pod network labels
 	// carry, so a nodeclass may only override it, not turn pod subnet on by itself

@@ -66,11 +66,9 @@ POD_SUBNET_ID=""
 if [[ "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineapiheaderbatch" ]]; then
     POD_SUBNET_ID=$(jq -r ".agentPoolProfiles[0].podSubnetId // empty" <<< "$AKS_JSON")
 fi
-# Static Block pools also report podSubnetId, but need a different pod network type
-POD_IP_ALLOCATION_MODE=$(jq -r ".agentPoolProfiles[0].podIpAllocationMode // empty" <<< "$AKS_JSON")
-if [[ -n "$POD_SUBNET_ID" && "$POD_IP_ALLOCATION_MODE" == "StaticBlock" ]]; then
-    echo "Error: pod IP allocation mode 'StaticBlock' is not supported. Only dynamic pod subnet allocation is."
-    exit 1
+POD_IP_ALLOCATION_MODE=""
+if [[ -n "$POD_SUBNET_ID" ]]; then
+    POD_IP_ALLOCATION_MODE=$(jq -r ".agentPoolProfiles[0].podIpAllocationMode // empty" <<< "$AKS_JSON")
 fi
 VNET_GUID=$(jq -r ".resourceGuid // empty" <<< "$VNET_JSON")
 
@@ -95,7 +93,7 @@ if [[ "${PROVISION_MODE:-}" == "aksmachineapi" || "${PROVISION_MODE:-}" == "aksm
 fi
 
 export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
-    CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID POD_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES AZURE_SUBSCRIPTION_ID NETWORK_PLUGIN NETWORK_PLUGIN_MODE NETWORK_POLICY NETWORK_DATAPLANE \
+    CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID POD_SUBNET_ID POD_IP_ALLOCATION_MODE KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES AZURE_SUBSCRIPTION_ID NETWORK_PLUGIN NETWORK_PLUGIN_MODE NETWORK_POLICY NETWORK_DATAPLANE \
     LOG_LEVEL VNET_GUID KUBELET_IDENTITY_CLIENT_ID ENABLE_AZURE_SDK_LOGGING PROVISION_MODE USE_SIG AZURE_SIG_SUBSCRIPTION_ID AKS_MACHINES_POOL_NAME
 
 # get karpenter-values-template.yaml, if not already present (e.g. outside of repo context)

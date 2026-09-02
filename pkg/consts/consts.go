@@ -26,6 +26,9 @@ const (
 	// podnetwork-type value for pods getting VNet IPs from a pod subnet
 	PodNetworkTypeVNet = "vnet"
 
+	PodIPAllocationModeDynamicIndividual = "DynamicIndividual"
+	PodIPAllocationModeStaticBlock       = "StaticBlock"
+
 	NetworkDataplaneNone   = ""
 	NetworkDataplaneCilium = "cilium"
 	NetworkDataplaneAzure  = "azure"

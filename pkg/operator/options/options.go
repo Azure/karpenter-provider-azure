@@ -88,6 +88,7 @@ type Options struct {
 	VnetGUID                string   `json:"vnetGuid,omitempty"`                // resource guid used by azure cni for identifying the right vnet
 	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	PodSubnetID             string   `json:"podSubnetId,omitempty"`             // => Subnet pods get their IPs from, for Azure CNI with pod subnet
+	PodIPAllocationMode     string   `json:"podIPAllocationMode,omitempty"`     // => Pod IP allocation mode for Azure CNI with pod subnet
 	setFlags                map[string]bool
 
 	ProvisionMode              string            `json:"provisionMode,omitempty"`
@@ -130,6 +131,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.VnetGUID, "vnet-guid", env.WithDefaultString("VNET_GUID", ""), "The vnet guid of the clusters vnet, only required by azure cni with overlay + byo vnet")
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.StringVar(&o.PodSubnetID, "pod-subnet-id", env.WithDefaultString("POD_SUBNET_ID", ""), "The subnet ID pods get their IPs from, for clusters using Azure CNI with pod subnet and dynamic IP allocation. Must be a valid ARM resource ID for a subnet in the same virtual network as --vnet-subnet-id. Only applies to newly provisioned nodes; nodes created before this was set keep their existing networking until they are replaced.")
+	fs.StringVar(&o.PodIPAllocationMode, "pod-ip-allocation-mode", env.WithDefaultString("POD_IP_ALLOCATION_MODE", ""), "The pod IP allocation mode for clusters using Azure CNI with pod subnet. Empty and DynamicIndividual are supported.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")

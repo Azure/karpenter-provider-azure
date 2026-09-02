@@ -104,7 +104,10 @@ func (o *Options) validateVnetSubnetID() error {
 
 func (o *Options) validatePodSubnetID() error {
 	if o.PodSubnetID == "" {
-		return nil
+		return validatePodIPAllocationModeWithoutSubnet(o.PodIPAllocationMode)
+	}
+	if err := validatePodIPAllocationMode(o.PodIPAllocationMode); err != nil {
+		return err
 	}
 	podSubnet, err := utils.GetVnetSubnetIDComponents(o.PodSubnetID)
 	if err != nil {
@@ -130,6 +133,23 @@ func (o *Options) validatePodSubnetID() error {
 		return fmt.Errorf("pod-subnet-id must be different from vnet-subnet-id")
 	}
 	return nil
+}
+
+func validatePodIPAllocationModeWithoutSubnet(mode string) error {
+	if mode != "" {
+		return fmt.Errorf("pod-ip-allocation-mode requires pod-subnet-id to be set")
+	}
+	return nil
+}
+
+func validatePodIPAllocationMode(mode string) error {
+	if mode == "" || strings.EqualFold(mode, consts.PodIPAllocationModeDynamicIndividual) {
+		return nil
+	}
+	if strings.EqualFold(mode, consts.PodIPAllocationModeStaticBlock) {
+		mode = consts.PodIPAllocationModeStaticBlock
+	}
+	return fmt.Errorf("pod-ip-allocation-mode '%s' is not supported; only '%s' is supported", mode, consts.PodIPAllocationModeDynamicIndividual)
 }
 
 func (o *Options) validateEndpoint() error {

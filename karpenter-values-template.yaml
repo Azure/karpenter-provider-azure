@@ -28,6 +28,8 @@ controller:
       value: ${VNET_SUBNET_ID}
     - name: POD_SUBNET_ID
       value: ${POD_SUBNET_ID}
+    - name: POD_IP_ALLOCATION_MODE
+      value: ${POD_IP_ALLOCATION_MODE}
     - name: VNET_GUID
       value: ${VNET_GUID}
     - name: NODE_IDENTITIES

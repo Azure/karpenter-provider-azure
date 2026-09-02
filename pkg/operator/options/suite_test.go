@@ -58,9 +58,13 @@ var _ = Describe("Options", func() {
 		"KUBELET_BOOTSTRAP_TOKEN",
 		"SSH_PUBLIC_KEY",
 		"NETWORK_PLUGIN",
+		"NETWORK_PLUGIN_MODE",
 		"NETWORK_POLICY",
 		"DNS_SERVICE_IP",
 		"NODE_IDENTITIES",
+		"VNET_SUBNET_ID",
+		"POD_SUBNET_ID",
+		"POD_IP_ALLOCATION_MODE",
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
 		"VNET_GUID",
@@ -385,6 +389,62 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
 			Expect(err).To(MatchError(ContainSubstring("not a valid clusterEndpoint URL")))
+		})
+		It("should reject StaticBlock pod IP allocation", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "StaticBlock",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-ip-allocation-mode 'StaticBlock' is not supported; only 'DynamicIndividual' is supported")))
+		})
+		It("should accept an empty pod IP allocation mode", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should accept DynamicIndividual pod IP allocation", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "dynamicindividual",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should reject pod IP allocation mode without a pod subnet", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-ip-allocation-mode requires pod-subnet-id to be set")))
 		})
 		It("should fail validation when pod-subnet-id is invalid (not absolute)", func() {
 			err := opts.Parse(

@@ -353,9 +353,37 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(cond.Message).To(ContainSubstring("requires the cluster-level --pod-subnet-id"))
 		})
 
-		It("should not require a pod subnet lookup when podSubnetID is unset", func() {
+		It("should validate the inherited cluster pod subnet", func() {
+			lookedUp := sets.New[string]()
 			azureEnv.SubnetsAPI.GetFunc = func(_ context.Context, _ string, _ string, subnetName string, _ *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
-				Expect(subnetName).To(Equal("nodesubnet"))
+				lookedUp.Insert(subnetName)
+				return armnetwork.SubnetsClientGetResponse{}, &azcore.ResponseError{
+					StatusCode: http.StatusNotFound,
+					RawResponse: &http.Response{
+						StatusCode: http.StatusNotFound,
+						Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"NotFound","message":"pod subnet not found"}}`)),
+					},
+				}
+			}
+
+			result, err := reconciler.Reconcile(podSubnetCtx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute}))
+			Expect(lookedUp.UnsortedList()).To(ConsistOf("clusterpodsubnet"))
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal("SubnetNotFound"))
+			Expect(cond.Message).To(ContainSubstring(clusterPodSubnet))
+		})
+
+		It("should not require a pod subnet lookup when the cluster has no pod subnet", func() {
+			noPodSubnetCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
+				SubnetID:          lo.ToPtr(nodeSubnetID),
+				NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+			}))
+			lookedUp := sets.New[string]()
+			azureEnv.SubnetsAPI.GetFunc = func(_ context.Context, _ string, _ string, subnetName string, _ *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+				lookedUp.Insert(subnetName)
 				return armnetwork.SubnetsClientGetResponse{
 					Subnet: armnetwork.Subnet{
 						Properties: &armnetwork.SubnetPropertiesFormat{AddressPrefix: lo.ToPtr("10.0.0.0/16")},
@@ -363,8 +391,9 @@ var _ = Describe("SubnetStatus", func() {
 				}, nil
 			}
 
-			_, err := reconciler.Reconcile(podSubnetCtx, nodeClass)
+			_, err := reconciler.Reconcile(noPodSubnetCtx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(lookedUp.UnsortedList()).To(ConsistOf("nodesubnet"))
 			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady).IsTrue()).To(BeTrue())
 		})
 	})
