@@ -44,7 +44,8 @@ const (
 	cigImageVersion      = "202505.27.0"
 	laterCIGImageVersion = "202605.27.0"
 
-	sigImageVersion = "202512.18.0" // Updated to match fake data versions
+	sigImageVersion             = "202608.26.0"
+	azureLinuxV2SIGImageVersion = "202512.06.0"
 )
 
 func renderExpectedCIGNodeImages(
@@ -67,10 +68,14 @@ func renderExpectedSIGNodeImages(
 	fips *v1beta1.FIPSMode,
 	trustedLaunch bool,
 ) []imagefamily.NodeImage {
+	version := sigImageVersion
+	if _, ok := fam.(*imagefamily.AzureLinux); ok {
+		version = azureLinuxV2SIGImageVersion
+	}
 	defaultImages := fam.DefaultImages(true, fips, trustedLaunch)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
-		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, sigImageVersion)
+		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, version)
 		out = append(out, imagefamily.NodeImage{ID: id, Requirements: img.Requirements})
 	}
 	return out
