@@ -143,7 +143,10 @@ func validatePodIPAllocationModeWithoutSubnet(mode string) error {
 }
 
 func validatePodIPAllocationMode(mode string) error {
-	if mode == "" || strings.EqualFold(mode, consts.PodIPAllocationModeDynamicIndividual) {
+	if mode == "" {
+		return fmt.Errorf("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to '%s' when --pod-subnet-id is set", consts.PodIPAllocationModeDynamicIndividual)
+	}
+	if strings.EqualFold(mode, consts.PodIPAllocationModeDynamicIndividual) {
 		return nil
 	}
 	if strings.EqualFold(mode, consts.PodIPAllocationModeStaticBlock) {

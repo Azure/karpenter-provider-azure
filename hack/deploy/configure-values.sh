@@ -68,7 +68,7 @@ if [[ "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "aksmachineap
 fi
 POD_IP_ALLOCATION_MODE=""
 if [[ -n "$POD_SUBNET_ID" ]]; then
-    POD_IP_ALLOCATION_MODE=$(jq -r ".agentPoolProfiles[0].podIpAllocationMode // empty" <<< "$AKS_JSON")
+    POD_IP_ALLOCATION_MODE=$(jq -r '.agentPoolProfiles[0].podIpAllocationMode // "DynamicIndividual"' <<< "$AKS_JSON")
 fi
 VNET_GUID=$(jq -r ".resourceGuid // empty" <<< "$VNET_JSON")
 

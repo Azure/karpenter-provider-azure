@@ -193,9 +193,8 @@ settings:
   clusterEndpoint: ""
   # -- The subnet ID pods get their IPs from for Azure CNI with pod subnet.
   podSubnetID: ""
-  # -- Set to the cluster's actual `podIpAllocationMode` reported by `az aks nodepool show --output json`.
-  # StaticBlock is unsupported and causes Karpenter to refuse startup when set.
-  # Leave empty only for DynamicIndividual. On StaticBlock, empty silently misconfigures maxPods.
+  # -- Required when podSubnetID is set. Use the cluster's actual `podIpAllocationMode` from `az aks nodepool show --output json`.
+  # Only DynamicIndividual is supported. StaticBlock or an empty value causes Karpenter startup to fail.
   podIPAllocationMode: ""
   # -- The VM memory overhead as a percent that will be subtracted from the total memory for all instance types
   vmMemoryOverheadPercent: 0.075

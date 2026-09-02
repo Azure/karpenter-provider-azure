@@ -390,6 +390,20 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("not a valid clusterEndpoint URL")))
 		})
+		It("should accept empty pod subnet and pod IP allocation mode", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--pod-subnet-id", "",
+				"--pod-ip-allocation-mode", "",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
 		It("should reject StaticBlock pod IP allocation", func() {
 			err := opts.Parse(
 				fs,
@@ -404,7 +418,7 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("pod-ip-allocation-mode 'StaticBlock' is not supported; only 'DynamicIndividual' is supported")))
 		})
-		It("should accept an empty pod IP allocation mode", func() {
+		It("should require pod IP allocation mode with a pod subnet", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -417,7 +431,7 @@ var _ = Describe("Options", func() {
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
 				"--pod-ip-allocation-mode", "",
 			)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to 'DynamicIndividual' when --pod-subnet-id is set")))
 		})
 		It("should accept DynamicIndividual pod IP allocation", func() {
 			err := opts.Parse(
@@ -456,6 +470,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin-mode", "",
 				"--pod-subnet-id", "invalid-pod-subnet-id",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is invalid: invalid vnet subnet id: invalid-pod-subnet-id")))
 		})
@@ -470,6 +485,7 @@ var _ = Describe("Options", func() {
 				"--network-plugin", "none",
 				"--network-plugin-mode", "",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is only supported with network-plugin 'azure', got 'none'")))
 		})
@@ -483,6 +499,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin-mode", "overlay",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is not supported with network-plugin-mode 'overlay'")))
 		})
@@ -496,6 +513,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin-mode", "",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/othervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id must be in the same virtual network as vnet-subnet-id")))
 		})
@@ -509,6 +527,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin-mode", "",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id must be different from vnet-subnet-id")))
 		})
@@ -527,6 +546,7 @@ var _ = Describe("Options", func() {
 				"--use-sig",
 				"--sig-subscription-id", "12345678-1234-1234-1234-123456789012",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is not supported with provision-mode 'aksmachineapi'")))
 		})
@@ -541,6 +561,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--network-plugin-mode", "",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/SillyGeese/providers/Microsoft.Network/virtualNetworks/KarpenterVNet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(opts.IsAzureCNIPodSubnet()).To(BeTrue())
@@ -556,6 +577,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--network-plugin-mode", "",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(opts.IsAzureCNIPodSubnet()).To(BeTrue())
