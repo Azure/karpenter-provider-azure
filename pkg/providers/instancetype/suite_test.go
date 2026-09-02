@@ -988,6 +988,15 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(sizeGB).To(Equal(int64(80)))
 					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)))
 				})
+				It("should choose the largest eligible placement before applying the label cap", func() {
+					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "CacheDisk,ResourceDisk")
+					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(2040*int64(units.GiB)+512*int64(units.MiB), 10))
+					sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(2041*int64(units.GiB)/int64(units.MiB), 10))
+
+					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+					Expect(sizeGB).To(Equal(int64(2190)))
+					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)))
+				})
 				It("should ignore capacity from an ineligible placement", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "ResourceDisk")
 					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(200*int64(units.GiB), 10))
