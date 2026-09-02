@@ -126,6 +126,15 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
+		It("should match expected images for AzureContainerLinux", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureContainerLinux{}, nodeClass.Spec.FIPSMode, cigImageVersion, nodeClass.IsTrustedLaunchEnabled())
+			Expect(foundImages).To(Equal(expectedImages))
+		})
+
 		// This test changes depending on the Kubernetes version, in effect making the following version-specific tests unnecessary.
 		// They are still kept for clarity and to ensure that the behavior is explicitly tested.
 		It("should match expected images for AzureLinux, depending on the Kubernetes version", func() {

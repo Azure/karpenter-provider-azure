@@ -487,6 +487,17 @@ func TestLabelsGet(t *testing.T) {
 				v1beta1.AKSLabelOSSKUEffective: "AzureLinux3",
 			},
 		},
+		{
+			name:              "AzureContainerLinux with k8s >= 1.34 should use AzureContainerLinux",
+			imageFamily:       v1beta1.AzureContainerLinuxImageFamily,
+			kubernetesVersion: "1.34.0",
+			arch:              "amd64",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "AzureContainerLinux",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.AzureContainerLinuxImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.AzureContainerLinuxImageFamily,
+			},
+		},
 		// Artifact streaming label cases
 		{
 			name:              "AMD64 with nil artifact streaming (default) should NOT have label",

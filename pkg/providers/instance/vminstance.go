@@ -672,33 +672,37 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 }
 
 func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.Security == nil {
+	isAzureContainerLinux := lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily
+
+	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+		ensureSecurityProfile(vmProperties).EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
+
+	if isAzureContainerLinux || nodeClass.IsTrustedLaunchEnabled() {
+		applyTrustedLaunch(vmProperties, nodeClass, isAzureContainerLinux)
+	}
+}
+
+func ensureSecurityProfile(vmProperties *armcompute.VirtualMachineProperties) *armcompute.SecurityProfile {
+	if vmProperties.SecurityProfile == nil {
+		vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
+	}
+	return vmProperties.SecurityProfile
+}
+
+func applyTrustedLaunch(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass, isAzureContainerLinux bool) {
+	sp := ensureSecurityProfile(vmProperties)
+	if sp.SecurityType == nil {
+		sp.SecurityType = lo.ToPtr(armcompute.SecurityTypesTrustedLaunch)
+	}
+	secureBoot := lo.ToPtr(nodeClass.IsSecureBootEnabled() || isAzureContainerLinux)
+	vtpm := lo.ToPtr(nodeClass.IsVTPMEnabled() || isAzureContainerLinux)
+	if sp.UefiSettings == nil {
+		sp.UefiSettings = &armcompute.UefiSettings{SecureBootEnabled: secureBoot, VTpmEnabled: vtpm}
 		return
 	}
-
-	if nodeClass.Spec.Security.EncryptionAtHost != nil {
-		if vmProperties.SecurityProfile == nil {
-			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
-		}
-		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
-	}
-
-	if nodeClass.IsTrustedLaunchEnabled() {
-		if vmProperties.SecurityProfile == nil {
-			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
-		}
-
-		if vmProperties.SecurityProfile.SecurityType == nil {
-			vmProperties.SecurityProfile.SecurityType = lo.ToPtr(armcompute.SecurityTypesTrustedLaunch)
-		}
-
-		if vmProperties.SecurityProfile.UefiSettings == nil {
-			vmProperties.SecurityProfile.UefiSettings = &armcompute.UefiSettings{
-				SecureBootEnabled: lo.ToPtr(nodeClass.IsSecureBootEnabled()),
-				VTpmEnabled:       lo.ToPtr(nodeClass.IsVTPMEnabled()),
-			}
-		}
-	}
+	sp.UefiSettings.SecureBootEnabled = secureBoot
+	sp.UefiSettings.VTpmEnabled = vtpm
 }
 
 func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSSDEnabled bool) {

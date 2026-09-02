@@ -62,7 +62,10 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
 // +kubebuilder:validation:XValidation:message="TrustedLaunch is required for FIPS support with Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && (self.imageFamily != 'Ubuntu2204' || (has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))))) : true"
-// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu, Ubuntu2204, and AzureContainerLinux",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204' || self.imageFamily == 'AzureContainerLinux') : true"
+// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires Secure Boot and vTPM",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.security) || !has(self.security.trustedLaunch) || ((!has(self.security.trustedLaunch.vtpm) || self.security.trustedLaunch.vtpm) && (!has(self.security.trustedLaunch.secureBoot) || self.security.trustedLaunch.secureBoot))"
+// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires an OS disk of at least 60 GB",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60"
+// +kubebuilder:validation:XValidation:message="artifactStreaming.enabled cannot be true when imageFamily is AzureContainerLinux",rule="has(self.artifactStreaming) && has(self.artifactStreaming.enabled) && self.artifactStreaming.enabled == true ? !(has(self.imageFamily) && self.imageFamily == 'AzureContainerLinux') : true"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -81,7 +84,7 @@ type AKSNodeClassSpec struct {
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
 	// +default="Ubuntu"
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,AzureContainerLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// fipsMode controls FIPS compliance for the provisioned nodes
@@ -735,6 +738,9 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 }
 
 func (in *AKSNodeClass) IsVTPMEnabled() bool {
+	if lo.FromPtr(in.Spec.ImageFamily) == AzureContainerLinuxImageFamily {
+		return true
+	}
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.VTPM != nil {
 		return *in.Spec.Security.TrustedLaunch.VTPM
 	}
@@ -742,6 +748,9 @@ func (in *AKSNodeClass) IsVTPMEnabled() bool {
 }
 
 func (in *AKSNodeClass) IsSecureBootEnabled() bool {
+	if lo.FromPtr(in.Spec.ImageFamily) == AzureContainerLinuxImageFamily {
+		return true
+	}
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.SecureBoot != nil {
 		return *in.Spec.Security.TrustedLaunch.SecureBoot
 	}

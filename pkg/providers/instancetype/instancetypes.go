@@ -61,6 +61,7 @@ const (
 // struct; adding a new field here automatically incorporates it into the key.
 type instanceTypeParameters struct {
 	ImageFamily              string
+	KubernetesVersion        string
 	OSDiskSizeGB             int32
 	MaxPods                  int32
 	EncryptionAtHost         bool
@@ -143,9 +144,19 @@ func (p *DefaultProvider) List(
 		return nil, fmt.Errorf("no instance types found")
 	}
 
+	kubernetesVersion := ""
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily {
+		var err error
+		kubernetesVersion, err = nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Compute fully initialized instance types hash key
 	instanceTypeParams := &instanceTypeParameters{
 		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
+		KubernetesVersion:        kubernetesVersion,
 		OSDiskSizeGB:             lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
@@ -343,6 +354,7 @@ func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, 
 // filters into a single call to keep the List() method's cyclomatic complexity low.
 func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
 	return p.isInstanceTypeSupportedByImageFamily(sku.GetName(), params.ImageFamily) &&
+		p.isInstanceTypeSupportedByAzureContainerLinux(sku, architecture, params) &&
 		p.isInstanceTypeSupportedByEncryptionAtHost(sku, params) &&
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
@@ -361,9 +373,71 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	case imageFamily == v1beta1.AzureLinuxImageFamily:
 		return utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux") ||
 			utils.IsGPUSKUSupportedOnOS(skuName, "azurelinux3")
+	case imageFamily == v1beta1.AzureContainerLinuxImageFamily:
+		return utils.IsGPUSKUSupportedOnOS(skuName, "azurecontainerlinux")
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByAzureContainerLinux(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
+	if params.ImageFamily != v1beta1.AzureContainerLinuxImageFamily {
+		return true
+	}
+
+	if !supportsTrustedLaunch(sku) {
+		return false
+	}
+
+	skuName := sku.GetName()
+	kubeArch := getArchitecture(architecture)
+
+	if kubeArch == karpv1.ArchitectureArm64 {
+		if !isCobaltV6SKU(skuName) || !hasNVMeDisk(sku) {
+			return false
+		}
+		if utils.IsGPUSKU(skuName) {
+			return false
+		}
+		return true
+	}
+
+	if utils.IsGPUSKU(skuName) {
+		if !utils.IsNvidiaEnabledSKU(skuName) {
+			return false
+		}
+		if !utils.IsGPUSKUSupportedOnOS(skuName, "azurecontainerlinux") {
+			return false
+		}
+	}
+
+	return true
+}
+
+func supportsTrustedLaunch(sku *skewer.SKU) bool {
+	value, err := sku.GetCapabilityString("TrustedLaunchDisabled")
+	if err != nil {
+		return true
+	}
+	return !strings.EqualFold(value, "True")
+}
+
+func isCobaltV6SKU(skuName string) bool {
+	name := strings.ToLower(strings.TrimPrefix(skuName, "Standard_"))
+	if !strings.HasSuffix(name, "_v6") {
+		return false
+	}
+	versionSeparatorIdx := strings.LastIndex(name, "_v")
+	if versionSeparatorIdx == -1 {
+		return false
+	}
+	familyPart := name[:versionSeparatorIdx]
+	return strings.Contains(familyPart, "p")
+}
+
+func hasNVMeDisk(sku *skewer.SKU) bool {
+	nvmeMiB, err := nvmeDiskSizeInMiB(sku)
+	return err == nil && nvmeMiB > 0
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {

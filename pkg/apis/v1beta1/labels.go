@@ -44,7 +44,7 @@ func init() {
 	karpv1.WellKnownValuesForRequirements[AKSLabelMode] = sets.New(ModeSystem, ModeUser)
 	karpv1.WellKnownValuesForRequirements[AKSLabelScaleSetPriority] = sets.New(ScaleSetPriorityRegular, ScaleSetPrioritySpot)
 	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
-	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux)
+	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux, OSSKUAzureContainerLinux)
 	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
 }
 
@@ -191,15 +191,17 @@ const (
 )
 
 const (
-	UbuntuImageFamily     = "Ubuntu"
-	Ubuntu2204ImageFamily = "Ubuntu2204"
-	Ubuntu2404ImageFamily = "Ubuntu2404"
-	AzureLinuxImageFamily = "AzureLinux"
+	UbuntuImageFamily              = "Ubuntu"
+	Ubuntu2204ImageFamily          = "Ubuntu2204"
+	Ubuntu2404ImageFamily          = "Ubuntu2404"
+	AzureLinuxImageFamily          = "AzureLinux"
+	AzureContainerLinuxImageFamily = "AzureContainerLinux"
 )
 
 const (
-	OSSKUUbuntu     = "Ubuntu"
-	OSSKUAzureLinux = "AzureLinux"
+	OSSKUUbuntu              = "Ubuntu"
+	OSSKUAzureLinux          = "AzureLinux"
+	OSSKUAzureContainerLinux = "AzureContainerLinux"
 )
 
 const (
@@ -221,10 +223,11 @@ var UbuntuFamilies = sets.New(
 // imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
 // These values match what AKS writes for kubernetes.azure.com/os-sku.
 var imageFamilyToOSSKU = map[string]string{
-	UbuntuImageFamily:     OSSKUUbuntu,
-	Ubuntu2204ImageFamily: OSSKUUbuntu,
-	Ubuntu2404ImageFamily: OSSKUUbuntu,
-	AzureLinuxImageFamily: OSSKUAzureLinux,
+	UbuntuImageFamily:              OSSKUUbuntu,
+	Ubuntu2204ImageFamily:          OSSKUUbuntu,
+	Ubuntu2404ImageFamily:          OSSKUUbuntu,
+	AzureLinuxImageFamily:          OSSKUAzureLinux,
+	AzureContainerLinuxImageFamily: OSSKUAzureContainerLinux,
 }
 
 // GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.

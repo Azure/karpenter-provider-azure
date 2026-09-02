@@ -87,6 +87,10 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, err
 	}
 
+	if err := validateNodeClassForMachineAPI(nodeClass); err != nil {
+		return nil, err
+	}
+
 	// OSDiskType
 	osDiskType, err := configureOSDiskType(ctx, p.instanceTypeProvider, nodeClass, instanceType)
 	if err != nil {
@@ -302,6 +306,8 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 		ossku = armcontainerservice.OSSKUUbuntu2404
 	case v1beta1.AzureLinuxImageFamily:
 		ossku = armcontainerservice.OSSKUAzureLinux
+	case v1beta1.AzureContainerLinuxImageFamily:
+		ossku = armcontainerservice.OSSKUAzureContainerLinux
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
@@ -315,6 +321,15 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 	}
 
 	return lo.ToPtr(ossku), lo.ToPtr(enableFIPS), nil
+}
+
+// validateNodeClassForMachineAPI enforces runtime restrictions that CEL rules cannot cover
+// for the AKS Machine API path.
+func validateNodeClassForMachineAPI(nodeClass *v1beta1.AKSNodeClass) error {
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily && nodeClass.IsArtifactStreamingExplicitlyEnabled() {
+		return fmt.Errorf("artifact streaming is not supported with imageFamily %q", v1beta1.AzureContainerLinuxImageFamily)
+	}
+	return nil
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {

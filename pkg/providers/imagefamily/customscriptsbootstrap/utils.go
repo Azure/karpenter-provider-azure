@@ -17,7 +17,12 @@ limitations under the License.
 package customscriptsbootstrap
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
 	"math"
 	"strings"
 
@@ -36,9 +41,95 @@ func hydrateBootstrapTokenIfNeeded(customDataDehydratable string, cseDehydratabl
 		return "", "", err
 	}
 	decodedCustomDataHydrated := strings.ReplaceAll(string(decodedCustomDataDehydratableInBytes), "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken)
+	decodedCustomDataHydrated, err = hydrateIgnitionFiles(decodedCustomDataHydrated, bootstrapToken)
+	if err != nil {
+		return "", "", err
+	}
 	customDataHydrated := base64.StdEncoding.EncodeToString([]byte(decodedCustomDataHydrated))
 
 	return customDataHydrated, cseHydrated, nil
+}
+
+// hydrateIgnitionFiles rewrites the bootstrap token placeholder inside every
+// embedded storage.files[].contents.source of an Ignition custom-data document,
+// including gzip-compressed files. AgentBaker emits Ignition (not CSE) for
+// AzureContainerLinux, and the bootstrap token placeholder can end up inside a
+// gzip'd file rather than the outer document.
+func hydrateIgnitionFiles(customData string, bootstrapToken string) (string, error) {
+	var ignition map[string]any
+	// Not Ignition JSON (e.g. Ubuntu cloud-init) — pass through unchanged.
+	if err := json.Unmarshal([]byte(customData), &ignition); err != nil {
+		return customData, nil //nolint:nilerr
+	}
+	if ignition["ignition"] == nil {
+		return customData, nil
+	}
+	storage, _ := ignition["storage"].(map[string]any)
+	files, _ := storage["files"].([]any)
+
+	for i, rawFile := range files {
+		if err := hydrateIgnitionFile(rawFile, bootstrapToken, i); err != nil {
+			return "", err
+		}
+	}
+
+	hydrated, err := json.Marshal(ignition)
+	if err != nil {
+		return "", fmt.Errorf("marshal hydrated Ignition: %w", err)
+	}
+	return string(hydrated), nil
+}
+
+func hydrateIgnitionFile(rawFile any, bootstrapToken string, index int) error {
+	const prefix = "data:;base64,"
+	file, _ := rawFile.(map[string]any)
+	contents, _ := file["contents"].(map[string]any)
+	source, _ := contents["source"].(string)
+	compression, _ := contents["compression"].(string)
+	if !strings.HasPrefix(source, prefix) {
+		return nil
+	}
+	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(source, prefix))
+	if err != nil {
+		return fmt.Errorf("decode Ignition file %d: %w", index, err)
+	}
+	if compression == "gzip" {
+		payload, err = gunzipBytes(payload)
+		if err != nil {
+			return fmt.Errorf("decompress Ignition file %d: %w", index, err)
+		}
+	}
+
+	hydrated := []byte(strings.ReplaceAll(string(payload), "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken))
+	if compression == "gzip" {
+		hydrated, err = gzipBytes(hydrated)
+		if err != nil {
+			return fmt.Errorf("compress Ignition file %d: %w", index, err)
+		}
+	}
+	contents["source"] = prefix + base64.StdEncoding.EncodeToString(hydrated)
+	return nil
+}
+
+func gunzipBytes(payload []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+func gzipBytes(payload []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := gzip.NewWriter(&buf)
+	if _, err := writer.Write(payload); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory float64) float64 {
