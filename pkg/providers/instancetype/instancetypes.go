@@ -19,6 +19,7 @@ package instancetype
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -570,18 +571,20 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesCache.Unlock()
 }
 
-// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk size in GiB, capped at the Compute limit.
-func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGiB int64, placement *armcompute.DiffDiskPlacement) {
+// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk capacity in integer decimal GB.
+// The largest eligible placement is selected before its capacity is capped at the 2040-GiB Compute limit.
+func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	largest, ok := largestEphemeralOSDiskCandidate(sku)
 	if !ok {
 		return 0, nil
 	}
 
-	sizeGiB = min(largest.sizeBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
-	if sizeGiB == 0 {
+	maxLabelBytes := maxEphemeralOSDiskSizeGiB * int64(units.GiB)
+	sizeGB = min(largest.sizeBytes, maxLabelBytes) / int64(units.Gigabyte)
+	if sizeGB == 0 {
 		return 0, nil
 	}
-	return sizeGiB, lo.ToPtr(largest.placement)
+	return sizeGB, lo.ToPtr(largest.placement)
 }
 
 func supportedEphemeralOSDiskPlacements(sku *skewer.SKU) (cache, resource, nvme bool) {
@@ -623,14 +626,10 @@ func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
 	cacheBytes, _ := sku.MaxCachedDiskBytes()
 	resourceMiB, _ := sku.MaxResourceVolumeMB()
 	nvmeMiB, _ := nvmeDiskSizeInMiB(sku)
-
-	// Keep one GiB above the Compute disk-size limit so a capped 2040-GiB Trusted
-	// Launch disk can still prove that its guest-state reservation fits.
-	maxCandidateBytes := (maxEphemeralOSDiskSizeGiB + 1) * int64(units.GiB)
-	maxCandidateMiB := maxCandidateBytes / int64(units.MiB)
-	cacheBytes = min(max(cacheBytes, 0), maxCandidateBytes)
-	resourceBytes := min(max(resourceMiB, 0), maxCandidateMiB) * int64(units.MiB)
-	nvmeBytes := min(max(nvmeMiB, 0), maxCandidateMiB) * int64(units.MiB)
+	maxMiBWithoutOverflow := int64(math.MaxInt64) / int64(units.MiB)
+	cacheBytes = max(cacheBytes, 0)
+	resourceBytes := min(max(resourceMiB, 0), maxMiBWithoutOverflow) * int64(units.MiB)
+	nvmeBytes := min(max(nvmeMiB, 0), maxMiBWithoutOverflow) * int64(units.MiB)
 
 	cacheSupported, resourceSupported, nvmeSupported := supportedEphemeralOSDiskPlacements(sku)
 	if !cacheSupported && !resourceSupported && !nvmeSupported {
