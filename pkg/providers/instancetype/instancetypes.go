@@ -19,6 +19,7 @@ package instancetype
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -561,7 +562,8 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesCache.Unlock()
 }
 
-// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk size in GiB, capped at the Compute limit.
+// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk capacity in integer decimal GB.
+// The largest eligible placement is selected before its capacity is capped at the 2040-GiB Compute limit.
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	candidates := ephemeralOSDiskCandidates(sku)
 	if len(candidates) == 0 {
@@ -574,7 +576,8 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 			largest = candidate
 		}
 	}
-	sizeGB = min(largest.sizeBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+	maxLabelBytes := maxEphemeralOSDiskSizeGiB * int64(units.GiB)
+	sizeGB = min(largest.sizeBytes, maxLabelBytes) / int64(units.Gigabyte)
 	if sizeGB == 0 {
 		return 0, nil
 	}
@@ -626,11 +629,10 @@ func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
 	cacheBytes, _ := sku.MaxCachedDiskBytes()
 	resourceMiB, _ := sku.MaxResourceVolumeMB()
 	nvmeMiB, _ := nvmeDiskSizeInMiB(sku)
-	maxBytes := maxEphemeralOSDiskSizeGiB * int64(units.GiB)
-	maxMiB := maxBytes / int64(units.MiB)
-	cacheBytes = min(max(cacheBytes, 0), maxBytes)
-	resourceBytes := min(max(resourceMiB, 0), maxMiB) * int64(units.MiB)
-	nvmeBytes := min(max(nvmeMiB, 0), maxMiB) * int64(units.MiB)
+	maxMiBWithoutOverflow := int64(math.MaxInt64) / int64(units.MiB)
+	cacheBytes = max(cacheBytes, 0)
+	resourceBytes := min(max(resourceMiB, 0), maxMiBWithoutOverflow) * int64(units.MiB)
+	nvmeBytes := min(max(nvmeMiB, 0), maxMiBWithoutOverflow) * int64(units.MiB)
 
 	cacheSupported, resourceSupported, nvmeSupported := supportedEphemeralOSDiskPlacements(sku)
 	if !cacheSupported && !resourceSupported && !nvmeSupported {
