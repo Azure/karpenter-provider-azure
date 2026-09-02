@@ -2889,7 +2889,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Name        string
 				Label       string
 				ValueFunc   func() string
-				SetupFunc   func()
+				SetupFunc   func(context.Context) context.Context
 				Environment *WellKnownLabelTestEnvironment
 				// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
 				// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
@@ -2904,11 +2904,12 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 
 			// requireFunc returns a SetupFunc that adds a label requirement to the NodePool
-			requireFunc := func(key, value string) func() {
-				return func() {
+			requireFunc := func(key, value string) func(context.Context) context.Context {
+				return func(ctx context.Context) context.Context {
 					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
 						karpv1.NodeSelectorRequirementWithMinValues{Key: key, Operator: v1.NodeSelectorOpIn, Values: []string{value}},
 					)
+					return ctx
 				}
 			}
 
@@ -2951,13 +2952,14 @@ var _ = Describe("InstanceType Provider", func() {
 					Name:  v1beta1.AKSLabelFIPSEnabled,
 					Label: v1beta1.AKSLabelFIPSEnabled,
 					// Needs special setup because it only works on FIPS
-					SetupFunc: func() {
+					SetupFunc: func(ctx context.Context) context.Context {
 						testOptions.UseSIG = true
 						ctx = options.ToContext(ctx, testOptions)
 
 						nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
 						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 						test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+						return ctx
 					},
 					ValueFunc:               func() string { return "true" },
 					ExpectedInKubeletLabels: true,
@@ -2967,7 +2969,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Name:  v1beta1.AKSLabelKataVMIsolation,
 					Label: v1beta1.AKSLabelKataVMIsolation,
 					// Needs special setup because it only works with Bootstrap or Machine API
-					SetupFunc: func() {
+					SetupFunc: func(ctx context.Context) context.Context {
 						kubernetesVersion := lo.Must(azureEnvBootstrap.KubernetesVersionProvider.KubeServerVersion(ctx))
 						if !imagefamily.UseAzureLinux3(kubernetesVersion) {
 							Skip("Kata requires Azure Linux 3")
@@ -2979,6 +2981,7 @@ var _ = Describe("InstanceType Provider", func() {
 						imageReconciler := status.NewNodeImageReconciler(azureEnvBootstrap.ImageProvider, env.KubernetesInterface)
 						_, err := imageReconciler.Reconcile(ctx, nodeClass)
 						Expect(err).ToNot(HaveOccurred())
+						return ctx
 					},
 					ValueFunc: func() string { return "true" },
 					Environment: &WellKnownLabelTestEnvironment{
@@ -3105,9 +3108,9 @@ var _ = Describe("InstanceType Provider", func() {
 					if item.Environment != nil {
 						testEnvironment = item.Environment
 					}
-					ctx = testEnvironment.Context
+					ctx := testEnvironment.Context
 					if item.SetupFunc != nil {
-						item.SetupFunc()
+						ctx = item.SetupFunc(ctx)
 					}
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -3172,9 +3175,9 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually) on bootstrap API",
 				func(item WellKnownLabelEntry) {
-					ctx = ctxBootstrap
+					ctx := ctxBootstrap
 					if item.SetupFunc != nil {
-						item.SetupFunc()
+						ctx = item.SetupFunc(ctx)
 					}
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
