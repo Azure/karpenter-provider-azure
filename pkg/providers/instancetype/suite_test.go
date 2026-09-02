@@ -1027,14 +1027,14 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(placement).To(BeNil())
 				})
 				It("should retain cache and resource fallback when placement metadata is absent", func() {
-					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
+					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
 
 					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
 					Expect(sizeGB).To(Equal(int64(1717)))
 					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)))
 				})
 				It("should infer resource capacity when absent placement metadata has a larger resource disk", func() {
-					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
+					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
 					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(50*int64(units.GiB), 10))
 					sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(75*int64(units.GiB)/int64(units.MiB), 10))
 
@@ -1111,7 +1111,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)).To(BeNil())
 				})
 				It("should retain legacy placement inference when placement metadata is absent", func() {
-					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
+					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 
@@ -1120,7 +1120,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
 				})
 				It("should continue to inferred resource disk when absent metadata cache is too small", func() {
-					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
+					sku := withoutEphemeralOSDiskPlacementCapability(fake.MakeSKU("Standard_D64s_v3"))
 					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(50*int64(units.GiB), 10))
 					sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(75*int64(units.GiB)/int64(units.MiB), 10))
 					testNodeClass := test.AKSNodeClass()
@@ -3654,10 +3654,10 @@ func withSKUCapabilityValue(sku *skewer.SKU, name string, value *string) *skewer
 	return &clone
 }
 
-func withoutSKUCapability(sku *skewer.SKU, name string) *skewer.SKU {
+func withoutEphemeralOSDiskPlacementCapability(sku *skewer.SKU) *skewer.SKU {
 	clone := *sku
 	capabilities := lo.Filter(append([]compute.ResourceSkuCapabilities(nil), (*sku.Capabilities)...), func(capability compute.ResourceSkuCapabilities, _ int) bool {
-		return !strings.EqualFold(lo.FromPtr(capability.Name), name)
+		return !strings.EqualFold(lo.FromPtr(capability.Name), "SupportedEphemeralOSDiskPlacements")
 	})
 	clone.Capabilities = &capabilities
 	return &clone
