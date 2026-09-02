@@ -99,7 +99,18 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
 		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 		Entry("ArtifactStreaming.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
+		Entry("GPU.Nvidia.ManagementMode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}}}}),
 	)
+	It("should not change hash when gpu.nvidia is nil (non-breaking field addition)", func() {
+		// Adding the nvidia field must not alter the hash of NodeClasses that do
+		// not set it, so existing GPU nodes do not drift/roll on upgrade.
+		hash := nodeClass.Hash()
+		nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}
+		hashWithGPUNoNvidia := nodeClass.Hash()
+		nodeClass.Spec.GPU.Nvidia = nil
+		Expect(nodeClass.Hash()).To(Equal(hashWithGPUNoNvidia))
+		_ = hash
+	})
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
