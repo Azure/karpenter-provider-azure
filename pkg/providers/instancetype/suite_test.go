@@ -1126,7 +1126,7 @@ var _ = Describe("InstanceType Provider", func() {
 					testNodeClass := test.AKSNodeClass()
 					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](60)
 
-					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
+					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass.Spec.OSDiskSizeGB, testNodeClass.IsTrustedLaunchEnabled())
 					Expect(placement).ToNot(BeNil())
 					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 				})
