@@ -1019,6 +1019,13 @@ var _ = Describe("InstanceType Provider", func() {
 					Entry("unknown token", "NvmeDiskV2"),
 					Entry("empty value", ""),
 				)
+				It("should reject capacity when placement metadata has a nil value", func() {
+					sku := withSKUCapabilityValue(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", nil)
+
+					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+					Expect(sizeGB).To(BeZero())
+					Expect(placement).To(BeNil())
+				})
 				It("should retain cache and resource fallback when placement metadata is absent", func() {
 					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
 
@@ -3604,12 +3611,16 @@ var _ = Describe("Tax Calculator", func() {
 })
 
 func withSKUCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
+	return withSKUCapabilityValue(sku, name, lo.ToPtr(value))
+}
+
+func withSKUCapabilityValue(sku *skewer.SKU, name string, value *string) *skewer.SKU {
 	clone := *sku
 	capabilities := append([]compute.ResourceSkuCapabilities(nil), (*sku.Capabilities)...)
 	for i := range capabilities {
 		if lo.FromPtr(capabilities[i].Name) == name {
 			capability := capabilities[i]
-			capability.Value = lo.ToPtr(value)
+			capability.Value = value
 			capabilities[i] = capability
 			clone.Capabilities = &capabilities
 			return &clone
@@ -3617,7 +3628,7 @@ func withSKUCapability(sku *skewer.SKU, name, value string) *skewer.SKU {
 	}
 	capabilities = append(capabilities, compute.ResourceSkuCapabilities{
 		Name:  lo.ToPtr(name),
-		Value: lo.ToPtr(value),
+		Value: value,
 	})
 	clone.Capabilities = &capabilities
 	return &clone
