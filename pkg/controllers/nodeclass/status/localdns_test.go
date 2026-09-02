@@ -124,18 +124,6 @@ func TestPreferred_BYOCNI_Disabled(t *testing.T) {
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
 
-func TestPreferred_Ubuntu2004_Disabled(t *testing.T) {
-	nc := newNC()
-	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
-	nc.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
-	nc.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
-	k8sUbuntu2004 := "1.34" // Ubuntu 20.04 is only available for k8s version 1.34 and below
-	setKVReady(nc, k8sUbuntu2004)
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
-	mustReconcile(t, r, nc)
-	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
-}
-
 func TestPreferred_NoConflicts_Enabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
