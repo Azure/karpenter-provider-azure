@@ -1033,6 +1033,15 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(sizeGB).To(Equal(int64(1717)))
 					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)))
 				})
+				It("should infer resource capacity when absent placement metadata has a larger resource disk", func() {
+					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
+					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(50*int64(units.GiB), 10))
+					sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(75*int64(units.GiB)/int64(units.MiB), 10))
+
+					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+					Expect(sizeGB).To(Equal(int64(80)))
+					Expect(placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)))
+				})
 				It("should ignore unknown placement tokens alongside a known placement", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements", "CacheDisk,NvmeDiskV2")
 					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(200*int64(units.GiB), 10))
@@ -1109,6 +1118,17 @@ var _ = Describe("InstanceType Provider", func() {
 					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
 					Expect(placement).ToNot(BeNil())
 					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
+				})
+				It("should continue to inferred resource disk when absent metadata cache is too small", func() {
+					sku := withoutSKUCapability(fake.MakeSKU("Standard_D64s_v3"), "SupportedEphemeralOSDiskPlacements")
+					sku = withSKUCapability(sku, "CachedDiskBytes", strconv.FormatInt(50*int64(units.GiB), 10))
+					sku = withSKUCapability(sku, "MaxResourceVolumeMB", strconv.FormatInt(75*int64(units.GiB)/int64(units.MiB), 10))
+					testNodeClass := test.AKSNodeClass()
+					testNodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](60)
+
+					placement := instancetype.FindEphemeralOSDiskPlacement(sku, testNodeClass)
+					Expect(placement).ToNot(BeNil())
+					Expect(*placement).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 				})
 				It("should prefer resource disk over NVMe when cache does not fit", func() {
 					sku := withSKUCapability(fake.MakeSKU("Standard_B20ms"), "SupportedEphemeralOSDiskPlacements", "CacheDisk,ResourceDisk,NvmeDisk")
