@@ -561,7 +561,8 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesCache.Unlock()
 }
 
-// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk size in GiB, capped at the Compute limit.
+// FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk capacity in integer decimal GB.
+// Candidate capacity is capped at the 2040-GiB Compute limit before conversion.
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	candidates := ephemeralOSDiskCandidates(sku)
 	if len(candidates) == 0 {
@@ -574,7 +575,7 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 			largest = candidate
 		}
 	}
-	sizeGB = min(largest.sizeBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+	sizeGB = largest.sizeBytes / int64(units.Gigabyte)
 	if sizeGB == 0 {
 		return 0, nil
 	}
