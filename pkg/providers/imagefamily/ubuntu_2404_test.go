@@ -44,13 +44,13 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 		images := ubuntu.DefaultImages(false, nil, false)
 		g.Expect(images).To(HaveLen(3))
 
-		g.Expect(images[0].ImageDefinition).To(Equal("2404gen2containerd"))
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2ImageDefinition))
 		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-24.04-gen2"))
 
-		g.Expect(images[1].ImageDefinition).To(Equal("2404containerd"))
+		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen1ImageDefinition))
 		g.Expect(images[1].Distro).To(Equal("aks-ubuntu-containerd-24.04"))
 
-		g.Expect(images[2].ImageDefinition).To(Equal("2404gen2arm64containerd"))
+		g.Expect(images[2].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2ArmImageDefinition))
 		g.Expect(images[2].Distro).To(Equal("aks-ubuntu-arm64-containerd-24.04-gen2"))
 	})
 
@@ -58,7 +58,7 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 		g := NewWithT(t)
 		images := ubuntu.DefaultImages(false, nil, true)
 		g.Expect(images).To(HaveLen(1))
-		g.Expect(images[0].ImageDefinition).To(Equal("2404gen2TLcontainerd"))
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2404Gen2TrustedLaunchImageDefinition))
 		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-24.04-tl-gen2"))
 	})
 
