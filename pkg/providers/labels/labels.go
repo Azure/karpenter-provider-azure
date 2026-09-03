@@ -39,9 +39,17 @@ import (
 var (
 	AKSLabelEBPFDataplane               = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
 	AKSLabelAzureCNIOverlay             = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	AKSLabelNetworkName                 = v1beta1.AKSLabelDomain + "/network-name"
+	AKSLabelNetworkResourceGroup        = v1beta1.AKSLabelDomain + "/network-resourcegroup"
 	AKSLabelSubnetName                  = v1beta1.AKSLabelDomain + "/network-subnet"
+	AKSLabelNetworkSubscription         = v1beta1.AKSLabelDomain + "/network-subscription"
 	AKSLabelVNetGUID                    = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
 	AKSLabelPodNetworkType              = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	AKSLabelPodNetworkDelegationGUID    = v1beta1.AKSLabelDomain + "/podnetwork-delegationguid"
+	AKSLabelPodNetworkName              = v1beta1.AKSLabelDomain + "/podnetwork-name"
+	AKSLabelPodNetworkResourceGroup     = v1beta1.AKSLabelDomain + "/podnetwork-resourcegroup"
+	AKSLabelPodNetworkSubnet            = v1beta1.AKSLabelDomain + "/podnetwork-subnet"
+	AKSLabelPodNetworkSubscription      = v1beta1.AKSLabelDomain + "/podnetwork-subscription"
 	AKSLabelNetworkStatelessCNI         = v1beta1.AKSLabelDomain + "/network-stateless-cni"
 	AKSLocalDNSStateLabelKey            = v1beta1.AKSLabelDomain + "/localdns-state"
 	AKSArtifactStreamingEnabledLabelKey = v1beta1.AKSLabelDomain + "/artifactstreaming-enabled"
@@ -124,23 +132,8 @@ func Get(
 	imageFamily := imagefamily.GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), kubernetesVersion, nil)
 	labels[v1beta1.AKSLabelOSSKUEffective] = imageFamily.Name()
 
-	if opts.IsAzureCNIOverlay() {
-		// TODO: make conditional on pod subnet
-		vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID) // good
-		if err != nil {
-			return nil, err
-		}
-		labels[AKSLabelSubnetName] = vnetSubnetComponents.SubnetName
-		labels[AKSLabelVNetGUID] = options.FromContext(ctx).VnetGUID
-		labels[AKSLabelAzureCNIOverlay] = strconv.FormatBool(true)
-		labels[AKSLabelPodNetworkType] = consts.NetworkPluginModeOverlay
-
-		parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
-		// Sanity Check: in production we should always have a k8s version set
-		if err != nil {
-			return nil, err
-		}
-		labels[AKSLabelNetworkStatelessCNI] = lo.Ternary(parsedVersion.GE(semver.Version{Major: 1, Minor: 34}), "true", "false")
+	if err := setNetworkLabels(ctx, labels, nodeClass, subnetID, kubernetesVersion); err != nil {
+		return nil, err
 	}
 	if opts.NetworkDataplane == consts.NetworkDataplaneCilium {
 		// This label is required for the cilium agent daemonset because
@@ -166,6 +159,64 @@ func Get(
 	}
 
 	return labels, nil
+}
+
+// setNetworkLabels adds the labels describing the node and pod networks, for the CNI modes that need them
+func setNetworkLabels(ctx context.Context, labels map[string]string, nodeClass *v1beta1.AKSNodeClass, subnetID, kubernetesVersion string) error {
+	opts := options.FromContext(ctx)
+	podSubnetID := nodeClass.GetPodSubnetID(opts.PodSubnetID)
+	if !opts.IsAzureCNIOverlay() && !opts.IsAzureCNIPodSubnetFor(podSubnetID) {
+		return nil
+	}
+
+	nodeSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
+	if err != nil {
+		return err
+	}
+	statelessCNI, err := networkStatelessCNI(kubernetesVersion)
+	if err != nil {
+		return err
+	}
+	labels[AKSLabelSubnetName] = nodeSubnetComponents.SubnetName
+	labels[AKSLabelVNetGUID] = opts.VnetGUID
+	labels[AKSLabelNetworkStatelessCNI] = statelessCNI
+
+	if opts.IsAzureCNIOverlay() {
+		labels[AKSLabelAzureCNIOverlay] = strconv.FormatBool(true)
+		labels[AKSLabelPodNetworkType] = consts.NetworkPluginModeOverlay
+		return nil
+	}
+
+	// The Delegated Network Controller keys off these labels to allocate pod subnet IPs for the node
+	podSubnetComponents, err := utils.GetVnetSubnetIDComponents(podSubnetID)
+	if err != nil {
+		return err
+	}
+	labels[AKSLabelNetworkName] = nodeSubnetComponents.VNetName
+	labels[AKSLabelNetworkResourceGroup] = nodeSubnetComponents.ResourceGroupName
+	labels[AKSLabelNetworkSubscription] = nodeSubnetComponents.SubscriptionID
+	podNetworkType := consts.PodNetworkTypeVNet
+	if strings.EqualFold(opts.PodIPAllocationMode, consts.PodIPAllocationModeStaticBlock) {
+		podNetworkType = consts.PodNetworkTypeVNetBlock
+	}
+	labels[AKSLabelPodNetworkType] = podNetworkType
+	// AKS requires the pod subnet to be in the node subnet's VNet, and delegates to that VNet's guid
+	labels[AKSLabelPodNetworkDelegationGUID] = opts.VnetGUID
+	labels[AKSLabelPodNetworkName] = podSubnetComponents.VNetName
+	labels[AKSLabelPodNetworkResourceGroup] = podSubnetComponents.ResourceGroupName
+	labels[AKSLabelPodNetworkSubnet] = podSubnetComponents.SubnetName
+	labels[AKSLabelPodNetworkSubscription] = podSubnetComponents.SubscriptionID
+	return nil
+}
+
+// networkStatelessCNI returns whether the node should use the stateless Azure CNI, which AKS enables from 1.34
+func networkStatelessCNI(kubernetesVersion string) (string, error) {
+	parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	// Sanity Check: in production we should always have a k8s version set
+	if err != nil {
+		return "", err
+	}
+	return lo.Ternary(parsedVersion.GE(semver.Version{Major: 1, Minor: 34}), "true", "false"), nil
 }
 
 // CanKubeletSetLabel returns true if the given label is a label kubelet is allowed to set.

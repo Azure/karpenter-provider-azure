@@ -70,6 +70,13 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// podSubnetID is the subnet pods on nodes provisioned with this nodeclass get their IPs from,
+	// overriding the cluster-level --pod-subnet-id, for clusters using Azure CNI with pod subnet.
+	// Must be in the same virtual network as the node subnet, and requires --pod-subnet-id to be set.
+	// If not specified, the cluster-level --pod-subnet-id is used.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
+	// +optional
+	PodSubnetID *string `json:"podSubnetID,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +default=128
 	// +kubebuilder:validation:Minimum=30
@@ -723,6 +730,14 @@ type AKSNodeClassList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AKSNodeClass `json:"items"`
+}
+
+// GetPodSubnetID returns the pod subnet for this node class, falling back to the cluster default.
+func (in *AKSNodeClass) GetPodSubnetID(defaultPodSubnetID string) string {
+	if in.Spec.PodSubnetID != nil {
+		return *in.Spec.PodSubnetID
+	}
+	return defaultPodSubnetID
 }
 
 // GetEncryptionAtHost returns whether encryption at host is enabled for the node class.

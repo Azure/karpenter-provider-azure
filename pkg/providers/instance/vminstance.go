@@ -487,9 +487,10 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 			EnableIPForwarding:          lo.ToPtr(false),
 		},
 	}
-	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
+	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay && opts.PodSubnetID == "" {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
+		// With a pod subnet, pod IPs come from that subnet instead, so the NIC only keeps its primary IP
 		for i := 1; i < int(opts.MaxPods); i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
@@ -518,6 +519,7 @@ type createNICOptions struct {
 	LaunchTemplate         *launchtemplate.Template
 	NetworkPlugin          string
 	NetworkPluginMode      string
+	PodSubnetID            string
 	MaxPods                int32
 	NetworkSecurityGroupID string
 }
@@ -814,6 +816,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
+	podSubnetID := nodeClass.GetPodSubnetID(options.FromContext(ctx).PodSubnetID)
 
 	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
 	if err != nil {
@@ -836,7 +839,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		NICName:                resourceName,
 		NetworkPlugin:          networkPlugin,
 		NetworkPluginMode:      networkPluginMode,
-		MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
+		PodSubnetID:            podSubnetID,
+		MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode, podSubnetID),
 		LaunchTemplate:         launchTemplate,
 		BackendPools:           backendPools,
 		InstanceType:           instanceType,

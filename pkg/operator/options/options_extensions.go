@@ -31,3 +31,13 @@ func (o *Options) IsCiliumNodeSubnet() bool {
 func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
+
+func (o *Options) IsAzureCNIPodSubnet() bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && o.PodSubnetID != ""
+}
+
+// IsAzureCNIPodSubnetFor reports pod subnet mode for a specific effective pod subnet, which may come
+// from an AKSNodeClass rather than the cluster default
+func (o *Options) IsAzureCNIPodSubnetFor(podSubnetID string) bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && podSubnetID != ""
+}

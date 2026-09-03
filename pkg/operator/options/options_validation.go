@@ -42,6 +42,7 @@ func (o *Options) Validate() error {
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
+		o.validatePodSubnetID(),
 		o.validateProvisionMode(),
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
@@ -99,6 +100,56 @@ func (o *Options) validateVnetSubnetID() error {
 		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
 	}
 	return nil
+}
+
+func (o *Options) validatePodSubnetID() error {
+	if o.PodSubnetID == "" {
+		return validatePodIPAllocationModeWithoutSubnet(o.PodIPAllocationMode)
+	}
+	if err := validatePodIPAllocationMode(o.PodIPAllocationMode); err != nil {
+		return err
+	}
+	podSubnet, err := utils.GetVnetSubnetIDComponents(o.PodSubnetID)
+	if err != nil {
+		return fmt.Errorf("pod-subnet-id is invalid: %w", err)
+	}
+	if o.NetworkPlugin != consts.NetworkPluginAzure {
+		return fmt.Errorf("pod-subnet-id is only supported with network-plugin 'azure', got '%s'", o.NetworkPlugin)
+	}
+	if o.NetworkPluginMode == consts.NetworkPluginModeOverlay {
+		return fmt.Errorf("pod-subnet-id is not supported with network-plugin-mode '%s'", consts.NetworkPluginModeOverlay)
+	}
+	// AKS machine nodes do not carry the bootstrap pod network labels, and the AKS API rejects PodSubnetID
+	if o.IsAKSMachineAPIMode() {
+		return fmt.Errorf("pod-subnet-id is not supported with provision-mode '%s'", o.ProvisionMode)
+	}
+	// Skip the cross-check when the node subnet does not parse; validateVnetSubnetID reports that
+	if nodeSubnet, nodeSubnetErr := utils.GetVnetSubnetIDComponents(o.SubnetID); nodeSubnetErr == nil {
+		if !nodeSubnet.IsSameVNETFold(podSubnet) {
+			return fmt.Errorf("pod-subnet-id must be in the same virtual network as vnet-subnet-id")
+		}
+	}
+	if strings.EqualFold(o.PodSubnetID, o.SubnetID) {
+		return fmt.Errorf("pod-subnet-id must be different from vnet-subnet-id")
+	}
+	return nil
+}
+
+func validatePodIPAllocationModeWithoutSubnet(mode string) error {
+	if mode != "" {
+		return fmt.Errorf("pod-ip-allocation-mode requires pod-subnet-id to be set")
+	}
+	return nil
+}
+
+func validatePodIPAllocationMode(mode string) error {
+	if mode == "" {
+		return fmt.Errorf("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to '%s' or '%s' when --pod-subnet-id is set", consts.PodIPAllocationModeDynamicIndividual, consts.PodIPAllocationModeStaticBlock)
+	}
+	if strings.EqualFold(mode, consts.PodIPAllocationModeDynamicIndividual) || strings.EqualFold(mode, consts.PodIPAllocationModeStaticBlock) {
+		return nil
+	}
+	return fmt.Errorf("pod-ip-allocation-mode '%s' is invalid; must be '%s' or '%s'", mode, consts.PodIPAllocationModeDynamicIndividual, consts.PodIPAllocationModeStaticBlock)
 }
 
 func (o *Options) validateEndpoint() error {

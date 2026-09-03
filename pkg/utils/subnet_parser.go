@@ -42,6 +42,14 @@ func (v VnetSubnetResource) IsSameVNET(cmp VnetSubnetResource) bool {
 	return true
 }
 
+// IsSameVNETFold compares the virtual networks of two subnets, case-insensitively, since ARM
+// resource IDs are not case-sensitive.
+func (v VnetSubnetResource) IsSameVNETFold(cmp VnetSubnetResource) bool {
+	return strings.EqualFold(v.SubscriptionID, cmp.SubscriptionID) &&
+		strings.EqualFold(v.ResourceGroupName, cmp.ResourceGroupName) &&
+		strings.EqualFold(v.VNetName, cmp.VNetName)
+}
+
 // GetSubnetResourceID constructs the subnet resource id
 func GetSubnetResourceID(subscriptionID, resourceGroupName, virtualNetworkName, subnetName string) string {
 	// an example subnet resource: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{virtualNetworkName}/subnets/{subnetName}

@@ -191,6 +191,11 @@ settings:
   clusterName: ""
   # -- Cluster endpoint.
   clusterEndpoint: ""
+  # -- The subnet ID pods get their IPs from for Azure CNI with pod subnet.
+  podSubnetID: ""
+  # -- Required when podSubnetID is set. Use the cluster's actual `podIpAllocationMode` from `az aks nodepool show --output json`.
+  # Supported values are DynamicIndividual and StaticBlock. An empty value causes Karpenter startup to fail when podSubnetID is set.
+  podIPAllocationMode: ""
   # -- The VM memory overhead as a percent that will be subtracted from the total memory for all instance types
   vmMemoryOverheadPercent: 0.075
   # -- Additional tags to apply to Azure resources. These tags are merged with AKSNodeClass tags, with AKSNodeClass tags taking precedence on collisions.

@@ -1668,6 +1668,14 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              podSubnetID:
+                description: |-
+                  podSubnetID is the subnet pods on nodes provisioned with this nodeclass get their IPs from,
+                  overriding the cluster-level --pod-subnet-id, for clusters using Azure CNI with pod subnet.
+                  Must be in the same virtual network as the node subnet, and requires --pod-subnet-id to be set.
+                  If not specified, the cluster-level --pod-subnet-id is used.
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields

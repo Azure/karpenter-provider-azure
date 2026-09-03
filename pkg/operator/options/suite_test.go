@@ -58,9 +58,13 @@ var _ = Describe("Options", func() {
 		"KUBELET_BOOTSTRAP_TOKEN",
 		"SSH_PUBLIC_KEY",
 		"NETWORK_PLUGIN",
+		"NETWORK_PLUGIN_MODE",
 		"NETWORK_POLICY",
 		"DNS_SERVICE_IP",
 		"NODE_IDENTITIES",
+		"VNET_SUBNET_ID",
+		"POD_SUBNET_ID",
+		"POD_IP_ALLOCATION_MODE",
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
 		"VNET_GUID",
@@ -385,6 +389,213 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
 			Expect(err).To(MatchError(ContainSubstring("not a valid clusterEndpoint URL")))
+		})
+		It("should accept empty pod subnet and pod IP allocation mode", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--pod-subnet-id", "",
+				"--pod-ip-allocation-mode", "",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should accept StaticBlock pod IP allocation", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "staticblock",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should reject an unknown pod IP allocation mode", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "UnknownMode",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-ip-allocation-mode 'UnknownMode' is invalid; must be 'DynamicIndividual' or 'StaticBlock'")))
+		})
+		It("should require pod IP allocation mode with a pod subnet", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "",
+			)
+			Expect(err).To(MatchError(ContainSubstring("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to 'DynamicIndividual' or 'StaticBlock' when --pod-subnet-id is set")))
+		})
+		It("should accept DynamicIndividual pod IP allocation", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "dynamicindividual",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should reject pod IP allocation mode without a pod subnet", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-ip-allocation-mode requires pod-subnet-id to be set")))
+		})
+		It("should fail validation when pod-subnet-id is invalid (not absolute)", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "invalid-pod-subnet-id",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is invalid: invalid vnet subnet id: invalid-pod-subnet-id")))
+		})
+		It("should fail validation when pod-subnet-id is set on a network-plugin none cluster", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "none",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is only supported with network-plugin 'azure', got 'none'")))
+		})
+		It("should fail validation when pod-subnet-id is set on an overlay cluster", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin-mode", "overlay",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is not supported with network-plugin-mode 'overlay'")))
+		})
+		It("should fail validation when pod-subnet-id is in a different VNet than vnet-subnet-id", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/othervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id must be in the same virtual network as vnet-subnet-id")))
+		})
+		It("should fail validation when pod-subnet-id matches vnet-subnet-id", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id must be different from vnet-subnet-id")))
+		})
+		It("should fail validation when pod-subnet-id is set on an AKS machine API provision mode", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--provision-mode", "aksmachineapi",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "12345678-1234-1234-1234-123456789012",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).To(MatchError(ContainSubstring("pod-subnet-id is not supported with provision-mode 'aksmachineapi'")))
+		})
+		It("should succeed when pod-subnet-id differs in casing from vnet-subnet-id", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/SillyGeese/providers/Microsoft.Network/virtualNetworks/KarpenterVNet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.IsAzureCNIPodSubnet()).To(BeTrue())
+		})
+		It("should succeed when pod-subnet-id is a sibling subnet of vnet-subnet-id", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "DynamicIndividual",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.IsAzureCNIPodSubnet()).To(BeTrue())
 		})
 		It("should fail when vmMemoryOverheadPercent is negative", func() {
 			err := opts.Parse(
