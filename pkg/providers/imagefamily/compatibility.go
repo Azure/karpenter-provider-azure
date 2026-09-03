@@ -26,6 +26,18 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
+// Kubernetes version bounds for the version-pinned Ubuntu image families.
+//
+// These follow the AKS node OS support windows documented at
+// https://learn.microsoft.com/azure/aks/upgrade-os-version - a pinned OS version
+// is only usable while AKS still publishes node images for it on the cluster's
+// Kubernetes version.
+//
+// The bounds apply *only* when spec.imageFamily explicitly pins an Ubuntu
+// version. The generic "Ubuntu" family (and leaving spec.imageFamily unset) is a
+// contract to run "an AKS-supported Ubuntu", which is resolved per Kubernetes
+// version - and may be resolved differently by different provisioning modes - so
+// it is intentionally never rejected here.
 var (
 	ubuntu2204MinimumVersion     = semver.MustParse("1.25.2")
 	ubuntu2204MaximumVersion     = semver.MustParse("1.37.0")
@@ -48,11 +60,64 @@ func (e *MalformedDiscoveredKubernetesVersionError) Unwrap() error {
 	return e.cause
 }
 
-// ValidateImageFamilyCompatibility verifies that the AKSNodeClass resolves to an
-// image family supported by the discovered cluster Kubernetes version.
+// ImageFamilyKubernetesVersionIncompatibleError indicates the image family
+// explicitly requested by spec.imageFamily pins an Ubuntu version that the
+// discovered cluster Kubernetes version does not support.
+//
+// This is a static, deterministic incompatibility: it can only change when the
+// NodeClass spec changes or the cluster Kubernetes version changes, both of
+// which trigger a fresh reconciliation.
+type ImageFamilyKubernetesVersionIncompatibleError struct {
+	// RequestedImageFamily is the value of spec.imageFamily that was validated.
+	RequestedImageFamily string
+	// KubernetesVersion is the discovered cluster Kubernetes version, as discovered (unparsed).
+	KubernetesVersion string
+	// FIPS reports whether the FIPS-specific bounds were applied.
+	FIPS bool
+	// MinimumVersion is the inclusive lower bound for the requested image family.
+	MinimumVersion semver.Version
+	// MaximumVersion is the exclusive upper bound for the requested image family, or nil when unbounded.
+	MaximumVersion *semver.Version
+}
+
+func (e *ImageFamilyKubernetesVersionIncompatibleError) Error() string {
+	fipsSuffix := ""
+	if e.FIPS {
+		fipsSuffix = " with FIPS"
+	}
+	supportedRange := fmt.Sprintf(">= %s", e.MinimumVersion)
+	if e.MaximumVersion != nil {
+		supportedRange = fmt.Sprintf("%s and < %s", supportedRange, e.MaximumVersion)
+	}
+	return fmt.Sprintf(
+		"requested image family %q%s is not supported with discovered Kubernetes version %q; supported range is %s",
+		e.RequestedImageFamily,
+		fipsSuffix,
+		e.KubernetesVersion,
+		supportedRange,
+	)
+}
+
+// ValidateImageFamilyCompatibility verifies that an explicitly version-pinned
+// spec.imageFamily is supported by the discovered cluster Kubernetes version.
+//
+// Only explicitly pinned Ubuntu families (Ubuntu2204, Ubuntu2404) are in scope.
+// The generic Ubuntu family, an unset image family, AzureLinux, and any future
+// family are unrestricted by this helper: what they resolve to is the
+// resolver's (and, for AKS Machine API provisioning, the AKS RP's) decision, and
+// that decision is expected to remain valid across Kubernetes versions.
+//
+// It returns *ImageFamilyKubernetesVersionIncompatibleError for a pinned family
+// outside its supported range, and *MalformedDiscoveredKubernetesVersionError
+// when the discovered version cannot be parsed.
 func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernetesVersion string) error {
 	if nodeClass == nil {
 		return fmt.Errorf("AKSNodeClass is required to validate image family compatibility")
+	}
+
+	requestedImageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
+	if requestedImageFamily != v1beta1.Ubuntu2204ImageFamily && requestedImageFamily != v1beta1.Ubuntu2404ImageFamily {
+		return nil
 	}
 
 	version, err := parseKubernetesVersionTolerant(kubernetesVersion)
@@ -60,29 +125,32 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernete
 		return err
 	}
 
-	effectiveImageFamily := GetImageFamily(
-		nodeClass.Spec.ImageFamily,
-		nodeClass.Spec.FIPSMode,
-		nodeClass.IsTrustedLaunchEnabled(),
-		version.String(),
-		nil,
-	)
+	fips := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
 
-	switch effectiveImageFamily.Name() {
+	switch requestedImageFamily {
 	case v1beta1.Ubuntu2204ImageFamily:
 		maximumVersion := ubuntu2204MaximumVersion
-		descriptionSuffix := ""
-		if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+		if fips {
 			maximumVersion = ubuntu2204FIPSMaximumVersion
-			descriptionSuffix = " with FIPS"
 		}
-
 		if version.LT(ubuntu2204MinimumVersion) || !version.LT(maximumVersion) {
-			return fmt.Errorf("effective image family %q%s is not supported with discovered Kubernetes version %q; supported range is >= %s and < %s", effectiveImageFamily.Name(), descriptionSuffix, kubernetesVersion, ubuntu2204MinimumVersion, maximumVersion)
+			return &ImageFamilyKubernetesVersionIncompatibleError{
+				RequestedImageFamily: requestedImageFamily,
+				KubernetesVersion:    kubernetesVersion,
+				FIPS:                 fips,
+				MinimumVersion:       ubuntu2204MinimumVersion,
+				MaximumVersion:       lo.ToPtr(maximumVersion),
+			}
 		}
 	case v1beta1.Ubuntu2404ImageFamily:
+		// Ubuntu2404 has no FIPS-specific bound today, so FIPS is left unset to
+		// avoid implying the reported range depends on it.
 		if version.LT(ubuntu2404MinimumVersion) {
-			return fmt.Errorf("effective image family %q is not supported with discovered Kubernetes version %q; supported range is >= %s", effectiveImageFamily.Name(), kubernetesVersion, ubuntu2404MinimumVersion)
+			return &ImageFamilyKubernetesVersionIncompatibleError{
+				RequestedImageFamily: requestedImageFamily,
+				KubernetesVersion:    kubernetesVersion,
+				MinimumVersion:       ubuntu2404MinimumVersion,
+			}
 		}
 	}
 

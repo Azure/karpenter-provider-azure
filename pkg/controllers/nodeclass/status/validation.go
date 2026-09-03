@@ -34,8 +34,8 @@ import (
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
 	// ImageFamilyKubernetesVersionIncompatible is the stable reason used when
-	// the chosen image family is statically incompatible with the ready
-	// discovered Kubernetes version.
+	// spec.imageFamily explicitly pins an OS version that the ready discovered
+	// Kubernetes version does not support.
 	ImageFamilyKubernetesVersionIncompatible = "ImageFamilyKubernetesVersionIncompatible"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
@@ -73,19 +73,29 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		return reconcile.Result{}, fmt.Errorf("getting kubernetes version: %w", err)
 	}
 	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, kubernetesVersion); err != nil {
+		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+		if errors.As(err, &incompatibleErr) {
+			// This incompatibility is static: it can only change when the NodeClass spec or
+			// the discovered Kubernetes version changes, and both of those already trigger a
+			// reconcile. Polling would burn reconciles without ever observing a difference.
+			logger.V(1).Info("image family compatibility validation failed", "error", err)
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				ImageFamilyKubernetesVersionIncompatible,
+				err.Error(),
+			)
+			return reconcile.Result{}, nil
+		}
+
 		var malformedKubernetesVersionErr *imagefamily.MalformedDiscoveredKubernetesVersionError
 		if errors.As(err, &malformedKubernetesVersionErr) {
 			logger.Error(err, "image family compatibility validation encountered malformed kubernetes version")
 			return reconcile.Result{}, fmt.Errorf("validating image family compatibility: %w", err)
 		}
 
-		logger.V(1).Info("image family compatibility validation failed", "error", err)
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			ImageFamilyKubernetesVersionIncompatible,
-			err.Error(),
-		)
-		return reconcile.Result{RequeueAfter: ValidationFailureRequeueInterval}, nil
+		// Any other error is unexpected; leave the condition alone and let controller-runtime retry.
+		logger.Error(err, "image family compatibility validation encountered unexpected error")
+		return reconcile.Result{}, fmt.Errorf("validating image family compatibility: %w", err)
 	}
 
 	// Check BYOK RBAC if DES ID is configured

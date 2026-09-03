@@ -37,81 +37,130 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		kubernetesVersion string
 		wantErr           []string
 	}{
-		"ubuntu2204 rejects versions below lower bound": {
+		// Explicitly pinned Ubuntu2204.
+		"explicit ubuntu2204 rejects versions below lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			kubernetesVersion: "1.25.1",
-			wantErr:           []string{"effective image family", v1beta1.Ubuntu2204ImageFamily, "1.25.1", "supported range is >= 1.25.2 and < 1.37.0"},
+			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.25.1", "supported range is >= 1.25.2 and < 1.37.0"},
 		},
-		"ubuntu2204 accepts lower bound": {
+		"explicit ubuntu2204 accepts lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			kubernetesVersion: "1.25.2",
 		},
-		"ubuntu2204 accepts below upper bound": {
+		"explicit ubuntu2204 accepts below upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			kubernetesVersion: "1.36.9",
 		},
-		"ubuntu2204 rejects upper bound": {
+		"explicit ubuntu2204 rejects upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			kubernetesVersion: "1.37.0",
-			wantErr:           []string{"effective image family", v1beta1.Ubuntu2204ImageFamily, "1.37.0", "supported range is >= 1.25.2 and < 1.37.0"},
+			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.37.0", "supported range is >= 1.25.2 and < 1.37.0"},
 		},
-		"ubuntu2204 with fips accepts below extended upper bound": {
+		"explicit ubuntu2204 with trusted launch rejects upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
+			trustedLaunch:     true,
+			kubernetesVersion: "1.37.0",
+			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.37.0", "supported range is >= 1.25.2 and < 1.37.0"},
+		},
+		"explicit ubuntu2204 with fips accepts below extended upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			kubernetesVersion: "1.38.9",
 		},
-		"ubuntu2204 with fips rejects extended upper bound": {
+		"explicit ubuntu2204 with fips rejects extended upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			kubernetesVersion: "1.39.0",
-			wantErr:           []string{"effective image family", v1beta1.Ubuntu2204ImageFamily, "1.39.0", "with FIPS", "supported range is >= 1.25.2 and < 1.39.0"},
+			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.39.0", "with FIPS", "supported range is >= 1.25.2 and < 1.39.0"},
 		},
-		"generic ubuntu with fips and trusted launch accepts below extended upper bound": {
-			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
-			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
-			trustedLaunch:     true,
-			kubernetesVersion: "1.38.9",
-		},
-		"generic ubuntu with fips and trusted launch rejects extended upper bound": {
-			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
+		"explicit ubuntu2204 with fips and trusted launch rejects extended upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			trustedLaunch:     true,
 			kubernetesVersion: "1.39.0",
-			wantErr:           []string{"effective image family", v1beta1.Ubuntu2204ImageFamily, "1.39.0", "with FIPS", "supported range is >= 1.25.2 and < 1.39.0"},
+			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.39.0", "with FIPS", "supported range is >= 1.25.2 and < 1.39.0"},
 		},
-		"ubuntu2404 rejects versions below lower bound": {
+
+		// Explicitly pinned Ubuntu2404.
+		"explicit ubuntu2404 rejects versions below lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.31.9",
-			wantErr:           []string{"effective image family", v1beta1.Ubuntu2404ImageFamily, "1.31.9", "supported range is >= 1.32.0"},
+			wantErr:           []string{"requested image family", v1beta1.Ubuntu2404ImageFamily, "1.31.9", "supported range is >= 1.32.0"},
 		},
-		"ubuntu2404 accepts lower bound": {
+		"explicit ubuntu2404 accepts lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.32.0",
 		},
-		"generic ubuntu resolves to ubuntu2204 compatibility below ubuntu2404 threshold": {
-			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
-			kubernetesVersion: "1.33.9",
+		"explicit ubuntu2404 has no upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
+			kubernetesVersion: "1.39.0",
 		},
-		"generic ubuntu resolves to ubuntu2404 compatibility at ubuntu2404 threshold": {
+
+		// Generic and unset Ubuntu are out of scope: what they resolve to is the
+		// resolver's (or the AKS RP's) decision, and it stays valid across versions.
+		"generic ubuntu is unrestricted below the ubuntu2204 lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
-			kubernetesVersion: "1.34.0",
-		},
-		"unset ubuntu resolves to ubuntu2204 compatibility for earlier clusters": {
 			kubernetesVersion: "1.25.1",
-			wantErr:           []string{"effective image family", v1beta1.Ubuntu2204ImageFamily, "1.25.1", "supported range is >= 1.25.2 and < 1.37.0"},
 		},
-		"unset ubuntu with fips and trusted launch accepts below extended upper bound": {
+		"generic ubuntu is unrestricted at the ubuntu2204 upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
+			kubernetesVersion: "1.37.0",
+		},
+		"generic ubuntu with trusted launch is unrestricted at the ubuntu2204 upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
+			trustedLaunch:     true,
+			kubernetesVersion: "1.37.0",
+		},
+		"generic ubuntu with trusted launch is unrestricted well past the ubuntu2204 upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
+			trustedLaunch:     true,
+			kubernetesVersion: "1.40.0",
+		},
+		"generic ubuntu with fips is unrestricted at the fips upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
+			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
+			kubernetesVersion: "1.39.0",
+		},
+		"generic ubuntu with fips and trusted launch is unrestricted at the fips upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			trustedLaunch:     true,
-			kubernetesVersion: "1.38.9",
+			kubernetesVersion: "1.39.0",
 		},
+		"unset image family is unrestricted below the ubuntu2204 lower bound": {
+			kubernetesVersion: "1.25.1",
+		},
+		"unset image family is unrestricted at the ubuntu2204 upper bound": {
+			kubernetesVersion: "1.37.0",
+		},
+		"unset image family with trusted launch is unrestricted at the ubuntu2204 upper bound": {
+			trustedLaunch:     true,
+			kubernetesVersion: "1.37.0",
+		},
+		"unset image family with fips and trusted launch is unrestricted at the fips upper bound": {
+			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
+			trustedLaunch:     true,
+			kubernetesVersion: "1.39.0",
+		},
+		"unset image family is unrestricted with an unparsable kubernetes version": {
+			kubernetesVersion: "1.32.x",
+		},
+
+		// Other families are out of scope entirely.
 		"azlinux remains unrestricted": {
 			imageFamily:       lo.ToPtr(v1beta1.AzureLinuxImageFamily),
 			kubernetesVersion: "1.20.0",
 		},
+
+		// Version parsing.
 		"accepts tolerant two segment versions": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.32",
+		},
+		"rejects tolerant two segment versions below the lower bound": {
+			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
+			kubernetesVersion: "1.31",
+			wantErr:           []string{"requested image family", v1beta1.Ubuntu2404ImageFamily, "1.31", "supported range is >= 1.32.0"},
 		},
 		"treats prerelease upper bound consistently with semver": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
@@ -148,8 +197,45 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			for _, substring := range tc.wantErr {
 				g.Expect(err.Error()).To(ContainSubstring(substring))
 			}
+
+			var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+			g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
+			g.Expect(incompatibleErr.RequestedImageFamily).To(Equal(lo.FromPtr(tc.imageFamily)))
+			g.Expect(incompatibleErr.KubernetesVersion).To(Equal(tc.kubernetesVersion))
 		})
 	}
+
+	t.Run("reports the applied bounds on the typed incompatibility error", func(t *testing.T) {
+		t.Parallel()
+
+		g := NewWithT(t)
+		nodeClass := &v1beta1.AKSNodeClass{
+			Spec: v1beta1.AKSNodeClassSpec{
+				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
+				FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+			},
+		}
+
+		err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, "1.39.0")
+		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+		g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
+		g.Expect(incompatibleErr.FIPS).To(BeTrue())
+		g.Expect(incompatibleErr.MinimumVersion.String()).To(Equal("1.25.2"))
+		g.Expect(incompatibleErr.MaximumVersion).ToNot(BeNil())
+		g.Expect(incompatibleErr.MaximumVersion.String()).To(Equal("1.39.0"))
+
+		nodeClass = &v1beta1.AKSNodeClass{
+			Spec: v1beta1.AKSNodeClassSpec{
+				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
+			},
+		}
+
+		err = imagefamily.ValidateImageFamilyCompatibility(nodeClass, "1.31.0")
+		g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
+		g.Expect(incompatibleErr.FIPS).To(BeFalse())
+		g.Expect(incompatibleErr.MinimumVersion.String()).To(Equal("1.32.0"))
+		g.Expect(incompatibleErr.MaximumVersion).To(BeNil())
+	})
 
 	t.Run("returns typed error for malformed kubernetes version", func(t *testing.T) {
 		t.Parallel()
@@ -170,5 +256,17 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		g.Expect(malformedErr).ToNot(BeNil())
 		g.Expect(errors.Unwrap(malformedErr)).ToNot(BeNil())
 		g.Expect(errors.Unwrap(malformedErr).Error()).To(ContainSubstring(`patch number "x"`))
+
+		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+		g.Expect(errors.As(err, &incompatibleErr)).To(BeFalse())
+	})
+
+	t.Run("returns an error for a nil node class", func(t *testing.T) {
+		t.Parallel()
+
+		g := NewWithT(t)
+		err := imagefamily.ValidateImageFamilyCompatibility(nil, "1.32.0")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("AKSNodeClass is required"))
 	})
 }

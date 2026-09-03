@@ -127,12 +127,14 @@ var _ = Describe("Validation Reconciler", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
+			// Static incompatibility: no polling, the spec watch and Kubernetes version
+			// reconciliation are what can make this change.
+			Expect(result).To(Equal(reconcile.Result{}))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
 			Expect(condition.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
-			Expect(condition.Message).To(Equal(`effective image family "Ubuntu2404" is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`))
+			Expect(condition.Message).To(Equal(`requested image family "Ubuntu2404" is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`))
 		})
 
 		It("should reject Ubuntu2204 on Kubernetes 1.37", func() {
@@ -141,12 +143,12 @@ var _ = Describe("Validation Reconciler", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
+			Expect(result).To(Equal(reconcile.Result{}))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
 			Expect(condition.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
-			Expect(condition.Message).To(Equal(`effective image family "Ubuntu2204" is not supported with discovered Kubernetes version "1.37"; supported range is >= 1.25.2 and < 1.37.0`))
+			Expect(condition.Message).To(Equal(`requested image family "Ubuntu2204" is not supported with discovered Kubernetes version "1.37"; supported range is >= 1.25.2 and < 1.37.0`))
 		})
 
 		DescribeTable("should pass compatible boundary combinations",
@@ -165,13 +167,31 @@ var _ = Describe("Validation Reconciler", func() {
 			Entry("Ubuntu2404 lower bound", v1beta1.Ubuntu2404ImageFamily, "1.32.0"),
 		)
 
+		DescribeTable("should not validate image families that are not explicitly version pinned",
+			func(imageFamily *string, kubernetesVersion string) {
+				nodeClass.Spec.ImageFamily = imageFamily
+				setKubernetesVersionReady(nodeClass, kubernetesVersion)
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsTrue()).To(BeTrue())
+			},
+			Entry("generic Ubuntu past the Ubuntu2204 upper bound", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.37.0"),
+			Entry("generic Ubuntu below the Ubuntu2204 lower bound", lo.ToPtr(v1beta1.UbuntuImageFamily), "1.25.1"),
+			Entry("unset image family past the Ubuntu2204 upper bound", nil, "1.37.0"),
+			Entry("AzureLinux on an old cluster", lo.ToPtr(v1beta1.AzureLinuxImageFamily), "1.20.0"),
+		)
+
 		It("should recover ValidationSucceeded to true after changing an incompatible image family to a compatible one", func() {
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 			setKubernetesVersionReady(nodeClass, "1.31")
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
+			Expect(result).To(Equal(reconcile.Result{}))
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
 			Expect(condition.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
@@ -185,6 +205,23 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
 			condition = nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
+		})
+
+		It("should recover ValidationSucceeded to true when the cluster is upgraded to a supported Kubernetes version", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			setKubernetesVersionReady(nodeClass, "1.31")
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			setKubernetesVersionReady(nodeClass, "1.32.0")
+
+			result, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
 		})
 
 		It("should not call the DES API for static image family incompatibility", func() {
@@ -202,7 +239,7 @@ var _ = Describe("Validation Reconciler", func() {
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
+			Expect(result).To(Equal(reconcile.Result{}))
 			Expect(desCalls).To(Equal(0))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
@@ -269,6 +306,10 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(err.Error()).To(ContainSubstring(`validating image family compatibility: malformed discovered Kubernetes version "1.32.x"`))
 			var malformedErr *imagefamily.MalformedDiscoveredKubernetesVersionError
 			Expect(errors.As(err, &malformedErr)).To(BeTrue())
+			// An unexpected (non-incompatibility) error must never masquerade as a static
+			// incompatibility: it is returned for retry rather than latched onto the condition.
+			var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+			Expect(errors.As(err, &incompatibleErr)).To(BeFalse())
 			Expect(result).To(Equal(reconcile.Result{}))
 			Expect(desCalls).To(Equal(0))
 
@@ -277,6 +318,16 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(condition.IsUnknown()).To(BeTrue())
 			Expect(condition.IsFalse()).To(BeFalse())
 			Expect(*condition).To(Equal(initialCondition))
+		})
+
+		It("should not treat a malformed Kubernetes version as an error when the image family is not version pinned", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+			setKubernetesVersionReady(nodeClass, "1.32.x")
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
 		})
 	})
 
