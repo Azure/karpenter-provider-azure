@@ -1104,7 +1104,7 @@ spec:
                         || self[key].endsWith(''Gi'') || self[key].endsWith(''%''))'
                   evictionMaxPodGracePeriod:
                     description: |-
-                      EvictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
                       It matches AKS `kubeletConfig.evictionMaxPodGracePeriodInSeconds`.
                     format: int32
                     minimum: 0
