@@ -668,6 +668,7 @@ type SysctlConfiguration struct {
 // +kubebuilder:printcolumn:name="ImageFamily",type=string,JSONPath=".spec.imageFamily",priority=1
 // +kubebuilder:subresource:status
 // +kubebuilder:deprecatedversion:warning="use v1beta1.AKSNodeClass instead"
+// +kubebuilder:unservedversion
 type AKSNodeClass struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is standard object metadata.
