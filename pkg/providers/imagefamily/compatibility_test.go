@@ -57,11 +57,22 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		"ubuntu2204 with fips accepts below extended upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
-			trustedLaunch:     true,
 			kubernetesVersion: "1.38.9",
 		},
 		"ubuntu2204 with fips rejects extended upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
+			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
+			kubernetesVersion: "1.39.0",
+			wantErr:           []string{"effective image family", v1beta1.Ubuntu2204ImageFamily, "1.39.0", "with FIPS", "supported range is >= 1.25.2 and < 1.39.0"},
+		},
+		"generic ubuntu with fips and trusted launch accepts below extended upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
+			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
+			trustedLaunch:     true,
+			kubernetesVersion: "1.38.9",
+		},
+		"generic ubuntu with fips and trusted launch rejects extended upper bound": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			trustedLaunch:     true,
 			kubernetesVersion: "1.39.0",
@@ -76,13 +87,22 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.32.0",
 		},
-		"generic ubuntu resolves to ubuntu2404 compatibility for later clusters": {
+		"generic ubuntu resolves to ubuntu2204 compatibility below ubuntu2404 threshold": {
 			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
-			kubernetesVersion: "1.39.0",
+			kubernetesVersion: "1.33.9",
+		},
+		"generic ubuntu resolves to ubuntu2404 compatibility at ubuntu2404 threshold": {
+			imageFamily:       lo.ToPtr(v1beta1.UbuntuImageFamily),
+			kubernetesVersion: "1.34.0",
 		},
 		"unset ubuntu resolves to ubuntu2204 compatibility for earlier clusters": {
 			kubernetesVersion: "1.25.1",
 			wantErr:           []string{"effective image family", v1beta1.Ubuntu2204ImageFamily, "1.25.1", "supported range is >= 1.25.2 and < 1.37.0"},
+		},
+		"unset ubuntu with fips and trusted launch accepts below extended upper bound": {
+			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
+			trustedLaunch:     true,
+			kubernetesVersion: "1.38.9",
 		},
 		"azlinux remains unrestricted": {
 			imageFamily:       lo.ToPtr(v1beta1.AzureLinuxImageFamily),
