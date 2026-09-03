@@ -480,8 +480,8 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should return a NodeClassNotReadyError before instance creation when validation marks the NodeClass incompatible with the Kubernetes version", func() {
 				message := "Resolved image family does not support the current Kubernetes version. Update spec.imageFamily or wait for a compatible image release."
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, imageFamilyKubernetesVersionIncompatibleReason, message)
-				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(imageFamilyKubernetesVersionIncompatibleReason))
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, status.ImageFamilyKubernetesVersionIncompatible, message)
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
 				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Message).To(Equal(message))
 				Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsFalse()).To(BeTrue())
 

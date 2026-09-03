@@ -83,8 +83,6 @@ var nodeClaim *karpv1.NodeClaim
 var fakeZone1 = zones.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 var defaultTestSKU = fake.MakeSKU("Standard_D2_v3")
 
-const imageFamilyKubernetesVersionIncompatibleReason = "ImageFamilyKubernetesVersionIncompatible"
-
 func TestCloudProvider(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
@@ -365,22 +363,24 @@ var _ = Describe("CloudProvider", func() {
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
 		})
-		It("should return a NodeClassNotReadyError before instance creation when validation marks the NodeClass incompatible with the Kubernetes version", func() {
-			message := "Resolved image family does not support the current Kubernetes version. Update spec.imageFamily or wait for a compatible image release."
-			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, imageFamilyKubernetesVersionIncompatibleReason, message)
-			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(imageFamilyKubernetesVersionIncompatibleReason))
-			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Message).To(Equal(message))
-			Expect(nodeClass.StatusConditions().Get(opstatus.ConditionReady).IsFalse()).To(BeTrue())
+		Context("Create - Expected Creation Failures", func() {
+			It("should return a NodeClassNotReadyError before instance creation when validation marks the NodeClass incompatible with the Kubernetes version", func() {
+				message := "Resolved image family does not support the current Kubernetes version. Update spec.imageFamily or wait for a compatible image release."
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, status.ImageFamilyKubernetesVersionIncompatible, message)
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Message).To(Equal(message))
+				Expect(nodeClass.StatusConditions().Get(opstatus.ConditionReady).IsFalse()).To(BeTrue())
 
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
-			Expect(err).To(HaveOccurred())
-			Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
-			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.NodeClassNotReadyError{}))
-			Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("%s=False", v1beta1.ConditionTypeValidationSucceeded)))
-			Expect(cloudProviderMachine).To(BeNil())
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+				cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.NodeClassNotReadyError{}))
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("%s=False", v1beta1.ConditionTypeValidationSucceeded)))
+				Expect(cloudProviderMachine).To(BeNil())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
 		})
 
 		runNodeOverlayCapacityTests(vmNodeOverlayCapacityTestOptions())
