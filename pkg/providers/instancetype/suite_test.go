@@ -1275,6 +1275,43 @@ var _ = Describe("InstanceType Provider", func() {
 				// Karpenter's baseline (KubeReservedPIDs).
 				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi", "pid=1000")
 			})
+
+			It("should let AKSNodeClass.spec.kubelet overrides win over node hardening defaults", func() {
+				// The overlay is applied after the hardening defaults, so customer
+				// keys must win even with hardening enabled while unset keys keep
+				// the hardened baseline.
+				ctx = options.ToContext(
+					ctx,
+					test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}),
+				)
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+					EvictionHard: map[string]v1beta1.EvictionHardValue{
+						"memory.available": "333Mi",
+					},
+					KubeReserved: map[string]v1beta1.KubeReservedValue{
+						"cpu":    "250m",
+						"memory": "512Mi",
+					},
+				}
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				customData := ExpectDecodedCustomData(azureEnv)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				// Customer eviction-hard override wins for memory.available.
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<333Mi"))
+				// Hardening's soft eviction and enforcement flags remain untouched.
+				ExpectSoftEvictionThresholds(customData, "500Mi")
+				Expect(kubeletFlags).To(ContainSubstring("enforce-node-allocatable=pods,kube-reserved,system-reserved"))
+				// Customer kube-reserved values win per key; pid inherits from
+				// the hardened baseline (KubeReservedPIDs).
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi", "pid=1000")
+			})
 		})
 
 		Context("Nodepool with KubeletConfig", func() {

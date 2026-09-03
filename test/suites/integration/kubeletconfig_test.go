@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -80,5 +81,8 @@ func createKubeletFlagsVerificationPod(nodeName string) *corev1.Pod {
 		RestartPolicy: corev1.RestartPolicyNever,
 	})
 	pod.Spec.HostPID = true
+	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
+		Privileged: lo.ToPtr(true),
+	}
 	return pod
 }
