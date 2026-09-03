@@ -23,8 +23,9 @@ const (
 	NetworkPluginModeOverlay = "overlay"
 	NetworkPluginModeNone    = ""
 
-	// podnetwork-type value for pods getting VNet IPs from a pod subnet
-	PodNetworkTypeVNet = "vnet"
+	// podnetwork-type values for pods getting VNet IPs from a pod subnet
+	PodNetworkTypeVNet      = "vnet"
+	PodNetworkTypeVNetBlock = "vnetblock"
 
 	PodIPAllocationModeDynamicIndividual = "DynamicIndividual"
 	PodIPAllocationModeStaticBlock       = "StaticBlock"

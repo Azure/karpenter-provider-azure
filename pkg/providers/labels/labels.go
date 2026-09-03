@@ -195,7 +195,11 @@ func setNetworkLabels(ctx context.Context, labels map[string]string, nodeClass *
 	labels[AKSLabelNetworkName] = nodeSubnetComponents.VNetName
 	labels[AKSLabelNetworkResourceGroup] = nodeSubnetComponents.ResourceGroupName
 	labels[AKSLabelNetworkSubscription] = nodeSubnetComponents.SubscriptionID
-	labels[AKSLabelPodNetworkType] = consts.PodNetworkTypeVNet
+	podNetworkType := consts.PodNetworkTypeVNet
+	if strings.EqualFold(opts.PodIPAllocationMode, consts.PodIPAllocationModeStaticBlock) {
+		podNetworkType = consts.PodNetworkTypeVNetBlock
+	}
+	labels[AKSLabelPodNetworkType] = podNetworkType
 	// AKS requires the pod subnet to be in the node subnet's VNet, and delegates to that VNet's guid
 	labels[AKSLabelPodNetworkDelegationGUID] = opts.VnetGUID
 	labels[AKSLabelPodNetworkName] = podSubnetComponents.VNetName

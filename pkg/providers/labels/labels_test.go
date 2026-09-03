@@ -588,21 +588,23 @@ func TestNetworkLabels(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name               string
-		networkPlugin      string
-		networkPluginMode  string
-		podSubnetID        string
-		nodeClassPodSubnet string
-		kubernetesVersion  string
-		expectedLabels     map[string]string
-		unexpectedLabels   []string
+		name                string
+		networkPlugin       string
+		networkPluginMode   string
+		podSubnetID         string
+		podIPAllocationMode string
+		nodeClassPodSubnet  string
+		kubernetesVersion   string
+		expectedLabels      map[string]string
+		unexpectedLabels    []string
 	}{
 		{
-			name:              "Azure CNI pod subnet emits the podnetwork labels DNC keys off",
-			networkPlugin:     consts.NetworkPluginAzure,
-			networkPluginMode: consts.NetworkPluginModeNone,
-			podSubnetID:       podSubnetID,
-			kubernetesVersion: "1.35.0",
+			name:                "Azure CNI pod subnet with DynamicIndividual emits the podnetwork labels DNC keys off",
+			networkPlugin:       consts.NetworkPluginAzure,
+			networkPluginMode:   consts.NetworkPluginModeNone,
+			podSubnetID:         podSubnetID,
+			podIPAllocationMode: consts.PodIPAllocationModeDynamicIndividual,
+			kubernetesVersion:   "1.35.0",
 			expectedLabels: map[string]string{
 				labels.AKSLabelNetworkName:              "test-vnet",
 				labels.AKSLabelNetworkResourceGroup:     "test-rg",
@@ -618,6 +620,17 @@ func TestNetworkLabels(t *testing.T) {
 				labels.AKSLabelNetworkStatelessCNI:      "true",
 			},
 			unexpectedLabels: []string{labels.AKSLabelAzureCNIOverlay},
+		},
+		{
+			name:                "Azure CNI pod subnet with StaticBlock emits vnetblock",
+			networkPlugin:       consts.NetworkPluginAzure,
+			networkPluginMode:   consts.NetworkPluginModeNone,
+			podSubnetID:         podSubnetID,
+			podIPAllocationMode: "staticblock",
+			kubernetesVersion:   "1.35.0",
+			expectedLabels: map[string]string{
+				labels.AKSLabelPodNetworkType: consts.PodNetworkTypeVNetBlock,
+			},
 		},
 		{
 			name:              "Azure CNI pod subnet with k8s < 1.34 disables stateless CNI",
@@ -700,6 +713,7 @@ func TestNetworkLabels(t *testing.T) {
 				NetworkPluginMode:       tc.networkPluginMode,
 				SubnetID:                nodeSubnetID,
 				PodSubnetID:             tc.podSubnetID,
+				PodIPAllocationMode:     tc.podIPAllocationMode,
 				VnetGUID:                vnetGUID,
 			})
 

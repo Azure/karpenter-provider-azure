@@ -144,15 +144,12 @@ func validatePodIPAllocationModeWithoutSubnet(mode string) error {
 
 func validatePodIPAllocationMode(mode string) error {
 	if mode == "" {
-		return fmt.Errorf("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to '%s' when --pod-subnet-id is set", consts.PodIPAllocationModeDynamicIndividual)
+		return fmt.Errorf("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to '%s' or '%s' when --pod-subnet-id is set", consts.PodIPAllocationModeDynamicIndividual, consts.PodIPAllocationModeStaticBlock)
 	}
-	if strings.EqualFold(mode, consts.PodIPAllocationModeDynamicIndividual) {
+	if strings.EqualFold(mode, consts.PodIPAllocationModeDynamicIndividual) || strings.EqualFold(mode, consts.PodIPAllocationModeStaticBlock) {
 		return nil
 	}
-	if strings.EqualFold(mode, consts.PodIPAllocationModeStaticBlock) {
-		mode = consts.PodIPAllocationModeStaticBlock
-	}
-	return fmt.Errorf("pod-ip-allocation-mode '%s' is not supported; only '%s' is supported", mode, consts.PodIPAllocationModeDynamicIndividual)
+	return fmt.Errorf("pod-ip-allocation-mode '%s' is invalid; must be '%s' or '%s'", mode, consts.PodIPAllocationModeDynamicIndividual, consts.PodIPAllocationModeStaticBlock)
 }
 
 func (o *Options) validateEndpoint() error {

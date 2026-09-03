@@ -404,7 +404,22 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
-		It("should reject StaticBlock pod IP allocation", func() {
+		It("should accept StaticBlock pod IP allocation", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--network-plugin-mode", "",
+				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
+				"--pod-ip-allocation-mode", "staticblock",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should reject an unknown pod IP allocation mode", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -414,9 +429,9 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin-mode", "",
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
-				"--pod-ip-allocation-mode", "StaticBlock",
+				"--pod-ip-allocation-mode", "UnknownMode",
 			)
-			Expect(err).To(MatchError(ContainSubstring("pod-ip-allocation-mode 'StaticBlock' is not supported; only 'DynamicIndividual' is supported")))
+			Expect(err).To(MatchError(ContainSubstring("pod-ip-allocation-mode 'UnknownMode' is invalid; must be 'DynamicIndividual' or 'StaticBlock'")))
 		})
 		It("should require pod IP allocation mode with a pod subnet", func() {
 			err := opts.Parse(
@@ -431,7 +446,7 @@ var _ = Describe("Options", func() {
 				"--pod-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/podsub",
 				"--pod-ip-allocation-mode", "",
 			)
-			Expect(err).To(MatchError(ContainSubstring("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to 'DynamicIndividual' when --pod-subnet-id is set")))
+			Expect(err).To(MatchError(ContainSubstring("--pod-ip-allocation-mode flag or POD_IP_ALLOCATION_MODE environment variable must be set to 'DynamicIndividual' or 'StaticBlock' when --pod-subnet-id is set")))
 		})
 		It("should accept DynamicIndividual pod IP allocation", func() {
 			err := opts.Parse(
