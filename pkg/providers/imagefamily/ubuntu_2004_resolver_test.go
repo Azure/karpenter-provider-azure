@@ -54,7 +54,7 @@ func TestResolvesToUbuntu2004(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			got := imagefamily.ResolvesToUbuntu2004(tc.family, tc.fips, tc.trustedLaunch, tc.k8sVersion)
 			if got != tc.want {
-				t.Fatalf("ResolvesToUbuntu2004(%v, %v, %v) = %v, want %v", lo.FromPtr(tc.family), lo.FromPtr(tc.fips), tc.trustedLaunch, got, tc.want)
+				t.Fatalf("ResolvesToUbuntu2004(%v, %v, %v, %q) = %v, want %v", lo.FromPtr(tc.family), lo.FromPtr(tc.fips), tc.trustedLaunch, tc.k8sVersion, got, tc.want)
 			}
 		})
 	}
