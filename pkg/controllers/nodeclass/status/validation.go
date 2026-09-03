@@ -19,18 +19,24 @@ package status
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	// ImageFamilyKubernetesVersionIncompatible is the stable reason used when
+	// the chosen image family is statically incompatible with the ready
+	// discovered Kubernetes version.
+	ImageFamilyKubernetesVersionIncompatible = "ImageFamilyKubernetesVersionIncompatible"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -62,6 +68,25 @@ func NewValidationReconciler(
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("getting kubernetes version: %w", err)
+	}
+	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, kubernetesVersion); err != nil {
+		if isMalformedDiscoveredKubernetesVersionError(err) {
+			logger.Error(err, "image family compatibility validation encountered malformed kubernetes version")
+			return reconcile.Result{}, fmt.Errorf("validating image family compatibility: %w", err)
+		}
+
+		logger.V(1).Info("image family compatibility validation failed", "error", err)
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			ImageFamilyKubernetesVersionIncompatible,
+			err.Error(),
+		)
+		return reconcile.Result{RequeueAfter: ValidationFailureRequeueInterval}, nil
+	}
+
 	// Check BYOK RBAC if DES ID is configured
 	if r.parsedDiskEncryptionSetID != nil {
 		logger.V(1).Info("validating Disk Encryption Set RBAC")
@@ -86,6 +111,10 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+func isMalformedDiscoveredKubernetesVersionError(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "malformed discovered Kubernetes version ")
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
