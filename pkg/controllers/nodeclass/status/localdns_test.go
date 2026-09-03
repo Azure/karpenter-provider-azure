@@ -124,15 +124,15 @@ func TestPreferred_BYOCNI_Disabled(t *testing.T) {
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
 
-func TestPreferred_Ubuntu2004_Disabled(t *testing.T) {
+func TestPreferred_UbuntuFIPS_Enabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	nc.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 	nc.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
 	setKVReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "cilium", "azure")
 	mustReconcile(t, r, nc)
-	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
 
 func TestPreferred_NoConflicts_Enabled(t *testing.T) {
