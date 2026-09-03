@@ -27,7 +27,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -36,6 +39,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
 // createZoneOverride creates a LocalDNSZoneOverride with all required fields
@@ -452,5 +456,75 @@ var _ = Describe("Validation Reconciler", func() {
 			condition = nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
+	})
+})
+
+// stubKubernetesVersionProvider reports a fixed Kubernetes version, letting the
+// status controller be exercised against versions the envtest API server does not run.
+type stubKubernetesVersionProvider struct {
+	version string
+}
+
+func (p *stubKubernetesVersionProvider) KubeServerVersion(_ context.Context) (string, error) {
+	return p.version, nil
+}
+
+var _ = Describe("NodeClass Status Controller image family compatibility", func() {
+	// Covers the full chain the ValidationReconciler participates in: an explicitly
+	// pinned image family that the discovered Kubernetes version does not support must
+	// leave the NodeClass not Ready, which is what blocks provisioning.
+	newControllerForVersion := func(kubernetesVersion string) *status.Controller {
+		return status.NewController(
+			env.Client,
+			&stubKubernetesVersionProvider{version: kubernetesVersion},
+			azureEnv.ImageProvider,
+			env.KubernetesInterface,
+			env.KubernetesInterface,
+			azureEnv.DynamicInterface,
+			azureEnv.SubnetsAPI,
+			azureEnv.DiskEncryptionSetsAPI,
+			testOptions.ParsedDiskEncryptionSetID,
+			options.FromContext(ctx).NetworkPolicy,
+			options.FromContext(ctx).NetworkPlugin,
+		)
+	}
+
+	It("should leave the NodeClass not Ready when Ubuntu2404 is pinned on Kubernetes 1.31", func() {
+		statusController := newControllerForVersion("1.31.0")
+
+		pinnedNodeClass := test.AKSNodeClass()
+		pinnedNodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+		ExpectApplied(ctx, env.Client, pinnedNodeClass)
+		ExpectObjectReconciled(ctx, env.Client, statusController, pinnedNodeClass)
+		pinnedNodeClass = ExpectExists(ctx, env.Client, pinnedNodeClass)
+
+		Expect(lo.FromPtr(pinnedNodeClass.Status.KubernetesVersion)).To(Equal("1.31.0"))
+
+		validationCondition := pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+		Expect(validationCondition.IsFalse()).To(BeTrue())
+		Expect(validationCondition.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+		Expect(validationCondition.Message).To(ContainSubstring(`requested image family "Ubuntu2404"`))
+
+		// The other status reconcilers succeed, so the NodeClass is not Ready specifically
+		// because of the image family incompatibility.
+		Expect(pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()).To(BeTrue())
+		Expect(pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue()).To(BeTrue())
+
+		readyCondition := pinnedNodeClass.StatusConditions().Get(opstatus.ConditionReady)
+		Expect(readyCondition.IsFalse()).To(BeTrue())
+		Expect(readyCondition.Message).To(ContainSubstring(v1beta1.ConditionTypeValidationSucceeded))
+	})
+
+	It("should become Ready when Ubuntu2404 is pinned on a supported Kubernetes version", func() {
+		statusController := newControllerForVersion("1.32.0")
+
+		pinnedNodeClass := test.AKSNodeClass()
+		pinnedNodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+		ExpectApplied(ctx, env.Client, pinnedNodeClass)
+		ExpectObjectReconciled(ctx, env.Client, statusController, pinnedNodeClass)
+		pinnedNodeClass = ExpectExists(ctx, env.Client, pinnedNodeClass)
+
+		Expect(pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		Expect(pinnedNodeClass.StatusConditions().Get(opstatus.ConditionReady).IsTrue()).To(BeTrue())
 	})
 })
