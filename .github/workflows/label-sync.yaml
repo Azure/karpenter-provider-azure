@@ -21,6 +21,7 @@ jobs:
             aquasecurity.github.io:443
             azure.archive.ubuntu.com:80
             esm.ubuntu.com:443
+            aka.ms:443
             github.com:443
             packages.microsoft.com:443
             proxy.golang.org:443
