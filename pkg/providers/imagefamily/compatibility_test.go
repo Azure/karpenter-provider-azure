@@ -17,6 +17,7 @@ limitations under the License.
 package imagefamily_test
 
 import (
+	"errors"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -108,11 +109,6 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			imageFamily:       lo.ToPtr(v1beta1.AzureLinuxImageFamily),
 			kubernetesVersion: "1.20.0",
 		},
-		"rejects malformed kubernetes versions": {
-			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
-			kubernetesVersion: "not-a-version",
-			wantErr:           []string{"malformed discovered Kubernetes version", "not-a-version", "semantic version"},
-		},
 		"accepts tolerant two segment versions": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.32",
@@ -154,4 +150,25 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("returns typed error for malformed kubernetes version", func(t *testing.T) {
+		t.Parallel()
+
+		g := NewWithT(t)
+		nodeClass := &v1beta1.AKSNodeClass{
+			Spec: v1beta1.AKSNodeClassSpec{
+				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
+			},
+		}
+
+		err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, "1.32.x")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring(`malformed discovered Kubernetes version "1.32.x": expected a semantic version like 1.32.0`))
+
+		var malformedErr *imagefamily.MalformedDiscoveredKubernetesVersionError
+		g.Expect(errors.As(err, &malformedErr)).To(BeTrue())
+		g.Expect(malformedErr).ToNot(BeNil())
+		g.Expect(errors.Unwrap(malformedErr)).ToNot(BeNil())
+		g.Expect(errors.Unwrap(malformedErr).Error()).To(ContainSubstring(`patch number "x"`))
+	})
 }

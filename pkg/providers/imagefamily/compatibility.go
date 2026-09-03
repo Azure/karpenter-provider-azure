@@ -33,6 +33,21 @@ var (
 	ubuntu2404MinimumVersion     = semver.MustParse("1.32.0")
 )
 
+// MalformedDiscoveredKubernetesVersionError indicates the discovered cluster
+// Kubernetes version could not be parsed as a semantic version.
+type MalformedDiscoveredKubernetesVersionError struct {
+	kubernetesVersion string
+	cause             error
+}
+
+func (e *MalformedDiscoveredKubernetesVersionError) Error() string {
+	return fmt.Sprintf("malformed discovered Kubernetes version %q: expected a semantic version like 1.32.0: %v", e.kubernetesVersion, e.cause)
+}
+
+func (e *MalformedDiscoveredKubernetesVersionError) Unwrap() error {
+	return e.cause
+}
+
 // ValidateImageFamilyCompatibility verifies that the AKSNodeClass resolves to an
 // image family supported by the discovered cluster Kubernetes version.
 func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernetesVersion string) error {
@@ -77,7 +92,10 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernete
 func parseKubernetesVersionTolerant(kubernetesVersion string) (semver.Version, error) {
 	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
 	if err != nil {
-		return semver.Version{}, fmt.Errorf("malformed discovered Kubernetes version %q: expected a semantic version like 1.32.0: %w", kubernetesVersion, err)
+		return semver.Version{}, &MalformedDiscoveredKubernetesVersionError{
+			kubernetesVersion: kubernetesVersion,
+			cause:             err,
+		}
 	}
 	return version, nil
 }

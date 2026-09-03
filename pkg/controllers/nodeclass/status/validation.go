@@ -18,8 +18,8 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -73,7 +73,8 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		return reconcile.Result{}, fmt.Errorf("getting kubernetes version: %w", err)
 	}
 	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, kubernetesVersion); err != nil {
-		if isMalformedDiscoveredKubernetesVersionError(err) {
+		var malformedKubernetesVersionErr *imagefamily.MalformedDiscoveredKubernetesVersionError
+		if errors.As(err, &malformedKubernetesVersionErr) {
 			logger.Error(err, "image family compatibility validation encountered malformed kubernetes version")
 			return reconcile.Result{}, fmt.Errorf("validating image family compatibility: %w", err)
 		}
@@ -111,10 +112,6 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
-}
-
-func isMalformedDiscoveredKubernetesVersionError(err error) bool {
-	return err != nil && strings.HasPrefix(err.Error(), "malformed discovered Kubernetes version ")
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {

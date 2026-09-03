@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -260,16 +261,22 @@ var _ = Describe("Validation Reconciler", func() {
 			}
 			desReconciler := status.NewValidationReconciler(fakeDesAPI, parsedID)
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-			setKubernetesVersionReady(nodeClass, "not-a-version")
+			setKubernetesVersionReady(nodeClass, "1.32.x")
+			initialCondition := *nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(`validating image family compatibility: malformed discovered Kubernetes version "not-a-version"`))
+			Expect(err.Error()).To(ContainSubstring(`validating image family compatibility: malformed discovered Kubernetes version "1.32.x"`))
+			var malformedErr *imagefamily.MalformedDiscoveredKubernetesVersionError
+			Expect(errors.As(err, &malformedErr)).To(BeTrue())
 			Expect(result).To(Equal(reconcile.Result{}))
 			Expect(desCalls).To(Equal(0))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-			Expect(condition.Reason).ToNot(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+			Expect(condition).ToNot(BeNil())
+			Expect(condition.IsUnknown()).To(BeTrue())
+			Expect(condition.IsFalse()).To(BeFalse())
+			Expect(*condition).To(Equal(initialCondition))
 		})
 	})
 
