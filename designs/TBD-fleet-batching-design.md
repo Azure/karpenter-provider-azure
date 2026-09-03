@@ -75,7 +75,7 @@ The promise implements a two-phase design that separates fast assignment from sl
 
 - **`ResolveAssignment()`** - Synchronous, fast, in-memory. Called immediately after the executor completes. Reads the FIFO assignment from `FleetSharedState` and populates VM stub fields (ID, Name, VMSize, Zone, Location). Returns ProviderID so core can create the NodeClaim and begin its lifecycle without waiting for full VM provisioning.
 
-- **`Wait()`** - Asynchronous, runs in a background goroutine inside `handleInstancePromise`. Polls `GET /virtualMachines/{name}?$expand=instanceView` every 5 seconds until `provisioningState` reaches `Succeeded` or `Failed`. On success, the full VM object (Tags, TimeCreated, ImageReference) is available for informational purposes. On failure, the error handler is invoked to mark the SKU/zone unavailable in the ICE cache, `Cleanup()` deletes the failed VM, and the error is returned so the NodeClaim is retried immediately with updated offerings.
+- **`Wait()`** - Asynchronous, runs in a background goroutine inside `handleInstancePromise`. Polls `GET /virtualMachines/{name}?$expand=instanceView` with exponential backoff starting at 5 seconds and capped at 30 seconds between requests. Polling stops when `provisioningState` reaches `Succeeded` or `Failed`, the context is cancelled, or the 15-minute overall deadline is reached. On success, the full VM object (Tags, TimeCreated, ImageReference) is available for informational purposes. On failure or timeout, `Cleanup()` deletes the VM and an error is returned so the NodeClaim is retried; provisioning failures also update the ICE cache for the failed SKU/zone.
 
 - **`Cleanup()`** - Routes VM deletion through `VMProvider.Delete`, the same path used by user-initiated `CloudProvider.Delete`. This inherits in-process deduplication, idempotency checks, and `ForceDeletion=true` semantics.
 
@@ -129,7 +129,7 @@ Spot and Regular NodeClaims always land in separate Fleets because the capacity 
 
 After the Fleet PUT succeeds and VMs are listed, the executor must pair VMs back to NodeClaims. This post-creation assignment step is unique to Fleet (in single-VM mode, the 1:1 mapping is implicit because the VM name matches the NodeClaim name).
 
-The algorithm is **pure FIFO**: the Nth request (in submission order) is paired with the Nth well-formed VM (in list order). No re-matching by SKU or zone is performed because the pairing records ownership rather than selecting placement.
+The algorithm is **pure FIFO**: the Nth request (in submission order) is paired with the Nth well-formed VM (in list order).
 
 **Data structures:**
 
@@ -148,7 +148,7 @@ FleetAssignment {
 }
 ```
 
-**Why FIFO is correct:** Fleet selects each VM's concrete SKU and zone from the same candidate lists (`vmSizesProfile` and zones) shared by every request in the batch. Since all requests in a batch produced identical Fleet bodies at capacity=1, every VM returned for that Fleet satisfies the inputs of every request, even when Fleet chooses different SKUs or zones for individual VMs. Re-matching by SKU or zone would add complexity without improving correctness.
+**Why FIFO is correct:** FIFO is valid because the batch key groups only NodeClaims with identical acceptable SKU and zone sets. Fleet may choose a different concrete SKU or zone for each VM, but every placement selected by Fleet is valid for every NodeClaim in that batch. Therefore, re-matching by SKU or zone cannot improve the assignment.
 
 **Zone/SKU derivation:** The specific SKU and zone assigned to each VM are read from the Fleet `ListVirtualMachines` API response - `VMSize` and `Zone` fields per VM. Karpenter never assumes what was requested; it always reports what Fleet actually chose. The AKS-label zone is constructed from the numeric ARM zone + Location (e.g., ARM zone "1" in eastus becomes `eastus-1`).
 
@@ -197,8 +197,10 @@ After assignment, the VM may still be in `Creating` state. Without polling, `Wai
 
 **With polling:**
 - Polls `GET /virtualMachines/{name}?$expand=instanceView` with exponential backoff starting at 5 seconds and capped at 30 seconds between requests
+- Stops after an overall deadline of 15 minutes, matching Karpenter's NodeClaim registration TTL
 - **On `Succeeded`:** Updates `.VM` with the full VM object (Tags, TimeCreated, ImageReference, ProvisioningState). Flow proceeds normally - `Launched=true`, kubelet boots, Node registers.
 - **On `Failed`:** Parses the ARM error code → marks the SKU/zone unavailable in the ICE cache → `Cleanup()` deletes the failed VM → error returned so the NodeClaim is retried immediately with updated offerings. Failure detection takes ~5-60 seconds instead of 15 minutes.
+- **On timeout:** Stops polling → `Cleanup()` deletes the VM → returns a timeout error so the NodeClaim can be retried instead of polling indefinitely.
 
 ---
 
