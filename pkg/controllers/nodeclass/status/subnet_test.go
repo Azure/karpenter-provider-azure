@@ -200,6 +200,20 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(cond.Message).To(ContainSubstring("custom subnet cannot be in the same VNet as cluster managed VNet"))
 		})
 
+		It("should preserve the transition time when the subnet remains invalid", func() {
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr("invalid")
+
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			transitionTime := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady).LastTransitionTime
+			time.Sleep(time.Millisecond)
+
+			_, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady).LastTransitionTime).To(Equal(transitionTime))
+		})
+
 		It("should mark nodeclass as not ready when subnet hits unknown error", func() {
 			const errString = "An unexpected internal server error occurred while processing the request. The service encountered an unrecoverable condition and was unable to complete the operation. Please retry the request after some time. If the problem persists, contact Azure support with the correlation ID and timestamp for further investigation."
 			azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {

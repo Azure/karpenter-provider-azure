@@ -60,19 +60,18 @@ const (
 )
 
 func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	if result, err := r.validatePodSubnetID(ctx, nodeClass); err != nil || !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady).IsTrue() {
+	if result, valid, err := r.validatePodSubnetID(ctx, nodeClass); err != nil || !valid {
 		return result, err
 	}
 	return r.validateVNETSubnetID(ctx, nodeClass)
 }
 
 // validatePodSubnetID checks the effective pod subnet against the cluster-wide configuration.
-func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, bool, error) {
 	opts := options.FromContext(ctx)
 	podSubnetID := nodeClass.GetPodSubnetID(opts.PodSubnetID)
 	if podSubnetID == "" {
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, true, nil
 	}
 	logger := log.FromContext(ctx).WithName(subnetReconcilerName).WithValues("podSubnetID", podSubnetID)
 
@@ -84,11 +83,11 @@ func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v
 			SubnetUnreadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse podSubnetID %s", podSubnetID),
 		)
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, false, nil
 	}
 	if msg := podSubnetConfigError(opts, nodeClass, podSubnetID, podSubnetComponents); msg != "" {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeSubnetsReady, SubnetUnreadyReasonIDInvalid, msg)
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, false, nil
 	}
 
 	_, err = r.subnetClient.Get(ctx, podSubnetComponents.ResourceGroupName, podSubnetComponents.VNetName, podSubnetComponents.SubnetName, nil)
@@ -100,7 +99,7 @@ func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v
 				SubnetUnreadyReasonNotFound,
 				fmt.Sprintf("resource not found: %s", podSubnetID),
 			)
-			return reconcile.Result{RequeueAfter: time.Minute}, err
+			return reconcile.Result{RequeueAfter: time.Minute}, false, err
 		}
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetsReady,
@@ -108,11 +107,10 @@ func (r *SubnetReconciler) validatePodSubnetID(ctx context.Context, nodeClass *v
 			fmt.Sprintf("unknown error getting pod subnet: %s", err.Error()),
 		)
 		logger.Error(err, "getting pod subnet failed during reconciliation with unknown error")
-		return reconcile.Result{}, err
+		return reconcile.Result{}, false, err
 	}
 
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
-	return reconcile.Result{}, nil
+	return reconcile.Result{}, true, nil
 }
 
 // podSubnetConfigError returns why a pod subnet cannot be used with the current cluster configuration.
