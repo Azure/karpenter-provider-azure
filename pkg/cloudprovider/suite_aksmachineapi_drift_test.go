@@ -280,6 +280,30 @@ var _ = Describe("CloudProvider", func() {
 					Expect(drifted).To(Equal(K8sVersionDrift))
 				})
 			})
+
+			Context("Validation Succeeded", func() {
+				// An already launched NodeClaim must not be disrupted just because the NodeClass
+				// stopped being Ready: image family / Kubernetes version incompatibility is a
+				// forward-looking provisioning constraint, and treating it as drift would
+				// replace healthy nodes with nodes that cannot be provisioned at all.
+				It("should succeed with no drift when ValidationSucceeded is false for image family incompatibility", func() {
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					nodeClass.StatusConditions().SetFalse(
+						v1beta1.ConditionTypeValidationSucceeded,
+						status.ImageFamilyKubernetesVersionIncompatible,
+						`requested image family "Ubuntu2404" is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`,
+					)
+					ExpectApplied(ctx, env.Client, nodeClass)
+
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+					Expect(nodeClass.StatusConditions().Root().IsFalse()).To(BeTrue())
+
+					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NoDrift))
+				})
+			})
 		})
 	})
 })

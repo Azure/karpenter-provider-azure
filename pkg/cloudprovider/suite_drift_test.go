@@ -34,6 +34,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
@@ -260,6 +261,30 @@ var _ = Describe("CloudProvider", func() {
 				})
 			})
 
+			Context("Validation Succeeded", func() {
+				// An already launched NodeClaim must not be disrupted just because the NodeClass
+				// stopped being Ready: image family / Kubernetes version incompatibility is a
+				// forward-looking provisioning constraint, and treating it as drift would
+				// replace healthy nodes with nodes that cannot be provisioned at all.
+				It("should succeed with no drift when ValidationSucceeded is false for image family incompatibility", func() {
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					nodeClass.StatusConditions().SetFalse(
+						v1beta1.ConditionTypeValidationSucceeded,
+						status.ImageFamilyKubernetesVersionIncompatible,
+						`requested image family "Ubuntu2404" is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`,
+					)
+					ExpectApplied(ctx, env.Client, nodeClass)
+
+					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+					Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+					Expect(nodeClass.StatusConditions().Root().IsFalse()).To(BeTrue())
+
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(drifted).To(Equal(NoDrift))
+				})
+			})
+
 			Context("Kubelet Client ID", func() {
 				It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
 					node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "" // Not set
@@ -286,7 +311,6 @@ var _ = Describe("CloudProvider", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(BeEmpty())
 				})
-
 				It("should trigger drift if NodeClass subnet changed", func() {
 					testSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/my-subnet"
 					nodeClass.Spec.VNETSubnetID = lo.ToPtr(testSubnetID)
