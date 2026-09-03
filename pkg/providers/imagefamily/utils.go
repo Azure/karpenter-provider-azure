@@ -63,7 +63,8 @@ func UseUbuntu2204FIPS(kubernetesVersion string, trustedLaunch bool) bool {
 // in defaultUbuntu (see resolver.go).
 //
 // Today, Ubuntu2004 is reachable only when the legacy/unset Ubuntu image
-// family is selected together with FIPS mode and without TrustedLaunch. Callers outside of the
+// family is selected together with FIPS mode and without TrustedLaunch,
+// and only for Kubernetes versions below 1.35. Callers outside of the
 // resolver use this to make decisions that depend on whether a NodeClass
 // will ultimately be backed by 20.04 (e.g. the LocalDNS state reconciler,
 // since LocalDNS is unsupported on 20.04).
