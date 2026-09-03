@@ -45,6 +45,35 @@ var (
 	ubuntu2404MinimumVersion     = semver.MustParse("1.32.0")
 )
 
+// versionPinnedImageFamilies are the spec.imageFamily values that name a specific OS
+// version, and are therefore the only families whose usability depends on the cluster's
+// Kubernetes version.
+//
+// Validation is deliberately limited to these: the generic "Ubuntu" family (and an unset
+// spec.imageFamily) is a rolling contract to run "an AKS-supported Ubuntu", resolved per
+// Kubernetes version by the provisioning path - the image resolver for VM-based
+// provisioning, and AKS itself for AKS Machine API provisioning - so there is no version
+// range we could enforce here without contradicting that resolution. AzureLinux is
+// likewise unpinned.
+var versionPinnedImageFamilies = []string{
+	v1beta1.Ubuntu2204ImageFamily,
+	v1beta1.Ubuntu2404ImageFamily,
+}
+
+// RequiresKubernetesVersionCompatibility reports whether the image family requested by
+// spec.imageFamily is explicitly version pinned, and so needs the discovered cluster
+// Kubernetes version in order to be validated.
+//
+// Callers use this to avoid making Kubernetes version readiness a precondition for
+// NodeClasses that no compatibility policy applies to: for those, an unavailable or
+// malformed Kubernetes version must not block the rest of validation.
+func RequiresKubernetesVersionCompatibility(nodeClass *v1beta1.AKSNodeClass) bool {
+	if nodeClass == nil {
+		return false
+	}
+	return lo.Contains(versionPinnedImageFamilies, lo.FromPtr(nodeClass.Spec.ImageFamily))
+}
+
 // MalformedDiscoveredKubernetesVersionError indicates the discovered cluster
 // Kubernetes version could not be parsed as a semantic version.
 type MalformedDiscoveredKubernetesVersionError struct {
@@ -116,7 +145,7 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernete
 	}
 
 	requestedImageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
-	if requestedImageFamily != v1beta1.Ubuntu2204ImageFamily && requestedImageFamily != v1beta1.Ubuntu2404ImageFamily {
+	if !RequiresKubernetesVersionCompatibility(nodeClass) {
 		return nil
 	}
 

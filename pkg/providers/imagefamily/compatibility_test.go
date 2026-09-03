@@ -270,3 +270,50 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		g.Expect(err.Error()).To(ContainSubstring("AKSNodeClass is required"))
 	})
 }
+
+func TestRequiresKubernetesVersionCompatibility(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		imageFamily *string
+		want        bool
+	}{
+		"explicit ubuntu2204 is version pinned": {
+			imageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
+			want:        true,
+		},
+		"explicit ubuntu2404 is version pinned": {
+			imageFamily: lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
+			want:        true,
+		},
+		"generic ubuntu is not version pinned": {
+			imageFamily: lo.ToPtr(v1beta1.UbuntuImageFamily),
+		},
+		"unset image family is not version pinned": {},
+		"azure linux is not version pinned": {
+			imageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			g := NewWithT(t)
+			nodeClass := &v1beta1.AKSNodeClass{
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: tc.imageFamily,
+				},
+			}
+
+			g.Expect(imagefamily.RequiresKubernetesVersionCompatibility(nodeClass)).To(Equal(tc.want))
+		})
+	}
+
+	t.Run("reports false for a nil node class", func(t *testing.T) {
+		t.Parallel()
+
+		g := NewWithT(t)
+		g.Expect(imagefamily.RequiresKubernetesVersionCompatibility(nil)).To(BeFalse())
+	})
+}

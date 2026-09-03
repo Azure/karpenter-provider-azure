@@ -66,6 +66,17 @@ func setKubernetesVersionReady(nodeClass *v1beta1.AKSNodeClass, kubernetesVersio
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 }
 
+// newAuthorizationError returns the 403 the DES API surfaces when the controlling identity
+// lacks the Reader role, matching the shape asserted by the DES RBAC cases below.
+func newAuthorizationError() error {
+	return &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+		},
+	}
+}
+
 var _ = Describe("Validation Reconciler", func() {
 	var ctx context.Context
 	var reconciler *status.ValidationReconciler
@@ -278,7 +289,8 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
 
-		It("should return an error when the Kubernetes version is unavailable and should not use the incompatibility reason", func() {
+		It("should return an error for a pinned image family when the Kubernetes version is unavailable and should not use the incompatibility reason", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 			nodeClass.Status.KubernetesVersion = nil
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnavailable", "object is awaiting reconciliation")
 
@@ -290,6 +302,68 @@ var _ = Describe("Validation Reconciler", func() {
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.Reason).ToNot(Equal(status.ImageFamilyKubernetesVersionIncompatible))
 		})
+
+		DescribeTable("should not require the Kubernetes version for image families that are not explicitly version pinned",
+			func(imageFamily *string) {
+				nodeClass.Spec.ImageFamily = imageFamily
+				nodeClass.Status.KubernetesVersion = nil
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnavailable", "object is awaiting reconciliation")
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsTrue()).To(BeTrue())
+			},
+			Entry("generic Ubuntu", lo.ToPtr(v1beta1.UbuntuImageFamily)),
+			Entry("unset image family", nil),
+			Entry("AzureLinux", lo.ToPtr(v1beta1.AzureLinuxImageFamily)),
+		)
+
+		DescribeTable("should still run DES validation for image families that are not explicitly version pinned when the Kubernetes version is unavailable",
+			func(imageFamily *string, desErr error, expectSucceeded bool, expectedReason string) {
+				parsedID, err := arm.ParseResourceID("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des")
+				Expect(err).ToNot(HaveOccurred())
+
+				desCalls := 0
+				fakeDesAPI.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
+					desCalls++
+					if desErr != nil {
+						return armcompute.DiskEncryptionSetsClientGetResponse{}, desErr
+					}
+					return armcompute.DiskEncryptionSetsClientGetResponse{
+						DiskEncryptionSet: armcompute.DiskEncryptionSet{
+							Name:     lo.ToPtr("test-des"),
+							Location: lo.ToPtr("eastus"),
+						},
+					}, nil
+				}
+				desReconciler := status.NewValidationReconciler(fakeDesAPI, parsedID)
+				nodeClass.Spec.ImageFamily = imageFamily
+				nodeClass.Status.KubernetesVersion = nil
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnavailable", "object is awaiting reconciliation")
+
+				result, err := desReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(desCalls).To(Equal(1))
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if expectSucceeded {
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+					Expect(condition.IsTrue()).To(BeTrue())
+					return
+				}
+				Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(expectedReason))
+			},
+			Entry("generic Ubuntu with DES access", lo.ToPtr(v1beta1.UbuntuImageFamily), nil, true, ""),
+			Entry("unset image family with DES access", nil, nil, true, ""),
+			Entry("AzureLinux with DES access", lo.ToPtr(v1beta1.AzureLinuxImageFamily), nil, true, ""),
+			Entry("generic Ubuntu without DES access", lo.ToPtr(v1beta1.UbuntuImageFamily), newAuthorizationError(), false, status.DiskEncryptionSetRBACMissing),
+			Entry("AzureLinux without DES access", lo.ToPtr(v1beta1.AzureLinuxImageFamily), newAuthorizationError(), false, status.DiskEncryptionSetRBACMissing),
+		)
 
 		It("should return an error when the Kubernetes version is malformed and should not use the incompatibility reason", func() {
 			parsedID, err := arm.ParseResourceID("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des")

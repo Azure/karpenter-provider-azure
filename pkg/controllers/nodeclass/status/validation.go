@@ -68,34 +68,40 @@ func NewValidationReconciler(
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
-	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting kubernetes version: %w", err)
-	}
-	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, kubernetesVersion); err != nil {
-		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
-		if errors.As(err, &incompatibleErr) {
-			// This incompatibility is static: it can only change when the NodeClass spec or
-			// the discovered Kubernetes version changes, and both of those already trigger a
-			// reconcile. Polling would burn reconciles without ever observing a difference.
-			logger.V(1).Info("image family compatibility validation failed", "error", err)
-			nodeClass.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeValidationSucceeded,
-				ImageFamilyKubernetesVersionIncompatible,
-				err.Error(),
-			)
-			return reconcile.Result{}, nil
+	// Image family compatibility only constrains explicitly version-pinned families, so the
+	// discovered Kubernetes version is only needed - and only required to be ready - for
+	// those. A generic/unset Ubuntu or AzureLinux NodeClass must not be blocked from the
+	// remaining validations just because the Kubernetes version isn't available yet.
+	if imagefamily.RequiresKubernetesVersionCompatibility(nodeClass) {
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("getting kubernetes version: %w", err)
 		}
+		if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, kubernetesVersion); err != nil {
+			var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+			if errors.As(err, &incompatibleErr) {
+				// This incompatibility is static: it can only change when the NodeClass spec or
+				// the discovered Kubernetes version changes, and both of those already trigger a
+				// reconcile. Polling would burn reconciles without ever observing a difference.
+				logger.V(1).Info("image family compatibility validation failed", "error", err)
+				nodeClass.StatusConditions().SetFalse(
+					v1beta1.ConditionTypeValidationSucceeded,
+					ImageFamilyKubernetesVersionIncompatible,
+					err.Error(),
+				)
+				return reconcile.Result{}, nil
+			}
 
-		var malformedKubernetesVersionErr *imagefamily.MalformedDiscoveredKubernetesVersionError
-		if errors.As(err, &malformedKubernetesVersionErr) {
-			logger.Error(err, "image family compatibility validation encountered malformed kubernetes version")
+			var malformedKubernetesVersionErr *imagefamily.MalformedDiscoveredKubernetesVersionError
+			if errors.As(err, &malformedKubernetesVersionErr) {
+				logger.Error(err, "image family compatibility validation encountered malformed kubernetes version")
+				return reconcile.Result{}, fmt.Errorf("validating image family compatibility: %w", err)
+			}
+
+			// Any other error is unexpected; leave the condition alone and let controller-runtime retry.
+			logger.Error(err, "image family compatibility validation encountered unexpected error")
 			return reconcile.Result{}, fmt.Errorf("validating image family compatibility: %w", err)
 		}
-
-		// Any other error is unexpected; leave the condition alone and let controller-runtime retry.
-		logger.Error(err, "image family compatibility validation encountered unexpected error")
-		return reconcile.Result{}, fmt.Errorf("validating image family compatibility: %w", err)
 	}
 
 	// Check BYOK RBAC if DES ID is configured
