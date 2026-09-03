@@ -674,7 +674,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(config.PodMaxPids).To(BeNil())
 		})
 
-		It("should configure supported reservation and hard eviction overrides", func() {
+		It("should configure supported reservation and eviction overrides", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				KubeReserved: map[string]v1beta1.KubeReservedValue{"cpu": "250m", "memory": "512Mi"},
 				EvictionHard: map[string]v1beta1.EvictionHardValue{
@@ -682,20 +682,6 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					"nodefs.available":  "12%",
 					"nodefs.inodesFree": "7%",
 				},
-			}
-
-			config, err := configureKubeletConfig(nodeClass)
-
-			Expect(err).ToNot(HaveOccurred())
-			Expect(*config.KubeReserved.CPUMillicores).To(Equal(int32(250)))
-			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(512)))
-			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
-			Expect(*config.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
-			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
-		})
-
-		It("should configure supported soft eviction overrides", func() {
-			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				EvictionSoft: map[string]v1beta1.EvictionSoftValue{
 					"memory.available":  "500Mi",
 					"nodefs.available":  "15%",
@@ -710,6 +696,11 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			config, err := configureKubeletConfig(nodeClass)
 
 			Expect(err).ToNot(HaveOccurred())
+			Expect(*config.KubeReserved.CPUMillicores).To(Equal(int32(250)))
+			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(512)))
+			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
+			Expect(*config.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
+			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
 			Expect(*config.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
 			Expect(*config.SoftEvictionThreshold.NodeFsAvailable).To(Equal("15%"))
 			Expect(*config.SoftEvictionThreshold.NodeFsInodesFree).To(Equal("10%"))

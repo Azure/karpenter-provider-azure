@@ -31,7 +31,7 @@ import (
 )
 
 var _ = Describe("KubeletConfig", func() {
-	It("should apply kubeReserved and evictionHard overrides to the node", func() {
+	It("should apply kubeReserved, evictionHard, and evictionSoft overrides to the node", func() {
 		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 			KubeReserved: map[string]v1beta1.KubeReservedValue{
 				"cpu":    "250m",
