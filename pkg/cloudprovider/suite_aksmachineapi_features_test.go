@@ -18,6 +18,7 @@ package cloudprovider
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	. "github.com/onsi/ginkgo/v2"
@@ -486,6 +487,13 @@ var _ = Describe("CloudProvider", func() {
 						"nodefs.available":  "12%",
 						"nodefs.inodesFree": "7%",
 					},
+					EvictionSoft: map[string]v1beta1.EvictionSoftValue{
+						"memory.available": "500Mi",
+					},
+					EvictionSoftGracePeriod: map[string]metav1.Duration{
+						"memory.available": {Duration: 90 * time.Second},
+					},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
@@ -546,6 +554,10 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
+
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("1m30s"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
 
 				// Verify image family configuration
 				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))

@@ -18,10 +18,12 @@ package instance
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -690,6 +692,29 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
 			Expect(*config.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
 			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
+		})
+
+		It("should configure supported soft eviction overrides", func() {
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				EvictionSoft: map[string]v1beta1.EvictionSoftValue{
+					"memory.available":  "500Mi",
+					"nodefs.available":  "15%",
+					"nodefs.inodesFree": "10%",
+				},
+				EvictionSoftGracePeriod: map[string]metav1.Duration{
+					"memory.available": {Duration: 90 * time.Second},
+				},
+				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+			}
+
+			config, err := configureKubeletConfig(nodeClass)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(*config.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
+			Expect(*config.SoftEvictionThreshold.NodeFsAvailable).To(Equal("15%"))
+			Expect(*config.SoftEvictionThreshold.NodeFsInodesFree).To(Equal("10%"))
+			Expect(*config.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("1m30s"))
+			Expect(*config.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
 		})
 
 	})

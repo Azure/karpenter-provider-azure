@@ -18,6 +18,7 @@ package integration_test
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
@@ -41,6 +42,13 @@ var _ = Describe("KubeletConfig", func() {
 				"nodefs.available":  "12%",
 				"nodefs.inodesFree": "7%",
 			},
+			EvictionSoft: map[string]v1beta1.EvictionSoftValue{
+				"memory.available": "500Mi",
+			},
+			EvictionSoftGracePeriod: map[string]metav1.Duration{
+				"memory.available": {Duration: 90 * time.Second},
+			},
+			EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 		}
 
 		pod := coretest.UnschedulablePod()
@@ -61,6 +69,9 @@ var _ = Describe("KubeletConfig", func() {
 		Expect(flags).To(ContainSubstring("memory.available<333Mi"))
 		Expect(flags).To(ContainSubstring("nodefs.available<12%"))
 		Expect(flags).To(ContainSubstring("nodefs.inodesFree<7%"))
+		Expect(flags).To(ContainSubstring("--eviction-soft="))
+		Expect(flags).To(ContainSubstring("memory.available<500Mi"))
+		Expect(flags).To(ContainSubstring("--eviction-max-pod-grace-period=120"))
 	})
 })
 

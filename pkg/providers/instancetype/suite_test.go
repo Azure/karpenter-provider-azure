@@ -1290,6 +1290,10 @@ var _ = Describe("InstanceType Provider", func() {
 					EvictionHard: map[string]v1beta1.EvictionHardValue{
 						"memory.available": "333Mi",
 					},
+					EvictionSoft: map[string]v1beta1.EvictionSoftValue{
+						"memory.available": "444Mi",
+					},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 					KubeReserved: map[string]v1beta1.KubeReservedValue{
 						"cpu":    "250m",
 						"memory": "512Mi",
@@ -1305,8 +1309,9 @@ var _ = Describe("InstanceType Provider", func() {
 				kubeletFlags := ExpectKubeletFlagsPassed(customData)
 				// Customer eviction-hard override wins for memory.available.
 				Expect(kubeletFlags).To(ContainSubstring("memory.available<333Mi"))
-				// Hardening's soft eviction and enforcement flags remain untouched.
-				ExpectSoftEvictionThresholds(customData, "500Mi")
+				// Customer soft-eviction and max-pod-grace overrides win over the hardened baseline.
+				ExpectSoftEvictionThresholds(customData, "444Mi")
+				Expect(kubeletFlags).To(ContainSubstring("eviction-max-pod-grace-period=120"))
 				Expect(kubeletFlags).To(ContainSubstring("enforce-node-allocatable=pods,kube-reserved,system-reserved"))
 				// Customer kube-reserved values win per key; pid inherits from
 				// the hardened baseline (KubeReservedPIDs).

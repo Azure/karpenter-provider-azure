@@ -389,6 +389,7 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 
 func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
 	if len(overrides) > 0 {
+		// Values are validated at CRD admission; an unexpected parse failure here falls back to the computed default.
 		if value, ok := overrides[0][MemoryAvailable]; ok {
 			if strings.HasSuffix(value, "%") {
 				if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {

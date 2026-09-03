@@ -462,6 +462,26 @@ type KubeletConfiguration struct {
 	// +optional
 	//nolint:kubeapilinter // ssatags: server-side apply is not used for kubelet eviction maps
 	EvictionHard map[string]EvictionHardValue `json:"evictionHard,omitempty"`
+	// EvictionSoft maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to quantities and overrides Karpenter's soft eviction thresholds per key.
+	// It matches AKS `kubeletConfig.softEvictionThreshold`. Each soft threshold must be paired with a grace period in evictionSoftGracePeriod.
+	// +kubebuilder:validation:MaxProperties=3
+	// +kubebuilder:validation:XValidation:rule="self.all(key, key == 'memory.available' || key == 'nodefs.available' || key == 'nodefs.inodesFree')",message="evictionSoft supports only memory.available, nodefs.available, and nodefs.inodesFree"
+	// +kubebuilder:validation:XValidation:rule="self.all(key, key == 'nodefs.inodesFree' ? !self[key].endsWith('Ki') && !self[key].endsWith('Mi') && !self[key].endsWith('Gi') : self[key].endsWith('Ki') || self[key].endsWith('Mi') || self[key].endsWith('Gi') || self[key].endsWith('%'))",message="memory.available and nodefs.available must be integer Ki, Mi, or Gi quantities or percentages; nodefs.inodesFree must be an integer count or percentage"
+	// +optional
+	//nolint:kubeapilinter // ssatags: server-side apply is not used for kubelet eviction maps
+	EvictionSoft map[string]EvictionSoftValue `json:"evictionSoft,omitempty"`
+	// EvictionSoftGracePeriod maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to grace periods and overrides Karpenter's defaults per key.
+	// It matches AKS `kubeletConfig.softEvictionGracePeriod`.
+	// +kubebuilder:validation:MaxProperties=3
+	// +kubebuilder:validation:XValidation:rule="self.all(key, key == 'memory.available' || key == 'nodefs.available' || key == 'nodefs.inodesFree')",message="evictionSoftGracePeriod supports only memory.available, nodefs.available, and nodefs.inodesFree"
+	// +optional
+	//nolint:kubeapilinter // ssatags,nodurations: metav1.Duration matches upstream kubelet types
+	EvictionSoftGracePeriod map[string]metav1.Duration `json:"evictionSoftGracePeriod,omitempty"`
+	// evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+	// It matches AKS `kubeletConfig.evictionMaxPodGracePeriodInSeconds`.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`
 }
 
 // +kubebuilder:validation:MaxLength=20
@@ -471,6 +491,10 @@ type KubeReservedValue string
 // +kubebuilder:validation:MaxLength=20
 // +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)?|([0-9]|[1-9][0-9]|100)%)$`
 type EvictionHardValue string
+
+// +kubebuilder:validation:MaxLength=20
+// +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)?|([0-9]|[1-9][0-9]|100)%)$`
+type EvictionSoftValue string
 
 // +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}
 type TransparentHugePageDefrag string

@@ -27,6 +27,7 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -451,6 +452,23 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) (*armcontainerservi
 		}
 		kubeletConfig.HardEvictionThreshold = hardEvictionThreshold
 	}
+	if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 {
+		softEvictionThreshold, err := configureAKSMachineSoftEviction(nodeClass.Spec.Kubelet.EvictionSoft)
+		if err != nil {
+			return nil, err
+		}
+		kubeletConfig.SoftEvictionThreshold = softEvictionThreshold
+	}
+	if len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 {
+		softEvictionGracePeriod, err := configureAKSMachineSoftEvictionGracePeriod(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod)
+		if err != nil {
+			return nil, err
+		}
+		kubeletConfig.SoftEvictionGracePeriod = softEvictionGracePeriod
+	}
+	if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
+		kubeletConfig.EvictionMaxPodGracePeriodInSeconds = lo.ToPtr(*nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod)
+	}
 
 	return kubeletConfig, nil
 }
@@ -496,6 +514,40 @@ func configureAKSMachineHardEviction(overrides map[string]v1beta1.EvictionHardVa
 			result.NodeFsInodesFree = lo.ToPtr(string(value))
 		default:
 			return nil, fmt.Errorf("evictionHard[%q] is not supported by the AKS Machine API", key)
+		}
+	}
+	return result, nil
+}
+
+func configureAKSMachineSoftEviction(overrides map[string]v1beta1.EvictionSoftValue) (*armcontainerservice.SoftEvictionThreshold, error) {
+	result := &armcontainerservice.SoftEvictionThreshold{}
+	for key, value := range overrides {
+		switch key {
+		case instancetype.MemoryAvailable:
+			result.MemoryAvailable = lo.ToPtr(string(value))
+		case instancetype.NodeFSAvailable:
+			result.NodeFsAvailable = lo.ToPtr(string(value))
+		case instancetype.NodeFSInodesFree:
+			result.NodeFsInodesFree = lo.ToPtr(string(value))
+		default:
+			return nil, fmt.Errorf("evictionSoft[%q] is not supported by the AKS Machine API", key)
+		}
+	}
+	return result, nil
+}
+
+func configureAKSMachineSoftEvictionGracePeriod(overrides map[string]metav1.Duration) (*armcontainerservice.SoftEvictionGracePeriod, error) {
+	result := &armcontainerservice.SoftEvictionGracePeriod{}
+	for key, value := range overrides {
+		switch key {
+		case instancetype.MemoryAvailable:
+			result.MemoryAvailable = lo.ToPtr(value.Duration.String())
+		case instancetype.NodeFSAvailable:
+			result.NodeFsAvailable = lo.ToPtr(value.Duration.String())
+		case instancetype.NodeFSInodesFree:
+			result.NodeFsInodesFree = lo.ToPtr(value.Duration.String())
+		default:
+			return nil, fmt.Errorf("evictionSoftGracePeriod[%q] is not supported by the AKS Machine API", key)
 		}
 	}
 	return result, nil
