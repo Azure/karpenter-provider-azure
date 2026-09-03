@@ -53,7 +53,8 @@ import (
 )
 
 const (
-	InstanceTypesCacheTTL = 23 * time.Hour
+	InstanceTypesCacheTTL      = 23 * time.Hour
+	skuRetirementHorizonMonths = 6
 )
 
 // instanceTypeParameters contains the resolved set of AKSNodeClass fields that affect
@@ -460,8 +461,13 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 
 	skus := cache.List(ctx, skewer.ResourceTypeFilter("virtualMachines"))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
+	now := time.Now().UTC()
+	retirementCutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, skuRetirementHorizonMonths, 0)
 	for i := range skus {
 		if IsRestrictedSKU(skus[i].GetName()) {
+			continue
+		}
+		if isRetired(ctx, &skus[i], retirementCutoff) {
 			continue
 		}
 		vmsize, err := skus[i].GetVMSize()
@@ -488,6 +494,17 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	}
 	p.instanceTypesInfo = instanceTypes
 	return nil
+}
+
+// isRetired returns true if the specified SKU has a retirement date that is before the retirement cutoff.
+func isRetired(ctx context.Context, sku *skewer.SKU, retirementCutoff time.Time) bool {
+	retirementDate, err := sku.GetRetirementDate()
+	if err != nil {
+		log.FromContext(ctx).Error(err, "parsing SKU retirement date", "vmSize", sku.GetSize())
+		// We don't understand the format of the retirement entry, so assume it is not retied and don't filter it for safety
+		return false
+	}
+	return retirementDate != nil && retirementDate.Before(retirementCutoff)
 }
 
 // logUnknownSKUFamilies logs VM SKU families that were discovered from the Azure API
