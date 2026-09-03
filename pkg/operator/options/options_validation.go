@@ -129,6 +129,9 @@ func (o *Options) validateProvisionMode() error {
 	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
 		return o.validateAKSMachineProvisionMode()
 	case consts.ProvisionModeFleet:
+		if o.UseSIG {
+			return fmt.Errorf("use-sig is not supported when provision-mode is fleet")
+		}
 		return o.validateBatchOptions()
 	}
 	return nil

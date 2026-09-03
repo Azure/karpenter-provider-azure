@@ -473,6 +473,20 @@ var _ = Describe("Options", func() {
 			Expect(opts.IsFleetMode()).To(BeTrue())
 			Expect(opts.IsAKSMachineAPIMode()).To(BeFalse())
 		})
+		It("should reject fleet provision mode when use-sig is enabled", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--provision-mode", "fleet",
+				"--use-sig",
+			)
+			Expect(err).To(MatchError(ContainSubstring("use-sig is not supported when provision-mode is fleet")))
+		})
 		It("should fail if use-sig is enabled, but sig-access-token-server-url is not set", func() {
 			err := opts.Parse(
 				fs,

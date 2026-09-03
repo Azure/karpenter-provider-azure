@@ -1,4 +1,4 @@
-# Azure Compute Fleet Batching for Karpenter - Final Design
+# Azure Compute Fleet Batching for Karpenter
 
 **Author:** Abhijeet Warhekar
 
@@ -6,9 +6,9 @@
 
 ## Overview
 
-Today, when Karpenter scales up a cluster, it fires one VM PUT call per NodeClaim. A burst of 50 pods needing new nodes means 50 independent API calls, each negotiating capacity on its own, each subject to throttling, and none taking advantage of Azure's multi-SKU allocation intelligence.
+Today, when Karpenter scales up a cluster, it fires one VM PUT call per NodeClaim in `scriptless` mode. A burst of 50 pods needing new nodes means 50 independent API calls, each negotiating capacity on its own, each subject to throttling, and none taking advantage of Azure's multi-SKU allocation intelligence.
 
-This design introduces the **Azure Compute Fleet API** (`Microsoft.AzureFleet/fleets`) as a transparent batching layer between Karpenter and the Azure compute platform. Instead of N individual VM PUT calls, the cloud provider groups compatible Create requests and provisions them in a single Fleet PUT. Fleet natively handles multi-SKU selection, zone placement, and capacity optimization - capabilities that are impossible to replicate with individual VM calls.
+This design introduces the **Azure Compute Fleet API** (`Microsoft.AzureFleet/fleets`) as a transparent batching layer between Karpenter and the Azure compute platform, similar to the approach used by [AKS Machines batch creation](./0010-aks-machines-batch-creation.md). Instead of N individual VM PUT calls, the cloud provider groups compatible Create requests and provisions them in a single Fleet PUT. Fleet natively handles multi-SKU selection, zone placement, and capacity optimization - capabilities that are impossible to replicate with individual VM calls.
 
 Fleet integration is selected cluster-wide via `PROVISION_MODE=fleet`. It is purely additive: existing single-VM provisioning paths remain unchanged and are the default. No per-NodePool or per-AKSNodeClass toggle is introduced.
 
@@ -88,7 +88,7 @@ A periodic singleton reconcile controller that applies the `nodeclaim-name` owne
 3. PATCHes `karpenter.azure.com_nodeclaim-name` onto each assigned-but-untagged VM whose ProviderID maps to a live NodeClaim
 4. Leaves surplus VMs (those with no ProviderID match) untagged - they are reclaimed by Instance GC
 
-**Purpose:** External visibility from the Azure portal/CLI side. Operators can identify which NodeClaim owns a VM without needing cluster access. This tag is **never used for GC decisions** - all garbage collection is ProviderID-based.
+**Purpose:** This tag is only for operator debugging through the Azure portal or CLI. It lets operators identify which NodeClaim owns a VM without cluster access, but it is never used for assignment, lifecycle correctness, or GC decisions. All garbage collection is ProviderID-based.
 
 ---
 
@@ -127,9 +127,9 @@ Spot and Regular NodeClaims always land in separate Fleets because the capacity 
 
 ## VM-to-NodeClaim Assignment
 
-After the Fleet PUT succeeds and VMs are listed, the executor must pair VMs back to NodeClaims. This post-creation assignment step is unique to Fleet (in single-VM mode, the 1:1 mapping is implicit).
+After the Fleet PUT succeeds and VMs are listed, the executor must pair VMs back to NodeClaims. This post-creation assignment step is unique to Fleet (in single-VM mode, the 1:1 mapping is implicit because the VM name matches the NodeClaim name).
 
-The algorithm is **pure FIFO**: the Nth request (in submission order) is paired with the Nth well-formed VM (in list order). No re-matching by SKU or zone is performed.
+The algorithm is **pure FIFO**: the Nth request (in submission order) is paired with the Nth well-formed VM (in list order). No re-matching by SKU or zone is performed because the pairing records ownership rather than selecting placement.
 
 **Data structures:**
 
@@ -148,7 +148,7 @@ FleetAssignment {
 }
 ```
 
-**Why FIFO is correct:** Fleet selects SKU and zone per its allocation strategy from the same candidate list (vmSizesProfile + zones) that every request in the batch shares. Since all requests in a batch produced identical Fleet bodies at capacity=1, every VM in the batch is an acceptable answer for any request. Re-matching by (SKU, zone) would add complexity without improving correctness.
+**Why FIFO is correct:** Fleet selects each VM's concrete SKU and zone from the same candidate lists (`vmSizesProfile` and zones) shared by every request in the batch. Since all requests in a batch produced identical Fleet bodies at capacity=1, every VM returned for that Fleet satisfies the inputs of every request, even when Fleet chooses different SKUs or zones for individual VMs. Re-matching by SKU or zone would add complexity without improving correctness.
 
 **Zone/SKU derivation:** The specific SKU and zone assigned to each VM are read from the Fleet `ListVirtualMachines` API response - `VMSize` and `Zone` fields per VM. Karpenter never assumes what was requested; it always reports what Fleet actually chose. The AKS-label zone is constructed from the numeric ARM zone + Location (e.g., ARM zone "1" in eastus becomes `eastus-1`).
 
@@ -196,7 +196,7 @@ This is the only tag that cannot be set at Fleet creation time. The Fleet provis
 After assignment, the VM may still be in `Creating` state. Without polling, `Wait()` would return immediately, core would set `Launched=true`, and Karpenter would wait for the kubelet to register a Node. If the VM subsequently fails provisioning, the failure is invisible: the NodeClaim sits in `Launched` for 15 minutes until the registration TTL expires, the ICE cache is never updated (so the same SKU/zone may be retried), and operators get no error code in logs.
 
 **With polling:**
-- Polls `GET /virtualMachines/{name}?$expand=instanceView` every 5 seconds (exponential backoff)
+- Polls `GET /virtualMachines/{name}?$expand=instanceView` with exponential backoff starting at 5 seconds and capped at 30 seconds between requests
 - **On `Succeeded`:** Updates `.VM` with the full VM object (Tags, TimeCreated, ImageReference, ProvisioningState). Flow proceeds normally - `Launched=true`, kubelet boots, Node registers.
 - **On `Failed`:** Parses the ARM error code → marks the SKU/zone unavailable in the ICE cache → `Cleanup()` deletes the failed VM → error returned so the NodeClaim is retried immediately with updated offerings. Failure detection takes ~5-60 seconds instead of 15 minutes.
 
@@ -218,14 +218,14 @@ If a NodeClaim is deleted while its Fleet PUT is in-flight, the resulting VM bec
 
 ## Crash Recovery
 
-If the Karpenter pod restarts during in-flight Fleet operations, no in-memory state is needed for recovery:
+If the Karpenter pod restarts during in-flight Fleet operations, the in-memory VM-to-NodeClaim assignments are lost. This is a tradeoff from delegating VM naming and placement to Fleet: unlike single-VM mode, Karpenter cannot reconstruct an uncommitted assignment from a VM name. VMs created before the crash can therefore remain unassigned until Instance GC reclaims them after its standard grace period.
 
 - **Fleet + VMs remain in ARM:** They are durable cloud resources discoverable via tags and resource group listing.
 - **Surplus/unassigned VMs:** Reclaimed by Instance GC after the standard grace period. No persisted in-flight state is required.
 - **Empty Fleet shells:** Auto-deleted by Azure (Launch mode).
 - **NodeClaim re-discovery:** `NodeClaim.Status.ProviderID` connects the cluster-side object back to the ARM VM for diagnostics and lifecycle operations.
 
-GC-based cleanup is sufficient for crash recovery; persisted state or resume logic is not a GA requirement.
+GC-based cleanup is sufficient for crash recovery, but it accepts temporary VM leakage until GC runs. Persisted state or resume logic is not a GA requirement.
 
 ---
 
@@ -291,12 +291,3 @@ Fleet mode does not support NAP (`USE_SIG=false`). Only self-hosted Community Ga
 3. **Fleet "Maintain capacity" mode** - conflicts with Karpenter's lifecycle ownership model (Karpenter manages disruption/replacement, not Fleet)
 4. **Per-VM SKU/zone specification** - Fleet picks from the candidate list, Karpenter does not override individual placements
 5. **VMSS-based placement management** - Fleet uses VMSS Flex internally for ICG/ICB SKUs, but Karpenter does not manage or reference the VMSS directly
-
----
-
-## Open Questions (Remaining)
-
-| # | Question |
-|---|---|
-| 1| Per-subscription concurrent-fleet quota in target regions? |
-| 2 | AKSNodeClass.Spec.SpotMaxPrice override fleet-level maxPrice? |
