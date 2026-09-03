@@ -262,10 +262,11 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			Context("Validation Succeeded", func() {
-				// An already launched NodeClaim must not be disrupted just because the NodeClass
-				// stopped being Ready: image family / Kubernetes version incompatibility is a
-				// forward-looking provisioning constraint, and treating it as drift would
-				// replace healthy nodes with nodes that cannot be provisioned at all.
+				// Proves drift is not derived from the ValidationSucceeded condition or from
+				// aggregate NodeClass readiness: a NodeClass that has gone NotReady for a
+				// forward-looking provisioning constraint must not, on its own, disrupt an
+				// already launched NodeClaim. Spec edits that change the NodeClass hash are a
+				// separate drift path and are covered elsewhere.
 				It("should succeed with no drift when ValidationSucceeded is false for image family incompatibility", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 					nodeClass.StatusConditions().SetFalse(
@@ -311,6 +312,7 @@ var _ = Describe("CloudProvider", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(BeEmpty())
 				})
+
 				It("should trigger drift if NodeClass subnet changed", func() {
 					testSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/my-subnet"
 					nodeClass.Spec.VNETSubnetID = lo.ToPtr(testSubnetID)

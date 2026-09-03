@@ -66,13 +66,13 @@ func setKubernetesVersionReady(nodeClass *v1beta1.AKSNodeClass, kubernetesVersio
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 }
 
-// newAuthorizationError returns the 403 the DES API surfaces when the controlling identity
-// lacks the Reader role, matching the shape asserted by the DES RBAC cases below.
-func newAuthorizationError() error {
+// newAuthorizationError returns the authorization failure the DES API surfaces when the
+// controlling identity lacks the Reader role, for the DES RBAC cases below.
+func newAuthorizationError(statusCode int) error {
 	return &azcore.ResponseError{
-		StatusCode: http.StatusForbidden,
+		StatusCode: statusCode,
 		RawResponse: &http.Response{
-			StatusCode: http.StatusForbidden,
+			StatusCode: statusCode,
 		},
 	}
 }
@@ -361,8 +361,9 @@ var _ = Describe("Validation Reconciler", func() {
 			Entry("generic Ubuntu with DES access", lo.ToPtr(v1beta1.UbuntuImageFamily), nil, true, ""),
 			Entry("unset image family with DES access", nil, nil, true, ""),
 			Entry("AzureLinux with DES access", lo.ToPtr(v1beta1.AzureLinuxImageFamily), nil, true, ""),
-			Entry("generic Ubuntu without DES access", lo.ToPtr(v1beta1.UbuntuImageFamily), newAuthorizationError(), false, status.DiskEncryptionSetRBACMissing),
-			Entry("AzureLinux without DES access", lo.ToPtr(v1beta1.AzureLinuxImageFamily), newAuthorizationError(), false, status.DiskEncryptionSetRBACMissing),
+			Entry("generic Ubuntu without DES access", lo.ToPtr(v1beta1.UbuntuImageFamily), newAuthorizationError(http.StatusForbidden), false, status.DiskEncryptionSetRBACMissing),
+			Entry("unset image family without DES access", nil, newAuthorizationError(http.StatusForbidden), false, status.DiskEncryptionSetRBACMissing),
+			Entry("AzureLinux without DES access", lo.ToPtr(v1beta1.AzureLinuxImageFamily), newAuthorizationError(http.StatusForbidden), false, status.DiskEncryptionSetRBACMissing),
 		)
 
 		It("should return an error when the Kubernetes version is malformed and should not use the incompatibility reason", func() {
@@ -443,12 +444,7 @@ var _ = Describe("Validation Reconciler", func() {
 		It("should set ValidationSucceeded to false and requeue soon when DES RBAC check fails with 403", func() {
 			// Configure fake client to return 403 Forbidden
 			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
-				return armcompute.DiskEncryptionSetsClientGetResponse{}, &azcore.ResponseError{
-					StatusCode: http.StatusForbidden,
-					RawResponse: &http.Response{
-						StatusCode: http.StatusForbidden,
-					},
-				}
+				return armcompute.DiskEncryptionSetsClientGetResponse{}, newAuthorizationError(http.StatusForbidden)
 			}
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
@@ -464,12 +460,7 @@ var _ = Describe("Validation Reconciler", func() {
 		It("should set ValidationSucceeded to false and requeue soon when DES RBAC check fails with 401", func() {
 			// Configure fake client to return 401 Unauthorized
 			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
-				return armcompute.DiskEncryptionSetsClientGetResponse{}, &azcore.ResponseError{
-					StatusCode: http.StatusUnauthorized,
-					RawResponse: &http.Response{
-						StatusCode: http.StatusUnauthorized,
-					},
-				}
+				return armcompute.DiskEncryptionSetsClientGetResponse{}, newAuthorizationError(http.StatusUnauthorized)
 			}
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
@@ -498,12 +489,7 @@ var _ = Describe("Validation Reconciler", func() {
 			shouldFail := true
 			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
 				if shouldFail {
-					return armcompute.DiskEncryptionSetsClientGetResponse{}, &azcore.ResponseError{
-						StatusCode: http.StatusForbidden,
-						RawResponse: &http.Response{
-							StatusCode: http.StatusForbidden,
-						},
-					}
+					return armcompute.DiskEncryptionSetsClientGetResponse{}, newAuthorizationError(http.StatusForbidden)
 				}
 				return armcompute.DiskEncryptionSetsClientGetResponse{
 					DiskEncryptionSet: armcompute.DiskEncryptionSet{
