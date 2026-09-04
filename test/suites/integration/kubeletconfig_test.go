@@ -71,6 +71,8 @@ var _ = Describe("KubeletConfig", func() {
 		Expect(flags).To(ContainSubstring("nodefs.inodesFree<7%"))
 		Expect(flags).To(ContainSubstring("--eviction-soft="))
 		Expect(flags).To(ContainSubstring("memory.available<500Mi"))
+		Expect(flags).To(ContainSubstring("--eviction-soft-grace-period="))
+		Expect(flags).To(ContainSubstring("memory.available=1m30s"))
 		Expect(flags).To(ContainSubstring("--eviction-max-pod-grace-period=120"))
 	})
 })

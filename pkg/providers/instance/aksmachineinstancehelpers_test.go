@@ -688,7 +688,9 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					"nodefs.inodesFree": "10%",
 				},
 				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					"memory.available": {Duration: 90 * time.Second},
+					"memory.available":  {Duration: 90 * time.Second},
+					"nodefs.available":  {Duration: 2 * time.Minute},
+					"nodefs.inodesFree": {Duration: 2 * time.Minute},
 				},
 				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 			}
@@ -705,6 +707,8 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(*config.SoftEvictionThreshold.NodeFsAvailable).To(Equal("15%"))
 			Expect(*config.SoftEvictionThreshold.NodeFsInodesFree).To(Equal("10%"))
 			Expect(*config.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("1m30s"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsAvailable).To(Equal("2m0s"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsInodesFree).To(Equal("2m0s"))
 			Expect(*config.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
 		})
 

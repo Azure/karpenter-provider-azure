@@ -124,7 +124,7 @@ func TestOverlayKubeletConfiguration(t *testing.T) {
 		KubeReserved:              map[string]string{"cpu": "100m", "memory": "1Gi"},
 		EvictionHard:              map[string]string{"memory.available": "750Mi", "nodefs.available": "10%"},
 		EvictionSoft:              map[string]string{"memory.available": "1Gi", "nodefs.available": "12%"},
-		EvictionSoftGracePeriod:   map[string]metav1.Duration{"memory.available": {Duration: 30 * time.Second}},
+		EvictionSoftGracePeriod:   map[string]metav1.Duration{"memory.available": {Duration: 30 * time.Second}, "nodefs.available": {Duration: 2 * time.Minute}},
 		EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
 	}
 	overrides := &v1beta1.KubeletConfiguration{
@@ -141,6 +141,6 @@ func TestOverlayKubeletConfiguration(t *testing.T) {
 	g.Expect(configuration.KubeReserved).To(Equal(map[string]string{"cpu": "250m", "memory": "1Gi"}))
 	g.Expect(configuration.EvictionHard).To(Equal(map[string]string{"memory.available": "333Mi", "nodefs.available": "10%"}))
 	g.Expect(configuration.EvictionSoft).To(Equal(map[string]string{"memory.available": "444Mi", "nodefs.available": "12%"}))
-	g.Expect(configuration.EvictionSoftGracePeriod).To(Equal(map[string]metav1.Duration{"memory.available": {Duration: 90 * time.Second}}))
+	g.Expect(configuration.EvictionSoftGracePeriod).To(Equal(map[string]metav1.Duration{"memory.available": {Duration: 90 * time.Second}, "nodefs.available": {Duration: 2 * time.Minute}}))
 	g.Expect(*configuration.EvictionMaxPodGracePeriod).To(Equal(int32(120)))
 }
