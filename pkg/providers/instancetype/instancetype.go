@@ -187,6 +187,8 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular, v1beta1.PrioritySpot),
 		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(params.ImageFamily)),
 		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist), // AKS only sets this label if FIPS is enabled, otherwise it's expected to be empty
+		// AKS only stamps the Kata label when the Pod Sandboxing workloadRuntime is requested; otherwise expected to be absent.
+		scheduling.NewRequirement(v1beta1.AKSLabelKataVMIsolation, corev1.NodeSelectorOpDoesNotExist),
 
 		// composites
 		scheduling.NewRequirement(v1beta1.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
@@ -217,6 +219,11 @@ func computeRequirements(
 	setRequirementsVersion(requirements, vmsize)
 	if params.FIPSMode == v1beta1.FIPSModeFIPS {
 		requirements[v1beta1.AKSLabelFIPSEnabled].Insert("true")
+	}
+	// Advertise the Kata node label AKS will stamp so Karpenter can scale up for pending pods that
+	// select it.
+	if params.KataEnabled {
+		requirements[v1beta1.AKSLabelKataVMIsolation].Insert("true")
 	}
 
 	return requirements

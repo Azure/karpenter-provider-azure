@@ -64,6 +64,7 @@ type ProvisionClientBootstrap struct {
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	GPUDriverInstallationEnabled   bool
 	FIPSMode                       *v1beta1.FIPSMode
+	WorkloadRuntime                *v1beta1.WorkloadRuntime
 	LocalDNSProfile                *v1beta1.LocalDNS
 	ArtifactStreaming              *v1beta1.ArtifactStreaming
 	LinuxOSConfig                  *v1beta1.LinuxOSConfiguration
@@ -140,7 +141,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		CustomLinuxOSConfig: convertLinuxOSConfigToModel(p.LinuxOSConfig),
 		EnableFIPS:          lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
-		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
+		// WorkloadRuntime is left unset for the default OCIContainer case so existing payloads are
+		// unchanged; it is only sent when Pod Sandboxing (Kata) is requested.
+		WorkloadRuntime: convertWorkloadRuntimeToModel(p.WorkloadRuntime),
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},
@@ -210,4 +213,14 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
 	}, nil
+}
+
+// convertWorkloadRuntimeToModel maps the AKSNodeClass workloadRuntime onto the node bootstrapping
+// contract's WorkloadRuntime enum. It returns nil for the default OCIContainer case so non-Kata
+// NodeClasses keep their existing wire payload.
+func convertWorkloadRuntimeToModel(workloadRuntime *v1beta1.WorkloadRuntime) *int32 {
+	if lo.FromPtr(workloadRuntime) == v1beta1.WorkloadRuntimeKataVMIsolation {
+		return lo.ToPtr(models.WorkloadRuntimeKataVMIsolation)
+	}
+	return nil
 }

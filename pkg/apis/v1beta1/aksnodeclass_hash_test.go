@@ -70,6 +70,7 @@ var _ = Describe("Hash", func() {
 
 		// Static fields, expect changed hash from base
 		Entry("VNETSubnetID", "13971920214979852468", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("WorkloadRuntime", "13352508654154828139", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{WorkloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)}}),
 		Entry("OSDiskSizeGB", "7816855636861645563", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", "15616969746300892810", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", "33638514539106194", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
@@ -117,6 +118,23 @@ var _ = Describe("Hash", func() {
 			Spec: nodeClass.Spec,
 		}
 		Expect(nodeClass.Hash()).To(Equal(otherNodeClass.Hash()))
+	})
+	// workloadRuntime OCIContainer is the default and means "no additional runtime", so it must hash
+	// the same as the field being absent. This is what lets the field carry a server-side default
+	// without bumping AKSNodeClassHashVersion: the default landing on an existing AKSNodeClass, or a
+	// user explicitly writing it, must not drift nodes. Kata must still drift them.
+	It("should not change hash when workloadRuntime is explicitly set to the OCIContainer default", func() {
+		Expect(nodeClass.Spec.WorkloadRuntime).To(BeNil())
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+	})
+	It("should change hash when workloadRuntime is KataVmIsolation", func() {
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+		Expect(nodeClass.Hash()).ToNot(Equal(hash))
 	})
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
