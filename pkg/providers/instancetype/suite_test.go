@@ -2398,10 +2398,10 @@ var _ = Describe("InstanceType Provider", func() {
 					}
 				},
 				Entry("retains a SKU without a retirement date", nil, true),
-			Entry("retains a SKU retiring in more than six months", lo.ToPtr(time.Now().UTC().AddDate(0, 7, 0).Format("01/02/2006")), true),
-			Entry("retains a SKU retiring in exactly six months", lo.ToPtr(time.Now().UTC().AddDate(0, 6, 0).Format("01/02/2006")), true),
-			Entry("filters a SKU retiring with less than six months", lo.ToPtr(time.Now().UTC().AddDate(0, 5, 0).Format("01/02/2006")), false),
-			Entry("filters an already retired SKU", lo.ToPtr(time.Now().UTC().AddDate(0, -1, 0).Format("01/02/2006")), false),
+				Entry("retains a SKU retiring in more than six months", lo.ToPtr(time.Now().UTC().AddDate(0, 7, 0).Format("01/02/2006")), true),
+				Entry("retains a SKU retiring in exactly six months", lo.ToPtr(time.Now().UTC().AddDate(0, 6, 0).Format("01/02/2006")), true),
+				Entry("filters a SKU retiring with less than six months", lo.ToPtr(time.Now().UTC().AddDate(0, 5, 0).Format("01/02/2006")), false),
+				Entry("filters an already retired SKU", lo.ToPtr(time.Now().UTC().AddDate(0, -1, 0).Format("01/02/2006")), false),
 				Entry("retains a SKU with an invalid retirement date", lo.ToPtr("not-a-date"), true),
 			)
 		})
