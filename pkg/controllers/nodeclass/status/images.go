@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -174,6 +175,16 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
 		logger.Info("new available images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
 	}
+
+	recentlyUsed := lo.Map(nodeClass.Status.Images, func(image v1beta1.NodeImage, _ int) v1beta1.RecentlyUsedVersion {
+		return v1beta1.RecentlyUsedVersion{
+			TimestampUsed:     lo.ToPtr(metav1.Now()),
+			KubernetesVersion: nodeClass.Status.KubernetesVersion,
+			ImageVersion:      lo.ToPtr(parseVersion(image.ID)),
+		}
+	})
+	nodeClass.Status.Versions.RecentlyUsedVersions = recentlyUsed
+
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -303,4 +314,23 @@ func trimVersionSuffix(imageID string) string {
 	imageIDParts := strings.Split(imageID, "/")
 	baseID := strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
 	return baseID
+}
+
+// Trims off the version prefix, and leaves just the image version
+// Examples:
+//
+// - CIG:
+//   - Input: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+//
+// - SIG:
+//   - Input: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+func parseVersion(imageID string) string {
+	imageIDParts := strings.Split(imageID, "/")
+	if len(imageIDParts) < 2 {
+		return ""
+	}
+	version := imageIDParts[len(imageIDParts)-1]
+	return version
 }
