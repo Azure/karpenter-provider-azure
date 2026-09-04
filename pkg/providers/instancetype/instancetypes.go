@@ -53,7 +53,8 @@ import (
 )
 
 const (
-	InstanceTypesCacheTTL = 23 * time.Hour
+	InstanceTypesCacheTTL      = 23 * time.Hour
+	skuRetirementHorizonMonths = 6
 )
 
 // instanceTypeParameters contains the resolved set of AKSNodeClass fields that affect
@@ -69,6 +70,7 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+	KataEnabled              bool
 }
 
 type instanceTypesSourceDataGeneration struct {
@@ -154,6 +156,7 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
@@ -347,7 +350,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
-		p.isInstanceTypeSupportedByTrustedLaunch(sku, params)
+		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
+		p.isInstanceTypeSupportedByKata(sku, architecture, params)
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
@@ -364,6 +368,20 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByKata(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
+	// If a Kata workload runtime is not requested, all instance types are supported.
+	if !params.KataEnabled {
+		return true
+	}
+	// The only Kata image variants AKS publishes today are amd64 (see imagefamily/azlinux3.go).
+	// Advertising an arm64 SKU as Kata-capable would fail late at image resolution instead of
+	// simply not being offered. Drop this condition when an arm64 Kata image ships.
+	if getArchitecture(architecture) != karpv1.ArchitectureAmd64 {
+		return false
+	}
+	return sku.IsNestedVirtualizationSupported()
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {
@@ -460,8 +478,13 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 
 	skus := cache.List(ctx, skewer.ResourceTypeFilter("virtualMachines"))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
+	now := time.Now().UTC()
+	retirementCutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, skuRetirementHorizonMonths, 0)
 	for i := range skus {
 		if IsRestrictedSKU(skus[i].GetName()) {
+			continue
+		}
+		if isRetired(ctx, &skus[i], retirementCutoff) {
 			continue
 		}
 		vmsize, err := skus[i].GetVMSize()
@@ -488,6 +511,17 @@ func (p *DefaultProvider) UpdateInstanceTypes(ctx context.Context) error {
 	}
 	p.instanceTypesInfo = instanceTypes
 	return nil
+}
+
+// isRetired returns true if the specified SKU has a retirement date that is before the retirement cutoff.
+func isRetired(ctx context.Context, sku *skewer.SKU, retirementCutoff time.Time) bool {
+	retirementDate, err := sku.GetRetirementDate()
+	if err != nil {
+		log.FromContext(ctx).Error(err, "parsing SKU retirement date", "vmSize", sku.GetSize())
+		// We don't understand the format of the retirement entry, so assume it is not retired and don't filter it for safety
+		return false
+	}
+	return retirementDate != nil && retirementDate.Before(retirementCutoff)
 }
 
 // logUnknownSKUFamilies logs VM SKU families that were discovered from the Azure API
