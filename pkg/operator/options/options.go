@@ -103,9 +103,9 @@ type Options struct {
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 
 	AKSMachinesPoolName       string        `json:"aksMachinesPoolName,omitempty"`       // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision modes.
-	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"` // Idle duration for provider batch accumulation (default 1s). Only used on provision mode aksmachineapiheaderbatch.
-	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
-	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
+	ProviderBatchIdleDuration time.Duration `json:"providerBatchIdleDuration,omitempty"` // Idle duration for provider batch accumulation (default 1s). Used on batched provision modes.
+	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Used on batched provision modes.
+	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50). Used on batched provision modes.
 
 	ComputeRecommendationMode string `json:"computeRecommendationMode,omitempty"` // Controls compute recommendation API behavior: "disabled" (default), "log-only", or "enabled".
 
@@ -156,6 +156,11 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 // IsAKSMachineAPIMode returns true if the current provision mode creates instances via the AKS Machine API.
 func (o *Options) IsAKSMachineAPIMode() bool {
 	return o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ProvisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
+}
+
+// IsFleetMode returns true if the current provision mode uses Azure Compute Fleet.
+func (o *Options) IsFleetMode() bool {
+	return o.ProvisionMode == consts.ProvisionModeFleet
 }
 
 // ShouldUseNodeHardening returns the effective node hardening setting. Scriptless and AKS Machine

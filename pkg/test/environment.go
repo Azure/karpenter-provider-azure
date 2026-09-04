@@ -237,6 +237,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 		usageAPI,
+		// TODO: Replace with a fake FleetsAPI when Fleet behavior is covered by this test environment.
+		nil,
 		skuMixPlacementScoresAPI,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()

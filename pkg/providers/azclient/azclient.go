@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	armrecommender "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computefleet/armcomputefleet/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -57,6 +58,7 @@ type AZClient struct {
 	networkInterfacesClient        azapi.NetworkInterfacesAPI
 	subnetsClient                  azapi.SubnetsAPI
 	diskEncryptionSetsClient       azapi.DiskEncryptionSetsAPI
+	fleetsClient                   azapi.FleetsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -106,6 +108,10 @@ func (c *AZClient) AzureResourceGraphClient() azapi.AzureResourceGraphAPI {
 	return c.azureResourceGraphClient
 }
 
+func (c *AZClient) FleetsClient() azapi.FleetsAPI {
+	return c.fleetsClient
+}
+
 func NewAZClientFromAPI(
 	virtualMachinesClient azapi.VirtualMachinesAPI,
 	azureResourceGraphClient azapi.AzureResourceGraphAPI,
@@ -124,6 +130,7 @@ func NewAZClientFromAPI(
 	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
 	usageClient quota.UsageAPI,
+	fleetsClient azapi.FleetsAPI,
 	skuMixPlacementClient capacityrecommendation.SKUMixPlacementScoresAPI,
 ) *AZClient {
 	return &AZClient{
@@ -144,6 +151,7 @@ func NewAZClientFromAPI(
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 		SubscriptionsClient:            subscriptionsClient,
 		UsageClient:                    usageClient,
+		fleetsClient:                   fleetsClient,
 		SKUMixPlacementClient:          skuMixPlacementClient,
 	}
 }
@@ -300,6 +308,14 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		)
 	}
 
+	var fleetsClient azapi.FleetsAPI
+	if o.IsFleetMode() {
+		fleetsClient, err = armcomputefleet.NewFleetsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
@@ -318,6 +334,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		skuClient,
 		subscriptionsClient,
 		usageClient,
+		fleetsClient,
 		skuMixPlacementClient,
 	), nil
 }
