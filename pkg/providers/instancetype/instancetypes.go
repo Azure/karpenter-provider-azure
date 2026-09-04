@@ -501,7 +501,7 @@ func isRetired(ctx context.Context, sku *skewer.SKU, retirementCutoff time.Time)
 	retirementDate, err := sku.GetRetirementDate()
 	if err != nil {
 		log.FromContext(ctx).Error(err, "parsing SKU retirement date", "vmSize", sku.GetSize())
-		// We don't understand the format of the retirement entry, so assume it is not retied and don't filter it for safety
+		// We don't understand the format of the retirement entry, so assume it is not retired and don't filter it for safety
 		return false
 	}
 	return retirementDate != nil && retirementDate.Before(retirementCutoff)
