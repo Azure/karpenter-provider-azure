@@ -17,6 +17,8 @@ limitations under the License.
 package utils
 
 import (
+	"slices"
+
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -28,7 +30,7 @@ func ExtractTaints(nodeClaim *karpv1.NodeClaim) (generalTaints, startupTaints []
 	generalTaints = nodeClaim.Spec.Taints
 	startupTaints = nodeClaim.Spec.StartupTaints
 
-	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
+	allTaints := slices.Concat(generalTaints, startupTaints)
 
 	// Ensure UnregisteredNoExecuteTaint is present
 	if _, found := lo.Find(allTaints, func(t corev1.Taint) bool {

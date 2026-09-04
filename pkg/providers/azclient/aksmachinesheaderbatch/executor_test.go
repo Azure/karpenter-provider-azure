@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -73,9 +74,8 @@ func (r *recordingClient) BeginCreateOrUpdate(
 func (r *recordingClient) snapshot() []recordedCall {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]recordedCall, len(r.calls))
-	copy(out, r.calls)
-	return out
+
+	return slices.Clone(r.calls)
 }
 
 // ---------------------------------------------------------------------------

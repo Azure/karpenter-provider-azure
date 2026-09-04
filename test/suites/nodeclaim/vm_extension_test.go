@@ -44,7 +44,7 @@ var _ = Describe("VMExtension", func() {
 			}
 		}
 
-		installedExtensions := []string{}
+		installedExtensions := make([]string, 0, len(vm.Resources))
 		for _, ext := range vm.Resources {
 			installedExtensions = append(installedExtensions, lo.FromPtr(ext.Name))
 		}

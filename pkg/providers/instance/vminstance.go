@@ -446,7 +446,7 @@ func (p *DefaultVMProvider) createCSExtension(ctx context.Context, vmName string
 }
 
 func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
-	var ipv4BackendPools []*armnetwork.BackendAddressPool
+	ipv4BackendPools := make([]*armnetwork.BackendAddressPool, 0, len(opts.BackendPools.IPv4PoolIDs))
 	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
 		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
 			ID: &poolID,

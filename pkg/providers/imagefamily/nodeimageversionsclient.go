@@ -84,10 +84,11 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 		}
 	}
 
-	var filteredImages []*armcontainerservice.NodeImageVersion
+	filteredImages := make([]*armcontainerservice.NodeImageVersion, 0, len(latestImages))
 	for _, image := range latestImages {
 		filteredImages = append(filteredImages, image)
 	}
+
 	return filteredImages
 }
 

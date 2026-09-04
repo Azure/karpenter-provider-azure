@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -169,7 +170,13 @@ func (p *DefaultProvider) List(
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
 		// so that modifications to the ordering of the data don't affect the original
-		return append([]*cloudprovider.InstanceType{}, item.([]*cloudprovider.InstanceType)...), nil
+		types := item.([]*cloudprovider.InstanceType)
+		if len(types) > 0 {
+			return slices.Clone(types), nil
+		}
+
+		// Ensure we never return nil
+		return []*cloudprovider.InstanceType{}, nil
 	}
 
 	result := p.buildInstanceTypes(ctx, instanceTypeParams)
@@ -261,7 +268,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
 func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string]) cloudprovider.Offerings {
-	offerings := []*cloudprovider.Offering{}
+	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
 
 	for zone := range offeringZones {
 		placementScope := zones.PlacementScopeForZone(zone)

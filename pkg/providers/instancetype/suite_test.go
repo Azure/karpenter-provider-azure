@@ -3019,7 +3019,7 @@ var _ = Describe("InstanceType Provider", func() {
 					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
 					// end up with a new node for each scheduling attempt
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						results := []ProvisioningResult{}
+						results := make([]ProvisioningResult, 0, 3)
 						for range 3 {
 							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}
@@ -3066,7 +3066,7 @@ var _ = Describe("InstanceType Provider", func() {
 					// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
 					// end up with a new node for each scheduling attempt
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
-						results := []ProvisioningResult{}
+						results := make([]ProvisioningResult, 0, 3)
 						for range 3 {
 							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 						}

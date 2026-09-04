@@ -205,7 +205,7 @@ func TestProvider_SupportsZones_ThreadSafety(t *testing.T) {
 
 // createZonalLocation creates a location with availability zone mappings
 func createZonalLocation(name string, zones []string) armsubscriptions.Location {
-	var zoneMappings []*armsubscriptions.AvailabilityZoneMappings
+	zoneMappings := make([]*armsubscriptions.AvailabilityZoneMappings, 0, len(zones))
 	for _, zone := range zones {
 		zoneMappings = append(zoneMappings, &armsubscriptions.AvailabilityZoneMappings{
 			LogicalZone:  lo.ToPtr(zone),

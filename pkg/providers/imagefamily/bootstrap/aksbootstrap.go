@@ -462,11 +462,11 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 // joinParameterArgsToMap joins a map of keys and values by their separator. The separator will sit between the
 // arguments in a comma-separated list i.e. arg1<sep>val1,arg2<sep>val2
 func JoinParameterArgsToMap[K comparable, V any](result map[string]string, name string, m map[K]V, separator string) {
-	var args []string
-
+	args := make([]string, 0, len(m))
 	for k, v := range m {
 		args = append(args, fmt.Sprintf("%v%s%v", k, separator, v))
 	}
+
 	if len(args) > 0 {
 		result[name] = strings.Join(args, ",")
 	}
