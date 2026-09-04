@@ -60,7 +60,9 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
-// +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
+// +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch is required for FIPS support with Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && (self.imageFamily != 'Ubuntu2204' || (has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))))) : true"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -141,6 +143,16 @@ type AKSNodeClassSpec struct {
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
 }
 
+// TrustedLaunch configures Trusted Launch security features for provisioned nodes.
+type TrustedLaunch struct {
+	// vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+	// +optional
+	VTPM *bool `json:"vtpm,omitempty"`
+	// secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+	// +optional
+	SecureBoot *bool `json:"secureBoot,omitempty"`
+}
+
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
 type Security struct {
 	// encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
@@ -149,6 +161,9 @@ type Security struct {
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
+	// trustedLaunch specifies Trusted Launch settings for provisioned nodes.
+	// +optional
+	TrustedLaunch *TrustedLaunch `json:"trustedLaunch,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={Preferred,Required,Disabled}
@@ -723,6 +738,25 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+func (in *AKSNodeClass) IsVTPMEnabled() bool {
+	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.VTPM != nil {
+		return *in.Spec.Security.TrustedLaunch.VTPM
+	}
+	return false
+}
+
+func (in *AKSNodeClass) IsSecureBootEnabled() bool {
+	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.SecureBoot != nil {
+		return *in.Spec.Security.TrustedLaunch.SecureBoot
+	}
+	return false
+}
+
+// IsTrustedLaunchEnabled returns whether any Trusted Launch-backed setting is enabled.
+func (in *AKSNodeClass) IsTrustedLaunchEnabled() bool {
+	return in.IsVTPMEnabled() || in.IsSecureBootEnabled()
 }
 
 // IsArtifactStreamingEnabled returns whether artifact streaming should be enabled for this node class.

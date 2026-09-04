@@ -83,6 +83,12 @@ var (
 			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
+			FullName: new("AKSUbuntu-2204gen2fipsTLcontainerd-202512.18.0"),
+			OS:       new("AKSUbuntu"),
+			SKU:      new("2204gen2fipsTLcontainerd"),
+			Version:  new("202512.18.0"),
+		},
+		{
 			FullName: lo.ToPtr("AKSUbuntuEdgeZone-2204containerd-202512.18.0"),
 			OS:       lo.ToPtr("AKSUbuntuEdgeZone"),
 			SKU:      lo.ToPtr("2204containerd"),

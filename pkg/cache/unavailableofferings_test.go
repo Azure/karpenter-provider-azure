@@ -19,6 +19,7 @@ package cache
 import (
 	"context"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -236,4 +237,84 @@ func TestUnavailableOfferingsRestrictiveLimitPreservation(t *testing.T) {
 	for _, sku := range skus {
 		assertOfferingAvailable(t, u, sku, "westus-1", karpv1.CapacityTypeOnDemand, "Offering should not be marked as unavailable after cache expiration")
 	}
+}
+
+func TestUnavailableOfferingsSeqNumChangesOnlyWhenAvailabilityChanges(t *testing.T) {
+	singleInstanceCache := cache.New(time.Hour, time.Hour)
+	vmFamilyCache := cache.New(time.Hour, time.Hour)
+	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
+
+	nv8 := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+	nv16 := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+	nv24 := createTestSKU("Standard_NV24as_v4", "standardNVasv4Family", "NV24as_v4", 24)
+
+	u.MarkUnavailableWithTTL(context.TODO(), "test reason", nv16, "westus-1", karpv1.CapacityTypeOnDemand, time.Hour)
+	if got := u.SeqNum(); got != 1 {
+		t.Fatalf("expected first mark to advance one generation, got %d", got)
+	}
+
+	_, singleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey(nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, familyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey(nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	u.MarkUnavailableWithTTL(context.TODO(), "test reason", nv16, "westus-1", karpv1.CapacityTypeOnDemand, 2*time.Hour)
+	if got := u.SeqNum(); got != 1 {
+		t.Fatalf("expected duplicate mark to keep generation 1, got %d", got)
+	}
+	_, refreshedSingleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey(nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, refreshedFamilyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey(nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	if !refreshedSingleExpiration.After(singleExpiration) || !refreshedFamilyExpiration.After(familyExpiration) {
+		t.Fatal("expected duplicate mark to refresh both cache expirations")
+	}
+
+	u.MarkUnavailableWithTTL(context.TODO(), "test reason", nv24, "westus-1", karpv1.CapacityTypeOnDemand, time.Hour)
+	if got := u.SeqNum(); got != 1 {
+		t.Fatalf("expected redundant mark under stricter family limit to keep generation 1, got %d", got)
+	}
+
+	u.MarkUnavailableWithTTL(context.TODO(), "test reason", nv8, "westus-1", karpv1.CapacityTypeOnDemand, time.Hour)
+	if got := u.SeqNum(); got != 2 {
+		t.Fatalf("expected stricter family limit to advance generation to 2, got %d", got)
+	}
+
+	u.MarkFamilyUnavailable(context.TODO(), nv8, "westus-1", karpv1.CapacityTypeOnDemand, time.Hour)
+	if got := u.SeqNum(); got != 3 {
+		t.Fatalf("expected whole-family block to advance generation to 3, got %d", got)
+	}
+	u.MarkFamilyUnavailable(context.TODO(), nv8, "westus-1", karpv1.CapacityTypeOnDemand, time.Hour)
+	if got := u.SeqNum(); got != 3 {
+		t.Fatalf("expected duplicate whole-family block to keep generation 3, got %d", got)
+	}
+
+	u.MarkSpotUnavailableWithTTL(context.TODO(), time.Hour)
+	if got := u.SeqNum(); got != 4 {
+		t.Fatalf("expected first global spot block to advance generation to 4, got %d", got)
+	}
+	u.MarkSpotUnavailableWithTTL(context.TODO(), time.Hour)
+	if got := u.SeqNum(); got != 4 {
+		t.Fatalf("expected duplicate global spot block to keep generation 4, got %d", got)
+	}
+}
+
+func TestUnavailableOfferingsConcurrentDuplicateMarksAdvanceOneGeneration(t *testing.T) {
+	singleInstanceCache := cache.New(time.Hour, time.Hour)
+	vmFamilyCache := cache.New(time.Hour, time.Hour)
+	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
+	sku := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for range 100 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			u.MarkUnavailableWithTTL(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand, time.Hour)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if got := u.SeqNum(); got != 1 {
+		t.Fatalf("expected concurrent duplicate marks to advance one generation, got %d", got)
+	}
+	assertOfferingUnavailable(t, u, sku, "westus-1", karpv1.CapacityTypeOnDemand, "Offering should be unavailable after concurrent marks")
 }
