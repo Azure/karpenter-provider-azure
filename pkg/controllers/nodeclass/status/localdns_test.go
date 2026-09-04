@@ -19,11 +19,15 @@ package status
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -31,18 +35,129 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 )
 
 const (
 	hiK8s = "1.99.0"
 	loK8s = "1.98.0"
+
+	smallSKU = "Standard_B2s"    // 2 vCPU -- below the LocalDNS floor
+	largeSKU = "Standard_D4s_v3" // 4 vCPU -- above the LocalDNS floor
 )
+
+// stubInstanceTypeProvider stands in for the real instance type provider. It
+// mirrors the one behavior this reconciler depends on: List returns the
+// LocalDNS-filtered set only when the NodeClass it is handed reports LocalDNS
+// as enabled. That makes the probe in nodePoolsWithoutCompatibleInstanceTypes
+// observable -- a reconciler that forgot to set LocalDNSState on the probe
+// would see the unfiltered set and wrongly pass the gate.
+type stubInstanceTypeProvider struct {
+	all               []*corecloudprovider.InstanceType
+	localDNSSupported []*corecloudprovider.InstanceType
+	err               error
+}
+
+var _ instancetype.Provider = (*stubInstanceTypeProvider)(nil)
+
+func (s *stubInstanceTypeProvider) List(_ context.Context, nc *v1beta1.AKSNodeClass) ([]*corecloudprovider.InstanceType, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if nc.IsLocalDNSEnabled() {
+		return s.localDNSSupported, nil
+	}
+	return s.all, nil
+}
+
+func (s *stubInstanceTypeProvider) Get(_ context.Context, _ string) (*skewer.SKU, error) {
+	return nil, errors.New("not implemented")
+}
+func (s *stubInstanceTypeProvider) UpdateInstanceTypes(_ context.Context) error { return nil }
+func (s *stubInstanceTypeProvider) LivenessProbe(_ *http.Request) error         { return nil }
+
+// newInstanceType builds an instance type carrying the two labels a NodePool
+// realistically selects on when pinning VM size.
+func newInstanceType(name string, cpu int) *corecloudprovider.InstanceType {
+	return &corecloudprovider.InstanceType{
+		Name: name,
+		Requirements: scheduling.NewRequirements(
+			scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, name),
+			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, fmt.Sprint(cpu)),
+		),
+	}
+}
+
+// newNodePool builds a NodePool referencing nodeClassName, optionally pinned to
+// a set of instance types.
+func newNodePool(name, nodeClassName string, instanceTypes ...string) *karpv1.NodePool {
+	np := &karpv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: karpv1.NodePoolSpec{
+			Template: karpv1.NodeClaimTemplate{
+				Spec: karpv1.NodeClaimTemplateSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Group: "karpenter.azure.com",
+						Kind:  "AKSNodeClass",
+						Name:  nodeClassName,
+					},
+				},
+			},
+		},
+	}
+	if len(instanceTypes) > 0 {
+		np.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   instanceTypes,
+		}}
+	}
+	return np
+}
+
+func newCRClient(nodePools ...*karpv1.NodePool) client.Client {
+	b := crfake.NewClientBuilder()
+	for _, np := range nodePools {
+		b = b.WithObjects(np)
+	}
+	return b.Build()
+}
+
+// defaultInstanceTypeProvider offers one small and one large SKU, with only the
+// large one surviving the LocalDNS filter.
+func defaultInstanceTypeProvider() *stubInstanceTypeProvider {
+	small, large := newInstanceType(smallSKU, 2), newInstanceType(largeSKU, 4)
+	return &stubInstanceTypeProvider{
+		all:               []*corecloudprovider.InstanceType{small, large},
+		localDNSSupported: []*corecloudprovider.InstanceType{large},
+	}
+}
+
+// newReconciler builds a LocalDNSReconciler whose instance-type gate passes, so
+// the pre-existing tests keep exercising only the gate they care about.
+func newReconciler(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface, networkPolicy, networkPlugin string) *LocalDNSReconciler {
+	return NewLocalDNSReconciler(
+		kubeClient,
+		dynamicClient,
+		newCRClient(newNodePool("default", "test")),
+		defaultInstanceTypeProvider(),
+		networkPolicy,
+		networkPlugin,
+	)
+}
 
 func newDynFake() *dynamicfake.FakeDynamicClient {
 	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
@@ -82,7 +197,7 @@ func expectState(t *testing.T, nc *v1beta1.AKSNodeClass, want v1beta1.LocalDNSSt
 func TestModeUnsetSetsDisabled(t *testing.T) {
 	nc := newNC()
 	nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled) // stale
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	r := newReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 	if !nc.StatusConditions().IsTrue(v1beta1.ConditionTypeLocalDNSReady) {
@@ -93,7 +208,7 @@ func TestModeUnsetSetsDisabled(t *testing.T) {
 func TestModeRequired(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	r := newReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -101,7 +216,7 @@ func TestModeRequired(t *testing.T) {
 func TestModeDisabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	r := newReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -110,7 +225,7 @@ func TestPreferred_K8sBelowThreshold_Disabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setKVReady(nc, loK8s)
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	r := newReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -119,7 +234,7 @@ func TestPreferred_BYOCNI_Disabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setKVReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", consts.NetworkPluginNone)
+	r := newReconciler(fake.NewClientset(), newDynFake(), "", consts.NetworkPluginNone)
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -130,7 +245,7 @@ func TestPreferred_Ubuntu2004_Disabled(t *testing.T) {
 	nc.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 	nc.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
 	setKVReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	r := newReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -139,7 +254,7 @@ func TestPreferred_NoConflicts_Enabled(t *testing.T) {
 	nc := newNC()
 	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
 	setKVReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "cilium", "azure")
+	r := newReconciler(fake.NewClientset(), newDynFake(), "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -151,7 +266,7 @@ func TestPreferred_NodeLocalDNSPresent_Disabled(t *testing.T) {
 	k8sFake := fake.NewClientset(&appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-local-dns", Namespace: "kube-system"},
 	})
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -163,7 +278,7 @@ func TestPreferred_NetworkPolicyPresent_Disabled(t *testing.T) {
 	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
 	})
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -179,7 +294,7 @@ func TestPreferred_CiliumClusterwidePolicyPresent_Disabled(t *testing.T) {
 	},
 		unstructuredObj("cilium.io/v2", "CiliumClusterwideNetworkPolicy", "", "deny-cluster"),
 	)
-	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "cilium", "azure")
+	r := newReconciler(fake.NewClientset(), dc, "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -195,7 +310,7 @@ func TestPreferred_CalicoNamespacedPolicyPresent_Disabled(t *testing.T) {
 	},
 		unstructuredObj("crd.projectcalico.org/v1", "NetworkPolicy", "default", "deny-ns"),
 	)
-	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "calico", "azure")
+	r := newReconciler(fake.NewClientset(), dc, "calico", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -212,7 +327,7 @@ func TestPreferred_NPM_K8sNetworkPolicyPresent_Enabled(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
 	})
 	// networkPolicy="" simulates NPM / no recognized CRD-based engine.
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -224,7 +339,7 @@ func TestPreferred_KonnectivityAgentIgnored(t *testing.T) {
 	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "konnectivity-agent", Namespace: "kube-system"},
 	})
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -237,7 +352,7 @@ func TestPreferred_StickyEnabled_DoesNotFlipOnNewConflict(t *testing.T) {
 	k8sFake := fake.NewClientset(&networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: "default"},
 	})
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -250,7 +365,7 @@ func TestPreferred_TransientError_RequeuesViaError(t *testing.T) {
 	k8sFake.PrependReactor("list", "networkpolicies", func(_ clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("transient")
 	})
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "cilium", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "cilium", "azure")
 	_, err := r.Reconcile(context.Background(), nc)
 	if err == nil {
 		t.Fatalf("expected error on transient failure")
@@ -271,7 +386,7 @@ func TestPreferred_DaemonSetGetError_Requeues(t *testing.T) {
 	k8sFake.PrependReactor("get", "daemonsets", func(_ clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("rbac forbidden")
 	})
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "", "azure")
 	_, err := r.Reconcile(context.Background(), nc)
 	if err == nil {
 		t.Fatalf("expected error on DS get failure")
@@ -286,7 +401,7 @@ func TestPreferred_DaemonSetGetNotFound_Enabled(t *testing.T) {
 	k8sFake.PrependReactor("get", "daemonsets", func(_ clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, k8serrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, "node-local-dns")
 	})
-	r := NewLocalDNSReconciler(k8sFake, newDynFake(), "", "azure")
+	r := newReconciler(k8sFake, newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -302,7 +417,7 @@ func TestPreferred_CiliumCRDPolicyPresent_Disabled(t *testing.T) {
 	},
 		unstructuredObj("cilium.io/v2", "CiliumNetworkPolicy", "default", "deny"),
 	)
-	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "cilium", "azure")
+	r := newReconciler(fake.NewClientset(), dc, "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -318,7 +433,7 @@ func TestPreferred_CalicoCRDPolicyPresent_Disabled(t *testing.T) {
 	},
 		unstructuredObj("crd.projectcalico.org/v1", "GlobalNetworkPolicy", "", "deny-all"),
 	)
-	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "calico", "azure")
+	r := newReconciler(fake.NewClientset(), dc, "calico", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 }
@@ -335,7 +450,7 @@ func TestPreferred_CiliumCRDNotInstalled_Enabled(t *testing.T) {
 	dc := newDynFake()
 	dc.PrependReactor("list", "ciliumnetworkpolicies", noKindMatchReactor("cilium.io", "CiliumNetworkPolicy"))
 	dc.PrependReactor("list", "ciliumclusterwidenetworkpolicies", noKindMatchReactor("cilium.io", "CiliumClusterwideNetworkPolicy"))
-	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "cilium", "azure")
+	r := newReconciler(fake.NewClientset(), dc, "cilium", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -349,7 +464,7 @@ func TestPreferred_CalicoCRDNotInstalled_Enabled(t *testing.T) {
 	dc := newDynFake()
 	dc.PrependReactor("list", "networkpolicies", noKindMatchReactor("crd.projectcalico.org", "NetworkPolicy"))
 	dc.PrependReactor("list", "globalnetworkpolicies", noKindMatchReactor("crd.projectcalico.org", "GlobalNetworkPolicy"))
-	r := NewLocalDNSReconciler(fake.NewClientset(), dc, "calico", "azure")
+	r := newReconciler(fake.NewClientset(), dc, "calico", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
@@ -375,4 +490,142 @@ func unstructuredObj(apiVersion, kind, namespace, name string) *unstructured.Uns
 	}
 	u.SetName(name)
 	return u
+}
+
+// --- instance type gate ---
+
+// preferredNC builds a NodeClass in Preferred mode that clears every gate
+// except the instance type one.
+func preferredNC() *v1beta1.AKSNodeClass {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	return nc
+}
+
+func newLocalDNSReconcilerWith(crClient client.Client, itProvider instancetype.Provider) *LocalDNSReconciler {
+	return NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), crClient, itProvider, "", "azure")
+}
+
+func expectReadyReason(t *testing.T, nc *v1beta1.AKSNodeClass, want string) {
+	t.Helper()
+	g := NewWithT(t)
+	cond := nc.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+	g.Expect(cond).ToNot(BeNil())
+	g.Expect(cond.Reason).To(Equal(want))
+}
+
+func TestPreferred_NodePoolPinnedToSmallSKU_Disabled(t *testing.T) {
+	nc := preferredNC()
+	r := newLocalDNSReconcilerWith(
+		newCRClient(newNodePool("small", "test", smallSKU)),
+		defaultInstanceTypeProvider(),
+	)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+	expectReadyReason(t, nc, reasonNoCompatibleInstanceTypes)
+}
+
+func TestPreferred_NodePoolPinnedToLargeSKU_Enabled(t *testing.T) {
+	nc := preferredNC()
+	r := newLocalDNSReconcilerWith(
+		newCRClient(newNodePool("large", "test", largeSKU)),
+		defaultInstanceTypeProvider(),
+	)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+// Fan-in rule: a single starved NodePool disables LocalDNS for the NodeClass.
+func TestPreferred_AnyStarvedNodePool_Disabled(t *testing.T) {
+	nc := preferredNC()
+	r := newLocalDNSReconcilerWith(
+		newCRClient(
+			newNodePool("large", "test", largeSKU),
+			newNodePool("small", "test", smallSKU),
+		),
+		defaultInstanceTypeProvider(),
+	)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+	expectReadyReason(t, nc, reasonNoCompatibleInstanceTypes)
+}
+
+// Nothing to evaluate against -- don't commit Enabled, since it would be sticky.
+func TestPreferred_NoNodePools_Disabled(t *testing.T) {
+	g := NewWithT(t)
+	nc := preferredNC()
+	r := newLocalDNSReconcilerWith(newCRClient(), defaultInstanceTypeProvider())
+	res, err := r.Reconcile(context.Background(), nc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(res.RequeueAfter).To(Equal(localDNSPreferredRequeueAfter))
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+	expectReadyReason(t, nc, reasonNoCompatibleInstanceTypes)
+}
+
+func TestPreferred_NodePoolForOtherNodeClass_Ignored(t *testing.T) {
+	nc := preferredNC()
+	r := newLocalDNSReconcilerWith(
+		newCRClient(
+			newNodePool("large", "test", largeSKU),
+			newNodePool("small", "other-nodeclass", smallSKU),
+		),
+		defaultInstanceTypeProvider(),
+	)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+// An unconstrained NodePool can still reach the large SKU, so the gate passes.
+func TestPreferred_UnconstrainedNodePool_Enabled(t *testing.T) {
+	nc := preferredNC()
+	r := newLocalDNSReconcilerWith(
+		newCRClient(newNodePool("any", "test")),
+		defaultInstanceTypeProvider(),
+	)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+// Sticky-Enabled still wins: narrowing a NodePool after the fact does not flip
+// LocalDNS back off, because that would drift and reimage the pool.
+func TestPreferred_StickyEnabled_SurvivesStarvedNodePool(t *testing.T) {
+	nc := preferredNC()
+	nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+	r := newLocalDNSReconcilerWith(
+		newCRClient(newNodePool("small", "test", smallSKU)),
+		defaultInstanceTypeProvider(),
+	)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
+}
+
+func TestPreferred_InstanceTypeProviderError_Requeues(t *testing.T) {
+	g := NewWithT(t)
+	nc := preferredNC()
+	itProvider := defaultInstanceTypeProvider()
+	itProvider.err = errors.New("boom")
+	r := newLocalDNSReconcilerWith(newCRClient(newNodePool("any", "test")), itProvider)
+
+	_, err := r.Reconcile(context.Background(), nc)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(nc.StatusConditions().IsTrue(v1beta1.ConditionTypeLocalDNSReady)).To(BeFalse())
+}
+
+// The gate must probe the provider with LocalDNS on. If it probed with LocalDNS
+// off it would see the unfiltered list, find the small SKU compatible, and
+// wrongly enable.
+func TestPreferred_GateProbesProviderWithLocalDNSEnabled(t *testing.T) {
+	nc := preferredNC()
+	small := newInstanceType(smallSKU, 2)
+	r := newLocalDNSReconcilerWith(
+		newCRClient(newNodePool("small", "test", smallSKU)),
+		&stubInstanceTypeProvider{
+			all:               []*corecloudprovider.InstanceType{small},
+			localDNSSupported: nil,
+		},
+	)
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+	expectReadyReason(t, nc, reasonNoCompatibleInstanceTypes)
 }

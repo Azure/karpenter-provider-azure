@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
@@ -67,6 +68,7 @@ func NewController(
 	subnetClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
+	instanceTypeProvider instancetype.Provider,
 	networkPolicy string,
 	networkPlugin string,
 ) *Controller {
@@ -78,7 +80,7 @@ func NewController(
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:            NewSubnetReconciler(subnetClient),
 		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
+		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, kubeClient, instanceTypeProvider, networkPolicy, networkPlugin),
 	}
 }
 
