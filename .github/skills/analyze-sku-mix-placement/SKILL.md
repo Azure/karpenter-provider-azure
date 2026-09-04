@@ -70,10 +70,14 @@ For each individual call:
      `placementChoice`.
 3. Report local-versus-recommended results separately for every observed capacity type and scope.
    - Compare `localRanking` and `recommendedRanking` directly; do not rely only on `differences`.
-  - Immediately after every differing comparison, include a compact JSON block copied from the
-    comparison record with `capacityType`, `placementScope`, `localRanking`, and
-    `recommendedRanking`. This should show the requested ranking and the recommendation returned by
-    the placement provider. Omit this block for complete matches.
+   - Immediately after every differing comparison, include a compact JSON block copied from the
+     comparison record with `capacityType`, `placementScope`, `localRanking`, and
+     `recommendedRanking`. This should show the requested ranking and the recommendation returned by
+     the placement provider. Omit this block for complete matches.
+   - After that comparison block, include the full, pretty-printed body from the associated
+     `received SKU Mix Placement API response` record. If the comparison came from the provider
+     cache and no raw response was emitted, state that the full response is unavailable instead of
+     inferring or omitting it silently.
    - Identify VM sizes removed entirely and zones removed from a retained VM size.
    - Remove entirely filtered VM sizes from the local sequence and compare the remaining sequence with
      the recommended sequence. Rank movement caused only by higher-ranked removals is expected
@@ -128,6 +132,19 @@ Requested local ranking and received recommendation:
     {"vmSize": "Standard_D2as_v6", "zones": ["1", "2", "3"]}
   ],
   "recommendedRanking": []
+}
+```
+
+Full placement API response:
+
+```json
+{
+  "placementChoices": [
+    {
+      "id": "example-placement-choice-id",
+      "skuSplit": []
+    }
+  ]
 }
 ```
 

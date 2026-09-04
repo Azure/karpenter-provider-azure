@@ -378,6 +378,17 @@ def render_call(call: Call, number: int) -> str:
             lines.append(ranking_evidence(comparison))
             lines.append("```")
             lines.append("")
+            response = response_for_comparison(call, comparison)
+            if response is None:
+                lines.append("Full placement API response: unavailable because no raw response was emitted for this comparison.")
+                lines.append("")
+            else:
+                lines.append("Full placement API response:")
+                lines.append("")
+                lines.append("```json")
+                lines.append(json.dumps(response.body, indent=2, sort_keys=False))
+                lines.append("```")
+                lines.append("")
 
     for index, response in enumerate(failures, 1):
         error = response.order_error.data
