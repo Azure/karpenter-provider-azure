@@ -85,6 +85,7 @@ type Environment struct {
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
 	UsageAPI                    *fake.UsageAPI
+	SKUMixPlacementScoresAPI    *fake.SKUMixPlacementScoresAPI
 	DynamicInterface            dynamic.Interface
 
 	// Fake data stores for the APIs
@@ -154,6 +155,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
 	usageAPI := &fake.UsageAPI{}
+	skuMixPlacementScoresAPI := &fake.SKUMixPlacementScoresAPI{}
 
 	aksDataStorage := fake.NewAKSDataStorage()
 	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(aksDataStorage)
@@ -237,6 +239,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		usageAPI,
 		// TODO: Replace with a fake FleetsAPI when Fleet behavior is covered by this test environment.
 		nil,
+		skuMixPlacementScoresAPI,
 	)
 	allocationStrategyProvider := allocationstrategy.NewProvider()
 	vmInstanceProvider := instance.NewDefaultVMProvider(
@@ -324,6 +327,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
 		UsageAPI:                    usageAPI,
+		SKUMixPlacementScoresAPI:    skuMixPlacementScoresAPI,
 		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
