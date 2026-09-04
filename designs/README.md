@@ -8,7 +8,6 @@ These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
 
-- [Azure Compute Fleet batching](./0014-fleet-batching-design.md)
 - [Azure Compute Fleet Batching](./TBD-fleet-batching-design.md)
 - [Ultra SSD support](./0013-ultra-ssd-support.md)
 
