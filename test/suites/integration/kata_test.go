@@ -31,7 +31,10 @@ import (
 )
 
 // kataRuntimeClassName is the RuntimeClass AKS creates on clusters with Pod Sandboxing enabled.
-const kataRuntimeClassName = "kata-vm-isolation"
+const (
+	kataRuntimeClassName = "kata-vm-isolation"
+	kataKernelName       = "mshv1"
+)
 
 var _ = Describe("Kata (Pod Sandboxing)", func() {
 	BeforeEach(func() {
@@ -78,6 +81,8 @@ var _ = Describe("Kata (Pod Sandboxing)", func() {
 		guestKernel := strings.TrimSpace(strings.SplitN(env.EventuallyGetPodLogs(pod), "\n", 2)[0])
 		By("guest kernel: " + guestKernel + ", host kernel: " + node.Status.NodeInfo.KernelVersion)
 		Expect(guestKernel).ToNot(BeEmpty())
+		Expect(guestKernel).To(MatchRegexp(`[.]`+kataKernelName+`(?:-|$)`),
+			"pod kernel does not use the expected Kata sandbox kernel name")
 		Expect(guestKernel).ToNot(Equal(node.Status.NodeInfo.KernelVersion),
 			"pod kernel matches the host kernel, so it did not run in a Kata sandbox VM")
 	})

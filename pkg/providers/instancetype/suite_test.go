@@ -2878,19 +2878,11 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 
 			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
-			type WellKnownLabelTestEnvironment struct {
-				Context         context.Context
-				Cluster         *state.Cluster
-				CloudProvider   *cloudprovider.CloudProvider
-				CoreProvisioner *provisioning.Provisioner
-				AzureEnv        *test.Environment
-			}
 			type WellKnownLabelEntry struct {
-				Name        string
-				Label       string
-				ValueFunc   func() string
-				SetupFunc   func(context.Context) context.Context
-				Environment *WellKnownLabelTestEnvironment
+				Name      string
+				Label     string
+				ValueFunc func() string
+				SetupFunc func(context.Context) context.Context
 				// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
 				// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
 				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written by another process.
@@ -2970,6 +2962,9 @@ var _ = Describe("InstanceType Provider", func() {
 					Label: v1beta1.AKSLabelKataVMIsolation,
 					// Needs special setup because it only works with Bootstrap or Machine API
 					SetupFunc: func(ctx context.Context) context.Context {
+						if !options.FromContext(ctx).SupportsWorkloadRuntime() {
+							Skip("Kata requires the bootstrapping client or AKS machine API")
+						}
 						kubernetesVersion := lo.Must(azureEnvBootstrap.KubernetesVersionProvider.KubeServerVersion(ctx))
 						if !imagefamily.UseAzureLinux3(kubernetesVersion) {
 							Skip("Kata requires Azure Linux 3")
@@ -2983,14 +2978,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Expect(err).ToNot(HaveOccurred())
 						return ctx
 					},
-					ValueFunc: func() string { return "true" },
-					Environment: &WellKnownLabelTestEnvironment{
-						Context:         ctxBootstrap,
-						Cluster:         clusterBootstrap,
-						CloudProvider:   cloudProviderBootstrap,
-						CoreProvisioner: coreProvisionerBootstrap,
-						AzureEnv:        azureEnvBootstrap,
-					},
+					ValueFunc:               func() string { return "true" },
 					ExpectedInKubeletLabels: true,
 					ExpectedOnNode:          true,
 				},
@@ -3098,17 +3086,7 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually)",
 				func(item WellKnownLabelEntry) {
-					testEnvironment := &WellKnownLabelTestEnvironment{
-						Context:         ctx,
-						Cluster:         cluster,
-						CloudProvider:   cloudProvider,
-						CoreProvisioner: coreProvisioner,
-						AzureEnv:        azureEnv,
-					}
-					if item.Environment != nil {
-						testEnvironment = item.Environment
-					}
-					ctx := testEnvironment.Context
+					ctx := ctx
 					if item.SetupFunc != nil {
 						ctx = item.SetupFunc(ctx)
 					}
@@ -3122,21 +3100,14 @@ var _ = Describe("InstanceType Provider", func() {
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
 						results := []ProvisioningResult{}
 						for range 3 {
-							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod))
 						}
 						for i := range len(results) {
 							Expect(lo.Values(results[i].Bindings)).ToNot(BeEmpty())
 							Expect(lo.Values(results[i].Bindings)[0].Node.Name).To(Equal(lo.Values(results[0].Bindings)[0].Node.Name), "expected all bindings to have the same node name")
 						}
 					}
-					ExpectProvisionedAndWaitForPromises(
-						ctx,
-						env.Client,
-						testEnvironment.Cluster,
-						testEnvironment.CloudProvider,
-						testEnvironment.CoreProvisioner,
-						testEnvironment.AzureEnv,
-						pod)
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					node := ExpectScheduled(ctx, env.Client, pod)
 
 					if item.ExpectedOnNode {
@@ -3145,21 +3116,9 @@ var _ = Describe("InstanceType Provider", func() {
 						Expect(node.Labels).ToNot(HaveKey(item.Label))
 					}
 
-					// Some tests only work in bootstrapping client, for those ensure we check the bootstrap API input too.
-					if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeBootstrappingClient {
-						Expect(testEnvironment.AzureEnv.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Len()).To(Equal(1))
-						bootstrapInput := testEnvironment.AzureEnv.NodeBootstrappingAPI.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
-						if item.ExpectedInKubeletLabels {
-							Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).To(HaveKeyWithValue(item.Label, value))
-						} else {
-							Expect(bootstrapInput.Params.ProvisionProfile.CustomNodeLabels).ToNot(HaveKeyWithValue(item.Label, value))
-						}
-						return
-					}
-
 					// Get the VM creation input and decode custom data
-					Expect(testEnvironment.AzureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-					vmInput := testEnvironment.AzureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 					vm := vmInput.VM
 					if item.ExpectedInKubeletLabels {
 						ExpectKubeletNodeLabelsInCustomData(&vm, item.Label, value)
