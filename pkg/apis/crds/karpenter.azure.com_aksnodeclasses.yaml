@@ -1080,6 +1080,70 @@ spec:
                     - none
                     - static
                     type: string
+                  evictionHard:
+                    additionalProperties:
+                      maxLength: 20
+                      pattern: ^([0-9]+(Ki|Mi|Gi)?|([0-9]|[1-9][0-9]|100)%)$
+                      type: string
+                    description: |-
+                      EvictionHard maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to quantities and overrides Karpenter's defaults per key.
+                      It matches AKS `kubeletConfig.hardEvictionThreshold`.
+                    maxProperties: 3
+                    type: object
+                    x-kubernetes-validations:
+                    - message: evictionHard supports only memory.available, nodefs.available,
+                        and nodefs.inodesFree
+                      rule: self.all(key, key == 'memory.available' || key == 'nodefs.available'
+                        || key == 'nodefs.inodesFree')
+                    - message: memory.available and nodefs.available must be integer
+                        Ki, Mi, or Gi quantities or percentages; nodefs.inodesFree
+                        must be an integer count or percentage
+                      rule: 'self.all(key, key == ''nodefs.inodesFree'' ? !self[key].endsWith(''Ki'')
+                        && !self[key].endsWith(''Mi'') && !self[key].endsWith(''Gi'')
+                        : self[key].endsWith(''Ki'') || self[key].endsWith(''Mi'')
+                        || self[key].endsWith(''Gi'') || self[key].endsWith(''%''))'
+                  evictionMaxPodGracePeriod:
+                    description: |-
+                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+                      It matches AKS `kubeletConfig.evictionMaxPodGracePeriodInSeconds`.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  evictionSoft:
+                    additionalProperties:
+                      maxLength: 20
+                      pattern: ^([0-9]+(Ki|Mi|Gi)?|([0-9]|[1-9][0-9]|100)%)$
+                      type: string
+                    description: |-
+                      EvictionSoft maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to quantities and overrides Karpenter's soft eviction thresholds per key.
+                      It matches AKS `kubeletConfig.softEvictionThreshold`. Each soft threshold must be paired with a grace period in evictionSoftGracePeriod.
+                    maxProperties: 3
+                    type: object
+                    x-kubernetes-validations:
+                    - message: evictionSoft supports only memory.available, nodefs.available,
+                        and nodefs.inodesFree
+                      rule: self.all(key, key == 'memory.available' || key == 'nodefs.available'
+                        || key == 'nodefs.inodesFree')
+                    - message: memory.available and nodefs.available must be integer
+                        Ki, Mi, or Gi quantities or percentages; nodefs.inodesFree
+                        must be an integer count or percentage
+                      rule: 'self.all(key, key == ''nodefs.inodesFree'' ? !self[key].endsWith(''Ki'')
+                        && !self[key].endsWith(''Mi'') && !self[key].endsWith(''Gi'')
+                        : self[key].endsWith(''Ki'') || self[key].endsWith(''Mi'')
+                        || self[key].endsWith(''Gi'') || self[key].endsWith(''%''))'
+                  evictionSoftGracePeriod:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      EvictionSoftGracePeriod maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to grace periods and overrides Karpenter's defaults per key.
+                      It matches AKS `kubeletConfig.softEvictionGracePeriod`.
+                    maxProperties: 3
+                    type: object
+                    x-kubernetes-validations:
+                    - message: evictionSoftGracePeriod supports only memory.available,
+                        nodefs.available, and nodefs.inodesFree
+                      rule: self.all(key, key == 'memory.available' || key == 'nodefs.available'
+                        || key == 'nodefs.inodesFree')
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
@@ -1108,6 +1172,24 @@ spec:
                     maximum: 100
                     minimum: 0
                     type: integer
+                  kubeReserved:
+                    additionalProperties:
+                      maxLength: 20
+                      pattern: ^([1-9][0-9]*m|[1-9][0-9]*(Mi|Gi)?)$
+                      type: string
+                    description: |-
+                      KubeReserved maps supported resource names (`cpu`, `memory`) to reserved values and overrides Karpenter's computed defaults per key.
+                      It matches AKS `kubeletConfig.cpuReserved` and `memoryReserved`.
+                    maxProperties: 2
+                    type: object
+                    x-kubernetes-validations:
+                    - message: kubeReserved supports only cpu and memory
+                      rule: self.all(key, key == 'cpu' || key == 'memory')
+                    - message: kubeReserved cpu must be positive whole cores or millicores
+                        and memory must be positive whole MiB or GiB
+                      rule: 'self.all(key, key == ''cpu'' ? !self[key].endsWith(''Mi'')
+                        && !self[key].endsWith(''Gi'') : self[key].endsWith(''Mi'')
+                        || self[key].endsWith(''Gi''))'
                   podPidsLimit:
                     description: |-
                       podPidsLimit is the maximum number of PIDs in any pod.

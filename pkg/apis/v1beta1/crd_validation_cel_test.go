@@ -18,6 +18,7 @@ package v1beta1_test
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Pallinder/go-randomdata"
@@ -90,6 +91,86 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			},
 		}
+	})
+	Context("Kubelet overrides", func() {
+		DescribeTable("should validate kubeReserved", func(kubeReserved map[string]v1beta1.KubeReservedValue, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: kubeReserved},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid cpu and memory", map[string]v1beta1.KubeReservedValue{"cpu": "250m", "memory": "512Mi"}, true),
+			Entry("valid whole cores and GiB", map[string]v1beta1.KubeReservedValue{"cpu": "2", "memory": "1Gi"}, true),
+			Entry("unsupported pid", map[string]v1beta1.KubeReservedValue{"pid": "1000"}, false),
+			Entry("invalid cpu quantity", map[string]v1beta1.KubeReservedValue{"cpu": "quarter"}, false),
+			Entry("fractional millicores", map[string]v1beta1.KubeReservedValue{"cpu": "0.0001"}, false),
+			Entry("memory not representable as whole MiB", map[string]v1beta1.KubeReservedValue{"memory": "1M"}, false),
+		)
+
+		DescribeTable("should validate evictionHard", func(evictionHard map[string]v1beta1.EvictionHardValue, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: evictionHard},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", map[string]v1beta1.EvictionHardValue{"memory.available": "333Mi", "nodefs.available": "12%", "nodefs.inodesFree": "100000"}, true),
+			Entry("valid percentage boundary", map[string]v1beta1.EvictionHardValue{"memory.available": "100%"}, true),
+			Entry("unsupported pid signal", map[string]v1beta1.EvictionHardValue{"pid.available": "1000"}, false),
+			Entry("invalid quantity", map[string]v1beta1.EvictionHardValue{"memory.available": "invalid"}, false),
+			Entry("percentage above 100", map[string]v1beta1.EvictionHardValue{"nodefs.available": "101%"}, false),
+			Entry("inode byte quantity", map[string]v1beta1.EvictionHardValue{"nodefs.inodesFree": "100Mi"}, false),
+		)
+
+		DescribeTable("should validate evictionSoft", func(evictionSoft map[string]v1beta1.EvictionSoftValue, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionSoft: evictionSoft},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", map[string]v1beta1.EvictionSoftValue{"memory.available": "500Mi", "nodefs.available": "15%", "nodefs.inodesFree": "100000"}, true),
+			Entry("unsupported pid signal", map[string]v1beta1.EvictionSoftValue{"pid.available": "1000"}, false),
+			Entry("invalid quantity", map[string]v1beta1.EvictionSoftValue{"memory.available": "invalid"}, false),
+			Entry("percentage above 100", map[string]v1beta1.EvictionSoftValue{"nodefs.available": "101%"}, false),
+			Entry("inode byte quantity", map[string]v1beta1.EvictionSoftValue{"nodefs.inodesFree": "100Mi"}, false),
+		)
+
+		DescribeTable("should validate evictionSoftGracePeriod", func(gracePeriod map[string]metav1.Duration, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionSoftGracePeriod: gracePeriod},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", map[string]metav1.Duration{"memory.available": {Duration: 90 * time.Second}, "nodefs.available": {Duration: 2 * time.Minute}}, true),
+			Entry("unsupported pid signal", map[string]metav1.Duration{"pid.available": {Duration: 30 * time.Second}}, false),
+		)
 	})
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {
