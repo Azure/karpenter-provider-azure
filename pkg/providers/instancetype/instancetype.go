@@ -130,15 +130,20 @@ func newInstanceType(
 	opts := options.FromContext(ctx)
 	totalMemoryMiB := memoryMiB(sku)
 	enableNodeHardening := opts.ShouldUseNodeHardening()
+	capacity := computeCapacity(ctx, sku, params)
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(opts, sku, vmsize, architecture, offerings, region, params),
 		Offerings:    offerings,
-		Capacity:     computeCapacity(ctx, sku, params),
+		Capacity:     capacity,
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening),
-			SystemReserved:    SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
-			EvictionThreshold: EvictionThreshold(totalMemoryMiB, enableNodeHardening),
+			KubeReserved:   KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening),
+			SystemReserved: SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
+			EvictionThreshold: EvictionThreshold(
+				totalMemoryMiB,
+				capacity[corev1.ResourceEphemeralStorage],
+				enableNodeHardening,
+			),
 		},
 	}
 }
@@ -383,15 +388,20 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 	return resources
 }
 
-func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool) corev1.ResourceList {
+func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool) corev1.ResourceList {
+	memory := resource.MustParse(DefaultMemoryAvailable)
 	if enableNodeHardening {
 		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
-		return corev1.ResourceList{
-			corev1.ResourceMemory: *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI),
-		}
+		memory = *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI)
 	}
+
+	// Kubelet parses percentage eviction thresholds as float32, converts them
+	// to float64 for multiplication, and truncates the result to bytes.
+	storagePercentage := float32(hardEvictionNodeFSAvailablePercent) / 100
+	storageBytes := int64(float64(ephemeralStorageCapacity.Value()) * float64(storagePercentage))
 	return corev1.ResourceList{
-		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
+		corev1.ResourceMemory:           memory,
+		corev1.ResourceEphemeralStorage: *resource.NewQuantity(storageBytes, resource.BinarySI),
 	}
 }
 

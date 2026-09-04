@@ -2916,6 +2916,23 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(capList).To(HaveKey(v1.ResourceEphemeralStorage))
 				}
 			})
+			It("should reserve the hard nodefs threshold from ephemeral storage", func() {
+				instanceType, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+					return instanceType.Name == "Standard_D2s_v3"
+				})
+				Expect(ok).To(BeTrue())
+
+				capacity := instanceType.Capacity[v1.ResourceEphemeralStorage]
+				Expect(capacity.String()).To(Equal("128G"))
+				Expect(capacity.Value()).To(Equal(int64(128_000_000_000)))
+
+				eviction, ok := instanceType.Overhead.EvictionThreshold[v1.ResourceEphemeralStorage]
+				Expect(ok).To(BeTrue())
+				Expect(eviction.Value()).To(Equal(int64(12_800_000_190)))
+
+				allocatable := instanceType.Allocatable()[v1.ResourceEphemeralStorage]
+				Expect(allocatable.Value()).To(Equal(capacity.Value() - eviction.Value()))
+			})
 
 			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
 			type WellKnownLabelEntry struct {
