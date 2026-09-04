@@ -48,6 +48,7 @@ func (o *Options) Validate() error {
 		o.validateAdditionalTags(),
 		o.validateDiskEncryptionSetID(),
 		o.validateClusterDNSIP(),
+		o.validateComputeRecommendationMode(),
 		validate.Struct(o),
 	)
 }
@@ -129,6 +130,9 @@ func (o *Options) validateProvisionMode() error {
 	case consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch:
 		return o.validateAKSMachineProvisionMode()
 	case consts.ProvisionModeFleet:
+		if o.UseSIG {
+			return fmt.Errorf("use-sig is not supported when provision-mode is fleet")
+		}
 		return o.validateBatchOptions()
 	}
 	return nil
@@ -294,4 +298,20 @@ func (o *Options) validateDiskEncryptionSetID() error {
 
 	o.ParsedDiskEncryptionSetID = parsedID
 	return nil
+}
+
+func (o *Options) validateComputeRecommendationMode() error {
+	// TODO: We currently only accept disabled. Will expand to accept the other documented values later
+	if o.ComputeRecommendationMode != consts.ComputeRecommendationModeDisabled {
+		return fmt.Errorf("compute-recommendation-mode %q is invalid, must be one of 'disabled'", o.ComputeRecommendationMode)
+	}
+
+	switch o.ComputeRecommendationMode {
+	case consts.ComputeRecommendationModeDisabled,
+		consts.ComputeRecommendationModeLog,
+		consts.ComputeRecommendationModeEnabled:
+		return nil
+	default:
+		return fmt.Errorf("compute-recommendation-mode %q is invalid, must be one of 'disabled', 'log-only', or 'enabled'", o.ComputeRecommendationMode)
+	}
 }
