@@ -223,7 +223,7 @@ func computeRequirements(
 }
 
 func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
-	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacementForAKS(sku)
 	if sizeGB > 0 {
 		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(sizeGB))
 	}
@@ -273,7 +273,7 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, params *instanceTypeP
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
-		corev1.ResourceEphemeralStorage:       *ephemeralStorage(params),
+		corev1.ResourceEphemeralStorage:       *ephemeralStorage(sku, params),
 		corev1.ResourcePods:                   *pods(params),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 		corev1.ResourceName("amd.com/gpu"):    *gpuAMDCount(sku),
@@ -338,8 +338,9 @@ func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGi
 	return memory
 }
 
-func ephemeralStorage(params *instanceTypeParameters) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(params.OSDiskSizeGB), resource.Giga)
+// ephemeralStorage reports the OS disk size that provisioning will actually use for this SKU.
+func ephemeralStorage(sku *skewer.SKU, params *instanceTypeParameters) *resource.Quantity {
+	return resources.Quantity(fmt.Sprintf("%dGi", ResolveOSDiskProfileFromSKU(sku, params.OSDiskSizeGB).SizeGB))
 }
 
 func pods(params *instanceTypeParameters) *resource.Quantity {
