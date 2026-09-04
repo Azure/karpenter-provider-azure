@@ -560,7 +560,21 @@ func TestPreferred_NoNodePools_Disabled(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(res.RequeueAfter).To(Equal(localDNSPreferredRequeueAfter))
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
-	expectReadyReason(t, nc, reasonNoCompatibleInstanceTypes)
+	expectReadyReason(t, nc, reasonNoReferencingNodePools)
+}
+
+// A NodePool naming this NodeClass but pointing at a different Group/Kind is
+// somebody else's NodeClass and must not be counted.
+func TestPreferred_NodePoolWithForeignGroupKind_Ignored(t *testing.T) {
+	nc := preferredNC()
+	foreign := newNodePool("small", "test", smallSKU)
+	foreign.Spec.Template.Spec.NodeClassRef.Group = "karpenter.k8s.aws"
+	foreign.Spec.Template.Spec.NodeClassRef.Kind = "EC2NodeClass"
+	r := newLocalDNSReconcilerWith(newCRClient(foreign), defaultInstanceTypeProvider())
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+	// Ignored entirely rather than counted as starved.
+	expectReadyReason(t, nc, reasonNoReferencingNodePools)
 }
 
 func TestPreferred_NodePoolForOtherNodeClass_Ignored(t *testing.T) {

@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -68,6 +69,14 @@ const (
 	// resolves to Disabled because enabling LocalDNS would leave a referencing
 	// NodePool with no provisionable instance type.
 	reasonNoCompatibleInstanceTypes = "NoCompatibleInstanceTypes"
+
+	// reasonNoReferencingNodePools is set on LocalDNSReady when Preferred
+	// resolves to Disabled because no NodePool references the AKSNodeClass yet,
+	// leaving the instance type gate nothing to evaluate against.
+	reasonNoReferencingNodePools = "NoReferencingNodePools"
+
+	// aksNodeClassKind is the NodeClassRef.Kind identifying an AKSNodeClass.
+	aksNodeClassKind = "AKSNodeClass"
 )
 
 // localDNSPreferredRequeueAfter bounds how long the controller waits before
@@ -86,8 +95,9 @@ const localDNSPreferredRequeueAfter = 5 * time.Minute
 //   - Mode=Disabled   -> Status=Disabled, LocalDNSReady=True.
 //   - Mode=Preferred  -> evaluate six gates (k8s>=1.36, !BYO CNI,
 //     !ResolvesToUbuntu2004, no conflicting NetworkPolicies, no upstream
-//     node-local-dns DS, and every referencing NodePool retains at least one
-//     LocalDNS-compatible instance type) and commit Enabled or Disabled.
+//     node-local-dns DS, and at least one NodePool references this NodeClass
+//     with every such NodePool retaining a LocalDNS-compatible instance type)
+//     and commit Enabled or Disabled.
 //     Sticky: once Enabled under Preferred, stays Enabled while Mode=Preferred
 //     (read off Status.LocalDNSState directly).
 type LocalDNSReconciler struct {
@@ -195,17 +205,16 @@ func (r *LocalDNSReconciler) reconcilePreferred(ctx context.Context, nc *v1beta1
 	}
 
 	// Instance-type gate last: it is the only gate that costs a provider call.
-	starved, err := r.nodePoolsWithoutCompatibleInstanceTypes(ctx, nc)
+	reason, msg, err := r.checkInstanceTypeGate(ctx, nc)
 	if err != nil {
 		log.FromContext(ctx).V(1).Info("localdns resolve: instance type check error, requeuing", "error", err.Error())
 		nc.StatusConditions().SetFalse(v1beta1.ConditionTypeLocalDNSReady, "CheckingClusterRequirementsFailed", err.Error())
 		return reconcile.Result{}, err
 	}
-	if len(starved) > 0 {
-		msg := fmt.Sprintf("enabling LocalDNS would leave NodePool(s) %s with no provisionable instance type (LocalDNS requires >=4 vCPU and >=256MB)", strings.Join(starved, ", "))
-		log.FromContext(ctx).Info("localdns resolve: disabling, no compatible instance types", "nodePools", starved)
+	if reason != "" {
+		log.FromContext(ctx).Info("localdns resolve: disabling", "reason", reason, "message", msg)
 		nc.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
-		nc.StatusConditions().SetTrueWithReason(v1beta1.ConditionTypeLocalDNSReady, reasonNoCompatibleInstanceTypes, msg)
+		nc.StatusConditions().SetTrueWithReason(v1beta1.ConditionTypeLocalDNSReady, reason, msg)
 		return reconcile.Result{RequeueAfter: localDNSPreferredRequeueAfter}, nil
 	}
 
@@ -257,31 +266,30 @@ func (r *LocalDNSReconciler) meetsClusterRequirements(ctx context.Context) (bool
 	return !has, nil
 }
 
-// nodePoolsWithoutCompatibleInstanceTypes returns the names of NodePools
-// referencing nc that would be left with no provisionable instance type if
-// LocalDNS were enabled.
+// checkInstanceTypeGate reports whether enabling LocalDNS is safe for every
+// NodePool referencing nc. It returns an empty reason when the gate passes, or
+// a LocalDNSReady reason plus an operator-facing message when it does not.
 //
 // Enabling LocalDNS activates isInstanceTypeSupportedByLocalDNS in the instance
-// type provider, which drops every SKU below 4 vCPU / 256MB. A NodePool whose
-// requirements only admit such SKUs would silently lose all of its candidates,
-// leaving pods Pending behind core's generic "no instance type satisfied
-// requirements". Rather than restating the vCPU/memory thresholds here, we ask
-// the provider for the list it would produce with LocalDNS on -- the two rules
-// can then never drift.
-//
-// A NodeClass with no referencing NodePool is reported as starved: there is
-// nothing to evaluate against, and committing Enabled would be sticky, so we
-// wait for a NodePool to appear instead.
-func (r *LocalDNSReconciler) nodePoolsWithoutCompatibleInstanceTypes(ctx context.Context, nc *v1beta1.AKSNodeClass) ([]string, error) {
+// type provider, which drops every VM size below the LocalDNS resource floor. A
+// NodePool whose requirements only admit such sizes would silently lose all of
+// its candidates, leaving pods Pending behind core's generic "no instance type
+// satisfied requirements". Rather than restating the floor here -- where it
+// could drift from the provider's copy -- we ask the provider for the list it
+// would produce with LocalDNS on.
+func (r *LocalDNSReconciler) checkInstanceTypeGate(ctx context.Context, nc *v1beta1.AKSNodeClass) (reason, message string, err error) {
 	nodePoolList := &karpv1.NodePoolList{}
 	if err := r.crClient.List(ctx, nodePoolList); err != nil {
-		return nil, fmt.Errorf("listing NodePools: %w", err)
+		return "", "", fmt.Errorf("listing NodePools: %w", err)
 	}
 	nodePools := lo.Filter(nodePoolList.Items, func(np karpv1.NodePool, _ int) bool {
-		return np.Spec.Template.Spec.NodeClassRef != nil && np.Spec.Template.Spec.NodeClassRef.Name == nc.Name
+		return referencesNodeClass(np, nc)
 	})
+	// Nothing to evaluate against. Committing Enabled here would be sticky, so
+	// defer until a NodePool appears instead of locking LocalDNS on blind.
 	if len(nodePools) == 0 {
-		return []string{"<none>"}, nil
+		return reasonNoReferencingNodePools,
+			fmt.Sprintf("no NodePool references AKSNodeClass %q yet, deferring LocalDNS until one does", nc.Name), nil
 	}
 
 	// Probe the provider as if LocalDNS were already Enabled: IsLocalDNSEnabled
@@ -292,7 +300,7 @@ func (r *LocalDNSReconciler) nodePoolsWithoutCompatibleInstanceTypes(ctx context
 	probe.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
 	supported, err := r.instanceTypeProvider.List(ctx, probe)
 	if err != nil {
-		return nil, fmt.Errorf("listing instance types: %w", err)
+		return "", "", fmt.Errorf("listing instance types: %w", err)
 	}
 
 	var starved []string
@@ -310,7 +318,23 @@ func (r *LocalDNSReconciler) nodePoolsWithoutCompatibleInstanceTypes(ctx context
 			starved = append(starved, np.Name)
 		}
 	}
-	return starved, nil
+	if len(starved) > 0 {
+		return reasonNoCompatibleInstanceTypes, fmt.Sprintf(
+			"enabling LocalDNS would leave NodePool(s) %s with no provisionable instance type: their requirements admit no VM size meeting the LocalDNS resource floor",
+			strings.Join(starved, ", ")), nil
+	}
+	return "", "", nil
+}
+
+// referencesNodeClass reports whether np targets nc. Group and Kind are matched
+// alongside Name so that a NodePool pointing at some other provider's NodeClass
+// that happens to share a name cannot spuriously disable LocalDNS.
+func referencesNodeClass(np karpv1.NodePool, nc *v1beta1.AKSNodeClass) bool {
+	ref := np.Spec.Template.Spec.NodeClassRef
+	return ref != nil &&
+		ref.Name == nc.Name &&
+		ref.Kind == aksNodeClassKind &&
+		ref.Group == apis.Group
 }
 
 func (r *LocalDNSReconciler) hasUpstreamNodeLocalDNS(ctx context.Context) (bool, error) {
