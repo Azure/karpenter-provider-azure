@@ -1029,10 +1029,11 @@ func (env *Environment) EventuallyExpectMinUtilization(resource corev1.ResourceN
 	}).Should(Succeed())
 }
 
-func (env *Environment) EventuallyExpectAvgUtilization(resource corev1.ResourceName, comparator string, value float64) {
+func (env *Environment) EventuallyExpectAvgUtilization(resource corev1.ResourceName, comparator string, value float64, deployments ...*appsv1.Deployment) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		g.Expect(env.Monitor.AvgUtilization(resource)).To(BeNumerically(comparator, value))
+		average, details := env.Monitor.avgUtilization(resource, deployments...)
+		g.Expect(average).To(BeNumerically(comparator, value), details)
 	}, 12*time.Minute).Should(Succeed())
 }
 

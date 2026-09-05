@@ -18,10 +18,15 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
+	"strconv"
 	"sync"
+	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -45,10 +50,13 @@ type Monitor struct {
 }
 
 type state struct {
-	pods         corev1.PodList
-	nodes        map[string]*corev1.Node        // node name -> node
-	nodePods     map[string][]*corev1.Pod       // node name -> pods bound to the node
-	nodeRequests map[string]corev1.ResourceList // node name -> sum of pod resource requests
+	pods                 corev1.PodList
+	nodes                map[string]*corev1.Node        // node name -> node
+	nodePods             map[string][]*corev1.Pod       // node name -> pods bound to the node
+	nodeRequests         map[string]corev1.ResourceList // node name -> sum of pod resource requests
+	nodesResourceVersion string
+	observedAt           time.Time
+	listErrors           []string
 }
 
 func NewMonitor(ctx context.Context, kubeClient client.Client) *Monitor {
@@ -168,19 +176,25 @@ func (m *Monitor) RunningPodsCount(selector labels.Selector) int {
 }
 
 func (m *Monitor) poll() state {
+	var listErrors []string
 	var nodes corev1.NodeList
 	if err := m.kubeClient.List(m.ctx, &nodes); err != nil {
 		log.FromContext(m.ctx).Error(err, "failed listing nodes")
+		listErrors = append(listErrors, fmt.Sprintf("listing nodes: %v", err))
 	}
 	var pods corev1.PodList
 	if err := m.kubeClient.List(m.ctx, &pods); err != nil {
 		log.FromContext(m.ctx).Error(err, "failing listing pods")
+		listErrors = append(listErrors, fmt.Sprintf("listing pods: %v", err))
 	}
 	st := state{
-		nodes:        map[string]*corev1.Node{},
-		pods:         pods,
-		nodePods:     map[string][]*corev1.Pod{},
-		nodeRequests: map[string]corev1.ResourceList{},
+		nodes:                map[string]*corev1.Node{},
+		pods:                 pods,
+		nodePods:             map[string][]*corev1.Pod{},
+		nodeRequests:         map[string]corev1.ResourceList{},
+		nodesResourceVersion: nodes.ResourceVersion,
+		observedAt:           time.Now().UTC(),
+		listErrors:           listErrors,
 	}
 	for i := range nodes.Items {
 		st.nodes[nodes.Items[i].Name] = &nodes.Items[i]
@@ -201,12 +215,42 @@ func (m *Monitor) poll() state {
 }
 
 func (m *Monitor) AvgUtilization(resource corev1.ResourceName) float64 {
-	utilization := m.nodeUtilization(resource)
+	average, _ := m.avgUtilization(resource)
+	return average
+}
+
+func (m *Monitor) avgUtilization(resource corev1.ResourceName, deployments ...*appsv1.Deployment) (float64, func() string) {
+	st := m.poll()
+	utilization := st.nodeUtilization(resource)
 	sum := 0.0
 	for _, v := range utilization {
 		sum += v
 	}
-	return sum / float64(len(utilization))
+	average := sum / float64(len(utilization))
+
+	// These are separate API reads, not an atomic cluster snapshot. Retain their
+	// resource versions alongside the exact Node/Pod sample used for the scalar.
+	deploymentSnapshots := make([]map[string]interface{}, 0, len(deployments))
+	for _, deployment := range deployments {
+		snapshot := map[string]interface{}{"namespace": deployment.Namespace, "name": deployment.Name}
+		current := &appsv1.Deployment{}
+		if err := m.kubeClient.Get(m.ctx, client.ObjectKeyFromObject(deployment), current); err != nil {
+			snapshot["error"] = err.Error()
+		} else {
+			snapshot["uid"] = current.UID
+			snapshot["resourceVersion"] = current.ResourceVersion
+			snapshot["generation"] = current.Generation
+			snapshot["observedGeneration"] = current.Status.ObservedGeneration
+			snapshot["desiredReplicas"] = current.Spec.Replicas
+			snapshot["replicas"] = current.Status.Replicas
+			snapshot["readyReplicas"] = current.Status.ReadyReplicas
+			snapshot["updatedReplicas"] = current.Status.UpdatedReplicas
+		}
+		deploymentSnapshots = append(deploymentSnapshots, snapshot)
+	}
+	return average, func() string {
+		return st.utilizationDetails(resource, average, utilization, deploymentSnapshots)
+	}
 }
 
 func (m *Monitor) MinUtilization(resource corev1.ResourceName) float64 {
@@ -218,7 +262,10 @@ func (m *Monitor) MinUtilization(resource corev1.ResourceName) float64 {
 }
 
 func (m *Monitor) nodeUtilization(resource corev1.ResourceName) []float64 {
-	st := m.poll()
+	return m.poll().nodeUtilization(resource)
+}
+
+func (st state) nodeUtilization(resource corev1.ResourceName) []float64 {
 	var utilization []float64
 	for nodeName, requests := range st.nodeRequests {
 		allocatable := st.nodes[nodeName].Status.Allocatable[resource]
@@ -233,6 +280,62 @@ func (m *Monitor) nodeUtilization(resource corev1.ResourceName) []float64 {
 		utilization = append(utilization, requested.AsApproximateFloat64()/allocatable.AsApproximateFloat64())
 	}
 	return utilization
+}
+
+// utilizationDetails describes the same inputs as the assertion, without polling again.
+// Include all listed nodes/pods so excluded nodes and unbound/terminal/deleting pods
+// are visible. Only resource inputs are retained from containers, not environment values.
+func (st state) utilizationDetails(resource corev1.ResourceName, average float64, ratios []float64, deployments []map[string]interface{}) string {
+	nodes := make([]map[string]interface{}, 0, len(st.nodes))
+	names := lo.Keys(st.nodes)
+	sort.Strings(names)
+	for _, name := range names {
+		node := st.nodes[name]
+		requested := st.nodeRequests[name][resource]
+		allocatable := node.Status.Allocatable[resource]
+		included := node.Labels[karpv1.NodePoolLabelKey] != "" && !allocatable.IsZero()
+		ratio := ""
+		if included {
+			ratio = strconv.FormatFloat(requested.AsApproximateFloat64()/allocatable.AsApproximateFloat64(), 'g', -1, 64)
+		}
+		nodes = append(nodes, map[string]interface{}{
+			"name": name, "uid": node.UID, "resourceVersion": node.ResourceVersion,
+			"nodePool": node.Labels[karpv1.NodePoolLabelKey], "deletionTimestamp": node.DeletionTimestamp,
+			"requests": requested.String(), "allocatable": allocatable.String(), "ratio": ratio, "included": included,
+		})
+	}
+	containerResources := func(containers []corev1.Container) []map[string]interface{} {
+		return lo.Map(containers, func(c corev1.Container, _ int) map[string]interface{} {
+			return map[string]interface{}{"name": c.Name, "resources": c.Resources, "restartPolicy": c.RestartPolicy}
+		})
+	}
+	statusResources := func(statuses []corev1.ContainerStatus) []map[string]interface{} {
+		return lo.Map(statuses, func(s corev1.ContainerStatus, _ int) map[string]interface{} {
+			return map[string]interface{}{"name": s.Name, "resources": s.Resources, "allocatedResources": s.AllocatedResources}
+		})
+	}
+	pods := lo.Map(st.pods.Items, func(p corev1.Pod, _ int) map[string]interface{} {
+		requested := resources.RequestsForPods(&p)[resource]
+		return map[string]interface{}{
+			"namespace": p.Namespace, "name": p.Name, "uid": p.UID, "resourceVersion": p.ResourceVersion,
+			"nodeName": p.Spec.NodeName, "phase": p.Status.Phase, "conditions": p.Status.Conditions, "deletionTimestamp": p.DeletionTimestamp, "owners": p.OwnerReferences,
+			"requests": requested.String(), "podResources": p.Spec.Resources, "overhead": p.Spec.Overhead,
+			"containers": containerResources(p.Spec.Containers), "initContainers": containerResources(p.Spec.InitContainers),
+			"containerStatuses": statusResources(p.Status.ContainerStatuses), "initContainerStatuses": statusResources(p.Status.InitContainerStatuses),
+		}
+	})
+	data, err := json.MarshalIndent(map[string]interface{}{
+		"resource": resource, "formula": "mean(pod requests / node allocatable)", "observedAt": st.observedAt,
+		// Strings preserve round-trip precision and also represent an empty-cohort NaN.
+		"average": strconv.FormatFloat(average, 'g', -1, 64), "cohortSize": len(ratios),
+		"ratiosInSumOrder":        lo.Map(ratios, func(r float64, _ int) string { return strconv.FormatFloat(r, 'g', -1, 64) }),
+		"nodeListResourceVersion": st.nodesResourceVersion, "podListResourceVersion": st.pods.ResourceVersion, "listErrors": st.listErrors,
+		"nodes": nodes, "pods": pods, "deployments": deployments,
+	}, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("formatting utilization sample: %v", err)
+	}
+	return string(data)
 }
 
 type copyable[T any] interface {
