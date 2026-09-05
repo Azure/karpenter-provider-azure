@@ -18,6 +18,7 @@ package consolidation_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -170,8 +171,49 @@ func normalizeTerminalDeploymentPods(ctx context.Context, kube kubernetes.Interf
 	return ctx.Err()
 }
 
-// writeTerminalPodCleanupEvidence is a no-op seam for the evidence regressions.
-// Keep it unwired from the live suite until the recorder contract is validated.
-func writeTerminalPodCleanupEvidence(io.Writer, *corev1.Pod) error {
+// writeTerminalPodCleanupEvidence writes only the closed metadata/status projection.
+// With Kubernetes v0.37.0 and Go 1.26.6, its acyclic leaves are strings, integers,
+// booleans and metav1.Time, whose JSON marshaler returns no ordinary encoding
+// error. Revisit marshal-error coverage when projection fields or dependencies
+// change; keep error propagation defensive rather than widening the projection.
+func writeTerminalPodCleanupEvidence(writer io.Writer, pod *corev1.Pod) error {
+	if writer == nil || pod == nil {
+		return fmt.Errorf("terminal Pod cleanup evidence requires a writer and Pod")
+	}
+	containerStates := func(statuses []corev1.ContainerStatus) []map[string]interface{} {
+		states := make([]map[string]interface{}, len(statuses))
+		for i, status := range statuses {
+			states[i] = map[string]interface{}{
+				"name": status.Name, "state": status.State,
+				"lastTerminationState": status.LastTerminationState, "restartCount": status.RestartCount,
+			}
+		}
+		return states
+	}
+	// Preserve requested status text verbatim; field exclusion is not text redaction.
+	data, err := json.Marshal(map[string]interface{}{
+		"event":     "terminalPodCleanupEvidence",
+		"namespace": pod.Namespace, "name": pod.Name, "uid": pod.UID, "resourceVersion": pod.ResourceVersion,
+		"ownerReferences": pod.OwnerReferences, "nodeName": pod.Spec.NodeName,
+		"deletionTimestamp": pod.DeletionTimestamp, "finalizers": pod.Finalizers,
+		"status": map[string]interface{}{
+			"phase": pod.Status.Phase, "reason": pod.Status.Reason, "message": pod.Status.Message,
+			"conditions":                 pod.Status.Conditions,
+			"containerStatuses":          containerStates(pod.Status.ContainerStatuses),
+			"initContainerStatuses":      containerStates(pod.Status.InitContainerStatuses),
+			"ephemeralContainerStatuses": containerStates(pod.Status.EphemeralContainerStatuses),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal terminal Pod cleanup evidence: %w", err)
+	}
+	data = append(data, '\n')
+	written, err := writer.Write(data)
+	if err != nil {
+		return fmt.Errorf("write terminal Pod cleanup evidence: %w", err)
+	}
+	if written != len(data) {
+		return fmt.Errorf("write terminal Pod cleanup evidence: %w", io.ErrShortWrite)
+	}
 	return nil
 }
