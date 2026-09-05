@@ -21,14 +21,17 @@ import (
 
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	"sigs.k8s.io/karpenter/pkg/utils/result"
@@ -37,6 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
@@ -67,6 +71,7 @@ func NewController(
 	subnetClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
+	instanceTypeProvider instancetype.Provider,
 	networkPolicy string,
 	networkPlugin string,
 ) *Controller {
@@ -78,7 +83,7 @@ func NewController(
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:            NewSubnetReconciler(subnetClient),
 		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
+		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, kubeClient, instanceTypeProvider, networkPolicy, networkPlugin),
 	}
 }
 
@@ -126,6 +131,15 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("nodeclass.status").
 		For(&v1beta1.AKSNodeClass{}).
+		// LocalDNS Mode=Preferred resolution reads the set of NodePools
+		// referencing the AKSNodeClass (see checkInstanceTypeGate), so NodePool
+		// churn is an input to this controller, not just AKSNodeClass churn.
+		// Without this watch, a NodePool created alongside its AKSNodeClass
+		// loses the race against the first reconcile, LocalDNS latches at
+		// NoReferencingNodePools, and nothing re-runs the gate until the next
+		// periodic requeue -- a multi-minute window in which nodes provision
+		// with LocalDNS off.
+		Watches(&karpv1.NodePool{}, handler.EnqueueRequestsFromMapFunc(nodePoolToAKSNodeClass)).
 		WithOptions(controller.Options{
 			RateLimiter: reasonable.RateLimiter(),
 			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
@@ -133,4 +147,20 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
+}
+
+// nodePoolToAKSNodeClass maps a NodePool to the AKSNodeClass it references so
+// that creating, updating or deleting a NodePool re-runs the LocalDNS instance
+// type gate against the current set of NodePools. NodePools that reference
+// another provider's NodeClass map to nothing.
+func nodePoolToAKSNodeClass(_ context.Context, o client.Object) []reconcile.Request {
+	np, ok := o.(*karpv1.NodePool)
+	if !ok {
+		return nil
+	}
+	name, ok := aksNodeClassRefName(np)
+	if !ok {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: name}}}
 }
