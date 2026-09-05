@@ -24,7 +24,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -301,6 +303,10 @@ func TestReplacementBudgetPlacementWritableContract(t *testing.T) {
 	}
 }
 
+// These legacy controls have fake-only knowledge: no-op and response-only never
+// persist, while persist-then-error persists before returning. Their expectations
+// are unchanged; none proves that an unsuccessful real request cannot commit later.
+// TestReplacementBudgetPlacementLateApply covers that separate ordering.
 func TestReplacementBudgetPlacementMutationFailures(t *testing.T) {
 	for _, mode := range []string{"no-op", "response-only", "persist-then-error", "extra-field", "delete-then-error"} {
 		t.Run(mode, func(t *testing.T) {
@@ -516,6 +522,8 @@ func TestReplacementBudgetPlacementCleanupDiscrepancies(t *testing.T) {
 	}
 }
 
+// The no-op and response-only release controls also never persist in this fake.
+// They check readback, not the outcome of an outstanding asynchronous request.
 func TestReplacementBudgetPlacementCleanupRequiresEffectsAndHealth(t *testing.T) {
 	for _, mode := range []string{"no-op", "response-only", "stalled rollout"} {
 		t.Run(mode, func(t *testing.T) {
@@ -679,6 +687,185 @@ func TestReplacementBudgetPlacementSSAImplementation(t *testing.T) {
 	}
 }
 
+// This fault is at the submitted-request boundary: the actual helper receives
+// cancellation, but its captured apply can still reach real API-server storage.
+// Channels order completion after Restore returns, not sleeps or synthetic CAS.
+// This does not induce an API-server timeout or run a Deployment controller.
+func TestReplacementBudgetPlacementLateApply(t *testing.T) {
+	kube := newPlacementImplementationAPI(t)
+	tests := []struct {
+		name string
+		run  func(*testing.T, *placementLateApplyFixture, placementLateApplyRequest)
+	}{
+		{name: "unchanged resourceVersion remains recoverable", run: testPlacementLateApplyUnchangedVersion},
+		{name: "advanced resourceVersion fences pending apply", run: testPlacementLateApplyAdvancedVersion},
+		{name: "replacement UID is never adopted", run: testPlacementLateApplyReplacement},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newPlacementLateApplyFixture(t, kube)
+			request := fixture.submit()
+			tt.run(t, fixture, request)
+		})
+	}
+}
+
+func testPlacementLateApplyUnchangedVersion(t *testing.T, f *placementLateApplyFixture, request placementLateApplyRequest) {
+	firstErr := f.restoreBeforeCompletion()
+	firstReleased := f.target.released
+	f.requireCleanupObserved(f.baseline)
+	if len(f.requests) != 1 || !reflect.DeepEqual(f.get(), f.baseline) {
+		t.Fatal("late-apply prerequisite: cleanup must leave the absent selector and submitted UID/RV unchanged while apply is held")
+	}
+
+	result := f.complete()
+	if result.err != nil || result.deployment == nil {
+		t.Fatalf("late-apply prerequisite: the unchanged-UID/RV apply must actually commit after cleanup returns: %v", result.err)
+	}
+	stored := f.get()
+	if stored.UID != request.uid || stored.ResourceVersion == request.resourceVersion || stored.Generation <= f.baseline.Generation {
+		t.Fatalf("late-apply prerequisite: storage did not record the delayed template change: uid=%s rv=%s generation=%d", stored.UID, stored.ResourceVersion, stored.Generation)
+	}
+	if !reflect.DeepEqual(stored, result.deployment) {
+		t.Fatal("late-apply prerequisite: the successful response must equal a fresh persisted GET")
+	}
+	assertSSAContractSelector(t, f.baseline, stored, f.scope.manager)
+	t.Logf("late-apply storage proved: uid=%s submittedRV=%s committedRV=%s; first Restore error=%v released=%t", request.uid, request.resourceVersion, stored.ResourceVersion, firstErr, firstReleased)
+
+	// These assertions deliberately do not stop the test: the same target must
+	// also demonstrate whether a later Restore can recover the real stored field.
+	if firstErr == nil {
+		t.Error("Restore returned success while a submitted apply could still commit against the unchanged UID/resourceVersion")
+	}
+	if firstReleased {
+		t.Error("Restore marked an unresolved apply released from an unchanged-resourceVersion absence observation")
+	}
+	if err := f.restore(); err != nil {
+		t.Errorf("subsequent Restore must recover and relinquish the late-installed selector: %v", err)
+	}
+	restored := f.get()
+	if err := f.scope.validateRestored(restored); err != nil {
+		t.Errorf("subsequent Restore did not actually remove the late-installed selector and its ownership from storage: %v", err)
+	}
+	if restored.UID != request.uid || restored.ResourceVersion == stored.ResourceVersion {
+		t.Errorf("subsequent Restore must persist omission on the original UID, not merely validate: uid=%s rv=%s", restored.UID, restored.ResourceVersion)
+	}
+	if len(f.requests) != 2 || f.requests[1].install {
+		t.Errorf("subsequent Restore must submit one real omission-only apply; got %d helper requests", len(f.requests))
+	}
+	if !f.target.released {
+		t.Error("subsequent Restore must confirm release after removing the persisted intent")
+	}
+	pod, err := f.kube.CoreV1().Pods(f.originalPod.Namespace).Get(f.ctx, f.originalPod.Name, metav1.GetOptions{})
+	if err != nil || pod == nil || pod.UID != f.originalPod.UID {
+		t.Fatalf("late-apply prerequisite: the original healthy Pod must remain available, not be replaced by the fixture: %v", err)
+	}
+}
+
+func testPlacementLateApplyAdvancedVersion(t *testing.T, f *placementLateApplyFixture, request placementLateApplyRequest) {
+	// This is an independent owner update, not a helper write invented as a fence.
+	// The owner continues to omit the independently owned selector from its intent.
+	changedOwner := f.owner.DeepCopy()
+	changedOwner.Annotations["example.com/revision"] = "intervening-owner-update"
+	changed, err := ssaContractApply(t, f.ctx, f.kube.AppsV1().Deployments(f.owner.Namespace), f.owner.Name, changedOwner, metav1.PatchOptions{FieldManager: "deployment-owner"})
+	if err != nil {
+		t.Fatalf("late-apply prerequisite: apply the independent owner update: %v", err)
+	}
+	if changed == nil || changed.UID != request.uid || changed.ResourceVersion == request.resourceVersion {
+		t.Fatal("late-apply prerequisite: the independent owner update, not status setup, must already advance RV on the same UID")
+	}
+	if changed.Annotations["example.com/revision"] != "intervening-owner-update" || !reflect.DeepEqual(f.get(), changed) {
+		t.Fatal("late-apply prerequisite: the owner change must actually persist before health publication")
+	}
+	current := f.publishAvailable(changed)
+	if current.UID != request.uid || current.ResourceVersion == request.resourceVersion {
+		t.Fatal("late-apply prerequisite: the owner update must advance the stored RV without replacing the UID")
+	}
+	if err := f.scope.validateRestored(current); err != nil {
+		t.Fatalf("late-apply prerequisite: the advanced-RV object must still have no selector or scope ownership: %v", err)
+	}
+	if _, err := f.scope.rolloutReady(f.ctx, current, f.target, "restored"); err != nil {
+		t.Fatalf("late-apply prerequisite: the advanced-RV control must have healthy original placement: %v", err)
+	}
+	firstErr := f.restoreBeforeCompletion()
+	f.requireCleanupObserved(current)
+	result := f.complete()
+	if !apierrors.IsConflict(result.err) || !strings.Contains(result.err.Error(), "the object has been modified") {
+		t.Fatalf("late-apply prerequisite: the real API server must reject the stale RV as a storage conflict, not a mock/setup error: %v", result.err)
+	}
+	if !reflect.DeepEqual(f.get(), current) {
+		t.Fatal("late-apply prerequisite: the rejected stale-RV request changed real storage")
+	}
+	t.Logf("late-apply RV fence proved: uid=%s submittedRV=%s observedRV=%s rejection=%v", request.uid, request.resourceVersion, current.ResourceVersion, result.err)
+	if firstErr != nil || !f.target.released {
+		t.Errorf("Restore must accept absent intent once an observed new RV fences the pending apply: error=%v released=%t", firstErr, f.target.released)
+	}
+	if err := f.restore(); err != nil {
+		t.Errorf("Restore after a real stale-RV rejection must confirm absence: %v", err)
+	}
+	if len(f.requests) != 1 || !reflect.DeepEqual(f.get(), current) {
+		t.Error("the fenced absent selector requires no helper mutation, and the owner's update must be preserved")
+	}
+}
+
+func testPlacementLateApplyReplacement(t *testing.T, f *placementLateApplyFixture, request placementLateApplyRequest) {
+	deployments := f.kube.AppsV1().Deployments(f.owner.Namespace)
+	if err := deployments.Delete(f.ctx, f.owner.Name, metav1.DeleteOptions{
+		Preconditions: &metav1.Preconditions{UID: &request.uid}, PropagationPolicy: ptr.To(metav1.DeletePropagationBackground),
+	}); err != nil {
+		t.Fatalf("late-apply prerequisite: delete only the fixture's original Deployment: %v", err)
+	}
+	if _, err := deployments.Get(f.ctx, f.owner.Name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("late-apply prerequisite: the original Deployment must actually be absent before replacement: %v", err)
+	}
+	replacement, err := ssaContractApply(t, f.ctx, deployments, f.owner.Name, f.owner, metav1.PatchOptions{FieldManager: "deployment-owner"})
+	if err != nil || replacement == nil || replacement.UID == "" || replacement.UID == request.uid {
+		t.Fatalf("late-apply prerequisite: create a same-name Deployment with a genuinely new UID: %v", err)
+	}
+	firstErr := f.restoreBeforeCompletion()
+	f.requireCleanupObserved(replacement)
+	result := f.complete()
+	if !apierrors.IsInvalid(result.err) && !apierrors.IsConflict(result.err) {
+		t.Fatalf("late-apply prerequisite: the original submitted request must be rejected against the replacement: %v", result.err)
+	}
+	if !reflect.DeepEqual(f.get(), replacement) {
+		t.Fatal("late-apply prerequisite: the original pending apply changed the replacement in storage")
+	}
+
+	// Isolate UID rejection from stale-RV rejection with a separate setup-actor
+	// probe. Do not retarget or rewrite the helper's captured pending request.
+	var uidProbe map[string]interface{}
+	if err := json.Unmarshal(request.data, &uidProbe); err != nil {
+		t.Fatalf("late-apply prerequisite: decode the independent UID probe: %v", err)
+	}
+	metadata := uidProbe["metadata"].(map[string]interface{})
+	metadata["resourceVersion"] = replacement.ResourceVersion
+	if metadata["uid"] != string(request.uid) {
+		t.Fatal("late-apply prerequisite: the UID probe must retain the originally submitted UID")
+	}
+	data, err := json.Marshal(uidProbe)
+	if err != nil {
+		t.Fatalf("late-apply prerequisite: encode the independent UID probe: %v", err)
+	}
+	_, err = deployments.Patch(f.ctx, f.owner.Name, types.ApplyPatchType, data, request.options)
+	if (!apierrors.IsInvalid(err) && !apierrors.IsConflict(err)) || !strings.Contains(strings.ToLower(err.Error()), "uid") {
+		t.Fatalf("late-apply prerequisite: real UID rejection must survive a fresh replacement RV: %v", err)
+	}
+	if !reflect.DeepEqual(f.get(), replacement) {
+		t.Fatal("late-apply prerequisite: the rejected UID-only probe changed the replacement")
+	}
+	t.Logf("late-apply UID fence proved: originalUID=%s replacementUID=%s freshRV=%s rejection=%v", request.uid, replacement.UID, replacement.ResourceVersion, err)
+	if firstErr == nil || f.target.released || f.target.uid != request.uid {
+		t.Errorf("Restore must refuse, not release or adopt, a replacement UID: error=%v released=%t targetUID=%s", firstErr, f.target.released, f.target.uid)
+	}
+	if err := f.restore(); err == nil {
+		t.Error("repeated Restore must continue to refuse the replacement UID")
+	}
+	if len(f.requests) != 1 || !reflect.DeepEqual(f.get(), replacement) {
+		t.Error("neither Restore may mutate or adopt the same-name replacement")
+	}
+}
+
 func newPlacementImplementationAPI(t *testing.T) kubernetes.Interface {
 	t.Helper()
 	assets := os.Getenv("KUBEBUILDER_ASSETS")
@@ -708,6 +895,347 @@ func newPlacementImplementationAPI(t *testing.T) kubernetes.Interface {
 	NewWithT(t).Expect(err).ToNot(HaveOccurred())
 	t.Logf("actual placement implementation uses real Kubernetes %s", version.GitVersion)
 	return kube
+}
+
+type placementLateApplyRequest struct {
+	install         bool
+	uid             types.UID
+	resourceVersion string
+	data            []byte
+	options         metav1.PatchOptions
+}
+
+type placementLateApplyResult struct {
+	deployment *appsv1.Deployment
+	err        error
+}
+
+// The client-go fake is only a request adapter here: its tracker is empty and
+// never answers a request. Every read and completed write uses real API storage.
+// Only the first apply is held, and its bytes survive the caller's cancellation.
+// The setup actor publishes health because envtest has no workload controllers;
+// it never changes the selector or advances the Deployment RV during the hold.
+// The advanced-RV test explicitly drives a separate owner update as its control.
+type placementLateApplyFixture struct {
+	t                    *testing.T
+	ctx                  context.Context
+	kube                 kubernetes.Interface
+	owner                *appsv1.Deployment
+	baseline             *appsv1.Deployment
+	originalPod          *corev1.Pod
+	scope                *replacementBudgetPlacement
+	target               *budgetPlacementTarget
+	cancelActivation     context.CancelFunc
+	submitted            chan placementLateApplyRequest
+	release              chan struct{}
+	completed            chan placementLateApplyResult
+	firstRestoreReturned chan struct{}
+	observeCleanup       bool
+	cleanupReads         []*appsv1.Deployment
+	requests             []placementLateApplyRequest
+}
+
+func newPlacementLateApplyFixture(t *testing.T, kube kubernetes.Interface) *placementLateApplyFixture {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	t.Cleanup(cancel)
+	owner := ssaContractOwner()
+	owner.Spec.Replicas = ptr.To[int32](1)
+	owner.Labels["app"] = owner.Name
+	owner.Spec.Selector.MatchLabels["app"] = owner.Name
+	owner.Spec.Template.Labels["app"] = owner.Name
+	owner.Spec.Template.Spec.ServiceAccountName = owner.Name
+	owner.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
+	f := &placementLateApplyFixture{
+		t: t, ctx: ctx, kube: kube, owner: owner,
+		submitted: make(chan placementLateApplyRequest, 1), release: make(chan struct{}),
+		completed: make(chan placementLateApplyResult, 1), firstRestoreReturned: make(chan struct{}),
+	}
+	created, err := ssaContractApply(t, ctx, kube.AppsV1().Deployments(owner.Namespace), owner.Name, owner, metav1.PatchOptions{FieldManager: "deployment-owner"})
+	if err != nil || created == nil || created.UID == "" || created.ResourceVersion == "" {
+		t.Fatalf("late-apply prerequisite: create the SSA-owned Deployment with server-assigned UID/RV: %v", err)
+	}
+	if _, err := kube.CoreV1().ServiceAccounts(owner.Namespace).Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: owner.Name, Namespace: owner.Namespace}, AutomountServiceAccountToken: ptr.To(false),
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("late-apply prerequisite: create the fixture Pod's ServiceAccount: %v", err)
+	}
+	node, err := kube.CoreV1().Nodes().Create(ctx, &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: owner.Name + "-node", Labels: map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeSystem}},
+	}, metav1.CreateOptions{})
+	if err != nil || node == nil || node.UID == "" || node.ResourceVersion == "" {
+		t.Fatalf("late-apply prerequisite: create the fixture Node with server-assigned UID/RV: %v", err)
+	}
+	if _, err := kube.CoreV1().Nodes().Patch(ctx, node.Name, types.MergePatchType, placementLateApplyStatusPatch(t, node, corev1.NodeStatus{
+		Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}},
+	}), metav1.PatchOptions{}, "status"); err != nil {
+		t.Fatalf("late-apply prerequisite: publish the fixture Node's health: %v", err)
+	}
+	rs, err := kube.AppsV1().ReplicaSets(owner.Namespace).Create(ctx, &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: owner.Name + "-rs", Namespace: owner.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: created.Name, UID: created.UID, Controller: ptr.To(true)}},
+		},
+		Spec: appsv1.ReplicaSetSpec{Replicas: ptr.To[int32](1), Selector: created.Spec.Selector.DeepCopy(), Template: *created.Spec.Template.DeepCopy()},
+	}, metav1.CreateOptions{})
+	if err != nil || rs == nil || rs.UID == "" || rs.ResourceVersion == "" {
+		t.Fatalf("late-apply prerequisite: create the original ReplicaSet with its real Deployment UID: %v", err)
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: owner.Name + "-pod", Namespace: owner.Namespace, Labels: maps.Clone(created.Spec.Template.Labels),
+			Annotations:     maps.Clone(created.Spec.Template.Annotations),
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: rs.Name, UID: rs.UID, Controller: ptr.To(true)}},
+		},
+		Spec: *created.Spec.Template.Spec.DeepCopy(),
+	}
+	pod.Spec.NodeName = node.Name
+	pod, err = kube.CoreV1().Pods(owner.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil || pod == nil || pod.UID == "" || pod.ResourceVersion == "" {
+		t.Fatalf("late-apply prerequisite: create the original bound Pod with its real ReplicaSet UID: %v", err)
+	}
+	var containerStatuses []corev1.ContainerStatus
+	for _, container := range pod.Spec.Containers {
+		containerStatuses = append(containerStatuses, corev1.ContainerStatus{
+			Name: container.Name, Image: container.Image, ImageID: "fixture-image", Ready: true,
+			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		})
+	}
+	f.originalPod, err = kube.CoreV1().Pods(owner.Namespace).Patch(ctx, pod.Name, types.MergePatchType, placementLateApplyStatusPatch(t, pod, corev1.PodStatus{
+		Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}, ContainerStatuses: containerStatuses,
+	}), metav1.PatchOptions{}, "status")
+	if err != nil || f.originalPod == nil || f.originalPod.UID != pod.UID {
+		t.Fatalf("late-apply prerequisite: publish the original Pod's health without replacing its UID: %v", err)
+	}
+	f.baseline = f.publishAvailable(created)
+	adapter := kubefake.NewSimpleClientset()
+	adapter.PrependReactor("*", "*", f.react)
+	f.scope = newReplacementBudgetPlacement(adapter, placementTestPool())
+	f.scope.timeout = time.Minute
+	f.target = &budgetPlacementTarget{
+		key: types.NamespacedName{Namespace: created.Namespace, Name: created.Name}, uid: created.UID, writeSelector: true,
+	}
+	f.scope.targets = []*budgetPlacementTarget{f.target}
+	// Use the actual baseline and mutation entry points, as in the implementation
+	// SSA tests above. Real UID-linked original Pods make a successful first
+	// Restore possible; an empty inventory must not manufacture the regression.
+	if err := f.scope.captureBaseline(ctx, f.target); err != nil {
+		t.Fatalf("late-apply prerequisite: actual helper must capture healthy original placement: %v", err)
+	}
+	if f.target.beforeActivation.Len() != 1 || !f.target.beforeActivation.Has(f.originalPod.UID) || f.target.baselinePodSelector != nil {
+		t.Fatal("late-apply prerequisite: capture exactly the healthy original Pod with absent selector")
+	}
+	return f
+}
+
+func placementLateApplyStatusPatch(t *testing.T, object metav1.Object, status interface{}) []byte {
+	t.Helper()
+	data, err := json.Marshal(map[string]interface{}{
+		"metadata": map[string]interface{}{"uid": object.GetUID(), "resourceVersion": object.GetResourceVersion()}, "status": status,
+	})
+	if err != nil {
+		t.Fatalf("late-apply prerequisite: encode the setup actor's status patch: %v", err)
+	}
+	return data
+}
+
+func (f *placementLateApplyFixture) publishAvailable(deployment *appsv1.Deployment) *appsv1.Deployment {
+	f.t.Helper()
+	// Setup/controller observation only: before submission, after the independent
+	// owner update, or after a real omission has already removed the selector.
+	// Never run on a cleanup GET or use a status write to fence the pending apply.
+	status := appsv1.DeploymentStatus{ObservedGeneration: deployment.Generation, Replicas: 1, UpdatedReplicas: 1, ReadyReplicas: 1, AvailableReplicas: 1}
+	after, err := f.kube.AppsV1().Deployments(deployment.Namespace).Patch(f.ctx, deployment.Name, types.MergePatchType,
+		placementLateApplyStatusPatch(f.t, deployment, status), metav1.PatchOptions{}, "status")
+	if err != nil || after == nil {
+		f.t.Fatalf("late-apply prerequisite: publish controlled Deployment health: %v", err)
+	}
+	if after.UID != deployment.UID || after.Generation != deployment.Generation || !reflect.DeepEqual(after.Spec, deployment.Spec) {
+		f.t.Fatal("late-apply prerequisite: the setup status update must not alter identity or template")
+	}
+	return f.get()
+}
+
+func (f *placementLateApplyFixture) get() *appsv1.Deployment {
+	f.t.Helper()
+	current, err := f.kube.AppsV1().Deployments(f.owner.Namespace).Get(f.ctx, f.owner.Name, metav1.GetOptions{})
+	if err != nil || current == nil || current.UID == "" || current.ResourceVersion == "" {
+		f.t.Fatalf("late-apply prerequisite: read actual fixture storage with server-assigned UID/RV: %v", err)
+	}
+	return current
+}
+
+func (f *placementLateApplyFixture) react(action ktesting.Action) (bool, runtime.Object, error) {
+	f.t.Helper()
+	if action.GetSubresource() != "" {
+		f.t.Fatalf("late-apply prerequisite: helper must not access subresource %q", action.GetSubresource())
+	}
+	switch action.GetVerb() + " " + action.GetResource().Resource {
+	case "get deployments":
+		current, err := f.kube.AppsV1().Deployments(action.GetNamespace()).Get(f.ctx, action.(ktesting.GetAction).GetName(), metav1.GetOptions{})
+		if f.observeCleanup && err == nil && current != nil {
+			f.cleanupReads = append(f.cleanupReads, current.DeepCopy())
+		}
+		return true, current, err
+	case "list replicasets":
+		current, err := f.kube.AppsV1().ReplicaSets(action.GetNamespace()).List(f.ctx, metav1.ListOptions{})
+		return true, current, err
+	case "list pods":
+		current, err := f.kube.CoreV1().Pods(action.GetNamespace()).List(f.ctx, metav1.ListOptions{})
+		return true, current, err
+	case "get nodes":
+		current, err := f.kube.CoreV1().Nodes().Get(f.ctx, action.(ktesting.GetAction).GetName(), metav1.GetOptions{})
+		return true, current, err
+	case "patch deployments":
+		return f.patch(action)
+	default:
+		f.t.Fatalf("late-apply prerequisite: forbidden helper action %s %s; only reads and minimal selector apply are allowed", action.GetVerb(), action.GetResource().Resource)
+		return true, nil, errors.New("forbidden helper action")
+	}
+}
+
+func (f *placementLateApplyFixture) patch(action ktesting.Action) (bool, runtime.Object, error) {
+	f.t.Helper()
+	patch := action.(ktesting.PatchAction)
+	options := action.(interface{ GetPatchOptions() metav1.PatchOptions }).GetPatchOptions()
+	if patch.GetPatchType() != types.ApplyPatchType || !reflect.DeepEqual(options, metav1.PatchOptions{FieldManager: f.scope.manager}) {
+		f.t.Fatal("late-apply prerequisite: helper must use unforced, non-dry-run apply with its own manager")
+	}
+	before := f.get()
+	if action.GetNamespace() != before.Namespace || patch.GetName() != before.Name {
+		f.t.Fatal("late-apply prerequisite: helper requested a different fixture identity")
+	}
+	var intent map[string]interface{}
+	if err := json.Unmarshal(patch.GetPatch(), &intent); err != nil {
+		f.t.Fatalf("late-apply prerequisite: decode actual submitted helper intent: %v", err)
+	}
+	_, install := intent["spec"]
+	expected := map[string]interface{}{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]interface{}{
+		"name": before.Name, "namespace": before.Namespace, "uid": string(before.UID), "resourceVersion": before.ResourceVersion,
+	}}
+	if install {
+		expected["spec"] = map[string]interface{}{"template": map[string]interface{}{"spec": map[string]interface{}{"nodeSelector": map[string]interface{}{v1beta1.AKSLabelMode: v1beta1.ModeSystem}}}}
+	}
+	if !reflect.DeepEqual(intent, expected) || before.UID == "" || before.ResourceVersion == "" {
+		f.t.Fatalf("late-apply prerequisite: actual helper payload must contain exact UID/RV and only selector intent (or omission), got %s", patch.GetPatch())
+	}
+	metadata := intent["metadata"].(map[string]interface{})
+	request := placementLateApplyRequest{
+		install: install, uid: types.UID(metadata["uid"].(string)), resourceVersion: metadata["resourceVersion"].(string),
+		data: append([]byte(nil), patch.GetPatch()...), options: options,
+	}
+	f.requests = append(f.requests, request)
+	if install {
+		if len(f.requests) != 1 || f.cancelActivation == nil {
+			f.t.Fatal("late-apply prerequisite: only the initial submitted apply may be delayed")
+		}
+		f.submitted <- request
+		go func() {
+			select {
+			case <-f.release:
+				// The persistence side has its own lifetime, not the canceled
+				// caller context. Replay exact bytes, with real server UID/RV CAS.
+				after, err := f.kube.AppsV1().Deployments(before.Namespace).Patch(f.ctx, before.Name, types.ApplyPatchType, request.data, request.options)
+				f.completed <- placementLateApplyResult{deployment: after, err: err}
+			case <-f.ctx.Done():
+				f.completed <- placementLateApplyResult{err: f.ctx.Err()}
+			}
+		}()
+		f.cancelActivation()
+		return true, nil, context.Canceled
+	}
+	after, err := f.kube.AppsV1().Deployments(before.Namespace).Patch(f.ctx, before.Name, types.ApplyPatchType, request.data, request.options)
+	if err == nil {
+		if after == nil || after.Spec.Template.Spec.NodeSelector != nil {
+			f.t.Fatal("late-apply prerequisite: real omission must remove the selector before publishing restored health")
+		}
+		// Original Pods never rolled during the hold. Publish their observed
+		// health only after the helper's real omission has persisted.
+		f.publishAvailable(after)
+	}
+	return true, after, err
+}
+
+func (f *placementLateApplyFixture) submit() placementLateApplyRequest {
+	f.t.Helper()
+	ctx, cancel := context.WithCancel(f.ctx)
+	defer cancel()
+	f.cancelActivation = cancel
+	err := f.scope.mutateSelector(ctx, f.target, true)
+	if !errors.Is(err, context.Canceled) || ctx.Err() != context.Canceled {
+		f.t.Fatalf("late-apply prerequisite: the actual mutation helper must receive cancellation after submission: %v", err)
+	}
+	if !f.target.attempted || f.target.confirmed || f.target.released || len(f.requests) != 1 {
+		f.t.Fatal("late-apply prerequisite: retain one attempted but unconfirmed, unreleased target")
+	}
+	select {
+	case request := <-f.submitted:
+		if request.uid != f.baseline.UID || request.resourceVersion != f.baseline.ResourceVersion || !reflect.DeepEqual(f.get(), f.baseline) {
+			f.t.Fatal("late-apply prerequisite: submitted UID/RV must match unchanged storage with no persisted apply")
+		}
+		return request
+	case <-f.ctx.Done():
+		f.t.Fatalf("late-apply deadlock guard: no submitted request: %v", f.ctx.Err())
+		return placementLateApplyRequest{}
+	}
+}
+
+func (f *placementLateApplyFixture) restore() error {
+	f.t.Helper()
+	ctx, cancel := context.WithTimeout(f.ctx, time.Minute)
+	defer cancel()
+	err := f.scope.Restore(ctx)
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		f.t.Fatalf("late-apply deadlock guard: Restore must finish from observations, not a guard timeout: %v", err)
+	}
+	return err
+}
+
+func (f *placementLateApplyFixture) restoreBeforeCompletion() error {
+	f.t.Helper()
+	f.observeCleanup = true
+	err := f.restore()
+	f.observeCleanup = false
+	close(f.firstRestoreReturned)
+	return err
+}
+
+func (f *placementLateApplyFixture) requireCleanupObserved(expected *appsv1.Deployment) {
+	f.t.Helper()
+	if len(f.cleanupReads) == 0 {
+		f.t.Fatal("late-apply prerequisite: actual Restore must read real storage before delayed completion")
+	}
+	for _, observed := range f.cleanupReads {
+		if !reflect.DeepEqual(observed, expected) {
+			f.t.Fatalf("late-apply prerequisite: cleanup observed unexpected storage: uid=%s rv=%s", observed.UID, observed.ResourceVersion)
+		}
+		if err := f.scope.validateRestored(observed); err != nil {
+			f.t.Fatalf("late-apply prerequisite: every pre-completion cleanup read must observe absent/unowned selector: %v", err)
+		}
+	}
+}
+
+func (f *placementLateApplyFixture) complete() placementLateApplyResult {
+	f.t.Helper()
+	select {
+	case <-f.firstRestoreReturned:
+	default:
+		f.t.Fatal("late-apply prerequisite: completion must not be released until the first Restore returns")
+	}
+	if len(f.cleanupReads) == 0 {
+		f.t.Fatal("late-apply prerequisite: completion requires a recorded real cleanup GET")
+	}
+	close(f.release)
+	select {
+	case result := <-f.completed:
+		if errors.Is(result.err, context.Canceled) || errors.Is(result.err, context.DeadlineExceeded) {
+			f.t.Fatalf("late-apply deadlock guard: persistence did not complete independently of caller cancellation: %v", result.err)
+		}
+		return result
+	case <-f.ctx.Done():
+		f.t.Fatalf("late-apply deadlock guard: pending apply did not finish: %v", f.ctx.Err())
+		return placementLateApplyResult{}
+	}
 }
 
 // The fake below supplies explicitly controlled Kubernetes observations, not SSA
