@@ -408,6 +408,7 @@ func TestReplacementBudgetPlacementSubmittedApplyOutcomes(t *testing.T) {
 				diagnostics = append(diagnostics, map[string]interface{}{
 					"uid": submitted.uid, "resourceVersion": submitted.resourceVersion, "install": submitted.install,
 					"outcome": string(submitted.outcome), "fencedAtResourceVersion": submitted.fencedAtResourceVersion,
+					"omissionRetiredAtResourceVersion": "", // These cases have no older omission followed by an owned-selector fence.
 				})
 			}
 			g.Expect(scope.Diagnostics()["targets"].([]map[string]interface{})[0]["submittedApplies"]).To(Equal(diagnostics))
@@ -532,6 +533,154 @@ func TestReplacementBudgetPlacementApplyFenceRequirements(t *testing.T) {
 				if tt.wantFenced {
 					g.Expect(target.submittedApplies[0].fencedAtResourceVersion).To(Equal(current.ResourceVersion))
 				}
+			}
+		})
+	}
+}
+
+// These observations exercise ledger bookkeeping and ownership guards only.
+// The unchanged real-API omission-causality test proves the storage ordering.
+func TestReplacementBudgetPlacementOmissionRetirement(t *testing.T) {
+	tests := []struct {
+		name        string
+		rv          string
+		outcome     budgetPlacementApplyOutcome
+		install     bool
+		foreignUID  bool
+		coowned     bool
+		broadened   bool
+		wantRetired bool
+		wantError   bool
+	}{
+		{name: "unknown omission at different opaque RV", rv: "z-submitted", outcome: budgetPlacementApplyUnknown, wantRetired: true},
+		{name: "acknowledged omission at different opaque RV", rv: "z-submitted", outcome: budgetPlacementApplyAcknowledged, wantRetired: true},
+		{name: "unchanged RV remains eligible", rv: "a-observed", outcome: budgetPlacementApplyUnknown},
+		{name: "installation is not an omission", rv: "z-submitted", outcome: budgetPlacementApplyUnknown, install: true},
+		{name: "rejected omission stays rejected", rv: "z-submitted", outcome: budgetPlacementApplyRejected},
+		{name: "foreign submitted UID is not fenced", rv: "z-submitted", outcome: budgetPlacementApplyUnknown, foreignUID: true},
+		{name: "missing submitted RV is not fenced", outcome: budgetPlacementApplyUnknown},
+		{name: "coowned observation cannot retire", rv: "z-submitted", outcome: budgetPlacementApplyUnknown, coowned: true, wantError: true},
+		{name: "broadened ownership cannot retire", rv: "z-submitted", outcome: budgetPlacementApplyUnknown, broadened: true, wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			scope := &replacementBudgetPlacement{manager: "placement-owner"}
+			current := placementTestDeployment("controller")
+			current.ResourceVersion = "a-observed" // Deliberately not numeric or lexically after the submitted RV.
+			current.Spec.Template.Spec.NodeSelector = map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeSystem}
+			current.ManagedFields = append(current.ManagedFields, placementTestOwner(scope.manager, budgetPlacementSelectorFields))
+			if tt.coowned {
+				current.ManagedFields = append(current.ManagedFields, placementTestOwner("another-owner", budgetPlacementSelectorFields))
+			}
+			if tt.broadened {
+				current.ManagedFields[1].FieldsV1 = placementTestFields(`{"f:spec":{"f:replicas":{},"f:template":{"f:spec":{"f:nodeSelector":{}}}}}`)
+			}
+			submitted := budgetPlacementApply{uid: current.UID, resourceVersion: tt.rv, install: tt.install, outcome: tt.outcome}
+			if tt.foreignUID {
+				submitted.uid = "another-deployment-uid"
+			}
+			target := &budgetPlacementTarget{
+				key: types.NamespacedName{Namespace: current.Namespace, Name: current.Name}, uid: current.UID,
+				attempted: true, submittedApplies: []budgetPlacementApply{submitted},
+			}
+			scope.targets = []*budgetPlacementTarget{target}
+			err := scope.observeOwnedSelector(target, current)
+			g.Expect(err != nil).To(Equal(tt.wantError), "observation error: %v", err)
+			g.Expect(target.confirmed).To(Equal(!tt.wantError), "only a validated owned observation proves installation")
+			g.Expect(target.released).To(BeFalse(), "an owned observation cannot certify absent intent or restored health")
+			wanted := submitted // Expected metadata/outcome comes from input, not the mutated ledger.
+			if tt.wantRetired {
+				wanted.fencedAtResourceVersion = current.ResourceVersion
+				wanted.omissionRetiredAtResourceVersion = current.ResourceVersion
+			}
+			g.Expect(target.submittedApplies).To(Equal([]budgetPlacementApply{wanted}))
+			diagnostics := scope.Diagnostics()["targets"].([]map[string]interface{})[0]["submittedApplies"].([]map[string]interface{})
+			g.Expect(diagnostics).To(Equal([]map[string]interface{}{{
+				"uid": submitted.uid, "resourceVersion": submitted.resourceVersion, "install": submitted.install,
+				"outcome": string(submitted.outcome), "fencedAtResourceVersion": wanted.fencedAtResourceVersion,
+				"omissionRetiredAtResourceVersion": wanted.omissionRetiredAtResourceVersion,
+			}}))
+			if tt.wantRetired {
+				firstWitness := current.ResourceVersion
+				current.ResourceVersion = "second-owned-observation"
+				g.Expect(scope.observeOwnedSelector(target, current)).To(Succeed())
+				wanted.fencedAtResourceVersion = current.ResourceVersion
+				g.Expect(target.submittedApplies).To(Equal([]budgetPlacementApply{wanted}), "later reads must preserve the original client outcome and first causal witness")
+				diagnostics = scope.Diagnostics()["targets"].([]map[string]interface{})[0]["submittedApplies"].([]map[string]interface{})
+				g.Expect(diagnostics[0]["fencedAtResourceVersion"]).To(Equal(current.ResourceVersion))
+				g.Expect(diagnostics[0]["omissionRetiredAtResourceVersion"]).To(Equal(firstWitness))
+			}
+		})
+	}
+}
+
+func TestReplacementBudgetPlacementLaterOmissionRecovery(t *testing.T) {
+	for _, installation := range []string{"normal", "persist-then-error"} {
+		t.Run(installation, func(t *testing.T) {
+			g := NewWithT(t)
+			world := newPlacementTestWorld(t)
+			world.mode = installation
+			scope := world.scope()
+			var cleanup func(context.Context) error
+			activationErr := scope.Activate(t.Context(), world.registrar(&cleanup))
+			g.Expect(activationErr == nil).To(Equal(installation == "normal"))
+			target := scope.targets[0]
+			g.Expect(target.confirmed).To(Equal(installation == "normal"))
+			world.ordinaryCleanupDone = true
+			world.mode = "no-op"
+			g.Expect(cleanup(t.Context())).ToNot(Succeed())
+			g.Expect(target.confirmed).To(BeTrue(), "the fresh owned read proves installation even when its response was lost")
+			g.Expect(target.submittedApplies).To(HaveLen(2))
+			g.Expect(target.submittedApplies[1].outcome).To(Equal(budgetPlacementApplyUnknown))
+
+			// Controlled observation only, not an SSA/CAS proof. Exercise the
+			// actual mutation-preparation read before any later omission is sent.
+			changed := world.deployment(world.name)
+			changed.ResourceVersion = "20"
+			changed.Annotations["example.com/revision"] = "owned-after-older-omission"
+			world.put(changed)
+			observed, err := scope.prepareSelectorMutation(t.Context(), target, false)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(world.requests).To(HaveLen(2), "recording an observed fence must not submit a write")
+			retirementRV := observed.ResourceVersion
+			g.Expect(retirementRV).ToNot(Equal(target.submittedApplies[1].resourceVersion))
+			g.Expect(target.submittedApplies[1].omissionRetiredAtResourceVersion).To(Equal(retirementRV))
+			g.Expect(target.submittedApplies[1].fencedAtResourceVersion).To(Equal(retirementRV))
+
+			world.mode = "persist-then-error"
+			g.Expect(cleanup(t.Context())).ToNot(Succeed())
+			g.Expect(target.submittedApplies).To(HaveLen(3))
+			g.Expect(target.submittedApplies[2].resourceVersion).To(Equal(retirementRV))
+			g.Expect(target.submittedApplies[2].install).To(BeFalse())
+			g.Expect(target.submittedApplies[2].outcome).To(Equal(budgetPlacementApplyUnknown))
+			g.Expect(target.submittedApplies[2].omissionRetiredAtResourceVersion).To(BeEmpty(), "a newly submitted omission is not retired by an earlier read")
+			g.Expect(target.released).To(BeFalse())
+			world.mode = "normal"
+			restored := world.deployment(world.name)
+			g.Expect(cleanup(t.Context())).To(Succeed(), "the later omission can explain absence despite the older retired omission")
+			g.Expect(target.released).To(BeTrue())
+			g.Expect(world.requests).To(HaveLen(3), "lost-response recovery must not send a no-op apply")
+			g.Expect(world.forbidden).To(BeEmpty())
+			diagnostics := scope.Diagnostics()["targets"].([]map[string]interface{})[0]["submittedApplies"].([]map[string]interface{})
+			g.Expect(diagnostics).To(HaveLen(3))
+			for i, request := range world.requests {
+				outcome := budgetPlacementApplyUnknown
+				if i == 0 && installation == "normal" {
+					outcome = budgetPlacementApplyAcknowledged
+				}
+				retiredAt := ""
+				if i == 1 {
+					retiredAt = retirementRV
+				}
+				g.Expect(target.submittedApplies[i]).To(Equal(budgetPlacementApply{
+					uid: target.uid, resourceVersion: request.resourceVersion, install: request.install, outcome: outcome,
+					fencedAtResourceVersion: restored.ResourceVersion, omissionRetiredAtResourceVersion: retiredAt,
+				}))
+				g.Expect(diagnostics[i]).To(Equal(map[string]interface{}{
+					"uid": target.uid, "resourceVersion": request.resourceVersion, "install": request.install, "outcome": string(outcome),
+					"fencedAtResourceVersion": restored.ResourceVersion, "omissionRetiredAtResourceVersion": retiredAt,
+				}))
 			}
 		})
 	}

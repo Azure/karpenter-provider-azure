@@ -179,11 +179,12 @@ const (
 )
 
 type budgetPlacementApply struct {
-	uid                     types.UID
-	resourceVersion         string
-	install                 bool
-	outcome                 budgetPlacementApplyOutcome
-	fencedAtResourceVersion string // A same-UID current version that invalidates this exact request's old-RV CAS.
+	uid                              types.UID
+	resourceVersion                  string
+	install                          bool
+	outcome                          budgetPlacementApplyOutcome
+	fencedAtResourceVersion          string // A same-UID current version that invalidates this exact request's old-RV CAS.
+	omissionRetiredAtResourceVersion string // First owned-selector observation fencing this omission as a cause of later absence.
 }
 
 type budgetPlacementTarget struct {
@@ -593,6 +594,30 @@ func (s *replacementBudgetPlacement) validateOwned(deployment *appsv1.Deployment
 	return s.validateManagerIntent(deployment)
 }
 
+func (s *replacementBudgetPlacement) observeOwnedSelector(target *budgetPlacementTarget, current *appsv1.Deployment) error {
+	// Runtime callers supply getDeployment's validated same-UID, nonempty-RV
+	// observation. Ownership must also be proved before recording causal evidence.
+	if err := s.validateOwned(current); err != nil {
+		return err
+	}
+	// Readback proves installation even if its original response was lost.
+	target.confirmed = true
+	for i := range target.submittedApplies {
+		submitted := &target.submittedApplies[i]
+		if submitted.install || submitted.outcome == budgetPlacementApplyRejected || submitted.uid != current.UID || submitted.resourceVersion == "" || submitted.resourceVersion == current.ResourceVersion {
+			continue
+		}
+		// This older omission cannot commit after this owned-selector observation,
+		// so it cannot explain a later disappearance. Keep its original outcome and
+		// first causal witness even if a later read supplies another completion fence.
+		submitted.fencedAtResourceVersion = current.ResourceVersion
+		if submitted.omissionRetiredAtResourceVersion == "" {
+			submitted.omissionRetiredAtResourceVersion = current.ResourceVersion
+		}
+	}
+	return nil
+}
+
 func (s *replacementBudgetPlacement) validateManagerIntent(deployment *appsv1.Deployment) error {
 	// Omitting an unexpectedly broadened field set could prune other properties.
 	// Require this unique manager to own exactly the minimal intent we sent.
@@ -709,7 +734,7 @@ func (s *replacementBudgetPlacement) prepareSelectorMutation(ctx context.Context
 	if install {
 		err = validateBudgetPlacementWritable(before)
 	} else {
-		err = s.validateOwned(before)
+		err = s.observeOwnedSelector(target, before)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("refuse selector mutation for %s: %w", target.key, err)
@@ -762,10 +787,9 @@ func (s *replacementBudgetPlacement) verifyPersistedSelector(ctx context.Context
 		return fmt.Errorf("persisted Deployment %s generation %d predates SSA response generation %d", target.key, current.Generation, response.Generation)
 	}
 	if install {
-		if err := s.validateOwned(current); err != nil {
+		if err := s.observeOwnedSelector(target, current); err != nil {
 			return err
 		}
-		target.confirmed = true
 	} else {
 		if err := s.validateRestored(current); err != nil {
 			return err
@@ -1049,7 +1073,7 @@ func (s *replacementBudgetPlacement) checkTargetIntent(ctx context.Context, targ
 	if restoring {
 		err = s.validateRestored(deployment)
 	} else if target.writeSelector {
-		err = s.validateOwned(deployment)
+		err = s.observeOwnedSelector(target, deployment)
 	} else if !replacementBudgetPodExcluded(s.pool, &corev1.Pod{Spec: deployment.Spec.Template.Spec}) {
 		err = fmt.Errorf("read-only Deployment %s no longer has an excluding template", target.key)
 	}
@@ -1187,15 +1211,16 @@ func (s *replacementBudgetPlacement) restoreTarget(ctx context.Context, target *
 	if err := s.validateRestored(deployment); err == nil {
 		releaseMayHavePersisted := false
 		for _, submitted := range target.submittedApplies {
-			if !submitted.install && submitted.outcome != budgetPlacementApplyRejected {
+			if !submitted.install && submitted.outcome != budgetPlacementApplyRejected && submitted.omissionRetiredAtResourceVersion == "" {
 				releaseMayHavePersisted = true
 			}
 		}
 		if target.confirmed && !releaseMayHavePersisted {
-			return false, fmt.Errorf("confirmed selector intent disappeared before cleanup; refusing to mask lost ownership")
+			return false, fmt.Errorf("confirmed selector intent disappeared without a causally eligible omission; refusing to mask lost ownership")
 		}
-		// A lost omission response can explain absence after cleanup began. It
-		// still needs every submitted precondition fenced, not just this GET.
+		// A lost omission response can explain absence only if a later owned
+		// observation has not already ruled it out. All submitted preconditions
+		// still need completion fences, independently of that causal explanation.
 		if err := target.resolveSubmittedApplies(deployment); err != nil {
 			// Leave the target recoverable: a later Restore can observe and
 			// omit our selector if an unknown apply subsequently persists.
@@ -1206,9 +1231,11 @@ func (s *replacementBudgetPlacement) restoreTarget(ctx context.Context, target *
 		target.released = true
 		return true, nil
 	}
-	if err := s.validateOwned(deployment); err != nil {
+	if err := s.observeOwnedSelector(target, deployment); err != nil {
 		return false, err // Preserve any co-owned/foreign selector and report the discrepancy.
 	}
+	// Record the owned observation before inventory or cancellation can interrupt
+	// cleanup without submitting another omission.
 	target.beforeRelease = sets.New[types.UID]()
 	pods, observationErr := s.ownedPods(ctx, deployment)
 	for _, related := range pods {
@@ -1235,6 +1262,7 @@ func (s *replacementBudgetPlacement) Diagnostics() map[string]interface{} {
 			submitted = append(submitted, map[string]interface{}{
 				"uid": apply.uid, "resourceVersion": apply.resourceVersion, "install": apply.install,
 				"outcome": string(apply.outcome), "fencedAtResourceVersion": apply.fencedAtResourceVersion,
+				"omissionRetiredAtResourceVersion": apply.omissionRetiredAtResourceVersion,
 			})
 		}
 		targets = append(targets, map[string]interface{}{
