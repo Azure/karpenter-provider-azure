@@ -73,7 +73,15 @@ const (
 	NodeClassReadinessUnknownReason    = "NodeClassReadinessUnknown"
 	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
 	CreateInstanceFailedReason         = "CreateInstanceFailed"
-	SpotConditionPreemptionScheduled   = "PreemptionScheduled"
+
+	// SpotConditionPreemptionScheduled is the Node condition the AKS node-problem-detector sets when
+	// Azure schedules an eviction for the underlying Spot VM.
+	//
+	// Deprecated: this condition is no longer a repair policy. Azure Spot preemption is owned by the
+	// deadline-aware controller in pkg/controllers/node/interruption, which keys off
+	// interruption.ConditionTypePreemptionScheduled. This constant is retained only for source
+	// compatibility with external importers and will be removed in a future release.
+	SpotConditionPreemptionScheduled = "PreemptionScheduled"
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
@@ -543,16 +551,13 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 			ConditionStatus:    corev1.ConditionFalse,
 			TolerationDuration: 0,
 		},
-		// Fast-path repair for Azure Spot VMs that received a platform eviction signal.
-		// The condition is emitted by a node-level agent that polls the Instance Metadata
-		// Service for SpotRebalanceRecommendation / Preempt events. Spot eviction notice
-		// is ~30s, so toleration is 0 — we want to start the replacement immediately
-		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
-		{
-			ConditionType:      SpotConditionPreemptionScheduled,
-			ConditionStatus:    corev1.ConditionTrue,
-			TolerationDuration: 0,
-		},
+		// NOTE: Azure Spot preemption (the `PreemptionScheduled` condition) is deliberately absent here.
+		// Node repair reacts to every policy the same way -- it overwrites
+		// karpenter.sh/nodeclaim-termination-timestamp with `now`, discarding the eviction deadline Azure
+		// published, and gates the repair behind the cluster-wide unhealthy-node circuit breaker, which
+		// can hold the repair past the point where the VM has already been reclaimed. Spot preemption is
+		// handled by the dedicated, deadline-aware pkg/controllers/node/interruption controller instead;
+		// re-adding it here would let node.health race that controller and win.
 	}
 }
 
