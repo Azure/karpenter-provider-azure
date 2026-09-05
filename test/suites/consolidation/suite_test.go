@@ -33,7 +33,10 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
+	podutils "sigs.k8s.io/karpenter/pkg/utils/pod"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
@@ -302,69 +305,29 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.ConsistentlyExpectDisruptionsUntilNoneLeft(3, 2, 10*time.Minute)
 		})
 		It("should respect budgets for non-empty replace consolidation", func() {
-			appLabels := map[string]string{"app": "large-app"}
-			// This test will hold consolidation until we are ready to execute it
-			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("Never")
-
-			nodePool = coretest.ReplaceRequirements(nodePool,
-				karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      v1beta1.LabelSKUCPU,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"4", "8"},
-				},
-				// Add an Exists operator so that we can select on a fake partition later
-				karpv1.NodeSelectorRequirementWithMinValues{
-					Key:      "test-partition",
-					Operator: corev1.NodeSelectorOpExists,
-				},
-			)
-			nodePool.Labels = appLabels
-			// We're expecting to create 5 nodes, so we'll expect to see at most 3 nodes deleting at one time.
-			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
-				Nodes: "3",
-			}}
-
-			ds := coretest.DaemonSet(coretest.DaemonSetOptions{
-				Selector: appLabels,
-				PodOptions: coretest.PodOptions{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: appLabels,
-					},
-					// with 8 cpu, so each node should fit no more than 1 pod since each node will have
-					// an equivalently sized daemonset
-					ResourceRequirements: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: resource.MustParse("3"),
-						},
-					},
-				},
-			})
-
-			env.ExpectCreated(ds)
-
-			// Make 5 pods all with different deployments and different test partitions, so that each pod can be put
-			// on a separate node.
-			selector = labels.SelectorFromSet(appLabels)
+			ds, deployments := replacementBudgetResources(nodePool)
+			By("checking that unrelated pods cannot use the budget node pool")
+			pods := &corev1.PodList{}
+			Expect(env.Client.List(env, pods)).To(Succeed())
+			AddReportEntry("replacement budget isolation", map[string]interface{}{
+				"nodePool": nodePool.Name,
+				"taints":   nodePool.Spec.Template.Spec.Taints,
+				"pods": lo.FilterMap(pods.Items, func(p corev1.Pod, _ int) (map[string]interface{}, bool) {
+					return map[string]interface{}{
+						"pod":             client.ObjectKeyFromObject(&p).String(),
+						"uid":             p.UID,
+						"resourceVersion": p.ResourceVersion,
+						"owners":          p.OwnerReferences,
+						"nodeName":        p.Spec.NodeName,
+						"requests":        resources.RequestsForPods(&p),
+						"tolerations":     p.Spec.Tolerations,
+					}, !podutils.IsOwnedByDaemonSet(&p)
+				}),
+			}, ReportEntryVisibilityFailureOrVerbose)
+			Expect(validateReplacementBudgetIsolation(nodePool, pods.Items)).To(Succeed())
+			selector = labels.SelectorFromSet(ds.Spec.Selector.MatchLabels)
 			numPods = 5
-			deployments := make([]*appsv1.Deployment, numPods)
-			for i := range lo.Range(int(numPods)) {
-				deployments[i] = coretest.Deployment(coretest.DeploymentOptions{
-					Replicas: 1,
-					PodOptions: coretest.PodOptions{
-						ObjectMeta: metav1.ObjectMeta{
-							Labels: appLabels,
-						},
-						NodeSelector: map[string]string{"test-partition": fmt.Sprintf("%d", i)},
-						// with 8 cpu, each node should fit no more than 1 pod since each node will have
-						// an equivalently sized daemonset
-						ResourceRequirements: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU: resource.MustParse("3"),
-							},
-						},
-					},
-				})
-			}
+			env.ExpectCreated(ds)
 
 			env.ExpectCreated(nodeClass, nodePool, deployments[0], deployments[1], deployments[2], deployments[3], deployments[4])
 
@@ -542,8 +505,8 @@ var _ = Describe("Consolidation", Ordered, func() {
 			By("reducing the number of pods by 60%")
 			dep.Spec.Replicas = lo.ToPtr[int32](20)
 			env.ExpectUpdated(dep)
-			By("waiting for avg CPU utilization to drop < 0.5")
-			env.EventuallyExpectAvgUtilization(corev1.ResourceCPU, "<", 0.5)
+			By("waiting for mean CPU requests/allocatable to drop < 0.5")
+			env.EventuallyExpectAvgUtilization(corev1.ResourceCPU, "<", 0.5, dep)
 
 			// Enable consolidation as WhenEmptyOrUnderutilized doesn't allow a consolidateAfter value
 			By("enabling consolidation")
@@ -551,7 +514,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.ExpectUpdated(nodePool)
 
 			// With consolidation enabled, we now must delete nodes
-			By("waiting for avg CPU utilization to increase > 0.6")
+			By("waiting for mean CPU requests/allocatable to increase > 0.6")
 			env.EventuallyExpectAvgUtilization(corev1.ResourceCPU, ">", 0.6)
 
 			By("deleting the deployment")
@@ -865,6 +828,77 @@ var _ = Describe("Consolidation", Ordered, func() {
 		env.ExpectDeleted(smallDep)
 	})
 })
+
+func replacementBudgetResources(nodePool *karpv1.NodePool) (*appsv1.DaemonSet, []*appsv1.Deployment) {
+	appLabels := map[string]string{"app": "large-app"}
+	// Keep unrelated addon provisioning out of this test's strict NodeClaim counts.
+	// Only this budget fixture is isolated; its application pods and DaemonSet opt in.
+	taint := corev1.Taint{Key: "testing/consolidation-budget", Value: "true", Effect: corev1.TaintEffectNoSchedule}
+	nodePool.Spec.Template.Spec.Taints = append(nodePool.Spec.Template.Spec.Taints, taint)
+	toleration := corev1.Toleration{Key: taint.Key, Operator: corev1.TolerationOpEqual, Value: taint.Value, Effect: taint.Effect}
+	// This test will hold consolidation until we are ready to execute it
+	nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("Never")
+
+	coretest.ReplaceRequirements(nodePool,
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelSKUCPU,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"4", "8"},
+		},
+		// Add an Exists operator so that we can select on a fake partition later
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      "test-partition",
+			Operator: corev1.NodeSelectorOpExists,
+		},
+	)
+	nodePool.Labels = appLabels
+	// We're expecting to create 5 nodes, so we'll expect to see at most 3 nodes deleting at one time.
+	nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{Nodes: "3"}}
+
+	ds := coretest.DaemonSet(coretest.DaemonSetOptions{
+		Selector: appLabels,
+		PodOptions: coretest.PodOptions{
+			ObjectMeta:  metav1.ObjectMeta{Labels: appLabels},
+			Tolerations: []corev1.Toleration{toleration},
+			// With 8 CPUs, each node fits only one application pod alongside this DaemonSet.
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")},
+			},
+		},
+	})
+
+	// Make 5 pods with different deployments and test partitions, so each needs a separate node.
+	deployments := make([]*appsv1.Deployment, 5)
+	for i := range deployments {
+		deployments[i] = coretest.Deployment(coretest.DeploymentOptions{
+			Replicas: 1,
+			PodOptions: coretest.PodOptions{
+				ObjectMeta:   metav1.ObjectMeta{Labels: appLabels},
+				Tolerations:  []corev1.Toleration{toleration},
+				NodeSelector: map[string]string{"test-partition": fmt.Sprintf("%d", i)},
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")},
+				},
+			},
+		})
+	}
+	return ds, deployments
+}
+
+func validateReplacementBudgetIsolation(nodePool *karpv1.NodePool, pods []corev1.Pod) error {
+	for _, p := range pods {
+		// DaemonSets are node overhead, not a source of ordinary provisioning requests.
+		// Check all other pods before creating the fixture, including running addons that
+		// could become pending during disruption. Broad Exists tolerations defeat isolation.
+		if podutils.IsOwnedByDaemonSet(&p) {
+			continue
+		}
+		if scheduling.Taints(nodePool.Spec.Template.Spec.Taints).ToleratesPod(&p) == nil {
+			return fmt.Errorf("unrelated pod %s tolerates budget pool taints %v; cannot isolate NodeClaim counts", client.ObjectKeyFromObject(&p), nodePool.Spec.Template.Spec.Taints)
+		}
+	}
+	return nil
+}
 
 var _ = Describe("Node Overlay", func() {
 	var nodePool *karpv1.NodePool
