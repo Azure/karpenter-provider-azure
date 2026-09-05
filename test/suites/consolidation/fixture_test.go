@@ -42,8 +42,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
-// These tests construct fixtures and use a fake Kubernetes client. Run them without
-// the live suite using go test -run '^TestReplacementBudget' ./test/suites/consolidation.
+// These tests construct fixtures and use a fake Kubernetes client. Run the standard
+// tests without the live suite using go test -skip '^TestConsolidation$' ./test/suites/consolidation.
+// The separate SSA contract test requires the installed envtest API-server assets.
 func TestReplacementBudgetFixture(t *testing.T) {
 	for _, dataplane := range []string{common.NetworkDataplaneAzure, common.NetworkDataplaneCilium} {
 		t.Run(dataplane, func(t *testing.T) {
@@ -65,6 +66,12 @@ func TestReplacementBudgetFixture(t *testing.T) {
 			g.Expect(nodePool.Spec.Template.Spec.NodeClassRef).To(Equal(original.Spec.Template.Spec.NodeClassRef))
 			g.Expect(nodePool.Spec.Template.Labels).To(Equal(original.Spec.Template.Labels))
 			g.Expect(nodePool.Spec.Limits).To(Equal(original.Spec.Limits))
+			g.Expect(nodePool.Spec.Template.Spec.Requirements).To(ContainElement(karpv1.NodeSelectorRequirementWithMinValues{
+				Key: v1beta1.LabelSKUCPU, Operator: corev1.NodeSelectorOpIn, Values: []string{"4", "8"},
+			}))
+			g.Expect(nodePool.Spec.Template.Spec.Requirements).To(ContainElement(karpv1.NodeSelectorRequirementWithMinValues{
+				Key: "test-partition", Operator: corev1.NodeSelectorOpExists,
+			}))
 
 			daemonPod := &corev1.Pod{Spec: ds.Spec.Template.Spec}
 			g.Expect(scheduling.Taints(template.Spec.Taints).ToleratesPod(daemonPod)).To(Succeed())
@@ -138,6 +145,137 @@ func TestReplacementBudgetIsolation(t *testing.T) {
 				g.Expect(err.Error()).To(ContainSubstring("testing/consolidation-budget"))
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestReplacementBudgetExplicitUserMode(t *testing.T) {
+	for _, dataplane := range []string{common.NetworkDataplaneAzure, common.NetworkDataplaneCilium} {
+		t.Run(dataplane, func(t *testing.T) {
+			g := NewWithT(t)
+			fixtureEnv := &common.Environment{NetworkDataplane: dataplane}
+			nodeClass := &v1beta1.AKSNodeClass{ObjectMeta: metav1.ObjectMeta{Name: "test-class"}}
+			nodePool := fixtureEnv.DefaultNodePool(nodeClass)
+			originalRequirements := nodePool.DeepCopy().Spec.Template.Spec.Requirements
+
+			replacementBudgetResources(nodePool)
+
+			// Restrict only this fixture, not provider defaults or other suites. Both
+			// system and user are supported provider modes; a default is not exclusion.
+			g.Expect(fixtureEnv.DefaultNodePool(nodeClass).Spec.Template.Spec.Requirements).To(Equal(originalRequirements))
+			var modeRequirements []karpv1.NodeSelectorRequirementWithMinValues
+			for _, requirement := range nodePool.Spec.Template.Spec.Requirements {
+				if requirement.Key == v1beta1.AKSLabelMode {
+					modeRequirements = append(modeRequirements, requirement)
+				}
+			}
+			g.Expect(modeRequirements).To(Equal([]karpv1.NodeSelectorRequirementWithMinValues{{
+				Key: v1beta1.AKSLabelMode, Operator: corev1.NodeSelectorOpIn, Values: []string{v1beta1.ModeUser},
+			}}), "the counted replacement budget pool must explicitly require user mode")
+		})
+	}
+}
+
+func TestReplacementBudgetHardIsolation(t *testing.T) {
+	modeTerm := func(operator corev1.NodeSelectorOperator, values ...string) corev1.NodeSelectorTerm {
+		return corev1.NodeSelectorTerm{MatchExpressions: []corev1.NodeSelectorRequirement{{
+			Key: v1beta1.AKSLabelMode, Operator: operator, Values: values,
+		}}}
+	}
+	requiredAffinity := func(terms ...corev1.NodeSelectorTerm) *corev1.Affinity {
+		return &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: terms},
+		}}
+	}
+	systemSelector := map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeSystem}
+	systemTerm := modeTerm(corev1.NodeSelectorOpIn, v1beta1.ModeSystem)
+	userTerm := modeTerm(corev1.NodeSelectorOpIn, v1beta1.ModeUser)
+	systemAndArchitecture := systemTerm.DeepCopy()
+	systemAndArchitecture.MatchExpressions = append(systemAndArchitecture.MatchExpressions, corev1.NodeSelectorRequirement{
+		Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64},
+	})
+	tests := []struct {
+		name         string
+		nodeName     string
+		selector     map[string]string
+		affinity     *corev1.Affinity
+		poolModes    []string
+		omitPoolMode bool
+		untolerated  bool
+		wantError    bool
+	}{
+		{name: "wildcard NoSchedule and NoExecute are not isolated", wantError: true},
+		{name: "hard system selector excludes explicit user pool", selector: systemSelector},
+		{name: "hard user selector remains compatible", selector: map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeUser}, wantError: true},
+		{name: "current system node binding is not a future constraint", nodeName: "system-node", wantError: true},
+		{name: "preferred system placement is not exclusion", affinity: &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{{Weight: 100, Preference: systemTerm}},
+		}}, wantError: true},
+		{name: "required system affinity excludes user pool", affinity: requiredAffinity(systemTerm)},
+		{name: "all required affinity OR terms exclude user", affinity: requiredAffinity(systemTerm, modeTerm(corev1.NodeSelectorOpNotIn, v1beta1.ModeUser))},
+		{name: "required affinity AND retains mode contradiction", affinity: requiredAffinity(*systemAndArchitecture)},
+		{name: "later compatible OR term prevents exclusion", affinity: requiredAffinity(systemTerm, userTerm), wantError: true},
+		{name: "earlier compatible OR term prevents exclusion", affinity: requiredAffinity(userTerm, systemTerm), wantError: true},
+		{name: "multi-value affinity can still select user", affinity: requiredAffinity(modeTerm(corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser)), wantError: true},
+		{name: "NotIn user excludes explicit user pool", affinity: requiredAffinity(modeTerm(corev1.NodeSelectorOpNotIn, v1beta1.ModeUser))},
+		{name: "NotIn system still permits user", affinity: requiredAffinity(modeTerm(corev1.NodeSelectorOpNotIn, v1beta1.ModeSystem)), wantError: true},
+		{name: "DoesNotExist mode contradicts required user label", affinity: requiredAffinity(modeTerm(corev1.NodeSelectorOpDoesNotExist))},
+		{name: "Exists mode still permits user", affinity: requiredAffinity(modeTerm(corev1.NodeSelectorOpExists)), wantError: true},
+		{name: "selector is conjunctive with every affinity term", selector: systemSelector, affinity: requiredAffinity(userTerm, systemTerm)},
+		{name: "provider mode default is not a pool constraint", selector: systemSelector, omitPoolMode: true, wantError: true},
+		{name: "pool permitting both modes is not disjoint", selector: systemSelector, poolModes: []string{v1beta1.ModeSystem, v1beta1.ModeUser}, wantError: true},
+		{name: "system pool is not disjoint", selector: systemSelector, poolModes: []string{v1beta1.ModeSystem}, wantError: true},
+		{name: "unconstrained selector key is not proof", selector: map[string]string{"example.com/placement": "elsewhere"}, wantError: true},
+		{name: "unknown affinity operator fails closed", affinity: requiredAffinity(modeTerm(corev1.NodeSelectorOperator("Unknown"), v1beta1.ModeSystem)), wantError: true},
+		{name: "unknown OR term cannot be discarded", affinity: requiredAffinity(systemTerm, corev1.NodeSelectorTerm{MatchExpressions: []corev1.NodeSelectorRequirement{{
+			Key: "example.com/placement", Operator: corev1.NodeSelectorOpIn, Values: []string{"elsewhere"},
+		}}}), wantError: true},
+		{name: "node-name affinity cannot rule out future claims", affinity: requiredAffinity(corev1.NodeSelectorTerm{MatchFields: []corev1.NodeSelectorRequirement{{
+			Key: "metadata.name", Operator: corev1.NodeSelectorOpIn, Values: []string{"system-node"},
+		}}}), wantError: true},
+		{name: "taint exclusion remains independently sufficient", untolerated: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			nodePool := (&common.Environment{}).DefaultNodePool(&v1beta1.AKSNodeClass{})
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{{Key: "testing/consolidation-budget", Value: "true", Effect: corev1.TaintEffectNoSchedule}}
+			if !tt.omitPoolMode {
+				modes := tt.poolModes
+				if modes == nil {
+					modes = []string{v1beta1.ModeUser}
+				}
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key: v1beta1.AKSLabelMode, Operator: corev1.NodeSelectorOpIn, Values: modes,
+				})
+			}
+			pod := corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "background-workload"},
+				Spec: corev1.PodSpec{
+					NodeName: tt.nodeName, NodeSelector: tt.selector, Affinity: tt.affinity,
+					Tolerations: []corev1.Toleration{
+						{Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+						{Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodPending},
+			}
+			if tt.nodeName != "" {
+				pod.Status.Phase = corev1.PodRunning
+			}
+			if tt.untolerated {
+				pod.Spec.Tolerations = nil
+			}
+			originalPod, originalPool := pod.DeepCopy(), nodePool.DeepCopy()
+			err := validateReplacementBudgetIsolation(nodePool, []corev1.Pod{pod})
+			g.Expect(&pod).To(Equal(originalPod), "the guard must not mutate scheduling constraints")
+			g.Expect(nodePool).To(Equal(originalPool))
+			if tt.wantError {
+				g.Expect(err).To(HaveOccurred(), "compatible or unknown hard placement must fail closed")
+				g.Expect(err.Error()).To(ContainSubstring("kube-system/background-workload"))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "taint exclusion OR proven hard incompatibility must be accepted")
 			}
 		})
 	}
