@@ -60,3 +60,12 @@ jobs:
         COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # ignore failures to avoid disruption of CI workflows on coveralls outages
       run: goveralls -coverprofile=coverage.out -service=github || true
+    - name: Test consolidation fixtures and SSA contract
+      env:
+        KUBEBUILDER_ASSETS: /usr/local/kubebuilder/bin
+      run: |
+        test -x "$KUBEBUILDER_ASSETS/kube-apiserver"
+        test -x "$KUBEBUILDER_ASSETS/etcd"
+        test -x "$KUBEBUILDER_ASSETS/kubectl"
+        # Exclude only the live Ginkgo entry point; include all other standard tests.
+        go test -count=1 -timeout=10m -v -skip '^TestConsolidation$' ./test/suites/consolidation
