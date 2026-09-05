@@ -524,6 +524,74 @@ func TestTerminalPodCleanupVerifiesAbsence(t *testing.T) {
 	}
 }
 
+func TestTerminalPodCleanupRejectsRetainedObjectWithoutCancellation(t *testing.T) {
+	tests := []struct {
+		name      string
+		finalizer bool
+	}{
+		{name: "delete_acknowledged_but_object_retained"},
+		{name: "finalizer_retains_terminal_object", finalizer: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			world := newTerminalPodTestWorld(t)
+			// Exercise finalizer retention independently of the acknowledged-delete switch.
+			world.keepAfterDelete = !tt.finalizer
+			before := world.pod("terminal")
+			before.Status.Reason = "SyntheticFailure"
+			before.Status.Message = "terminal failure evidence must survive an acknowledged delete"
+			if tt.finalizer {
+				before.Finalizers = []string{"example.com/retain"}
+			}
+			world.put(before)
+			recordEvent := fmt.Sprintf("record:%s:%s", before.UID, before.ResourceVersion)
+			world.beforeDelete = func() {
+				g.Expect(world.evidence).To(Equal([]*corev1.Pod{before}), "capture evidence before the actual delete request")
+				g.Expect(world.events).To(Equal([]string{recordEvent}))
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			confirmationGets := 0
+			world.kube.PrependReactor("*", "*", func(action ktesting.Action) (bool, runtime.Object, error) {
+				// Leave the first confirmation GET uncanceled so retention, rather
+				// than ctx.Err(), must explain the failure. Bound accidental retries
+				// only when an unexpected subsequent operation is attempted.
+				if confirmationGets > 0 {
+					cancel()
+					t.Fatalf("unexpected cleanup operation after retention confirmation: %s %s", action.GetVerb(), action.GetResource().Resource)
+				}
+				if len(world.deletes) > 0 && action.GetVerb() == "get" && action.GetResource() == terminalPodTestPods && action.GetSubresource() == "" {
+					g.Expect(action.GetNamespace()).To(Equal(before.Namespace))
+					g.Expect(action.(ktesting.GetAction).GetName()).To(Equal(before.Name))
+					g.Expect(ctx.Err()).To(Succeed(), "the first confirmation GET must not be canceled")
+					confirmationGets++
+				}
+				return false, nil, nil // Let the fake return the unchanged retained object.
+			})
+
+			err := normalizeTerminalDeploymentPods(ctx, world.kube, world.target, world.record)
+
+			g.Expect(ctx.Err()).To(Succeed(), "retention must be reported before the retry guard cancels the context")
+			g.Expect(errors.Is(err, context.Canceled)).To(BeFalse())
+			g.Expect(err).To(MatchError(fmt.Sprintf(
+				"terminal Pod %s/%s still exists after deleting uid=%s: observed uid=%s rv=%s",
+				before.Namespace, before.Name, before.UID, before.UID, before.ResourceVersion,
+			)), "an acknowledged delete of a retained object must not return success")
+			g.Expect(world.deletes).To(HaveLen(1), "observe exactly one actual API delete")
+			g.Expect(world.deletes[0].key).To(Equal(types.NamespacedName{Namespace: before.Namespace, Name: before.Name}))
+			g.Expect(world.deletes[0].options.Preconditions).To(Equal(&metav1.Preconditions{
+				UID: ptr.To(before.UID), ResourceVersion: ptr.To(before.ResourceVersion),
+			}))
+			g.Expect(confirmationGets).To(Equal(1), "confirm retention with exactly one fresh GET")
+			g.Expect(world.pod("terminal")).To(Equal(before), "leave the entire retained object, including finalizers, unchanged")
+			g.Expect(world.evidence).To(Equal([]*corev1.Pod{before}))
+			g.Expect(world.events).To(Equal([]string{recordEvent, fmt.Sprintf("delete:%s:%s", before.UID, before.ResourceVersion)}))
+			g.Expect(world.forbiddenWrites).To(BeEmpty(), "cleanup must not remove finalizers or write other resources")
+		})
+	}
+}
+
 func TestTerminalPodCleanupPreconditionRaces(t *testing.T) {
 	tests := []struct {
 		name       string
