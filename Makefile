@@ -58,11 +58,13 @@ e2etests: ## Run the e2e suite against your local cluster
 	# -count 1: prevents caching
 	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
 	# -v: verbose output
+	# Consolidation helper tests run in CI; live runs select its complete Ginkgo entry point.
 	cd test && AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} VNET_RESOURCE_GROUP=${VNET_RESOURCE_GROUP} PROVISION_MODE=${PROVISION_MODE} go test \
 		-p 1 \
 		-count 1 \
 		-timeout ${TEST_TIMEOUT} \
 		-v \
+		$(if $(filter consolidation,$(shell echo $(TEST_SUITE) | tr A-Z a-z)),-run '^TestConsolidation$$',) \
 		./suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
 		--ginkgo.focus="${FOCUS}" \
 		$(if $(LABEL_FILTER),--ginkgo.label-filter="${LABEL_FILTER}",) \

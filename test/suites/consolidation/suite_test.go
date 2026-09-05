@@ -17,6 +17,7 @@ limitations under the License.
 package consolidation_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -33,7 +34,6 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
-	"sigs.k8s.io/karpenter/pkg/scheduling"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	podutils "sigs.k8s.io/karpenter/pkg/utils/pod"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
@@ -304,14 +304,27 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 			env.ConsistentlyExpectDisruptionsUntilNoneLeft(3, 2, 10*time.Minute)
 		})
-		It("should respect budgets for non-empty replace consolidation", func() {
+		It("should respect budgets for non-empty replace consolidation", func(ctx SpecContext) {
 			ds, deployments := replacementBudgetResources(nodePool)
+			placement := newReplacementBudgetPlacement(env.KubeClient, nodePool)
+			By("isolating compatible Deployment owners before creating budget resources")
+			Expect(placement.Activate(ctx, func(restore func(context.Context) error) {
+				// Per-spec DeferCleanup runs after the ordinary AfterEach teardown.
+				// Its context is fresh; never capture this It's possibly canceled context.
+				DeferCleanup(func(cleanupCtx SpecContext) error {
+					err := restore(cleanupCtx)
+					AddReportEntry("replacement budget placement cleanup", placement.Diagnostics(), ReportEntryVisibilityFailureOrVerbose)
+					return err
+				}, NodeTimeout(replacementBudgetPlacementTimeout))
+			})).To(Succeed())
+			AddReportEntry("replacement budget placement activated", placement.Diagnostics(), ReportEntryVisibilityFailureOrVerbose)
 			By("checking that unrelated pods cannot use the budget node pool")
-			pods := &corev1.PodList{}
-			Expect(env.Client.List(env, pods)).To(Succeed())
+			pods, err := env.KubeClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+			Expect(err).ToNot(HaveOccurred())
 			AddReportEntry("replacement budget isolation", map[string]interface{}{
-				"nodePool": nodePool.Name,
-				"taints":   nodePool.Spec.Template.Spec.Taints,
+				"nodePool":     nodePool.Name,
+				"taints":       nodePool.Spec.Template.Spec.Taints,
+				"requirements": nodePool.Spec.Template.Spec.Requirements,
 				"pods": lo.FilterMap(pods.Items, func(p corev1.Pod, _ int) (map[string]interface{}, bool) {
 					return map[string]interface{}{
 						"pod":             client.ObjectKeyFromObject(&p).String(),
@@ -321,6 +334,8 @@ var _ = Describe("Consolidation", Ordered, func() {
 						"nodeName":        p.Spec.NodeName,
 						"requests":        resources.RequestsForPods(&p),
 						"tolerations":     p.Spec.Tolerations,
+						"nodeSelector":    p.Spec.NodeSelector,
+						"affinity":        p.Spec.Affinity,
 					}, !podutils.IsOwnedByDaemonSet(&p)
 				}),
 			}, ReportEntryVisibilityFailureOrVerbose)
@@ -350,6 +365,8 @@ var _ = Describe("Consolidation", Ordered, func() {
 			// Check that all daemonsets and deployment pods are online
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
+			By("rechecking placement ownership and unrelated pods before consolidation")
+			Expect(placement.Verify(ctx, deployments)).To(Succeed())
 			By("enabling consolidation")
 			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 			env.ExpectUpdated(nodePool)
@@ -374,6 +391,9 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.EventuallyExpectNotFound(lo.Map(originalNodeClaims, func(n *karpv1.NodeClaim, _ int) client.Object { return n })...)
 			env.ExpectNodeClaimCount("==", 5)
 			env.ExpectNodeCount("==", 5)
+			By("verifying placement remained isolated through the original count assertions")
+			Expect(placement.Verify(ctx, deployments)).To(Succeed())
+			AddReportEntry("replacement budget placement verified", placement.Diagnostics(), ReportEntryVisibilityFailureOrVerbose)
 		})
 		It("should not allow consolidation if the budget is fully blocking", func() {
 			// We're going to define a budget that doesn't allow any consolidation to happen
@@ -840,6 +860,13 @@ func replacementBudgetResources(nodePool *karpv1.NodePool) (*appsv1.DaemonSet, [
 	nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("Never")
 
 	coretest.ReplaceRequirements(nodePool,
+		// The provider supports both modes. Only this counted pool requires user,
+		// so separately owned system placement is a hard scheduling contradiction.
+		karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.AKSLabelMode,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{v1beta1.ModeUser},
+		},
 		karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      v1beta1.LabelSKUCPU,
 			Operator: corev1.NodeSelectorOpIn,
@@ -893,8 +920,8 @@ func validateReplacementBudgetIsolation(nodePool *karpv1.NodePool, pods []corev1
 		if podutils.IsOwnedByDaemonSet(&p) {
 			continue
 		}
-		if scheduling.Taints(nodePool.Spec.Template.Spec.Taints).ToleratesPod(&p) == nil {
-			return fmt.Errorf("unrelated pod %s tolerates budget pool taints %v; cannot isolate NodeClaim counts", client.ObjectKeyFromObject(&p), nodePool.Spec.Template.Spec.Taints)
+		if !replacementBudgetPodExcluded(nodePool, &p) {
+			return fmt.Errorf("unrelated pod %s uid=%s owners=%v tolerates budget pool taints %v without a proven hard contradiction; selector=%v affinity=%v pool requirements=%v; cannot isolate NodeClaim counts", client.ObjectKeyFromObject(&p), p.UID, p.OwnerReferences, nodePool.Spec.Template.Spec.Taints, p.Spec.NodeSelector, p.Spec.Affinity, nodePool.Spec.Template.Spec.Requirements)
 		}
 	}
 	return nil
