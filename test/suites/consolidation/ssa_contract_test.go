@@ -62,6 +62,49 @@ func TestReplacementBudgetSSAContract(t *testing.T) {
 	}
 }
 
+func TestReplacementBudgetSSASelectorOwnershipShape(t *testing.T) {
+	// These field sets test path parsing only. The independent API-server test
+	// remains the SSA proof; a synthetic managedFields entry is not one.
+	entry := func(manager, fields string) metav1.ManagedFieldsEntry {
+		return metav1.ManagedFieldsEntry{
+			Manager: manager, Operation: metav1.ManagedFieldsOperationApply,
+			APIVersion: "apps/v1", FieldsType: "FieldsV1",
+			FieldsV1: &metav1.FieldsV1{Raw: []byte(fields)},
+		}
+	}
+	const selectorFields = `{"f:spec":{"f:template":{"f:spec":{"f:nodeSelector":{}}}}}`
+	const affinityFields = `{"f:spec":{"f:template":{"f:spec":{"f:affinity":{}}}}}`
+	tests := []struct {
+		name          string
+		managedFields []metav1.ManagedFieldsEntry
+		want          []string
+	}{
+		{name: "unowned selector"},
+		{
+			name:          "atomic selector has no child field keys",
+			managedFields: []metav1.ManagedFieldsEntry{entry("consolidation-fixture", selectorFields)},
+			want:          []string{"consolidation-fixture"},
+		},
+		{
+			name: "coownership is recorded at the same atomic leaf",
+			managedFields: []metav1.ManagedFieldsEntry{
+				entry("deployment-owner", selectorFields), entry("consolidation-fixture", selectorFields),
+			},
+			want: []string{"consolidation-fixture", "deployment-owner"},
+		},
+		{
+			name:          "owned affinity does not own sibling selector",
+			managedFields: []metav1.ManagedFieldsEntry{entry("deployment-owner", affinityFields)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{ManagedFields: tt.managedFields}}
+			NewWithT(t).Expect(ssaContractSelectorOwners(t, deployment)).To(Equal(tt.want))
+		})
+	}
+}
+
 func newReplacementBudgetSSAAPI(t *testing.T) appsv1client.DeploymentInterface {
 	t.Helper()
 	assets := os.Getenv("KUBEBUILDER_ASSETS")
@@ -116,7 +159,7 @@ func testReplacementBudgetSSAOwnerReapply(t *testing.T, deployments appsv1client
 	baseline, err := ssaContractApply(t, ctx, deployments, owner.Name, owner, ownerOptions)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(baseline.Spec.Template.Spec.NodeSelector).To(BeEmpty())
-	g.Expect(ssaContractFieldOwners(t, baseline, "f:spec", "f:template", "f:spec", "f:nodeSelector")).To(BeEmpty())
+	g.Expect(ssaContractSelectorOwners(t, baseline)).To(BeEmpty())
 	g.Expect(ssaContractFieldOwners(t, baseline, "f:spec", "f:template", "f:spec", "f:affinity")).To(Equal([]string{ownerOptions.FieldManager}))
 
 	current := ssaContractGet(t, ctx, deployments, baseline.Name)
@@ -142,7 +185,7 @@ func testReplacementBudgetSSAOwnerReapply(t *testing.T, deployments appsv1client
 	g.Expect(preview.Spec.Template.Spec.Containers[0].Image).To(Equal(changedOwner.Spec.Template.Spec.Containers[0].Image))
 	g.Expect(preview.Annotations).To(Equal(changedOwner.Annotations))
 	g.Expect(preview.Spec.Template.Spec.NodeSelector).To(HaveKeyWithValue(v1beta1.AKSLabelMode, v1beta1.ModeSystem))
-	g.Expect(ssaContractFieldOwners(t, preview, "f:spec", "f:template", "f:spec", "f:nodeSelector", "f:"+v1beta1.AKSLabelMode)).To(Equal([]string{fixtureOptions.FieldManager}))
+	g.Expect(ssaContractSelectorOwners(t, preview)).To(Equal([]string{fixtureOptions.FieldManager}))
 	g.Expect(ssaContractGet(t, ctx, deployments, owner.Name)).To(Equal(beforeDryRun), "dry-run changes must not persist")
 
 	reapplied, err = ssaContractApply(t, ctx, deployments, owner.Name, owner, ownerOptions)
@@ -154,7 +197,7 @@ func testReplacementBudgetSSAOwnerReapply(t *testing.T, deployments appsv1client
 	g.Expect(updated.Spec.Template.Spec.Containers[0].Image).To(Equal(changedOwner.Spec.Template.Spec.Containers[0].Image))
 	g.Expect(updated.Annotations).To(Equal(changedOwner.Annotations))
 	g.Expect(updated.Spec.Template.Annotations).To(Equal(changedOwner.Spec.Template.Annotations))
-	g.Expect(ssaContractFieldOwners(t, updated, "f:spec", "f:template", "f:spec", "f:nodeSelector", "f:"+v1beta1.AKSLabelMode)).To(Equal([]string{fixtureOptions.FieldManager}))
+	g.Expect(ssaContractSelectorOwners(t, updated)).To(Equal([]string{fixtureOptions.FieldManager}))
 
 	current = ssaContractGet(t, ctx, deployments, owner.Name)
 	// Omit only this manager's intent. Never restore the old Deployment preimage,
@@ -167,7 +210,7 @@ func testReplacementBudgetSSAOwnerReapply(t *testing.T, deployments appsv1client
 	g.Expect(restored.Spec).To(Equal(expected.Spec))
 	g.Expect(restored.Labels).To(Equal(current.Labels))
 	g.Expect(restored.Annotations).To(Equal(changedOwner.Annotations))
-	g.Expect(ssaContractFieldOwners(t, restored, "f:spec", "f:template", "f:spec", "f:nodeSelector")).To(BeEmpty())
+	g.Expect(ssaContractSelectorOwners(t, restored)).To(BeEmpty())
 	g.Expect(ssaContractGet(t, ctx, deployments, owner.Name)).To(Equal(restored))
 }
 
@@ -243,19 +286,32 @@ func assertSSAContractFence(t *testing.T, deployments appsv1client.DeploymentInt
 }
 
 func testReplacementBudgetSSAConflict(t *testing.T, deployments appsv1client.DeploymentInterface) {
-	g := NewWithT(t)
-	ctx := ssaContractContext(t)
-	owner := ssaContractOwner()
-	owner.Spec.Template.Spec.NodeSelector = map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeUser}
-	current, err := ssaContractApply(t, ctx, deployments, owner.Name, owner, metav1.PatchOptions{FieldManager: "deployment-owner"})
-	g.Expect(err).ToNot(HaveOccurred())
-	_, err = ssaContractApply(t, ctx, deployments, current.Name, ssaContractSelectorIntent(current, true), metav1.PatchOptions{
-		FieldManager: "consolidation-fixture-" + uuid.NewString(),
-	})
-	g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "the fixture must not force an already owned selector: %v", err)
-	g.Expect(err.Error()).To(ContainSubstring("deployment-owner"))
-	g.Expect(err.Error()).To(ContainSubstring(v1beta1.AKSLabelMode))
-	g.Expect(ssaContractGet(t, ctx, deployments, owner.Name)).To(Equal(current))
+	tests := []struct {
+		name     string
+		selector map[string]string
+	}{
+		{name: "different mode", selector: map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeUser}},
+		{name: "another key still owns the entire selector", selector: map[string]string{"example.com/placement": "reserved"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := ssaContractContext(t)
+			owner := ssaContractOwner()
+			owner.Spec.Template.Spec.NodeSelector = tt.selector
+			current, err := ssaContractApply(t, ctx, deployments, owner.Name, owner, metav1.PatchOptions{FieldManager: "deployment-owner"})
+			g.Expect(err).ToNot(HaveOccurred())
+			_, err = ssaContractApply(t, ctx, deployments, current.Name, ssaContractSelectorIntent(current, true), metav1.PatchOptions{
+				FieldManager: "consolidation-fixture-" + uuid.NewString(),
+			})
+			// An absent mode key is insufficient: atomic maps cannot be extended
+			// through separately owned keys. The whole selector must be unowned.
+			g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "the fixture must not force an already owned selector: %v", err)
+			g.Expect(err.Error()).To(ContainSubstring("deployment-owner"))
+			g.Expect(err.Error()).To(ContainSubstring(".spec.template.spec.nodeSelector"))
+			g.Expect(ssaContractGet(t, ctx, deployments, owner.Name)).To(Equal(current))
+		})
+	}
 }
 
 func testReplacementBudgetSSACoownership(t *testing.T, deployments appsv1client.DeploymentInterface) {
@@ -276,14 +332,14 @@ func testReplacementBudgetSSACoownership(t *testing.T, deployments appsv1client.
 			owner.Spec.Template.Spec.NodeSelector = map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeSystem}
 			shared, err := ssaContractApply(t, ctx, deployments, owner.Name, owner, ownerOptions)
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(ssaContractFieldOwners(t, shared, "f:spec", "f:template", "f:spec", "f:nodeSelector", "f:"+v1beta1.AKSLabelMode)).To(ConsistOf(fixtureOptions.FieldManager, ownerOptions.FieldManager))
+			g.Expect(ssaContractSelectorOwners(t, shared)).To(ConsistOf(fixtureOptions.FieldManager, ownerOptions.FieldManager))
 
 			current = ssaContractGet(t, ctx, deployments, owner.Name)
 			released, err := ssaContractApply(t, ctx, deployments, current.Name, ssaContractSelectorIntent(current, false), fixtureOptions)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(released.Spec).To(Equal(current.Spec), "omission cannot remove a field another manager still owns")
 			g.Expect(released.Annotations).To(Equal(current.Annotations))
-			g.Expect(ssaContractFieldOwners(t, released, "f:spec", "f:template", "f:spec", "f:nodeSelector", "f:"+v1beta1.AKSLabelMode)).To(Equal([]string{ownerOptions.FieldManager}))
+			g.Expect(ssaContractSelectorOwners(t, released)).To(Equal([]string{ownerOptions.FieldManager}))
 			// A successful omission is not proof of restored placement. The fixture
 			// must reject a pre-owned selector and detect subsequent coownership.
 			g.Expect(released.Spec.Template.Spec.NodeSelector).To(HaveKeyWithValue(v1beta1.AKSLabelMode, v1beta1.ModeSystem))
@@ -304,14 +360,14 @@ func testReplacementBudgetSSAExternalChange(t *testing.T, deployments appsv1clie
 	owner.Spec.Template.Spec.NodeSelector = map[string]string{v1beta1.AKSLabelMode: v1beta1.ModeUser}
 	changed, err := ssaContractApply(t, ctx, deployments, owner.Name, owner, ownerOptions)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(ssaContractFieldOwners(t, changed, "f:spec", "f:template", "f:spec", "f:nodeSelector", "f:"+v1beta1.AKSLabelMode)).To(Equal([]string{ownerOptions.FieldManager}))
+	g.Expect(ssaContractSelectorOwners(t, changed)).To(Equal([]string{ownerOptions.FieldManager}))
 	current = ssaContractGet(t, ctx, deployments, owner.Name)
 	released, err := ssaContractApply(t, ctx, deployments, current.Name, ssaContractSelectorIntent(current, false), fixtureOptions)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(released.Spec).To(Equal(current.Spec))
 	g.Expect(released.UID).To(Equal(current.UID))
 	g.Expect(released.Spec.Template.Spec.NodeSelector).To(HaveKeyWithValue(v1beta1.AKSLabelMode, v1beta1.ModeUser))
-	g.Expect(ssaContractFieldOwners(t, released, "f:spec", "f:template", "f:spec", "f:nodeSelector", "f:"+v1beta1.AKSLabelMode)).To(Equal([]string{ownerOptions.FieldManager}))
+	g.Expect(ssaContractSelectorOwners(t, released)).To(Equal([]string{ownerOptions.FieldManager}))
 }
 
 func ssaContractOwner() *appsv1.Deployment {
@@ -357,6 +413,8 @@ func ssaContractOwner() *appsv1.Deployment {
 func ssaContractSelectorIntent(current *appsv1.Deployment, includeSelector bool) map[string]interface{} {
 	// Use an explicit partial intent, not a marshaled Deployment with zero-valued
 	// fields. Omitting spec on release relinquishes only this manager's field set.
+	// Activation requires the entire atomic nodeSelector to be absent and unowned;
+	// this intent does not merge its mode key with another owner's selector keys.
 	intent := map[string]interface{}{
 		"apiVersion": "apps/v1",
 		"kind":       "Deployment",
@@ -410,8 +468,15 @@ func assertSSAContractSelector(t *testing.T, baseline, current *appsv1.Deploymen
 	g.Expect(current.Finalizers).To(Equal(baseline.Finalizers))
 	g.Expect(current.Labels).ToNot(HaveKey(coretest.DiscoveryLabel))
 	g.Expect(current.Spec.Template.Labels).ToNot(HaveKey(coretest.DiscoveryLabel))
-	g.Expect(ssaContractFieldOwners(t, current, "f:spec", "f:template", "f:spec", "f:nodeSelector", "f:"+v1beta1.AKSLabelMode)).To(Equal([]string{manager}))
+	g.Expect(ssaContractSelectorOwners(t, current)).To(Equal([]string{manager}))
 	g.Expect(ssaContractFieldOwners(t, current, "f:spec", "f:template", "f:spec", "f:affinity")).To(Equal([]string{"deployment-owner"}))
+}
+
+func ssaContractSelectorOwners(t *testing.T, deployment *appsv1.Deployment) []string {
+	t.Helper()
+	// PodSpec.NodeSelector is an atomic map. Its managedFields leaf is the whole
+	// nodeSelector field, with no nested ownership entry for an individual label.
+	return ssaContractFieldOwners(t, deployment, "f:spec", "f:template", "f:spec", "f:nodeSelector")
 }
 
 func ssaContractFieldOwners(t *testing.T, deployment *appsv1.Deployment, path ...string) []string {
