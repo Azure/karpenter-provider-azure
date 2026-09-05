@@ -270,6 +270,28 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 
+		It("should support Kata VM isolation label for instance type selection", func() {
+			selectors.Insert(v1beta1.AKSLabelKataVMIsolation)
+			if !env.IsMachineModeOrNPS() {
+				Skip("Kata Pod Sandboxing is not supported on the aksscriptless provision mode")
+			}
+
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+			deployment := test.Deployment(
+				test.DeploymentOptions{
+					Replicas: 1,
+					PodOptions: test.PodOptions{
+						NodeSelector: map[string]string{
+							corev1.LabelInstanceTypeStable:  "Standard_D4s_v5",
+							v1beta1.AKSLabelKataVMIsolation: "true",
+						},
+					}})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+		})
+
 		DescribeTable("should support restricted label domain exceptions", func(domain string) {
 			// Assign labels to the nodepool so that it has known values
 			test.ReplaceRequirements(nodePool,

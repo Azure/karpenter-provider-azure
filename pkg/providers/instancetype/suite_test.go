@@ -84,6 +84,7 @@ import (
 )
 
 var ctx context.Context
+var ctxBootstrap context.Context
 var testOptions *options.Options
 var stop context.CancelFunc
 var env *coretest.Environment
@@ -105,7 +106,7 @@ func TestAzure(t *testing.T) {
 	ctx, stop = context.WithCancel(ctx) //nolint:gosec // G118: stop is called in AfterSuite
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
-	ctxBootstrap := options.ToContext(ctx, test.Options(test.OptionsFields{
+	ctxBootstrap = options.ToContext(ctx, test.Options(test.OptionsFields{
 		ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
 	}))
 
@@ -2535,6 +2536,56 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 
+		Context("Filtering by WorkloadRuntime (Kata)", func() {
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			listFor := func(runtime *v1beta1.WorkloadRuntime) corecloudprovider.InstanceTypes {
+				nc := test.AKSNodeClass()
+				nc.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nc.Spec.WorkloadRuntime = runtime
+				ExpectApplied(ctx, env.Client, nc)
+				its, err := azureEnv.InstanceTypesProvider.List(ctx, nc)
+				Expect(err).ToNot(HaveOccurred())
+				return its
+			}
+
+			It("should exclude SKUs that cannot run Pod Sandboxing when Kata is requested", func() {
+				instanceTypes := listFor(lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation))
+
+				// Gen-1-only SKUs cannot run Kata.
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Include supported families whose version alone does not determine nested virtualization.
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_F16s_v2"))))
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+			})
+
+			// Karpenter advertises the Kata node label AKS will stamp so it can scale up for pending
+			// pods that select it.
+			Context("Advertising the Kata node label", func() {
+				find := func(its corecloudprovider.InstanceTypes, name string) *corecloudprovider.InstanceType {
+					for _, it := range its {
+						if it.Name == name {
+							return it
+						}
+					}
+					return nil
+				}
+
+				It("should advertise the Kata label for KataVmIsolation", func() {
+					it := find(listFor(lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)), "Standard_D2_v5")
+					Expect(it).ToNot(BeNil())
+					Expect(it.Requirements.Get(v1beta1.AKSLabelKataVMIsolation).Has("true")).To(BeTrue())
+				})
+
+				It("should not advertise the Kata label for OCIContainer", func() {
+					it := find(listFor(lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)), "Standard_D2_v5")
+					Expect(it).ToNot(BeNil())
+					Expect(it.Requirements.Get(v1beta1.AKSLabelKataVMIsolation).Has("true")).To(BeFalse())
+				})
+			})
+		})
+
 		Context("Offering Availability", func() {
 			var instanceTypes corecloudprovider.InstanceTypes
 
@@ -2865,13 +2916,30 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(capList).To(HaveKey(v1.ResourceEphemeralStorage))
 				}
 			})
+			It("should reserve the hard nodefs threshold from ephemeral storage", func() {
+				instanceType, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+					return instanceType.Name == "Standard_D2s_v3"
+				})
+				Expect(ok).To(BeTrue())
+
+				capacity := instanceType.Capacity[v1.ResourceEphemeralStorage]
+				Expect(capacity.String()).To(Equal("128G"))
+				Expect(capacity.Value()).To(Equal(int64(128_000_000_000)))
+
+				eviction, ok := instanceType.Overhead.EvictionThreshold[v1.ResourceEphemeralStorage]
+				Expect(ok).To(BeTrue())
+				Expect(eviction.Value()).To(Equal(int64(12_800_000_190)))
+
+				allocatable := instanceType.Allocatable()[v1.ResourceEphemeralStorage]
+				Expect(allocatable.Value()).To(Equal(capacity.Value() - eviction.Value()))
+			})
 
 			// TODO: Is this stuff really about Provider List? Feels like no, should we put it elsewhere?
 			type WellKnownLabelEntry struct {
 				Name      string
 				Label     string
 				ValueFunc func() string
-				SetupFunc func()
+				SetupFunc func(context.Context) context.Context
 				// ExpectedInKubeletLabels indicates if we expect to see this in the KUBELET_NODE_LABELS section of the custom script extension.
 				// If this is false it means that Karpenter will not set it on the node via KUBELET_NODE_LABELS.
 				// It does NOT mean that it will not be on the resulting Node object in a real cluster, as it may be written by another process.
@@ -2885,11 +2953,12 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 
 			// requireFunc returns a SetupFunc that adds a label requirement to the NodePool
-			requireFunc := func(key, value string) func() {
-				return func() {
+			requireFunc := func(key, value string) func(context.Context) context.Context {
+				return func(ctx context.Context) context.Context {
 					nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
 						karpv1.NodeSelectorRequirementWithMinValues{Key: key, Operator: v1.NodeSelectorOpIn, Values: []string{value}},
 					)
+					return ctx
 				}
 			}
 
@@ -2932,13 +3001,39 @@ var _ = Describe("InstanceType Provider", func() {
 					Name:  v1beta1.AKSLabelFIPSEnabled,
 					Label: v1beta1.AKSLabelFIPSEnabled,
 					// Needs special setup because it only works on FIPS
-					SetupFunc: func() {
+					SetupFunc: func(ctx context.Context) context.Context {
 						testOptions.UseSIG = true
 						ctx = options.ToContext(ctx, testOptions)
 
 						nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
 						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 						test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+						return ctx
+					},
+					ValueFunc:               func() string { return "true" },
+					ExpectedInKubeletLabels: true,
+					ExpectedOnNode:          true,
+				},
+				{
+					Name:  v1beta1.AKSLabelKataVMIsolation,
+					Label: v1beta1.AKSLabelKataVMIsolation,
+					// Needs special setup because it only works with Bootstrap or Machine API
+					SetupFunc: func(ctx context.Context) context.Context {
+						if !options.FromContext(ctx).SupportsWorkloadRuntime() {
+							Skip("Kata requires the bootstrapping client or AKS machine API")
+						}
+						kubernetesVersion := lo.Must(azureEnvBootstrap.KubernetesVersionProvider.KubeServerVersion(ctx))
+						if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+							Skip("Kata requires Azure Linux 3")
+						}
+
+						nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+						nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+						nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "Test", "force image refresh")
+						imageReconciler := status.NewNodeImageReconciler(azureEnvBootstrap.ImageProvider, env.KubernetesInterface)
+						_, err := imageReconciler.Reconcile(ctx, nodeClass)
+						Expect(err).ToNot(HaveOccurred())
+						return ctx
 					},
 					ValueFunc:               func() string { return "true" },
 					ExpectedInKubeletLabels: true,
@@ -3048,8 +3143,9 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually)",
 				func(item WellKnownLabelEntry) {
+					ctx := ctx
 					if item.SetupFunc != nil {
-						item.SetupFunc()
+						ctx = item.SetupFunc(ctx)
 					}
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -3061,7 +3157,7 @@ var _ = Describe("InstanceType Provider", func() {
 					if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
 						results := []ProvisioningResult{}
 						for range 3 {
-							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+							results = append(results, ExpectProvisionedNoBinding(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod))
 						}
 						for i := range len(results) {
 							Expect(lo.Values(results[i].Bindings)).ToNot(BeEmpty())
@@ -3095,8 +3191,9 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable(
 				"should support individual instance type labels (when all pods scheduled individually) on bootstrap API",
 				func(item WellKnownLabelEntry) {
+					ctx := ctxBootstrap
 					if item.SetupFunc != nil {
-						item.SetupFunc()
+						ctx = item.SetupFunc(ctx)
 					}
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)

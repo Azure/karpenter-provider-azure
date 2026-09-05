@@ -70,6 +70,7 @@ type instanceTypeParameters struct {
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
+	KataEnabled              bool
 }
 
 type instanceTypesSourceDataGeneration struct {
@@ -155,6 +156,7 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
@@ -348,7 +350,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByFilters(sku *skewer.SKU, arch
 		p.isInstanceTypeSupportedByLocalDNS(sku, params) &&
 		p.isInstanceTypeSupportedByGPUDriverMode(sku, params) &&
 		p.isInstanceTypeSupportedByArtifactStreaming(architecture, params) &&
-		p.isInstanceTypeSupportedByTrustedLaunch(sku, params)
+		p.isInstanceTypeSupportedByTrustedLaunch(sku, params) &&
+		p.isInstanceTypeSupportedByKata(sku, architecture, params)
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
@@ -365,6 +368,20 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByKata(sku *skewer.SKU, architecture string, params *instanceTypeParameters) bool {
+	// If a Kata workload runtime is not requested, all instance types are supported.
+	if !params.KataEnabled {
+		return true
+	}
+	// The only Kata image variants AKS publishes today are amd64 (see imagefamily/azlinux3.go).
+	// Advertising an arm64 SKU as Kata-capable would fail late at image resolution instead of
+	// simply not being offered. Drop this condition when an arm64 Kata image ships.
+	if getArchitecture(architecture) != karpv1.ArchitectureAmd64 {
+		return false
+	}
+	return sku.IsNestedVirtualizationSupported()
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {
