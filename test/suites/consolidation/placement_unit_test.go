@@ -529,6 +529,9 @@ func TestReplacementBudgetPlacementApplyFenceRequirements(t *testing.T) {
 			if !tt.noHistory {
 				g.Expect(target.submittedApplies[0].outcome).To(Equal(tt.outcome))
 				g.Expect(target.submittedApplies[0].fencedAtResourceVersion != "").To(Equal(tt.wantFenced))
+				if tt.wantFenced {
+					g.Expect(target.submittedApplies[0].fencedAtResourceVersion).To(Equal(current.ResourceVersion))
+				}
 			}
 		})
 	}
@@ -904,6 +907,253 @@ func TestReplacementBudgetPlacementLateApply(t *testing.T) {
 			request := fixture.submit()
 			tt.run(t, fixture, request)
 		})
+	}
+}
+
+// An old omission cannot explain removal after the helper has observed the
+// selector still present at a different RV. This uses the existing real-storage
+// world; only the client completion/cancellation boundary is controlled. As in
+// the late-installation tests, original healthy Pods have not rolled during the
+// interrupted activation. Envtest runs no Deployment or workload controllers.
+func TestReplacementBudgetPlacementOmissionCausality(t *testing.T) {
+	kube := newPlacementImplementationAPI(t)
+	for _, tt := range []struct {
+		name            string
+		persistOmission bool
+	}{
+		{name: "fenced omission cannot explain foreign removal"},
+		{name: "persisted omission with lost response remains recoverable", persistOmission: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newPlacementLateApplyFixture(t, kube)
+			firstRestoreCtx, cancelFirstRestore := context.WithCancel(f.ctx)
+			defer cancelFirstRestore()
+			fencedRestoreCtx, cancelFencedRestore := context.WithCancel(f.ctx)
+			defer cancelFencedRestore()
+			var requests []placementLateApplyRequest
+			var omittedResponse *appsv1.Deployment
+			var fencedReads []*appsv1.Deployment
+			observeFencedRestore, canceledAfterOwnedRead := false, false
+			adapter := kubefake.NewSimpleClientset()
+			adapter.PrependReactor("*", "*", func(action ktesting.Action) (bool, runtime.Object, error) {
+				if action.GetSubresource() != "" {
+					t.Fatalf("omission prerequisite: forbidden helper subresource %q", action.GetSubresource())
+				}
+				switch action.GetVerb() + " " + action.GetResource().Resource {
+				case "patch deployments":
+					request := capturePlacementOmissionApply(t, f.scope, f.get(), action)
+					requests = append(requests, request)
+					if request.install {
+						if len(requests) != 1 {
+							t.Fatal("omission prerequisite: only one initial helper installation is allowed")
+						}
+						after, err := f.kube.AppsV1().Deployments(f.owner.Namespace).Patch(f.ctx, f.owner.Name, types.ApplyPatchType, request.data, request.options)
+						return true, after, err
+					}
+					if len(requests) != 2 || !requests[0].install {
+						t.Fatal("omission prerequisite: another helper omission was submitted after the captured request")
+					}
+					if tt.persistOmission {
+						var err error
+						omittedResponse, err = f.kube.AppsV1().Deployments(f.owner.Namespace).Patch(f.ctx, f.owner.Name, types.ApplyPatchType, request.data, request.options)
+						if err != nil || omittedResponse == nil {
+							t.Fatalf("omission prerequisite: the positive control must actually persist its omission: %v", err)
+						}
+					}
+					// In the regression case, hold these exact bytes for later real
+					// storage completion. In the positive control they already persisted.
+					// Neither completion outcome is acknowledged to the helper.
+					cancelFirstRestore()
+					return true, nil, context.Canceled
+				case "get deployments":
+					if observeFencedRestore {
+						current, err := f.kube.AppsV1().Deployments(action.GetNamespace()).Get(fencedRestoreCtx, action.(ktesting.GetAction).GetName(), metav1.GetOptions{})
+						if err == nil && current != nil {
+							fencedReads = append(fencedReads, current.DeepCopy())
+						}
+						return true, current, err
+					}
+				case "list replicasets":
+					if observeFencedRestore {
+						// Restore reaches inventory only after its own UID/ownership
+						// checks accepted the preceding real Deployment observation.
+						if len(fencedReads) != 1 || canceledAfterOwnedRead {
+							t.Fatal("omission prerequisite: cancellation must follow exactly one validated owned-selector observation")
+						}
+						cancelFencedRestore()
+						canceledAfterOwnedRead = true
+						result, err := f.kube.AppsV1().ReplicaSets(action.GetNamespace()).List(fencedRestoreCtx, metav1.ListOptions{})
+						if !errors.Is(err, context.Canceled) {
+							t.Fatalf("omission prerequisite: the typed inventory request must observe actual context cancellation: %v", err)
+						}
+						return true, result, err
+					}
+				}
+				return f.react(action) // Existing adapter: real reads, no tracker-backed observations.
+			})
+			f.scope.kube = adapter
+
+			// Baseline identity and healthy original placement were captured by
+			// the existing world. Exercise the actual installation/readback path.
+			if err := f.scope.mutateSelector(f.ctx, f.target, true); err != nil {
+				t.Fatalf("omission prerequisite: actual helper installation must succeed: %v", err)
+			}
+			installed := f.get()
+			if !f.target.confirmed || f.target.released || len(requests) != 1 || installed.UID != f.baseline.UID || installed.ResourceVersion == f.baseline.ResourceVersion {
+				t.Fatal("omission prerequisite: retain a confirmed, exclusively owned installation on the original UID")
+			}
+			if err := f.scope.validateOwned(installed); err != nil {
+				t.Fatalf("omission prerequisite: real storage must exclusively own the selector: %v", err)
+			}
+			firstErr := f.scope.Restore(firstRestoreCtx)
+			if firstRestoreCtx.Err() != context.Canceled || !errors.Is(firstErr, context.Canceled) || f.target.released || len(requests) != 2 {
+				t.Fatalf("omission prerequisite: the first Restore must retain one unacknowledged omission after cancellation: error=%v released=%t requests=%d", firstErr, f.target.released, len(requests))
+			}
+			requirePlacementOmissionHistory(t, f.scope, requests)
+			omission := requests[1]
+			if omission.install || omission.uid != installed.UID || omission.resourceVersion != installed.ResourceVersion {
+				t.Fatal("omission prerequisite: captured omission must target the actual installed UID/RV")
+			}
+
+			if !tt.persistOmission {
+				if !reflect.DeepEqual(f.get(), installed) {
+					t.Fatal("omission prerequisite: the held omission must leave real storage unchanged")
+				}
+				changedOwner := f.owner.DeepCopy()
+				changedOwner.Annotations["example.com/revision"] = "fence-older-omission"
+				fenced, err := ssaContractApply(t, f.ctx, f.kube.AppsV1().Deployments(f.owner.Namespace), f.owner.Name, changedOwner, metav1.PatchOptions{FieldManager: "deployment-owner"})
+				if err != nil || fenced == nil || fenced.UID != omission.uid || fenced.ResourceVersion == omission.resourceVersion {
+					t.Fatalf("omission prerequisite: an independent owner update must advance the same UID's RV: %v", err)
+				}
+				if err := f.scope.validateOwned(fenced); err != nil || !reflect.DeepEqual(f.get(), fenced) {
+					t.Fatalf("omission prerequisite: the advanced-RV selector must remain exclusively owned in real storage: %v", err)
+				}
+				observeFencedRestore = true
+				fencedErr := f.scope.Restore(fencedRestoreCtx)
+				observeFencedRestore = false
+				if !canceledAfterOwnedRead || fencedRestoreCtx.Err() != context.Canceled || !errors.Is(fencedErr, context.Canceled) || f.target.released {
+					t.Fatalf("omission prerequisite: Restore must observe owned intent and then stop before another submission: error=%v released=%t", fencedErr, f.target.released)
+				}
+				if len(fencedReads) != 1 || !reflect.DeepEqual(fencedReads[0], fenced) || len(requests) != 2 {
+					t.Fatal("omission prerequisite: actual helper must read the exact fenced-present object and submit no new omission")
+				}
+				requirePlacementOmissionHistory(t, f.scope, requests)
+
+				// Complete only the previously captured request, with its original
+				// UID/RV and bytes. This is not a new helper submission or a fake CAS.
+				_, err = f.kube.AppsV1().Deployments(f.owner.Namespace).Patch(f.ctx, f.owner.Name, types.ApplyPatchType, omission.data, omission.options)
+				if !apierrors.IsConflict(err) || !strings.Contains(err.Error(), "the object has been modified") || !reflect.DeepEqual(f.get(), fenced) {
+					t.Fatalf("omission prerequisite: real storage must reject the old omission as an RV conflict without changing the owned selector: %v", err)
+				}
+				t.Logf("fenced-omission RV proof: uid=%s submittedRV=%s observedPresentRV=%s rejection=%v; canceledAfterOwnedRead=%t helperApplies=%d", omission.uid, omission.resourceVersion, fencedReads[0].ResourceVersion, err, canceledAfterOwnedRead, len(requests))
+
+				// An independent actor removes the field through ordinary merge
+				// patch. Never construct, clear, or edit managedFields in the fixture.
+				foreignPatch, err := json.Marshal(map[string]interface{}{
+					"metadata": map[string]interface{}{"uid": omission.uid, "resourceVersion": fenced.ResourceVersion},
+					"spec":     map[string]interface{}{"template": map[string]interface{}{"spec": map[string]interface{}{"nodeSelector": nil}}},
+				})
+				if err != nil {
+					t.Fatalf("omission prerequisite: encode the independent actor's ordinary patch: %v", err)
+				}
+				removed, err := f.kube.AppsV1().Deployments(f.owner.Namespace).Patch(f.ctx, f.owner.Name, types.MergePatchType, foreignPatch, metav1.PatchOptions{FieldManager: "external-selector-remover"})
+				if err != nil || removed == nil || removed.UID != omission.uid || removed.ResourceVersion == fenced.ResourceVersion || removed.Generation <= fenced.Generation {
+					t.Fatalf("omission prerequisite: ordinary foreign removal must actually persist a template change on the original UID: %v", err)
+				}
+				if err := f.scope.validateRestored(removed); err != nil || !reflect.DeepEqual(f.get(), removed) {
+					t.Fatalf("omission prerequisite: the server, not synthetic managedFields, must remove the selector and scope ownership: %v", err)
+				}
+				t.Logf("fenced-omission foreign removal proof: uid=%s presentRV=%s removedRV=%s helperApplies=%d", removed.UID, fenced.ResourceVersion, removed.ResourceVersion, len(requests))
+			} else {
+				if omittedResponse.UID != omission.uid || omittedResponse.ResourceVersion == omission.resourceVersion || omittedResponse.Generation <= installed.Generation || !reflect.DeepEqual(f.get(), omittedResponse) {
+					t.Fatal("omission prerequisite: the positive control's lost response must correspond to real persisted removal")
+				}
+				if err := f.scope.validateRestored(omittedResponse); err != nil {
+					t.Fatalf("omission prerequisite: the positive control must remove actual selector ownership: %v", err)
+				}
+			}
+
+			// Fixture-only controller observation: storage removal has already
+			// been proved. Envtest has no controllers; the existing healthy original
+			// Pod and ReplicaSet match the restored template without replacement.
+			healthy := f.publishAvailable(f.get())
+			pods, err := f.scope.rolloutReady(f.ctx, healthy, f.target, "restored")
+			if err != nil || len(pods) != 1 || pods[0].pod.UID != f.originalPod.UID {
+				t.Fatalf("omission prerequisite: actual UID-linked original Pod/ReplicaSet/Node observations must prove healthy restored placement before the assertion: %v", err)
+			}
+			finalErr := f.scope.Restore(f.ctx)
+			if len(requests) != 2 || !reflect.DeepEqual(f.get(), healthy) {
+				t.Fatal("omission prerequisite: final Restore must be read-only and preserve real absent/unowned storage")
+			}
+			requirePlacementOmissionHistory(t, f.scope, requests)
+			t.Logf("omission recovery observation: uid=%s healthyRV=%s originalPodUID=%s persistedOmission=%t helperApplies=%d finalError=%v released=%t", healthy.UID, healthy.ResourceVersion, f.originalPod.UID, tt.persistOmission, len(requests), finalErr, f.target.released)
+			if !tt.persistOmission {
+				if finalErr == nil || !strings.Contains(finalErr.Error(), "confirmed selector intent disappeared") {
+					t.Errorf("Restore must report confirmed selector disappearance: the old omission was fenced while intent was still present and no later omission was submitted; got %v", finalErr)
+				}
+				if f.target.released {
+					t.Error("Restore must not mark a later foreign selector removal released because an older, already-fenced omission has an unknown outcome")
+				}
+				return
+			}
+			if finalErr != nil || !f.target.released {
+				t.Fatalf("a genuinely persisted omission with a lost response must remain recoverable: error=%v released=%t", finalErr, f.target.released)
+			}
+			for _, submitted := range f.target.submittedApplies {
+				if submitted.fencedAtResourceVersion != healthy.ResourceVersion {
+					t.Errorf("recovery fence must equal the actual independently observed current RV %s, got %s", healthy.ResourceVersion, submitted.fencedAtResourceVersion)
+				}
+			}
+		})
+	}
+}
+
+func capturePlacementOmissionApply(t *testing.T, scope *replacementBudgetPlacement, before *appsv1.Deployment, action ktesting.Action) placementLateApplyRequest {
+	t.Helper()
+	patch := action.(ktesting.PatchAction)
+	options := action.(interface{ GetPatchOptions() metav1.PatchOptions }).GetPatchOptions()
+	if patch.GetPatchType() != types.ApplyPatchType || !reflect.DeepEqual(options, metav1.PatchOptions{FieldManager: scope.manager}) || action.GetNamespace() != before.Namespace || patch.GetName() != before.Name {
+		t.Fatal("omission prerequisite: helper must submit only its own unforced selector apply to the original identity")
+	}
+	var intent map[string]interface{}
+	if err := json.Unmarshal(patch.GetPatch(), &intent); err != nil {
+		t.Fatalf("omission prerequisite: decode actual helper payload: %v", err)
+	}
+	_, install := intent["spec"]
+	expected, err := json.Marshal(ssaContractSelectorIntent(before, install))
+	if err != nil || !reflect.DeepEqual(patch.GetPatch(), expected) || before.UID == "" || before.ResourceVersion == "" {
+		t.Fatalf("omission prerequisite: helper payload must match independent minimal UID/RV selector intent: %v", err)
+	}
+	return placementLateApplyRequest{
+		install: install, uid: before.UID, resourceVersion: before.ResourceVersion,
+		data: append([]byte(nil), patch.GetPatch()...), options: options,
+	}
+}
+
+func requirePlacementOmissionHistory(t *testing.T, scope *replacementBudgetPlacement, requests []placementLateApplyRequest) {
+	t.Helper()
+	if len(requests) != 2 || len(scope.targets) != 1 || len(scope.targets[0].submittedApplies) != len(requests) {
+		t.Fatal("omission prerequisite: retain exactly the captured installation and omission")
+	}
+	diagnostics := scope.Diagnostics()["targets"].([]map[string]interface{})[0]["submittedApplies"].([]map[string]interface{})
+	if len(diagnostics) != len(requests) {
+		t.Fatal("omission prerequisite: diagnostics must retain every captured request")
+	}
+	for i, request := range requests {
+		outcome := budgetPlacementApplyUnknown
+		if request.install {
+			outcome = budgetPlacementApplyAcknowledged
+		}
+		submitted := scope.targets[0].submittedApplies[i]
+		if submitted.uid != request.uid || submitted.resourceVersion != request.resourceVersion || submitted.install != request.install || submitted.outcome != outcome {
+			t.Fatalf("omission prerequisite: ledger entry %d must preserve the captured UID/RV/direction and client outcome: %+v", i, submitted)
+		}
+		// Expectations come from captured bytes and observed client completions,
+		// not from copying the ledger into another expected Diagnostics map.
+		entry := diagnostics[i]
+		if entry["uid"] != request.uid || entry["resourceVersion"] != request.resourceVersion || entry["install"] != request.install || entry["outcome"] != string(outcome) {
+			t.Fatalf("omission prerequisite: diagnostics entry %d lost or rewrote captured request evidence: %v", i, entry)
+		}
 	}
 }
 
