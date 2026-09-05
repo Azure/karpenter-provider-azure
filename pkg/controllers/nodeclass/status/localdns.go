@@ -326,15 +326,26 @@ func (r *LocalDNSReconciler) checkInstanceTypeGate(ctx context.Context, nc *v1be
 	return "", "", nil
 }
 
-// referencesNodeClass reports whether np targets nc. Group and Kind are matched
+// aksNodeClassRefName returns the name of the AKSNodeClass np references, and
+// whether np references an AKSNodeClass at all. Group and Kind are matched
 // alongside Name so that a NodePool pointing at some other provider's NodeClass
 // that happens to share a name cannot spuriously disable LocalDNS.
-func referencesNodeClass(np karpv1.NodePool, nc *v1beta1.AKSNodeClass) bool {
+//
+// Both the instance type gate and the NodePool watch that feeds it resolve
+// references through here, so the two cannot disagree about which NodePools
+// belong to a NodeClass.
+func aksNodeClassRefName(np *karpv1.NodePool) (string, bool) {
 	ref := np.Spec.Template.Spec.NodeClassRef
-	return ref != nil &&
-		ref.Name == nc.Name &&
-		ref.Kind == aksNodeClassKind &&
-		ref.Group == apis.Group
+	if ref == nil || ref.Kind != aksNodeClassKind || ref.Group != apis.Group {
+		return "", false
+	}
+	return ref.Name, true
+}
+
+// referencesNodeClass reports whether np targets nc.
+func referencesNodeClass(np karpv1.NodePool, nc *v1beta1.AKSNodeClass) bool {
+	name, ok := aksNodeClassRefName(&np)
+	return ok && name == nc.Name
 }
 
 func (r *LocalDNSReconciler) hasUpstreamNodeLocalDNS(ctx context.Context) (bool, error) {

@@ -643,3 +643,37 @@ func TestPreferred_GateProbesProviderWithLocalDNSEnabled(t *testing.T) {
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
 	expectReadyReason(t, nc, reasonNoCompatibleInstanceTypes)
 }
+
+// --- NodePool watch mapping ---
+//
+// The instance type gate reads the set of NodePools referencing the NodeClass,
+// so NodePool churn has to re-enqueue that NodeClass. Without the mapping the
+// gate stays latched on whatever the first reconcile saw until the next
+// periodic requeue, and nodes provision with LocalDNS off in the meantime.
+
+func TestNodePoolToAKSNodeClass_MapsToReferencedNodeClass(t *testing.T) {
+	g := NewWithT(t)
+	reqs := nodePoolToAKSNodeClass(context.Background(), newNodePool("np", "test", largeSKU))
+	g.Expect(reqs).To(HaveLen(1))
+	g.Expect(reqs[0].Name).To(Equal("test"))
+	// AKSNodeClass is cluster-scoped; a namespace here would never match.
+	g.Expect(reqs[0].Namespace).To(BeEmpty())
+}
+
+// Same Name, different provider: mapping it would make foreign NodePool churn
+// spin this controller, and pairs with the gate ignoring it entirely.
+func TestNodePoolToAKSNodeClass_IgnoresForeignGroupKind(t *testing.T) {
+	g := NewWithT(t)
+	foreign := newNodePool("np", "test", largeSKU)
+	foreign.Spec.Template.Spec.NodeClassRef.Group = "karpenter.k8s.aws"
+	foreign.Spec.Template.Spec.NodeClassRef.Kind = "EC2NodeClass"
+	g.Expect(nodePoolToAKSNodeClass(context.Background(), foreign)).To(BeEmpty())
+}
+
+func TestNodePoolToAKSNodeClass_IgnoresNilRefAndWrongType(t *testing.T) {
+	g := NewWithT(t)
+	noRef := newNodePool("np", "test", largeSKU)
+	noRef.Spec.Template.Spec.NodeClassRef = nil
+	g.Expect(nodePoolToAKSNodeClass(context.Background(), noRef)).To(BeEmpty())
+	g.Expect(nodePoolToAKSNodeClass(context.Background(), newNC())).To(BeEmpty())
+}

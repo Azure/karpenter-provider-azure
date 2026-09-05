@@ -306,9 +306,15 @@ const (
 	localDNSCompatibleSKU = "Standard_D4s_v3"
 
 	// localDNSResolutionTimeout bounds how long we wait for the nodeclass.status
-	// controller to resolve Mode=Preferred. Resolution is event-driven on create,
-	// so this only has to absorb controller startup and API latency.
-	localDNSResolutionTimeout = 3 * time.Minute
+	// controller to resolve Mode=Preferred. The gate specs create the NodeClass
+	// and its NodePool together, and the gate's verdict depends on the NodePool
+	// being visible. Resolution is event-driven on both objects, but the two
+	// creates race, so the first reconcile can still land before the NodePool is
+	// observed and record NoReferencingNodePools. This has to leave room for the
+	// requeue that corrects that -- keep it above the 3m floor set by
+	// subnet.go's healthyRequeueInterval, which is the smallest interval
+	// result.Min picks across the status subreconcilers.
+	localDNSResolutionTimeout = 6 * time.Minute
 )
 
 // preferredLocalDNS returns the LocalDNS spec used by the gate tests: Preferred
