@@ -303,10 +303,11 @@ func TestReplacementBudgetPlacementWritableContract(t *testing.T) {
 	}
 }
 
-// These legacy controls have fake-only knowledge: no-op and response-only never
-// persist, while persist-then-error persists before returning. Their expectations
-// are unchanged; none proves that an unsuccessful real request cannot commit later.
-// TestReplacementBudgetPlacementLateApply covers that separate ordering.
+// These legacy faults have fake-only knowledge: no-op and response-only never
+// persist, while persist-then-error persists before returning. The real-storage
+// TestReplacementBudgetPlacementLateApply counterexample shows why the first two
+// must now expect unresolved cleanup: their absence observations cannot tell the
+// helper that the submitted write will never commit. The fault behavior is unchanged.
 func TestReplacementBudgetPlacementMutationFailures(t *testing.T) {
 	for _, mode := range []string{"no-op", "response-only", "persist-then-error", "extra-field", "delete-then-error"} {
 		t.Run(mode, func(t *testing.T) {
@@ -325,6 +326,12 @@ func TestReplacementBudgetPlacementMutationFailures(t *testing.T) {
 			if mode == "delete-then-error" {
 				g.Expect(err).To(HaveOccurred(), "missing is not a successful rollback and must not upsert")
 				g.Expect(world.requests).To(HaveLen(1))
+			} else if mode == "no-op" || mode == "response-only" {
+				g.Expect(err).To(HaveOccurred(), "fake-only knowledge of non-persistence is not a request completion fence")
+				g.Expect(err.Error()).To(ContainSubstring("unresolved selector apply"))
+				g.Expect(scope.targets[0].released).To(BeFalse(), "a later Restore must still be able to recover a late write")
+				g.Expect(world.requests).To(HaveLen(1), "do not manufacture a fence with a no-op apply")
+				g.Expect(world.deployment(world.name).Spec.Template.Spec.NodeSelector).To(BeNil())
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(world.deployment(world.name).Spec.Template.Spec.NodeSelector).To(BeNil())
@@ -333,6 +340,196 @@ func TestReplacementBudgetPlacementMutationFailures(t *testing.T) {
 				g.Expect(world.deployment(world.name).Spec.Template.Spec.Containers[0].Image).To(Equal("unexpected-owner-image"), "cleanup must not restore a full preimage")
 			}
 			g.Expect(world.forbidden).To(BeEmpty(), "no-op Create/Delete/Update stubs cannot hide unsafe calls")
+		})
+	}
+}
+
+// Bookkeeping is checked against the actual helper's captured Patch actions.
+// This fake does not prove persistence; the unchanged real-API cases do that.
+func TestReplacementBudgetPlacementSubmittedApplyOutcomes(t *testing.T) {
+	tests := []struct {
+		name           string
+		activationOK   bool
+		cleanupOK      bool
+		clientOutcomes []budgetPlacementApplyOutcome
+	}{
+		{name: "normal", activationOK: true, cleanupOK: true, clientOutcomes: []budgetPlacementApplyOutcome{budgetPlacementApplyAcknowledged, budgetPlacementApplyAcknowledged}},
+		{name: "no-op", clientOutcomes: []budgetPlacementApplyOutcome{budgetPlacementApplyUnknown}},
+		{name: "response-only", clientOutcomes: []budgetPlacementApplyOutcome{budgetPlacementApplyAcknowledged}},
+		{name: "persist-then-error", cleanupOK: true, clientOutcomes: []budgetPlacementApplyOutcome{budgetPlacementApplyUnknown, budgetPlacementApplyAcknowledged}},
+		{name: "same-version-conflict", cleanupOK: true, clientOutcomes: []budgetPlacementApplyOutcome{budgetPlacementApplyRejected}},
+		{name: "version-conflict-once", activationOK: true, cleanupOK: true, clientOutcomes: []budgetPlacementApplyOutcome{budgetPlacementApplyRejected, budgetPlacementApplyAcknowledged, budgetPlacementApplyAcknowledged}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			world := newPlacementTestWorld(t)
+			world.mode = tt.name
+			scope := world.scope()
+			var cleanup func(context.Context) error
+			err := scope.Activate(t.Context(), world.registrar(&cleanup))
+			g.Expect(err == nil).To(Equal(tt.activationOK), "activation error: %v", err)
+			g.Expect(scope.targets).To(HaveLen(1))
+			world.mode = "normal"
+			world.ordinaryCleanupDone = true
+			err = cleanup(t.Context())
+			g.Expect(err == nil).To(Equal(tt.cleanupOK), "cleanup error: %v", err)
+			target := scope.targets[0]
+			g.Expect(target.released).To(Equal(tt.cleanupOK))
+			g.Expect(target.submittedApplies).To(HaveLen(len(tt.clientOutcomes)))
+
+			var patches []ktesting.PatchAction
+			for _, action := range world.client.Actions() {
+				if action.GetVerb() == "patch" && action.GetResource().Resource == "deployments" {
+					patches = append(patches, action.(ktesting.PatchAction))
+				}
+			}
+			g.Expect(patches).To(HaveLen(len(target.submittedApplies)))
+			var diagnostics []map[string]interface{}
+			for i, submitted := range target.submittedApplies {
+				var actual struct {
+					Metadata struct {
+						UID             types.UID `json:"uid"`
+						ResourceVersion string    `json:"resourceVersion"`
+					} `json:"metadata"`
+					Spec json.RawMessage `json:"spec"`
+				}
+				g.Expect(json.Unmarshal(patches[i].GetPatch(), &actual)).To(Succeed())
+				g.Expect(submitted.uid).To(Equal(actual.Metadata.UID))
+				g.Expect(submitted.resourceVersion).To(Equal(actual.Metadata.ResourceVersion))
+				g.Expect(submitted.install).To(Equal(len(actual.Spec) != 0))
+				g.Expect(submitted.outcome).To(Equal(tt.clientOutcomes[i]), "a later GET must not rewrite the client-observed outcome")
+				if tt.cleanupOK && submitted.outcome != budgetPlacementApplyRejected {
+					g.Expect(submitted.fencedAtResourceVersion).ToNot(BeEmpty())
+					g.Expect(submitted.fencedAtResourceVersion).ToNot(Equal(submitted.resourceVersion))
+				} else {
+					g.Expect(submitted.fencedAtResourceVersion).To(BeEmpty())
+				}
+				diagnostics = append(diagnostics, map[string]interface{}{
+					"uid": submitted.uid, "resourceVersion": submitted.resourceVersion, "install": submitted.install,
+					"outcome": string(submitted.outcome), "fencedAtResourceVersion": submitted.fencedAtResourceVersion,
+				})
+			}
+			g.Expect(scope.Diagnostics()["targets"].([]map[string]interface{})[0]["submittedApplies"]).To(Equal(diagnostics))
+			g.Expect(world.forbidden).To(BeEmpty())
+		})
+	}
+}
+
+func TestReplacementBudgetPlacementEarlierUnknownApplySurvivesRejection(t *testing.T) {
+	for _, mode := range []string{"no-op", "response-only"} {
+		t.Run(mode, func(t *testing.T) {
+			g := NewWithT(t)
+			world := newPlacementTestWorld(t)
+			world.mode = mode
+			scope := world.scope()
+			var cleanup func(context.Context) error
+			g.Expect(scope.Activate(t.Context(), world.registrar(&cleanup))).ToNot(Succeed())
+			target := scope.targets[0]
+			// Exercise another actual submission at the same RV. A conclusive
+			// rejection of this request cannot resolve the earlier unknown one.
+			world.mode = "same-version-conflict"
+			g.Expect(scope.mutateSelector(t.Context(), target, true)).ToNot(Succeed())
+			g.Expect(world.requests).To(HaveLen(2))
+			g.Expect(target.submittedApplies).To(HaveLen(2))
+			g.Expect(target.submittedApplies[0].outcome).ToNot(Equal(budgetPlacementApplyRejected))
+			g.Expect(target.submittedApplies[1].outcome).To(Equal(budgetPlacementApplyRejected))
+			g.Expect(target.submittedApplies[0].resourceVersion).To(Equal(target.submittedApplies[1].resourceVersion))
+			world.mode = "normal"
+			world.ordinaryCleanupDone = true
+			err := cleanup(t.Context())
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring("unresolved selector apply"))
+			g.Expect(target.released).To(BeFalse())
+			g.Expect(target.submittedApplies[0].fencedAtResourceVersion).To(BeEmpty())
+			g.Expect(world.requests).To(HaveLen(2), "checking absence must not invent a write fence")
+			g.Expect(world.forbidden).To(BeEmpty())
+		})
+	}
+}
+
+func TestReplacementBudgetPlacementUnknownReleaseRecovery(t *testing.T) {
+	for _, mode := range []string{"persist-then-error", "same-version-conflict"} {
+		t.Run(mode, func(t *testing.T) {
+			g := NewWithT(t)
+			world := newPlacementTestWorld(t)
+			scope := world.scope()
+			var cleanup func(context.Context) error
+			g.Expect(scope.Activate(t.Context(), world.registrar(&cleanup))).To(Succeed())
+			world.ordinaryCleanupDone = true
+			world.mode = mode
+			g.Expect(cleanup(t.Context())).ToNot(Succeed())
+			target := scope.targets[0]
+			g.Expect(target.confirmed).To(BeTrue())
+			g.Expect(target.released).To(BeFalse())
+			g.Expect(target.submittedApplies).To(HaveLen(2))
+			g.Expect(target.submittedApplies[1].install).To(BeFalse())
+			world.mode = "normal"
+			if mode == "persist-then-error" {
+				g.Expect(target.submittedApplies[1].outcome).To(Equal(budgetPlacementApplyUnknown))
+				g.Expect(world.deployment(world.name).Spec.Template.Spec.NodeSelector).To(BeNil())
+				g.Expect(cleanup(t.Context())).To(Succeed(), "an unknown omission may already have restored placement")
+				g.Expect(target.released).To(BeTrue())
+				g.Expect(target.submittedApplies[1].fencedAtResourceVersion).ToNot(BeEmpty())
+				g.Expect(target.submittedApplies[1].outcome).To(Equal(budgetPlacementApplyUnknown), "fencing must not invent a response outcome")
+			} else {
+				g.Expect(target.submittedApplies[1].outcome).To(Equal(budgetPlacementApplyRejected))
+				// Independent fixture actor, not a helper write or an SSA proof:
+				// remove the selector after our omission was conclusively rejected.
+				changed := world.deployment(world.name)
+				changed.Spec.Template.Spec.NodeSelector = nil
+				changed.ManagedFields = changed.ManagedFields[:1]
+				changed.ResourceVersion = "3"
+				changed.Generation++
+				world.publishRollout(changed)
+				err := cleanup(t.Context())
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("confirmed selector intent disappeared"))
+				g.Expect(target.released).To(BeFalse(), "a rejected omission cannot excuse externally lost ownership")
+			}
+			g.Expect(world.requests).To(HaveLen(2), "recovery or discrepancy reporting must not send a no-op omission")
+			g.Expect(world.forbidden).To(BeEmpty())
+		})
+	}
+}
+
+func TestReplacementBudgetPlacementApplyFenceRequirements(t *testing.T) {
+	tests := []struct {
+		name       string
+		uid        types.UID
+		rv         string
+		outcome    budgetPlacementApplyOutcome
+		noHistory  bool
+		wantError  bool
+		wantFenced bool
+	}{
+		{name: "missing history", noHistory: true, wantError: true},
+		{name: "missing submitted UID", rv: "before", outcome: budgetPlacementApplyUnknown, wantError: true},
+		{name: "missing submitted RV", uid: "controller-uid", outcome: budgetPlacementApplyUnknown, wantError: true},
+		{name: "foreign submitted UID", uid: "replacement-uid", rv: "before", outcome: budgetPlacementApplyUnknown, wantError: true},
+		{name: "unknown outcome kind", uid: "controller-uid", rv: "before", outcome: "invalid", wantError: true},
+		{name: "unknown unchanged RV", uid: "controller-uid", rv: "current", outcome: budgetPlacementApplyUnknown, wantError: true},
+		{name: "acknowledged unchanged RV", uid: "controller-uid", rv: "current", outcome: budgetPlacementApplyAcknowledged, wantError: true},
+		{name: "rejected unchanged RV", uid: "controller-uid", rv: "current", outcome: budgetPlacementApplyRejected},
+		{name: "unknown different opaque RV", uid: "controller-uid", rv: "before", outcome: budgetPlacementApplyUnknown, wantFenced: true},
+		{name: "acknowledged different opaque RV", uid: "controller-uid", rv: "before", outcome: budgetPlacementApplyAcknowledged, wantFenced: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			current := placementTestDeployment("controller")
+			current.ResourceVersion = "current"
+			target := &budgetPlacementTarget{key: types.NamespacedName{Namespace: current.Namespace, Name: current.Name}, uid: current.UID, attempted: true}
+			if !tt.noHistory {
+				target.submittedApplies = []budgetPlacementApply{{uid: tt.uid, resourceVersion: tt.rv, install: true, outcome: tt.outcome}}
+			}
+			err := target.resolveSubmittedApplies(current)
+			g.Expect(err != nil).To(Equal(tt.wantError), "resolution error: %v", err)
+			g.Expect(target.released).To(BeFalse(), "request fencing alone cannot certify restored intent and healthy Pods")
+			if !tt.noHistory {
+				g.Expect(target.submittedApplies[0].outcome).To(Equal(tt.outcome))
+				g.Expect(target.submittedApplies[0].fencedAtResourceVersion != "").To(Equal(tt.wantFenced))
+			}
 		})
 	}
 }

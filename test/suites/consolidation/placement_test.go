@@ -170,13 +170,30 @@ type replacementBudgetPlacement struct {
 	targets      []*budgetPlacementTarget
 }
 
+type budgetPlacementApplyOutcome string
+
+const (
+	budgetPlacementApplyUnknown      budgetPlacementApplyOutcome = "unknown"
+	budgetPlacementApplyAcknowledged budgetPlacementApplyOutcome = "acknowledged"
+	budgetPlacementApplyRejected     budgetPlacementApplyOutcome = "rejected"
+)
+
+type budgetPlacementApply struct {
+	uid                     types.UID
+	resourceVersion         string
+	install                 bool
+	outcome                 budgetPlacementApplyOutcome
+	fencedAtResourceVersion string // A same-UID current version that invalidates this exact request's old-RV CAS.
+}
+
 type budgetPlacementTarget struct {
 	key                 types.NamespacedName
 	uid                 types.UID
 	writeSelector       bool
-	attempted           bool // Set before the request: an error may follow a persisted write.
+	attempted           bool // Set before the request: an error may leave a write pending or persisted.
 	confirmed           bool // A fresh GET proved our exact selector intent was installed.
-	released            bool // A fresh GET proved our intent was removed (or never installed).
+	released            bool // Intent is absent and every submitted apply is rejected or fenced.
+	submittedApplies    []budgetPlacementApply
 	baselinePodSelector map[string]string
 	beforeActivation    sets.Set[types.UID]
 	beforeRelease       sets.Set[types.UID]
@@ -708,13 +725,29 @@ func (s *replacementBudgetPlacement) writeSelector(ctx context.Context, target *
 	if install {
 		target.attempted = true
 	}
+	// Retain every submitted precondition before invoking the client. A later
+	// request's rejection cannot resolve an earlier unknown request at the same RV.
+	submission := len(target.submittedApplies)
+	target.submittedApplies = append(target.submittedApplies, budgetPlacementApply{
+		uid: before.UID, resourceVersion: before.ResourceVersion, install: install, outcome: budgetPlacementApplyUnknown,
+	})
+	target.released = false
 	after, err := s.kube.AppsV1().Deployments(target.key.Namespace).Patch(ctx, target.key.Name, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: s.manager})
 	if err != nil {
+		// Conflict conclusively rejects this request, matching mutateSelector's
+		// existing retry contract. Other errors remain conservatively unknown;
+		// cancellation or timeout can precede persistence rather than prevent it.
+		if apierrors.IsConflict(err) {
+			target.submittedApplies[submission].outcome = budgetPlacementApplyRejected
+		}
 		return nil, err
 	}
 	if err := validateBudgetPlacementResponse(before, after, install); err != nil {
 		return nil, fmt.Errorf("verify SSA response for %s: %w", target.key, err)
 	}
+	// A valid reply still needs persisted readback. It cannot justify releasing
+	// an absent selector observed at the unchanged submitted resourceVersion.
+	target.submittedApplies[submission].outcome = budgetPlacementApplyAcknowledged
 	return after, nil
 }
 
@@ -735,6 +768,9 @@ func (s *replacementBudgetPlacement) verifyPersistedSelector(ctx context.Context
 		target.confirmed = true
 	} else {
 		if err := s.validateRestored(current); err != nil {
+			return err
+		}
+		if err := target.resolveSubmittedApplies(current); err != nil {
 			return err
 		}
 		target.released = true
@@ -1108,6 +1144,38 @@ func (s *replacementBudgetPlacement) Restore(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
+func (target *budgetPlacementTarget) resolveSubmittedApplies(current *appsv1.Deployment) error {
+	// Callers supply getDeployment's validated, uncached current object. RVs are
+	// opaque: for the same UID, a different current RV invalidates the submitted
+	// old-RV CAS. Absence, another GET, or an acknowledged but unobserved response
+	// cannot invalidate a request whose preconditions are still current.
+	if len(target.submittedApplies) == 0 {
+		return fmt.Errorf("cannot resolve attempted selector mutation for %s without submitted preconditions", target.key)
+	}
+	var unresolved []error
+	for i := range target.submittedApplies {
+		submitted := &target.submittedApplies[i]
+		if submitted.uid == "" || submitted.uid != current.UID || submitted.resourceVersion == "" {
+			return fmt.Errorf("cannot fence selector apply for %s: submitted uid=%s rv=%s, current uid=%s rv=%s", target.key, submitted.uid, submitted.resourceVersion, current.UID, current.ResourceVersion)
+		}
+		switch submitted.outcome {
+		case budgetPlacementApplyRejected:
+			continue
+		case budgetPlacementApplyUnknown, budgetPlacementApplyAcknowledged:
+			if current.ResourceVersion != submitted.resourceVersion {
+				// Record the fence separately: a GET does not retroactively tell
+				// us whether an unknown request committed or was rejected.
+				submitted.fencedAtResourceVersion = current.ResourceVersion
+				continue
+			}
+			unresolved = append(unresolved, fmt.Errorf("unresolved selector apply for %s uid=%s submitted rv=%s install=%t outcome=%s: unchanged current rv=%s is not a completion fence", target.key, submitted.uid, submitted.resourceVersion, submitted.install, submitted.outcome, current.ResourceVersion))
+		default:
+			return fmt.Errorf("unrecognized selector apply outcome %q for %s uid=%s rv=%s", submitted.outcome, target.key, submitted.uid, submitted.resourceVersion)
+		}
+	}
+	return errors.Join(unresolved...)
+}
+
 func (s *replacementBudgetPlacement) restoreTarget(ctx context.Context, target *budgetPlacementTarget) (bool, error) {
 	deployment, err := s.getDeployment(ctx, target.key, target.uid)
 	if err != nil {
@@ -1117,11 +1185,24 @@ func (s *replacementBudgetPlacement) restoreTarget(ctx context.Context, target *
 		return true, s.validateRestored(deployment)
 	}
 	if err := s.validateRestored(deployment); err == nil {
-		if target.confirmed {
+		releaseMayHavePersisted := false
+		for _, submitted := range target.submittedApplies {
+			if !submitted.install && submitted.outcome != budgetPlacementApplyRejected {
+				releaseMayHavePersisted = true
+			}
+		}
+		if target.confirmed && !releaseMayHavePersisted {
 			return false, fmt.Errorf("confirmed selector intent disappeared before cleanup; refusing to mask lost ownership")
 		}
-		// An unsuccessful activation request provably left no selector intent.
-		// Do not send a no-op apply that could create a missing resource or steal fields.
+		// A lost omission response can explain absence after cleanup began. It
+		// still needs every submitted precondition fenced, not just this GET.
+		if err := target.resolveSubmittedApplies(deployment); err != nil {
+			// Leave the target recoverable: a later Restore can observe and
+			// omit our selector if an unknown apply subsequently persists.
+			return false, err
+		}
+		// Absence is final only after every submitted request was rejected or
+		// fenced. Never manufacture that proof with a no-op or unrelated write.
 		target.released = true
 		return true, nil
 	}
@@ -1149,9 +1230,17 @@ func (s *replacementBudgetPlacement) restoreTarget(ctx context.Context, target *
 func (s *replacementBudgetPlacement) Diagnostics() map[string]interface{} {
 	targets := make([]map[string]interface{}, 0, len(s.targets))
 	for _, target := range s.targets {
+		submitted := make([]map[string]interface{}, 0, len(target.submittedApplies))
+		for _, apply := range target.submittedApplies {
+			submitted = append(submitted, map[string]interface{}{
+				"uid": apply.uid, "resourceVersion": apply.resourceVersion, "install": apply.install,
+				"outcome": string(apply.outcome), "fencedAtResourceVersion": apply.fencedAtResourceVersion,
+			})
+		}
 		targets = append(targets, map[string]interface{}{
 			"deployment": target.key.String(), "uid": target.uid, "writeSelector": target.writeSelector,
 			"attempted": target.attempted, "confirmed": target.confirmed, "released": target.released,
+			"submittedApplies":    submitted,
 			"baselinePodSelector": target.baselinePodSelector, "lastObservation": target.lastObservation,
 		})
 	}
