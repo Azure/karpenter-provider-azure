@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -431,8 +430,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Decide on offerings
 	selection := p.allocationStrategyProvider.Allocate(
 		ctx,
+		nodeClaim,
 		instanceTypes,
-		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
 	if selection == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))

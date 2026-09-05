@@ -788,8 +788,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 ) (*VirtualMachinePromise, error) {
 	selection := p.allocationStrategyProvider.Allocate(
 		ctx,
+		nodeClaim,
 		instanceTypes,
-		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
 	)
 	if selection == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
