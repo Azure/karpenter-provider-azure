@@ -285,7 +285,7 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, params *instanceTypeP
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
-		corev1.ResourceEphemeralStorage:       *ephemeralStorage(params),
+		corev1.ResourceEphemeralStorage:       *ephemeralStorage(sku, params),
 		corev1.ResourcePods:                   *pods(params),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 		corev1.ResourceName("amd.com/gpu"):    *gpuAMDCount(sku),
@@ -350,8 +350,11 @@ func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGi
 	return memory
 }
 
-func ephemeralStorage(params *instanceTypeParameters) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(params.OSDiskSizeGB), resource.Giga)
+// ephemeralStorage conservatively models the formatted node filesystem. Azure's API
+// size is GiB, while the existing decimal-G quantity leaves headroom for filesystem
+// and image overhead before kubelet's separate eviction reservation is applied.
+func ephemeralStorage(sku *skewer.SKU, params *instanceTypeParameters) *resource.Quantity {
+	return resources.Quantity(fmt.Sprintf("%dG", ResolveOSDiskProfileFromSKU(sku, params.OSDiskSizeGB, params.TrustedLaunch).SizeGB))
 }
 
 func pods(params *instanceTypeParameters) *resource.Quantity {

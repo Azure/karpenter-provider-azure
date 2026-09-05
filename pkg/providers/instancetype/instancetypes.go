@@ -57,6 +57,15 @@ import (
 const (
 	InstanceTypesCacheTTL      = 23 * time.Hour
 	skuRetirementHorizonMonths = 6
+
+	// AKS accepts osDiskSizeGB values up to 2048, while Azure Compute limits ephemeral
+	// OS disks to 2040 GiB. Use the Compute limit for effective provisioning capacity.
+	// https://learn.microsoft.com/rest/api/aks/agent-pools/create-or-update
+	// https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks
+	maxEphemeralOSDiskSizeGiB = int64(2040)
+	// minEphemeralOSDiskSizeGiB is AKS's raw-capacity threshold for auto-selecting an
+	// ephemeral OS disk; below it, auto-sizing falls back to vCPU-based managed defaults.
+	minEphemeralOSDiskSizeGiB = int64(128)
 )
 
 // instanceTypeParameters contains the resolved set of AKSNodeClass fields that affect
@@ -64,7 +73,7 @@ const (
 // struct; adding a new field here automatically incorporates it into the key.
 type instanceTypeParameters struct {
 	ImageFamily              string
-	OSDiskSizeGB             int32
+	OSDiskSizeGB             *int32 // nil means auto-sized per SKU
 	MaxPods                  int32
 	EncryptionAtHost         bool
 	TrustedLaunch            bool
@@ -150,7 +159,7 @@ func (p *DefaultProvider) List(
 	// Compute fully initialized instance types hash key
 	instanceTypeParams := &instanceTypeParameters{
 		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
-		OSDiskSizeGB:             lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
+		OSDiskSizeGB:             nodeClass.Spec.OSDiskSizeGB,
 		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
 		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
@@ -600,17 +609,11 @@ func (p *DefaultProvider) Reset() {
 // FindMaxEphemeralSizeGBAndPlacement returns the maximum eligible ephemeral OS disk capacity in integer decimal GB.
 // The largest eligible placement is selected before its capacity is capped at the 2040-GiB Compute limit.
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
-	candidates := ephemeralOSDiskCandidates(sku)
-	if len(candidates) == 0 {
+	largest, ok := largestEphemeralOSDiskCandidate(sku)
+	if !ok {
 		return 0, nil
 	}
 
-	largest := candidates[0]
-	for _, candidate := range candidates[1:] {
-		if candidate.sizeBytes > largest.sizeBytes {
-			largest = candidate
-		}
-	}
 	maxLabelBytes := maxEphemeralOSDiskSizeGiB * int64(units.GiB)
 	sizeGB = min(largest.sizeBytes, maxLabelBytes) / int64(units.Gigabyte)
 	if sizeGB == 0 {
@@ -639,8 +642,6 @@ func supportedEphemeralOSDiskPlacements(sku *skewer.SKU) (cache, resource, nvme,
 	return cache, resource, nvme, true
 }
 
-const maxEphemeralOSDiskSizeGiB = int64(2040)
-
 type ephemeralOSDiskCandidate struct {
 	placement armcompute.DiffDiskPlacement
 	sizeBytes int64
@@ -654,11 +655,7 @@ func appendEphemeralOSDiskCandidate(candidates []ephemeralOSDiskCandidate, suppo
 }
 
 func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
-	if sku == nil {
-		return nil
-	}
-
-	if !sku.IsEphemeralOSDiskSupported() {
+	if sku == nil || !sku.IsEphemeralOSDiskSupported() {
 		return nil
 	}
 
@@ -678,23 +675,40 @@ func ephemeralOSDiskCandidates(sku *skewer.SKU) []ephemeralOSDiskCandidate {
 		resourceSupported = resourceBytes > 0
 	}
 
-	candidates := []ephemeralOSDiskCandidate{}
+	var candidates []ephemeralOSDiskCandidate
 	candidates = appendEphemeralOSDiskCandidate(candidates, cacheSupported, armcompute.DiffDiskPlacementCacheDisk, cacheBytes)
 	candidates = appendEphemeralOSDiskCandidate(candidates, resourceSupported, armcompute.DiffDiskPlacementResourceDisk, resourceBytes)
 	candidates = appendEphemeralOSDiskCandidate(candidates, nvmeSupported, armcompute.DiffDiskPlacementNvmeDisk, nvmeBytes)
 	return candidates
 }
 
-func FindEphemeralOSDiskPlacement(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) *armcompute.DiffDiskPlacement {
-	if nodeClass == nil || nodeClass.Spec.OSDiskSizeGB == nil {
+func largestEphemeralOSDiskCandidate(sku *skewer.SKU) (ephemeralOSDiskCandidate, bool) {
+	candidates := ephemeralOSDiskCandidates(sku)
+	if len(candidates) == 0 {
+		return ephemeralOSDiskCandidate{}, false
+	}
+
+	largest := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate.sizeBytes > largest.sizeBytes {
+			largest = candidate
+		}
+	}
+	return largest, true
+}
+
+// FindEphemeralOSDiskPlacement returns the first eligible placement that fits the requested size.
+func FindEphemeralOSDiskPlacement(sku *skewer.SKU, requestedOSDiskSizeGB *int32, trustedLaunch bool) *armcompute.DiffDiskPlacement {
+	if requestedOSDiskSizeGB == nil {
 		return nil
 	}
-	requestedGiB := int64(*nodeClass.Spec.OSDiskSizeGB)
-	if requestedGiB > maxEphemeralOSDiskSizeGiB {
+	requestedGiB := int64(*requestedOSDiskSizeGB)
+	if requestedGiB < 0 || requestedGiB > maxEphemeralOSDiskSizeGiB {
 		return nil
 	}
+
 	requiredBytes := requestedGiB * int64(units.GiB)
-	if nodeClass.IsTrustedLaunchEnabled() {
+	if trustedLaunch {
 		requiredBytes += int64(units.GiB)
 	}
 	for _, candidate := range ephemeralOSDiskCandidates(sku) {
@@ -705,8 +719,71 @@ func FindEphemeralOSDiskPlacement(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeCla
 	return nil
 }
 
-func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	return FindEphemeralOSDiskPlacement(sku, nodeClass) != nil // use ephemeral disk if it is large enough
+// OSDiskProfile is the per-SKU OS disk configuration consumed by every provisioning path and capacity model.
+type OSDiskProfile struct {
+	SizeGB int32
+	// Placement is nil when the resolved OS disk is managed.
+	Placement *armcompute.DiffDiskPlacement
+}
+
+func (p OSDiskProfile) IsEphemeral() bool {
+	return p.Placement != nil
+}
+
+// ResolveOSDiskProfileFromSKU resolves disk size, type, and placement for one SKU.
+func ResolveOSDiskProfileFromSKU(sku *skewer.SKU, requestedOSDiskSizeGB *int32, trustedLaunch bool) OSDiskProfile {
+	if requestedOSDiskSizeGB != nil {
+		placement := FindEphemeralOSDiskPlacement(sku, requestedOSDiskSizeGB, trustedLaunch)
+		return OSDiskProfile{SizeGB: *requestedOSDiskSizeGB, Placement: placement}
+	}
+
+	largest, ok := largestEphemeralOSDiskCandidate(sku)
+	if ok {
+		rawSizeGiB := min(largest.sizeBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+		if rawSizeGiB >= minEphemeralOSDiskSizeGiB {
+			usableBytes := largest.sizeBytes
+			if trustedLaunch {
+				usableBytes = max(0, usableBytes-int64(units.GiB))
+			}
+			resolvedSizeGiB := min(usableBytes/int64(units.GiB), maxEphemeralOSDiskSizeGiB)
+			resolvedSize := int32(resolvedSizeGiB) //nolint:gosec // G115: value is bounded to [0,2040]
+			if placement := FindEphemeralOSDiskPlacement(sku, lo.ToPtr(resolvedSize), trustedLaunch); placement != nil {
+				return OSDiskProfile{SizeGB: resolvedSize, Placement: placement}
+			}
+		}
+	}
+
+	return OSDiskProfile{SizeGB: defaultManagedOSDiskSizeGB(sku)}
+}
+
+func ResolveOSDiskProfileFromInstanceType(ctx context.Context, provider Provider, instanceTypeName string, requestedOSDiskSizeGB *int32, trustedLaunch bool) (OSDiskProfile, error) {
+	sku, err := provider.Get(ctx, instanceTypeName)
+	if err != nil {
+		return OSDiskProfile{}, err
+	}
+	return ResolveOSDiskProfileFromSKU(sku, requestedOSDiskSizeGB, trustedLaunch), nil
+}
+
+// defaultManagedOSDiskSizeGB returns the managed OS disk size by vCPU count, mirroring AKS defaulting.
+// https://learn.microsoft.com/azure/aks/concepts-storage#default-os-disk-sizing
+func defaultManagedOSDiskSizeGB(sku *skewer.SKU) int32 {
+	if sku == nil {
+		return 128
+	}
+	vcpus, err := sku.VCPU()
+	if err != nil {
+		return 128
+	}
+	switch {
+	case vcpus < 8:
+		return 128
+	case vcpus < 16:
+		return 256
+	case vcpus < 64:
+		return 512
+	default:
+		return 1024
+	}
 }
 
 func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
