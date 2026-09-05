@@ -17,9 +17,12 @@ limitations under the License.
 package consolidation_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -712,6 +715,251 @@ func TestTerminalPodCleanupIsIdempotent(t *testing.T) {
 	g.Expect(world.podExists("terminal")).To(BeFalse())
 }
 
+func TestTerminalPodCleanupEvidenceProjection(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase corev1.PodPhase
+	}{
+		{name: "Failed", phase: corev1.PodFailed},
+		{name: "Succeeded", phase: corev1.PodSucceeded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			pod := terminalPodEvidenceFixture()
+			pod.Status.Phase = tt.phase
+			pod.UID = types.UID("evidence-" + tt.name)
+			before := pod.DeepCopy()
+			var output bytes.Buffer
+
+			g.Expect(writeTerminalPodCleanupEvidence(&output, pod)).To(Succeed())
+
+			expectTerminalPodEvidence(t, output.Bytes(), before)
+			g.Expect(pod).To(Equal(before), "recording must not mutate the supplied Pod")
+		})
+	}
+}
+
+func TestTerminalPodCleanupEvidenceExcludesPrivateFields(t *testing.T) {
+	g := NewWithT(t)
+	pod := terminalPodEvidenceFixture()
+	canaries := map[string]string{
+		"label": "CANARY_LABEL", "annotation": "CANARY_ANNOTATION",
+		"image": "CANARY_IMAGE", "command": "CANARY_COMMAND", "argument": "CANARY_ARGUMENT",
+		"env": "CANARY_ENV_VALUE", "envFrom": "CANARY_ENV_FROM_SECRET",
+		"secretName": "CANARY_SECRET_NAME", "secretKey": "CANARY_SECRET_KEY",
+		"volume": "CANARY_VOLUME_SECRET", "volumeKey": "CANARY_VOLUME_KEY", "volumePath": "CANARY_VOLUME_PATH",
+		"mount": "CANARY_VOLUME_MOUNT", "initImage": "CANARY_INIT_IMAGE", "ephemeralImage": "CANARY_EPHEMERAL_IMAGE",
+		"statusImage": "CANARY_STATUS_IMAGE", "statusImageID": "CANARY_STATUS_IMAGE_ID",
+		"statusContainerID": "CANARY_STATUS_CONTAINER_ID", "statusMount": "CANARY_STATUS_MOUNT",
+		"hostIP": "CANARY_HOST_IP", "podIP": "CANARY_POD_IP",
+	}
+	pod.Labels = map[string]string{"example.com/private": canaries["label"]}
+	pod.Annotations = map[string]string{"example.com/private": canaries["annotation"]}
+	pod.Spec.Containers = []corev1.Container{{
+		Name: "regular", Image: canaries["image"], Command: []string{canaries["command"]}, Args: []string{canaries["argument"]},
+		Env: []corev1.EnvVar{
+			{Name: "PLAIN", Value: canaries["env"]},
+			{Name: "FROM_SECRET", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: canaries["secretName"]}, Key: canaries["secretKey"],
+			}}},
+		},
+		EnvFrom: []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: canaries["envFrom"]},
+		}}},
+		VolumeMounts: []corev1.VolumeMount{{Name: "secret", MountPath: canaries["mount"]}},
+	}}
+	pod.Spec.InitContainers = []corev1.Container{{Name: "init", Image: canaries["initImage"], Env: pod.Spec.Containers[0].Env}}
+	pod.Spec.EphemeralContainers = []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{
+		Name: "ephemeral", Image: canaries["ephemeralImage"], Env: pod.Spec.Containers[0].Env,
+	}}}
+	pod.Spec.Volumes = []corev1.Volume{{Name: "secret", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+		SecretName: canaries["volume"], Items: []corev1.KeyToPath{{Key: canaries["volumeKey"], Path: canaries["volumePath"]}},
+	}}}}
+	for _, statuses := range [][]corev1.ContainerStatus{pod.Status.ContainerStatuses, pod.Status.InitContainerStatuses, pod.Status.EphemeralContainerStatuses} {
+		for i := range statuses {
+			statuses[i].Image = canaries["statusImage"]
+			statuses[i].ImageID = canaries["statusImageID"]
+			statuses[i].ContainerID = canaries["statusContainerID"]
+			statuses[i].Ready = true
+			statuses[i].Started = ptr.To(true)
+			statuses[i].VolumeMounts = []corev1.VolumeMountStatus{{Name: "secret", MountPath: canaries["statusMount"]}}
+		}
+	}
+	pod.Status.HostIP, pod.Status.PodIP = canaries["hostIP"], canaries["podIP"]
+	before := pod.DeepCopy()
+	var output bytes.Buffer
+
+	g.Expect(writeTerminalPodCleanupEvidence(&output, pod)).To(Succeed())
+
+	// Empty output must fail before any negative exclusion assertions can pass.
+	expectTerminalPodEvidence(t, output.Bytes(), before)
+	for field, canary := range canaries {
+		g.Expect(bytes.Contains(output.Bytes(), []byte(canary))).To(BeFalse(), fmt.Sprintf("unselected %s leaked into evidence", field))
+	}
+	g.Expect(pod).To(Equal(before))
+}
+
+func TestTerminalPodCleanupEvidenceWriteErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		partial, noErr bool
+	}{
+		{name: "writer_error"},
+		{name: "partial_write_with_error", partial: true},
+		{name: "short_write_without_error", partial: true, noErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			pod := terminalPodEvidenceFixture()
+			before := pod.DeepCopy()
+			writeErr := errors.New("injected evidence writer failure")
+			writer := &terminalPodEvidenceWriteFailure{t: t, partial: tt.partial, err: writeErr}
+			wantErr := writeErr
+			if tt.noErr {
+				writer.err, wantErr = nil, io.ErrShortWrite
+			}
+
+			err := writeTerminalPodCleanupEvidence(writer, pod)
+
+			g.Expect(errors.Is(err, wantErr)).To(BeTrue(), "preserve the writer failure or report a short write, not success")
+			g.Expect(writer.calls).To(Equal(1), "attempt the actual writer exactly once")
+			expectTerminalPodEvidence(t, writer.attempt, before)
+			g.Expect(pod).To(Equal(before))
+		})
+	}
+}
+
+func TestTerminalPodCleanupEvidenceWrittenBeforeDelete(t *testing.T) {
+	g := NewWithT(t)
+	world := newTerminalPodTestWorld(t)
+	before := world.pod("terminal")
+	before.Status = terminalPodEvidenceFixture().Status
+	world.put(before)
+	deployment, replicaSet := world.deployment(), world.replicaSet()
+	var output bytes.Buffer
+	world.beforeDelete = func() {
+		expectTerminalPodEvidence(t, output.Bytes(), before)
+		g.Expect(world.pod("terminal")).To(Equal(before), "the complete record must exist while the original Pod still exists")
+	}
+	confirmationGets := 0
+	world.kube.PrependReactor("get", "pods", func(action ktesting.Action) (bool, runtime.Object, error) {
+		if len(world.deletes) > 0 {
+			confirmationGets++
+			g.Expect(action.GetNamespace()).To(Equal(before.Namespace))
+			g.Expect(action.(ktesting.GetAction).GetName()).To(Equal(before.Name))
+		}
+		return false, nil, nil
+	})
+
+	err := normalizeTerminalDeploymentPods(t.Context(), world.kube, world.target, func(pod *corev1.Pod) error {
+		return writeTerminalPodCleanupEvidence(&output, pod)
+	})
+
+	g.Expect(err).To(Succeed())
+	g.Expect(t.Context().Err()).To(Succeed())
+	g.Expect(world.deletes).To(HaveLen(1))
+	g.Expect(world.deletes[0].key).To(Equal(types.NamespacedName{Namespace: before.Namespace, Name: before.Name}))
+	g.Expect(world.deletes[0].options.Preconditions).To(Equal(&metav1.Preconditions{
+		UID: ptr.To(before.UID), ResourceVersion: ptr.To(before.ResourceVersion),
+	}))
+	g.Expect(confirmationGets).To(Equal(1))
+	g.Expect(world.podExists("terminal")).To(BeFalse())
+	g.Expect(world.deployment()).To(Equal(deployment))
+	g.Expect(world.replicaSet()).To(Equal(replicaSet))
+	g.Expect(world.forbiddenWrites).To(BeEmpty())
+	expectTerminalPodEvidence(t, output.Bytes(), before)
+}
+
+func TestTerminalPodCleanupEvidenceFailurePreventsDelete(t *testing.T) {
+	tests := []struct {
+		name  string
+		short bool
+	}{
+		{name: "writer_error"},
+		{name: "short_write_without_error", short: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			world := newTerminalPodTestWorld(t)
+			before := world.pod("terminal")
+			before.Status = terminalPodEvidenceFixture().Status
+			before.Finalizers = []string{"example.com/retain"}
+			world.put(before)
+			writeErr := errors.New("injected evidence writer failure")
+			writer := &terminalPodEvidenceWriteFailure{t: t, err: writeErr, partial: tt.short}
+			wantErr := writeErr
+			if tt.short {
+				writer.err, wantErr = nil, io.ErrShortWrite
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			err := normalizeTerminalDeploymentPods(ctx, world.kube, world.target, func(pod *corev1.Pod) error {
+				return writeTerminalPodCleanupEvidence(writer, pod)
+			})
+
+			g.Expect(ctx.Err()).To(Succeed(), "cancellation must not explain the recording failure")
+			g.Expect(errors.Is(err, wantErr)).To(BeTrue(), "a retained-object error is not a substitute for the writer failure")
+			g.Expect(writer.calls).To(Equal(1))
+			expectTerminalPodEvidence(t, writer.attempt, before)
+			g.Expect(world.deletes).To(BeEmpty(), "even an acknowledged DELETE is forbidden when evidence was not recorded")
+			g.Expect(world.pod("terminal")).To(Equal(before))
+			g.Expect(world.forbiddenWrites).To(BeEmpty())
+		})
+	}
+}
+
+func TestTerminalPodCleanupEvidenceMultipleRecords(t *testing.T) {
+	g := NewWithT(t)
+	first, second := terminalPodEvidenceFixture(), terminalPodEvidenceFixture()
+	second.Name, second.UID, second.ResourceVersion = "second-terminal", "second-pod-uid", "another-opaque-rv"
+	first.Status.Message = "first \"quoted\" status\nfirst continuation"
+	second.Status.Message = "second \"quoted\" status\nsecond continuation"
+	beforeFirst, beforeSecond := first.DeepCopy(), second.DeepCopy()
+	var output bytes.Buffer
+
+	g.Expect(writeTerminalPodCleanupEvidence(&output, first)).To(Succeed())
+	g.Expect(writeTerminalPodCleanupEvidence(&output, second)).To(Succeed())
+
+	records := bytes.SplitAfter(output.Bytes(), []byte{'\n'})
+	g.Expect(records).To(HaveLen(3), "require exactly two newline-framed records")
+	g.Expect(records[2]).To(BeEmpty(), "no trailing record or unframed bytes")
+	expectTerminalPodEvidence(t, records[0], beforeFirst)
+	expectTerminalPodEvidence(t, records[1], beforeSecond)
+	g.Expect(first).To(Equal(beforeFirst))
+	g.Expect(second).To(Equal(beforeSecond))
+}
+
+func TestTerminalPodCleanupEvidenceRequiresInputs(t *testing.T) {
+	tests := []struct {
+		name      string
+		nilWriter bool
+	}{
+		{name: "nil_writer", nilWriter: true},
+		{name: "nil_pod"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			pod := terminalPodEvidenceFixture()
+			var output bytes.Buffer
+			var writer io.Writer = &output
+			if tt.nilWriter {
+				writer = nil
+			} else {
+				pod = nil
+			}
+
+			g.Expect(writeTerminalPodCleanupEvidence(writer, pod)).To(HaveOccurred())
+
+			g.Expect(output.Len()).To(BeZero())
+		})
+	}
+}
+
 var (
 	terminalPodTestPods        = corev1.SchemeGroupVersion.WithResource("pods")
 	terminalPodTestNodes       = corev1.SchemeGroupVersion.WithResource("nodes")
@@ -933,4 +1181,132 @@ func (w *terminalPodTestWorld) averageCPU() float64 {
 	// not compute an expected result from a disconnected, manually filtered list.
 	monitorClient := clientfake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(objects...).Build()
 	return common.NewMonitor(w.t.Context(), monitorClient).AvgUtilization(corev1.ResourceCPU)
+}
+
+func terminalPodEvidenceFixture() *corev1.Pod {
+	started := metav1.NewTime(time.Unix(1700000000, 0).UTC())
+	finished := metav1.NewTime(time.Unix(1700000005, 0).UTC())
+	terminated := func(name string, exitCode int32) corev1.ContainerState {
+		return corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			ExitCode: exitCode, Signal: 9, Reason: "SyntheticExit", Message: name + " \"exit\"\ncontainer evidence",
+			StartedAt: started, FinishedAt: finished, ContainerID: "containerd://" + name,
+		}}
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "evidence-fixture", Name: "terminal-evidence", UID: "pod-evidence", ResourceVersion: "opaque-evidence-rv",
+			OwnerReferences: []metav1.OwnerReference{
+				{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "evidence-rs", UID: "rs-evidence", Controller: ptr.To(true), BlockOwnerDeletion: ptr.To(true)},
+				{APIVersion: "v1", Kind: "ConfigMap", Name: "evidence-observer", UID: "observer-evidence", Controller: ptr.To(false), BlockOwnerDeletion: ptr.To(false)},
+			},
+			DeletionTimestamp: &finished, Finalizers: []string{"example.com/retain-evidence"},
+		},
+		Spec: corev1.PodSpec{NodeName: "evidence-node"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed, Reason: "SyntheticPodFailure", Message: "pod \"failure\"\nverbatim status",
+			Conditions: []corev1.PodCondition{{
+				Type: corev1.PodReady, Status: corev1.ConditionFalse, ObservedGeneration: 7,
+				LastProbeTime: started, LastTransitionTime: finished, Reason: "SyntheticCondition", Message: "condition \"failure\"\nverbatim detail",
+			}},
+			// These observations are evidence, not additional readiness requirements.
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name: "regular", State: terminated("regular", 137), LastTerminationState: terminated("regular-previous", 2), RestartCount: 3,
+			}},
+			InitContainerStatuses: []corev1.ContainerStatus{{
+				Name: "init", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "SyntheticWait", Message: "init \"waiting\"\nevidence"}},
+				LastTerminationState: terminated("init-previous", 1), RestartCount: 2,
+			}},
+			EphemeralContainerStatuses: []corev1.ContainerStatus{{
+				Name: "ephemeral", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: started}},
+				LastTerminationState: terminated("ephemeral-previous", 5), RestartCount: 1,
+			}},
+		},
+	}
+}
+
+func expectTerminalPodEvidence(t *testing.T, data []byte, pod *corev1.Pod) {
+	t.Helper()
+	g := NewWithT(t)
+	g.Expect(data).ToNot(BeEmpty(), "the recorder must emit actual evidence bytes")
+	g.Expect(bytes.HasSuffix(data, []byte{'\n'})).To(BeTrue(), "finish each evidence record before returning")
+	g.Expect(bytes.Count(data, []byte{'\n'})).To(Equal(1), "status newlines must be JSON-escaped, not split the record")
+	object := terminalPodEvidenceObject(t, data,
+		"event", "namespace", "name", "uid", "resourceVersion", "ownerReferences", "nodeName", "deletionTimestamp", "finalizers", "status")
+	terminalPodEvidenceValue(t, object["event"], "terminalPodCleanupEvidence")
+	terminalPodEvidenceValue(t, object["namespace"], pod.Namespace)
+	terminalPodEvidenceValue(t, object["name"], pod.Name)
+	terminalPodEvidenceValue(t, object["uid"], pod.UID)
+	terminalPodEvidenceValue(t, object["resourceVersion"], pod.ResourceVersion)
+	terminalPodEvidenceValue(t, object["ownerReferences"], pod.OwnerReferences)
+	terminalPodEvidenceValue(t, object["nodeName"], pod.Spec.NodeName)
+	terminalPodEvidenceValue(t, object["deletionTimestamp"], pod.DeletionTimestamp)
+	terminalPodEvidenceValue(t, object["finalizers"], pod.Finalizers)
+	status := terminalPodEvidenceObject(t, object["status"],
+		"phase", "reason", "message", "conditions", "containerStatuses", "initContainerStatuses", "ephemeralContainerStatuses")
+	terminalPodEvidenceValue(t, status["phase"], pod.Status.Phase)
+	terminalPodEvidenceValue(t, status["reason"], pod.Status.Reason)
+	terminalPodEvidenceValue(t, status["message"], pod.Status.Message)
+	terminalPodEvidenceValue(t, status["conditions"], pod.Status.Conditions)
+	for _, group := range []struct {
+		key      string
+		statuses []corev1.ContainerStatus
+	}{
+		{key: "containerStatuses", statuses: pod.Status.ContainerStatuses},
+		{key: "initContainerStatuses", statuses: pod.Status.InitContainerStatuses},
+		{key: "ephemeralContainerStatuses", statuses: pod.Status.EphemeralContainerStatuses},
+	} {
+		var statuses []json.RawMessage
+		g.Expect(json.Unmarshal(status[group.key], &statuses)).To(Succeed())
+		g.Expect(statuses).To(HaveLen(len(group.statuses)))
+		for i, expected := range group.statuses {
+			fields := terminalPodEvidenceObject(t, statuses[i], "name", "state", "lastTerminationState", "restartCount")
+			terminalPodEvidenceValue(t, fields["name"], expected.Name)
+			terminalPodEvidenceValue(t, fields["state"], expected.State)
+			terminalPodEvidenceValue(t, fields["lastTerminationState"], expected.LastTerminationState)
+			terminalPodEvidenceValue(t, fields["restartCount"], expected.RestartCount)
+		}
+	}
+}
+
+func terminalPodEvidenceObject(t *testing.T, data []byte, keys ...string) map[string]json.RawMessage {
+	t.Helper()
+	g := NewWithT(t)
+	var object map[string]json.RawMessage
+	g.Expect(json.Unmarshal(data, &object)).To(Succeed(), "require a complete JSON object from the actual writer")
+	g.Expect(object).To(HaveLen(len(keys)), "the evidence field whitelist is closed")
+	for _, key := range keys {
+		g.Expect(object).To(HaveKey(key))
+	}
+	return object
+}
+
+func terminalPodEvidenceValue(t *testing.T, actual json.RawMessage, expected interface{}) {
+	t.Helper()
+	g := NewWithT(t)
+	// Compare each independently selected field as JSON. This avoids imposing a
+	// local time.Location on metav1.Time while preserving its wire timestamp.
+	encoded, err := json.Marshal(expected)
+	g.Expect(err).To(Succeed())
+	g.Expect([]byte(actual)).To(MatchJSON(encoded))
+}
+
+type terminalPodEvidenceWriteFailure struct {
+	t       *testing.T
+	partial bool
+	err     error
+	calls   int
+	attempt []byte
+}
+
+func (w *terminalPodEvidenceWriteFailure) Write(data []byte) (int, error) {
+	w.t.Helper()
+	w.calls++
+	if w.calls > 1 {
+		w.t.Fatalf("unexpected retry of a failed evidence write")
+	}
+	w.attempt = append([]byte(nil), data...)
+	if w.partial {
+		return len(data) / 2, w.err
+	}
+	return 0, w.err
 }

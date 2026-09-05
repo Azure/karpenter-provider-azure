@@ -19,6 +19,7 @@ package consolidation_test
 import (
 	"context"
 	"fmt"
+	"io"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -167,4 +168,10 @@ func normalizeTerminalDeploymentPods(ctx context.Context, kube kubernetes.Interf
 		return fmt.Errorf("terminal Pod %s/%s still exists after deleting uid=%s: observed uid=%s rv=%s", pod.Namespace, pod.Name, uid, remaining.UID, remaining.ResourceVersion)
 	}
 	return ctx.Err()
+}
+
+// writeTerminalPodCleanupEvidence is a no-op seam for the evidence regressions.
+// Keep it unwired from the live suite until the recorder contract is validated.
+func writeTerminalPodCleanupEvidence(io.Writer, *corev1.Pod) error {
+	return nil
 }
