@@ -52,8 +52,8 @@ import (
 )
 
 const (
-	hiK8s = "1.99.0"
-	loK8s = "1.98.0"
+	hiK8s = "1.36.0"
+	loK8s = "1.35.0"
 
 	smallSKU = "Standard_B2s"    // 2 vCPU -- below the LocalDNS floor
 	largeSKU = "Standard_D4s_v3" // 4 vCPU -- above the LocalDNS floor
