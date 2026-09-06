@@ -39,6 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type reconciler interface {
@@ -109,6 +110,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	}
 
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
+		snapshotRecentlyUsed(nodeClass, stored)
 		// We use client.MergeFromWithOptimisticLock because patching a list with a JSON merge patch
 		// can cause races due to the fact that it fully replaces the list on a change
 		// Here, we are updating the status condition list
@@ -133,4 +135,34 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
+}
+
+func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
+	oldImages := oldNodeClass.Status.Images
+	newImages := newNodeClass.Status.Images
+
+	if len(oldImages) == 0 {
+		return
+	}
+	oldSuffix := parseVersion(oldImages[0].ID)
+
+	var newSuffix string
+	if len(newImages) > 0 {
+		newSuffix = parseVersion(newImages[0].ID)
+	}
+
+	if newSuffix != oldSuffix {
+		if newNodeClass.Status.Versions == nil {
+			newNodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+		}
+
+		now := metav1.Now()
+		newNodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+			{
+				ImageVersion:      &oldSuffix,
+				TimestampUsed:     &now,
+				KubernetesVersion: oldNodeClass.Status.KubernetesVersion,
+			},
+		}
+	}
 }
