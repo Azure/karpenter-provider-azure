@@ -81,28 +81,26 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
 	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
 	// as defense-in-depth.
-	if nodeClass.IsKataEnabled() {
-		if !options.FromContext(ctx).SupportsWorkloadRuntime() {
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			KataPodSandboxingUnsupportedProvisionMode,
+			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+		)
+		return reconcile.Result{}, nil
+	}
+	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
+		}
+		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeValidationSucceeded,
-				KataPodSandboxingUnsupportedProvisionMode,
-				fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+				KataRequiresAzureLinux3,
+				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
 			)
 			return reconcile.Result{}, nil
-		}
-		if lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
-			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
-			}
-			if !imagefamily.UseAzureLinux3(kubernetesVersion) {
-				nodeClass.StatusConditions().SetFalse(
-					v1beta1.ConditionTypeValidationSucceeded,
-					KataRequiresAzureLinux3,
-					fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
-				)
-				return reconcile.Result{}, nil
-			}
 		}
 	}
 
