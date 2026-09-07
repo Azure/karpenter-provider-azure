@@ -49,8 +49,13 @@ const (
 	GPUInstanceProfileUnspecified int32 = 0
 )
 
+// WorkloadRuntime values mirror the AKS RP's WorkloadRuntime enum. Sourced from
+// https://github.com/Azure/karpenter-provider-azure/pull/1721#discussion_r3634566052
+// (OCIContainer = 1, WasmWasi = 2, Invalid = 3 and KataMshvVmIsolation = 4 also exist server-side;
+// OCIContainer is the RP default so we leave the field unset for it rather than sending it.)
 const (
-	WorkloadRuntimeUnspecified int32 = 0
+	WorkloadRuntimeUnspecified     int32 = 0
+	WorkloadRuntimeKataVMIsolation int32 = 6
 )
 
 const (
