@@ -237,7 +237,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		g.Expect(incompatibleErr.MaximumVersion).To(BeNil())
 	})
 
-	t.Run("returns typed error for malformed kubernetes version", func(t *testing.T) {
+	t.Run("returns an error for malformed kubernetes version", func(t *testing.T) {
 		t.Parallel()
 
 		g := NewWithT(t)
@@ -248,14 +248,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		}
 
 		err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, "1.32.x")
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring(`malformed discovered Kubernetes version "1.32.x": expected a semantic version like 1.32.0`))
-
-		var malformedErr *imagefamily.MalformedDiscoveredKubernetesVersionError
-		g.Expect(errors.As(err, &malformedErr)).To(BeTrue())
-		g.Expect(malformedErr).ToNot(BeNil())
-		g.Expect(errors.Unwrap(malformedErr)).ToNot(BeNil())
-		g.Expect(errors.Unwrap(malformedErr).Error()).To(ContainSubstring(`patch number "x"`))
+		g.Expect(err).To(MatchError(ContainSubstring(`malformed discovered Kubernetes version "1.32.x": expected a semantic version like 1.32.0`)))
 
 		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
 		g.Expect(errors.As(err, &incompatibleErr)).To(BeFalse())

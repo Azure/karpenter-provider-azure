@@ -111,21 +111,6 @@ func RequiresKubernetesVersionCompatibility(nodeClass *v1beta1.AKSNodeClass) boo
 	return found
 }
 
-// MalformedDiscoveredKubernetesVersionError indicates the discovered cluster
-// Kubernetes version could not be parsed as a semantic version.
-type MalformedDiscoveredKubernetesVersionError struct {
-	kubernetesVersion string
-	cause             error
-}
-
-func (e *MalformedDiscoveredKubernetesVersionError) Error() string {
-	return fmt.Sprintf("malformed discovered Kubernetes version %q: expected a semantic version like 1.32.0: %v", e.kubernetesVersion, e.cause)
-}
-
-func (e *MalformedDiscoveredKubernetesVersionError) Unwrap() error {
-	return e.cause
-}
-
 // ImageFamilyKubernetesVersionIncompatibleError indicates the image family
 // explicitly requested by spec.imageFamily pins an Ubuntu version that the
 // discovered cluster Kubernetes version does not support.
@@ -175,8 +160,7 @@ func (e *ImageFamilyKubernetesVersionIncompatibleError) Error() string {
 // versions.
 //
 // It returns *ImageFamilyKubernetesVersionIncompatibleError for a pinned family
-// outside its supported range, and *MalformedDiscoveredKubernetesVersionError
-// when the discovered version cannot be parsed.
+// outside its supported range.
 func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernetesVersion string) error {
 	if nodeClass == nil {
 		return fmt.Errorf("AKSNodeClass is required to validate image family compatibility")
@@ -210,10 +194,11 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernete
 func parseKubernetesVersionTolerant(kubernetesVersion string) (semver.Version, error) {
 	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
 	if err != nil {
-		return semver.Version{}, &MalformedDiscoveredKubernetesVersionError{
-			kubernetesVersion: kubernetesVersion,
-			cause:             err,
-		}
+		return semver.Version{}, fmt.Errorf(
+			"malformed discovered Kubernetes version %q: expected a semantic version like 1.32.0: %w",
+			kubernetesVersion,
+			err,
+		)
 	}
 	return version, nil
 }

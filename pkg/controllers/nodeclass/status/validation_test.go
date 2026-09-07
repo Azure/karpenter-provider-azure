@@ -444,10 +444,7 @@ var _ = Describe("Validation Reconciler", func() {
 			initialCondition := *nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(`validating image family compatibility: malformed discovered Kubernetes version "1.32.x"`))
-			var malformedErr *imagefamily.MalformedDiscoveredKubernetesVersionError
-			Expect(errors.As(err, &malformedErr)).To(BeTrue())
+			Expect(err).To(MatchError(ContainSubstring(`validating image family compatibility: malformed discovered Kubernetes version "1.32.x"`)))
 			// An unexpected (non-incompatibility) error must never masquerade as a static
 			// incompatibility: it is returned for retry rather than latched onto the condition.
 			var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
