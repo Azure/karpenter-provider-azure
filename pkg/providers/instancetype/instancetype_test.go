@@ -17,6 +17,7 @@ limitations under the License.
 package instancetype
 
 import (
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -142,10 +143,39 @@ func TestEvictionThreshold(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			threshold := EvictionThreshold(test.memoryMiB, test.enableNodeHardening)[corev1.ResourceMemory]
+			threshold := EvictionThreshold(test.memoryMiB, resource.MustParse("128G"), test.enableNodeHardening)[corev1.ResourceMemory]
 			g.Expect(threshold.String()).To(Equal(test.want))
 		})
 	}
+}
+
+func TestEvictionThresholdEphemeralStorage(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(HardEvictionNodeFSAvailable).To(Equal(fmt.Sprintf("%d%%", hardEvictionNodeFSAvailablePercent)))
+
+	tests := []struct {
+		name          string
+		capacity      string
+		expectedBytes int64
+	}{
+		{name: "128 decimal gigabytes", capacity: "128G", expectedBytes: 12_800_000_190},
+		{name: "128 binary gibibytes", capacity: "128Gi", expectedBytes: 13_743_895_552},
+		{name: "odd bytes floor", capacity: "101", expectedBytes: 10},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			caseG := NewWithT(t)
+			threshold := EvictionThreshold(32*1024, resource.MustParse(test.capacity), false)
+			storage := threshold[corev1.ResourceEphemeralStorage]
+			caseG.Expect(storage.Value()).To(Equal(test.expectedBytes))
+		})
+	}
+
+	capacity := resource.MustParse("128G")
+	eviction := EvictionThreshold(32*1024, capacity, true)[corev1.ResourceEphemeralStorage]
+	system := SystemReservedResources(32*1024, consts.NetworkPluginAzure, true)[corev1.ResourceEphemeralStorage]
+	g.Expect(eviction.Value()).To(Equal(int64(12_800_000_190)))
+	g.Expect(system.String()).To(Equal("1Gi"))
 }
 
 func TestSoftEvictionThreshold(t *testing.T) {

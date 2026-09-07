@@ -70,6 +70,8 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var vTPMEnabled *bool                            // to test with nil
 	var secureBootEnabled *bool                      // to test with nil
 
+	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
+
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
 		taints,
@@ -80,6 +82,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		workloadRuntime,
 		nil, // Ubuntu 20.04 does not support LocalDNS
 		artifactStreaming,
 		linuxOSConfig,
