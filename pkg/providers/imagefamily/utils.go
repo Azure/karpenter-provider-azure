@@ -45,6 +45,7 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 	return version.GE(semver.Version{Major: 1, Minor: 34})
 }
 
+// UseUbuntu2204FIPS returns true when generic Ubuntu + FIPS should resolve to Ubuntu 22.04 for the given Kubernetes version / Trusted Launch setting.
 func UseUbuntu2204FIPS(kubernetesVersion string, trustedLaunch bool) bool {
 	if trustedLaunch {
 		return true
