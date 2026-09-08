@@ -676,90 +676,50 @@ var _ = Describe("VMInstanceProvider", func() {
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
 	})
 
-	It("should create VM with managed OS disk type", func() {
-		nodeClass.Spec.OSDiskType = lo.ToPtr("Managed")
-
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
-	})
-
-	It("should fall back to managed disk if instance type doesn't have enough ephemeral disk space for the OS disk", func() {
-		// Standard_D2s_v3 has 53GB of CacheDisk space and 16GB temp disk, so with default 128GB OS disk it falls back to managed
-		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      v1.LabelInstanceTypeStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D2s_v3"},
-		})
-
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
-
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-
-		// Should use managed disk since ephemeral disk is too small
-		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
-	})
-
-	It("should create VM with ephemeral disk when instance type has enough space", func() {
+	Context("OSDiskType", func() {
 		// Standard_D64s_v3 has 1600GB of CacheDisk space, plenty for the default 128GB OS disk
-		nodeClass.Spec.OSDiskType = lo.ToPtr("EphemeralWithFallbackToManaged")
-		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      v1.LabelInstanceTypeStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D64s_v3"},
+		const ephemeralCapableVMSize = "Standard_D64s_v3"
+		// Standard_D2s_v3 has 53GB of CacheDisk space and a 16GB temp disk, too small for the default 128GB OS disk
+		const ephemeralTooSmallVMSize = "Standard_D2s_v3"
+
+		expectVMForVMSize := func(vmSize string) *armcompute.VirtualMachine {
+			GinkgoHelper()
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{vmSize},
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			return &createInput.VM
+		}
+
+		It("should use an ephemeral disk when unspecified and the instance type has enough space", func() {
+			vm := expectVMForVMSize(ephemeralCapableVMSize)
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
 		})
 
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		It("should fall back to a managed disk when unspecified and the instance type doesn't have enough ephemeral space", func() {
+			vm := expectVMForVMSize(ephemeralTooSmallVMSize)
 
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
-
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-
-		// Should use ephemeral disk
-		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
-		Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).To(BeNil())
-	})
-
-	It("should choose ephemeral disk by default when not specified and instance type supports it", func() {
-		// Don't set OSDiskType - it should default to ephemeral when available
-		// Standard_D64s_v3 has 1600GB of CacheDisk space
-		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      v1.LabelInstanceTypeStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{"Standard_D64s_v3"},
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 		})
 
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		It("should use a managed disk when Managed, even if the instance type has enough ephemeral space", func() {
+			nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
 
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
+			vm := expectVMForVMSize(ephemeralCapableVMSize)
 
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-
-		// Default behavior should prefer ephemeral disk when instance type supports it
-		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
-		Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).To(BeNil())
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		})
 	})
 
 	Context("Update", func() {

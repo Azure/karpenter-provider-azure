@@ -32,6 +32,12 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+type OSDiskType string
+
+var (
+	OSDiskTypeManaged = OSDiskType("Managed")
+)
+
 // ArtifactStreaming configures artifact streaming for provisioned nodes.
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreaming struct {
@@ -70,12 +76,12 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
-	// OSDiskType is the type of disk to use for the OS.
-	// If EphemeralWithFallbackToManaged, but the VM type does not support ephemeral disks
-	// of at least OSDiskSizeGB size, we will fall back to Managed.
-	// +default="EphemeralWithFallbackToManaged"
-	// +kubebuilder:validation:Enum:={"EphemeralWithFallbackToManaged","Managed"}
-	OSDiskType *string `json:"osDiskType,omitempty"`
+	// osDiskType is the type of disk to use for the OS.
+	// If unspecified, an ephemeral OS disk is used when the VM size supports one of at least
+	// osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
+	// +kubebuilder:validation:Enum:={Managed}
+	// +optional
+	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +default=128
 	// +kubebuilder:validation:Minimum=30

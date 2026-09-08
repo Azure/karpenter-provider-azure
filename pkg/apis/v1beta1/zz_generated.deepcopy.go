@@ -95,7 +95,7 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 	}
 	if in.OSDiskType != nil {
 		in, out := &in.OSDiskType, &out.OSDiskType
-		*out = new(string)
+		*out = new(OSDiskType)
 		**out = **in
 	}
 	if in.OSDiskSizeGB != nil {
