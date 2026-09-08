@@ -17,6 +17,7 @@ limitations under the License.
 package imagefamily
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -163,7 +164,7 @@ func (e *ImageFamilyKubernetesVersionIncompatibleError) Error() string {
 // outside its supported range.
 func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernetesVersion string) error {
 	if nodeClass == nil {
-		return fmt.Errorf("AKSNodeClass is required to validate image family compatibility")
+		return errors.New("AKSNodeClass is required to validate image family compatibility")
 	}
 
 	policy, found := kubernetesVersionPolicyFor(nodeClass)

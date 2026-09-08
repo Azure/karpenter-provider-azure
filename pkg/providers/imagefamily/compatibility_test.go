@@ -41,7 +41,12 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		"explicit ubuntu2204 rejects versions below lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			kubernetesVersion: "1.25.1",
-			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.25.1", "supported range is >= 1.25.2 and < 1.37.0"},
+			wantErr: []string{
+				"requested image family",
+				v1beta1.Ubuntu2204ImageFamily,
+				"1.25.1",
+				"supported range is >= 1.25.2 and < 1.37.0",
+			},
 		},
 		"explicit ubuntu2204 accepts lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
@@ -54,13 +59,23 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		"explicit ubuntu2204 rejects upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			kubernetesVersion: "1.37.0",
-			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.37.0", "supported range is >= 1.25.2 and < 1.37.0"},
+			wantErr: []string{
+				"requested image family",
+				v1beta1.Ubuntu2204ImageFamily,
+				"1.37.0",
+				"supported range is >= 1.25.2 and < 1.37.0",
+			},
 		},
 		"explicit ubuntu2204 with trusted launch rejects upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			trustedLaunch:     true,
 			kubernetesVersion: "1.37.0",
-			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.37.0", "supported range is >= 1.25.2 and < 1.37.0"},
+			wantErr: []string{
+				"requested image family",
+				v1beta1.Ubuntu2204ImageFamily,
+				"1.37.0",
+				"supported range is >= 1.25.2 and < 1.37.0",
+			},
 		},
 		"explicit ubuntu2204 with fips accepts below extended upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
@@ -71,21 +86,38 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			kubernetesVersion: "1.39.0",
-			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.39.0", "with FIPS", "supported range is >= 1.25.2 and < 1.39.0"},
+			wantErr: []string{
+				"requested image family",
+				v1beta1.Ubuntu2204ImageFamily,
+				"1.39.0",
+				"with FIPS",
+				"supported range is >= 1.25.2 and < 1.39.0",
+			},
 		},
 		"explicit ubuntu2204 with fips and trusted launch rejects extended upper bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			fipsMode:          lo.ToPtr(v1beta1.FIPSModeFIPS),
 			trustedLaunch:     true,
 			kubernetesVersion: "1.39.0",
-			wantErr:           []string{"requested image family", v1beta1.Ubuntu2204ImageFamily, "1.39.0", "with FIPS", "supported range is >= 1.25.2 and < 1.39.0"},
+			wantErr: []string{
+				"requested image family",
+				v1beta1.Ubuntu2204ImageFamily,
+				"1.39.0",
+				"with FIPS",
+				"supported range is >= 1.25.2 and < 1.39.0",
+			},
 		},
 
 		// Explicitly pinned Ubuntu2404.
 		"explicit ubuntu2404 rejects versions below lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.31.9",
-			wantErr:           []string{"requested image family", v1beta1.Ubuntu2404ImageFamily, "1.31.9", "supported range is >= 1.32.0"},
+			wantErr: []string{
+				"requested image family",
+				v1beta1.Ubuntu2404ImageFamily,
+				"1.31.9",
+				"supported range is >= 1.32.0",
+			},
 		},
 		"explicit ubuntu2404 accepts lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
@@ -160,7 +192,12 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		"rejects tolerant two segment versions below the lower bound": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			kubernetesVersion: "1.31",
-			wantErr:           []string{"requested image family", v1beta1.Ubuntu2404ImageFamily, "1.31", "supported range is >= 1.32.0"},
+			wantErr: []string{
+				"requested image family",
+				v1beta1.Ubuntu2404ImageFamily,
+				"1.31",
+				"supported range is >= 1.32.0",
+			},
 		},
 		"treats prerelease upper bound consistently with semver": {
 			imageFamily:       lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
@@ -195,7 +232,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 
 			g.Expect(err).To(HaveOccurred())
 			for _, substring := range tc.wantErr {
-				g.Expect(err.Error()).To(ContainSubstring(substring))
+				g.Expect(err).To(MatchError(ContainSubstring(substring)))
 			}
 
 			var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
@@ -260,7 +297,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		g := NewWithT(t)
 		err := imagefamily.ValidateImageFamilyCompatibility(nil, "1.32.0")
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("AKSNodeClass is required"))
+		g.Expect(err).To(MatchError(ContainSubstring("AKSNodeClass is required")))
 	})
 }
 
