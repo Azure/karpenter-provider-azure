@@ -396,6 +396,7 @@ func TestLabelsGet(t *testing.T) {
 		kubernetesVersion string
 		arch              string
 		artifactStreaming *v1beta1.ArtifactStreaming
+		workloadRuntime   *v1beta1.WorkloadRuntime
 		expectedLabels    map[string]string
 		unexpectedLabels  []string
 	}{
@@ -487,6 +488,32 @@ func TestLabelsGet(t *testing.T) {
 				v1beta1.AKSLabelOSSKUEffective: "AzureLinux3",
 			},
 		},
+		// KATA label test cases
+		{
+			name:              "KataVmIsolation stamps the Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			workloadRuntime:   lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelKataVMIsolation: "true",
+			},
+		},
+		{
+			name:              "OCIContainer stamps no Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			workloadRuntime:   lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer),
+			unexpectedLabels:  []string{v1beta1.AKSLabelKataVMIsolation},
+		},
+		{
+			name:              "Unset workloadRuntime stamps no Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			unexpectedLabels:  []string{v1beta1.AKSLabelKataVMIsolation},
+		},
 		// Artifact streaming label cases
 		{
 			name:              "AMD64 with nil artifact streaming (default) should NOT have label",
@@ -555,6 +582,7 @@ func TestLabelsGet(t *testing.T) {
 				Spec: v1beta1.AKSNodeClassSpec{
 					ImageFamily:       &imageFamily,
 					ArtifactStreaming: tc.artifactStreaming,
+					WorkloadRuntime:   tc.workloadRuntime,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
 					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
