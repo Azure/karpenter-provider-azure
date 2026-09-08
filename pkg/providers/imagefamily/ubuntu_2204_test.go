@@ -138,7 +138,7 @@ func TestUbuntu2204_DefaultImages(t *testing.T) {
 
 	t.Run("should return correct default images", func(t *testing.T) {
 		g := NewWithT(t)
-		images := ubuntu.DefaultImages(false, nil, false)
+		images := ubuntu.DefaultImages(false, nil, false, false)
 		g.Expect(images).To(HaveLen(3))
 
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2ImageDefinition))
@@ -153,7 +153,7 @@ func TestUbuntu2204_DefaultImages(t *testing.T) {
 
 	t.Run("should return correct images for TrustedLaunch", func(t *testing.T) {
 		g := NewWithT(t)
-		images := ubuntu.DefaultImages(false, nil, true)
+		images := ubuntu.DefaultImages(false, nil, true, false)
 		g.Expect(images).To(HaveLen(1))
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2TrustedLaunchImageDefinition))
 		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-containerd-22.04-tl-gen2"))
@@ -162,14 +162,14 @@ func TestUbuntu2204_DefaultImages(t *testing.T) {
 	t.Run("should return empty images for FIPS mode without SIG", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
-		images := ubuntu.DefaultImages(false, &fipsMode, false)
+		images := ubuntu.DefaultImages(false, &fipsMode, false, false)
 		g.Expect(images).To(BeEmpty())
 	})
 
 	t.Run("should return images for FIPS mode with SIG", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
-		images := ubuntu.DefaultImages(true, &fipsMode, false)
+		images := ubuntu.DefaultImages(true, &fipsMode, false, false)
 		g.Expect(images).To(HaveLen(2))
 
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2FIPSImageDefinition))
@@ -182,9 +182,15 @@ func TestUbuntu2204_DefaultImages(t *testing.T) {
 	t.Run("should return TrustedLaunch images for FIPS mode with SIG", func(t *testing.T) {
 		g := NewWithT(t)
 		fipsMode := v1beta1.FIPSModeFIPS
-		images := ubuntu.DefaultImages(true, &fipsMode, true)
+		images := ubuntu.DefaultImages(true, &fipsMode, true, false)
 		g.Expect(images).To(HaveLen(1))
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2FIPSTLImageDefinition))
 		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04-tl-gen2"))
+	})
+
+	t.Run("should return empty images when Kata is enabled", func(t *testing.T) {
+		g := NewWithT(t)
+		images := ubuntu.DefaultImages(true, nil, false, true)
+		g.Expect(images).To(BeEmpty())
 	})
 }
