@@ -81,6 +81,7 @@ func NewControllers(
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
+		//nolint:staticcheck,nolintlint // SA1019: will be replaced by mgr.GetEventRecorder once operatorpkg is updated
 		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 
 		instancetypecontroller.NewController(instanceTypesProvider),
