@@ -401,32 +401,62 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 }
 
 func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
+	return corev1.ResourceList{
+		corev1.ResourceMemory:           memoryEvictionThreshold(totalMemoryMiB, enableNodeHardening, overrides),
+		corev1.ResourceEphemeralStorage: ephemeralStorageEvictionThreshold(ephemeralStorageCapacity, overrides),
+	}
+}
+
+func memoryEvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides []map[string]string) resource.Quantity {
 	memory := resource.MustParse(DefaultMemoryAvailable)
 	if enableNodeHardening {
 		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
 		memory = *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI)
 	}
-	if len(overrides) > 0 {
-		// Values are validated at CRD admission; an unexpected parse failure here falls back to the computed default.
-		if value, ok := overrides[0][MemoryAvailable]; ok {
-			if strings.HasSuffix(value, "%") {
-				if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
-					memory = *resource.NewQuantity(int64(math.Ceil(float64(totalMemoryMiB)*percentage/100))*bytesPerMiB, resource.BinarySI)
-				}
-			} else if quantity, err := resource.ParseQuantity(value); err == nil {
-				memory = quantity
-			}
-		}
+	if len(overrides) == 0 {
+		return memory
 	}
+	// Values are validated at CRD admission; an unexpected parse failure here falls back to the computed default.
+	value, ok := overrides[0][MemoryAvailable]
+	if !ok {
+		return memory
+	}
+	if strings.HasSuffix(value, "%") {
+		if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
+			memory = *resource.NewQuantity(int64(math.Ceil(float64(totalMemoryMiB)*percentage/100))*bytesPerMiB, resource.BinarySI)
+		}
+	} else if quantity, err := resource.ParseQuantity(value); err == nil {
+		memory = quantity
+	}
+	return memory
+}
 
+func ephemeralStorageEvictionThreshold(ephemeralStorageCapacity resource.Quantity, overrides []map[string]string) resource.Quantity {
 	// Kubelet parses percentage eviction thresholds as float32, converts them
 	// to float64 for multiplication, and truncates the result to bytes.
 	storagePercentage := float32(hardEvictionNodeFSAvailablePercent) / 100
 	storageBytes := int64(float64(ephemeralStorageCapacity.Value()) * float64(storagePercentage))
-	return corev1.ResourceList{
-		corev1.ResourceMemory:           memory,
-		corev1.ResourceEphemeralStorage: *resource.NewQuantity(storageBytes, resource.BinarySI),
+	// Honor a customer nodefs.available override so the modeled ephemeral-storage
+	// overhead matches the eviction threshold actually applied to the kubelet.
+	if value, ok := overrideValue(overrides, NodeFSAvailable); ok {
+		if strings.HasSuffix(value, "%") {
+			if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
+				storageBytes = int64(float64(ephemeralStorageCapacity.Value()) * float64(float32(percentage)/100))
+			}
+		} else if quantity, err := resource.ParseQuantity(value); err == nil {
+			storageBytes = quantity.Value()
+		}
 	}
+	return *resource.NewQuantity(storageBytes, resource.BinarySI)
+}
+
+// overrideValue returns the customer override for key, if the optional overrides map is present.
+func overrideValue(overrides []map[string]string, key string) (string, bool) {
+	if len(overrides) == 0 {
+		return "", false
+	}
+	value, ok := overrides[0][key]
+	return value, ok
 }
 
 // SoftEvictionThreshold returns the hardened soft-eviction memory threshold

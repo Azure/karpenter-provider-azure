@@ -195,6 +195,15 @@ func TestEvictionThresholdOverrides(t *testing.T) {
 		threshold := EvictionThreshold(8192, resource.Quantity{}, true, map[string]string{MemoryAvailable: value})[corev1.ResourceMemory]
 		g.Expect(threshold.String()).To(Equal("250Mi"))
 	}
+
+	// A nodefs.available override drives the modeled ephemeral-storage overhead
+	// so it stays consistent with the kubelet eviction flag on the node.
+	capacity := resource.MustParse("100Gi")
+	nodefsPercent := EvictionThreshold(8192, capacity, true, map[string]string{NodeFSAvailable: "12%"})[corev1.ResourceEphemeralStorage]
+	g.Expect(nodefsPercent.Value()).To(Equal(int64(float64(capacity.Value()) * float64(float32(12)/100))))
+	fiveGi := resource.MustParse("5Gi")
+	nodefsAbsolute := EvictionThreshold(8192, capacity, true, map[string]string{NodeFSAvailable: "5Gi"})[corev1.ResourceEphemeralStorage]
+	g.Expect(nodefsAbsolute.Value()).To(Equal(fiveGi.Value()))
 }
 
 func TestEvictionThresholdEphemeralStorage(t *testing.T) {

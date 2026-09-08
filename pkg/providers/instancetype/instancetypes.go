@@ -162,7 +162,7 @@ func (p *DefaultProvider) List(
 	}
 	if nodeClass.Spec.Kubelet != nil {
 		instanceTypeParams.KubeReserved = copySelectedValues(nodeClass.Spec.Kubelet.KubeReserved, string(corev1.ResourceCPU), string(corev1.ResourceMemory))
-		instanceTypeParams.EvictionHard = copySelectedValues(nodeClass.Spec.Kubelet.EvictionHard, MemoryAvailable)
+		instanceTypeParams.EvictionHard = copySelectedValues(nodeClass.Spec.Kubelet.EvictionHard, MemoryAvailable, NodeFSAvailable)
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
