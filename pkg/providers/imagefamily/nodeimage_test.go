@@ -44,7 +44,8 @@ const (
 	cigImageVersion      = "202505.27.0"
 	laterCIGImageVersion = "202605.27.0"
 
-	sigImageVersion             = "202608.26.0"
+	sigImageVersion = "202608.26.0"
+	// Azure Linux V2 node images are frozen at their final release, 202512.06.0.
 	azureLinuxV2SIGImageVersion = "202512.06.0"
 )
 

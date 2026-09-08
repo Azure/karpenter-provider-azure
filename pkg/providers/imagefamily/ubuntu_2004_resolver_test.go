@@ -35,20 +35,20 @@ func TestResolvesToUbuntu2004(t *testing.T) {
 		k8sVersion    string
 		want          bool
 	}{
-		"nil family + nil fips":                      {nil, nil, false, oldVersion, false},
-		"nil family + FIPS":                          {nil, lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, true},
-		"nil family + FIPS + TrustedLaunch":          {nil, lo.ToPtr(v1beta1.FIPSModeFIPS), true, oldVersion, false},
-		"nil family + FIPS Disabled":                 {nil, lo.ToPtr(v1beta1.FIPSModeDisabled), false, oldVersion, false},
-		"empty family + FIPS":                        {lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, true},
-		"empty family + FIPS + TrustedLaunch":        {lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), true, oldVersion, false},
-		"Ubuntu legacy + FIPS":                       {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, true},
-		"Ubuntu legacy + FIPS + TrustedLaunch":       {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), true, oldVersion, false},
-		"Ubuntu legacy + nil fips":                   {lo.ToPtr(v1beta1.UbuntuImageFamily), nil, false, oldVersion, false},
-		"Ubuntu legacy + Disabled":                   {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeDisabled), false, oldVersion, false},
-		"Ubuntu legacy + FIPS + K8S version >= 1.35": {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, newVersion, false},
-		"Ubuntu2204 + FIPS":                          {lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, false},
-		"Ubuntu2404 + FIPS":                          {lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, false},
-		"AzureLinux + FIPS":                          {lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, false},
+		"nil family + nil fips":                       {nil, nil, false, oldVersion, false},
+		"nil family + FIPS":                           {nil, lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, true},
+		"nil family + FIPS + TrustedLaunch":           {nil, lo.ToPtr(v1beta1.FIPSModeFIPS), true, oldVersion, false},
+		"nil family + FIPS Disabled":                  {nil, lo.ToPtr(v1beta1.FIPSModeDisabled), false, oldVersion, false},
+		"empty family + FIPS":                         {lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, true},
+		"empty family + FIPS + TrustedLaunch":         {lo.ToPtr(""), lo.ToPtr(v1beta1.FIPSModeFIPS), true, oldVersion, false},
+		"Generic Ubuntu + FIPS":                       {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, true},
+		"Generic Ubuntu + FIPS + TrustedLaunch":       {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), true, oldVersion, false},
+		"Generic Ubuntu + nil fips":                   {lo.ToPtr(v1beta1.UbuntuImageFamily), nil, false, oldVersion, false},
+		"Generic Ubuntu + Disabled":                   {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeDisabled), false, oldVersion, false},
+		"Generic Ubuntu + FIPS + K8S version >= 1.35": {lo.ToPtr(v1beta1.UbuntuImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, newVersion, false},
+		"Ubuntu2204 + FIPS":                           {lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, false},
+		"Ubuntu2404 + FIPS":                           {lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, false},
+		"AzureLinux + FIPS":                           {lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr(v1beta1.FIPSModeFIPS), false, oldVersion, false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
