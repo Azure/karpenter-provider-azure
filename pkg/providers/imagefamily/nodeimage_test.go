@@ -55,7 +55,7 @@ func renderExpectedCIGNodeImages(
 	version string,
 	trustedLaunch bool,
 ) []imagefamily.NodeImage {
-	defaultImages := fam.DefaultImages(false, fips, trustedLaunch)
+	defaultImages := fam.DefaultImages(false, fips, trustedLaunch, false)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDCIG(img.PublicGalleryURL, img.ImageDefinition, version)
@@ -73,7 +73,7 @@ func renderExpectedSIGNodeImages(
 	if _, ok := fam.(*imagefamily.AzureLinux); ok {
 		version = azureLinuxV2SIGImageVersion
 	}
-	defaultImages := fam.DefaultImages(true, fips, trustedLaunch)
+	defaultImages := fam.DefaultImages(true, fips, trustedLaunch, false)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
 		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, version)

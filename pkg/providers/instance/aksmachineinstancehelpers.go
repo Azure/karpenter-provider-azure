@@ -157,7 +157,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeInitializationTaints: nodeInitializationTaints,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
-				// WorkloadRuntime:          nil,
+				WorkloadRuntime:          configureWorkloadRuntime(nodeClass),
 				ArtifactStreamingProfile: configureArtifactStreamingProfile(nodeClass, instanceType),
 			},
 
@@ -192,6 +192,16 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	return &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
 	}
+}
+
+// configureWorkloadRuntime maps a Kata workloadRuntime to the AKS machine API enum.
+// It returns nil for the default OCIContainer case (the AKS machine API defaults to
+// OCIContainer), so non-Kata NodeClasses keep their existing wire payload.
+func configureWorkloadRuntime(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.WorkloadRuntime {
+	if nodeClass.IsKataEnabled() {
+		return lo.ToPtr(armcontainerservice.WorkloadRuntimeKataVMIsolation)
+	}
+	return nil
 }
 
 func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.AgentPoolArtifactStreamingProfile {

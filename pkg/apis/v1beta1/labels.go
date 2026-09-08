@@ -46,6 +46,7 @@ func init() {
 	karpv1.WellKnownValuesForRequirements[AKSLabelPriority] = sets.New(PriorityRegular, PrioritySpot)
 	karpv1.WellKnownValuesForRequirements[AKSLabelOSSKU] = sets.New(OSSKUUbuntu, OSSKUAzureLinux)
 	karpv1.WellKnownValuesForRequirements[AKSLabelFIPSEnabled] = sets.New("true")
+	karpv1.WellKnownValuesForRequirements[AKSLabelKataVMIsolation] = sets.New("true")
 }
 
 var (
@@ -111,6 +112,7 @@ var (
 		AKSLabelPriority,
 		AKSLabelOSSKU,
 		AKSLabelFIPSEnabled,
+		AKSLabelKataVMIsolation,
 	)
 
 	AllowUndefinedWellKnownAndRestrictedLabels = func(options *scheduling.CompatibilityOptions) {
@@ -157,11 +159,12 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
-	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
-	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
-	AKSLabelPriority                = AKSLabelDomain + "/priority"         // "spot" or "regular".
-	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
-	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"     // "true" or not specified
+	AKSLabelMode                    = AKSLabelDomain + "/mode"              // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority"  // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelPriority                = AKSLabelDomain + "/priority"          // "spot" or "regular".
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"            // "Ubuntu" or "AzureLinux"
+	AKSLabelFIPSEnabled             = AKSLabelDomain + "/fips_enabled"      // "true" or not specified
+	AKSLabelKataVMIsolation         = AKSLabelDomain + "/kata-vm-isolation" // "true" or not specified
 
 	AKSLabelOSSKUEffective = AKSLabelDomain + "/os-sku-effective" // "Ubuntu2204", "Ubuntu2404", "AzureLinux2", "AzureLinux3"
 	AKSLabelOSSKURequested = AKSLabelDomain + "/os-sku-requested" // "Ubuntu", "Ubuntu2204", or "AzureLinux" (We don't currently allow users to explicitly request AzureLinux3 but if we did that would show up here too)
