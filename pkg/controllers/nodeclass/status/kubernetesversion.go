@@ -88,6 +88,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	var requestedVersion *string
 	if nodeClass.Spec.Versions != nil && nodeClass.Spec.Versions.KubernetesVersion != nil {
 		if err := validateVersion(*nodeClass.Spec.Versions.KubernetesVersion, goalK8sVersion); err != nil {
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalid", fmt.Sprintf("requested kubernetes version %s is invalid: %v", *nodeClass.Spec.Versions.KubernetesVersion, err))
 			return reconcile.Result{}, fmt.Errorf("validating requested kubernetes version, %w", err)
 		}
 		requestedVersion = nodeClass.Spec.Versions.KubernetesVersion

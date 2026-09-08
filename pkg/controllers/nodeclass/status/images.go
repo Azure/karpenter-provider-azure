@@ -123,10 +123,23 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{}, nil
 	}
 
+	var requestedImageVersion *string
+	if nodeClass.Spec.Versions != nil && nodeClass.Spec.Versions.NodeImageVersion != nil {
+		// Validate that the Kubernetes version is set.
+		// Validate()
+		requestedImageVersion = nodeClass.Spec.Versions.NodeImageVersion
+	}
+
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
+
+	if len(nodeImages) > 0 {
+		imgVersion := parseVersion(nodeImages[0].ID)
+		nodeClass.Status.Versions.LatestImageVersion = imgVersion
+	}
+
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
@@ -140,8 +153,8 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 			return reqs[i].Key < reqs[j].Key
 		})
 
-		if nodeClass.Spec.Versions.NodeImageVersion != nil && *nodeClass.Spec.Versions.NodeImageVersion != "" && isValidRollback(nodeClass) {
-			nodeImage.ID = strings.Replace(nodeImage.ID, parseVersion(nodeImage.ID), *nodeClass.Spec.Versions.NodeImageVersion, 1)
+		if requestedImageVersion != nil && *requestedImageVersion != "" {
+			nodeImage.ID = strings.Replace(nodeImage.ID, parseVersion(nodeImage.ID), *requestedImageVersion, 1)
 		}
 
 		return v1beta1.NodeImage{
