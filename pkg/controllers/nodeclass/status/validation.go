@@ -76,34 +76,14 @@ func NewValidationReconciler(
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
-	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
-	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
-	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
-	// as defense-in-depth.
-	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			KataPodSandboxingUnsupportedProvisionMode,
-			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
-		)
+	// Validation for KATA
+	if validationFailed, err := validateKata(ctx, nodeClass); err != nil {
+		return reconcile.Result{}, err
+	} else if validationFailed {
 		return reconcile.Result{}, nil
 	}
-	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
-		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
-		}
-		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
-			nodeClass.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeValidationSucceeded,
-				KataRequiresAzureLinux3,
-				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
-			)
-			return reconcile.Result{}, nil
-		}
-	}
 
+	// Validation for image family compatibility
 	if validationFailed, err := validateImageFamilyCompatibility(ctx, nodeClass); err != nil {
 		return reconcile.Result{}, err
 	} else if validationFailed {
@@ -134,6 +114,37 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+func validateKata(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, error) {
+	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
+	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
+	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
+	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
+	// as defense-in-depth.
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			KataPodSandboxingUnsupportedProvisionMode,
+			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+		)
+		return true, nil
+	}
+	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return false, fmt.Errorf("getting kubernetes version, %w", err)
+		}
+		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				KataRequiresAzureLinux3,
+				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
+			)
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func validateImageFamilyCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, error) {
