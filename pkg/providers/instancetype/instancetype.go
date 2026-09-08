@@ -132,15 +132,21 @@ func newInstanceType(
 	opts := options.FromContext(ctx)
 	totalMemoryMiB := memoryMiB(sku)
 	enableNodeHardening := opts.ShouldUseNodeHardening()
+	capacity := computeCapacity(ctx, sku, params)
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(opts, sku, vmsize, architecture, offerings, region, params),
 		Offerings:    offerings,
-		Capacity:     computeCapacity(ctx, sku, params),
+		Capacity:     capacity,
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening, params.KubeReserved),
-			SystemReserved:    SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
-			EvictionThreshold: EvictionThreshold(totalMemoryMiB, enableNodeHardening, params.EvictionHard),
+			KubeReserved:   KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening, params.KubeReserved),
+			SystemReserved: SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
+			EvictionThreshold: EvictionThreshold(
+				totalMemoryMiB,
+				capacity[corev1.ResourceEphemeralStorage],
+				enableNodeHardening,
+				params.EvictionHard,
+			),
 		},
 	}
 }
@@ -189,6 +195,8 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.AKSLabelPriority, corev1.NodeSelectorOpIn, v1beta1.PriorityRegular, v1beta1.PrioritySpot),
 		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(params.ImageFamily)),
 		scheduling.NewRequirement(v1beta1.AKSLabelFIPSEnabled, corev1.NodeSelectorOpDoesNotExist), // AKS only sets this label if FIPS is enabled, otherwise it's expected to be empty
+		// AKS only stamps the Kata label when the Pod Sandboxing workloadRuntime is requested; otherwise expected to be absent.
+		scheduling.NewRequirement(v1beta1.AKSLabelKataVMIsolation, corev1.NodeSelectorOpDoesNotExist),
 
 		// composites
 		scheduling.NewRequirement(v1beta1.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
@@ -219,6 +227,11 @@ func computeRequirements(
 	setRequirementsVersion(requirements, vmsize)
 	if params.FIPSMode == v1beta1.FIPSModeFIPS {
 		requirements[v1beta1.AKSLabelFIPSEnabled].Insert("true")
+	}
+	// Advertise the Kata node label AKS will stamp so Karpenter can scale up for pending pods that
+	// select it.
+	if params.KataEnabled {
+		requirements[v1beta1.AKSLabelKataVMIsolation].Insert("true")
 	}
 
 	return requirements
@@ -387,29 +400,32 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 	return resources
 }
 
-func EvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
+func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
+	memory := resource.MustParse(DefaultMemoryAvailable)
+	if enableNodeHardening {
+		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
+		memory = *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI)
+	}
 	if len(overrides) > 0 {
 		// Values are validated at CRD admission; an unexpected parse failure here falls back to the computed default.
 		if value, ok := overrides[0][MemoryAvailable]; ok {
 			if strings.HasSuffix(value, "%") {
 				if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
-					return corev1.ResourceList{
-						corev1.ResourceMemory: *resource.NewQuantity(int64(math.Ceil(float64(totalMemoryMiB)*percentage/100))*bytesPerMiB, resource.BinarySI),
-					}
+					memory = *resource.NewQuantity(int64(math.Ceil(float64(totalMemoryMiB)*percentage/100))*bytesPerMiB, resource.BinarySI)
 				}
 			} else if quantity, err := resource.ParseQuantity(value); err == nil {
-				return corev1.ResourceList{corev1.ResourceMemory: quantity}
+				memory = quantity
 			}
 		}
 	}
-	if enableNodeHardening {
-		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
-		return corev1.ResourceList{
-			corev1.ResourceMemory: *resource.NewQuantity(hardMemoryMiB*bytesPerMiB, resource.BinarySI),
-		}
-	}
+
+	// Kubelet parses percentage eviction thresholds as float32, converts them
+	// to float64 for multiplication, and truncates the result to bytes.
+	storagePercentage := float32(hardEvictionNodeFSAvailablePercent) / 100
+	storageBytes := int64(float64(ephemeralStorageCapacity.Value()) * float64(storagePercentage))
 	return corev1.ResourceList{
-		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
+		corev1.ResourceMemory:           memory,
+		corev1.ResourceEphemeralStorage: *resource.NewQuantity(storageBytes, resource.BinarySI),
 	}
 }
 

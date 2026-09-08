@@ -61,7 +61,7 @@ var _ = Describe("KubeletConfig", func() {
 		env.ExpectCreated(verifyPod)
 		defer env.ExpectDeleted(verifyPod)
 
-		flags := eventuallyGetPodLogs(verifyPod)
+		flags := env.EventuallyGetPodLogs(verifyPod)
 		Expect(flags).To(ContainSubstring("--kube-reserved="))
 		Expect(flags).To(ContainSubstring("cpu=250m"))
 		Expect(flags).To(ContainSubstring("memory=512Mi"))

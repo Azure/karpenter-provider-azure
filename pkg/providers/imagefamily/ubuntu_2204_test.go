@@ -74,6 +74,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	vtpmEnabled := lo.ToPtr(true)
 	secureBootEnabled := lo.ToPtr(true)
 
+	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
+
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
 		taints,
@@ -84,6 +86,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		workloadRuntime,
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
