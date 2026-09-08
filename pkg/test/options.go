@@ -37,6 +37,7 @@ type OptionsFields struct {
 	NetworkPolicy                  *string
 	NetworkDataplane               *string
 	VMMemoryOverheadPercent        *float64
+	EnableNodeHardening            *bool
 	NodeIdentities                 []string
 	SubnetID                       *string
 	NodeResourceGroup              *string
@@ -53,6 +54,7 @@ type OptionsFields struct {
 	ProviderBatchIdleDuration      *time.Duration
 	ProviderBatchMaxDuration       *time.Duration
 	ProviderBatchMaxSize           *int
+	ComputeRecommendationMode      *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -80,6 +82,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		VnetGUID:                       lo.FromPtrOr(options.VnetGUID, "a519e60a-cac0-40b2-b883-084477fe6f5c"),
 		NetworkDataplane:               lo.FromPtrOr(options.NetworkDataplane, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
+		EnableNodeHardening:            lo.FromPtrOr(options.EnableNodeHardening, false),
 		NodeIdentities:                 options.NodeIdentities,
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
@@ -97,5 +100,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ProviderBatchIdleDuration:      lo.FromPtrOr(options.ProviderBatchIdleDuration, time.Second),
 		ProviderBatchMaxDuration:       lo.FromPtrOr(options.ProviderBatchMaxDuration, 5*time.Second),
 		ProviderBatchMaxSize:           lo.FromPtrOr(options.ProviderBatchMaxSize, 50),
+		ComputeRecommendationMode:      lo.FromPtrOr(options.ComputeRecommendationMode, "disabled"),
 	}
 }

@@ -175,4 +175,13 @@ func TestUbuntu2204_DefaultImages(t *testing.T) {
 		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen1FIPSImageDefinition))
 		g.Expect(images[1].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04"))
 	})
+
+	t.Run("should return TrustedLaunch images for FIPS mode with SIG", func(t *testing.T) {
+		g := NewWithT(t)
+		fipsMode := v1beta1.FIPSModeFIPS
+		images := ubuntu.DefaultImages(true, &fipsMode, true)
+		g.Expect(images).To(HaveLen(1))
+		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.Ubuntu2204Gen2FIPSTLImageDefinition))
+		g.Expect(images[0].Distro).To(Equal("aks-ubuntu-fips-containerd-22.04-tl-gen2"))
+	})
 }

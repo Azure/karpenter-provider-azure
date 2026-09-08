@@ -277,3 +277,29 @@ func Test_SeqNum_IncrementsOnlyWhenDataChanges(t *testing.T) {
 	lo.Must0(quotaProvider.Update(ctx))
 	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
 }
+
+func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	usageAPI, quotaProvider := newTestProvider(t)
+
+	usageAPI.Usages.Append(&armcompute.Usage{
+		Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
+		CurrentValue: lo.ToPtr[int32](10),
+		Limit:        lo.ToPtr[int64](100),
+	})
+	lo.Must0(quotaProvider.Update(ctx))
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+
+	quotaProvider.Reset()
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+	found, _ := quotaProvider.GetUsage("standardDSv3Family")
+	g.Expect(found).To(BeFalse())
+
+	quotaProvider.Reset()
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+
+	lo.Must0(quotaProvider.Update(ctx))
+	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(3)))
+}
