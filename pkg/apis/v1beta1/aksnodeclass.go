@@ -88,8 +88,8 @@ type AKSNodeClassSpec struct {
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// osDiskType is the type of disk to use for the OS.
-	// If unspecified, an ephemeral OS disk is used when the VM size supports one of at least
-	// osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
+	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
 	// +kubebuilder:validation:Enum:={Managed}
 	// +optional
 	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`
