@@ -110,7 +110,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	}
 
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
-		snapshotRecentlyUsed(nodeClass, stored)
+		snapshotRecentlyUsed(stored, nodeClass)
 		// We use client.MergeFromWithOptimisticLock because patching a list with a JSON merge patch
 		// can cause races due to the fact that it fully replaces the list on a change
 		// Here, we are updating the status condition list

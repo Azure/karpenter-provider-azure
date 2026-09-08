@@ -139,6 +139,11 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 			}
 			return reqs[i].Key < reqs[j].Key
 		})
+
+		if nodeClass.Spec.Versions.NodeImageVersion != nil && *nodeClass.Spec.Versions.NodeImageVersion != "" && isValidRollback(nodeClass) {
+			nodeImage.ID = strings.Replace(nodeImage.ID, parseVersion(nodeImage.ID), *nodeClass.Spec.Versions.NodeImageVersion, 1)
+		}
+
 		return v1beta1.NodeImage{
 			ID:           nodeImage.ID,
 			Requirements: reqs,
@@ -323,4 +328,28 @@ func parseVersion(imageID string) string {
 	}
 	version := imageIDParts[len(imageIDParts)-1]
 	return version
+}
+
+func isValidRollback(nodeClass *v1beta1.AKSNodeClass) bool {
+	version := nodeClass.Spec.Versions.KubernetesVersion
+	imgVersion := nodeClass.Spec.Versions.NodeImageVersion
+
+	if version == nil || *version == "" {
+		return false
+	}
+
+	for _, used := range nodeClass.Status.Versions.RecentlyUsedVersions {
+		if used.KubernetesVersion == nil || *used.KubernetesVersion != *version {
+			continue
+		}
+
+		if imgVersion == nil {
+			return true
+		}
+
+		return used.ImageVersion != nil && *used.ImageVersion == *imgVersion
+
+	}
+
+	return false
 }
