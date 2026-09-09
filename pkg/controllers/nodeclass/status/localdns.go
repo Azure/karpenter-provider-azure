@@ -192,7 +192,7 @@ func (r *LocalDNSReconciler) meetsStaticRequirements(nc *v1beta1.AKSNodeClass) (
 	if strings.EqualFold(r.networkPlugin, consts.NetworkPluginNone) {
 		return false, nil
 	}
-	if imagefamily.ResolvesToUbuntu2004(nc.Spec.ImageFamily, nc.Spec.FIPSMode, nc.IsTrustedLaunchEnabled()) {
+	if imagefamily.ResolvesToUbuntu2004(nc.Spec.ImageFamily, nc.Spec.FIPSMode, nc.IsTrustedLaunchEnabled(), k8sVersion) {
 		return false, nil
 	}
 	return true, nil
