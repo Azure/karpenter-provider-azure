@@ -123,26 +123,19 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{}, nil
 	}
 
-	var requestedImageVersion, requestedK8SVersion *string
-	if nodeClass.Spec.Versions != nil {
-		// Validate that the Kubernetes version is set.
-		// Validate()
-		if nodeClass.Spec.Versions.KubernetesVersion != nil {
-			requestedK8SVersion = nodeClass.Spec.Versions.KubernetesVersion
-		}
-		if nodeClass.Spec.Versions.NodeImageVersion != nil {
-			requestedImageVersion = nodeClass.Spec.Versions.NodeImageVersion
-		}
+	latestImages, err := listImages(ctx, r.nodeImageProvider, *nodeClass, *nodeClass.Status.Versions.ControlPlaneKubernetesVersion)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("getting latest images, %w", err)
+	}
+
+	if len(latestImages) > 0 {
+		imgVersion := parseVersion(latestImages[0].ID)
+		nodeClass.Status.Versions.LatestImageVersion = imgVersion
 	}
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
-	}
-
-	if len(nodeImages) > 0 {
-		imgVersion := parseVersion(nodeImages[0].ID)
-		nodeClass.Status.Versions.LatestImageVersion = imgVersion
 	}
 
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
@@ -157,10 +150,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 			}
 			return reqs[i].Key < reqs[j].Key
 		})
-
-		if requestedImageVersion != nil && *requestedImageVersion != "" {
-			nodeImage.ID = strings.Replace(nodeImage.ID, parseVersion(nodeImage.ID), *requestedImageVersion, 1)
-		}
 
 		return v1beta1.NodeImage{
 			ID:           nodeImage.ID,
@@ -201,6 +190,15 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+func listImages(ctx context.Context, r imagefamily.NodeImageProvider, nodeClass v1beta1.AKSNodeClass, k8sVersion string) ([]imagefamily.NodeImage, error) {
+	nodeClass.Status.KubernetesVersion = &k8sVersion
+	nodeImages, err := r.List(ctx, &nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("getting nodeimages, %w", err)
+	}
+	return nodeImages, nil
 }
 
 // Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
@@ -346,28 +344,4 @@ func parseVersion(imageID string) string {
 	}
 	version := imageIDParts[len(imageIDParts)-1]
 	return version
-}
-
-func isValidRollback(nodeClass *v1beta1.AKSNodeClass) bool {
-	version := nodeClass.Spec.Versions.KubernetesVersion
-	imgVersion := nodeClass.Spec.Versions.NodeImageVersion
-
-	if version == nil || *version == "" {
-		return false
-	}
-
-	for _, used := range nodeClass.Status.Versions.RecentlyUsedVersions {
-		if used.KubernetesVersion == nil || *used.KubernetesVersion != *version {
-			continue
-		}
-
-		if imgVersion == nil {
-			return true
-		}
-
-		return used.ImageVersion != nil && *used.ImageVersion == *imgVersion
-
-	}
-
-	return false
 }

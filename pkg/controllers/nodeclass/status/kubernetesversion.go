@@ -74,7 +74,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(kubernetesVersionReconcilerName))
 	logger := log.FromContext(ctx).WithValues("existingKubernetesVersion", nodeClass.Status.KubernetesVersion)
 
-	goalK8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
+	controlPlaneVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
 	}
@@ -83,20 +83,16 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	if nodeClass.Status.Versions == nil {
 		nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
 	}
-	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &goalK8sVersion
+	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &controlPlaneVersion
+	goalK8sVersion := controlPlaneVersion
 
-	var requestedVersion *string
-	if nodeClass.Spec.Versions != nil && nodeClass.Spec.Versions.KubernetesVersion != nil {
-		if err := validateVersion(*nodeClass.Spec.Versions.KubernetesVersion, goalK8sVersion); err != nil {
-			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalid", fmt.Sprintf("requested kubernetes version %s is invalid: %v", *nodeClass.Spec.Versions.KubernetesVersion, err))
+	if _, req := requestedVersion(nodeClass); req != nil {
+		if err := validateVersion(*req, goalK8sVersion); err != nil {
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalid", fmt.Sprintf("requested kubernetes version %s is invalid: %v", *req, err))
 			return reconcile.Result{}, fmt.Errorf("validating requested kubernetes version, %w", err)
 		}
-		requestedVersion = nodeClass.Spec.Versions.KubernetesVersion
-	}
-
-	if requestedVersion != nil {
-		logger = logger.WithValues("requestedKubernetesVersion", *requestedVersion)
-		goalK8sVersion = *requestedVersion
+		goalK8sVersion = *req
+		logger = logger.WithValues("requestedKubernetesVersion", *req)
 	}
 
 	// Handles case 1: init, update kubernetes status to API server version found
@@ -113,11 +109,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 			return reconcile.Result{}, fmt.Errorf("parsing current kubernetes version, %w", err)
 		}
 
-		if requestedVersion != nil {
-			if !newK8sVersion.Equals(currentK8sVersion) {
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesVersionChange", fmt.Sprintf("Kubernetes version changed from %s to %s", currentK8sVersion.String(), newK8sVersion.String()))
-			}
-		} else if newK8sVersion.GT(currentK8sVersion) {
+		if newK8sVersion.GT(currentK8sVersion) {
 			// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 			logger.V(1).Info("kubernetes upgrade detected", "currentKubernetesVersion", currentK8sVersion.String(), "discoveredKubernetesVersion", newK8sVersion.String())
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
@@ -133,52 +125,4 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		logger.WithValues("newKubernetesVersion", nodeClass.Status.KubernetesVersion).Info("new kubernetes version updated for nodeclass")
 	}
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
-}
-
-/*
-The requested version must satisfy AKS node/control-plane skew rules.
-
-Notation:
-
-C = cMajor.cMinor.cPatch is the control-plane version
-N = nMajor.nMinor.nPatch is the requested node version
-major versions must match (nMajor == cMajor)
-node minor must not be greater than control-plane minor (nMinor <= cMinor)
-node minor must be at most three minors behind control-plane minor (cMinor - nMinor <= 3)
-when both are on the same minor, node patch must not be greater than control-plane patch (nMinor == cMinor -> nPatch <= cPatch)
-Node Kubernetes version downgrade is allowed when selecting the retained image/Kubernetes rollback pair,
-provided the retained Kubernetes version still satisfies these control-plane skew rules.
-This changes only the node version; the control-plane version is not rolled back.
-*/
-func validateVersion(version, controlPlaneVersion string) error {
-	versionSemver, err := semver.Parse(version)
-	if err != nil {
-		return fmt.Errorf("parsing kubernetes version, %w", err)
-	}
-	controlPlaneVersionSemver, err := semver.Parse(controlPlaneVersion)
-	if err != nil {
-		return fmt.Errorf("parsing control-plane kubernetes version, %w", err)
-	}
-
-	// major versions must match
-	if versionSemver.Major != controlPlaneVersionSemver.Major {
-		return fmt.Errorf("kubernetes version major mismatch: node %d vs control-plane %d", versionSemver.Major, controlPlaneVersionSemver.Major)
-	}
-
-	// node minor must not be greater than control-plane minor
-	if versionSemver.Minor > controlPlaneVersionSemver.Minor {
-		return fmt.Errorf("kubernetes version minor too new: node %d vs control-plane %d", versionSemver.Minor, controlPlaneVersionSemver.Minor)
-	}
-
-	// node minor must be at most three minors behind control-plane minor
-	if controlPlaneVersionSemver.Minor-versionSemver.Minor > 3 {
-		return fmt.Errorf("kubernetes version minor too old: node %d vs control-plane %d", versionSemver.Minor, controlPlaneVersionSemver.Minor)
-	}
-
-	// when both are on the same minor, node patch must not be greater than control-plane patch
-	if versionSemver.Minor == controlPlaneVersionSemver.Minor && versionSemver.Patch > controlPlaneVersionSemver.Patch {
-		return fmt.Errorf("kubernetes version patch too new: node %d vs control-plane %d", versionSemver.Patch, controlPlaneVersionSemver.Patch)
-	}
-
-	return nil
 }
