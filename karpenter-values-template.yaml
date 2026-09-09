@@ -66,5 +66,7 @@ podLabels:
   azure.workload.identity/use: "true"
 logLevel: ${LOG_LEVEL}
 settings:
+  podSubnetID: "${POD_SUBNET_ID}"
+  podIPAllocationMode: "${POD_IP_ALLOCATION_MODE}"
   featureGates:
     staticCapacity: true

@@ -60,6 +60,7 @@ require (
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.22.2
 	sigs.k8s.io/controller-runtime v0.25.0
 	sigs.k8s.io/karpenter v1.14.0
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -176,5 +177,4 @@ require (
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )
