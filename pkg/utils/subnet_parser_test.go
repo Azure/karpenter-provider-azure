@@ -214,9 +214,9 @@ var _ = Describe("IsSameVNET", func() {
 	})
 
 	Context("case sensitivity", func() {
-		DescribeTable("should be case-sensitive for all components",
+		DescribeTable("should be case-insensitive for all components",
 			func(compareResource VnetSubnetResource) {
-				Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+				Expect(baseResource.IsSameVNET(compareResource)).To(BeTrue())
 			},
 			Entry("different case resource group name",
 				VnetSubnetResource{
@@ -235,5 +235,11 @@ var _ = Describe("IsSameVNET", func() {
 				},
 			),
 		)
+
+		It("should compare subscription IDs case-insensitively", func() {
+			first := VnetSubnetResource{SubscriptionID: "SUBSCRIPTION-ID", ResourceGroupName: "rg", VNetName: "vnet"}
+			second := VnetSubnetResource{SubscriptionID: "subscription-id", ResourceGroupName: "rg", VNetName: "vnet"}
+			Expect(first.IsSameVNET(second)).To(BeTrue())
+		})
 	})
 })

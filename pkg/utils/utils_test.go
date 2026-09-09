@@ -19,10 +19,13 @@ package utils_test
 import (
 	"testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/skewer"
 	"github.com/mitchellh/hashstructure/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 )
 
 func TestIsAKSManagedVNET(t *testing.T) {
@@ -269,4 +272,58 @@ func TestGetAlphanumericHash(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(hash).To(HaveLen(6))
 	})
+}
+
+func TestGetMaxPods(t *testing.T) {
+	const podSubnetID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/podsubnet"
+
+	cases := []struct {
+		name              string
+		maxPods           *int32
+		networkPlugin     string
+		networkPluginMode string
+		podSubnetID       string
+		expected          int32
+	}{
+		{
+			name:          "Network plugin none",
+			networkPlugin: consts.NetworkPluginNone,
+			expected:      consts.DefaultNetPluginNoneMaxPods,
+		},
+		{
+			name:              "Azure CNI overlay",
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeOverlay,
+			expected:          consts.DefaultOverlayMaxPods,
+		},
+		{
+			name:              "Azure CNI pod subnet",
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeNone,
+			podSubnetID:       podSubnetID,
+			expected:          consts.DefaultPodSubnetMaxPods,
+		},
+		{
+			name:              "Azure CNI node subnet",
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeNone,
+			expected:          consts.DefaultNodeSubnetMaxPods,
+		},
+		{
+			name:              "NodeClass maxPods wins over the pod subnet default",
+			maxPods:           lo.ToPtr(int32(11)),
+			networkPlugin:     consts.NetworkPluginAzure,
+			networkPluginMode: consts.NetworkPluginModeNone,
+			podSubnetID:       podSubnetID,
+			expected:          11,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: tc.maxPods}}
+			g.Expect(utils.GetMaxPods(nodeClass, tc.networkPlugin, tc.networkPluginMode, tc.podSubnetID)).To(Equal(tc.expected))
+		})
+	}
 }
