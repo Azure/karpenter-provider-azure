@@ -76,18 +76,20 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 		return reconcile.Result{}, fmt.Errorf("no latest images found for requested version")
 	}
 
-	reqImgVer, reqK8sVer, err := requestedVersions(nodeClass)
+	reqImgVer, reqK8sVer, err := requestedVersions(nodeClass, controlPlaneVersion)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
 	// Get the images associated with the requested version.
-	// If this fails, revert the k8s version.
-	nodeImages, err := listImages(ctx, r.nodeImageProvider, *nodeClass, reqK8sVer)
-	if err != nil {
-		// Set the ImagesReady condition to false since we failed to list images
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImageListingFailed", fmt.Sprintf("failed to list images for requested version: %v", err))
-		return reconcile.Result{}, fmt.Errorf("listing images, %w", err)
+	nodeImages := latestImages
+	if reqK8sVer != controlPlaneVersion {
+		nodeImages, err = listImages(ctx, r.nodeImageProvider, *nodeClass, reqK8sVer)
+		if err != nil {
+			// Set the ImagesReady condition to false since we failed to list images
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImageListingFailed", fmt.Sprintf("failed to list images for requested version: %v", err))
+			return reconcile.Result{}, fmt.Errorf("listing images, %w", err)
+		}
 	}
 
 	if len(nodeImages) == 0 {
@@ -139,7 +141,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
 
-func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string, error) {
+func requestedVersions(nodeClass *v1beta1.AKSNodeClass, controlPlaneVersion string) (string, string, error) {
 	if nodeClass == nil || nodeClass.Spec.Versions == nil {
 		return "", "", fmt.Errorf("versions are not configured")
 	}
@@ -155,7 +157,7 @@ func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string, error) 
 		reqImgVer = *rollback.ImageVersion
 	}
 
-	if err := validatePinning(reqImgVer, reqK8sVer, nodeClass); err != nil {
+	if err := validatePinning(reqImgVer, reqK8sVer, nodeClass, controlPlaneVersion); err != nil {
 		return "", "", fmt.Errorf("validating pinning, %w", err)
 	}
 	return reqImgVer, reqK8sVer, nil
@@ -183,12 +185,12 @@ func findRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSN
 	return v1beta1.RecentlyUsedVersion{}, false
 }
 
-func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClass) error {
+func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClass, controlPlaneVersion string) error {
 	if nodeClass == nil || nodeClass.Status.Versions == nil || nodeClass.Status.Versions.ControlPlaneKubernetesVersion == nil {
 		return fmt.Errorf("control plane kubernetes version is not available")
 	}
 
-	if err := validateVersion(reqK8sVer, *nodeClass.Status.Versions.ControlPlaneKubernetesVersion); err != nil {
+	if err := validateVersion(reqK8sVer, controlPlaneVersion); err != nil {
 		return err
 	}
 
