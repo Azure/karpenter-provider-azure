@@ -61,6 +61,21 @@ func (r *PinningReconciler) Register(_ context.Context, m manager.Manager) error
 
 // Reconcile handles the reconciliation of pinned node images for the given AKSNodeClass.
 func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	// Update control plane kubernetes version.
+	controlPlaneVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
+	}
+
+	// Update latest suffix
+	latestImages, err := listImages(ctx, r.nodeImageProvider, *nodeClass, controlPlaneVersion)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("listing latest images, %w", err)
+	}
+	if len(latestImages) == 0 {
+		return reconcile.Result{}, fmt.Errorf("no latest images found for requested version")
+	}
+
 	reqImgVer, reqK8sVer, err := requestedVersions(nodeClass)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -117,6 +132,9 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 
 	nodeClass.Status.KubernetesVersion = lo.ToPtr(reqK8sVer)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+
+	nodeClass.Status.Versions.LatestImageVersion = parseVersion(latestImages[0].ID)
+	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &controlPlaneVersion
 
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
