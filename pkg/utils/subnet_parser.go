@@ -30,16 +30,9 @@ type VnetSubnetResource struct {
 }
 
 func (v VnetSubnetResource) IsSameVNET(cmp VnetSubnetResource) bool {
-	if v.SubscriptionID != cmp.SubscriptionID {
-		return false
-	}
-	if v.ResourceGroupName != cmp.ResourceGroupName {
-		return false
-	}
-	if v.VNetName != cmp.VNetName {
-		return false
-	}
-	return true
+	return strings.EqualFold(v.SubscriptionID, cmp.SubscriptionID) &&
+		strings.EqualFold(v.ResourceGroupName, cmp.ResourceGroupName) &&
+		strings.EqualFold(v.VNetName, cmp.VNetName)
 }
 
 // GetSubnetResourceID constructs the subnet resource id

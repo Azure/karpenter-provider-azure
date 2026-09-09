@@ -137,7 +137,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 
 	azClient, err := azclient.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
-	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+	if options.FromContext(ctx).VnetGUID == "" && (options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay || options.FromContext(ctx).IsAzureCNIPodSubnet()) {
 		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID

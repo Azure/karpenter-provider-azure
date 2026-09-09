@@ -23,6 +23,13 @@ const (
 	NetworkPluginModeOverlay = "overlay"
 	NetworkPluginModeNone    = ""
 
+	// podnetwork-type values for pods getting VNet IPs from a pod subnet
+	PodNetworkTypeVNet      = "vnet"
+	PodNetworkTypeVNetBlock = "vnetblock"
+
+	PodIPAllocationModeDynamicIndividual = "DynamicIndividual"
+	PodIPAllocationModeStaticBlock       = "StaticBlock"
+
 	NetworkDataplaneNone   = ""
 	NetworkDataplaneCilium = "cilium"
 	NetworkDataplaneAzure  = "azure"
@@ -38,6 +45,7 @@ const (
 	// cni modes
 	DefaultNetPluginNoneMaxPods = 250
 	DefaultOverlayMaxPods       = 250
+	DefaultPodSubnetMaxPods     = 250
 	DefaultNodeSubnetMaxPods    = 30
 	DefaultKubernetesMaxPods    = 110
 
