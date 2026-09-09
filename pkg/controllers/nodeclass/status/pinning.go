@@ -141,6 +141,8 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
 
+// RequestedVersions returns the requested node image version and Kubernetes version for the given AKSNodeClass.
+// It validates the requested versions and returns an error if not.
 func requestedVersions(nodeClass *v1beta1.AKSNodeClass, controlPlaneVersion string) (string, string, error) {
 	if nodeClass == nil || nodeClass.Spec.Versions == nil {
 		return "", "", fmt.Errorf("versions are not configured")
