@@ -112,21 +112,17 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 			return reqs[i].Key < reqs[j].Key
 		})
 
-		if ver := parseVersion(nodeImage.ID); ver != reqImgVer {
-			nodeImage.ID = strings.Replace(nodeImage.ID, ver, reqImgVer, 1)
-
-			// Verify that the replacement was successful
-			if parseVersion(nodeImage.ID) != reqImgVer {
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImageUpdateFailed", fmt.Sprintf("failed to update image ID to requested version: %s", nodeImage.ID))
-				return v1beta1.NodeImage{}
-			}
-		}
-
 		return v1beta1.NodeImage{
 			ID:           nodeImage.ID,
 			Requirements: reqs,
 		}
 	})
+
+	goalImages, err = replaceSuffixes(goalImages, reqImgVer)
+	if err != nil {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImageUpdateFailed", fmt.Sprintf("failed to update image suffixes: %v", err))
+		return reconcile.Result{}, fmt.Errorf("replacing image suffixes, %w", err)
+	}
 
 	// At this point, goalImages contains the node images with updated suffixes if necessary.
 	nodeClass.Status.Images = goalImages
@@ -271,4 +267,18 @@ func validateVersion(version, controlPlaneVersion string) error {
 	}
 
 	return nil
+}
+
+func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
+	for i, image := range images {
+		if ver := parseVersion(image.ID); ver != newSuffix {
+			image.ID = strings.Replace(image.ID, ver, newSuffix, 1)
+			images[i] = image
+		}
+
+		if parseVersion(image.ID) != newSuffix {
+			return nil, fmt.Errorf("failed to replace image version suffix for image ID: %s", image.ID)
+		}
+	}
+	return images, nil
 }
