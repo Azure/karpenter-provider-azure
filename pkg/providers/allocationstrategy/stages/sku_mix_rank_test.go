@@ -166,6 +166,34 @@ func TestSKUMixRankStage_SplitsAndJoinsRecommendationGroupsPreservingSizeAndPrio
 	g.Expect(order[11]).To(Equal("Standard_B|on-demand|regional"))
 }
 
+func TestSKUMixRankStage_SplitsRecommendationGroupsByOS(t *testing.T) {
+	g := NewWithT(t)
+	client, provider := newTestCapacityProvider()
+	client.PostBehavior.Output.Set(skuMixResponse(
+		skuMixSplit("Standard_Linux", "1", armrecommender.SKUMixPlacementPriorityRegular),
+		skuMixSplit("Standard_Windows", "1", armrecommender.SKUMixPlacementPriorityRegular),
+	))
+	input := []stages.InstanceOffering{
+		newInstanceOfferingForOS("Standard_Linux", corev1.Linux,
+			newTestOffering(0.1, karpv1.CapacityTypeOnDemand, "westus-1")),
+		newInstanceOfferingForOS("Standard_Windows", corev1.Windows,
+			newTestOffering(0.2, karpv1.CapacityTypeOnDemand, "westus-1")),
+	}
+
+	stages.NewSKUMixRankStage(provider, consts.ComputeRecommendationModeEnabled).Process(context.Background(), input)
+	g.Expect(client.PostBehavior.Calls()).To(Equal(2))
+
+	requests := map[armrecommender.SKUMixPlacementOSType][]string{}
+	for range 2 {
+		request := client.PostBehavior.CalledWithInput.Pop().Request
+		requests[*request.CapacityProfile.OSType] = requestVMSizeNames(request)
+	}
+	g.Expect(requests).To(Equal(map[armrecommender.SKUMixPlacementOSType][]string{
+		armrecommender.SKUMixPlacementOSTypeLinux:   {"Standard_Linux"},
+		armrecommender.SKUMixPlacementOSTypeWindows: {"Standard_Windows"},
+	}))
+}
+
 func TestSKUMixRankStage_FailsOpenOnProviderError(t *testing.T) {
 	g := NewWithT(t)
 	client, provider := newTestCapacityProvider()
@@ -223,11 +251,15 @@ func requestVMSizeNames(request armrecommender.SKUMixPlacementRequest) []string 
 }
 
 func newInstanceOffering(name string, offerings ...*corecloudprovider.Offering) stages.InstanceOffering {
+	return newInstanceOfferingForOS(name, corev1.Linux, offerings...)
+}
+
+func newInstanceOfferingForOS(name string, osType corev1.OSName, offerings ...*corecloudprovider.Offering) stages.InstanceOffering {
 	return stages.InstanceOffering{
 		InstanceType: &corecloudprovider.InstanceType{
 			Name: name,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
+				scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(osType)),
 			),
 		},
 		Offerings: offerings,

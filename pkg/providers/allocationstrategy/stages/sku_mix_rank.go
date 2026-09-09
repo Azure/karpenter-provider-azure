@@ -47,6 +47,7 @@ type skuMixRankStage struct {
 type recommendationGroupKey struct {
 	capacityType   string
 	placementScope string
+	osType         corev1.OSName
 }
 
 type recommendationGroup struct {
@@ -56,7 +57,6 @@ type recommendationGroup struct {
 	zones     []string
 	zoneSet   sets.Set[string]
 	vmZones   map[string]sets.Set[string]
-	osType    corev1.OSName
 }
 
 func NewSKUMixRankStage(provider capacityrecommendation.Provider, mode string) Stage {
@@ -80,7 +80,7 @@ func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []Insta
 				VMSizes:      group.vmSizes,
 				Zones:        group.zones,
 				CapacityType: group.key.capacityType,
-				OSType:       group.osType,
+				OSType:       group.key.osType,
 				Count:        initialRequestCount,
 			},
 		)
@@ -109,7 +109,7 @@ func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []Insta
 		}
 
 		comparison := compareRecommendationGroup(group, recommendations)
-		log.FromContext(ctx).Info("compared SKU Mix Placement recommendations with local ranking",
+		log.FromContext(ctx).V(1).Info("compared SKU Mix Placement recommendations with local ranking",
 			"capacityType", group.key.capacityType,
 			"placementScope", group.key.placementScope,
 			"splitID", recommendations[0].ID,
@@ -146,14 +146,16 @@ func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []Insta
 
 func buildRecommendationGroups(instanceOfferings []InstanceOffering) []*recommendationGroup {
 	groupsByKey := map[recommendationGroupKey]*recommendationGroup{}
-	// Offerings can produce at most four groups: spot/on-demand crossed with zonal/regional placement scope.
-	groups := make([]*recommendationGroup, 0, 4)
+	// Offerings can produce at most eight groups: spot/on-demand crossed with zonal/regional placement scope and Linux/Windows.
+	// Although in practice we will not often see Linux + Windows together so practically speaking this is probably 4 at the moment.
+	groups := make([]*recommendationGroup, 0, 8)
 
 	for _, instanceOffering := range instanceOfferings {
 		for _, offering := range instanceOffering.Offerings {
 			key := recommendationGroupKey{
 				capacityType:   offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Any(),
 				placementScope: azurezones.PlacementScopeForOffering(offering),
+				osType:         instanceTypeOS(instanceOffering.InstanceType),
 			}
 			group, ok := groupsByKey[key]
 			if !ok {
@@ -162,7 +164,6 @@ func buildRecommendationGroups(instanceOfferings []InstanceOffering) []*recommen
 					vmSizeSet: sets.New[string](),
 					zoneSet:   sets.New[string](),
 					vmZones:   map[string]sets.Set[string]{},
-					osType:    instanceTypeOS(instanceOffering.InstanceType),
 				}
 				groupsByKey[key] = group
 				groups = append(groups, group)
