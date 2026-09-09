@@ -123,11 +123,16 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{}, nil
 	}
 
-	var requestedImageVersion *string
-	if nodeClass.Spec.Versions != nil && nodeClass.Spec.Versions.NodeImageVersion != nil {
+	var requestedImageVersion, requestedK8SVersion *string
+	if nodeClass.Spec.Versions != nil {
 		// Validate that the Kubernetes version is set.
 		// Validate()
-		requestedImageVersion = nodeClass.Spec.Versions.NodeImageVersion
+		if nodeClass.Spec.Versions.KubernetesVersion != nil {
+			requestedK8SVersion = nodeClass.Spec.Versions.KubernetesVersion
+		}
+		if nodeClass.Spec.Versions.NodeImageVersion != nil {
+			requestedImageVersion = nodeClass.Spec.Versions.NodeImageVersion
+		}
 	}
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
