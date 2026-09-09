@@ -104,6 +104,8 @@ az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overw
 > Note: <br>
 > \- If you see a warning for "CryptographyDeprecationWarning", "WARNING: SSH key files", and/or "WARNING: docker_bridge_cidr" these are not a concern, and can be disregarded.
 
+> Note: This workshop creates an Azure CNI Overlay cluster. Azure CNI Pod Subnet is an alternative for self-hosted Karpenter in `aksscriptless` mode only. The cluster must first be created with a pod subnet and either `DynamicIndividual` or `StaticBlock`, then the matching subnet and mode must be set in the Helm values. Cluster-level value changes affect only new nodes. An `AKSNodeClass` must specify both `podSubnetID` and `podIPAllocationMode`, or omit both to inherit the cluster defaults. The pod subnet must be in the node subnet's VNet, differ from the node subnet, and use the same mode for all nodes using that pod subnet. This is not supported by `bootstrappingclient` or the AKS Machine API modes. Managed NAP support is determined by AKS.
+
 > Note: If you've been disconnected from Cloud Shell, the env vars may have been removed. If you experience this issue follow [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md), along with restoring AKS_JSON, and KMSI_JSON using the command below. AKS_JSON, and KMSI_JSON are only required for the next two bash scripts, and not required for any future env recovery.
 > ```bash
 > AKS_JSON=$(az aks show --name "${CLUSTER_NAME}" --resource-group "${RG}" --output json)
@@ -147,7 +149,7 @@ curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}
 # use configure-values.sh to generate karpenter-values.yaml
 # (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/hack/deploy/configure-values.sh
-chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
+chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi false
 ```
 
 Check the `karpenter-values.yaml` file was created:

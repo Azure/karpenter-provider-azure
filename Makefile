@@ -34,6 +34,7 @@ ci-test: test coverage ## Runs tests and submits coverage
 ci-non-test: verify licenses vulncheck ## Runs checks other than tests
 
 test: ## Run tests
+	go test -count=1 ./hack/deploy
 	ginkgo -vv \
 		-cover -coverprofile=coverage.out -output-dir=. -coverpkg=./pkg/... \
 		--focus="${FOCUS}" \
