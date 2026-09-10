@@ -39,7 +39,8 @@ const (
 	// defaultCacheTTL is the default cache duration if the recommendation response does not include a validUntil value.
 	// Set to 45s since we expect the server to give a value of about ~60s.
 	defaultCacheTTL = 45 * time.Second
-	requestTimeout  = 5 * time.Second
+	// TODO: Need better metrics and to break calls out of hot path (+ parallelize?) in the future.
+	requestTimeout = 15 * time.Second
 )
 
 type SKUMixPlacementScoresAPI interface {
@@ -134,23 +135,26 @@ func (p *DefaultProvider) GetRecommendations(ctx context.Context, input *Ranking
 func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *RankingInput) ([]Recommendation, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
+	logger := log.FromContext(ctx)
 
 	response, err := p.client.Post(requestCtx, p.location, toSKUMixPlacementRequest(input), nil)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Remove this or increase verbosity?
-	log.FromContext(ctx).V(1).Info(
-		"received SKU Mix Placement API response",
-		"response", skuMixPlacementResponseJSON(response),
-	)
+
+	if logger.V(2).Enabled() {
+		logger.V(2).Info(
+			"received SKU Mix Placement API response",
+			"response", skuMixPlacementResponseJSON(response),
+		)
+	}
 
 	choices := sortedPlacementChoices(response, input)
 	if len(choices) == 0 {
 		return nil, fmt.Errorf("SKU Mix Placement response contained no placement choices")
 	}
 	if response.PlacementChoices[0] != choices[0] {
-		log.FromContext(ctx).Error(
+		logger.Error(
 			fmt.Errorf("expected top SKU Mix Placement choice differs from first response choice"),
 			"sorted non-first SKU Mix Placement choice first",
 			"ourChoice", placementChoiceJSON(choices[0]),
@@ -169,7 +173,7 @@ func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *
 	ttl := time.Until(validUntil)
 	// Hedge against possible short cache TTLs from the API by caching for at least the default TTL.
 	if ttl < p.defaultTTL {
-		log.FromContext(ctx).V(1).Info(
+		logger.V(1).Info(
 			"SKU Mix Placement recommendation response contained a short cache TTL; using default TTL instead",
 			"validUntil", validUntil,
 			"ttl", ttl,
@@ -199,6 +203,7 @@ func toSKUMixPlacementRequest(input *RankingInput) armrecommender.SKUMixPlacemen
 	if input.CapacityType == karpv1.CapacityTypeSpot {
 		priority = armrecommender.SKUMixPlacementPrioritySpot
 	}
+	// Note: osType is a required field of input so it will always be specified
 	var osType armrecommender.SKUMixPlacementOSType
 	switch input.OSType {
 	case corev1.Linux:
@@ -420,14 +425,10 @@ func validateInput(input *RankingInput) error {
 	if input.Count <= 0 {
 		return fmt.Errorf("count %d is outside the supported range", input.Count)
 	}
-	switch input.CapacityType {
-	case karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot:
-	default:
+	if input.CapacityType != karpv1.CapacityTypeOnDemand && input.CapacityType != karpv1.CapacityTypeSpot {
 		return fmt.Errorf("unsupported capacity type %q", input.CapacityType)
 	}
-	switch input.OSType {
-	case corev1.Linux, corev1.Windows:
-	default:
+	if input.OSType != corev1.Linux && input.OSType != corev1.Windows {
 		return fmt.Errorf("unsupported OS type %q", input.OSType)
 	}
 	return nil
