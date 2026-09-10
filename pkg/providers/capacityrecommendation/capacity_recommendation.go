@@ -54,7 +54,7 @@ type SKUMixPlacementScoresAPI interface {
 
 // Provider supplies capacity-aware VM placement recommendations.
 type Provider interface {
-	GetRecommendations(ctx context.Context, input *RankingInput) ([]Recommendation, error)
+	GetRecommendations(ctx context.Context, input *RankingInput) (RecommendationDetails, error)
 }
 
 // RankingInput identifies an allocation request to rank.
@@ -77,6 +77,12 @@ type Recommendation struct {
 	ID string
 	// Count is not currently used
 	Count int32
+}
+
+// RecommendationDetails contains placement recommendations and the capacity limits used to produce them.
+type RecommendationDetails struct {
+	Recommendations []Recommendation
+	CapacityLimits  []*armrecommender.SKUMixPlacementCapacityLimit
 }
 
 // DefaultProvider obtains and reactively caches SKU Mix Placement recommendations.
@@ -102,14 +108,14 @@ func NewProvider(client SKUMixPlacementScoresAPI, cache *cache.Cache, location s
 }
 
 // GetRecommendations returns cached or freshly generated recommendations.
-func (p *DefaultProvider) GetRecommendations(ctx context.Context, input *RankingInput) ([]Recommendation, error) {
+func (p *DefaultProvider) GetRecommendations(ctx context.Context, input *RankingInput) (RecommendationDetails, error) {
 	if err := validateInput(input); err != nil {
-		return nil, fmt.Errorf("invalid SKU Mix Placement recommendation input: %w", err)
+		return RecommendationDetails{}, fmt.Errorf("invalid SKU Mix Placement recommendation input: %w", err)
 	}
 
 	key, err := cacheKey(input)
 	if err != nil {
-		return nil, fmt.Errorf("hashing SKU Mix Placement recommendation input: %w", err)
+		return RecommendationDetails{}, fmt.Errorf("hashing SKU Mix Placement recommendation input: %w", err)
 	}
 	if result, ok := p.getCached(key); ok {
 		return result, nil
@@ -122,24 +128,24 @@ func (p *DefaultProvider) GetRecommendations(ctx context.Context, input *Ranking
 		return p.fetchAndCache(ctx, key, input)
 	})
 	if err != nil {
-		return nil, err
+		return RecommendationDetails{}, err
 	}
 
-	result, ok := value.([]Recommendation)
+	result, ok := value.(RecommendationDetails)
 	if !ok {
-		return nil, fmt.Errorf("unexpected recommendation result type %T", value)
+		return RecommendationDetails{}, fmt.Errorf("unexpected recommendation result type %T", value)
 	}
-	return cloneRecommendations(result), nil
+	return cloneRecommendationDetails(result), nil
 }
 
-func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *RankingInput) ([]Recommendation, error) {
+func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *RankingInput) (RecommendationDetails, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 	logger := log.FromContext(ctx)
 
 	response, err := p.client.Post(requestCtx, p.location, toSKUMixPlacementRequest(input), nil)
 	if err != nil {
-		return nil, err
+		return RecommendationDetails{}, err
 	}
 
 	if logger.V(2).Enabled() {
@@ -151,7 +157,7 @@ func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *
 
 	choices := sortedPlacementChoices(response, input)
 	if len(choices) == 0 {
-		return nil, fmt.Errorf("SKU Mix Placement response contained no placement choices")
+		return RecommendationDetails{}, fmt.Errorf("SKU Mix Placement response contained no placement choices")
 	}
 	if response.PlacementChoices[0] != choices[0] {
 		logger.Error(
@@ -161,9 +167,13 @@ func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *
 			"placementChoice", placementChoiceJSON(response.PlacementChoices[0]),
 		)
 	}
-	result, err := recommendationsFromChoices(lo.FromPtr(response.ID), choices)
+	recommendations, err := recommendationsFromChoices(lo.FromPtr(response.ID), choices)
 	if err != nil {
-		return nil, err
+		return RecommendationDetails{}, err
+	}
+	result := RecommendationDetails{
+		Recommendations: recommendations,
+		CapacityLimits:  response.CapacityLimits,
 	}
 
 	validUntil := time.Now().Add(p.defaultTTL)
@@ -183,19 +193,19 @@ func (p *DefaultProvider) fetchAndCache(ctx context.Context, key string, input *
 	}
 
 	p.cache.Set(key, result, ttl)
-	return cloneRecommendations(result), nil
+	return cloneRecommendationDetails(result), nil
 }
 
-func (p *DefaultProvider) getCached(key string) ([]Recommendation, bool) {
+func (p *DefaultProvider) getCached(key string) (RecommendationDetails, bool) {
 	value, ok := p.cache.Get(key)
 	if !ok {
-		return nil, false
+		return RecommendationDetails{}, false
 	}
-	result, ok := value.([]Recommendation)
+	result, ok := value.(RecommendationDetails)
 	if !ok {
-		return nil, false
+		return RecommendationDetails{}, false
 	}
-	return cloneRecommendations(result), true
+	return cloneRecommendationDetails(result), true
 }
 
 func toSKUMixPlacementRequest(input *RankingInput) armrecommender.SKUMixPlacementRequest {
@@ -454,6 +464,30 @@ func cacheKey(input *RankingInput) (string, error) {
 	return fmt.Sprintf("%016x", value), nil
 }
 
-func cloneRecommendations(in []Recommendation) []Recommendation {
-	return append([]Recommendation(nil), in...)
+func cloneRecommendationDetails(in RecommendationDetails) RecommendationDetails {
+	result := RecommendationDetails{
+		Recommendations: append([]Recommendation(nil), in.Recommendations...),
+		CapacityLimits:  make([]*armrecommender.SKUMixPlacementCapacityLimit, len(in.CapacityLimits)),
+	}
+	for i, capacityLimit := range in.CapacityLimits {
+		if capacityLimit == nil {
+			continue
+		}
+		cloned := *capacityLimit
+		cloned.Limit = clonePointer(capacityLimit.Limit)
+		cloned.Name = clonePointer(capacityLimit.Name)
+		cloned.Priority = clonePointer(capacityLimit.Priority)
+		cloned.Reason = clonePointer(capacityLimit.Reason)
+		cloned.Zone = clonePointer(capacityLimit.Zone)
+		result.CapacityLimits[i] = &cloned
+	}
+	return result
+}
+
+func clonePointer[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }

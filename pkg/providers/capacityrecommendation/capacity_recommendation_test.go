@@ -37,10 +37,14 @@ import (
 func TestGetRecommendations_ReturnsRecommendations(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D4s_v5", "2"))
+	response := recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D4s_v5", "2")
+	response.CapacityLimits = []*armrecommender.SKUMixPlacementCapacityLimit{
+		capacityLimit("Standard_D4s_v5", "2", 5),
+	}
+	client.PostBehavior.Output.Set(response)
 	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
 
-	recommendations, err := provider.GetRecommendations(
+	details, err := provider.GetRecommendations(
 		context.Background(),
 		&capacityrecommendation.RankingInput{
 			VMSizes:      []string{"Standard_D2s_v5", "Standard_D4s_v5"},
@@ -50,9 +54,10 @@ func TestGetRecommendations_ReturnsRecommendations(t *testing.T) {
 			Count:        5,
 		})
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(details.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D4s_v5", "2", "choice-id", 9, 5),
 	}))
+	g.Expect(details.CapacityLimits).To(Equal(response.CapacityLimits))
 	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
 
 	input := client.PostBehavior.CalledWithInput.Pop()
@@ -71,7 +76,11 @@ func TestGetRecommendations_ReturnsRecommendations(t *testing.T) {
 func TestGetRecommendations_CacheIgnoresZoneOrderAndCount(t *testing.T) {
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
-	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 8, "Standard_D2s_v5", "1"))
+	response := recommendationResponse(time.Now().Add(time.Minute), 8, "Standard_D2s_v5", "1")
+	response.CapacityLimits = []*armrecommender.SKUMixPlacementCapacityLimit{
+		capacityLimit("Standard_D2s_v5", "1", 5),
+	}
+	client.PostBehavior.Output.Set(response)
 	cache := newCache()
 	provider := capacityrecommendation.NewProvider(client, cache, "eastus")
 
@@ -87,7 +96,8 @@ func TestGetRecommendations_CacheIgnoresZoneOrderAndCount(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 
 	// mutate the ID so we can assert the second call doesn't see the mutated ID
-	first[0].ID = "caller-mutated"
+	first.Recommendations[0].ID = "caller-mutated"
+	*first.CapacityLimits[0].Limit = 0
 	second, err := provider.GetRecommendations(
 		context.Background(),
 		&capacityrecommendation.RankingInput{
@@ -98,11 +108,12 @@ func TestGetRecommendations_CacheIgnoresZoneOrderAndCount(t *testing.T) {
 			Count:        1,
 		})
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(second[0].ID).To(Equal("choice-id"))
+	g.Expect(second.Recommendations[0].ID).To(Equal("choice-id"))
+	g.Expect(*second.CapacityLimits[0].Limit).To(Equal(int32(5)))
 	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
 	g.Expect(cache.Items()).To(HaveLen(1))
 	for _, item := range cache.Items() {
-		cached, ok := item.Object.([]capacityrecommendation.Recommendation)
+		cached, ok := item.Object.(capacityrecommendation.RecommendationDetails)
 		g.Expect(ok).To(BeTrue())
 		g.Expect(cached).To(Equal(second))
 	}
@@ -151,7 +162,7 @@ func TestGetRecommendations_APIErrorIsPropagated(t *testing.T) {
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).To(MatchError("recommendation API unavailable"))
-	g.Expect(recommendations).To(BeNil())
+	g.Expect(recommendations).To(Equal(capacityrecommendation.RecommendationDetails{}))
 	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
 }
 
@@ -166,7 +177,7 @@ func TestGetRecommendations_InvalidInputErrorIsReturned(t *testing.T) {
 			CapacityType: karpv1.CapacityTypeOnDemand,
 			Count:        5,
 		})
-	g.Expect(recommendations).To(BeNil())
+	g.Expect(recommendations).To(Equal(capacityrecommendation.RecommendationDetails{}))
 	g.Expect(err).To(MatchError(ContainSubstring("no VM sizes specified")))
 	g.Expect(client.PostBehavior.Calls()).To(Equal(0))
 }
@@ -179,7 +190,7 @@ func TestGetRecommendations_InvalidResponseErrorIsReturned(t *testing.T) {
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).To(MatchError(ContainSubstring("no placement choices")))
-	g.Expect(recommendations).To(BeNil())
+	g.Expect(recommendations).To(Equal(capacityrecommendation.RecommendationDetails{}))
 }
 
 func TestGetRecommendations_MissingResponseIDReturnsEmptyRecommendationID(t *testing.T) {
@@ -192,7 +203,7 @@ func TestGetRecommendations_MissingResponseIDReturnsEmptyRecommendationID(t *tes
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D4s_v5", "2", "", 9, 5),
 	}))
 }
@@ -213,7 +224,7 @@ func TestGetRecommendations_ExpandsOneChoiceIntoSizeZoneEntries(t *testing.T) {
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
 		recommendation("Standard_D8s_v5", "2", "response-id", 9, 2),
 		recommendation("Standard_D8s_v5", "3", "response-id", 9, 1),
@@ -244,7 +255,7 @@ func TestGetRecommendations_CombinesUniqueEntriesFromChoices(t *testing.T) {
 
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
 		recommendation("Standard_D8s_v5", "2", "response-id", 9, 2),
 		recommendation("Standard_D8s_v6", "3", "response-id", 9, 1),
@@ -269,7 +280,7 @@ func TestGetRecommendations_KeepsHighestScoringEntryForDuplicateKey(t *testing.T
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
 	}))
 }
@@ -289,7 +300,7 @@ func TestGetRecommendations_TreatsCapacityTypeAsPartOfRecommendationIdentity(t *
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D8s_v5", "1", "response-id", 9, 1),
 		{VMSize: "Standard_D8s_v5", Zone: "1", CapacityType: karpv1.CapacityTypeSpot, Score: 9, ID: "response-id", Count: 2},
 	}))
@@ -310,7 +321,7 @@ func TestGetRecommendations_PreservesAPIReturnOrderForCompleteChoiceTie(t *testi
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D2s_v5", "1", "response-id", 9, 1),
 	}))
 }
@@ -327,7 +338,7 @@ func TestGetRecommendations_ReturnsErrorIfSplitAPIMissingPriorityInResponse(t *t
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).To(MatchError(ContainSubstring("invalid SKU split")))
-	g.Expect(recommendations).To(BeNil())
+	g.Expect(recommendations).To(Equal(capacityrecommendation.RecommendationDetails{}))
 }
 
 func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIReturnsOutOfOrder(t *testing.T) {
@@ -359,7 +370,7 @@ func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIRetur
 
 	recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D4s_v5", "2", "response-id", 9, 3),
 		recommendation("Standard_D8s_v5", "3", "response-id", 9, 2),
 		recommendation("Standard_D2s_v5", "1", "response-id", 4, 5),
@@ -408,7 +419,7 @@ func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
 		recommendation("Standard_D8s_v5", "2", "response-id", 9, 2),
 		recommendation("Standard_D8s_v5", "3", "response-id", 9, 1),
@@ -453,7 +464,7 @@ func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *te
 
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D8s_v5", "1", "response-id", 9, 2),
 		recommendation("Standard_D8s_v5", "2", "response-id", 9, 1),
 		recommendation("Standard_E2s_v3", "3", "response-id", 9, 2),
@@ -498,7 +509,7 @@ func TestGetRecommendations_UsesOverallZoneCoverageAfterPerSKUTie(t *testing.T) 
 
 	recommendations, err := provider.GetRecommendations(context.Background(), input)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(recommendations).To(Equal([]capacityrecommendation.Recommendation{
+	g.Expect(recommendations.Recommendations).To(Equal([]capacityrecommendation.Recommendation{
 		recommendation("Standard_D8s_v5", "1", "response-id", 9, 1),
 		recommendation("Standard_D8s_v5", "2", "response-id", 9, 1),
 		recommendation("Standard_E2s_v3", "2", "response-id", 9, 1),
@@ -564,14 +575,14 @@ func TestGetRecommendations_DeduplicatesConcurrentRequests(t *testing.T) {
 
 	var wg sync.WaitGroup
 	type result struct {
-		recommendations []capacityrecommendation.Recommendation
-		err             error
+		details capacityrecommendation.RecommendationDetails
+		err     error
 	}
 	results := make(chan result, 6)
 	request := func() {
 		defer wg.Done()
-		recommendations, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
-		results <- result{recommendations: recommendations, err: err}
+		details, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
+		results <- result{details: details, err: err}
 	}
 
 	wg.Add(1)
@@ -587,8 +598,8 @@ func TestGetRecommendations_DeduplicatesConcurrentRequests(t *testing.T) {
 
 	for result := range results {
 		g.Expect(result.err).NotTo(HaveOccurred())
-		g.Expect(result.recommendations).To(HaveLen(1))
-		g.Expect(result.recommendations[0].ID).To(Equal("choice-id"))
+		g.Expect(result.details.Recommendations).To(HaveLen(1))
+		g.Expect(result.details.Recommendations[0].ID).To(Equal("choice-id"))
 	}
 	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
 }
@@ -611,6 +622,16 @@ func recommendation(vmSize, zone, id string, score, count int32) capacityrecomme
 	return capacityrecommendation.Recommendation{
 		VMSize: vmSize, Zone: zone, CapacityType: karpv1.CapacityTypeOnDemand,
 		Score: score, ID: id, Count: count,
+	}
+}
+
+func capacityLimit(vmSize, zone string, limit int32) *armrecommender.SKUMixPlacementCapacityLimit {
+	return &armrecommender.SKUMixPlacementCapacityLimit{
+		Limit:    to.Ptr(limit),
+		Name:     to.Ptr(vmSize),
+		Priority: to.Ptr(armrecommender.SKUMixPlacementPriorityRegular),
+		Reason:   to.Ptr(armrecommender.SKUMixPlacementCapacityLimitReasonNone),
+		Zone:     to.Ptr(zone),
 	}
 }
 

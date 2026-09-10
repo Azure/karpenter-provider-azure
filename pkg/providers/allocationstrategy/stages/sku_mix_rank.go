@@ -74,7 +74,7 @@ func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []Insta
 		if len(group.vmSizes) == 0 {
 			continue
 		}
-		recommendations, err := s.provider.GetRecommendations(
+		details, err := s.provider.GetRecommendations(
 			ctx,
 			&capacityrecommendation.RankingInput{
 				VMSizes:      group.vmSizes,
@@ -98,6 +98,7 @@ func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []Insta
 			}
 			continue
 		}
+		recommendations := details.Recommendations
 		if len(recommendations) == 0 {
 			if s.mode == consts.ComputeRecommendationModeEnabled {
 				// If our API failed, we want to fail open so add all items in the group to recommended
@@ -111,6 +112,7 @@ func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []Insta
 		comparison := compareRecommendationGroup(group, recommendations)
 		log.FromContext(ctx).V(1).Info("compared SKU Mix Placement recommendations with local ranking",
 			"capacityType", group.key.capacityType,
+			"capacityLimits", details.CapacityLimits,
 			"placementScope", group.key.placementScope,
 			"splitID", recommendations[0].ID,
 			"mode", s.mode,
