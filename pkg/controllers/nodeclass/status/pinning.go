@@ -165,7 +165,7 @@ func requestedVersions(nodeClass *v1beta1.AKSNodeClass, controlPlaneVersion stri
 	reqK8sVer := lo.FromPtr(nodeClass.Spec.Versions.KubernetesVersion)
 
 	if err := validateK8sVersion(reqK8sVer, controlPlaneVersion); err != nil {
-		return "", "", fmt.Errorf("%w: %v", errKubernetesVersionControlPlaneIncompatible, err)
+		return "", "", err
 	}
 
 	if reqImgVer == "" {
@@ -241,31 +241,31 @@ This changes only the node version; the control-plane version is not rolled back
 func validateK8sVersion(version, controlPlaneVersion string) error {
 	versionSemver, err := semver.Parse(version)
 	if err != nil {
-		return fmt.Errorf("parsing kubernetes version, %w", err)
+		return fmt.Errorf("%w: %v", errKubernetesVersionInvalidFormat, err)
 	}
 	controlPlaneVersionSemver, err := semver.Parse(controlPlaneVersion)
 	if err != nil {
-		return fmt.Errorf("parsing control-plane kubernetes version, %w", err)
+		return fmt.Errorf("parsing control-plane kubernetes version: %w", err)
 	}
 
 	// major versions must match
 	if versionSemver.Major != controlPlaneVersionSemver.Major {
-		return fmt.Errorf("kubernetes version major mismatch: node %d vs control-plane %d", versionSemver.Major, controlPlaneVersionSemver.Major)
+		return fmt.Errorf("%w: kubernetes version major mismatch: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Major, controlPlaneVersionSemver.Major)
 	}
 
 	// node minor must not be greater than control-plane minor
 	if versionSemver.Minor > controlPlaneVersionSemver.Minor {
-		return fmt.Errorf("kubernetes version minor too new: node %d vs control-plane %d", versionSemver.Minor, controlPlaneVersionSemver.Minor)
+		return fmt.Errorf("%w: kubernetes version minor too new: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Minor, controlPlaneVersionSemver.Minor)
 	}
 
 	// node minor must be at most three minors behind control-plane minor
 	if controlPlaneVersionSemver.Minor-versionSemver.Minor > 3 {
-		return fmt.Errorf("kubernetes version minor too old: node %d vs control-plane %d", versionSemver.Minor, controlPlaneVersionSemver.Minor)
+		return fmt.Errorf("%w: kubernetes version minor too old: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Minor, controlPlaneVersionSemver.Minor)
 	}
 
 	// when both are on the same minor, node patch must not be greater than control-plane patch
 	if versionSemver.Minor == controlPlaneVersionSemver.Minor && versionSemver.Patch > controlPlaneVersionSemver.Patch {
-		return fmt.Errorf("kubernetes version patch too new: node %d vs control-plane %d", versionSemver.Patch, controlPlaneVersionSemver.Patch)
+		return fmt.Errorf("%w: kubernetes version patch too new: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Patch, controlPlaneVersionSemver.Patch)
 	}
 
 	// TODO: Check AKS version metadata
