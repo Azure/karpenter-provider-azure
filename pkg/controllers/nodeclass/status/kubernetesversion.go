@@ -86,15 +86,6 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &controlPlaneVersion
 	goalK8sVersion := controlPlaneVersion
 
-	if _, req := requestedVersion(nodeClass); req != nil {
-		if err := validateVersion(*req, goalK8sVersion); err != nil {
-			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalid", fmt.Sprintf("requested kubernetes version %s is invalid: %v", *req, err))
-			return reconcile.Result{}, fmt.Errorf("validating requested kubernetes version, %w", err)
-		}
-		goalK8sVersion = *req
-		logger = logger.WithValues("requestedKubernetesVersion", *req)
-	}
-
 	// Handles case 1: init, update kubernetes status to API server version found
 	if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == nil || *nodeClass.Status.KubernetesVersion == "" {
 		logger.V(1).Info("init kubernetes version", "goalKubernetesVersion", goalK8sVersion)

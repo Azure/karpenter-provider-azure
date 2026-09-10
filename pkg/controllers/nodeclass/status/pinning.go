@@ -178,18 +178,22 @@ func requestedVersions(nodeClass *v1beta1.AKSNodeClass, controlPlaneVersion stri
 	return reqImgVer, reqK8sVer, nil
 }
 
-func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) bool {
+func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) error {
 	if nodeClass == nil || nodeClass.Status.Versions == nil || nodeClass.Status.Versions.RecentlyUsedVersions == nil {
-		return false
+		return fmt.Errorf("%w: requested image version %s was not found", errNodeImageVersionInvalid, reqImageVersion)
 	}
 
 	for _, used := range nodeClass.Status.Versions.RecentlyUsedVersions {
-		if lo.FromPtr(used.KubernetesVersion) == reqK8sVersion && lo.FromPtr(used.ImageVersion) == reqImageVersion {
-			return true
+		if lo.FromPtr(used.ImageVersion) != reqImageVersion {
+			continue
 		}
+		if lo.FromPtr(used.KubernetesVersion) != reqK8sVersion {
+			return fmt.Errorf("%w: requested rollback image does not match the requested kubernetes version", errRollbackTargetKubernetesVersionMismatch)
+		}
+		return nil
 	}
 
-	return false
+	return fmt.Errorf("%w: requested image version %s was not found", errNodeImageVersionInvalid, reqImageVersion)
 }
 
 func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClass, controlPlaneVersion string) error {
@@ -217,8 +221,8 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 		if ctrlPlaneVer := nodeClass.Status.Versions.ControlPlaneKubernetesVersion; ctrlPlaneVer != nil && reqK8sVer != *ctrlPlaneVer {
 			return fmt.Errorf("%w: requested image version is latest but does not match the control plane version", errNodeImageVersionInvalid)
 		}
-	case !validRollback(reqK8sVer, reqImgVer, nodeClass):
-		return fmt.Errorf("%w: unable to find a valid rollback for requested image version: %s", errRollbackTargetKubernetesVersionMismatch, reqImgVer)
+	default:
+		return validRollback(reqK8sVer, reqImgVer, nodeClass)
 	}
 	return nil
 }
