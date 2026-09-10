@@ -114,7 +114,6 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 	}
 
-	// Update the suffix, if necessary. If this fails, revert the k8s version.
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
@@ -134,13 +133,14 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 		}
 	})
 
-	goalImages, err = replaceSuffixes(goalImages, reqImgVer)
-	if err != nil {
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", fmt.Sprintf("failed to update image suffixes: %v", err))
-		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+	if reqImgVer != "" {
+		goalImages, err = replaceSuffixes(goalImages, reqImgVer)
+		if err != nil {
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", fmt.Sprintf("failed to update image suffixes: %v", err))
+			return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+		}
 	}
 
-	// At this point, goalImages contains the node images with updated suffixes if necessary.
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
