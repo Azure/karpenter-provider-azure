@@ -98,9 +98,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 
 	reqImgVer, reqK8sVer := requestedVersions(nodeClass, controlPlaneVersion)
 	if err := validateK8sVersion(reqK8sVer, controlPlaneVersion); err != nil {
-		if errors.Is(err, errKubernetesVersionControlPlaneIncompatible) {
-			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", err.Error())
-		}
+		setStatusConditionByErr(nodeClass, err)
 		return reconcile.Result{
 			RequeueAfter: azurecache.KubernetesVersionTTL,
 		}, nil
@@ -108,16 +106,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 
 	if reqImgVer != "" {
 		if err := validatePinning(reqImgVer, reqK8sVer, currentCPVer, currentLatestImgVer, nodeClass); err != nil {
-			switch {
-			case errors.Is(err, errKubernetesVersionInvalidFormat):
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", err.Error())
-			case errors.Is(err, errKubernetesVersionControlPlaneIncompatible):
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", err.Error())
-			case errors.Is(err, errNodeImageVersionInvalid):
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", err.Error())
-			case errors.Is(err, errRollbackTargetKubernetesVersionMismatch):
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "RollbackTargetKubernetesVersionMismatch", err.Error())
-			}
+			setStatusConditionByErr(nodeClass, err)
 			return reconcile.Result{
 				RequeueAfter: azurecache.KubernetesVersionTTL,
 			}, nil
@@ -173,6 +162,19 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+}
+
+func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
+	switch {
+	case errors.Is(err, errKubernetesVersionInvalidFormat):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", err.Error())
+	case errors.Is(err, errKubernetesVersionControlPlaneIncompatible):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", err.Error())
+	case errors.Is(err, errNodeImageVersionInvalid):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", err.Error())
+	case errors.Is(err, errRollbackTargetKubernetesVersionMismatch):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "RollbackTargetKubernetesVersionMismatch", err.Error())
+	}
 }
 
 func requestedVersions(nodeClass *v1beta1.AKSNodeClass, previousControlPlaneVersion string) (string, string) {
