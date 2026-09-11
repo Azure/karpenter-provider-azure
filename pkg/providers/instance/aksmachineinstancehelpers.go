@@ -111,8 +111,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// MachineProperties field so batch grouping and header extraction stay correct.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
 	// TODO: Resolve one effective kubelet configuration for scheduling, AKSScriptless, and
-	// AKSMachineAPI so omitted defaults cannot drift. Preserve CustomNodeConfigPreview gating
-	// instead of sending preview-only computed defaults on every Machine request.
+	// AKSMachineAPI so omitted defaults cannot drift. This can be done when Node Hardening becomes GA.
 	kubeletConfig := configureKubeletConfig(nodeClass)
 
 	return &armcontainerservice.Machine{
