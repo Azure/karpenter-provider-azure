@@ -53,6 +53,7 @@ type AZClient struct {
 	aksMachinesClient              azapi.AKSMachinesAPI
 	aksMachinesBatchClient         aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
 	agentPoolsClient               azapi.AKSAgentPoolsAPI
+	managedClustersClient          azapi.AKSManagedClustersAPI
 	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI
 	networkInterfacesClient        azapi.NetworkInterfacesAPI
 	subnetsClient                  azapi.SubnetsAPI
@@ -90,6 +91,10 @@ func (c *AZClient) AgentPoolsClient() azapi.AKSAgentPoolsAPI {
 	return c.agentPoolsClient
 }
 
+func (c *AZClient) ManagedClustersClient() azapi.AKSManagedClustersAPI {
+	return c.managedClustersClient
+}
+
 func (c *AZClient) VirtualMachinesClient() azapi.VirtualMachinesAPI {
 	return c.virtualMachinesClient
 }
@@ -112,6 +117,7 @@ func NewAZClientFromAPI(
 	aksMachinesClient azapi.AKSMachinesAPI,
 	aksMachinesBatchClient aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI,
 	agentPoolsClient azapi.AKSAgentPoolsAPI,
+	managedClustersClient azapi.AKSManagedClustersAPI,
 	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI,
 	interfacesClient azapi.NetworkInterfacesAPI,
 	subnetsClient azapi.SubnetsAPI,
@@ -132,6 +138,7 @@ func NewAZClientFromAPI(
 		aksMachinesClient:              aksMachinesClient,
 		aksMachinesBatchClient:         aksMachinesBatchClient,
 		agentPoolsClient:               agentPoolsClient,
+		managedClustersClient:          managedClustersClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
 		subnetsClient:                  subnetsClient,
@@ -192,6 +199,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	managedClustersClient, err := armcontainerservice.NewManagedClustersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -306,6 +318,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		aksMachinesClient,
 		aksMachinesBatchClient,
 		agentPoolsClient,
+		managedClustersClient,
 		extensionsClient,
 		interfacesClient,
 		subnetsClient,

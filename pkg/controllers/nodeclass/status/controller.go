@@ -51,6 +51,7 @@ type Controller struct {
 
 	kubernetesVersion *KubernetesVersionReconciler
 	nodeImage         *NodeImageReconciler
+	pinning           *PinningReconciler
 	subnet            *SubnetReconciler
 	validation        *ValidationReconciler
 	localDNS          *LocalDNSReconciler
@@ -65,6 +66,7 @@ func NewController(
 	inClusterKubernetesInterface kubernetes.Interface,
 	managedKubernetesInterface kubernetes.Interface,
 	managedDynamicInterface dynamic.Interface,
+	managedClustersClient azapi.AKSManagedClustersAPI,
 	subnetClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	parsedDiskEncryptionSetID *arm.ResourceID,
@@ -77,6 +79,7 @@ func NewController(
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
+		pinning:           NewPinningReconciler(kubernetesVersionProvider, nodeImageProvider, managedClustersClient),
 		subnet:            NewSubnetReconciler(subnetClient),
 		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),

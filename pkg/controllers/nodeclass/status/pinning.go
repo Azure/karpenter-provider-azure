@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 
@@ -41,14 +42,16 @@ var (
 type PinningReconciler struct {
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
 	nodeImageProvider         imagefamily.NodeImageProvider
+	managedClustersClient     azapi.AKSManagedClustersAPI
 	cm                        *pretty.ChangeMonitor
 }
 
 // NewPinningReconciler creates a new instance of the PinningReconciler.
-func NewPinningReconciler(k8sProvider kubernetesversion.KubernetesVersionProvider, imgProvider imagefamily.NodeImageProvider) *PinningReconciler {
+func NewPinningReconciler(k8sProvider kubernetesversion.KubernetesVersionProvider, imgProvider imagefamily.NodeImageProvider, managedClustersClient azapi.AKSManagedClustersAPI) *PinningReconciler {
 	return &PinningReconciler{
 		kubernetesVersionProvider: k8sProvider,
 		nodeImageProvider:         imgProvider,
+		managedClustersClient:     managedClustersClient,
 		cm:                        pretty.NewChangeMonitor(),
 	}
 }
@@ -162,6 +165,20 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+}
+
+func (r *PinningReconciler) isSupported(ctx context.Context, k8sVersion string) (bool, error) {
+	resp, err := r.managedClustersClient.ListKubernetesVersions(ctx, "", nil)
+	if err != nil {
+		return false, err
+	}
+
+	for _, version := range resp.Values {
+		if version != nil && *version.Version == k8sVersion {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
