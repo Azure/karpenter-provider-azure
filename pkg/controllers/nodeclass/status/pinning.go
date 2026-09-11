@@ -284,17 +284,24 @@ func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKS
 }
 
 func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
-	for i, image := range images {
-		if ver := parseVersion(image.ID); ver != newSuffix {
-			image.ID = strings.Replace(image.ID, ver, newSuffix, 1)
-			images[i] = image
+	if newSuffix == "" || strings.Contains(newSuffix, "/") {
+		return nil, fmt.Errorf("invalid image version suffix %q", newSuffix)
+	}
+
+	updated := make([]v1beta1.NodeImage, len(images))
+	copy(updated, images)
+
+	for i := range updated {
+		parts := strings.Split(updated[i].ID, "/")
+		if len(parts) < 3 || parts[len(parts)-2] != "versions" || parts[len(parts)-1] == "" {
+			return nil, fmt.Errorf("image ID does not have expected versions suffix: %s", updated[i].ID)
 		}
 
-		if parseVersion(image.ID) != newSuffix {
-			return nil, fmt.Errorf("failed to replace image version suffix for image ID: %s", image.ID)
-		}
+		parts[len(parts)-1] = newSuffix
+		updated[i].ID = strings.Join(parts, "/")
 	}
-	return images, nil
+
+	return updated, nil
 }
 
 func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
