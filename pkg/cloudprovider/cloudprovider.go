@@ -74,6 +74,8 @@ const (
 	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
 	CreateInstanceFailedReason         = "CreateInstanceFailed"
 	SpotConditionPreemptionScheduled   = "PreemptionScheduled"
+	// Match Karpenter's maximum NodeClaim registration duration.
+	instancePromiseTimeout = 15 * time.Minute
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
@@ -255,7 +257,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		// so we delete them synchronously. After marking Launched=true,
 		// their status can't be reverted to false once the delete completes due to how core caches nodeclaims in
 		// the launch controller. This ensures we retry continuously until we hit the registration TTL
-		err := instancePromise.Wait()
+		err := waitForInstancePromise(ctx, instancePromise)
 		if err != nil {
 			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
 			return toCreateError(err, "creating standalone instance failed")
@@ -280,7 +282,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 			}
 		}()
 
-		err := instancePromise.Wait()
+		err := waitForInstancePromise(ctx, instancePromise)
 
 		// Wait until the claim is Launched, to avoid racing with creation.
 		// This isn't strictly required, but without this, failure test scenarios are harder
@@ -313,6 +315,12 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		}
 	}()
 	return nil
+}
+
+func waitForInstancePromise(ctx context.Context, promise instance.Promise) error {
+	waitCtx, cancel := context.WithTimeout(ctx, instancePromiseTimeout)
+	defer cancel()
+	return promise.Wait(waitCtx)
 }
 
 func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, waitErr error) {
