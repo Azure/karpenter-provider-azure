@@ -39,6 +39,7 @@ import (
 	nodeclasstermination "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/termination"
 
 	instancetypecontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/instancetype"
+	nodeinterruption "github.com/Azure/karpenter-provider-azure/pkg/controllers/node/interruption"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	quotacontroller "github.com/Azure/karpenter-provider-azure/pkg/controllers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
@@ -78,6 +79,10 @@ func NewControllers(
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
+
+		// Owns the response to Azure Spot preemption notices. See the package docs for why this is a
+		// dedicated controller rather than a cloudprovider.RepairPolicy.
+		nodeinterruption.NewController(kubeClient, cloudProvider, recorder, clk),
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
