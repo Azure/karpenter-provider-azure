@@ -96,7 +96,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	}
 	nodeClass.Status.Versions.LatestImageVersion = parseVersion(latestImages[0].ID)
 
-	reqImgVer, reqK8sVer := requestedVersions(nodeClass, controlPlaneVersion)
+	reqImgVer, reqK8sVer := requestedVersions(nodeClass)
 	if err := validateK8sVersion(reqK8sVer, controlPlaneVersion); err != nil {
 		setStatusConditionByErr(nodeClass, err)
 		return reconcile.Result{
@@ -177,7 +177,7 @@ func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
 	}
 }
 
-func requestedVersions(nodeClass *v1beta1.AKSNodeClass, previousControlPlaneVersion string) (string, string) {
+func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string) {
 	if nodeClass == nil || nodeClass.Spec.Versions == nil {
 		return "", ""
 	}
@@ -283,7 +283,7 @@ func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKS
 	if foundImage {
 		return fmt.Errorf("%w: requested image version %s was found but kubernetes version %s was not found", errRollbackTargetKubernetesVersionMismatch, reqImageVersion, reqK8sVersion)
 	}
-	return fmt.Errorf("%w: requested kubernetes version %s was not found", errNodeImageVersionInvalid, reqK8sVersion)
+	return fmt.Errorf("%w: requested node image version %s was not found", errNodeImageVersionInvalid, reqK8sVersion)
 }
 
 func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
