@@ -1,0 +1,35 @@
+# HARD requirement: keep an even-ish spread across zones, and FAIL scheduling if not possible.
+# Use case: high availability where you would rather run fewer replicas than violate zone spread.
+#
+# Key: whenUnsatisfiable: DoNotSchedule => HARD constraint.
+# Tradeoff: during cluster scale-up or a zone outage, pods can remain Pending.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-topologyspread-required-3-zone
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: sample-topologyspread-required-3-zone
+  template:
+    metadata:
+      labels:
+        app: sample-topologyspread-required-3-zone
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        minDomains: 3
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule  # HARD: keep pending if spread can't be satisfied
+        labelSelector:
+          matchLabels:
+            app: sample-topologyspread-required-3-zone
+
+      containers:
+      - name: app
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "256Mi"

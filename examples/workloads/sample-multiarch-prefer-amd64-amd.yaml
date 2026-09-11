@@ -1,0 +1,61 @@
+# Multi-architecture + preference for AMD64 (x86_64) and AMD CPUs.
+# Use case: you build multi-arch images, but want to prefer amd64 + AMD CPU nodes for perf/cost.
+#
+# Notes:
+# - kubernetes.io/arch is the canonical arch label (amd64/arm64).
+# - "preferredDuringSchedulingIgnoredDuringExecution" is a SOFT preference.
+# - "requiredDuringSchedulingIgnoredDuringExecution" is a HARD requirement.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-multiarch-prefer-amd64-amd
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: sample-multiarch-prefer-amd64-amd
+  template:
+    metadata:
+      labels:
+        app: sample-multiarch-prefer-amd64-amd
+    spec:
+      # Hard requirement: only schedule on Linux nodes (avoid Windows pools).
+      nodeSelector:
+        kubernetes.io/os: linux
+
+      affinity:
+        nodeAffinity:
+          # HARD constraints (must match):
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              # Allow either amd64 or arm64 nodes (multi-arch image).
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64", "arm64"]
+
+          # SOFT preferences (scheduler will try, but can fall back):
+          preferredDuringSchedulingIgnoredDuringExecution:
+          # Prefer AMD64 nodes (common default for many workloads).
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]
+          # If you label nodes by CPU vendor (you must add this label yourself),
+          # prefer AMD CPU nodes. Tradeoff: custom labels must be maintained.
+          - weight: 20
+            preference:
+              matchExpressions:
+              - key: example.com/cpu-vendor
+                operator: In
+                values: ["amd"]
+
+      containers:
+      - name: app
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
