@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: karpenter-azure-environment
+  namespace: kube-system
+data:
+  environment.json: |
+    {
+      "name": "AzurePublicCloudEUAP",
+      "resourceManagerEndpoint": "https://eastus2euap.management.azure.com/",
+      "activeDirectoryEndpoint": "https://login.microsoftonline.com/",
+      "tokenAudience": "https://management.azure.com/"
+    }
