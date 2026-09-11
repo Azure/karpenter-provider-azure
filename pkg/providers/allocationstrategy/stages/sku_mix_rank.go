@@ -59,6 +59,12 @@ type recommendationGroup struct {
 	vmZones   map[string]sets.Set[string]
 }
 
+type recommendationGroupResult struct {
+	group   *recommendationGroup
+	details capacityrecommendation.RecommendationDetails
+	err     error
+}
+
 func NewSKUMixRankStage(provider capacityrecommendation.Provider, mode string) Stage {
 	return &skuMixRankStage{
 		provider: provider,
@@ -69,74 +75,47 @@ func NewSKUMixRankStage(provider capacityrecommendation.Provider, mode string) S
 func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []InstanceOffering) []InstanceOffering {
 	groups := buildRecommendationGroups(instanceOfferings)
 	recommendedOfferings := sets.New[string]()
+	results := make(chan recommendationGroupResult, len(groups))
+	requestCount := 0
 
 	for _, group := range groups {
 		if len(group.vmSizes) == 0 {
 			continue
 		}
-		details, err := s.provider.GetRecommendations(
-			ctx,
-			&capacityrecommendation.RankingInput{
-				VMSizes:      group.vmSizes,
-				Zones:        group.zones,
-				CapacityType: group.key.capacityType,
-				OSType:       group.key.osType,
-				Count:        initialRequestCount,
-			},
-		)
-		if err != nil {
-			log.FromContext(ctx).Error(err, "failed to get SKU Mix Placement recommendation",
-				"capacityType", group.key.capacityType,
-				"placementScope", group.key.placementScope,
-				"zones", group.zones,
+		requestCount++
+		go func() {
+			details, err := s.provider.GetRecommendations(
+				ctx,
+				&capacityrecommendation.RankingInput{
+					VMSizes:      group.vmSizes,
+					Zones:        group.zones,
+					CapacityType: group.key.capacityType,
+					OSType:       group.key.osType,
+					Count:        initialRequestCount,
+				},
 			)
+			result := recommendationGroupResult{group: group, details: details, err: err}
 			if s.mode == consts.ComputeRecommendationModeEnabled {
-				// If our API failed, we want to fail open so add all items in the group to recommended
-				// Note that the group only has maxRecommendationVMSizes so even in the case the API fails
-				// we won't be recommending more than that number of VM sizes to the caller.
-				addLocalCandidates(group, recommendedOfferings)
+				results <- result
+				return
+			} else {
+				// In non-enabled mode, we process the recommendation result immediately without collecting it in the channel since
+				// nothing is waiting for it anyway
+				s.processRecommendationResult(ctx, result, nil)
 			}
-			continue
-		}
-		recommendations := details.Recommendations
-		if len(recommendations) == 0 {
-			if s.mode == consts.ComputeRecommendationModeEnabled {
-				// If our API failed, we want to fail open so add all items in the group to recommended
-				// Note that the group only has maxRecommendationVMSizes so even in the case the API fails
-				// we won't be recommending more than that number of VM sizes to the caller.
-				addLocalCandidates(group, recommendedOfferings)
-			}
-			continue
-		}
-
-		comparison := compareRecommendationGroup(group, recommendations)
-		log.FromContext(ctx).V(1).Info("compared SKU Mix Placement recommendations with local ranking",
-			"capacityType", group.key.capacityType,
-			"capacityLimits", details.CapacityLimits,
-			"placementScope", group.key.placementScope,
-			"splitID", recommendations[0].ID,
-			"mode", s.mode,
-			"localRanking", comparison.localRanking,
-			"recommendedRanking", comparison.recommendedRanking,
-			"hasDifferences", len(comparison.differences) > 0,
-			"differences", comparison.differences,
-		)
-
-		if s.mode != consts.ComputeRecommendationModeEnabled {
-			continue
-		}
-		for _, recommendation := range recommendations {
-			key := offeringKey(recommendation.VMSize, recommendation.CapacityType, group.key.placementScope, recommendation.Zone)
-			recommendedOfferings.Insert(key)
-		}
+		}()
 	}
 
-	// The net result here is that we're just using the SKU Mix API to filter offerings. It does NOT reorder/reprioritize them
-	// currently due to the need to join the (up to) 4 recommendation groups into a single list. We have an outstanding ask to
-	// the team to allow us to ask for spot + dedicated (at least) in a single list so that we can get back a true "price-prioritized"
-	// list of recommendations without having to join the two lists together (which requires some external source of truth to order between
-	// the two lists). Once we have that, we can remove the re-ranking step below and rely on the SKU API to provide the correct ordering.
 	if s.mode == consts.ComputeRecommendationModeEnabled {
+		// Only join on the channel when the compute recommendation mode is enabled
+		for range requestCount {
+			s.processRecommendationResult(ctx, <-results, recommendedOfferings)
+		}
+		// The net result here is that we're just using the SKU Mix API to filter offerings. It does NOT reorder/reprioritize them
+		// currently due to the need to join the (up to) 4 recommendation groups into a single list. We have an outstanding ask to
+		// the team to allow us to ask for spot + dedicated (at least) in a single list so that we can get back a true "price-prioritized"
+		// list of recommendations without having to join the two lists together (which requires some external source of truth to order between
+		// the two lists). Once we have that, we can remove the re-ranking step below and rely on the SKU API to provide the correct ordering.
 		instanceOfferings = filterOfferingsByRecommended(instanceOfferings, recommendedOfferings)
 		// TODO: Currently we re-rank instance offerings because we don't 100% trust the SKU API response (see comments on placementChoiceIsBetter in capacityrecommendation.go).
 		// Once we have more confidence in the API, we can remove this re-ranking step and rely on the SKU API to provide the correct ordering.
@@ -144,6 +123,56 @@ func (s *skuMixRankStage) Process(ctx context.Context, instanceOfferings []Insta
 		instanceOfferings = rankInstanceOfferings(instanceOfferings)
 	}
 	return instanceOfferings
+}
+
+func (s *skuMixRankStage) processRecommendationResult(ctx context.Context, result recommendationGroupResult, recommendedOfferings sets.Set[string]) {
+	group := result.group
+	details := result.details
+	if result.err != nil {
+		log.FromContext(ctx).Error(result.err, "failed to get SKU Mix Placement recommendation",
+			"capacityType", group.key.capacityType,
+			"placementScope", group.key.placementScope,
+			"zones", group.zones,
+		)
+		if s.mode == consts.ComputeRecommendationModeEnabled {
+			// If our API failed, we want to fail open so add all items in the group to recommended
+			// Note that the group only has maxRecommendationVMSizes so even in the case the API fails
+			// we won't be recommending more than that number of VM sizes to the caller.
+			addLocalCandidates(group, recommendedOfferings)
+		}
+		return
+	}
+	recommendations := details.Recommendations
+	if len(recommendations) == 0 {
+		if s.mode == consts.ComputeRecommendationModeEnabled {
+			// If our API failed, we want to fail open so add all items in the group to recommended
+			// Note that the group only has maxRecommendationVMSizes so even in the case the API fails
+			// we won't be recommending more than that number of VM sizes to the caller.
+			addLocalCandidates(group, recommendedOfferings)
+		}
+		return
+	}
+
+	comparison := compareRecommendationGroup(group, recommendations)
+	log.FromContext(ctx).V(1).Info("compared SKU Mix Placement recommendations with local ranking",
+		"capacityType", group.key.capacityType,
+		"capacityLimits", details.CapacityLimits,
+		"placementScope", group.key.placementScope,
+		"splitID", recommendations[0].ID,
+		"mode", s.mode,
+		"localRanking", comparison.localRanking,
+		"recommendedRanking", comparison.recommendedRanking,
+		"hasDifferences", len(comparison.differences) > 0,
+		"differences", comparison.differences,
+	)
+
+	if s.mode != consts.ComputeRecommendationModeEnabled {
+		return
+	}
+	for _, recommendation := range recommendations {
+		key := offeringKey(recommendation.VMSize, recommendation.CapacityType, group.key.placementScope, recommendation.Zone)
+		recommendedOfferings.Insert(key)
+	}
 }
 
 func buildRecommendationGroups(instanceOfferings []InstanceOffering) []*recommendationGroup {

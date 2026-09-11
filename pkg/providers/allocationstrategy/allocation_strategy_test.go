@@ -467,7 +467,8 @@ func TestFilterInstanceOfferings_InvokesComputeRecommendationStageInLogMode(t *t
 
 	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
 	g.Expect([]string{filtered[0].InstanceType.Name, filtered[1].InstanceType.Name}).To(Equal([]string{"Standard_D2s_v5", "Standard_D4s_v5"}))
-	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
+	// Calls don't happen in-line so we wait for them for a few seconds
+	g.Eventually(client.PostBehavior.Calls, 5*time.Second).Should(Equal(1))
 	apiInput := client.PostBehavior.CalledWithInput.Pop()
 	g.Expect(apiInput.Location).To(Equal("eastus"))
 	g.Expect(*apiInput.Request.CapacityProfile.Priority).To(Equal(armrecommender.SKUMixPlacementPriorityRegular))
