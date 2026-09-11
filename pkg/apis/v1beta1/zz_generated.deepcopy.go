@@ -93,6 +93,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.OSDiskType != nil {
+		in, out := &in.OSDiskType, &out.OSDiskType
+		*out = new(OSDiskType)
+		**out = **in
+	}
 	if in.OSDiskSizeGB != nil {
 		in, out := &in.OSDiskSizeGB, &out.OSDiskSizeGB
 		*out = new(int32)
@@ -111,6 +116,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 	if in.FIPSMode != nil {
 		in, out := &in.FIPSMode, &out.FIPSMode
 		*out = new(FIPSMode)
+		**out = **in
+	}
+	if in.WorkloadRuntime != nil {
+		in, out := &in.WorkloadRuntime, &out.WorkloadRuntime
+		*out = new(WorkloadRuntime)
 		**out = **in
 	}
 	if in.Tags != nil {

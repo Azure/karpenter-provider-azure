@@ -61,7 +61,6 @@ func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
 		"memory.available":  "512Mi",
 		"nodefs.available":  "10%",
 		"nodefs.inodesFree": "5%",
-		"pid.available":     "2000",
 	}
 	g.Expect(configuration.EvictionHard).To(Equal(expectedHardThresholds))
 
@@ -83,8 +82,8 @@ func TestPrepareKubeletConfigurationSoftEvictionEnabled(t *testing.T) {
 
 	expectedEnforcement := []string{"pods", "kube-reserved", "system-reserved"}
 	g.Expect(configuration.EnforceNodeAllocatable).To(Equal(expectedEnforcement))
-	g.Expect(configuration.SystemReserved).To(HaveKeyWithValue("pid", "1000"))
-	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("pid", "1000"))
+	g.Expect(configuration.SystemReserved).ToNot(HaveKey("pid"))
+	g.Expect(configuration.KubeReserved).ToNot(HaveKey("pid"))
 }
 
 func TestPrepareKubeletConfigurationSoftEvictionDisabled(t *testing.T) {
@@ -110,9 +109,11 @@ func TestPrepareKubeletConfigurationSoftEvictionDisabledForBootstrappingClient(t
 	g := NewWithT(t)
 	configuration := prepareTestKubeletConfiguration(true, consts.ProvisionModeBootstrappingClient)
 
+	g.Expect(configuration.EvictionHard).ToNot(BeNil())
 	g.Expect(configuration.EvictionSoft).To(BeNil())
 	g.Expect(configuration.EvictionSoftGracePeriod).To(BeNil())
 	g.Expect(configuration.EvictionMaxPodGracePeriod).To(BeNil())
 	g.Expect(configuration.EnforceNodeAllocatable).To(BeNil())
 	g.Expect(configuration.SystemReserved).ToNot(HaveKey("pid"))
+	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("pid", "1000"))
 }
