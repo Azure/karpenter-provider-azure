@@ -1250,13 +1250,8 @@ var _ = Describe("InstanceType Provider", func() {
 				// the RP-parity path where a customer sets kubelet knobs via the
 				// AKSNodeClass without opting in to hardening.
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					EvictionHard: map[string]v1beta1.EvictionHardValue{
-						"memory.available": "333Mi",
-					},
-					KubeReserved: map[string]v1beta1.KubeReservedValue{
-						"cpu":    "250m",
-						"memory": "512Mi",
-					},
+					EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
+					KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1288,17 +1283,11 @@ var _ = Describe("InstanceType Provider", func() {
 					}),
 				)
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-					EvictionHard: map[string]v1beta1.EvictionHardValue{
-						"memory.available": "333Mi",
-					},
-					EvictionSoft: map[string]v1beta1.EvictionSoftValue{
-						"memory.available": "444Mi",
-					},
+					EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
+					EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("444Mi")},
+					EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
 					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
-					KubeReserved: map[string]v1beta1.KubeReservedValue{
-						"cpu":    "250m",
-						"memory": "512Mi",
-					},
+					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -3662,7 +3651,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "140m"
 			expectedMemory := "1638Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false, nil)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3676,7 +3665,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "100m"
 			expectedMemory := "1843Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false, nil)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3690,7 +3679,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "120m"
 			expectedMemory := "5611Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false, nil)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 

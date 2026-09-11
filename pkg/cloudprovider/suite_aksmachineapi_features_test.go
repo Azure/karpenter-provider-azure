@@ -482,17 +482,17 @@ var _ = Describe("CloudProvider", func() {
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					FailSwapOn:                  lo.ToPtr(false),
-					KubeReserved:                map[string]v1beta1.KubeReservedValue{"cpu": "250m", "memory": "512Mi"},
-					EvictionHard: map[string]v1beta1.EvictionHardValue{
-						"memory.available":  "333Mi",
-						"nodefs.available":  "12%",
-						"nodefs.inodesFree": "7%",
+					KubeReserved:                &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+					EvictionHard: &v1beta1.EvictionThreshold{
+						MemoryAvailable:  lo.ToPtr("333Mi"),
+						NodeFsAvailable:  lo.ToPtr("12%"),
+						NodeFsInodesFree: lo.ToPtr("7%"),
 					},
-					EvictionSoft: map[string]v1beta1.EvictionSoftValue{
-						"memory.available": "500Mi",
+					EvictionSoft: &v1beta1.EvictionThreshold{
+						MemoryAvailable: lo.ToPtr("500Mi"),
 					},
-					EvictionSoftGracePeriod: map[string]metav1.Duration{
-						"memory.available": {Duration: 90 * time.Second},
+					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+						MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}),
 					},
 					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 				}

@@ -33,20 +33,17 @@ import (
 var _ = Describe("KubeletConfig", func() {
 	It("should apply kubeReserved, evictionHard, and evictionSoft overrides to the node", func() {
 		nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-			KubeReserved: map[string]v1beta1.KubeReservedValue{
-				"cpu":    "250m",
-				"memory": "512Mi",
+			KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+			EvictionHard: &v1beta1.EvictionThreshold{
+				MemoryAvailable:  lo.ToPtr("333Mi"),
+				NodeFsAvailable:  lo.ToPtr("12%"),
+				NodeFsInodesFree: lo.ToPtr("7%"),
 			},
-			EvictionHard: map[string]v1beta1.EvictionHardValue{
-				"memory.available":  "333Mi",
-				"nodefs.available":  "12%",
-				"nodefs.inodesFree": "7%",
+			EvictionSoft: &v1beta1.EvictionThreshold{
+				MemoryAvailable: lo.ToPtr("500Mi"),
 			},
-			EvictionSoft: map[string]v1beta1.EvictionSoftValue{
-				"memory.available": "500Mi",
-			},
-			EvictionSoftGracePeriod: map[string]metav1.Duration{
-				"memory.available": {Duration: 90 * time.Second},
+			EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+				MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}),
 			},
 			EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 		}

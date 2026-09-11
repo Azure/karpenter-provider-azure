@@ -375,7 +375,7 @@ func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableN
 	}
 }
 
-func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
+func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNodeHardening bool, overrides map[string]string) corev1.ResourceList {
 	reservedMemoryMiB := int64(1024 * reservedMemoryTaxGi.Calculate(float64(totalMemoryMiB)/1024))
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
 
@@ -389,7 +389,7 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 	}
 	if len(overrides) > 0 {
 		for _, resourceName := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
-			if value, ok := overrides[0][string(resourceName)]; ok {
+			if value, ok := overrides[string(resourceName)]; ok {
 				if quantity, err := resource.ParseQuantity(value); err == nil {
 					resources[resourceName] = quantity
 				}
@@ -400,14 +400,14 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 	return resources
 }
 
-func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool, overrides ...map[string]string) corev1.ResourceList {
+func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool, overrides map[string]string) corev1.ResourceList {
 	return corev1.ResourceList{
 		corev1.ResourceMemory:           memoryEvictionThreshold(totalMemoryMiB, enableNodeHardening, overrides),
 		corev1.ResourceEphemeralStorage: ephemeralStorageEvictionThreshold(ephemeralStorageCapacity, overrides),
 	}
 }
 
-func memoryEvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides []map[string]string) resource.Quantity {
+func memoryEvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, overrides map[string]string) resource.Quantity {
 	memory := resource.MustParse(DefaultMemoryAvailable)
 	if enableNodeHardening {
 		_, hardMemoryMiB := evictionMemoryLadder(totalMemoryMiB)
@@ -417,7 +417,7 @@ func memoryEvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, ove
 		return memory
 	}
 	// Values are validated at CRD admission; an unexpected parse failure here falls back to the computed default.
-	value, ok := overrides[0][MemoryAvailable]
+	value, ok := overrides[MemoryAvailable]
 	if !ok {
 		return memory
 	}
@@ -431,7 +431,7 @@ func memoryEvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, ove
 	return memory
 }
 
-func ephemeralStorageEvictionThreshold(ephemeralStorageCapacity resource.Quantity, overrides []map[string]string) resource.Quantity {
+func ephemeralStorageEvictionThreshold(ephemeralStorageCapacity resource.Quantity, overrides map[string]string) resource.Quantity {
 	// Kubelet parses percentage eviction thresholds as float32, converts them
 	// to float64 for multiplication, and truncates the result to bytes.
 	storagePercentage := float32(hardEvictionNodeFSAvailablePercent) / 100
@@ -450,12 +450,9 @@ func ephemeralStorageEvictionThreshold(ephemeralStorageCapacity resource.Quantit
 	return *resource.NewQuantity(storageBytes, resource.BinarySI)
 }
 
-// overrideValue returns the customer override for key, if the optional overrides map is present.
-func overrideValue(overrides []map[string]string, key string) (string, bool) {
-	if len(overrides) == 0 {
-		return "", false
-	}
-	value, ok := overrides[0][key]
+// overrideValue returns the customer override for key, if present.
+func overrideValue(overrides map[string]string, key string) (string, bool) {
+	value, ok := overrides[key]
 	return value, ok
 }
 

@@ -154,6 +154,93 @@ spec:
                     - none
                     - static
                     type: string
+                  evictionHard:
+                    description: |-
+                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                    type: object
+                  evictionMaxPodGracePeriod:
+                    description: |-
+                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  evictionSoft:
+                    description: |-
+                      evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Each configured threshold must have a matching field in evictionSoftGracePeriod.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                    type: object
+                  evictionSoftGracePeriod:
+                    description: |-
+                      evictionSoftGracePeriod configures grace periods for soft eviction signals.
+                      Each configured grace period must have a matching field in evictionSoft.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the grace period for the memoryAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: memoryAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the grace period for the nodeFsAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the grace period for the
+                          nodeFsInodesFree signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsInodesFree must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                    type: object
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
@@ -182,6 +269,24 @@ spec:
                     maximum: 100
                     minimum: 0
                     type: integer
+                  kubeReserved:
+                    description: |-
+                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      cpuMillicores:
+                        description: cpuMillicores is the CPU reservation in millicores.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 1
+                        type: integer
+                      memoryMB:
+                        description: memoryMB is the memory reservation in MiB.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 1
+                        type: integer
+                    type: object
                   podPidsLimit:
                     description: |-
                       podPidsLimit is the maximum number of PIDs in any pod.
@@ -212,6 +317,21 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+                - message: evictionSoft.memoryAvailable and evictionSoftGracePeriod.memoryAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.memoryAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.memoryAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.memoryAvailable)'
+                - message: evictionSoft.nodeFsAvailable and evictionSoftGracePeriod.nodeFsAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsAvailable)'
+                - message: evictionSoft.nodeFsInodesFree and evictionSoftGracePeriod.nodeFsInodesFree
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsInodesFree)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsInodesFree)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsInodesFree)'
               linuxOSConfig:
                 description: |-
                   linuxOSConfig specifies OS settings for Linux agent nodes.
@@ -1103,69 +1223,92 @@ spec:
                     - static
                     type: string
                   evictionHard:
-                    additionalProperties:
-                      maxLength: 20
-                      pattern: ^([0-9]+(Ki|Mi|Gi)?|([0-9]|[1-9][0-9]|100)%)$
-                      type: string
                     description: |-
-                      EvictionHard maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to quantities and overrides Karpenter's defaults per key.
-                      It matches AKS `kubeletConfig.hardEvictionThreshold`.
-                    maxProperties: 3
+                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
                     type: object
-                    x-kubernetes-validations:
-                    - message: evictionHard supports only memory.available, nodefs.available,
-                        and nodefs.inodesFree
-                      rule: self.all(key, key == 'memory.available' || key == 'nodefs.available'
-                        || key == 'nodefs.inodesFree')
-                    - message: memory.available and nodefs.available must be integer
-                        Ki, Mi, or Gi quantities or percentages; nodefs.inodesFree
-                        must be an integer count or percentage
-                      rule: 'self.all(key, key == ''nodefs.inodesFree'' ? !self[key].endsWith(''Ki'')
-                        && !self[key].endsWith(''Mi'') && !self[key].endsWith(''Gi'')
-                        : self[key].endsWith(''Ki'') || self[key].endsWith(''Mi'')
-                        || self[key].endsWith(''Gi'') || self[key].endsWith(''%''))'
                   evictionMaxPodGracePeriod:
                     description: |-
                       evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
-                      It matches AKS `kubeletConfig.evictionMaxPodGracePeriodInSeconds`.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
                     format: int32
                     minimum: 0
                     type: integer
                   evictionSoft:
-                    additionalProperties:
-                      maxLength: 20
-                      pattern: ^([0-9]+(Ki|Mi|Gi)?|([0-9]|[1-9][0-9]|100)%)$
-                      type: string
                     description: |-
-                      EvictionSoft maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to quantities and overrides Karpenter's soft eviction thresholds per key.
-                      It matches AKS `kubeletConfig.softEvictionThreshold`. Each soft threshold must be paired with a grace period in evictionSoftGracePeriod.
-                    maxProperties: 3
+                      evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
+                      Each configured threshold must have a matching field in evictionSoftGracePeriod.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the available-memory threshold
+                          as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the available-node-filesystem
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the free-inodes threshold
+                          as an integer count or percentage.
+                        maxLength: 20
+                        pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
+                        type: string
                     type: object
-                    x-kubernetes-validations:
-                    - message: evictionSoft supports only memory.available, nodefs.available,
-                        and nodefs.inodesFree
-                      rule: self.all(key, key == 'memory.available' || key == 'nodefs.available'
-                        || key == 'nodefs.inodesFree')
-                    - message: memory.available and nodefs.available must be integer
-                        Ki, Mi, or Gi quantities or percentages; nodefs.inodesFree
-                        must be an integer count or percentage
-                      rule: 'self.all(key, key == ''nodefs.inodesFree'' ? !self[key].endsWith(''Ki'')
-                        && !self[key].endsWith(''Mi'') && !self[key].endsWith(''Gi'')
-                        : self[key].endsWith(''Ki'') || self[key].endsWith(''Mi'')
-                        || self[key].endsWith(''Gi'') || self[key].endsWith(''%''))'
                   evictionSoftGracePeriod:
-                    additionalProperties:
-                      type: string
                     description: |-
-                      EvictionSoftGracePeriod maps supported eviction signals (`memory.available`, `nodefs.available`, `nodefs.inodesFree`) to grace periods and overrides Karpenter's defaults per key.
-                      It matches AKS `kubeletConfig.softEvictionGracePeriod`.
-                    maxProperties: 3
+                      evictionSoftGracePeriod configures grace periods for soft eviction signals.
+                      Each configured grace period must have a matching field in evictionSoft.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      memoryAvailable:
+                        description: memoryAvailable is the grace period for the memoryAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: memoryAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsAvailable:
+                        description: nodeFsAvailable is the grace period for the nodeFsAvailable
+                          signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsAvailable must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
+                      nodeFsInodesFree:
+                        description: nodeFsInodesFree is the grace period for the
+                          nodeFsInodesFree signal.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: nodeFsInodesFree must be a valid duration of at
+                            least 30s
+                          rule: duration(self) >= duration('30s')
                     type: object
-                    x-kubernetes-validations:
-                    - message: evictionSoftGracePeriod supports only memory.available,
-                        nodefs.available, and nodefs.inodesFree
-                      rule: self.all(key, key == 'memory.available' || key == 'nodefs.available'
-                        || key == 'nodefs.inodesFree')
                   failSwapOn:
                     description: |-
                       failSwapOn tells the kubelet to fail to start if swap is enabled on the node.
@@ -1195,23 +1338,23 @@ spec:
                     minimum: 0
                     type: integer
                   kubeReserved:
-                    additionalProperties:
-                      maxLength: 20
-                      pattern: ^([1-9][0-9]*m|[1-9][0-9]*(Mi|Gi)?)$
-                      type: string
                     description: |-
-                      KubeReserved maps supported resource names (`cpu`, `memory`) to reserved values and overrides Karpenter's computed defaults per key.
-                      It matches AKS `kubeletConfig.cpuReserved` and `memoryReserved`.
-                    maxProperties: 2
+                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    properties:
+                      cpuMillicores:
+                        description: cpuMillicores is the CPU reservation in millicores.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 1
+                        type: integer
+                      memoryMB:
+                        description: memoryMB is the memory reservation in MiB.
+                        format: int32
+                        maximum: 2147483647
+                        minimum: 1
+                        type: integer
                     type: object
-                    x-kubernetes-validations:
-                    - message: kubeReserved supports only cpu and memory
-                      rule: self.all(key, key == 'cpu' || key == 'memory')
-                    - message: kubeReserved cpu must be positive whole cores or millicores
-                        and memory must be positive whole MiB or GiB
-                      rule: 'self.all(key, key == ''cpu'' ? !self[key].endsWith(''Mi'')
-                        && !self[key].endsWith(''Gi'') : self[key].endsWith(''Mi'')
-                        || self[key].endsWith(''Gi''))'
                   podPidsLimit:
                     description: |-
                       podPidsLimit is the maximum number of PIDs in any pod.
@@ -1242,6 +1385,21 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+                - message: evictionSoft.memoryAvailable and evictionSoftGracePeriod.memoryAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.memoryAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.memoryAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.memoryAvailable)'
+                - message: evictionSoft.nodeFsAvailable and evictionSoftGracePeriod.nodeFsAvailable
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsAvailable)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsAvailable)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsAvailable)'
+                - message: evictionSoft.nodeFsInodesFree and evictionSoftGracePeriod.nodeFsInodesFree
+                    must be configured together
+                  rule: 'has(self.evictionSoft) && has(self.evictionSoft.nodeFsInodesFree)
+                    ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsInodesFree)
+                    : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsInodesFree)'
               linuxOSConfig:
                 description: |-
                   linuxOSConfig specifies OS settings for Linux agent nodes.

@@ -18,6 +18,7 @@ package v1alpha2_test
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -28,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -90,6 +92,34 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			},
 		}
+	})
+	Context("Kubelet overrides", func() {
+		It("should preserve supported fields", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{
+					KubeReserved:              &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(750))},
+					EvictionSoft:              &v1alpha2.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod:   &v1alpha2.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			persisted := &v1alpha2.AKSNodeClass{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), persisted)).To(Succeed())
+			Expect(persisted.Spec.Kubelet.KubeReserved.CPUMillicores).To(Equal(lo.ToPtr(int32(250))))
+		})
+
+		It("should reject mismatched soft eviction and grace period fields", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{
+					EvictionSoft:            &v1alpha2.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod: &v1alpha2.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
 	})
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {

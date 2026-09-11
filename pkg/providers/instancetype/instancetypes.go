@@ -161,8 +161,10 @@ func (p *DefaultProvider) List(
 		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
 	if nodeClass.Spec.Kubelet != nil {
-		instanceTypeParams.KubeReserved = copySelectedValues(nodeClass.Spec.Kubelet.KubeReserved, string(corev1.ResourceCPU), string(corev1.ResourceMemory))
-		instanceTypeParams.EvictionHard = copySelectedValues(nodeClass.Spec.Kubelet.EvictionHard, MemoryAvailable, NodeFSAvailable)
+		// These values do not filter SKUs, but they change scheduling simulation by changing
+		// allocatable resources. Include them so NodeClasses cannot share incompatible cached results.
+		instanceTypeParams.KubeReserved = kubeReservedOverrides(nodeClass.Spec.Kubelet.KubeReserved)
+		instanceTypeParams.EvictionHard = evictionHardOverrides(nodeClass.Spec.Kubelet.EvictionHard)
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
@@ -188,14 +190,38 @@ func (p *DefaultProvider) List(
 	return append([]*cloudprovider.InstanceType{}, result...), nil
 }
 
-func copySelectedValues[T ~string](values map[string]T, keys ...string) map[string]string {
-	selected := map[string]string{}
-	for _, key := range keys {
-		if value, ok := values[key]; ok {
-			selected[key] = string(value)
-		}
+func kubeReservedOverrides(config *v1beta1.KubeReserved) map[string]string {
+	if config == nil {
+		return nil
 	}
-	return selected
+	overrides := map[string]string{}
+	if config.CPUMillicores != nil {
+		overrides[string(corev1.ResourceCPU)] = fmt.Sprintf("%dm", *config.CPUMillicores)
+	}
+	if config.MemoryMB != nil {
+		overrides[string(corev1.ResourceMemory)] = fmt.Sprintf("%dMi", *config.MemoryMB)
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
+}
+
+func evictionHardOverrides(config *v1beta1.EvictionThreshold) map[string]string {
+	if config == nil {
+		return nil
+	}
+	overrides := map[string]string{}
+	if config.MemoryAvailable != nil {
+		overrides[MemoryAvailable] = *config.MemoryAvailable
+	}
+	if config.NodeFsAvailable != nil {
+		overrides[NodeFSAvailable] = *config.NodeFsAvailable
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
 }
 
 func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {

@@ -19,14 +19,12 @@ package instance
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -112,10 +110,10 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// see batch_field_registry.go — ClearPerMachineFields must cover any new per-machine
 	// MachineProperties field so batch grouping and header extraction stay correct.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
-	kubeletConfig, err := configureKubeletConfig(nodeClass)
-	if err != nil {
-		return nil, fmt.Errorf("configuring kubelet for AKS Machine API: %w", err)
-	}
+	// TODO: Resolve one effective kubelet configuration for scheduling, AKSScriptless, and
+	// AKSMachineAPI so omitted defaults cannot drift. Preserve CustomNodeConfigPreview gating
+	// instead of sending preview-only computed defaults on every Machine request.
+	kubeletConfig := configureKubeletConfig(nodeClass)
 
 	return &armcontainerservice.Machine{
 		// BATCH: Zones is a per-machine field (selected from instance type offerings).
@@ -402,12 +400,15 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	return tags
 }
 
+// Reservation and eviction fields require CustomNodeConfigPreview registration. Document the
+// rollout requirements for any additional preview-only fields before adding them to this payload.
+//
 //nolint:gocyclo // borderline complexity violation, code is not hard to read
-func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) (*armcontainerservice.KubeletConfig, error) {
+func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.KubeletConfig {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
 
 	if nodeClass == nil || nodeClass.Spec.Kubelet == nil {
-		return nil, nil
+		return nil
 	}
 
 	kubeletConfig := &armcontainerservice.KubeletConfig{}
@@ -448,119 +449,61 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) (*armcontainerservi
 
 	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
 
-	if len(nodeClass.Spec.Kubelet.KubeReserved) > 0 {
-		kubeReserved, err := configureAKSMachineKubeReserved(nodeClass.Spec.Kubelet.KubeReserved)
-		if err != nil {
-			return nil, err
-		}
-		kubeletConfig.KubeReserved = kubeReserved
+	if nodeClass.Spec.Kubelet.KubeReserved != nil {
+		kubeletConfig.KubeReserved = configureAKSMachineKubeReserved(nodeClass.Spec.Kubelet.KubeReserved)
 	}
-	if len(nodeClass.Spec.Kubelet.EvictionHard) > 0 {
-		hardEvictionThreshold, err := configureAKSMachineHardEviction(nodeClass.Spec.Kubelet.EvictionHard)
-		if err != nil {
-			return nil, err
-		}
-		kubeletConfig.HardEvictionThreshold = hardEvictionThreshold
+	if nodeClass.Spec.Kubelet.EvictionHard != nil {
+		kubeletConfig.HardEvictionThreshold = configureAKSMachineHardEviction(nodeClass.Spec.Kubelet.EvictionHard)
 	}
-	if len(nodeClass.Spec.Kubelet.EvictionSoft) > 0 {
-		softEvictionThreshold, err := configureAKSMachineSoftEviction(nodeClass.Spec.Kubelet.EvictionSoft)
-		if err != nil {
-			return nil, err
-		}
-		kubeletConfig.SoftEvictionThreshold = softEvictionThreshold
+	if nodeClass.Spec.Kubelet.EvictionSoft != nil {
+		kubeletConfig.SoftEvictionThreshold = configureAKSMachineSoftEviction(nodeClass.Spec.Kubelet.EvictionSoft)
 	}
-	if len(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod) > 0 {
-		softEvictionGracePeriod, err := configureAKSMachineSoftEvictionGracePeriod(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod)
-		if err != nil {
-			return nil, err
-		}
-		kubeletConfig.SoftEvictionGracePeriod = softEvictionGracePeriod
+	if nodeClass.Spec.Kubelet.EvictionSoftGracePeriod != nil {
+		kubeletConfig.SoftEvictionGracePeriod = configureAKSMachineSoftEvictionGracePeriod(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod)
 	}
 	if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
 		kubeletConfig.EvictionMaxPodGracePeriodInSeconds = lo.ToPtr(*nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod)
 	}
 
-	return kubeletConfig, nil
+	return kubeletConfig
 }
 
-func configureAKSMachineKubeReserved(overrides map[string]v1beta1.KubeReservedValue) (*armcontainerservice.KubeReserved, error) {
-	result := &armcontainerservice.KubeReserved{}
-	for key, value := range overrides {
-		quantity, err := resource.ParseQuantity(string(value))
-		if err != nil {
-			return nil, fmt.Errorf("invalid kubeReserved[%q] value %q: %w", key, value, err)
-		}
-		switch key {
-		case string(v1.ResourceCPU):
-			milliValue := quantity.MilliValue()
-			if milliValue < math.MinInt32 || milliValue > math.MaxInt32 || quantity.Cmp(*resource.NewMilliQuantity(milliValue, resource.DecimalSI)) != 0 {
-				return nil, fmt.Errorf("kubeReserved[%q] value %q cannot be represented as whole millicores", key, value)
-			}
-			result.CPUMillicores = lo.ToPtr(int32(milliValue))
-		case string(v1.ResourceMemory):
-			bytes := quantity.Value()
-			const bytesPerMiB = int64(1024 * 1024)
-			memoryMiB := bytes / bytesPerMiB
-			if bytes%bytesPerMiB != 0 || memoryMiB < math.MinInt32 || memoryMiB > math.MaxInt32 {
-				return nil, fmt.Errorf("kubeReserved[%q] value %q cannot be represented as whole MiB", key, value)
-			}
-			result.MemoryMB = lo.ToPtr(int32(memoryMiB))
-		default:
-			return nil, fmt.Errorf("kubeReserved[%q] is not supported by the AKS Machine API", key)
-		}
+func configureAKSMachineKubeReserved(config *v1beta1.KubeReserved) *armcontainerservice.KubeReserved {
+	return &armcontainerservice.KubeReserved{
+		CPUMillicores: config.CPUMillicores,
+		MemoryMB:      config.MemoryMB,
 	}
-	return result, nil
 }
 
-func configureAKSMachineHardEviction(overrides map[string]v1beta1.EvictionHardValue) (*armcontainerservice.HardEvictionThreshold, error) {
-	result := &armcontainerservice.HardEvictionThreshold{}
-	for key, value := range overrides {
-		switch key {
-		case instancetype.MemoryAvailable:
-			result.MemoryAvailable = lo.ToPtr(string(value))
-		case instancetype.NodeFSAvailable:
-			result.NodeFsAvailable = lo.ToPtr(string(value))
-		case instancetype.NodeFSInodesFree:
-			result.NodeFsInodesFree = lo.ToPtr(string(value))
-		default:
-			return nil, fmt.Errorf("evictionHard[%q] is not supported by the AKS Machine API", key)
-		}
+func configureAKSMachineHardEviction(config *v1beta1.EvictionThreshold) *armcontainerservice.HardEvictionThreshold {
+	return &armcontainerservice.HardEvictionThreshold{
+		MemoryAvailable:  config.MemoryAvailable,
+		NodeFsAvailable:  config.NodeFsAvailable,
+		NodeFsInodesFree: config.NodeFsInodesFree,
 	}
-	return result, nil
 }
 
-func configureAKSMachineSoftEviction(overrides map[string]v1beta1.EvictionSoftValue) (*armcontainerservice.SoftEvictionThreshold, error) {
-	result := &armcontainerservice.SoftEvictionThreshold{}
-	for key, value := range overrides {
-		switch key {
-		case instancetype.MemoryAvailable:
-			result.MemoryAvailable = lo.ToPtr(string(value))
-		case instancetype.NodeFSAvailable:
-			result.NodeFsAvailable = lo.ToPtr(string(value))
-		case instancetype.NodeFSInodesFree:
-			result.NodeFsInodesFree = lo.ToPtr(string(value))
-		default:
-			return nil, fmt.Errorf("evictionSoft[%q] is not supported by the AKS Machine API", key)
-		}
+func configureAKSMachineSoftEviction(config *v1beta1.EvictionThreshold) *armcontainerservice.SoftEvictionThreshold {
+	return &armcontainerservice.SoftEvictionThreshold{
+		MemoryAvailable:  config.MemoryAvailable,
+		NodeFsAvailable:  config.NodeFsAvailable,
+		NodeFsInodesFree: config.NodeFsInodesFree,
 	}
-	return result, nil
 }
 
-func configureAKSMachineSoftEvictionGracePeriod(overrides map[string]metav1.Duration) (*armcontainerservice.SoftEvictionGracePeriod, error) {
-	result := &armcontainerservice.SoftEvictionGracePeriod{}
-	for key, value := range overrides {
-		switch key {
-		case instancetype.MemoryAvailable:
-			result.MemoryAvailable = lo.ToPtr(value.Duration.String())
-		case instancetype.NodeFSAvailable:
-			result.NodeFsAvailable = lo.ToPtr(value.Duration.String())
-		case instancetype.NodeFSInodesFree:
-			result.NodeFsInodesFree = lo.ToPtr(value.Duration.String())
-		default:
-			return nil, fmt.Errorf("evictionSoftGracePeriod[%q] is not supported by the AKS Machine API", key)
-		}
+func configureAKSMachineSoftEvictionGracePeriod(config *v1beta1.EvictionSoftGracePeriod) *armcontainerservice.SoftEvictionGracePeriod {
+	return &armcontainerservice.SoftEvictionGracePeriod{
+		MemoryAvailable:  durationString(config.MemoryAvailable),
+		NodeFsAvailable:  durationString(config.NodeFsAvailable),
+		NodeFsInodesFree: durationString(config.NodeFsInodesFree),
 	}
-	return result, nil
+}
+
+func durationString(value *metav1.Duration) *string {
+	if value == nil {
+		return nil
+	}
+	return lo.ToPtr(value.Duration.String())
 }
 
 // convertContainerLogMaxSizeToMB converts string size to MB integer

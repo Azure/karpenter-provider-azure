@@ -610,17 +610,15 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 	Context("configureKubeletConfig", func() {
 		It("should return nil when nodeClass is nil", func() {
-			config, err := configureKubeletConfig(nil)
+			config := configureKubeletConfig(nil)
 
-			Expect(err).ToNot(HaveOccurred())
 			Expect(config).To(BeNil())
 		})
 
 		It("should return nil when kubelet spec is nil", func() {
 			nodeClass.Spec.Kubelet = nil
-			config, err := configureKubeletConfig(nodeClass)
+			config := configureKubeletConfig(nodeClass)
 
-			Expect(err).ToNot(HaveOccurred())
 			Expect(config).To(BeNil())
 		})
 
@@ -637,9 +635,8 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				PodPidsLimit:                lo.ToPtr(int64(2048)),
 			}
 
-			config, err := configureKubeletConfig(nodeClass)
+			config := configureKubeletConfig(nodeClass)
 
-			Expect(err).ToNot(HaveOccurred())
 			Expect(config).ToNot(BeNil())
 			Expect(*config.CPUManagerPolicy).To(Equal("static"))
 			Expect(*config.CPUCfsQuota).To(BeTrue())
@@ -663,9 +660,8 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				PodPidsLimit:         nil,             // Nil should stay nil
 			}
 
-			config, err := configureKubeletConfig(nodeClass)
+			config := configureKubeletConfig(nodeClass)
 
-			Expect(err).ToNot(HaveOccurred())
 			Expect(config.CPUManagerPolicy).To(BeNil())
 			Expect(*config.CPUCfsQuota).To(BeFalse())
 			Expect(config.AllowedUnsafeSysctls).To(BeNil())
@@ -676,28 +672,27 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 		It("should configure supported reservation and eviction overrides", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
-				KubeReserved: map[string]v1beta1.KubeReservedValue{"cpu": "250m", "memory": "512Mi"},
-				EvictionHard: map[string]v1beta1.EvictionHardValue{
-					"memory.available":  "333Mi",
-					"nodefs.available":  "12%",
-					"nodefs.inodesFree": "7%",
+				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+				EvictionHard: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("333Mi"),
+					NodeFsAvailable:  lo.ToPtr("12%"),
+					NodeFsInodesFree: lo.ToPtr("7%"),
 				},
-				EvictionSoft: map[string]v1beta1.EvictionSoftValue{
-					"memory.available":  "500Mi",
-					"nodefs.available":  "15%",
-					"nodefs.inodesFree": "10%",
+				EvictionSoft: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("500Mi"),
+					NodeFsAvailable:  lo.ToPtr("15%"),
+					NodeFsInodesFree: lo.ToPtr("10%"),
 				},
-				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					"memory.available":  {Duration: 90 * time.Second},
-					"nodefs.available":  {Duration: 2 * time.Minute},
-					"nodefs.inodesFree": {Duration: 2 * time.Minute},
+				EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+					MemoryAvailable:  lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}),
+					NodeFsAvailable:  lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute}),
+					NodeFsInodesFree: lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute}),
 				},
 				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 			}
 
-			config, err := configureKubeletConfig(nodeClass)
+			config := configureKubeletConfig(nodeClass)
 
-			Expect(err).ToNot(HaveOccurred())
 			Expect(*config.KubeReserved.CPUMillicores).To(Equal(int32(250)))
 			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(512)))
 			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
