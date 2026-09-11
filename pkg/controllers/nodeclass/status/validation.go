@@ -84,6 +84,10 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	}
 
 	// All validations passed - requeue to detect permission revocations
+	condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+	if condition.IsFalse() && condition.ObservedGeneration == nodeClass.Generation && condition.Reason != DiskEncryptionSetRBACMissing {
+		return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+	}
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
 }
