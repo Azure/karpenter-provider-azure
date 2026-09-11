@@ -219,7 +219,7 @@ func ExpectScheduledNodeClaimsCreated(
 ) []*karpv1.NodeClaim {
 	GinkgoHelper()
 
-	var nodeClaims []*karpv1.NodeClaim
+	nodeClaims := make([]*karpv1.NodeClaim, 0, len(claims))
 	for _, m := range claims {
 		nodeClaimName, err := coreProvisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
 		Expect(err).ToNot(HaveOccurred())
