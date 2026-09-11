@@ -1930,6 +1930,14 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              osDiskType:
+                description: |-
+                  osDiskType is the type of disk to use for the OS.
+                  If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+                  of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
+                enum:
+                - Managed
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields

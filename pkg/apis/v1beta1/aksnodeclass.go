@@ -32,6 +32,12 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+type OSDiskType string
+
+var (
+	OSDiskTypeManaged = OSDiskType("Managed")
+)
+
 // +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation}
 type WorkloadRuntime string
 
@@ -80,6 +86,12 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// osDiskType is the type of disk to use for the OS.
+	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
+	// +kubebuilder:validation:Enum:={Managed}
+	// +optional
+	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +default=128
 	// +kubebuilder:validation:Minimum=30
