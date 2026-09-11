@@ -362,6 +362,7 @@ az-creds: ## Get cluster credentials
 
 az-run: ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
 	az acr login -n $(AZURE_ACR_NAME)
+	kubectl apply -f karpenter-azure-environment.yaml
 	skaffold run
 
 az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
