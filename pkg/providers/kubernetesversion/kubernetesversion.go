@@ -70,14 +70,20 @@ func (p *kubernetesVersionProvider) KubeServerVersion(ctx context.Context) (stri
 	return version, nil
 }
 
-func (p *kubernetesVersionProvider) IsSupported(ctx context.Context, kubernetesVersion string) (bool, error) {
+func (p *kubernetesVersionProvider) IsSupported(
+	ctx context.Context,
+	kubernetesVersion string,
+) (bool, error) {
 	resp, err := p.managedClustersClient.ListKubernetesVersions(ctx, p.location, nil)
 	if err != nil {
 		return false, err
 	}
 
 	for _, version := range resp.Values {
-		if version != nil && *version.Version == kubernetesVersion {
+		if version == nil {
+			continue
+		}
+		if _, ok := version.PatchVersions[kubernetesVersion]; ok {
 			return true, nil
 		}
 	}
