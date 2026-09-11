@@ -96,7 +96,6 @@ func main() {
 			op.InClusterKubernetesInterface,
 			op.KubernetesInterface,
 			op.ManagedDynamicInterface,
-			op.AZClient.ManagedClustersClient(),
 			op.AZClient.SubnetsClient(),
 			op.AZClient.DiskEncryptionSetsClient(),
 			options.FromContext(ctx).ParsedDiskEncryptionSetID,

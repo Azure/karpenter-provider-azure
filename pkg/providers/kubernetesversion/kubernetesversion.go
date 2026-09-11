@@ -20,6 +20,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -32,18 +33,23 @@ const (
 
 type KubernetesVersionProvider interface {
 	KubeServerVersion(ctx context.Context) (string, error)
+	IsSupported(ctx context.Context, kubernetesVersion string) (bool, error)
 }
 
 type kubernetesVersionProvider struct {
 	kubernetesInterface    kubernetes.Interface
 	kubernetesVersionCache *cache.Cache
+	managedClustersClient  azapi.AKSManagedClustersAPI
+	location               string
 	cm                     *pretty.ChangeMonitor
 }
 
-func NewKubernetesVersionProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache) *kubernetesVersionProvider {
+func NewKubernetesVersionProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, managedClustersClient azapi.AKSManagedClustersAPI, location string) *kubernetesVersionProvider {
 	return &kubernetesVersionProvider{
 		kubernetesInterface:    kubernetesInterface,
 		kubernetesVersionCache: kubernetesVersionCache,
+		managedClustersClient:  managedClustersClient,
+		location:               location,
 		cm:                     pretty.NewChangeMonitor(),
 	}
 }
@@ -62,4 +68,18 @@ func (p *kubernetesVersionProvider) KubeServerVersion(ctx context.Context) (stri
 		log.FromContext(ctx).V(1).Info("discovered kubernetes version", "kubernetesVersion", version)
 	}
 	return version, nil
+}
+
+func (p *kubernetesVersionProvider) IsSupported(ctx context.Context, kubernetesVersion string) (bool, error) {
+	resp, err := p.managedClustersClient.ListKubernetesVersions(ctx, p.location, nil)
+	if err != nil {
+		return false, err
+	}
+
+	for _, version := range resp.Values {
+		if version != nil && *version.Version == kubernetesVersion {
+			return true, nil
+		}
+	}
+	return false, nil
 }

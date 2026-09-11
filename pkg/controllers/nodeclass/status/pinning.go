@@ -14,7 +14,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 
@@ -42,16 +41,14 @@ var (
 type PinningReconciler struct {
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
 	nodeImageProvider         imagefamily.NodeImageProvider
-	managedClustersClient     azapi.AKSManagedClustersAPI
 	cm                        *pretty.ChangeMonitor
 }
 
 // NewPinningReconciler creates a new instance of the PinningReconciler.
-func NewPinningReconciler(k8sProvider kubernetesversion.KubernetesVersionProvider, imgProvider imagefamily.NodeImageProvider, managedClustersClient azapi.AKSManagedClustersAPI) *PinningReconciler {
+func NewPinningReconciler(k8sProvider kubernetesversion.KubernetesVersionProvider, imgProvider imagefamily.NodeImageProvider) *PinningReconciler {
 	return &PinningReconciler{
 		kubernetesVersionProvider: k8sProvider,
 		nodeImageProvider:         imgProvider,
-		managedClustersClient:     managedClustersClient,
 		cm:                        pretty.NewChangeMonitor(),
 	}
 }
@@ -100,7 +97,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	nodeClass.Status.Versions.LatestImageVersion = parseVersion(latestImages[0].ID)
 
 	reqImgVer, reqK8sVer := requestedVersions(nodeClass)
-	if err := validateK8sVersion(reqK8sVer, controlPlaneVersion); err != nil {
+	if err := r.validateK8sVersion(ctx, reqK8sVer, controlPlaneVersion); err != nil {
 		setStatusConditionByErr(nodeClass, err)
 		return reconcile.Result{
 			RequeueAfter: azurecache.KubernetesVersionTTL,
@@ -167,69 +164,6 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
 
-func (r *PinningReconciler) isSupported(ctx context.Context, k8sVersion string) (bool, error) {
-	resp, err := r.managedClustersClient.ListKubernetesVersions(ctx, "", nil)
-	if err != nil {
-		return false, err
-	}
-
-	for _, version := range resp.Values {
-		if version != nil && *version.Version == k8sVersion {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
-	switch {
-	case errors.Is(err, errKubernetesVersionInvalidFormat):
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", err.Error())
-	case errors.Is(err, errKubernetesVersionControlPlaneIncompatible):
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", err.Error())
-	case errors.Is(err, errNodeImageVersionInvalid):
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", err.Error())
-	case errors.Is(err, errRollbackTargetKubernetesVersionMismatch):
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "RollbackTargetKubernetesVersionMismatch", err.Error())
-	}
-}
-
-func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string) {
-	if nodeClass == nil || nodeClass.Spec.Versions == nil {
-		return "", ""
-	}
-
-	reqImgVer := lo.FromPtr(nodeClass.Spec.Versions.NodeImageVersion)
-	reqK8sVer := lo.FromPtr(nodeClass.Spec.Versions.KubernetesVersion)
-
-	return reqImgVer, reqK8sVer
-}
-
-func validatePinning(reqImgVer, reqK8sVer, controlPlaneVersion, latestImgVer string, nodeClass *v1beta1.AKSNodeClass) error {
-	if _, err := semver.Parse(reqK8sVer); err != nil {
-		return fmt.Errorf("%w: parsing kubernetes version: %v", errKubernetesVersionInvalidFormat, err)
-	}
-
-	currentImgVer := ""
-	if len(nodeClass.Status.Images) > 0 {
-		currentImgVer = parseVersion(nodeClass.Status.Images[0].ID)
-	}
-
-	switch {
-	case reqImgVer == currentImgVer:
-		if curVer := nodeClass.Status.KubernetesVersion; curVer != nil && reqK8sVer != *curVer {
-			return fmt.Errorf("%w: requested image version is current but does not match the current k8s version", errNodeImageVersionInvalid)
-		}
-	case reqImgVer == latestImgVer:
-		if reqK8sVer != controlPlaneVersion {
-			return fmt.Errorf("%w: requested image version is latest but does not match the control plane version", errNodeImageVersionInvalid)
-		}
-	default:
-		return validRollback(reqK8sVer, reqImgVer, nodeClass)
-	}
-	return nil
-}
-
 /*
 The requested version must satisfy AKS node/control-plane skew rules.
 
@@ -245,7 +179,7 @@ Node Kubernetes version downgrade is allowed when selecting the retained image/K
 provided the retained Kubernetes version still satisfies these control-plane skew rules.
 This changes only the node version; the control-plane version is not rolled back.
 */
-func validateK8sVersion(version, controlPlaneVersion string) error {
+func (r *PinningReconciler) validateK8sVersion(ctx context.Context, version, controlPlaneVersion string) error {
 	versionSemver, err := semver.Parse(version)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errKubernetesVersionInvalidFormat, err)
@@ -275,9 +209,51 @@ func validateK8sVersion(version, controlPlaneVersion string) error {
 		return fmt.Errorf("%w: kubernetes version patch too new: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Patch, controlPlaneVersionSemver.Patch)
 	}
 
-	// TODO: Check AKS version metadata
+	supported, err := r.kubernetesVersionProvider.IsSupported(ctx, version)
+	if err != nil {
+		return fmt.Errorf("checking if kubernetes version is supported: %w", err)
+	}
+	if !supported {
+		return fmt.Errorf("%w: kubernetes version %s is not supported", errKubernetesVersionControlPlaneIncompatible, version)
+	}
 
 	return nil
+}
+
+func validatePinning(reqImgVer, reqK8sVer, controlPlaneVersion, latestImgVer string, nodeClass *v1beta1.AKSNodeClass) error {
+	if _, err := semver.Parse(reqK8sVer); err != nil {
+		return fmt.Errorf("%w: parsing kubernetes version: %v", errKubernetesVersionInvalidFormat, err)
+	}
+
+	currentImgVer := ""
+	if len(nodeClass.Status.Images) > 0 {
+		currentImgVer = parseVersion(nodeClass.Status.Images[0].ID)
+	}
+
+	switch {
+	case reqImgVer == currentImgVer:
+		if curVer := nodeClass.Status.KubernetesVersion; curVer != nil && reqK8sVer != *curVer {
+			return fmt.Errorf("%w: requested image version is current but does not match the current k8s version", errNodeImageVersionInvalid)
+		}
+	case reqImgVer == latestImgVer:
+		if reqK8sVer != controlPlaneVersion {
+			return fmt.Errorf("%w: requested image version is latest but does not match the control plane version", errNodeImageVersionInvalid)
+		}
+	default:
+		return validRollback(reqK8sVer, reqImgVer, nodeClass)
+	}
+	return nil
+}
+
+func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string) {
+	if nodeClass == nil || nodeClass.Spec.Versions == nil {
+		return "", ""
+	}
+
+	reqImgVer := lo.FromPtr(nodeClass.Spec.Versions.NodeImageVersion)
+	reqK8sVer := lo.FromPtr(nodeClass.Spec.Versions.KubernetesVersion)
+
+	return reqImgVer, reqK8sVer
 }
 
 func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) error {
@@ -315,4 +291,17 @@ func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.No
 		}
 	}
 	return images, nil
+}
+
+func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
+	switch {
+	case errors.Is(err, errKubernetesVersionInvalidFormat):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", err.Error())
+	case errors.Is(err, errKubernetesVersionControlPlaneIncompatible):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", err.Error())
+	case errors.Is(err, errNodeImageVersionInvalid):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", err.Error())
+	case errors.Is(err, errRollbackTargetKubernetesVersionMismatch):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "RollbackTargetKubernetesVersionMismatch", err.Error())
+	}
 }
