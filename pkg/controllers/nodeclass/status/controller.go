@@ -98,14 +98,17 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	stored := nodeClass.DeepCopy()
 
 	var results []reconcile.Result
+	var reconcilers []reconciler
 	var errs error
-	for _, reconciler := range []reconciler{
-		c.kubernetesVersion,
-		c.nodeImage,
-		c.subnet,
-		c.validation,
-		c.localDNS,
-	} {
+
+	if nodeImagePinningRequested(nodeClass) {
+		reconcilers = append(reconcilers, c.pinning)
+	} else {
+		reconcilers = append(reconcilers, c.kubernetesVersion, c.nodeImage)
+	}
+	reconcilers = append(reconcilers, c.subnet, c.validation, c.localDNS)
+
+	for _, reconciler := range reconcilers {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
 		results = append(results, res)
@@ -167,4 +170,11 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 			},
 		}
 	}
+}
+
+func nodeImagePinningRequested(nodeClass *v1beta1.AKSNodeClass) bool {
+	if nodeClass == nil || nodeClass.Spec.Versions == nil {
+		return false
+	}
+	return nodeClass.Spec.Versions.KubernetesVersion != nil || nodeClass.Spec.Versions.NodeImageVersion != nil
 }
