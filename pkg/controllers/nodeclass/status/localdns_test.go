@@ -40,8 +40,8 @@ import (
 )
 
 const (
-	hiK8s = "1.99.0"
-	loK8s = "1.98.0"
+	hiK8s = "1.37.0"
+	loK8s = "1.36.0"
 )
 
 func newDynFake() *dynamicfake.FakeDynamicClient {
@@ -113,6 +113,15 @@ func TestPreferred_K8sBelowThreshold_Disabled(t *testing.T) {
 	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateDisabled)
+}
+
+func TestPreferred_K8sAtThreshold_Enabled(t *testing.T) {
+	nc := newNC()
+	nc.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}
+	setKVReady(nc, hiK8s)
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
+	mustReconcile(t, r, nc)
+	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }
 
 func TestPreferred_BYOCNI_Disabled(t *testing.T) {

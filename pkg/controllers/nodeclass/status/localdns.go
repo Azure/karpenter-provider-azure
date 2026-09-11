@@ -45,7 +45,7 @@ var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(localDNSPre
 const (
 	// localDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
 	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred.
-	localDNSPreferredK8sVersionThreshold = "1.99.0"
+	localDNSPreferredK8sVersionThreshold = "1.37.0"
 
 	// konnectivityAgentPolicy{Name,Namespace} identify the AKS-managed
 	// NetworkPolicy that is allow-listed when scanning for conflicting
@@ -74,7 +74,7 @@ const localDNSPreferredRequeueAfter = 5 * time.Minute
 //   - Mode unset/nil  -> Status=Disabled, LocalDNSReady=True.
 //   - Mode=Required   -> Status=Enabled, LocalDNSReady=True.
 //   - Mode=Disabled   -> Status=Disabled, LocalDNSReady=True.
-//   - Mode=Preferred  -> evaluate five gates (k8s>=1.36, !BYO CNI,
+//   - Mode=Preferred  -> evaluate five gates (k8s>=1.37, !BYO CNI,
 //     !ResolvesToUbuntu2004, no conflicting NetworkPolicies, no upstream
 //     node-local-dns DS) and commit Enabled or Disabled. Sticky: once Enabled
 //     under Preferred, stays Enabled while Mode=Preferred (read off
