@@ -19,11 +19,13 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/awslabs/operatorpkg/object"
+	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -360,6 +362,28 @@ var _ = Describe("CloudProvider", func() {
 			cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
+		})
+		Context("Create - Expected Creation Failures", func() {
+			It("should return a NodeClassNotReadyError before instance creation when validation marks the NodeClass incompatible with the Kubernetes version", func() {
+				// Mirrors the message the ValidationReconciler sets for a pinned image family
+				// the discovered Kubernetes version does not support.
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				message := `requested image family "Ubuntu2404" is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, status.ImageFamilyKubernetesVersionIncompatible, message)
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Message).To(Equal(message))
+				Expect(nodeClass.StatusConditions().Get(opstatus.ConditionReady).IsFalse()).To(BeTrue())
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+				cloudProviderMachine, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.NodeClassNotReadyError{}))
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("%s=False", v1beta1.ConditionTypeValidationSucceeded)))
+				Expect(cloudProviderMachine).To(BeNil())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
 		})
 
 		runNodeOverlayCapacityTests(vmNodeOverlayCapacityTestOptions())
