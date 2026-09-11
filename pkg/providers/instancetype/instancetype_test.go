@@ -21,9 +21,11 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
@@ -47,7 +49,7 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			resources := KubeReservedResources(test.vcpus, test.memoryMiB, test.maxPods, true)
+			resources := KubeReservedResources(test.vcpus, test.memoryMiB, test.maxPods, true, nil)
 			cpu := resources[corev1.ResourceCPU]
 			memory := resources[corev1.ResourceMemory]
 			wantCPU := *resource.NewMilliQuantity(test.wantCPUMilli, resource.DecimalSI)
@@ -56,6 +58,38 @@ func TestKubeReservedResourcesHardeningParity(t *testing.T) {
 			g.Expect(memory.Cmp(wantMemory)).To(Equal(0))
 		})
 	}
+}
+
+func TestKubeReservedResourcesOverrides(t *testing.T) {
+	g := NewWithT(t)
+	resources := KubeReservedResources(4, 8192, 110, true, map[string]string{
+		"cpu":    "250m",
+		"memory": "512Mi",
+		"pid":    "2000",
+	})
+
+	cpu := resources[corev1.ResourceCPU]
+	memory := resources[corev1.ResourceMemory]
+	g.Expect(cpu.String()).To(Equal("250m"))
+	g.Expect(memory.String()).To(Equal("512Mi"))
+	g.Expect(resources).ToNot(HaveKey(corev1.ResourceName("pid")))
+}
+
+func TestTypedSchedulingOverrides(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(kubeReservedOverrides(&v1beta1.KubeReserved{
+		CPUMillicores: lo.ToPtr(int32(250)),
+		MemoryMB:      lo.ToPtr(int32(512)),
+	})).To(Equal(map[string]string{"cpu": "250m", "memory": "512Mi"}))
+	g.Expect(evictionHardOverrides(&v1beta1.EvictionThreshold{
+		MemoryAvailable:  lo.ToPtr("333Mi"),
+		NodeFsAvailable:  lo.ToPtr("12%"),
+		NodeFsInodesFree: lo.ToPtr("7%"),
+	})).To(Equal(map[string]string{"memory.available": "333Mi", "nodefs.available": "12%"}))
+	g.Expect(kubeReservedOverrides(nil)).To(BeNil())
+	g.Expect(kubeReservedOverrides(&v1beta1.KubeReserved{})).To(BeNil())
+	g.Expect(evictionHardOverrides(nil)).To(BeNil())
+	g.Expect(evictionHardOverrides(&v1beta1.EvictionThreshold{})).To(BeNil())
 }
 
 // These cases mirror the hardened system-reserved calculation in the AKS RP.
@@ -143,10 +177,34 @@ func TestEvictionThreshold(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			threshold := EvictionThreshold(test.memoryMiB, resource.MustParse("128G"), test.enableNodeHardening)[corev1.ResourceMemory]
+			threshold := EvictionThreshold(test.memoryMiB, resource.MustParse("128G"), test.enableNodeHardening, nil)[corev1.ResourceMemory]
 			g.Expect(threshold.String()).To(Equal(test.want))
 		})
 	}
+}
+
+func TestEvictionThresholdOverrides(t *testing.T) {
+	g := NewWithT(t)
+
+	absolute := EvictionThreshold(8192, resource.Quantity{}, true, map[string]string{MemoryAvailable: "333Mi"})[corev1.ResourceMemory]
+	g.Expect(absolute.String()).To(Equal("333Mi"))
+
+	percentage := EvictionThreshold(8192, resource.Quantity{}, true, map[string]string{MemoryAvailable: "5%"})[corev1.ResourceMemory]
+	g.Expect(percentage.Value()).To(Equal(410 * bytesPerMiB))
+
+	for _, value := range []string{"-1%", "101%", "NaN%"} {
+		threshold := EvictionThreshold(8192, resource.Quantity{}, true, map[string]string{MemoryAvailable: value})[corev1.ResourceMemory]
+		g.Expect(threshold.String()).To(Equal("250Mi"))
+	}
+
+	// A nodefs.available override drives the modeled ephemeral-storage overhead
+	// so it stays consistent with the kubelet eviction flag on the node.
+	capacity := resource.MustParse("100Gi")
+	nodefsPercent := EvictionThreshold(8192, capacity, true, map[string]string{NodeFSAvailable: "12%"})[corev1.ResourceEphemeralStorage]
+	g.Expect(nodefsPercent.Value()).To(Equal(int64(float64(capacity.Value()) * float64(float32(12)/100))))
+	fiveGi := resource.MustParse("5Gi")
+	nodefsAbsolute := EvictionThreshold(8192, capacity, true, map[string]string{NodeFSAvailable: "5Gi"})[corev1.ResourceEphemeralStorage]
+	g.Expect(nodefsAbsolute.Value()).To(Equal(fiveGi.Value()))
 }
 
 func TestEvictionThresholdEphemeralStorage(t *testing.T) {
@@ -165,14 +223,14 @@ func TestEvictionThresholdEphemeralStorage(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			caseG := NewWithT(t)
-			threshold := EvictionThreshold(32*1024, resource.MustParse(test.capacity), false)
+			threshold := EvictionThreshold(32*1024, resource.MustParse(test.capacity), false, nil)
 			storage := threshold[corev1.ResourceEphemeralStorage]
 			caseG.Expect(storage.Value()).To(Equal(test.expectedBytes))
 		})
 	}
 
 	capacity := resource.MustParse("128G")
-	eviction := EvictionThreshold(32*1024, capacity, true)[corev1.ResourceEphemeralStorage]
+	eviction := EvictionThreshold(32*1024, capacity, true, nil)[corev1.ResourceEphemeralStorage]
 	system := SystemReservedResources(32*1024, consts.NetworkPluginAzure, true)[corev1.ResourceEphemeralStorage]
 	g.Expect(eviction.Value()).To(Equal(int64(12_800_000_190)))
 	g.Expect(system.String()).To(Equal("1Gi"))

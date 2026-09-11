@@ -18,6 +18,7 @@ package v1beta1_test
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Pallinder/go-randomdata"
@@ -26,6 +27,7 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -91,6 +93,100 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			},
 		}
+	})
+	Context("Kubelet overrides", func() {
+		DescribeTable("should validate kubeReserved", func(kubeReserved *v1beta1.KubeReserved, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{KubeReserved: kubeReserved},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid cpu and memory", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))}, true),
+			Entry("maximum int32 values", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(2147483647)), MemoryMB: lo.ToPtr(int32(2147483647))}, true),
+			Entry("zero cpu", &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(0))}, false),
+			Entry("negative memory", &v1beta1.KubeReserved{MemoryMB: lo.ToPtr(int32(-1))}, false),
+		)
+
+		It("should reject kubeReserved values above int32 before typed decoding", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec": map[string]any{"kubelet": map[string]any{
+					"kubeReserved": map[string]any{"cpuMillicores": int64(2147483648)},
+				}},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		DescribeTable("should validate evictionHard", func(evictionHard *v1beta1.EvictionThreshold, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionHard: evictionHard},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi"), NodeFsAvailable: lo.ToPtr("12%"), NodeFsInodesFree: lo.ToPtr("100000")}, true),
+			Entry("valid percentage boundary", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("100%")}, true),
+			Entry("invalid memory quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, false),
+			Entry("node filesystem percentage above 100", &v1beta1.EvictionThreshold{NodeFsAvailable: lo.ToPtr("101%")}, false),
+			Entry("inode byte quantity", &v1beta1.EvictionThreshold{NodeFsInodesFree: lo.ToPtr("100Mi")}, false),
+		)
+
+		DescribeTable("should validate evictionSoft", func(evictionSoft *v1beta1.EvictionThreshold, gracePeriods *v1beta1.EvictionSoftGracePeriod, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Kubelet: &v1beta1.KubeletConfiguration{EvictionSoft: evictionSoft, EvictionSoftGracePeriod: gracePeriods},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi"), NodeFsAvailable: lo.ToPtr("15%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}), NodeFsAvailable: lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute})}, true),
+			Entry("invalid quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})}, false),
+			Entry("duration below minimum", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("1%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 29 * time.Second})}, false),
+		)
+
+		It("should reject mismatched soft eviction and grace period signals", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{
+					EvictionSoft:            &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+
+		It("should reject malformed grace periods before typed decoding", func() {
+			nodeClass := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "karpenter.azure.com/v1beta1",
+				"kind":       "AKSNodeClass",
+				"metadata":   map[string]any{"name": strings.ToLower(randomdata.SillyName())},
+				"spec": map[string]any{"kubelet": map[string]any{
+					"evictionSoft":            map[string]any{"memoryAvailable": "500Mi"},
+					"evictionSoftGracePeriod": map[string]any{"memoryAvailable": "not-a-duration"},
+				}},
+			}}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
 	})
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {

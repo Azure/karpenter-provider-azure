@@ -182,6 +182,27 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("ProvisionMode = BootstrappingClient", func() {
 		// Suggestion: ideally, we want to reuse all tests with just ProvisionMode changed to BootstrappingClient. It needs refactor to allow efficient reuse.
 		// However, not all tests are applicable. E.g., custom data tests are not useful as it is faked, unlike Scriptless.
+		It("should ignore unsupported kubelet overrides when calculating overhead", func() {
+			instanceTypes, err := azureEnvBootstrap.InstanceTypesProvider.List(ctxBootstrap, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			baseline, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == "Standard_D2s_v3"
+			})
+			Expect(ok).To(BeTrue())
+
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(777)), MemoryMB: lo.ToPtr(int32(777))},
+				EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("777Mi"), NodeFsAvailable: lo.ToPtr("7%")},
+			}
+			instanceTypes, err = azureEnvBootstrap.InstanceTypesProvider.List(ctxBootstrap, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			overridden, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == baseline.Name
+			})
+			Expect(ok).To(BeTrue())
+			Expect(overridden.Overhead).To(Equal(baseline.Overhead))
+		})
+
 		It("should provision the node and CSE", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
@@ -1246,6 +1267,69 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree=2m0s"))
 				Expect(kubeletFlags).ToNot(ContainSubstring("pid="))
 				Expect(kubeletFlags).ToNot(ContainSubstring("pid.available<"))
+			})
+
+			It("should let AKSNodeClass.spec.kubelet override evictionHard and kubeReserved", func() {
+				// Overrides must apply even when node hardening is disabled — this is
+				// the RP-parity path where a customer sets kubelet knobs via the
+				// AKSNodeClass without opting in to hardening.
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+					EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
+					KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+				}
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				customData := ExpectDecodedCustomData(azureEnv)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				// Customer eviction-hard override wins for memory.available; the
+				// unset filesystem/pid signals fall back to Karpenter's baseline.
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<333Mi"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
+				Expect(kubeletFlags).To(ContainSubstring("pid.available<2000"))
+				// Customer kube-reserved values win per key; pid inherits from
+				// Karpenter's baseline (KubeReservedPIDs).
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi", "pid=1000")
+			})
+
+			It("should let AKSNodeClass.spec.kubelet overrides win over node hardening defaults", func() {
+				// The overlay is applied after the hardening defaults, so customer
+				// keys must win even with hardening enabled while unset keys keep
+				// the hardened baseline.
+				ctx = options.ToContext(
+					ctx,
+					test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}),
+				)
+				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+					EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
+					EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("444Mi")},
+					EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+				}
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				customData := ExpectDecodedCustomData(azureEnv)
+				kubeletFlags := ExpectKubeletFlagsPassed(customData)
+				// Customer eviction-hard override wins for memory.available.
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<333Mi"))
+				// Customer soft-eviction and max-pod-grace overrides win over the hardened baseline.
+				ExpectSoftEvictionThresholds(customData, "444Mi")
+				Expect(kubeletFlags).To(ContainSubstring("eviction-max-pod-grace-period=120"))
+				Expect(kubeletFlags).To(ContainSubstring("enforce-node-allocatable=pods,kube-reserved,system-reserved"))
+				// Customer kube-reserved values win per key; hardening omits the
+				// legacy PID reservation.
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi")
 			})
 		})
 
@@ -3591,7 +3675,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "140m"
 			expectedMemory := "1638Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false, nil)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3605,7 +3689,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "100m"
 			expectedMemory := "1843Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false, nil)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3619,7 +3703,7 @@ var _ = Describe("Tax Calculator", func() {
 			expectedCPU := "120m"
 			expectedMemory := "5611Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 0, false, nil)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 

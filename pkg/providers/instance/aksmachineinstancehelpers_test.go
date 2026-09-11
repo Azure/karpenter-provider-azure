@@ -18,10 +18,12 @@ package instance
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -667,6 +669,44 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(config.ContainerLogMaxFiles).To(BeNil())
 			Expect(config.PodMaxPids).To(BeNil())
 		})
+
+		It("should configure supported reservation and eviction overrides", func() {
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+				EvictionHard: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("333Mi"),
+					NodeFsAvailable:  lo.ToPtr("12%"),
+					NodeFsInodesFree: lo.ToPtr("7%"),
+				},
+				EvictionSoft: &v1beta1.EvictionThreshold{
+					MemoryAvailable:  lo.ToPtr("500Mi"),
+					NodeFsAvailable:  lo.ToPtr("15%"),
+					NodeFsInodesFree: lo.ToPtr("10%"),
+				},
+				EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+					MemoryAvailable:  lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}),
+					NodeFsAvailable:  lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute}),
+					NodeFsInodesFree: lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute}),
+				},
+				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+			}
+
+			config := configureKubeletConfig(nodeClass)
+
+			Expect(*config.KubeReserved.CPUMillicores).To(Equal(int32(250)))
+			Expect(*config.KubeReserved.MemoryMB).To(Equal(int32(512)))
+			Expect(*config.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
+			Expect(*config.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
+			Expect(*config.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
+			Expect(*config.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
+			Expect(*config.SoftEvictionThreshold.NodeFsAvailable).To(Equal("15%"))
+			Expect(*config.SoftEvictionThreshold.NodeFsInodesFree).To(Equal("10%"))
+			Expect(*config.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("1m30s"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsAvailable).To(Equal("2m0s"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsInodesFree).To(Equal("2m0s"))
+			Expect(*config.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
+		})
+
 	})
 
 	Context("parseVMImageID", func() {

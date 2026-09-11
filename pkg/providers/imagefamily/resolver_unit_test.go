@@ -22,6 +22,7 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +36,10 @@ import (
 )
 
 func prepareTestKubeletConfiguration(enableNodeHardening bool, provisionMode string) *bootstrap.KubeletConfiguration {
+	return prepareTestKubeletConfigurationWithOverrides(enableNodeHardening, provisionMode, nil)
+}
+
+func prepareTestKubeletConfigurationWithOverrides(enableNodeHardening bool, provisionMode string, overrides *v1beta1.KubeletConfiguration) *bootstrap.KubeletConfiguration {
 	instanceType := &cloudprovider.InstanceType{
 		Requirements: scheduling.NewRequirements(
 			scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, "32768"),
@@ -45,7 +50,7 @@ func prepareTestKubeletConfiguration(enableNodeHardening bool, provisionMode str
 			EvictionThreshold: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("512Mi")},
 		},
 	}
-	nodeClass := &v1beta1.AKSNodeClass{}
+	nodeClass := &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: overrides}}
 	ctx := options.ToContext(context.Background(), &options.Options{
 		EnableNodeHardening: enableNodeHardening,
 		ProvisionMode:       provisionMode,
@@ -116,4 +121,25 @@ func TestPrepareKubeletConfigurationSoftEvictionDisabledForBootstrappingClient(t
 	g.Expect(configuration.EnforceNodeAllocatable).To(BeNil())
 	g.Expect(configuration.SystemReserved).ToNot(HaveKey("pid"))
 	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("pid", "1000"))
+}
+
+func TestPrepareKubeletConfigurationAppliesOverrides(t *testing.T) {
+	g := NewWithT(t)
+	overrides := &v1beta1.KubeletConfiguration{
+		KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))},
+		EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
+		EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("444Mi")},
+		EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second})},
+		EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
+	}
+
+	configuration := prepareTestKubeletConfigurationWithOverrides(true, consts.ProvisionModeAKSScriptless, overrides)
+
+	// Customer keys win per key; unset hardened baseline keys are preserved.
+	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("cpu", "250m"))
+	g.Expect(configuration.EvictionHard).To(HaveKeyWithValue("memory.available", "333Mi"))
+	g.Expect(configuration.EvictionHard).To(HaveKeyWithValue("nodefs.available", "10%"))
+	g.Expect(configuration.EvictionSoft).To(Equal(map[string]string{"memory.available": "444Mi", "nodefs.available": "12%", "nodefs.inodesFree": "7%"}))
+	g.Expect(configuration.EvictionSoftGracePeriod).To(Equal(map[string]metav1.Duration{"memory.available": {Duration: 90 * time.Second}, "nodefs.available": {Duration: 2 * time.Minute}, "nodefs.inodesFree": {Duration: 2 * time.Minute}}))
+	g.Expect(*configuration.EvictionMaxPodGracePeriod).To(Equal(int32(120)))
 }

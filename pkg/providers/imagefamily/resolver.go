@@ -283,7 +283,70 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
 		kubeletConfig.EvictionHard[instancetype.PIDAvailable] = instancetype.HardEvictionPIDAvailable
 	}
+
+	overlayKubeletConfiguration(kubeletConfig, nodeClass.Spec.Kubelet)
 	return kubeletConfig
+}
+
+func overlayKubeletConfiguration(kubeletConfig *bootstrap.KubeletConfiguration, overrides *v1beta1.KubeletConfiguration) {
+	if overrides == nil {
+		return
+	}
+	kubeletConfig.KubeReserved = lo.Assign(kubeletConfig.KubeReserved, kubeReservedMap(overrides.KubeReserved))
+	kubeletConfig.EvictionHard = lo.Assign(kubeletConfig.EvictionHard, evictionThresholdMap(overrides.EvictionHard))
+	kubeletConfig.EvictionSoft = lo.Assign(kubeletConfig.EvictionSoft, evictionThresholdMap(overrides.EvictionSoft))
+	kubeletConfig.EvictionSoftGracePeriod = lo.Assign(kubeletConfig.EvictionSoftGracePeriod, evictionGracePeriodMap(overrides.EvictionSoftGracePeriod))
+	if overrides.EvictionMaxPodGracePeriod != nil {
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(*overrides.EvictionMaxPodGracePeriod)
+	}
+}
+
+func kubeReservedMap(config *v1beta1.KubeReserved) map[string]string {
+	if config == nil {
+		return nil
+	}
+	result := map[string]string{}
+	if config.CPUMillicores != nil {
+		result[string(corev1.ResourceCPU)] = fmt.Sprintf("%dm", *config.CPUMillicores)
+	}
+	if config.MemoryMB != nil {
+		result[string(corev1.ResourceMemory)] = fmt.Sprintf("%dMi", *config.MemoryMB)
+	}
+	return result
+}
+
+func evictionThresholdMap(config *v1beta1.EvictionThreshold) map[string]string {
+	if config == nil {
+		return nil
+	}
+	result := map[string]string{}
+	if config.MemoryAvailable != nil {
+		result[instancetype.MemoryAvailable] = *config.MemoryAvailable
+	}
+	if config.NodeFsAvailable != nil {
+		result[instancetype.NodeFSAvailable] = *config.NodeFsAvailable
+	}
+	if config.NodeFsInodesFree != nil {
+		result[instancetype.NodeFSInodesFree] = *config.NodeFsInodesFree
+	}
+	return result
+}
+
+func evictionGracePeriodMap(config *v1beta1.EvictionSoftGracePeriod) map[string]metav1.Duration {
+	if config == nil {
+		return nil
+	}
+	result := map[string]metav1.Duration{}
+	if config.MemoryAvailable != nil {
+		result[instancetype.MemoryAvailable] = *config.MemoryAvailable
+	}
+	if config.NodeFsAvailable != nil {
+		result[instancetype.NodeFSAvailable] = *config.NodeFsAvailable
+	}
+	if config.NodeFsInodesFree != nil {
+		result[instancetype.NodeFSInodesFree] = *config.NodeFsInodesFree
+	}
+	return result
 }
 
 func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {

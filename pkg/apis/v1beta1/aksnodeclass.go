@@ -401,6 +401,9 @@ type GPU struct {
 //
 // AKS CustomKubeletConfig w/o CPUReserved,MemoryReserved,SeccompDefault
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration?tabs=linux-node-pools
+// +kubebuilder:validation:XValidation:rule="has(self.evictionSoft) && has(self.evictionSoft.memoryAvailable) ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.memoryAvailable) : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.memoryAvailable)",message="evictionSoft.memoryAvailable and evictionSoftGracePeriod.memoryAvailable must be configured together"
+// +kubebuilder:validation:XValidation:rule="has(self.evictionSoft) && has(self.evictionSoft.nodeFsAvailable) ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsAvailable) : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsAvailable)",message="evictionSoft.nodeFsAvailable and evictionSoftGracePeriod.nodeFsAvailable must be configured together"
+// +kubebuilder:validation:XValidation:rule="has(self.evictionSoft) && has(self.evictionSoft.nodeFsInodesFree) ? has(self.evictionSoftGracePeriod) && has(self.evictionSoftGracePeriod.nodeFsInodesFree) : !has(self.evictionSoftGracePeriod) || !has(self.evictionSoftGracePeriod.nodeFsInodesFree)",message="evictionSoft.nodeFsInodesFree and evictionSoftGracePeriod.nodeFsInodesFree must be configured together"
 type KubeletConfiguration struct {
 	// cpuManagerPolicy is the name of the policy to use.
 	// +kubebuilder:validation:Enum:={none,static}
@@ -479,6 +482,81 @@ type KubeletConfiguration struct {
 	// Must be set to false to allow linuxOSConfig.swapFileSize to take effect.
 	// +optional
 	FailSwapOn *bool `json:"failSwapOn,omitempty"`
+	// kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
+	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+	// +optional
+	KubeReserved *KubeReserved `json:"kubeReserved,omitempty"`
+	// evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
+	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+	// +optional
+	EvictionHard *EvictionThreshold `json:"evictionHard,omitempty"`
+	// evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
+	// Each configured threshold must have a matching field in evictionSoftGracePeriod.
+	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+	// +optional
+	EvictionSoft *EvictionThreshold `json:"evictionSoft,omitempty"`
+	// evictionSoftGracePeriod configures grace periods for soft eviction signals.
+	// Each configured grace period must have a matching field in evictionSoft.
+	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+	// +optional
+	EvictionSoftGracePeriod *EvictionSoftGracePeriod `json:"evictionSoftGracePeriod,omitempty"`
+	// evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
+	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`
+}
+
+// KubeReserved defines resources reserved for Kubernetes system daemons.
+type KubeReserved struct {
+	// cpuMillicores is the CPU reservation in millicores.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2147483647
+	// +optional
+	CPUMillicores *int32 `json:"cpuMillicores,omitempty"`
+	// memoryMB is the memory reservation in MiB.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2147483647
+	// +optional
+	MemoryMB *int32 `json:"memoryMB,omitempty"`
+}
+
+// EvictionThreshold defines thresholds for supported kubelet eviction signals.
+type EvictionThreshold struct {
+	// memoryAvailable is the available-memory threshold as an integer Ki, Mi, or Gi quantity or percentage.
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$`
+	// +optional
+	MemoryAvailable *string `json:"memoryAvailable,omitempty"`
+	// nodeFsAvailable is the available-node-filesystem threshold as an integer Ki, Mi, or Gi quantity or percentage.
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$`
+	// +optional
+	NodeFsAvailable *string `json:"nodeFsAvailable,omitempty"`
+	// nodeFsInodesFree is the free-inodes threshold as an integer count or percentage.
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:Pattern=`^([0-9]+|([0-9]|[1-9][0-9]|100)%)$`
+	// +optional
+	NodeFsInodesFree *string `json:"nodeFsInodesFree,omitempty"`
+}
+
+// EvictionSoftGracePeriod defines grace periods for supported soft eviction signals.
+type EvictionSoftGracePeriod struct {
+	// memoryAvailable is the grace period for the memoryAvailable signal.
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="memoryAvailable must be a valid duration of at least 30s"
+	// +optional
+	//nolint:kubeapilinter // nodurations: metav1.Duration matches upstream kubelet types
+	MemoryAvailable *metav1.Duration `json:"memoryAvailable,omitempty"`
+	// nodeFsAvailable is the grace period for the nodeFsAvailable signal.
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="nodeFsAvailable must be a valid duration of at least 30s"
+	// +optional
+	//nolint:kubeapilinter // nodurations: metav1.Duration matches upstream kubelet types
+	NodeFsAvailable *metav1.Duration `json:"nodeFsAvailable,omitempty"`
+	// nodeFsInodesFree is the grace period for the nodeFsInodesFree signal.
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="nodeFsInodesFree must be a valid duration of at least 30s"
+	// +optional
+	//nolint:kubeapilinter // nodurations: metav1.Duration matches upstream kubelet types
+	NodeFsInodesFree *metav1.Duration `json:"nodeFsInodesFree,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}

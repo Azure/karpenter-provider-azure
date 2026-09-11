@@ -18,6 +18,7 @@ package cloudprovider
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	. "github.com/onsi/ginkgo/v2"
@@ -502,6 +503,19 @@ var _ = Describe("CloudProvider", func() {
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					FailSwapOn:                  lo.ToPtr(false),
+					KubeReserved:                &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(512))},
+					EvictionHard: &v1beta1.EvictionThreshold{
+						MemoryAvailable:  lo.ToPtr("333Mi"),
+						NodeFsAvailable:  lo.ToPtr("12%"),
+						NodeFsInodesFree: lo.ToPtr("7%"),
+					},
+					EvictionSoft: &v1beta1.EvictionThreshold{
+						MemoryAvailable: lo.ToPtr("500Mi"),
+					},
+					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
+						MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}),
+					},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
@@ -557,6 +571,15 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcHighThreshold).To(Equal(int32(85)))
 				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.ImageGcLowThreshold).To(Equal(int32(80)))
 				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.KubeletConfig.FailSwapOn)).To(BeFalse())
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.CPUMillicores).To(Equal(int32(250)))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.KubeReserved.MemoryMB).To(Equal(int32(512)))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.MemoryAvailable).To(Equal("333Mi"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsAvailable).To(Equal("12%"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.HardEvictionThreshold.NodeFsInodesFree).To(Equal("7%"))
+
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("1m30s"))
+				Expect(*aksMachine.Properties.Kubernetes.KubeletConfig.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
 
 				// Verify image family configuration
 				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))
