@@ -123,6 +123,10 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{}, nil
 	}
 
+	if nodeClass.Status.Versions == nil || nodeClass.Status.Versions.ControlPlaneKubernetesVersion == nil {
+		return reconcile.Result{}, fmt.Errorf("control plane Kubernetes version is not set in node class status")
+	}
+
 	latestImages, err := listImages(ctx, r.nodeImageProvider, *nodeClass, *nodeClass.Status.Versions.ControlPlaneKubernetesVersion)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting latest images, %w", err)
