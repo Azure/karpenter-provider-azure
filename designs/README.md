@@ -8,6 +8,7 @@ These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
 
+- [Capacity reservations](./0014-capacity-reservations.md)
 - [Ultra SSD support](./0013-ultra-ssd-support.md)
 
 ## Completed
