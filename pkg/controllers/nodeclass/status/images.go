@@ -198,6 +198,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 
 func listImages(ctx context.Context, r imagefamily.NodeImageProvider, nodeClass v1beta1.AKSNodeClass, k8sVersion string) ([]imagefamily.NodeImage, error) {
 	nodeClass.Status.KubernetesVersion = &k8sVersion
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeImages, err := r.List(ctx, &nodeClass)
 	if err != nil {
 		return nil, fmt.Errorf("getting nodeimages, %w", err)
