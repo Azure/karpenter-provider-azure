@@ -37,6 +37,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
@@ -147,11 +148,12 @@ func (p *DefaultProvider) List(
 		return nil, fmt.Errorf("no instance types found")
 	}
 
+	opts := options.FromContext(ctx)
 	// Compute fully initialized instance types hash key
 	instanceTypeParams := &instanceTypeParameters{
 		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
 		OSDiskSizeGB:             lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
-		MaxPods:                  utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
+		MaxPods:                  utils.GetMaxPods(nodeClass, opts.NetworkPlugin, opts.NetworkPluginMode),
 		EncryptionAtHost:         nodeClass.GetEncryptionAtHost(),
 		TrustedLaunch:            nodeClass.IsTrustedLaunchEnabled(),
 		GPUMode:                  nodeClass.GetGPUMode(),
@@ -160,7 +162,7 @@ func (p *DefaultProvider) List(
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
-	if nodeClass.Spec.Kubelet != nil {
+	if nodeClass.Spec.Kubelet != nil && (opts.ProvisionMode == consts.ProvisionModeAKSScriptless || opts.IsAKSMachineAPIMode()) {
 		// These values do not filter SKUs, but they change scheduling simulation by changing
 		// allocatable resources. Include them so NodeClasses cannot share incompatible cached results.
 		instanceTypeParams.KubeReserved = kubeReservedOverrides(nodeClass.Spec.Kubelet.KubeReserved)

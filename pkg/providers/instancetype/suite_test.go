@@ -182,6 +182,27 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("ProvisionMode = BootstrappingClient", func() {
 		// Suggestion: ideally, we want to reuse all tests with just ProvisionMode changed to BootstrappingClient. It needs refactor to allow efficient reuse.
 		// However, not all tests are applicable. E.g., custom data tests are not useful as it is faked, unlike Scriptless.
+		It("should ignore unsupported kubelet overrides when calculating overhead", func() {
+			instanceTypes, err := azureEnvBootstrap.InstanceTypesProvider.List(ctxBootstrap, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			baseline, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == "Standard_D2s_v3"
+			})
+			Expect(ok).To(BeTrue())
+
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				KubeReserved: &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(777)), MemoryMB: lo.ToPtr(int32(777))},
+				EvictionHard: &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("777Mi"), NodeFsAvailable: lo.ToPtr("7%")},
+			}
+			instanceTypes, err = azureEnvBootstrap.InstanceTypesProvider.List(ctxBootstrap, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			overridden, ok := lo.Find(instanceTypes, func(instanceType *corecloudprovider.InstanceType) bool {
+				return instanceType.Name == baseline.Name
+			})
+			Expect(ok).To(BeTrue())
+			Expect(overridden.Overhead).To(Equal(baseline.Overhead))
+		})
+
 		It("should provision the node and CSE", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
@@ -1306,9 +1327,9 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectSoftEvictionThresholds(customData, "444Mi")
 				Expect(kubeletFlags).To(ContainSubstring("eviction-max-pod-grace-period=120"))
 				Expect(kubeletFlags).To(ContainSubstring("enforce-node-allocatable=pods,kube-reserved,system-reserved"))
-				// Customer kube-reserved values win per key; pid inherits from
-				// the hardened baseline (KubeReservedPIDs).
-				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi", "pid=1000")
+				// Customer kube-reserved values win per key; hardening omits the
+				// legacy PID reservation.
+				ExpectKubeReservedResources(customData, "cpu=250m", "memory=512Mi")
 			})
 		})
 

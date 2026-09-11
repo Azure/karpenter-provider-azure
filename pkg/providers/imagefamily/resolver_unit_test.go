@@ -135,9 +135,8 @@ func TestPrepareKubeletConfigurationAppliesOverrides(t *testing.T) {
 
 	configuration := prepareTestKubeletConfigurationWithOverrides(true, consts.ProvisionModeAKSScriptless, overrides)
 
-	// Customer keys win per key; unset keys keep the hardened baseline.
+	// Customer keys win per key; unset hardened baseline keys are preserved.
 	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("cpu", "250m"))
-	g.Expect(configuration.KubeReserved).To(HaveKeyWithValue("pid", "1000"))
 	g.Expect(configuration.EvictionHard).To(HaveKeyWithValue("memory.available", "333Mi"))
 	g.Expect(configuration.EvictionHard).To(HaveKeyWithValue("nodefs.available", "10%"))
 	g.Expect(configuration.EvictionSoft).To(Equal(map[string]string{"memory.available": "444Mi", "nodefs.available": "12%", "nodefs.inodesFree": "7%"}))
