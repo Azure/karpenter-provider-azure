@@ -127,7 +127,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{}, fmt.Errorf("control plane Kubernetes version is not set in node class status")
 	}
 
-	latestImages, err := listImages(ctx, r.nodeImageProvider, *nodeClass, *nodeClass.Status.Versions.ControlPlaneKubernetesVersion)
+	latestImages, err := listLatestImages(ctx, r.nodeImageProvider, *nodeClass)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting latest images, %w", err)
 	}
@@ -196,8 +196,12 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func listImages(ctx context.Context, r imagefamily.NodeImageProvider, nodeClass v1beta1.AKSNodeClass, k8sVersion string) ([]imagefamily.NodeImage, error) {
-	nodeClass.Status.KubernetesVersion = &k8sVersion
+func listLatestImages(ctx context.Context, r imagefamily.NodeImageProvider, nodeClass v1beta1.AKSNodeClass) ([]imagefamily.NodeImage, error) {
+	if nodeClass.Status.Versions == nil || lo.FromPtr(nodeClass.Status.Versions.ControlPlaneKubernetesVersion) == "" {
+		return nil, fmt.Errorf("control plane kubernetes version is not set")
+	}
+
+	nodeClass.Status.KubernetesVersion = nodeClass.Status.Versions.ControlPlaneKubernetesVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeImages, err := r.List(ctx, &nodeClass)
 	if err != nil {

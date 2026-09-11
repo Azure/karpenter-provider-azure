@@ -87,7 +87,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &controlPlaneVersion
 
 	// Update latest suffix
-	latestImages, err := listImages(ctx, r.nodeImageProvider, *nodeClass, controlPlaneVersion)
+	latestImages, err := listLatestImages(ctx, r.nodeImageProvider, *nodeClass)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing latest images, %w", err)
 	}
@@ -115,6 +115,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 			RequeueAfter: azurecache.KubernetesVersionTTL,
 		}, nil
 	}
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 	if reqImgVer != "" {
 		if err := validatePinning(reqImgVer, reqK8sVer, currentCPVer, currentLatestImgVer, nodeClass); err != nil {
@@ -128,7 +129,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	// Get the images associated with the requested version.
 	nodeImages := latestImages
 	if reqK8sVer != controlPlaneVersion {
-		nodeImages, err = listImages(ctx, r.nodeImageProvider, *nodeClass, reqK8sVer)
+		nodeImages, err = r.nodeImageProvider.List(ctx, nodeClass)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("listing images, %w", err)
 		}
