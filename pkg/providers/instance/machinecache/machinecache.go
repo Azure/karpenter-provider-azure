@@ -249,7 +249,11 @@ func (c *MachineCache) InvalidateAll() {
 func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcontainerservice.ErrorDetail, error) {
 	log.FromContext(ctx).V(2).Info("starting cache poller for AKS machine", "aksMachineName", name)
 
-	if !c.checkMachineExists(ctx, name) {
+	machine, err := c.GetWithFallback(ctx, name, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check AKS machine %q before polling: %w", name, err)
+	}
+	if machine == nil {
 		return nil, fmt.Errorf("AKS machine %q does not exist", name)
 	}
 
@@ -272,11 +276,6 @@ func (c *MachineCache) PollUntilDone(ctx context.Context, name string) (*armcont
 			return nil, fmt.Errorf("timed out while polling for AKS machine %q after %s", name, c.options.pollTimeout)
 		}
 	}
-}
-
-func (c *MachineCache) checkMachineExists(ctx context.Context, name string) bool {
-	machine, err := c.GetWithFallback(ctx, name, true)
-	return machine != nil && err == nil
 }
 
 func (c *MachineCache) pollOnce(ctx context.Context, aksMachineName string) (*armcontainerservice.ErrorDetail, error, bool) {
