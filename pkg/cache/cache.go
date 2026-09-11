@@ -25,6 +25,10 @@ const (
 	// UnavailableOfferingsTTL is the time before offerings that were marked as unavailable
 	// are removed from the cache and are available for launch again
 	UnavailableOfferingsTTL = 3 * time.Minute
+	// InFlightZoneSelectionTTL is the time a zone picked for a NodeClaim is remembered for zone
+	// balancing purposes. It only needs to cover the window between picking the zone and the
+	// NodeClaim being observable with a zone label of its own.
+	InFlightZoneSelectionTTL = 5 * time.Minute
 
 	// DefaultCleanupInterval triggers cache cleanup (lazy eviction) at this interval.
 	DefaultCleanupInterval = 1 * time.Minute

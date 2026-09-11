@@ -18,8 +18,10 @@ package allocationstrategy
 
 import (
 	"context"
+	"sync"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
@@ -29,7 +31,9 @@ import (
 
 type Provider interface {
 	// Allocate selects a single instance type and offering for a NodeClaim.
-	// Returns nil when no compatible offering is available.
+	// Returns nil when no compatible offering is available. When a zone load
+	// tracker is configured, the zone of the chosen offering is biased toward the
+	// NodePool's least loaded zone.
 	//
 	// This interface models client-side allocation: the provider chooses one
 	// concrete offering and the caller is responsible for provisioning. It
@@ -43,19 +47,38 @@ type Provider interface {
 	// they would replace this provider rather than implement it. Those paths
 	// can still reuse the default filtering/ranking stages when they need an
 	// ordered candidate set to pass to the server-side API.
-	Allocate(ctx context.Context, instanceTypes []*corecloudprovider.InstanceType, requirements scheduling.Requirements) *Selection
+	Allocate(ctx context.Context, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) *Selection
 }
 
 var _ Provider = &DefaultProvider{}
 
-type DefaultProvider struct{}
-
-func NewProvider() *DefaultProvider {
-	return &DefaultProvider{}
+type DefaultProvider struct {
+	// zoneLoadTracker is optional; a nil tracker leaves zone selection uniformly random.
+	zoneLoadTracker ZoneLoadTracker
+	// mu serializes zone-balanced allocation so that concurrent launches observe each other's zone
+	// picks instead of all choosing the same least loaded zone.
+	mu sync.Mutex
 }
 
-func (p *DefaultProvider) Allocate(ctx context.Context, instanceTypes []*corecloudprovider.InstanceType, requirements scheduling.Requirements) *Selection {
-	candidates := p.FilterInstanceOfferings(ctx, NewInstanceOfferings(instanceTypes), requirements)
+func NewProvider(zoneLoadTracker ZoneLoadTracker) *DefaultProvider {
+	return &DefaultProvider{zoneLoadTracker: zoneLoadTracker}
+}
+
+func (p *DefaultProvider) Allocate(ctx context.Context, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) *Selection {
+	requirements := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
+	nodePoolName := nodeClaim.Labels[karpv1.NodePoolLabelKey]
+	balanceZones := p.zoneLoadTracker != nil && nodePoolName != ""
+
+	var zoneLoad map[string]int
+	if balanceZones {
+		// Held until the pick is recorded, so a burst of launches spreads instead of piling into the
+		// zone that was least loaded when the burst started.
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		zoneLoad = p.zoneLoadTracker.Load(ctx, nodePoolName)
+	}
+
+	candidates := p.FilterInstanceOfferings(ctx, NewInstanceOfferings(instanceTypes), requirements, zoneLoad)
 	if len(candidates) == 0 {
 		return nil
 	}
@@ -63,19 +86,23 @@ func (p *DefaultProvider) Allocate(ctx context.Context, instanceTypes []*coreclo
 	if best.InstanceType == nil || len(best.Offerings) == 0 {
 		return nil
 	}
-	log.FromContext(ctx).Info("selected instance type", logging.InstanceType, best.InstanceType.Name)
-	return &Selection{
+	selection := &Selection{
 		InstanceType: best.InstanceType,
 		Offering:     best.Offerings[0],
 	}
+	if balanceZones {
+		p.zoneLoadTracker.Record(nodeClaim.Name, nodePoolName, selection.Zone())
+	}
+	log.FromContext(ctx).Info("selected instance type", logging.InstanceType, best.InstanceType.Name)
+	return selection
 }
 
-func (p *DefaultProvider) FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements) []InstanceOffering {
+func (p *DefaultProvider) FilterInstanceOfferings(ctx context.Context, instanceOfferings []InstanceOffering, requirements scheduling.Requirements, zoneLoad map[string]int) []InstanceOffering {
 	stages := []stages.Stage{
 		stages.NewAvailabilityCompatibilityFilterStage(requirements),
 		// Keep offering ranking in a single stage so future customizable allocation strategy work can swap or parameterize the ranker
 		// without introducing multiple reorder stages where the last reorder wins.
-		stages.NewDefaultOfferingRankStage(),
+		stages.NewDefaultOfferingRankStage(zoneLoad),
 	}
 	for _, stage := range stages {
 		instanceOfferings = stage.Process(ctx, instanceOfferings)

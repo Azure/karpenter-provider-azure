@@ -237,7 +237,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	allocationStrategyProvider := allocationstrategy.NewProvider()
+	allocationStrategyProvider := allocationstrategy.NewProvider(allocationstrategy.NewZoneLoadTracker(operator.GetClient()))
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,

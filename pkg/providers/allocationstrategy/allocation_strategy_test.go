@@ -18,6 +18,8 @@ package allocationstrategy_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -25,6 +27,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -32,7 +35,7 @@ import (
 
 func TestFilterInstanceOfferings_RemovesUnavailable(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, "In", karpv1.CapacityTypeOnDemand),
 	)
@@ -53,7 +56,7 @@ func TestFilterInstanceOfferings_RemovesUnavailable(t *testing.T) {
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 	g.Expect(filtered).To(HaveLen(1))
 	g.Expect(filtered[0].InstanceType.Name).To(Equal("Standard_D2s_v3"))
 	g.Expect(filtered[0].Offerings).To(HaveLen(1))
@@ -187,9 +190,9 @@ func TestFilterInstanceOfferings_ZerothItemHasExpectedPriority(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			g := NewWithT(t)
-			provider := allocationstrategy.NewProvider()
+			provider := allocationstrategy.NewProvider(nil)
 
-			filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(c.instanceTypes), c.requirements)
+			filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(c.instanceTypes), c.requirements, nil)
 
 			if c.expectedPriority == "" {
 				g.Expect(filtered).To(BeEmpty())
@@ -207,7 +210,7 @@ func TestFilterInstanceOfferings_ZerothItemHasExpectedPriority(t *testing.T) {
 
 func TestFilterInstanceOfferings_Requirements_FiltersByZone(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 	)
@@ -229,7 +232,7 @@ func TestFilterInstanceOfferings_Requirements_FiltersByZone(t *testing.T) {
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 	g.Expect(filtered).To(HaveLen(1))
 	g.Expect(filtered[0].InstanceType.Name).To(Equal("Standard_D2s_v3"))
 	g.Expect(filtered[0].Offerings).To(HaveLen(1))
@@ -238,7 +241,7 @@ func TestFilterInstanceOfferings_Requirements_FiltersByZone(t *testing.T) {
 
 func TestFilterInstanceOfferings_OrdersByPrice(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, "In", karpv1.CapacityTypeOnDemand),
 	)
@@ -270,7 +273,7 @@ func TestFilterInstanceOfferings_OrdersByPrice(t *testing.T) {
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 	g.Expect(filtered).To(HaveLen(3))
 	g.Expect([]string{filtered[0].InstanceType.Name, filtered[1].InstanceType.Name, filtered[2].InstanceType.Name}).To(Equal([]string{"Standard_D4s_v3", "Standard_D64s_v3", "Standard_F16s_v2"}))
 	g.Expect(filtered[0].Offerings).To(HaveLen(1))
@@ -280,7 +283,7 @@ func TestFilterInstanceOfferings_OrdersByPrice(t *testing.T) {
 
 func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
@@ -300,7 +303,7 @@ func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testi
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 	g.Expect(filtered).To(HaveLen(1))
 	g.Expect(filtered[0].Offerings).To(HaveLen(6))
 
@@ -316,7 +319,7 @@ func TestFilterInstanceOfferings_SpotOfferingsBeforeOnDemandAtSamePrice(t *testi
 
 func TestFilterInstanceOfferings_ZonalOfferingsBeforeRegionalAtSamePriceAndCapacityType(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -332,7 +335,7 @@ func TestFilterInstanceOfferings_ZonalOfferingsBeforeRegionalAtSamePriceAndCapac
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 	g.Expect(filtered).To(HaveLen(1))
 	g.Expect(filtered[0].Offerings).To(HaveLen(2))
 	g.Expect(filtered[0].Offerings[0].Requirements.Get(corev1.LabelTopologyZone).Any()).To(Equal("westus-1"))
@@ -340,7 +343,7 @@ func TestFilterInstanceOfferings_ZonalOfferingsBeforeRegionalAtSamePriceAndCapac
 
 func TestFilterInstanceOfferings_SpotRegionalOfferingBeforeOnDemandZonalAtSamePrice(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -356,7 +359,7 @@ func TestFilterInstanceOfferings_SpotRegionalOfferingBeforeOnDemandZonalAtSamePr
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 	g.Expect(filtered).To(HaveLen(1))
 	g.Expect(filtered[0].Offerings).To(HaveLen(2))
 	g.Expect(filtered[0].Offerings[0].Requirements.Get(karpv1.CapacityTypeLabelKey).Any()).To(Equal(karpv1.CapacityTypeSpot))
@@ -365,7 +368,7 @@ func TestFilterInstanceOfferings_SpotRegionalOfferingBeforeOnDemandZonalAtSamePr
 
 func TestFilterInstanceOfferings_ZonalInstanceTypeBeforeRegionalAtSamePriceAndCapacityType(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -386,7 +389,7 @@ func TestFilterInstanceOfferings_ZonalInstanceTypeBeforeRegionalAtSamePriceAndCa
 		},
 	}
 
-	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+	filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 	g.Expect(filtered).To(HaveLen(2))
 	g.Expect(filtered[0].InstanceType.Name).To(Equal("Standard_Zonal"))
 }
@@ -399,7 +402,7 @@ func TestFilterInstanceOfferings_ZonalInstanceTypeBeforeRegionalAtSamePriceAndCa
 // TODO: Consider a property-based test helper if we add more randomized ranker checks.
 func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
@@ -417,7 +420,7 @@ func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
 				},
 			},
 		}
-		filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements)
+		filtered := provider.FilterInstanceOfferings(context.Background(), allocationstrategy.NewInstanceOfferings(instanceTypes), requirements, nil)
 		g.Expect(filtered).To(HaveLen(1))
 		g.Expect(filtered[0].Offerings).NotTo(BeEmpty())
 		seen[filtered[0].Offerings[0].Requirements.Get(corev1.LabelTopologyZone).Any()]++
@@ -427,7 +430,7 @@ func TestFilterInstanceOfferings_ZoneTiesAreShuffled(t *testing.T) {
 
 func TestAllocate(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
 		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", zones.Regional),
@@ -448,7 +451,7 @@ func TestAllocate(t *testing.T) {
 		},
 	}
 
-	selection := provider.Allocate(context.Background(), instanceTypes, requirements)
+	selection := provider.Allocate(context.Background(), newNodeClaim("nodeclaim-1", "default", requirements), instanceTypes)
 	g.Expect(selection).ToNot(BeNil())
 	g.Expect(selection.InstanceType.Name).To(Equal("Standard_Zonal"))
 	g.Expect(selection.CapacityType()).To(Equal(karpv1.CapacityTypeOnDemand))
@@ -458,7 +461,7 @@ func TestAllocate(t *testing.T) {
 
 func TestAllocate_NoCompatibleOfferings(t *testing.T) {
 	g := NewWithT(t)
-	provider := allocationstrategy.NewProvider()
+	provider := allocationstrategy.NewProvider(nil)
 	requirements := scheduling.NewRequirements(
 		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
 	)
@@ -472,8 +475,113 @@ func TestAllocate_NoCompatibleOfferings(t *testing.T) {
 		},
 	}
 
-	selection := provider.Allocate(context.Background(), instanceTypes, requirements)
+	selection := provider.Allocate(context.Background(), newNodeClaim("nodeclaim-1", "default", requirements), instanceTypes)
 	g.Expect(selection).To(BeNil())
+}
+
+func TestAllocate_PrefersLeastLoadedZone(t *testing.T) {
+	g := NewWithT(t)
+	tracker := &fakeZoneLoadTracker{load: map[string]int{"westus-1": 2, "westus-3": 1}}
+	provider := allocationstrategy.NewProvider(tracker)
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
+	)
+
+	selection := provider.Allocate(context.Background(), newNodeClaim("nodeclaim-1", "default", requirements), zonalInstanceTypes())
+	g.Expect(selection).ToNot(BeNil())
+	g.Expect(selection.Zone()).To(Equal("westus-2"), "expected the zone with no NodeClaims, got load %v", tracker.load)
+}
+
+// TestAllocate_BalancesAcrossZones verifies that repeated launches for a NodePool with no zone
+// requirements even out across zones instead of following an unbalanced multinomial distribution.
+func TestAllocate_BalancesAcrossZones(t *testing.T) {
+	g := NewWithT(t)
+	tracker := &fakeZoneLoadTracker{load: map[string]int{}}
+	provider := allocationstrategy.NewProvider(tracker)
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
+	)
+
+	for i := 0; i < 9; i++ {
+		selection := provider.Allocate(context.Background(), newNodeClaim(fmt.Sprintf("nodeclaim-%d", i), "default", requirements), zonalInstanceTypes())
+		g.Expect(selection).ToNot(BeNil())
+	}
+	g.Expect(tracker.load).To(Equal(map[string]int{"westus-1": 3, "westus-2": 3, "westus-3": 3}))
+}
+
+// TestAllocate_BalancesAcrossZonesConcurrently covers a burst of launches: each allocation must
+// observe the zones picked by the ones running alongside it rather than all picking the same zone.
+func TestAllocate_BalancesAcrossZonesConcurrently(t *testing.T) {
+	g := NewWithT(t)
+	tracker := &fakeZoneLoadTracker{load: map[string]int{}}
+	provider := allocationstrategy.NewProvider(tracker)
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
+	)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 12; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			provider.Allocate(context.Background(), newNodeClaim(fmt.Sprintf("nodeclaim-%d", i), "default", requirements), zonalInstanceTypes())
+		}(i)
+	}
+	wg.Wait()
+	g.Expect(tracker.load).To(Equal(map[string]int{"westus-1": 4, "westus-2": 4, "westus-3": 4}))
+}
+
+func TestAllocate_WithoutNodePoolLabelSkipsZoneBalancing(t *testing.T) {
+	g := NewWithT(t)
+	tracker := &fakeZoneLoadTracker{load: map[string]int{}}
+	provider := allocationstrategy.NewProvider(tracker)
+	requirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2", "westus-3"),
+	)
+
+	selection := provider.Allocate(context.Background(), newNodeClaim("nodeclaim-1", "", requirements), zonalInstanceTypes())
+	g.Expect(selection).ToNot(BeNil())
+	g.Expect(tracker.load).To(BeEmpty())
+}
+
+type fakeZoneLoadTracker struct {
+	load map[string]int
+}
+
+func (f *fakeZoneLoadTracker) Load(context.Context, string) map[string]int {
+	return f.load
+}
+
+func (f *fakeZoneLoadTracker) Record(_, _, zone string) {
+	f.load[zone]++
+}
+
+func newNodeClaim(name, nodePoolName string, requirements scheduling.Requirements) *karpv1.NodeClaim {
+	nodeClaim := &karpv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec:       karpv1.NodeClaimSpec{Requirements: requirements.NodeSelectorRequirements()},
+	}
+	if nodePoolName != "" {
+		nodeClaim.Labels = map[string]string{karpv1.NodePoolLabelKey: nodePoolName}
+	}
+	return nodeClaim
+}
+
+func zonalInstanceTypes() []*corecloudprovider.InstanceType {
+	return []*corecloudprovider.InstanceType{
+		{
+			Name: "Standard_D2s_v3",
+			Offerings: corecloudprovider.Offerings{
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-1"),
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-2"),
+				newOfferingWithZone(0.1, karpv1.CapacityTypeOnDemand, "westus-3"),
+			},
+		},
+	}
 }
 
 func newOfferingWithZone(price float64, capacityType string, zone string) *corecloudprovider.Offering {
