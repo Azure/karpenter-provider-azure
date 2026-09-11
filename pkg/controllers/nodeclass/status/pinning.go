@@ -283,7 +283,7 @@ func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKS
 	if foundImage {
 		return fmt.Errorf("%w: requested image version %s was found but kubernetes version %s was not found", errRollbackTargetKubernetesVersionMismatch, reqImageVersion, reqK8sVersion)
 	}
-	return fmt.Errorf("%w: requested node image version %s was not found", errNodeImageVersionInvalid, reqK8sVersion)
+	return fmt.Errorf("%w: requested node image version %s was not found", errNodeImageVersionInvalid, reqImageVersion)
 }
 
 func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
