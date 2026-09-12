@@ -32,7 +32,6 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
-// OSDiskType is retained for compatibility with historical v1alpha2 managed fields.
 type OSDiskType string
 
 var (
@@ -70,8 +69,9 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
-	// osDiskType is retained for server-side apply compatibility with objects whose managed fields reference v1alpha2.
-	// v1alpha2 remains unserved; use v1beta1 to configure the OS disk type.
+	// osDiskType is the type of disk to use for the OS.
+	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
 	// +kubebuilder:validation:Enum:={Managed}
 	// +optional
 	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`

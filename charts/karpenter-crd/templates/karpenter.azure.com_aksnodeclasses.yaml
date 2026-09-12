@@ -744,8 +744,9 @@ spec:
                 type: integer
               osDiskType:
                 description: |-
-                  osDiskType is retained for server-side apply compatibility with objects whose managed fields reference v1alpha2.
-                  v1alpha2 remains unserved; use v1beta1 to configure the OS disk type.
+                  osDiskType is the type of disk to use for the OS.
+                  If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+                  of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
                 enum:
                 - Managed
                 type: string
