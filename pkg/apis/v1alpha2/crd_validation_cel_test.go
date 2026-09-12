@@ -27,6 +27,7 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -1177,5 +1178,42 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
+	})
+})
+
+var _ = Describe("Version Compatibility", func() {
+	It("should allow v1beta1 osDiskType apply with v1alpha2 managed fields", func() {
+		name := strings.ToLower(randomdata.SillyName())
+		alphaVersion := v1alpha2.SchemeGroupVersion.String()
+		betaVersion := v1beta1.SchemeGroupVersion.String()
+		alphaResource := azureEnv.DynamicInterface.Resource(v1alpha2.SchemeGroupVersion.WithResource("aksnodeclasses"))
+		betaResource := azureEnv.DynamicInterface.Resource(v1beta1.SchemeGroupVersion.WithResource("aksnodeclasses"))
+
+		alphaNodeClass := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": alphaVersion,
+			"kind":       "AKSNodeClass",
+			"metadata": map[string]any{
+				"name": name,
+			},
+			"spec": map[string]any{
+				"osDiskSizeGB": int64(64),
+			},
+		}}
+		created, err := alphaResource.Apply(ctx, name, alphaNodeClass, metav1.ApplyOptions{FieldManager: "v1alpha2-manager"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(lo.ContainsBy(created.GetManagedFields(), func(entry metav1.ManagedFieldsEntry) bool {
+			return entry.APIVersion == alphaVersion
+		})).To(BeTrue())
+
+		betaNodeClass := alphaNodeClass.DeepCopy()
+		betaNodeClass.SetAPIVersion(betaVersion)
+		Expect(unstructured.SetNestedField(betaNodeClass.Object, "Managed", "spec", "osDiskType")).To(Succeed())
+		applied, err := betaResource.Apply(ctx, name, betaNodeClass, metav1.ApplyOptions{FieldManager: "v1beta1-manager"})
+		Expect(err).ToNot(HaveOccurred())
+
+		osDiskType, found, err := unstructured.NestedString(applied.Object, "spec", "osDiskType")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(osDiskType).To(Equal("Managed"))
 	})
 })

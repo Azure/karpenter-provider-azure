@@ -32,6 +32,13 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+// OSDiskType is retained for compatibility with historical v1alpha2 managed fields.
+type OSDiskType string
+
+var (
+	OSDiskTypeManaged = OSDiskType("Managed")
+)
+
 // +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation}
 type WorkloadRuntime string
 
@@ -63,6 +70,11 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// osDiskType is retained for server-side apply compatibility with objects whose managed fields reference v1alpha2.
+	// v1alpha2 remains unserved; use v1beta1 to configure the OS disk type.
+	// +kubebuilder:validation:Enum:={Managed}
+	// +optional
+	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +default=128
 	// +kubebuilder:validation:Minimum=30

@@ -742,6 +742,13 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              osDiskType:
+                description: |-
+                  osDiskType is retained for server-side apply compatibility with objects whose managed fields reference v1alpha2.
+                  v1alpha2 remains unserved; use v1beta1 to configure the OS disk type.
+                enum:
+                - Managed
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields
