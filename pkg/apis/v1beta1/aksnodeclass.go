@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
@@ -721,7 +722,11 @@ type AKSNodeClass struct {
 const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
-	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
+	spec := in.Spec.DeepCopy()
+	if spec.CapacityReservationGroupID != nil {
+		spec.CapacityReservationGroupID = lo.ToPtr(strings.ToLower(*spec.CapacityReservationGroupID))
+	}
+	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,
 		ZeroNil:         true,

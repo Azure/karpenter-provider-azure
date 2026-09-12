@@ -93,6 +93,7 @@ var _ = Describe("Hash", func() {
 		Entry("ImageFamily", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
 		Entry("MaxPods", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("CapacityReservationGroupID", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")}}),
 		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
 		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
@@ -111,6 +112,12 @@ var _ = Describe("Hash", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-3": "valueTag-3"}
 		updatedHash := nodeClass.Hash()
 		Expect(hash).To(Equal(updatedHash))
+	})
+	It("should not change hash when capacity reservation group ID casing changes", func() {
+		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")
+		hash := nodeClass.Hash()
+		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr("/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/CRG")
+		Expect(nodeClass.Hash()).To(Equal(hash))
 	})
 	It("should expect two AKSNodeClasses with the same spec to have the same hash", func() {
 		otherNodeClass := &v1beta1.AKSNodeClass{
