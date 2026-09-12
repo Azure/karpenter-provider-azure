@@ -310,6 +310,30 @@ func (env *Environment) EventuallyExpectHealthy(pods ...*corev1.Pod) {
 	env.EventuallyExpectHealthyWithTimeout(-1, pods...)
 }
 
+// EventuallyGetPodLogs waits for the pod to be running or succeeded and returns its logs.
+func (env *Environment) EventuallyGetPodLogs(pod *corev1.Pod) string {
+	GinkgoHelper()
+	var logs string
+	Eventually(func(g Gomega) {
+		var currentPod corev1.Pod
+		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(pod), &currentPod)).To(Succeed())
+		g.Expect(currentPod.Status.Phase).To(Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)))
+
+		stream, err := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+			Container: pod.Spec.Containers[0].Name,
+		}).Stream(env.Context)
+		g.Expect(err).To(Succeed())
+		defer stream.Close()
+
+		buffer := new(bytes.Buffer)
+		_, err = io.Copy(buffer, stream)
+		g.Expect(err).To(Succeed())
+		logs = buffer.String()
+		g.Expect(logs).ToNot(BeEmpty())
+	}).WithTimeout(3 * time.Minute).Should(Succeed())
+	return logs
+}
+
 func (env *Environment) EventuallyExpectTerminating(pods ...*corev1.Pod) {
 	GinkgoHelper()
 	env.EventuallyExpectTerminatingWithTimeout(-1, pods...)

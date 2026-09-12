@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
@@ -87,18 +88,20 @@ type Environment struct {
 	AKSMachinesAPI               *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI             *fake.AKSAgentPoolsAPI
 	UsageAPI                     *fake.UsageAPI
+	SKUMixPlacementScoresAPI     *fake.SKUMixPlacementScoresAPI
 	DynamicInterface             dynamic.Interface
 
 	// Fake data stores for the APIs
 	AKSDataStorage *fake.AKSDataStorage
 
 	// Cache
-	AKSMachineCache           *machinecache.MachineCache
-	KubernetesVersionCache    *cache.Cache
-	NodeImagesCache           *cache.Cache
-	InstanceTypeCache         *cache.Cache
-	LoadBalancerCache         *cache.Cache
-	UnavailableOfferingsCache *azurecache.UnavailableOfferings
+	AKSMachineCache             *machinecache.MachineCache
+	KubernetesVersionCache      *cache.Cache
+	NodeImagesCache             *cache.Cache
+	InstanceTypeCache           *cache.Cache
+	LoadBalancerCache           *cache.Cache
+	CapacityRecommendationCache *cache.Cache
+	UnavailableOfferingsCache   *azurecache.UnavailableOfferings
 
 	// Providers
 	InstanceTypesProvider        *instancetype.DefaultProvider
@@ -156,6 +159,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
 	usageAPI := &fake.UsageAPI{}
+	skuMixPlacementScoresAPI := &fake.SKUMixPlacementScoresAPI{}
 
 	aksDataStorage := fake.NewAKSDataStorage()
 	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(aksDataStorage)
@@ -167,6 +171,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeImagesCache := cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval)
 	instanceTypeCache := cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval)
 	loadBalancerCache := cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval)
+	capacityRecommendationCache := cache.New(cache.NoExpiration, azurecache.DefaultCleanupInterval)
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 
 	// Providers
@@ -241,8 +246,17 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 		usageAPI,
+		skuMixPlacementScoresAPI,
 	)
-	allocationStrategyProvider := allocationstrategy.NewProvider()
+	capacityRecommendationProvider := capacityrecommendation.NewProvider(
+		skuMixPlacementScoresAPI,
+		capacityRecommendationCache,
+		region,
+	)
+	allocationStrategyProvider := allocationstrategy.NewProvider(
+		capacityRecommendationProvider,
+		testOptions.ComputeRecommendationMode,
+	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
@@ -330,16 +344,18 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		AKSMachinesAPI:               aksMachinesAPI,
 		AKSAgentPoolsAPI:             aksAgentPoolsAPI,
 		UsageAPI:                     usageAPI,
+		SKUMixPlacementScoresAPI:     skuMixPlacementScoresAPI,
 		DynamicInterface:             dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
 
-		AKSMachineCache:           aksMachineCache,
-		KubernetesVersionCache:    kubernetesVersionCache,
-		NodeImagesCache:           nodeImagesCache,
-		InstanceTypeCache:         instanceTypeCache,
-		UnavailableOfferingsCache: unavailableOfferingsCache,
-		LoadBalancerCache:         loadBalancerCache,
+		AKSMachineCache:             aksMachineCache,
+		KubernetesVersionCache:      kubernetesVersionCache,
+		NodeImagesCache:             nodeImagesCache,
+		InstanceTypeCache:           instanceTypeCache,
+		UnavailableOfferingsCache:   unavailableOfferingsCache,
+		LoadBalancerCache:           loadBalancerCache,
+		CapacityRecommendationCache: capacityRecommendationCache,
 
 		InstanceTypesProvider:        instanceTypesProvider,
 		VMInstanceProvider:           vmInstanceProvider,
@@ -385,6 +401,7 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.AKSMachinesAPI.Reset()
 	env.AKSAgentPoolsAPI.Reset()
 	env.UsageAPI.Reset()
+	env.SKUMixPlacementScoresAPI.Reset()
 	env.QuotaProvider.Reset()
 
 	env.KubernetesVersionCache.Flush()
@@ -393,6 +410,7 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.UnavailableOfferingsCache.Flush()
 	env.AKSMachineCache.InvalidateAll()
 	env.LoadBalancerCache.Flush()
+	env.CapacityRecommendationCache.Flush()
 
 	lo.Must0(env.InstanceTypesProvider.UpdateInstanceTypes(ctx))
 
