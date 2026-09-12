@@ -44,22 +44,25 @@ var _ = Describe("VMExtension", func() {
 			}
 		}
 
-		installedExtensions := []string{}
-		for _, ext := range vm.Resources {
-			installedExtensions = append(installedExtensions, lo.FromPtr(ext.Name))
-		}
-		expectedExtensions := []any{
-			// TODO: Uncomment when AKSLinuxExtension rolls out
-			// "AKSLinuxExtension",
-			"computeAksLinuxBilling",
-		}
-		Expect(installedExtensions).To(ContainElements(expectedExtensions...))
-		if !env.InClusterController {
-			expectedManagedExtensions := []any{
-				"cse-agent-karpenter",
+		Eventually(func(g Gomega) {
+			vm = env.GetVM(pods[0].Spec.NodeName)
+			installedExtensions := []string{}
+			for _, ext := range vm.Resources {
+				installedExtensions = append(installedExtensions, lo.FromPtr(ext.Name))
 			}
-			Expect(installedExtensions).To(ContainElements(expectedManagedExtensions))
-		}
+			expectedExtensions := []any{
+				// TODO: Uncomment when AKSLinuxExtension rolls out
+				// "AKSLinuxExtension",
+				"computeAksLinuxBilling",
+			}
+			g.Expect(installedExtensions).To(ContainElements(expectedExtensions...))
+			if !env.InClusterController {
+				expectedManagedExtensions := []any{
+					"cse-agent-karpenter",
+				}
+				g.Expect(installedExtensions).To(ContainElements(expectedManagedExtensions))
+			}
+		}).Should(Succeed())
 
 	})
 	//It("should use nodepool tags on the vm extensions karpenter manages", func(){})
