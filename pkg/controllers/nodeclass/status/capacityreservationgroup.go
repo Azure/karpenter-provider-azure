@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -71,19 +70,6 @@ const (
 	unreadyRequeueInterval = time.Minute
 )
 
-// cloudSupportsCapacityReservations reports whether the resolved cloud is one Azure
-// documents capacity reservations for. Compared by Resource Manager endpoint rather than
-// by name, because a file-based environment supplies both, and only the endpoint is
-// meaningful -- the same reason auth.IsPublic compares endpoints.
-func cloudSupportsCapacityReservations(cfg cloud.Configuration) bool {
-	return lo.ContainsBy([]cloud.Configuration{cloud.AzurePublic, cloud.AzureGovernment, cloud.AzureChina},
-		func(supported cloud.Configuration) bool {
-			return strings.EqualFold(
-				strings.TrimRight(cfg.Services[cloud.ResourceManager].Endpoint, "/"),
-				strings.TrimRight(supported.Services[cloud.ResourceManager].Endpoint, "/"))
-		})
-}
-
 // instanceTypeLister is the projection side of the CRG feature, narrowed to what
 // readiness needs. Reusing it keeps a single definition of which SKUs a NodeClass can
 // actually use, rather than a second copy that can drift.
@@ -101,7 +87,7 @@ type CapacityReservationGroupReconciler struct {
 	instanceTypes      instanceTypeLister
 	subscriptionID     string
 	location           string
-	cloud              cloud.Configuration
+	unsupportedCloud   atomic.Bool
 }
 
 func NewCapacityReservationGroupReconciler(
@@ -110,7 +96,6 @@ func NewCapacityReservationGroupReconciler(
 	instanceTypes instanceTypeLister,
 	subscriptionID string,
 	location string,
-	cloudConfig cloud.Configuration,
 ) *CapacityReservationGroupReconciler {
 	return &CapacityReservationGroupReconciler{
 		groupsClient:       groupsClient,
@@ -118,7 +103,6 @@ func NewCapacityReservationGroupReconciler(
 		instanceTypes:      instanceTypes,
 		subscriptionID:     subscriptionID,
 		location:           location,
-		cloud:              cloudConfig,
 	}
 }
 
@@ -144,14 +128,6 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		return reconcile.Result{}, nil
 	}
 
-	// Checked before the group is read, so an unsupported cloud reports itself rather than
-	// surfacing as whatever error that cloud's ARM returns for an unknown resource type.
-	if !cloudSupportsCapacityReservations(r.cloud) {
-		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedCloud,
-			"capacity reservations are only available in Azure Cloud, Azure Government, and Azure China")
-		return reconcile.Result{}, nil
-	}
-
 	resourceID, err := arm.ParseResourceID(crgID)
 	if err != nil || !strings.EqualFold(resourceID.ResourceType.Type, capacityReservationGroupResourceType) {
 		logger.Error(err, "failed to parse capacityReservationGroupID")
@@ -167,10 +143,21 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 			fmt.Sprintf("capacityReservationGroupID must be in subscription %s", r.subscriptionID))
 		return reconcile.Result{}, nil
 	}
+	if r.unsupportedCloud.Load() {
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedCloud,
+			"capacity reservation groups are not supported by this cloud")
+		return reconcile.Result{}, nil
+	}
 
 	group, err := r.groupsClient.Get(ctx, resourceID.ResourceGroupName, resourceID.Name, nil)
 	if err != nil {
 		if azErr := sdkerrors.IsResponseError(err); azErr != nil {
+			if strings.EqualFold(azErr.ErrorCode, "InvalidResourceType") || strings.EqualFold(azErr.ErrorCode, "NoRegisteredProviderFound") {
+				r.unsupportedCloud.Store(true)
+				r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedCloud,
+					"capacity reservation groups are not supported by this cloud")
+				return reconcile.Result{}, nil
+			}
 			switch azErr.StatusCode {
 			case http.StatusNotFound:
 				r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNotFound,

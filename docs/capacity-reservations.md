@@ -278,7 +278,7 @@ az capacity reservation show \
 | --- | --- |
 | Spot, Ultra Disk, proximity placement groups | Azure does not support these with capacity reservations, so those offerings are not emitted for a configured NodeClass |
 | AKS Machine API provisioning mode | Fails readiness with `CapacityReservationGroupUnsupportedProvisionMode`. The per-Machine field is not published yet |
-| Clouds other than Azure Cloud, Azure Government, Azure China | Fails readiness with `CapacityReservationGroupUnsupportedCloud` |
+| Clouds whose ARM endpoint does not expose capacity reservation groups | Fails readiness with `CapacityReservationGroupUnsupportedCloud`; the unsupported capability is cached after the first ARM response |
 | Cross-subscription (shared) groups | Not supported yet; same-subscription Targeted groups only |
 | Association changed outside Karpenter | **Not detected and not reconciled.** Manage association only through the NodeClass. These VMs live in the AKS node resource group, where direct edits are unsupported and are blocked outright when node resource group lockdown is enabled |
 | Changing `capacityReservationGroupID` | Drifts affected nodes and replaces them through ordinary disruption, paced by disruption budgets |
@@ -303,7 +303,7 @@ cluster, prefer a new NodeClass when that churn is unwelcome.
 | `CapacityReservationGroupNoEligibleReservations` | Members exist but none has provisioned successfully |
 | `CapacityReservationGroupNoCompatibleReservations` | No member reserves a VM size this NodeClass can use — check the region offers the size, and that the NodeClass does not exclude it |
 | `CapacityReservationGroupUnsupportedProvisionMode` | AKS Machine API mode; see above |
-| `CapacityReservationGroupUnsupportedCloud` | This cloud has no capacity reservations |
+| `CapacityReservationGroupUnsupportedCloud` | This cloud's ARM endpoint does not expose capacity reservation groups |
 | `CapacityReservationGroupUnknownError` | Unexpected Azure error; the message carries the detail |
 
 A member reservation with `quantity: 0` is valid and useful: it is the documented way to
