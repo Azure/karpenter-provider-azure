@@ -1724,6 +1724,10 @@ spec:
                       If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
                     type: string
                 type: object
+                x-kubernetes-validations:
+                - message: kubernetesVersion must be set when nodeImageVersion is
+                    set
+                  rule: '!has(self.nodeImageVersion) || has(self.kubernetesVersion)'
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -1924,6 +1928,16 @@ spec:
                 type: object
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: nodeImageVersion must match the current image, latest image, or
+            a recently used image paired with the requested kubernetesVersion
+          rule: 'has(self.spec.versions) && has(self.spec.versions.nodeImageVersion)
+            ? self.status.images.exists(image, image.id.endsWith(''/versions/'' +
+            self.spec.versions.nodeImageVersion)) || (has(self.status.versions) &&
+            self.status.versions.latestImageVersion == self.spec.versions.nodeImageVersion)
+            || (has(self.status.versions) && self.status.versions.recentlyUsedVersions.exists(version,
+            version.imageVersion == self.spec.versions.nodeImageVersion && version.kubernetesVersion
+            == self.spec.versions.kubernetesVersion)) : true'
     served: true
     storage: true
     subresources:

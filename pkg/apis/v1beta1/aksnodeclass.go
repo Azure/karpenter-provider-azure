@@ -145,6 +145,7 @@ type AKSNodeClassSpec struct {
 // If omitted, nodes follow the observed control plane version and automatic latest node image selection.
 // Versions controls the Kubernetes and node image versions used by the NodeClass.
 // If omitted, nodes follow the observed control plane version and automatic latest node image selection.
+// +kubebuilder:validation:XValidation:message="kubernetesVersion must be set when nodeImageVersion is set",rule="!has(self.nodeImageVersion) || has(self.kubernetesVersion)"
 type Versions struct {
 	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
 	// If omitted, the observed control plane version is used.
@@ -706,6 +707,7 @@ type SysctlConfiguration struct {
 // +kubebuilder:printcolumn:name="ImageFamily",type=string,JSONPath=".spec.imageFamily",priority=1
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:validation:XValidation:message="nodeImageVersion must match the current image, latest image, or a recently used image paired with the requested kubernetesVersion",rule="has(self.spec.versions) && has(self.spec.versions.nodeImageVersion) ? self.status.images.exists(image, image.id.endsWith('/versions/' + self.spec.versions.nodeImageVersion)) || (has(self.status.versions) && self.status.versions.latestImageVersion == self.spec.versions.nodeImageVersion) || (has(self.status.versions) && self.status.versions.recentlyUsedVersions.exists(version, version.imageVersion == self.spec.versions.nodeImageVersion && version.kubernetesVersion == self.spec.versions.kubernetesVersion)) : true"
 type AKSNodeClass struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is standard object metadata.
