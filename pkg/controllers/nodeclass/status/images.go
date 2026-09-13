@@ -196,20 +196,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func listLatestImages(ctx context.Context, r imagefamily.NodeImageProvider, nodeClass v1beta1.AKSNodeClass) ([]imagefamily.NodeImage, error) {
-	if nodeClass.Status.Versions == nil || lo.FromPtr(nodeClass.Status.Versions.ControlPlaneKubernetesVersion) == "" {
-		return nil, fmt.Errorf("control plane kubernetes version is not set")
-	}
-
-	nodeClass.Status.KubernetesVersion = nodeClass.Status.Versions.ControlPlaneKubernetesVersion
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
-	nodeImages, err := r.List(ctx, &nodeClass)
-	if err != nil {
-		return nil, fmt.Errorf("getting nodeimages, %w", err)
-	}
-	return nodeImages, nil
-}
-
 // Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
 // Handles case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.

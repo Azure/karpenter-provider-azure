@@ -148,6 +148,7 @@ type AKSNodeClassSpec struct {
 type Versions struct {
 	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
 	// If omitted, the observed control plane version is used.
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
 	// +optional
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 	// nodeImageVersion is the status-backed node image version to use for the NodeClass.

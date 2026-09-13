@@ -87,7 +87,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &controlPlaneVersion
 
 	// Update latest suffix
-	latestImages, err := listLatestImages(ctx, r.nodeImageProvider, *nodeClass)
+	latestImages, err := listImagesForVersion(ctx, r.nodeImageProvider, *nodeClass, controlPlaneVersion)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing latest images, %w", err)
 	}
@@ -98,7 +98,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	nodeClass.Status.Versions.LatestImageVersion = parseVersion(latestImages[0].ID)
 
 	reqImgVer, reqK8sVer := requestedVersions(nodeClass)
-	if err := validateK8sVersion(ctx, reqK8sVer, controlPlaneVersion); err != nil {
+	if err := validateK8sVersion(reqK8sVer, controlPlaneVersion); err != nil {
 		setStatusConditionByErr(nodeClass, err)
 		return reconcile.Result{
 			RequeueAfter: azurecache.KubernetesVersionTTL,
@@ -115,7 +115,6 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 			RequeueAfter: azurecache.KubernetesVersionTTL,
 		}, nil
 	}
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 	if reqImgVer != "" {
 		if err := validatePinning(reqImgVer, reqK8sVer, currentCPVer, currentLatestImgVer, nodeClass); err != nil {
@@ -129,9 +128,9 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	// Get the images associated with the requested version.
 	nodeImages := latestImages
 	if reqK8sVer != controlPlaneVersion {
-		nodeImages, err = r.nodeImageProvider.List(ctx, nodeClass)
+		nodeImages, err = listImagesForVersion(ctx, r.nodeImageProvider, *nodeClass, reqK8sVer)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("listing images, %w", err)
+			return reconcile.Result{}, fmt.Errorf("listing images for requested version, %w", err)
 		}
 	}
 
@@ -177,6 +176,20 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
 
+func listImagesForVersion(ctx context.Context, r imagefamily.NodeImageProvider, nodeClass v1beta1.AKSNodeClass, k8sVersion string) ([]imagefamily.NodeImage, error) {
+	if nodeClass.Status.Versions == nil {
+		return nil, fmt.Errorf("control plane kubernetes version is not set")
+	}
+
+	nodeClass.Status.KubernetesVersion = &k8sVersion
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+	nodeImages, err := r.List(ctx, &nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("getting nodeimages, %w", err)
+	}
+	return nodeImages, nil
+}
+
 /*
 The requested version must satisfy AKS node/control-plane skew rules.
 
@@ -192,7 +205,7 @@ Node Kubernetes version downgrade is allowed when selecting the retained image/K
 provided the retained Kubernetes version still satisfies these control-plane skew rules.
 This changes only the node version; the control-plane version is not rolled back.
 */
-func validateK8sVersion(ctx context.Context, version, controlPlaneVersion string) error {
+func validateK8sVersion(version, controlPlaneVersion string) error {
 	versionSemver, err := semver.Parse(version)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errKubernetesVersionInvalidFormat, err)
