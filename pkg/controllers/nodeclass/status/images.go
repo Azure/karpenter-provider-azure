@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/awslabs/operatorpkg/reasonable"
+	"github.com/blang/semver/v4"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 
@@ -55,6 +56,14 @@ const (
 	nodeOSMaintenanceWindowChannel = "aksManagedNodeOSUpgradeSchedule"
 	configMapStartTimeFormat       = "%s-start"
 	configMapEndTimeFormat         = "%s-end"
+)
+
+var (
+	errKubernetesVersionInvalidFormat            error
+	errKubernetesVersionControlPlaneIncompatible error
+	errNodeImageVersionInvalid                   error
+	errRollbackTargetKubernetesVersionMismatch   error
+	errKubernetesVersionUnsupported              error
 )
 
 type NodeImageReconciler struct {
@@ -144,6 +153,33 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 			Requirements: reqs,
 		}
 	})
+
+	if len((goalImages)) > 0 {
+		if nodeClass.Status.Versions == nil {
+			nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+		}
+		nodeClass.Status.Versions.LatestImageVersion = parseVersion(goalImages[0].ID)
+	}
+
+	if reqK8sVer, reqImgVer := requestedVersions(nodeClass); reqK8sVer != "" || reqImgVer != "" {
+		switch {
+		case reqK8sVer != "" && reqImgVer != "":
+			if err := validatePinning(reqImgVer, reqK8sVer, nodeClass); err != nil {
+				return reconcile.Result{}, fmt.Errorf("validating rollback, %w", err)
+			}
+			goalImages, err = replaceSuffixes(goalImages, reqImgVer)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("replacing image version suffixes, %w", err)
+			}
+
+		case reqK8sVer != "":
+			// Fall through
+		case reqImgVer != "":
+			// ERROR YOU SHOULD NOT DO THIS
+			return reconcile.Result{}, fmt.Errorf("requested image version without specifying Kubernetes version is not allowed")
+		}
+
+	}
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
 	//
@@ -303,4 +339,92 @@ func trimVersionSuffix(imageID string) string {
 	imageIDParts := strings.Split(imageID, "/")
 	baseID := strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
 	return baseID
+}
+
+// Trims off the version prefix, and leaves just the image version
+// Examples:
+//
+// - CIG:
+//   - Input: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+//
+// - SIG:
+//   - Input: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+func parseVersion(imageID string) string {
+	imageIDParts := strings.Split(imageID, "/")
+	if len(imageIDParts) < 2 {
+		return ""
+	}
+	version := imageIDParts[len(imageIDParts)-1]
+	return version
+}
+
+func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClass) error {
+	if _, err := semver.Parse(reqK8sVer); err != nil {
+		return fmt.Errorf("%w: parsing kubernetes version: %v", errKubernetesVersionInvalidFormat, err)
+	}
+
+	currentImgVer := ""
+	if len(nodeClass.Status.Images) > 0 {
+		currentImgVer = parseVersion(nodeClass.Status.Images[0].ID)
+	}
+
+	latestImgVer := ""
+	if nodeClass.Status.Versions != nil {
+		latestImgVer = nodeClass.Status.Versions.LatestImageVersion
+	}
+
+	if reqImgVer == currentImgVer || reqImgVer == latestImgVer {
+		if curVer := nodeClass.Status.KubernetesVersion; curVer != nil && reqK8sVer != *curVer {
+			return fmt.Errorf("%w: requested image does not have valid kubernetes version", errNodeImageVersionInvalid)
+		}
+	} else {
+		return validRollback(reqK8sVer, reqImgVer, nodeClass)
+	}
+	return nil
+}
+
+func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) error {
+	if nodeClass == nil || nodeClass.Status.Versions == nil || nodeClass.Status.Versions.RecentlyUsedVersions == nil {
+		return fmt.Errorf("%w: requested image version %s was not found", errNodeImageVersionInvalid, reqImageVersion)
+	}
+
+	foundImage := false
+	for _, used := range nodeClass.Status.Versions.RecentlyUsedVersions {
+		if lo.FromPtr(used.ImageVersion) != reqImageVersion {
+			continue
+		}
+
+		foundImage = true
+		if lo.FromPtr(used.KubernetesVersion) == reqK8sVersion {
+			return nil
+		}
+	}
+
+	if foundImage {
+		return fmt.Errorf("%w: requested image version %s was found but kubernetes version %s was not found", errRollbackTargetKubernetesVersionMismatch, reqImageVersion, reqK8sVersion)
+	}
+	return fmt.Errorf("%w: requested node image version %s was not found", errNodeImageVersionInvalid, reqImageVersion)
+}
+
+func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
+	if newSuffix == "" || strings.Contains(newSuffix, "/") {
+		return nil, fmt.Errorf("invalid image version suffix %q", newSuffix)
+	}
+
+	updated := make([]v1beta1.NodeImage, len(images))
+	copy(updated, images)
+
+	for i := range updated {
+		parts := strings.Split(updated[i].ID, "/")
+		if len(parts) < 3 || parts[len(parts)-2] != "versions" || parts[len(parts)-1] == "" {
+			return nil, fmt.Errorf("image ID does not have expected versions suffix: %s", updated[i].ID)
+		}
+
+		parts[len(parts)-1] = newSuffix
+		updated[i].ID = strings.Join(parts, "/")
+	}
+
+	return updated, nil
 }
