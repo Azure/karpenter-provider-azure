@@ -171,7 +171,11 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 
 	nodeClass.Status.KubernetesVersion = lo.ToPtr(reqK8sVer)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+
+	condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+	if !condition.IsFalse() || isPinningValidationReason(condition.Reason) {
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+	}
 
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
@@ -330,5 +334,16 @@ func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "RollbackTargetKubernetesVersionMismatch", err.Error())
 	case errors.Is(err, errKubernetesVersionUnsupported):
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnsupported", err.Error())
+	}
+}
+
+func isPinningValidationReason(reason string) bool {
+	switch reason {
+	case "KubernetesVersionInvalidFormat",
+		"NodeImageVersionInvalid",
+		"RollbackTargetKubernetesVersionMismatch":
+		return true
+	default:
+		return false
 	}
 }
