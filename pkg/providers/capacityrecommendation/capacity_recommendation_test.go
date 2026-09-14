@@ -639,7 +639,7 @@ func TestGetRecommendations_RecordsSuccessfulAPIMetrics(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 
 	labels := map[string]string{
-		providermetrics.PriorityLabel:           "regular",
+		providermetrics.CapacityTypeLabel:       karpv1.CapacityTypeOnDemand,
 		providermetrics.AllocationStrategyLabel: "prioritized",
 		providermetrics.OSTypeLabel:             "linux",
 		providermetrics.PlacementScopeLabel:     "zonal",
@@ -656,7 +656,7 @@ func TestGetRecommendations_RecordsSuccessfulAPIMetrics(t *testing.T) {
 	g.Expect(durationMetric.GetHistogram().GetSampleCount()).To(BeNumerically("==", 1))
 }
 
-func TestGetRecommendations_RecordsCacheHitMetric(t *testing.T) {
+func TestGetRecommendations_RecordsCacheRequestMetrics(t *testing.T) {
 	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
@@ -668,12 +668,20 @@ func TestGetRecommendations_RecordsCacheHitMetric(t *testing.T) {
 	_, err = provider.GetRecommendations(context.Background(), capacityRecommendationInput())
 	g.Expect(err).NotTo(HaveOccurred())
 
-	metric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_cache_hits_total", map[string]string{
-		providermetrics.PriorityLabel:           "regular",
+	labels := map[string]string{
+		providermetrics.CapacityTypeLabel:       karpv1.CapacityTypeOnDemand,
 		providermetrics.AllocationStrategyLabel: "prioritized",
 		providermetrics.OSTypeLabel:             "linux",
 		providermetrics.PlacementScopeLabel:     "zonal",
-	})
+		providermetrics.ResultLabel:             "miss",
+	}
+	metric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_cache_requests_total", labels)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(metric).NotTo(BeNil())
+	g.Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+	labels[providermetrics.ResultLabel] = "hit"
+	metric, err = providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_cache_requests_total", labels)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(metric).NotTo(BeNil())
 	g.Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
@@ -694,7 +702,7 @@ func TestGetRecommendations_RecordsFailedRegionalAPIMetrics(t *testing.T) {
 	g.Expect(err).To(MatchError("recommendation API unavailable"))
 
 	labels := map[string]string{
-		providermetrics.PriorityLabel:           "spot",
+		providermetrics.CapacityTypeLabel:       karpv1.CapacityTypeSpot,
 		providermetrics.AllocationStrategyLabel: "prioritized",
 		providermetrics.OSTypeLabel:             "windows",
 		providermetrics.PlacementScopeLabel:     "regional",
@@ -713,7 +721,7 @@ func TestGetRecommendations_RecordsFailedRegionalAPIMetrics(t *testing.T) {
 
 func resetSKUMixPlacementMetrics() {
 	capacityrecommendation.SKUMixPlacementRequestMetric.Reset()
-	capacityrecommendation.SKUMixPlacementCacheHitMetric.Reset()
+	capacityrecommendation.SKUMixPlacementCacheRequestMetric.Reset()
 	capacityrecommendation.SKUMixPlacementRequestDurationMetric.Reset()
 }
 

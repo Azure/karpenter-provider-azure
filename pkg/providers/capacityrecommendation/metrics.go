@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/lo"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 const (
@@ -33,6 +34,8 @@ const (
 	metricValueUnknown              = "unknown"
 	metricResultSuccess             = "success"
 	metricResultError               = "error"
+	metricResultHit                 = "hit"
+	metricResultMiss                = "miss"
 	metricPlacementScopeZonal       = "zonal"
 	metricPlacementScopeRegional    = "regional"
 )
@@ -48,20 +51,20 @@ var (
 			Name:      "requests_total",
 			Help:      "Total number of SKU Mix Placement API requests completed.",
 		},
-		[]string{metrics.PriorityLabel, metrics.AllocationStrategyLabel, metrics.OSTypeLabel, metrics.PlacementScopeLabel, metrics.ResultLabel},
+		[]string{metrics.CapacityTypeLabel, metrics.AllocationStrategyLabel, metrics.OSTypeLabel, metrics.PlacementScopeLabel, metrics.ResultLabel},
 	)
 
-	// SKUMixPlacementCacheHitMetric tracks SKU Mix Placement recommendation cache hits.
+	// SKUMixPlacementCacheRequestMetric tracks SKU Mix Placement recommendation cache requests.
 	//
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
-	SKUMixPlacementCacheHitMetric = prometheus.NewCounterVec(
+	SKUMixPlacementCacheRequestMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metrics.Namespace,
 			Subsystem: capacityRecommendationSubsystem,
-			Name:      "cache_hits_total",
-			Help:      "Total number of SKU Mix Placement recommendation cache hits.",
+			Name:      "cache_requests_total",
+			Help:      "Total number of SKU Mix Placement recommendation cache requests.",
 		},
-		[]string{metrics.PriorityLabel, metrics.AllocationStrategyLabel, metrics.OSTypeLabel, metrics.PlacementScopeLabel},
+		[]string{metrics.CapacityTypeLabel, metrics.AllocationStrategyLabel, metrics.OSTypeLabel, metrics.PlacementScopeLabel, metrics.ResultLabel},
 	)
 
 	// SKUMixPlacementRequestDurationMetric tracks SKU Mix Placement API request latency.
@@ -75,7 +78,7 @@ var (
 			Help:      "Duration in seconds of SKU Mix Placement API requests.",
 			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 20},
 		},
-		[]string{metrics.PriorityLabel, metrics.AllocationStrategyLabel, metrics.OSTypeLabel, metrics.PlacementScopeLabel, metrics.ResultLabel},
+		[]string{metrics.CapacityTypeLabel, metrics.AllocationStrategyLabel, metrics.OSTypeLabel, metrics.PlacementScopeLabel, metrics.ResultLabel},
 	)
 )
 
@@ -89,8 +92,10 @@ func newInstrumentedSKUMixPlacementScoresAPI(client SKUMixPlacementScoresAPI) SK
 	return &instrumentedSKUMixPlacementScoresAPI{client: client}
 }
 
-func recordCacheHit(input *RankingInput) {
-	SKUMixPlacementCacheHitMetric.With(requestMetricLabels(toSKUMixPlacementRequest(input))).Inc()
+func recordCacheRequest(input *RankingInput, result string) {
+	labels := requestMetricLabels(toSKUMixPlacementRequest(input))
+	labels[metrics.ResultLabel] = result
+	SKUMixPlacementCacheRequestMetric.With(labels).Inc()
 }
 
 func (c *instrumentedSKUMixPlacementScoresAPI) Post(
@@ -112,11 +117,11 @@ func (c *instrumentedSKUMixPlacementScoresAPI) Post(
 }
 
 func requestMetricLabels(request armrecommender.SKUMixPlacementRequest) prometheus.Labels {
-	priority := metricValueUnknown
+	capacityType := metricValueUnknown
 	allocationStrategy := metricValueUnknown
 	osType := metricValueUnknown
 	if request.CapacityProfile != nil {
-		priority = priorityMetricValue(request.CapacityProfile.Priority)
+		capacityType = capacityTypeMetricValue(request.CapacityProfile.Priority)
 		allocationStrategy = allocationStrategyMetricValue(request.CapacityProfile.AllocationStrategy)
 		osType = osTypeMetricValue(request.CapacityProfile.OSType)
 	}
@@ -126,15 +131,22 @@ func requestMetricLabels(request armrecommender.SKUMixPlacementRequest) promethe
 		placementScope = metricPlacementScopeZonal
 	}
 	return prometheus.Labels{
-		metrics.PriorityLabel:           priority,
+		metrics.CapacityTypeLabel:       capacityType,
 		metrics.AllocationStrategyLabel: allocationStrategy,
 		metrics.OSTypeLabel:             osType,
 		metrics.PlacementScopeLabel:     placementScope,
 	}
 }
 
-func priorityMetricValue(priority *armrecommender.SKUMixPlacementPriority) string {
-	return strings.ToLower(string(lo.FromPtrOr(priority, armrecommender.SKUMixPlacementPriority(metricValueUnknown))))
+func capacityTypeMetricValue(priority *armrecommender.SKUMixPlacementPriority) string {
+	switch lo.FromPtr(priority) {
+	case armrecommender.SKUMixPlacementPriorityRegular:
+		return karpv1.CapacityTypeOnDemand
+	case armrecommender.SKUMixPlacementPrioritySpot:
+		return karpv1.CapacityTypeSpot
+	default:
+		return metricValueUnknown
+	}
 }
 
 func allocationStrategyMetricValue(allocationStrategy *armrecommender.SKUMixPlacementAllocationStrategy) string {
@@ -148,7 +160,7 @@ func osTypeMetricValue(osType *armrecommender.SKUMixPlacementOSType) string {
 func init() {
 	crmetrics.Registry.MustRegister(
 		SKUMixPlacementRequestMetric,
-		SKUMixPlacementCacheHitMetric,
+		SKUMixPlacementCacheRequestMetric,
 		SKUMixPlacementRequestDurationMetric,
 	)
 }
