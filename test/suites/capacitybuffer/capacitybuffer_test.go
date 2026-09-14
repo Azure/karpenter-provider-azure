@@ -492,10 +492,10 @@ var _ = Describe("CapacityBuffer", func() {
 
 		EventuallyExpectCapacityBufferProvisioned(env, env.Client, buffer)
 		env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
-		env.EventuallyExpectInitializedNodeCount("==", 1)
+		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
 		refreshExistingBufferPlacement(buffer)
 
-		env.ConsistentlyExpectNoDisruptions(1, 60*time.Second)
+		env.ConsistentlyExpectNodesNotDisrupted(nodes, 60*time.Second)
 	})
 
 	// Azure-specific restart coverage for in-memory virtual-pod and empty-protection state.
