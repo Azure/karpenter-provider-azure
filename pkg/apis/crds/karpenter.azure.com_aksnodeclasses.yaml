@@ -807,12 +807,6 @@ spec:
             - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
-            - message: TrustedLaunch is required for FIPS support with Ubuntu2204
-              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
-                && (self.imageFamily != ''Ubuntu2204'' || (has(self.security) && has(self.security.trustedLaunch)
-                && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm)
-                || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)))))
-                : true'
             - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
                 and Ubuntu2204
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
@@ -1696,6 +1690,14 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              osDiskType:
+                description: |-
+                  osDiskType is the type of disk to use for the OS.
+                  If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+                  of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
+                enum:
+                - Managed
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields
@@ -1761,12 +1763,6 @@ spec:
             - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
-            - message: TrustedLaunch is required for FIPS support with Ubuntu2204
-              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
-                && (self.imageFamily != ''Ubuntu2204'' || (has(self.security) && has(self.security.trustedLaunch)
-                && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm)
-                || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)))))
-                : true'
             - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
                 and Ubuntu2204
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
