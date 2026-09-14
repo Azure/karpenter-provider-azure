@@ -126,7 +126,8 @@ func (p *DefaultProvider) GetRecommendations(ctx context.Context, input *Ranking
 	recordCacheRequest(input, metricResultMiss)
 	value, err, _ := p.sfGroup.Do(key, func() (any, error) {
 		// check the cache again in case a different caller in sfGroup already fetched and cached the result
-		if result, ok := p.getCached(key); ok {
+		var result RecommendationDetails
+		if result, ok = p.getCached(key); ok {
 			return result, nil
 		}
 		return p.fetchAndCache(ctx, key, input)
