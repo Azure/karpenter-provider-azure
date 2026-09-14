@@ -94,8 +94,10 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 		return reconcile.Result{}, fmt.Errorf("listing latest images, %w", err)
 	}
 	if len(latestImages) == 0 {
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", "no latest images found for requested version")
-		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+		return reconcile.Result{}, fmt.Errorf(
+			"no latest images found for control-plane Kubernetes version %s",
+			controlPlaneVersion,
+		)
 	}
 	nodeClass.Status.Versions.LatestImageVersion = parseVersion(latestImages[0].ID)
 
@@ -168,8 +170,7 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 		}
 	} else {
 		kubernetesVersionChanged := nodeClass.Status.KubernetesVersion == nil || lo.FromPtr(nodeClass.Status.KubernetesVersion) != reqK8sVer
-		explicitSpecChange := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).ObservedGeneration != nodeClass.Generation
-		if !kubernetesVersionChanged && !explicitSpecChange {
+		if !kubernetesVersionChanged {
 			maintenanceWindowOpen, err := r.nodeImageReconciler.isMaintenanceWindowOpen(ctx)
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
