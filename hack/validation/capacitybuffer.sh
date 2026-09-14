@@ -6,8 +6,7 @@ set -euo pipefail
 # This complements, rather than duplicates, runtime tests:
 # - feature-gate rendering is safe for defaults, explicit boolean/string values,
 #   and legacy Helm values that do not contain the newly added key;
-# - generated local/E2E values enable CapacityBuffer while the public chart
-#   remains default-disabled;
+# - public and generated self-hosted values remain default-disabled;
 # - CapacityBuffer and PodTemplate RBAC is present only when the gate is enabled;
 # - both CRD delivery paths contain exactly one v1beta1 CapacityBuffer CRD; and
 # - every packaged CRD is byte-for-byte identical to the pinned Karpenter core CRD.
@@ -42,14 +41,14 @@ run_helm() {
 run_helm /dev/null lint charts/karpenter
 run_helm /dev/null lint charts/karpenter-crd
 
-# The public chart remains opt-in, while generated development/E2E installs
-# enable the controller just like Static Capacity.
+# Public and generated self-hosted values remain opt-in. The dedicated E2E
+# suite enables the gate and temporary RBAC dynamically when it runs in-cluster.
 [[ "$(yq eval '.settings.featureGates.capacityBuffer' charts/karpenter/values.yaml)" == "false" ]] || {
     echo "expected the public chart to default CapacityBuffer to false"
     exit 1
 }
-[[ "$(yq eval '.settings.featureGates.capacityBuffer' karpenter-values-template.yaml)" == "true" ]] || {
-    echo "expected generated local/E2E values to enable CapacityBuffer"
+[[ "$(yq eval '.settings.featureGates.capacityBuffer' karpenter-values-template.yaml)" == "false" ]] || {
+    echo "expected generated self-hosted values to default CapacityBuffer to false"
     exit 1
 }
 
