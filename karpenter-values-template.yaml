@@ -67,4 +67,5 @@ podLabels:
 logLevel: ${LOG_LEVEL}
 settings:
   featureGates:
+    capacityBuffer: true
     staticCapacity: true
