@@ -72,13 +72,14 @@ func NewController(
 	networkPolicy string,
 	networkPlugin string,
 ) *Controller {
+	nodeImageReconciler := NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface)
 	return &Controller{
 
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
-		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
-		pinning:           NewPinningReconciler(kubernetesVersionProvider, nodeImageProvider),
+		nodeImage:         nodeImageReconciler,
+		pinning:           NewPinningReconciler(kubernetesVersionProvider, nodeImageProvider, nodeImageReconciler),
 		subnet:            NewSubnetReconciler(subnetClient),
 		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),

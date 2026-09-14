@@ -42,14 +42,16 @@ var (
 type PinningReconciler struct {
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
 	nodeImageProvider         imagefamily.NodeImageProvider
+	nodeImageReconciler       *NodeImageReconciler
 	cm                        *pretty.ChangeMonitor
 }
 
 // NewPinningReconciler creates a new instance of the PinningReconciler.
-func NewPinningReconciler(k8sProvider kubernetesversion.KubernetesVersionProvider, imgProvider imagefamily.NodeImageProvider) *PinningReconciler {
+func NewPinningReconciler(k8sProvider kubernetesversion.KubernetesVersionProvider, imgProvider imagefamily.NodeImageProvider, nodeImageReconciler *NodeImageReconciler) *PinningReconciler {
 	return &PinningReconciler{
 		kubernetesVersionProvider: k8sProvider,
 		nodeImageProvider:         imgProvider,
+		nodeImageReconciler:       nodeImageReconciler,
 		cm:                        pretty.NewChangeMonitor(),
 	}
 }
@@ -163,6 +165,18 @@ func (r *PinningReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AK
 		if err != nil {
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", fmt.Sprintf("failed to update image suffixes: %v", err))
 			return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+		}
+	} else {
+		kubernetesVersionChanged := nodeClass.Status.KubernetesVersion == nil || lo.FromPtr(nodeClass.Status.KubernetesVersion) != reqK8sVer
+		explicitSpecChange := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).ObservedGeneration != nodeClass.Generation
+		if !kubernetesVersionChanged && !explicitSpecChange {
+			maintenanceWindowOpen, err := r.nodeImageReconciler.isMaintenanceWindowOpen(ctx)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
+			}
+			if !maintenanceWindowOpen {
+				goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
+			}
 		}
 	}
 
