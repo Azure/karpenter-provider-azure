@@ -31,10 +31,12 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	providermetrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 )
 
 func TestGetRecommendations_ReturnsRecommendations(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	response := recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D4s_v5", "2")
@@ -74,6 +76,7 @@ func TestGetRecommendations_ReturnsRecommendations(t *testing.T) {
 }
 
 func TestGetRecommendations_CacheIgnoresZoneOrderAndCount(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	response := recommendationResponse(time.Now().Add(time.Minute), 8, "Standard_D2s_v5", "1")
@@ -120,6 +123,7 @@ func TestGetRecommendations_CacheIgnoresZoneOrderAndCount(t *testing.T) {
 }
 
 func TestGetRecommendations_CacheKeyIncludesVMSizeOrder(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 8, "Standard_D2s_v5", "1"))
@@ -137,6 +141,7 @@ func TestGetRecommendations_CacheKeyIncludesVMSizeOrder(t *testing.T) {
 }
 
 func TestGetRecommendations_CacheKeyIncludesOSType(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D2s_v5", "1"))
@@ -155,6 +160,7 @@ func TestGetRecommendations_CacheKeyIncludesOSType(t *testing.T) {
 }
 
 func TestGetRecommendations_APIErrorIsPropagated(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Error.Set(errors.New("recommendation API unavailable"))
@@ -167,6 +173,7 @@ func TestGetRecommendations_APIErrorIsPropagated(t *testing.T) {
 }
 
 func TestGetRecommendations_InvalidInputErrorIsReturned(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
@@ -183,6 +190,7 @@ func TestGetRecommendations_InvalidInputErrorIsReturned(t *testing.T) {
 }
 
 func TestGetRecommendations_InvalidResponseErrorIsReturned(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(&armrecommender.SKUMixPlacementScoresClientPostResponse{})
@@ -194,6 +202,7 @@ func TestGetRecommendations_InvalidResponseErrorIsReturned(t *testing.T) {
 }
 
 func TestGetRecommendations_MissingResponseIDReturnsEmptyRecommendationID(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	response := recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D4s_v5", "2")
@@ -209,6 +218,7 @@ func TestGetRecommendations_MissingResponseIDReturnsEmptyRecommendationID(t *tes
 }
 
 func TestGetRecommendations_ExpandsOneChoiceIntoSizeZoneEntries(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(
@@ -232,6 +242,7 @@ func TestGetRecommendations_ExpandsOneChoiceIntoSizeZoneEntries(t *testing.T) {
 }
 
 func TestGetRecommendations_CombinesUniqueEntriesFromChoices(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(
@@ -264,6 +275,7 @@ func TestGetRecommendations_CombinesUniqueEntriesFromChoices(t *testing.T) {
 }
 
 func TestGetRecommendations_KeepsHighestScoringEntryForDuplicateKey(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(
@@ -286,6 +298,7 @@ func TestGetRecommendations_KeepsHighestScoringEntryForDuplicateKey(t *testing.T
 }
 
 func TestGetRecommendations_TreatsCapacityTypeAsPartOfRecommendationIdentity(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(placementResponse(
@@ -307,6 +320,7 @@ func TestGetRecommendations_TreatsCapacityTypeAsPartOfRecommendationIdentity(t *
 }
 
 func TestGetRecommendations_PreservesAPIReturnOrderForCompleteChoiceTie(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(placementResponse(
@@ -327,6 +341,7 @@ func TestGetRecommendations_PreservesAPIReturnOrderForCompleteChoiceTie(t *testi
 }
 
 func TestGetRecommendations_ReturnsErrorIfSplitAPIMissingPriorityInResponse(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(placementResponse(
@@ -342,6 +357,7 @@ func TestGetRecommendations_ReturnsErrorIfSplitAPIMissingPriorityInResponse(t *t
 }
 
 func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIReturnsOutOfOrder(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
@@ -378,6 +394,7 @@ func TestGetRecommendations_OrdersHighestScoringPlacementChoiceFirstWhenAPIRetur
 }
 
 func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
@@ -431,6 +448,7 @@ func TestGetRecommendations_BreaksScoreTieUsingRequestedSKUOrder(t *testing.T) {
 }
 
 func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
@@ -473,6 +491,7 @@ func TestGetRecommendations_BreaksScoreAndSKUTieUsingRequestedZoneCoverage(t *te
 }
 
 func TestGetRecommendations_UsesOverallZoneCoverageAfterPerSKUTie(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(withRegularPriority(&armrecommender.SKUMixPlacementScoresClientPostResponse{
@@ -519,6 +538,7 @@ func TestGetRecommendations_UsesOverallZoneCoverageAfterPerSKUTie(t *testing.T) 
 }
 
 func TestGetRecommendations_HonorsValidUntil(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	cache := newCache()
@@ -537,6 +557,7 @@ func TestGetRecommendations_HonorsValidUntil(t *testing.T) {
 }
 
 func TestGetRecommendations_UsesDefaultTTLWhenValidUntilIsShort(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	const expectedDefaultTTL = 45 * time.Second
 	client := &fake.SKUMixPlacementScoresAPI{}
@@ -561,6 +582,7 @@ func TestGetRecommendations_UsesDefaultTTLWhenValidUntilIsShort(t *testing.T) {
 }
 
 func TestGetRecommendations_DeduplicatesConcurrentRequests(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
 	g := NewWithT(t)
 	client := &fake.SKUMixPlacementScoresAPI{}
 	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D2s_v5", "1"))
@@ -602,6 +624,97 @@ func TestGetRecommendations_DeduplicatesConcurrentRequests(t *testing.T) {
 		g.Expect(result.details.Recommendations[0].ID).To(Equal("choice-id"))
 	}
 	g.Expect(client.PostBehavior.Calls()).To(Equal(1))
+}
+
+func TestGetRecommendations_RecordsSuccessfulAPIMetrics(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
+	g := NewWithT(t)
+	client := &fake.SKUMixPlacementScoresAPI{}
+	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D2s_v5", "1"))
+	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
+
+	_, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
+	g.Expect(err).NotTo(HaveOccurred())
+	_, err = provider.GetRecommendations(context.Background(), capacityRecommendationInput())
+	g.Expect(err).NotTo(HaveOccurred())
+
+	labels := map[string]string{
+		providermetrics.PriorityLabel:           "regular",
+		providermetrics.AllocationStrategyLabel: "prioritized",
+		providermetrics.OSTypeLabel:             "linux",
+		providermetrics.PlacementScopeLabel:     "zonal",
+		providermetrics.ResultLabel:             "success",
+	}
+	requestMetric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_requests_total", labels)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(requestMetric).NotTo(BeNil())
+	g.Expect(requestMetric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+	durationMetric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_request_duration_seconds", labels)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(durationMetric).NotTo(BeNil())
+	g.Expect(durationMetric.GetHistogram().GetSampleCount()).To(BeNumerically("==", 1))
+}
+
+func TestGetRecommendations_RecordsCacheHitMetric(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
+	g := NewWithT(t)
+	client := &fake.SKUMixPlacementScoresAPI{}
+	client.PostBehavior.Output.Set(recommendationResponse(time.Now().Add(time.Minute), 9, "Standard_D2s_v5", "1"))
+	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
+
+	_, err := provider.GetRecommendations(context.Background(), capacityRecommendationInput())
+	g.Expect(err).NotTo(HaveOccurred())
+	_, err = provider.GetRecommendations(context.Background(), capacityRecommendationInput())
+	g.Expect(err).NotTo(HaveOccurred())
+
+	metric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_cache_hits_total", map[string]string{
+		providermetrics.PriorityLabel:           "regular",
+		providermetrics.AllocationStrategyLabel: "prioritized",
+		providermetrics.OSTypeLabel:             "linux",
+		providermetrics.PlacementScopeLabel:     "zonal",
+	})
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(metric).NotTo(BeNil())
+	g.Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+}
+
+func TestGetRecommendations_RecordsFailedRegionalAPIMetrics(t *testing.T) {
+	t.Cleanup(resetSKUMixPlacementMetrics)
+	g := NewWithT(t)
+	client := &fake.SKUMixPlacementScoresAPI{}
+	client.PostBehavior.Error.Set(errors.New("recommendation API unavailable"))
+	provider := capacityrecommendation.NewProvider(client, newCache(), "eastus")
+	input := capacityRecommendationInput()
+	input.Zones = nil
+	input.CapacityType = karpv1.CapacityTypeSpot
+	input.OSType = corev1.Windows
+
+	_, err := provider.GetRecommendations(context.Background(), input)
+	g.Expect(err).To(MatchError("recommendation API unavailable"))
+
+	labels := map[string]string{
+		providermetrics.PriorityLabel:           "spot",
+		providermetrics.AllocationStrategyLabel: "prioritized",
+		providermetrics.OSTypeLabel:             "windows",
+		providermetrics.PlacementScopeLabel:     "regional",
+		providermetrics.ResultLabel:             "error",
+	}
+	requestMetric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_requests_total", labels)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(requestMetric).NotTo(BeNil())
+	g.Expect(requestMetric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+	durationMetric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_request_duration_seconds", labels)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(durationMetric).NotTo(BeNil())
+	g.Expect(durationMetric.GetHistogram().GetSampleCount()).To(BeNumerically("==", 1))
+}
+
+func resetSKUMixPlacementMetrics() {
+	capacityrecommendation.SKUMixPlacementRequestMetric.Reset()
+	capacityrecommendation.SKUMixPlacementCacheHitMetric.Reset()
+	capacityrecommendation.SKUMixPlacementRequestDurationMetric.Reset()
 }
 
 func capacityRecommendationInput() *capacityrecommendation.RankingInput {

@@ -31,4 +31,10 @@ const (
 	CapacityTypeLabel = "capacity_type"
 	NodePoolLabel     = "nodepool"
 	PhaseLabel        = "phase"
+	// capacity recommendation keys
+	PriorityLabel           = "priority"
+	AllocationStrategyLabel = "allocation_strategy"
+	OSTypeLabel             = "os_type"
+	PlacementScopeLabel     = "placement_scope"
+	ResultLabel             = "result"
 )
