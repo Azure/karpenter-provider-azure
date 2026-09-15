@@ -156,6 +156,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		}
 	})
 
+	if len((goalImages)) > 0 {
+		if nodeClass.Status.Versions == nil {
+			nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+		}
+		nodeClass.Status.Versions.LatestImageVersion = parseVersion(goalImages[0].ID)
+	}
+
 	reqImgVer, reqK8sVer := requestedVersions(nodeClass)
 	if reqImgVer != "" {
 		if err := validatePinning(reqImgVer, reqK8sVer, nodeClass); err != nil {
@@ -178,13 +185,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 			}
 			return reconcile.Result{}, err
 		}
-	}
-
-	if len((goalImages)) > 0 {
-		if nodeClass.Status.Versions == nil {
-			nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
-		}
-		nodeClass.Status.Versions.LatestImageVersion = parseVersion(goalImages[0].ID)
 	}
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
@@ -232,12 +232,13 @@ func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 	return !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()
 }
 
-func (r *NodeImageReconciler) handleNodeImagePinning(ctx context.Context, reqImgVer, reqK8sVer string, goalImages []v1beta1.NodeImage, nodeClass *v1beta1.AKSNodeClass) ([]v1beta1.NodeImage, bool, error) {
+func (r *NodeImageReconciler) handleNodeImagePinning(ctx context.Context, reqImgVer, reqK8sVer string, images []v1beta1.NodeImage, nodeClass *v1beta1.AKSNodeClass) ([]v1beta1.NodeImage, bool, error) {
 	if reqK8sVer == "" {
 		return nil, false, fmt.Errorf("requested kubernetes version is empty")
 	}
 
 	currentK8sVer := lo.FromPtr(nodeClass.Status.KubernetesVersion)
+	goalImages := images
 
 	shouldUpdate := false
 	if currentK8sVer != reqK8sVer {

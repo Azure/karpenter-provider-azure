@@ -84,7 +84,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	}
 	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &goalK8sVersion
 
-	if reqK8sVer, _ := requestedVersions(nodeClass); reqK8sVer != "" {
+	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		if err := validateK8sVersion(reqK8sVer, goalK8sVersion); err != nil {
 			return reconcile.Result{}, fmt.Errorf("validating requested kubernetes version, %w", err)
 		}
@@ -94,8 +94,12 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 			logger.V(1).Info("requested Kubernetes version differs from current version", "currentKubernetesVersion", currentK8sVersion, "requestedKubernetesVersion", reqK8sVer)
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesPinning", "Performing kubernetes version change, need to get latest images")
 		}
-	} else if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == nil || *nodeClass.Status.KubernetesVersion == "" {
-		// Handles case 1: init, update kubernetes status to API server version found
+
+		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+	}
+
+	// Handles case 1: init, update kubernetes status to API server version found
+	if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == nil || *nodeClass.Status.KubernetesVersion == "" {
 		logger.V(1).Info("init kubernetes version", "goalKubernetesVersion", goalK8sVersion)
 	} else {
 		// Check if there is an upgrade
