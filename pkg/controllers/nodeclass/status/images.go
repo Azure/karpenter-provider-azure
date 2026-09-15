@@ -26,7 +26,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -166,12 +166,8 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	reqImgVer, reqK8sVer := requestedVersions(nodeClass)
 	if reqImgVer != "" {
 		if err := validatePinning(reqImgVer, reqK8sVer, nodeClass); err != nil {
-			if stderrors.Is(err, errRollbackTargetKubernetesVersionMismatch) {
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "RollbackTargetKubernetesVersionMismatch", err.Error())
-			} else {
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", err.Error())
-			}
-			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+			setStatusConditionByErr(nodeClass, err)
+			return reconcile.Result{}, err
 		}
 	}
 
@@ -179,10 +175,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if reqK8sVer != "" {
 		goalImages, pinningShouldUpdate, err = r.handleNodeImagePinning(ctx, reqImgVer, reqK8sVer, goalImages, nodeClass)
 		if err != nil {
-			if stderrors.Is(err, errRequestedNodeImageVersionUnavailable) {
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", err.Error())
-				return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-			}
+			setStatusConditionByErr(nodeClass, err)
 			return reconcile.Result{}, err
 		}
 	}
@@ -306,7 +299,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 
 	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(r.systemNamespace).Get(ctx, maintenanceWindowConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		if apierrors.IsNotFound(err) {
+		if errors.IsNotFound(err) {
 			// We fail open here, since the default case should be to upgrade
 			return true, nil
 		}
@@ -517,20 +510,19 @@ func (r *NodeImageReconciler) listImagesForVersion(ctx context.Context, nodeClas
 	return nodeImages, nil
 }
 
-/*
-
 func setStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
 	switch {
-	case errors.Is(err, errKubernetesVersionInvalidFormat):
+	case stderrors.Is(err, errKubernetesVersionInvalidFormat):
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", err.Error())
-	case errors.Is(err, errKubernetesVersionControlPlaneIncompatible):
+	case stderrors.Is(err, errKubernetesVersionControlPlaneIncompatible):
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", err.Error())
-	case errors.Is(err, errNodeImageVersionInvalid):
+	case stderrors.Is(err, errNodeImageVersionInvalid):
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", err.Error())
-	case errors.Is(err, errRollbackTargetKubernetesVersionMismatch):
+	case stderrors.Is(err, errRollbackTargetKubernetesVersionMismatch):
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "RollbackTargetKubernetesVersionMismatch", err.Error())
-	case errors.Is(err, errKubernetesVersionUnsupported):
+	case stderrors.Is(err, errKubernetesVersionUnsupported):
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnsupported", err.Error())
+	case stderrors.Is(err, errRequestedNodeImageVersionUnavailable):
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", err.Error())
 	}
 }
-*/

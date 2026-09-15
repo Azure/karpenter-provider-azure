@@ -86,7 +86,9 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		if err := validateK8sVersion(reqK8sVer, goalK8sVersion); err != nil {
-			return reconcile.Result{}, fmt.Errorf("validating requested kubernetes version, %w", err)
+			err = fmt.Errorf("validating requested kubernetes version, %w", err)
+			setStatusConditionByErr(nodeClass, err)
+			return reconcile.Result{}, err
 		}
 
 		currentK8sVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
