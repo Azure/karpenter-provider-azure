@@ -86,7 +86,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &goalK8sVersion
 
 	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
-		if err := validateK8sVersion(reqK8sVer, goalK8sVersion); err != nil {
+		if err := r.validateK8sVersion(ctx, reqK8sVer, goalK8sVersion); err != nil {
 			err = fmt.Errorf("validating requested kubernetes version, %w", err)
 			if stderrors.Is(err, errKubernetesVersionInvalidFormat) || stderrors.Is(err, errKubernetesVersionControlPlaneIncompatible) {
 				setStatusConditionByErr(nodeClass, err)
