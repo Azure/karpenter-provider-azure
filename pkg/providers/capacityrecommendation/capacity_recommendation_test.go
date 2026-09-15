@@ -654,6 +654,13 @@ func TestGetRecommendations_RecordsSuccessfulAPIMetrics(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(durationMetric).NotTo(BeNil())
 	g.Expect(durationMetric.GetHistogram().GetSampleCount()).To(BeNumerically("==", 1))
+
+	// Verify the cache and API paths emit the same request labels, differing only in result.
+	labels[providermetrics.ResultLabel] = "miss"
+	cacheMetric, err := providermetrics.FindMetricWithLabelValues("karpenter_capacity_recommendation_cache_requests_total", labels)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(cacheMetric).NotTo(BeNil())
+	g.Expect(cacheMetric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 }
 
 func TestGetRecommendations_RecordsCacheRequestMetrics(t *testing.T) {

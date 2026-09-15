@@ -93,7 +93,7 @@ func newInstrumentedSKUMixPlacementScoresAPI(client SKUMixPlacementScoresAPI) SK
 }
 
 func recordCacheRequest(input *RankingInput, result string) {
-	labels := requestMetricLabels(toSKUMixPlacementRequest(input))
+	labels := inputMetricLabels(input)
 	labels[metrics.ResultLabel] = result
 	SKUMixPlacementCacheRequestMetric.With(labels).Inc()
 }
@@ -114,6 +114,19 @@ func (c *instrumentedSKUMixPlacementScoresAPI) Post(
 	SKUMixPlacementRequestMetric.With(labels).Inc()
 	SKUMixPlacementRequestDurationMetric.With(labels).Observe(time.Since(startedAt).Seconds())
 	return response, err
+}
+
+func inputMetricLabels(input *RankingInput) prometheus.Labels {
+	placementScope := metricPlacementScopeRegional
+	if len(input.Zones) > 0 {
+		placementScope = metricPlacementScopeZonal
+	}
+	return prometheus.Labels{
+		metrics.CapacityTypeLabel:       input.CapacityType,
+		metrics.AllocationStrategyLabel: "prioritized", // all we support right now
+		metrics.OSTypeLabel:             string(input.OSType),
+		metrics.PlacementScopeLabel:     placementScope,
+	}
 }
 
 func requestMetricLabels(request armrecommender.SKUMixPlacementRequest) prometheus.Labels {
