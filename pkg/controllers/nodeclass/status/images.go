@@ -161,26 +161,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		nodeClass.Status.Versions.LatestImageVersion = parseVersion(goalImages[0].ID)
 	}
 
-	if reqK8sVer, reqImgVer := requestedVersions(nodeClass); reqK8sVer != "" || reqImgVer != "" {
-		switch {
-		case reqK8sVer != "" && reqImgVer != "":
-			if err := validatePinning(reqImgVer, reqK8sVer, nodeClass); err != nil {
-				return reconcile.Result{}, fmt.Errorf("validating rollback, %w", err)
-			}
-			goalImages, err = replaceSuffixes(goalImages, reqImgVer)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("replacing image version suffixes, %w", err)
-			}
-
-		case reqK8sVer != "":
-			// Fall through
-		case reqImgVer != "":
-			// ERROR YOU SHOULD NOT DO THIS
-			return reconcile.Result{}, fmt.Errorf("requested image version without specifying Kubernetes version is not allowed")
-		}
-
-	}
-
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
 	//
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
@@ -427,4 +407,65 @@ func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.No
 	}
 
 	return updated, nil
+}
+
+func (r *NodeImageReconciler) handleNodeImagePinning(ctx context.Context, reqImgVer, reqK8sVer string, goalImages []v1beta1.NodeImage, nodeClass *v1beta1.AKSNodeClass) ([]v1beta1.NodeImage, bool, error) {
+	currentK8sVer := lo.FromPtr(nodeClass.Status.KubernetesVersion)
+
+	shouldUpdate := false
+	if currentK8sVer != reqK8sVer {
+		shouldUpdate = true
+
+		nodeImages, err := r.listImagesForVersion(ctx, *nodeClass, reqK8sVer)
+		if err != nil {
+			return nil, false, fmt.Errorf("getting nodeimages, %w", err)
+		}
+
+		nodeClass.Status.KubernetesVersion = &reqK8sVer
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+
+		goalImages = lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
+			reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
+				return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
+			})
+
+			// sorted for consistency
+			sort.Slice(reqs, func(i, j int) bool {
+				if len(reqs[i].Key) != len(reqs[j].Key) {
+					return len(reqs[i].Key) < len(reqs[j].Key)
+				}
+				return reqs[i].Key < reqs[j].Key
+			})
+			return v1beta1.NodeImage{
+				ID:           nodeImage.ID,
+				Requirements: reqs,
+			}
+		})
+	}
+
+	alreadySet := len(goalImages) > 0 && strings.HasSuffix(goalImages[0].ID, reqImgVer)
+	if reqImgVer != "" && !alreadySet {
+		var err error
+		goalImages, err = replaceSuffixes(goalImages, reqImgVer)
+		if err != nil {
+			return nil, false, fmt.Errorf("replacing image suffixes, %w", err)
+		}
+		shouldUpdate = true
+	}
+
+	return goalImages, shouldUpdate, nil
+}
+
+func (r *NodeImageReconciler) listImagesForVersion(ctx context.Context, nodeClass v1beta1.AKSNodeClass, k8sVersion string) ([]imagefamily.NodeImage, error) {
+	if nodeClass.Status.Versions == nil {
+		return nil, fmt.Errorf("control plane kubernetes version is not set")
+	}
+
+	nodeClass.Status.KubernetesVersion = &k8sVersion
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+	nodeImages, err := r.nodeImageProvider.List(ctx, &nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("getting nodeimages, %w", err)
+	}
+	return nodeImages, nil
 }
