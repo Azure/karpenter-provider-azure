@@ -18,6 +18,7 @@ package status
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -87,7 +88,10 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		if err := validateK8sVersion(reqK8sVer, goalK8sVersion); err != nil {
 			err = fmt.Errorf("validating requested kubernetes version, %w", err)
-			setStatusConditionByErr(nodeClass, err)
+			if stderrors.Is(err, errKubernetesVersionInvalidFormat) || stderrors.Is(err, errKubernetesVersionControlPlaneIncompatible) {
+				setStatusConditionByErr(nodeClass, err)
+				return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+			}
 			return reconcile.Result{}, err
 		}
 
@@ -131,18 +135,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
 
-func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string) {
-	if nodeClass == nil || nodeClass.Spec.Versions == nil {
-		return "", ""
-	}
-
-	reqImgVer := lo.FromPtr(nodeClass.Spec.Versions.NodeImageVersion)
-	reqK8sVer := lo.FromPtr(nodeClass.Spec.Versions.KubernetesVersion)
-
-	return reqImgVer, reqK8sVer
-}
-
-func validateK8sVersion(version, controlPlaneVersion string) error {
+func (r *KubernetesVersionReconciler) validateK8sVersion(ctx context.Context, version, controlPlaneVersion string) error {
 	versionSemver, err := semver.Parse(version)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errKubernetesVersionInvalidFormat, err)
@@ -172,5 +165,25 @@ func validateK8sVersion(version, controlPlaneVersion string) error {
 		return fmt.Errorf("%w: kubernetes version patch too new: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Patch, controlPlaneVersionSemver.Patch)
 	}
 
+	// Check that this exists
+	supported, err := r.kubernetesVersionProvider.IsSupported(ctx, version)
+	if err != nil {
+		return fmt.Errorf("checking if kubernetes version is supported: %w", err)
+	}
+	if !supported {
+		return fmt.Errorf("%w: kubernetes version %s is not supported", errKubernetesVersionUnsupported, version)
+	}
+
 	return nil
+}
+
+func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string) {
+	if nodeClass == nil || nodeClass.Spec.Versions == nil {
+		return "", ""
+	}
+
+	reqImgVer := lo.FromPtr(nodeClass.Spec.Versions.NodeImageVersion)
+	reqK8sVer := lo.FromPtr(nodeClass.Spec.Versions.KubernetesVersion)
+
+	return reqImgVer, reqK8sVer
 }

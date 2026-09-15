@@ -167,7 +167,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if reqImgVer != "" {
 		if err := validatePinning(reqImgVer, reqK8sVer, nodeClass); err != nil {
 			setStatusConditionByErr(nodeClass, err)
-			return reconcile.Result{}, err
+			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
 	}
 
@@ -175,7 +175,10 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if reqK8sVer != "" {
 		goalImages, pinningShouldUpdate, err = r.handleNodeImagePinning(ctx, reqImgVer, reqK8sVer, goalImages, nodeClass)
 		if err != nil {
-			setStatusConditionByErr(nodeClass, err)
+			if stderrors.Is(err, errRequestedNodeImageVersionUnavailable) {
+				setStatusConditionByErr(nodeClass, err)
+				return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
 			return reconcile.Result{}, err
 		}
 	}
