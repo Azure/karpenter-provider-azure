@@ -410,6 +410,10 @@ func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.No
 }
 
 func (r *NodeImageReconciler) handleNodeImagePinning(ctx context.Context, reqImgVer, reqK8sVer string, goalImages []v1beta1.NodeImage, nodeClass *v1beta1.AKSNodeClass) ([]v1beta1.NodeImage, bool, error) {
+	if reqK8sVer == "" {
+		return nil, false, fmt.Errorf("requested kubernetes version is empty")
+	}
+
 	currentK8sVer := lo.FromPtr(nodeClass.Status.KubernetesVersion)
 
 	shouldUpdate := false
@@ -421,8 +425,9 @@ func (r *NodeImageReconciler) handleNodeImagePinning(ctx context.Context, reqImg
 			return nil, false, fmt.Errorf("getting nodeimages, %w", err)
 		}
 
-		nodeClass.Status.KubernetesVersion = &reqK8sVer
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+		if len(nodeImages) == 0 {
+			return nil, false, fmt.Errorf("no node images found for kubernetes version %s", reqK8sVer)
+		}
 
 		goalImages = lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 			reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
@@ -443,15 +448,21 @@ func (r *NodeImageReconciler) handleNodeImagePinning(ctx context.Context, reqImg
 		})
 	}
 
-	alreadySet := len(goalImages) > 0 && strings.HasSuffix(goalImages[0].ID, reqImgVer)
-	if reqImgVer != "" && !alreadySet {
+	if reqImgVer != "" {
 		var err error
 		goalImages, err = replaceSuffixes(goalImages, reqImgVer)
 		if err != nil {
 			return nil, false, fmt.Errorf("replacing image suffixes, %w", err)
 		}
+	}
+
+	alreadySet := len(nodeClass.Status.Images) > 0 && parseVersion(nodeClass.Status.Images[0].ID) == reqImgVer
+	if reqImgVer != "" && !alreadySet {
 		shouldUpdate = true
 	}
+
+	nodeClass.Status.KubernetesVersion = &reqK8sVer
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 	return goalImages, shouldUpdate, nil
 }
