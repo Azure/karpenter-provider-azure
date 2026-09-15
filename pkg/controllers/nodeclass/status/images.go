@@ -263,6 +263,11 @@ func (r *NodeImageReconciler) handleNodeImagePinning(ctx context.Context, reqImg
 				Requirements: reqs,
 			}
 		})
+
+		if nodeClass.Status.Versions == nil {
+			nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+		}
+		nodeClass.Status.Versions.LatestImageVersion = parseVersion(goalImages[0].ID)
 	}
 
 	if reqImgVer != "" {
