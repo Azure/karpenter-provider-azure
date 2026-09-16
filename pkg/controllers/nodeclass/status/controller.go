@@ -141,15 +141,11 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 	oldImages := oldNodeClass.Status.Images
 	newImages := newNodeClass.Status.Images
 
-	if len(oldImages) == 0 {
+	if len(oldImages) == 0 || len(newImages) == 0 {
 		return
 	}
 	oldSuffix := parseVersion(oldImages[0].ID)
-
-	var newSuffix string
-	if len(newImages) > 0 {
-		newSuffix = parseVersion(newImages[0].ID)
-	}
+	newSuffix := parseVersion(newImages[0].ID)
 
 	if newSuffix != oldSuffix {
 		if newNodeClass.Status.Versions == nil {

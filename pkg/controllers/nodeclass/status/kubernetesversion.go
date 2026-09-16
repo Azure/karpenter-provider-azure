@@ -18,7 +18,6 @@ package status
 
 import (
 	"context"
-	stderrors "errors"
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -88,7 +87,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		if err := r.validateK8sVersion(ctx, reqK8sVer, goalK8sVersion); err != nil {
 			err = fmt.Errorf("validating requested kubernetes version, %w", err)
-			if stderrors.Is(err, errKubernetesVersionInvalidFormat) || stderrors.Is(err, errKubernetesVersionControlPlaneIncompatible) {
+			if isStatusConditionError(err) {
 				setStatusConditionByErr(nodeClass, err)
 				return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 			}
@@ -101,6 +100,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesPinning", "Performing kubernetes version change, need to get latest images")
 		}
 
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 	}
 
