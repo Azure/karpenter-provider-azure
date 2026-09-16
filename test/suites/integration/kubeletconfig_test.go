@@ -18,12 +18,12 @@ package integration_test
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -43,7 +43,7 @@ var _ = Describe("KubeletConfig", func() {
 				MemoryAvailable: lo.ToPtr("500Mi"),
 			},
 			EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
-				MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}),
+				MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s")),
 			},
 			EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 		}

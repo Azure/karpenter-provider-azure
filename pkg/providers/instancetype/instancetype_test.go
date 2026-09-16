@@ -77,7 +77,7 @@ func TestKubeReservedResourcesOverrides(t *testing.T) {
 
 func TestTypedSchedulingOverrides(t *testing.T) {
 	g := NewWithT(t)
-	g.Expect(kubeReservedOverrides(&v1beta1.KubeReserved{
+	g.Expect(KubeReservedOverrides(&v1beta1.KubeReserved{
 		CPUMillicores: lo.ToPtr(int32(250)),
 		MemoryMB:      lo.ToPtr(int32(512)),
 	})).To(Equal(map[string]string{"cpu": "250m", "memory": "512Mi"}))
@@ -86,8 +86,8 @@ func TestTypedSchedulingOverrides(t *testing.T) {
 		NodeFsAvailable:  lo.ToPtr("12%"),
 		NodeFsInodesFree: lo.ToPtr("7%"),
 	})).To(Equal(map[string]string{"memory.available": "333Mi", "nodefs.available": "12%"}))
-	g.Expect(kubeReservedOverrides(nil)).To(BeNil())
-	g.Expect(kubeReservedOverrides(&v1beta1.KubeReserved{})).To(BeNil())
+	g.Expect(KubeReservedOverrides(nil)).To(BeNil())
+	g.Expect(KubeReservedOverrides(&v1beta1.KubeReserved{})).To(BeNil())
 	g.Expect(evictionHardOverrides(nil)).To(BeNil())
 	g.Expect(evictionHardOverrides(&v1beta1.EvictionThreshold{})).To(BeNil())
 }

@@ -18,7 +18,6 @@ package v1alpha2_test
 
 import (
 	"strings"
-	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -100,7 +99,7 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{
 					KubeReserved:              &v1alpha2.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(750))},
 					EvictionSoft:              &v1alpha2.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
-					EvictionSoftGracePeriod:   &v1alpha2.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
+					EvictionSoftGracePeriod:   &v1alpha2.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
 					EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
 				}},
 			}
@@ -115,7 +114,7 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{
 					EvictionSoft:            &v1alpha2.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
-					EvictionSoftGracePeriod: &v1alpha2.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
+					EvictionSoftGracePeriod: &v1alpha2.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
 				}},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())

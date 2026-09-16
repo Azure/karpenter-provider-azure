@@ -37,7 +37,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
@@ -162,10 +161,10 @@ func (p *DefaultProvider) List(
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
-	if nodeClass.Spec.Kubelet != nil && (opts.ProvisionMode == consts.ProvisionModeAKSScriptless || opts.IsAKSMachineAPIMode()) {
+	if nodeClass.Spec.Kubelet != nil {
 		// These values do not filter SKUs, but they change scheduling simulation by changing
 		// allocatable resources. Include them so NodeClasses cannot share incompatible cached results.
-		instanceTypeParams.KubeReserved = kubeReservedOverrides(nodeClass.Spec.Kubelet.KubeReserved)
+		instanceTypeParams.KubeReserved = KubeReservedOverrides(nodeClass.Spec.Kubelet.KubeReserved)
 		instanceTypeParams.EvictionHard = evictionHardOverrides(nodeClass.Spec.Kubelet.EvictionHard)
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
@@ -192,7 +191,8 @@ func (p *DefaultProvider) List(
 	return append([]*cloudprovider.InstanceType{}, result...), nil
 }
 
-func kubeReservedOverrides(config *v1beta1.KubeReserved) map[string]string {
+// KubeReservedOverrides converts typed kube-reserved overrides to kubelet resource quantities.
+func KubeReservedOverrides(config *v1beta1.KubeReserved) map[string]string {
 	if config == nil {
 		return nil
 	}

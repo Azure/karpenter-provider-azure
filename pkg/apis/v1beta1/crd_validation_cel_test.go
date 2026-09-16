@@ -18,7 +18,6 @@ package v1beta1_test
 
 import (
 	"strings"
-	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Pallinder/go-randomdata"
@@ -159,9 +158,9 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi"), NodeFsAvailable: lo.ToPtr("15%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}), NodeFsAvailable: lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute})}, true),
-			Entry("invalid quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})}, false),
-			Entry("duration below minimum", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("1%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 29 * time.Second})}, false),
+			Entry("valid supported signals", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi"), NodeFsAvailable: lo.ToPtr("15%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s")), NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("2m"))}, true),
+			Entry("invalid quantity", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("invalid")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))}, false),
+			Entry("duration below minimum", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("1%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("29s"))}, false),
 		)
 
 		It("should reject mismatched soft eviction and grace period signals", func() {
@@ -169,7 +168,7 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{
 					EvictionSoft:            &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
-					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(metav1.Duration{Duration: 30 * time.Second})},
+					EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{NodeFsAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
 				}},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())

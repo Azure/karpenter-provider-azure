@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
@@ -129,7 +130,7 @@ func TestPrepareKubeletConfigurationAppliesOverrides(t *testing.T) {
 		KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250))},
 		EvictionHard:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("333Mi")},
 		EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("444Mi")},
-		EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(metav1.Duration{Duration: 90 * time.Second})},
+		EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("90s"))},
 		EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 	}
 

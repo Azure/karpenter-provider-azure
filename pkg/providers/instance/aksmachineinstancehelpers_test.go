@@ -18,12 +18,10 @@ package instance
 
 import (
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -684,9 +682,9 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					NodeFsInodesFree: lo.ToPtr("10%"),
 				},
 				EvictionSoftGracePeriod: &v1beta1.EvictionSoftGracePeriod{
-					MemoryAvailable:  lo.ToPtr(metav1.Duration{Duration: 90 * time.Second}),
-					NodeFsAvailable:  lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute}),
-					NodeFsInodesFree: lo.ToPtr(metav1.Duration{Duration: 2 * time.Minute}),
+					MemoryAvailable:  lo.ToPtr(karpv1.MustParseNillableDuration("90s")),
+					NodeFsAvailable:  lo.ToPtr(karpv1.MustParseNillableDuration("2m")),
+					NodeFsInodesFree: lo.ToPtr(karpv1.MustParseNillableDuration("120s")),
 				},
 				EvictionMaxPodGracePeriod: lo.ToPtr(int32(120)),
 			}
@@ -701,9 +699,9 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(*config.SoftEvictionThreshold.MemoryAvailable).To(Equal("500Mi"))
 			Expect(*config.SoftEvictionThreshold.NodeFsAvailable).To(Equal("15%"))
 			Expect(*config.SoftEvictionThreshold.NodeFsInodesFree).To(Equal("10%"))
-			Expect(*config.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("1m30s"))
-			Expect(*config.SoftEvictionGracePeriod.NodeFsAvailable).To(Equal("2m0s"))
-			Expect(*config.SoftEvictionGracePeriod.NodeFsInodesFree).To(Equal("2m0s"))
+			Expect(*config.SoftEvictionGracePeriod.MemoryAvailable).To(Equal("90s"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsAvailable).To(Equal("2m"))
+			Expect(*config.SoftEvictionGracePeriod.NodeFsInodesFree).To(Equal("120s"))
 			Expect(*config.EvictionMaxPodGracePeriodInSeconds).To(Equal(int32(120)))
 		})
 

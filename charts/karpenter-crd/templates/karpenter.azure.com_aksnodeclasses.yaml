@@ -155,33 +155,34 @@ spec:
                     - static
                     type: string
                   evictionHard:
-                    description: |-
-                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    description: evictionHard configures hard eviction thresholds
+                      and overrides Karpenter's computed defaults per field.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
-                          as an integer Ki, Mi, or Gi quantity or percentage.
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsAvailable:
                         description: nodeFsAvailable is the available-node-filesystem
-                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsInodesFree:
                         description: nodeFsInodesFree is the free-inodes threshold
-                          as an integer count or percentage.
+                          as an integer count or percentage of total node filesystem
+                          inodes.
                         maxLength: 20
                         pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                     type: object
                   evictionMaxPodGracePeriod:
-                    description: |-
-                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    description: evictionMaxPodGracePeriod is the maximum grace period
+                      (in seconds) kubelet honors when terminating pods for soft eviction.
                     format: int32
                     minimum: 0
                     type: integer
@@ -189,23 +190,25 @@ spec:
                     description: |-
                       evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
                       Each configured threshold must have a matching field in evictionSoftGracePeriod.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
-                          as an integer Ki, Mi, or Gi quantity or percentage.
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsAvailable:
                         description: nodeFsAvailable is the available-node-filesystem
-                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsInodesFree:
                         description: nodeFsInodesFree is the free-inodes threshold
-                          as an integer count or percentage.
+                          as an integer count or percentage of total node filesystem
+                          inodes.
                         maxLength: 20
                         pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
                         type: string
@@ -214,7 +217,6 @@ spec:
                     description: |-
                       evictionSoftGracePeriod configures grace periods for soft eviction signals.
                       Each configured grace period must have a matching field in evictionSoft.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the grace period for the memoryAvailable
@@ -270,9 +272,9 @@ spec:
                     minimum: 0
                     type: integer
                   kubeReserved:
-                    description: |-
-                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    description: kubeReserved configures resources reserved for Kubernetes
+                      system daemons and overrides Karpenter's computed defaults per
+                      field.
                     properties:
                       cpuMillicores:
                         description: cpuMillicores is the CPU reservation in millicores.
@@ -1223,33 +1225,34 @@ spec:
                     - static
                     type: string
                   evictionHard:
-                    description: |-
-                      evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    description: evictionHard configures hard eviction thresholds
+                      and overrides Karpenter's computed defaults per field.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
-                          as an integer Ki, Mi, or Gi quantity or percentage.
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsAvailable:
                         description: nodeFsAvailable is the available-node-filesystem
-                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsInodesFree:
                         description: nodeFsInodesFree is the free-inodes threshold
-                          as an integer count or percentage.
+                          as an integer count or percentage of total node filesystem
+                          inodes.
                         maxLength: 20
                         pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                     type: object
                   evictionMaxPodGracePeriod:
-                    description: |-
-                      evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    description: evictionMaxPodGracePeriod is the maximum grace period
+                      (in seconds) kubelet honors when terminating pods for soft eviction.
                     format: int32
                     minimum: 0
                     type: integer
@@ -1257,23 +1260,25 @@ spec:
                     description: |-
                       evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
                       Each configured threshold must have a matching field in evictionSoftGracePeriod.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the available-memory threshold
-                          as an integer Ki, Mi, or Gi quantity or percentage.
+                          as an integer Ki, Mi, or Gi quantity or percentage of total
+                          node memory capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsAvailable:
                         description: nodeFsAvailable is the available-node-filesystem
-                          threshold as an integer Ki, Mi, or Gi quantity or percentage.
+                          threshold as an integer Ki, Mi, or Gi quantity or percentage
+                          of total node filesystem capacity.
                         maxLength: 20
                         pattern: ^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$
                         type: string
                       nodeFsInodesFree:
                         description: nodeFsInodesFree is the free-inodes threshold
-                          as an integer count or percentage.
+                          as an integer count or percentage of total node filesystem
+                          inodes.
                         maxLength: 20
                         pattern: ^([0-9]+|([0-9]|[1-9][0-9]|100)%)$
                         type: string
@@ -1282,7 +1287,6 @@ spec:
                     description: |-
                       evictionSoftGracePeriod configures grace periods for soft eviction signals.
                       Each configured grace period must have a matching field in evictionSoft.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
                     properties:
                       memoryAvailable:
                         description: memoryAvailable is the grace period for the memoryAvailable
@@ -1338,9 +1342,9 @@ spec:
                     minimum: 0
                     type: integer
                   kubeReserved:
-                    description: |-
-                      kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
-                      This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
+                    description: kubeReserved configures resources reserved for Kubernetes
+                      system daemons and overrides Karpenter's computed defaults per
+                      field.
                     properties:
                       cpuMillicores:
                         description: cpuMillicores is the CPU reservation in millicores.

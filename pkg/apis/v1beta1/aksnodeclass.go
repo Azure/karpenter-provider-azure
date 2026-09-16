@@ -483,25 +483,20 @@ type KubeletConfiguration struct {
 	// +optional
 	FailSwapOn *bool `json:"failSwapOn,omitempty"`
 	// kubeReserved configures resources reserved for Kubernetes system daemons and overrides Karpenter's computed defaults per field.
-	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
 	// +optional
 	KubeReserved *KubeReserved `json:"kubeReserved,omitempty"`
 	// evictionHard configures hard eviction thresholds and overrides Karpenter's computed defaults per field.
-	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
 	// +optional
 	EvictionHard *EvictionThreshold `json:"evictionHard,omitempty"`
 	// evictionSoft configures soft eviction thresholds and overrides Karpenter's computed defaults per field.
 	// Each configured threshold must have a matching field in evictionSoftGracePeriod.
-	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
 	// +optional
 	EvictionSoft *EvictionThreshold `json:"evictionSoft,omitempty"`
 	// evictionSoftGracePeriod configures grace periods for soft eviction signals.
 	// Each configured grace period must have a matching field in evictionSoft.
-	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
 	// +optional
 	EvictionSoftGracePeriod *EvictionSoftGracePeriod `json:"evictionSoftGracePeriod,omitempty"`
 	// evictionMaxPodGracePeriod is the maximum grace period (in seconds) kubelet honors when terminating pods for soft eviction.
-	// This field requires the CustomNodeConfigPreview feature registration and is supported only by the AKSScriptless and AKSMachineAPI provisioning modes.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`
@@ -523,17 +518,17 @@ type KubeReserved struct {
 
 // EvictionThreshold defines thresholds for supported kubelet eviction signals.
 type EvictionThreshold struct {
-	// memoryAvailable is the available-memory threshold as an integer Ki, Mi, or Gi quantity or percentage.
+	// memoryAvailable is the available-memory threshold as an integer Ki, Mi, or Gi quantity or percentage of total node memory capacity.
 	// +kubebuilder:validation:MaxLength=20
 	// +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$`
 	// +optional
 	MemoryAvailable *string `json:"memoryAvailable,omitempty"`
-	// nodeFsAvailable is the available-node-filesystem threshold as an integer Ki, Mi, or Gi quantity or percentage.
+	// nodeFsAvailable is the available-node-filesystem threshold as an integer Ki, Mi, or Gi quantity or percentage of total node filesystem capacity.
 	// +kubebuilder:validation:MaxLength=20
 	// +kubebuilder:validation:Pattern=`^([0-9]+(Ki|Mi|Gi)|([0-9]|[1-9][0-9]|100)%)$`
 	// +optional
 	NodeFsAvailable *string `json:"nodeFsAvailable,omitempty"`
-	// nodeFsInodesFree is the free-inodes threshold as an integer count or percentage.
+	// nodeFsInodesFree is the free-inodes threshold as an integer count or percentage of total node filesystem inodes.
 	// +kubebuilder:validation:MaxLength=20
 	// +kubebuilder:validation:Pattern=`^([0-9]+|([0-9]|[1-9][0-9]|100)%)$`
 	// +optional
@@ -544,19 +539,22 @@ type EvictionThreshold struct {
 type EvictionSoftGracePeriod struct {
 	// memoryAvailable is the grace period for the memoryAvailable signal.
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="memoryAvailable must be a valid duration of at least 30s"
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
 	// +optional
-	//nolint:kubeapilinter // nodurations: metav1.Duration matches upstream kubelet types
-	MemoryAvailable *metav1.Duration `json:"memoryAvailable,omitempty"`
+	MemoryAvailable *karpv1.NillableDuration `json:"memoryAvailable,omitempty"`
 	// nodeFsAvailable is the grace period for the nodeFsAvailable signal.
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="nodeFsAvailable must be a valid duration of at least 30s"
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
 	// +optional
-	//nolint:kubeapilinter // nodurations: metav1.Duration matches upstream kubelet types
-	NodeFsAvailable *metav1.Duration `json:"nodeFsAvailable,omitempty"`
+	NodeFsAvailable *karpv1.NillableDuration `json:"nodeFsAvailable,omitempty"`
 	// nodeFsInodesFree is the grace period for the nodeFsInodesFree signal.
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('30s')",message="nodeFsInodesFree must be a valid duration of at least 30s"
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
 	// +optional
-	//nolint:kubeapilinter // nodurations: metav1.Duration matches upstream kubelet types
-	NodeFsInodesFree *metav1.Duration `json:"nodeFsInodesFree,omitempty"`
+	NodeFsInodesFree *karpv1.NillableDuration `json:"nodeFsInodesFree,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={always,defer,"defer+madvise",madvise,never}

@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -399,9 +399,6 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	return tags
 }
 
-// Reservation and eviction fields require CustomNodeConfigPreview registration. Document the
-// rollout requirements for any additional preview-only fields before adding them to this payload.
-//
 //nolint:gocyclo // borderline complexity violation, code is not hard to read
 func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.KubeletConfig {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
@@ -498,11 +495,17 @@ func configureAKSMachineSoftEvictionGracePeriod(config *v1beta1.EvictionSoftGrac
 	}
 }
 
-func durationString(value *metav1.Duration) *string {
-	if value == nil {
+func durationString(value *karpv1.NillableDuration) *string {
+	if value == nil || value.Duration == nil {
 		return nil
 	}
-	return lo.ToPtr(value.Duration.String())
+	if value.Raw != nil {
+		var raw string
+		if err := json.Unmarshal(value.Raw, &raw); err == nil {
+			return lo.ToPtr(raw)
+		}
+	}
+	return lo.ToPtr(value.String())
 }
 
 // convertContainerLogMaxSizeToMB converts string size to MB integer

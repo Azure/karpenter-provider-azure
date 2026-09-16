@@ -292,27 +292,13 @@ func overlayKubeletConfiguration(kubeletConfig *bootstrap.KubeletConfiguration, 
 	if overrides == nil {
 		return
 	}
-	kubeletConfig.KubeReserved = lo.Assign(kubeletConfig.KubeReserved, kubeReservedMap(overrides.KubeReserved))
+	kubeletConfig.KubeReserved = lo.Assign(kubeletConfig.KubeReserved, instancetype.KubeReservedOverrides(overrides.KubeReserved))
 	kubeletConfig.EvictionHard = lo.Assign(kubeletConfig.EvictionHard, evictionThresholdMap(overrides.EvictionHard))
 	kubeletConfig.EvictionSoft = lo.Assign(kubeletConfig.EvictionSoft, evictionThresholdMap(overrides.EvictionSoft))
 	kubeletConfig.EvictionSoftGracePeriod = lo.Assign(kubeletConfig.EvictionSoftGracePeriod, evictionGracePeriodMap(overrides.EvictionSoftGracePeriod))
 	if overrides.EvictionMaxPodGracePeriod != nil {
 		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(*overrides.EvictionMaxPodGracePeriod)
 	}
-}
-
-func kubeReservedMap(config *v1beta1.KubeReserved) map[string]string {
-	if config == nil {
-		return nil
-	}
-	result := map[string]string{}
-	if config.CPUMillicores != nil {
-		result[string(corev1.ResourceCPU)] = fmt.Sprintf("%dm", *config.CPUMillicores)
-	}
-	if config.MemoryMB != nil {
-		result[string(corev1.ResourceMemory)] = fmt.Sprintf("%dMi", *config.MemoryMB)
-	}
-	return result
 }
 
 func evictionThresholdMap(config *v1beta1.EvictionThreshold) map[string]string {
@@ -337,14 +323,14 @@ func evictionGracePeriodMap(config *v1beta1.EvictionSoftGracePeriod) map[string]
 		return nil
 	}
 	result := map[string]metav1.Duration{}
-	if config.MemoryAvailable != nil {
-		result[instancetype.MemoryAvailable] = *config.MemoryAvailable
+	if config.MemoryAvailable != nil && config.MemoryAvailable.Duration != nil {
+		result[instancetype.MemoryAvailable] = metav1.Duration{Duration: *config.MemoryAvailable.Duration}
 	}
-	if config.NodeFsAvailable != nil {
-		result[instancetype.NodeFSAvailable] = *config.NodeFsAvailable
+	if config.NodeFsAvailable != nil && config.NodeFsAvailable.Duration != nil {
+		result[instancetype.NodeFSAvailable] = metav1.Duration{Duration: *config.NodeFsAvailable.Duration}
 	}
-	if config.NodeFsInodesFree != nil {
-		result[instancetype.NodeFSInodesFree] = *config.NodeFsInodesFree
+	if config.NodeFsInodesFree != nil && config.NodeFsInodesFree.Duration != nil {
+		result[instancetype.NodeFSInodesFree] = metav1.Duration{Duration: *config.NodeFsInodesFree.Duration}
 	}
 	return result
 }
