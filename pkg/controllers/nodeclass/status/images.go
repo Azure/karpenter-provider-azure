@@ -508,10 +508,16 @@ func isStatusConditionError(err error) bool {
 }
 
 func validateImagePinning(reqK8sVer string, reqImgVer string, nodeClass *v1beta1.AKSNodeClass) error {
-	if reqK8sVer != "" &&
-		(!nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() ||
-			!nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()) {
-		return fmt.Errorf("kubernetes version not ready")
+	if reqK8sVer != "" {
+		kubernetesVersionCondition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady)
+		if !kubernetesVersionCondition.IsTrue() || kubernetesVersionCondition.ObservedGeneration != nodeClass.Generation {
+			return fmt.Errorf("kubernetes version not ready")
+		}
+
+		validationCondition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+		if validationCondition.IsFalse() && !imageValidationReasonOwned(validationCondition.Reason) {
+			return fmt.Errorf("nodeclass validation failed")
+		}
 	}
 
 	if reqImgVer != "" {
@@ -520,4 +526,8 @@ func validateImagePinning(reqK8sVer string, reqImgVer string, nodeClass *v1beta1
 		}
 	}
 	return nil
+}
+
+func imageValidationReasonOwned(reason string) bool {
+	return reason == "NodeImageVersionInvalid" || reason == "RollbackTargetKubernetesVersionMismatch"
 }

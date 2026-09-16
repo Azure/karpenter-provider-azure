@@ -243,8 +243,49 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nodeClass.Status.KubernetesVersion).To(PointTo(Equal(testK8sVersion)))
+				Expect(nodeClass.Status.KubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+			})
+
+			It("should initialize images while validation is unknown", func() {
+				nodeClass.Status.KubernetesVersion = nil
+				nodeClass.StatusConditions().SetUnknown(v1beta1.ConditionTypeValidationSucceeded)
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nodeClass.Status.KubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+			})
+
+			It("should recover after an invalid image version is corrected", func() {
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", "invalid image version")
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(newCIGImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeValidationSucceeded)).To(BeTrue())
+			})
+
+			It("should not publish images with stale Kubernetes version readiness", func() {
+				nodeClass.Generation++
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(newCIGImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
 			})
 
 			It("should pin the requested image version outside the maintenance window", func() {

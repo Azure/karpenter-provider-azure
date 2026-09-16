@@ -122,8 +122,8 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal(reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}))
 
-				Expect(nodeClass.Status.KubernetesVersion).To(PointTo(Equal(testK8sVersion)))
-				Expect(nodeClass.Status.Versions.ControlPlaneKubernetesVersion).To(PointTo(Equal(testK8sVersion)))
+				Expect(nodeClass.Status.KubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
+				Expect(nodeClass.Status.Versions.ControlPlaneKubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
 				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
 			})
@@ -139,6 +139,19 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("KubernetesVersionInvalidFormat"))
+			})
+
+			It("should recover after an invalid version format is corrected", func() {
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", "invalid version format")
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(oldK8sVersion),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeValidationSucceeded)).To(BeTrue())
+				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 			})
 
 			It("should reject a version incompatible with the control plane", func() {

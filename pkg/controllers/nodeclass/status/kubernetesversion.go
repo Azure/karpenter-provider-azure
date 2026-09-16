@@ -100,6 +100,9 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesPinning", "Performing kubernetes version change, need to get latest images")
 		}
 
+		if nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason == "KubernetesVersionInvalidFormat" {
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+		}
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 	}

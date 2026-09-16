@@ -138,6 +138,11 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 }
 
 func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
+	if !oldNodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() ||
+		!oldNodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue() {
+		return
+	}
+
 	oldImages := oldNodeClass.Status.Images
 	newImages := newNodeClass.Status.Images
 
