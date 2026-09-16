@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	gomegaformat "github.com/onsi/gomega/format"
@@ -85,6 +86,7 @@ type Environment struct {
 	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
+	AKSManagedClustersAPI       *fake.AKSManagedClustersAPI
 	UsageAPI                    *fake.UsageAPI
 	SKUMixPlacementScoresAPI    *fake.SKUMixPlacementScoresAPI
 	DynamicInterface            dynamic.Interface
@@ -162,6 +164,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	aksDataStorage := fake.NewAKSDataStorage()
 	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(aksDataStorage)
 	aksMachinesAPI := fake.NewAKSMachinesAPI(aksDataStorage)
+	serverVersion := strings.TrimPrefix(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).GitVersion, "v")
+	aksManagedClustersAPI := fake.NewAKSManagedClustersAPI(serverVersion)
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -174,7 +178,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
-	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
+	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache, aksManagedClustersAPI, region)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
 	quotaProvider := quota.NewProvider(usageAPI, region)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
@@ -228,6 +232,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		aksMachinesAPI,
 		aksMachinesBatchAPI,
 		aksAgentPoolsAPI,
+		aksManagedClustersAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		subnetsAPI,
@@ -335,6 +340,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NodeBootstrappingAPI:        nodeBootstrappingAPI,
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
+		AKSManagedClustersAPI:       aksManagedClustersAPI,
 		UsageAPI:                    usageAPI,
 		SKUMixPlacementScoresAPI:    skuMixPlacementScoresAPI,
 		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
@@ -390,6 +396,7 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.PricingProvider.Reset()
 	env.AKSMachinesAPI.Reset()
 	env.AKSAgentPoolsAPI.Reset()
+	env.AKSManagedClustersAPI.Reset()
 	env.UsageAPI.Reset()
 	env.SKUMixPlacementScoresAPI.Reset()
 	env.QuotaProvider.Reset()

@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
+	"github.com/samber/lo"
 )
 
 type reconciler interface {
@@ -152,7 +153,10 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 	oldSuffix := parseVersion(oldImages[0].ID)
 	newSuffix := parseVersion(newImages[0].ID)
 
-	if newSuffix != oldSuffix {
+	oldK8sVer := lo.FromPtr(oldNodeClass.Status.KubernetesVersion)
+	newK8sVer := lo.FromPtr(newNodeClass.Status.KubernetesVersion)
+
+	if newSuffix != oldSuffix || newK8sVer != oldK8sVer {
 		if newNodeClass.Status.Versions == nil {
 			newNodeClass.Status.Versions = &v1beta1.VersionsStatus{}
 		}
