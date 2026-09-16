@@ -132,22 +132,22 @@ func TestMachineKeyFunc_ReadOnlyFieldsExcluded(t *testing.T) {
 	g.Expect(item1.machineBody.Properties.ResourceID).ToNot(gomega.BeNil())
 }
 
-func TestMachineKeyFunc_UseWindowsGen2VMSeparatesBatches(t *testing.T) {
+func TestMachineKeyFunc_NodeImageVersionSeparatesBatches(t *testing.T) {
 	t.Parallel()
 	g := gomega.NewWithT(t)
 
 	vmSize := "Standard_D2s_v3"
-	body := func() *armcontainerservice.Machine {
+	body := func(nodeImageVersion string) *armcontainerservice.Machine {
 		return &armcontainerservice.Machine{Properties: &armcontainerservice.MachineProperties{
-			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+			Hardware:         &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
+			NodeImageVersion: lo.ToPtr(nodeImageVersion),
 		}}
 	}
-	gen1 := aksMachineCreatePayload{machineBody: body(), options: CreateOptions{UseWindowsGen2VM: false}}
-	gen2 := aksMachineCreatePayload{machineBody: body(), options: CreateOptions{UseWindowsGen2VM: true}}
+	gen1 := aksMachineCreatePayload{machineBody: body("AKSWindows-2022-containerd-20348.4529.251212")}
+	gen2 := aksMachineCreatePayload{machineBody: body("AKSWindows-2022-containerd-gen2-20348.4529.251212")}
 
 	g.Expect(mustDetermineBatchKey(t, &gen2)).ToNot(gomega.Equal(mustDetermineBatchKey(t, &gen1)),
-		"machines requesting different Windows image generations must not share a batch")
-	g.Expect(mustDetermineBatchKey(t, &gen2)).To(gomega.HaveSuffix("/gen2=true"))
+		"machines pinned to different Windows images must not share a batch")
 }
 
 // realisticMachineProps returns a fully-populated MachineProperties matching

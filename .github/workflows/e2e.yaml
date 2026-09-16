@@ -102,6 +102,7 @@ env:
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
+    # Windows E2E supports only AKS Machine API modes; skip unsupported combinations before creating resources.
     if: ${{ inputs.suite != 'Windows' || inputs.provision_mode == 'aksmachineapi' || inputs.provision_mode == 'aksmachineapiheaderbatch' }}
     runs-on: karpenter-ci-1es-pool
     permissions:

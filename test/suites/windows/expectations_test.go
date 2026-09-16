@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	nodeutils "sigs.k8s.io/karpenter/pkg/utils/node"
 
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 
@@ -90,6 +91,7 @@ func expectWindowsProvisioningRelationships(settings windowsImageSettings, nodeP
 		Expect(nodeClaim.Status.ProviderID).To(Equal(expectedProviderID))
 		node, ok := nodesByProviderID[expectedProviderID]
 		Expect(ok).To(BeTrue(), "expected a Node with provider ID %s", expectedProviderID)
+		Expect(nodeutils.GetCondition(node, corev1.NodeReady).Status).To(Equal(corev1.ConditionTrue))
 
 		Expect(machine.Properties.Kubernetes).ToNot(BeNil())
 		Expect(machine.Properties.Kubernetes.NodeName).ToNot(BeNil())
@@ -99,6 +101,7 @@ func expectWindowsProvisioningRelationships(settings windowsImageSettings, nodeP
 		Expect(machine.Properties.NodeImageVersion).ToNot(BeNil())
 		Expect(*machine.Properties.NodeImageVersion).To(MatchRegexp(settings.expectedImagePattern))
 		Expect(nodeClaim.Status.ImageID).To(Equal(*machine.Properties.NodeImageVersion))
+		Expect(node.Labels).To(HaveKeyWithValue("kubernetes.azure.com/node-image-version", *machine.Properties.NodeImageVersion))
 
 		Expect(machine.Properties.OperatingSystem).ToNot(BeNil())
 		Expect(machine.Properties.OperatingSystem.OSType).ToNot(BeNil())

@@ -235,7 +235,7 @@ var _ = Describe("CloudProvider", func() {
 
 		Context("Create - Windows", func() {
 			DescribeTable("should create a Windows AKS Machine with OS-specific configuration",
-				func(imageFamily string, expectedOSSKU armcontainerservice.OSSKU, expectedFIPS bool) {
+				func(imageFamily string, expectedOSSKU armcontainerservice.OSSKU, expectedFIPS bool, expectedNodeImageVersion string) {
 					if imageFamily == v1beta1.Windows2025ImageFamily &&
 						!imagefamily.SupportsWindows2025(lo.FromPtr(nodeClass.Status.KubernetesVersion)) {
 						Skip("Windows2025 requires Kubernetes 1.32.0 or newer")
@@ -267,8 +267,9 @@ var _ = Describe("CloudProvider", func() {
 					createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 					aksMachine := createInput.AKSMachine
 					Expect(createInput.AKSMachineName).To(HaveLen(12))
-					Expect(createInput.UseWindowsGen2VM).To(BeTrue())
-					Expect(createInput.RequestedAKSMachine.Properties.NodeImageVersion).To(BeNil())
+					Expect(createInput.RequestedAKSMachine.Properties.NodeImageVersion).ToNot(BeNil())
+					Expect(lo.FromPtr(createInput.RequestedAKSMachine.Properties.NodeImageVersion)).To(Equal(expectedNodeImageVersion))
+					Expect(lo.FromPtr(aksMachine.Properties.NodeImageVersion)).To(Equal(expectedNodeImageVersion))
 					Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
 					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSType)).To(Equal(armcontainerservice.OSTypeWindows))
 					Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(expectedOSSKU))
@@ -284,8 +285,8 @@ var _ = Describe("CloudProvider", func() {
 						Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelFIPSEnabled, "true"))
 					}
 				},
-				Entry("Windows2022", v1beta1.Windows2022ImageFamily, armcontainerservice.OSSKUWindows2022, false),
-				Entry("Windows2025", v1beta1.Windows2025ImageFamily, armcontainerservice.OSSKUWindows2025, true),
+				Entry("Windows2022", v1beta1.Windows2022ImageFamily, armcontainerservice.OSSKUWindows2022, false, "AKSWindows-2022-containerd-gen2-20348.4529.251212"),
+				Entry("Windows2025", v1beta1.Windows2025ImageFamily, armcontainerservice.OSSKUWindows2025, true, "AKSWindows-2025-gen2-26100.7462.251212"),
 			)
 		})
 
@@ -1300,7 +1301,7 @@ var _ = Describe("CloudProvider", func() {
 			azureEnv.Reset(ctx)
 		})
 
-		It("should send the Gen2 Windows request through the direct Machine API path", func() {
+		It("should send the selected Windows image through the direct Machine API path", func() {
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
 			coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
@@ -1327,8 +1328,9 @@ var _ = Describe("CloudProvider", func() {
 			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			aksMachine := createInput.AKSMachine
 			Expect(createInput.AKSMachineName).To(HaveLen(12))
-			Expect(createInput.UseWindowsGen2VM).To(BeTrue())
-			Expect(createInput.RequestedAKSMachine.Properties.NodeImageVersion).To(BeNil())
+			Expect(createInput.RequestedAKSMachine.Properties.NodeImageVersion).ToNot(BeNil())
+			Expect(lo.FromPtr(createInput.RequestedAKSMachine.Properties.NodeImageVersion)).To(Equal("AKSWindows-2022-containerd-gen2-20348.4529.251212"))
+			Expect(lo.FromPtr(aksMachine.Properties.NodeImageVersion)).To(Equal("AKSWindows-2022-containerd-gen2-20348.4529.251212"))
 			Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
 			Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSType)).To(Equal(armcontainerservice.OSTypeWindows))
 			Expect(lo.FromPtr(aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(armcontainerservice.OSSKUWindows2022))

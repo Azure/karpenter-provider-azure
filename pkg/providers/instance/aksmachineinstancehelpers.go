@@ -329,14 +329,7 @@ func configureOSType(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.OSTyp
 }
 
 // configureNodeImageVersion resolves the AKS Machine API NodeImageVersion for the NodeClass.
-//
-// Windows temporarily returns nil until the AKS Machine API parser fix for hyphenated Windows
-// image definitions is deployed. The RP then resolves the latest image from OSSKU and returns
-// the actual NodeImageVersion on the created Machine. Restore explicit pinning after that rollout.
 func (p *DefaultAKSMachineProvider) configureNodeImageVersion(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*string, error) {
-	if v1beta1.IsWindowsImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily)) {
-		return nil, nil
-	}
 	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)

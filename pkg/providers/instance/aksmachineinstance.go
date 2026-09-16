@@ -19,11 +19,9 @@ package instance
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -38,7 +36,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/aksmachinesheaderbatch"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
@@ -460,10 +457,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
 
-	createOptions := machineCreateOptions{
-		useWindowsGen2VM: shouldUseWindowsGen2VM(nodeClass, instanceType),
-	}
-
 	// Call the AKS machine API with the template to create the AKS machine instance
 	if logger := log.FromContext(ctx).V(1); logger.Enabled() {
 		logger.Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name, "aksMachine", BuildJSONFromAKSMachine(aksMachineTemplate))
@@ -471,27 +464,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 
 	// Branch between batch and non-batch creation paths.
 	if p.batchCreationEnabled {
-		return p.beginCreateMachineBatch(ctx, aksMachineTemplate, aksMachineName, instanceType, capacityType, zone, createOptions)
+		return p.beginCreateMachineBatch(ctx, aksMachineTemplate, aksMachineName, instanceType, capacityType, zone)
 	}
-	return p.beginCreateMachineNonBatch(ctx, aksMachineTemplate, aksMachineName, instanceType, capacityType, zone, createOptions)
-}
-
-type machineCreateOptions struct {
-	useWindowsGen2VM bool
-}
-
-// shouldUseWindowsGen2VM reports whether the AKS machine create for this NodeClass and selected
-// instance type should request a Generation 2 Windows image from the AKS RP via the
-// UseWindowsGen2VM header.
-//
-// Windows2022 intentionally defaults to Gen1 for compatibility unless the caller sets the
-// supported UseWindowsGen2VM header. Request Gen2 when the selected SKU supports it; Gen1-only
-// SKUs keep the default. This mirrors the VM-direct image preference and supports both generations.
-func shouldUseWindowsGen2VM(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) bool {
-	if !v1beta1.IsWindowsImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily)) {
-		return false
-	}
-	return instanceType.Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Has(v1beta1.HyperVGenerationV2)
+	return p.beginCreateMachineNonBatch(ctx, aksMachineTemplate, aksMachineName, instanceType, capacityType, zone)
 }
 
 // beginCreateMachineBatch handles the batch creation path using the AKS machines header batch API and GET-based poller.
@@ -502,7 +477,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 	zone string,
-	createOptions machineCreateOptions,
 ) (*AKSMachinePromise, error) {
 	handlableError, err := p.azClient.AKSMachinesBatchClient().BeginCreateWithBatch(
 		ctx,
@@ -511,7 +485,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 		p.aksMachinesPoolName,
 		aksMachineName,
 		aksMachineTemplate,
-		aksmachinesheaderbatch.CreateOptions{UseWindowsGen2VM: createOptions.useWindowsGen2VM},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
@@ -573,14 +546,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineNonBatch(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 	zone string,
-	createOptions machineCreateOptions,
 ) (*AKSMachinePromise, error) {
-	if createOptions.useWindowsGen2VM {
-		// Request a Gen2 Windows image from the RP for this create (see shouldUseWindowsGen2VM).
-		ctx = policy.WithHTTPHeader(ctx, http.Header{consts.HeaderUseWindowsGen2VM: []string{"true"}})
-		// Mirror the header for the in-process fake; the real API reads the HTTP header above.
-		ctx = aksmachinesheaderbatch.WithFakeUseWindowsGen2VM(ctx, true)
-	}
 	poller, err := p.azClient.AKSMachinesClient().BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
 		he := offerings.ErrorToHandlableError(err)
