@@ -1247,6 +1247,33 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).ToNot(ContainSubstring("pid="))
 				Expect(kubeletFlags).ToNot(ContainSubstring("pid.available<"))
 			})
+
+			It("should configure the managed GPU system reservation", func() {
+				ctx = options.ToContext(
+					ctx,
+					test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}),
+				)
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_NC16as_T4_v3"},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					ResourceRequirements: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							"nvidia.com/gpu": resource.MustParse("1"),
+						},
+					},
+				})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				ExpectSystemReservedResources(ExpectDecodedCustomData(azureEnv), "cpu=100m", "memory=1176Mi", "ephemeral-storage=1Gi")
+			})
 		})
 
 		Context("Nodepool with KubeletConfig", func() {
@@ -2496,6 +2523,9 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Context("when driverInstallation is Install (default)", func() {
 				BeforeEach(func() {
+					ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}))
 					// Default nodeClass has no GPU config -> defaults to Install mode
 					nodeClassDefault := test.AKSNodeClass()
 					ExpectApplied(ctx, env.Client, nodeClassDefault)
@@ -2512,6 +2542,13 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				It("should include non-GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				})
+				It("should use the managed GPU system reservation", func() {
+					instanceType := lo.FindOrElse(instanceTypes, nil, func(instanceType *corecloudprovider.InstanceType) bool {
+						return instanceType.Name == "Standard_NC16as_T4_v3"
+					})
+					Expect(instanceType).ToNot(BeNil())
+					Expect(instanceType.Overhead.SystemReserved.Memory().String()).To(Equal("1176Mi"))
 				})
 			})
 
@@ -2535,6 +2572,9 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Context("when mode is None", func() {
 				BeforeEach(func() {
+					ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+						EnableNodeHardening: lo.ToPtr(true),
+					}))
 					noneMode := v1beta1.GPUModeNone
 					nodeClassNone := test.AKSNodeClass()
 					nodeClassNone.Spec.GPU = &v1beta1.GPU{Mode: &noneMode}
@@ -2548,6 +2588,13 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				It("should include non-GPU SKUs", func() {
 					Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				})
+				It("should preserve the standard GPU system reservation", func() {
+					instanceType := lo.FindOrElse(instanceTypes, nil, func(instanceType *corecloudprovider.InstanceType) bool {
+						return instanceType.Name == "Standard_NC16as_T4_v3"
+					})
+					Expect(instanceType).ToNot(BeNil())
+					Expect(instanceType.Overhead.SystemReserved.Memory().String()).To(Equal("600Mi"))
 				})
 			})
 		})
@@ -3718,6 +3765,16 @@ func ExpectSoftEvictionThresholds(customData, memory string) {
 func ExpectKubeReservedResources(customData string, expected ...string) {
 	GinkgoHelper()
 	const prefix = "--kube-reserved="
+	kubeletFlags := ExpectKubeletFlagsPassed(customData)
+	start := strings.Index(kubeletFlags, prefix)
+	Expect(start).ToNot(Equal(-1))
+	value := strings.Fields(kubeletFlags[start+len(prefix):])[0]
+	Expect(strings.Split(value, ",")).To(ConsistOf(expected))
+}
+
+func ExpectSystemReservedResources(customData string, expected ...string) {
+	GinkgoHelper()
+	const prefix = "--system-reserved="
 	kubeletFlags := ExpectKubeletFlagsPassed(customData)
 	start := strings.Index(kubeletFlags, prefix)
 	Expect(start).ToNot(Equal(-1))
