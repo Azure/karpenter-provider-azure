@@ -83,6 +83,10 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
+			// Written onto nodes by the Elastic SAN CSI driver (Azure Container Storage), which the E2E
+			// cluster does not install, so a pod selecting on it would never become Ready here. Its
+			// normalization is covered by the acceptance tests in pkg/providers/instancetype.
+			zones.LabelAzureElasticSANCSIZone,
 		)
 
 		if !env.UsesSharedImageGallery() {
@@ -182,7 +186,6 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				corev1.LabelFailureDomainBetaRegion: env.Region,
 				corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
 				zones.LabelAzureDiskCSIZone:         fmt.Sprintf("%s-1", env.Region),
-				zones.LabelAzureElasticSANCSIZone:   fmt.Sprintf("%s-1", env.Region),
 				"beta.kubernetes.io/arch":           "amd64",
 				"beta.kubernetes.io/os":             "linux",
 			}
