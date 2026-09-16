@@ -32,14 +32,19 @@ import (
 // The AKS RP is the source of truth; keep the formulas below in sync with its
 // node-hardening behavior.
 const (
-	// Hardened system-reserved memory (Linux):
-	//   200 + 100*floor(memGiB/32) (+100 when Azure CNI)
-	systemReservedBaseMiB       int64 = 200
-	systemReservedPerStepMiB    int64 = 100
-	systemReservedStepGiB       int64 = 32
-	systemReservedCNIBonusMiB   int64 = 100
+	// Hardened system-reserved memory (Linux): 400 (+100 when LocalDNS is enabled).
+	systemReservedBaseMiB       int64 = 400
+	systemReservedLocalDNSMiB   int64 = 100
 	systemReservedCPUMillicores int64 = 100
 	bytesPerMiB                 int64 = 1024 * 1024
+
+	// Additional managed GPU system-reserved memory (Linux):
+	//   roundUpTo64(1.10 * (479 + 30*gpuCount))
+	managedGPUBaseMiB         int64 = 479
+	managedGPUPerDeviceMiB    int64 = 30
+	managedGPUHeadroomPercent int64 = 110
+	managedGPURoundingMiB     int64 = 64
+	percentageDenominator     int64 = 100
 
 	// systemReservedEphemeralStorage mirrors the RP's fixed 1Gi ephemeral-storage
 	// system reservation on hardened nodes.
@@ -63,27 +68,37 @@ const (
 
 // hardenedKubeReservedMemoryMiB returns the hardened kube-reserved memory in MiB:
 //
-//	min(35*maxPods + max(250, 2% of totalMemoryMiB), 25% of totalMemoryMiB)
+//	100 * ceil((300 + 13*maxPods) / 100)
 //
 // Mirrors the hardened kube-reserved memory calculation in the AKS RP.
-func hardenedKubeReservedMemoryMiB(maxPods int32, totalMemoryMiB int64) int64 {
-	capMiB := totalMemoryMiB / 4 // 25%
-	reservedMiB := 35*int64(maxPods) + max(totalMemoryMiB*2/100, 250)
-	return min(reservedMiB, capMiB)
+func hardenedKubeReservedMemoryMiB(maxPods int32) int64 {
+	return ((300 + 13*int64(maxPods) + 99) / 100) * 100
 }
 
 // systemReservedMemoryMiB returns the hardened system-reserved memory in MiB:
 //
-//	200 + 100*floor(totalMemoryMiB/(32*1024)) (+100 when Azure CNI)
+//	400 (+100 when LocalDNS is enabled)
+//
+// Managed GPU nodes add:
+//
+//	roundUpTo64(1.10 * (479 + 30*gpuCount))
 //
 // Mirrors the hardened system-reserved memory calculation in the AKS RP.
-func systemReservedMemoryMiB(totalMemoryMiB int64, isAzureCNI bool) int64 {
-	steps := totalMemoryMiB / (systemReservedStepGiB * 1024)
-	mem := systemReservedBaseMiB + steps*systemReservedPerStepMiB
-	if isAzureCNI {
-		mem += systemReservedCNIBonusMiB
+func systemReservedMemoryMiB(localDNSEnabled bool, managedGPUCount int64) int64 {
+	mem := systemReservedBaseMiB
+	if localDNSEnabled {
+		mem += systemReservedLocalDNSMiB
+	}
+	if managedGPUCount > 0 {
+		mem += managedGPUSystemReservedMemoryMiB(managedGPUCount)
 	}
 	return mem
+}
+
+func managedGPUSystemReservedMemoryMiB(gpuCount int64) int64 {
+	reservationHundredths := managedGPUHeadroomPercent * (managedGPUBaseMiB + managedGPUPerDeviceMiB*gpuCount)
+	roundingHundredths := managedGPURoundingMiB * percentageDenominator
+	return ((reservationHundredths + roundingHundredths - 1) / roundingHundredths) * managedGPURoundingMiB
 }
 
 // evictionMemoryLadder returns the hardened soft- and hard-eviction

@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -115,8 +115,12 @@ func newInstanceType(
 		Offerings:    offerings,
 		Capacity:     capacity,
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:   KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening, params.KubeReserved),
-			SystemReserved: SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
+			KubeReserved: KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening, params.KubeReserved),
+			SystemReserved: SystemReservedResources(
+				params.LocalDNSEnabled && localdns.SKUMeetsFloor(lo.Must(sku.VCPU()), totalMemoryMiB),
+				enableNodeHardening,
+				managedGPUCount(sku, params.GPUMode),
+			),
 			EvictionThreshold: EvictionThreshold(
 				totalMemoryMiB,
 				capacity[corev1.ResourceEphemeralStorage],
@@ -301,6 +305,17 @@ func gpuTotalCount(sku *skewer.SKU) *resource.Quantity {
 	return resources.Quantity(fmt.Sprint(count))
 }
 
+func managedGPUCount(sku *skewer.SKU, gpuMode v1beta1.GPUMode) int64 {
+	if gpuMode != v1beta1.GPUModeDriver || !utils.IsNvidiaEnabledSKU(sku.GetName()) {
+		return 0
+	}
+	count, err := sku.GPU()
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
 func vcpuCount(sku *skewer.SKU) int64 {
 	return lo.Must(sku.VCPU())
 }
@@ -341,7 +356,7 @@ func pods(params *instanceTypeParameters) *resource.Quantity {
 	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
-func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableNodeHardening bool) corev1.ResourceList {
+func SystemReservedResources(localDNSEnabled, enableNodeHardening bool, managedGPUCount int64) corev1.ResourceList {
 	if !enableNodeHardening {
 		return corev1.ResourceList{
 			corev1.ResourceCPU:    resource.Quantity{},
@@ -350,7 +365,7 @@ func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableN
 	}
 	return corev1.ResourceList{
 		corev1.ResourceCPU:              *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
-		corev1.ResourceMemory:           *resource.NewQuantity(systemReservedMemoryMiB(totalMemoryMiB, networkPlugin == consts.NetworkPluginAzure)*bytesPerMiB, resource.BinarySI),
+		corev1.ResourceMemory:           *resource.NewQuantity(systemReservedMemoryMiB(localDNSEnabled, managedGPUCount)*bytesPerMiB, resource.BinarySI),
 		corev1.ResourceEphemeralStorage: resource.MustParse(systemReservedEphemeralStorage),
 	}
 }
@@ -362,7 +377,7 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
 
 	if enableNodeHardening {
-		reservedMemoryMiB = hardenedKubeReservedMemoryMiB(maxPods, totalMemoryMiB)
+		reservedMemoryMiB = hardenedKubeReservedMemoryMiB(maxPods)
 	}
 
 	resources := corev1.ResourceList{
