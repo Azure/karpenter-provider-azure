@@ -97,4 +97,45 @@ var _ = Describe("Node image pinning", func() {
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
 	})
+
+	It("should pin the latest node image version", func() {
+		env.ExpectCreated(nodeClass)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.GetKubernetesVersion()).ToNot(BeEmpty())
+			g.Expect(nodeClass.Status.Versions).ToNot(BeNil())
+			g.Expect(nodeClass.Status.Versions.LatestImageVersion).ToNot(BeEmpty())
+		}).Should(Succeed())
+
+		currentKubernetesVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
+		latestNodeImageVersion := nodeClass.Status.Versions.LatestImageVersion
+		nodeClass.Spec.Versions = &v1beta1.Versions{
+			KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
+			NodeImageVersion:  lo.ToPtr(latestNodeImageVersion),
+		}
+		env.ExpectUpdated(nodeClass)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.Spec.Versions).To(Equal(&v1beta1.Versions{
+				KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
+				NodeImageVersion:  lo.ToPtr(latestNodeImageVersion),
+			}))
+			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).ObservedGeneration).To(Equal(nodeClass.Generation))
+			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).ObservedGeneration).To(Equal(nodeClass.Generation))
+			g.Expect(nodeClass.GetKubernetesVersion()).To(Equal(currentKubernetesVersion))
+			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
+			g.Expect(nodeClass.Status.Images[0].ID).To(HaveSuffix(latestNodeImageVersion))
+		}).Should(Succeed())
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+
+		Expect(nodeClaim.Status.ImageID).To(HaveSuffix(latestNodeImageVersion))
+		node := env.GetNode(pods[0].Spec.NodeName)
+		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
+	})
 })
