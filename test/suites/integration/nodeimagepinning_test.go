@@ -19,6 +19,7 @@ package integration_test
 import (
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -55,5 +56,45 @@ var _ = Describe("Node image pinning", func() {
 
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(requestedVersion.String()))
+	})
+
+	It("should pin the current Kubernetes and node image versions", func() {
+		env.ExpectCreated(nodeClass)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.GetKubernetesVersion()).ToNot(BeEmpty())
+			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
+		}).Should(Succeed())
+
+		currentKubernetesVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
+		currentNodeImageVersion := nodeClass.Status.Images[0].ID[strings.LastIndex(nodeClass.Status.Images[0].ID, "/")+1:]
+		nodeClass.Spec.Versions = &v1beta1.Versions{
+			KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
+			NodeImageVersion:  lo.ToPtr(currentNodeImageVersion),
+		}
+		env.ExpectUpdated(nodeClass)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.Spec.Versions).To(Equal(&v1beta1.Versions{
+				KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
+				NodeImageVersion:  lo.ToPtr(currentNodeImageVersion),
+			}))
+			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).ObservedGeneration).To(Equal(nodeClass.Generation))
+			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).ObservedGeneration).To(Equal(nodeClass.Generation))
+			g.Expect(nodeClass.GetKubernetesVersion()).To(Equal(currentKubernetesVersion))
+			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
+			g.Expect(nodeClass.Status.Images[0].ID).To(HaveSuffix(currentNodeImageVersion))
+		}).Should(Succeed())
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+
+		Expect(nodeClaim.Status.ImageID).To(HaveSuffix(currentNodeImageVersion))
+		node := env.GetNode(pods[0].Spec.NodeName)
+		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
 	})
 })
