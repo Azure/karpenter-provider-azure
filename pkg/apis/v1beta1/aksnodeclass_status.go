@@ -21,6 +21,7 @@ import (
 
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -30,6 +31,32 @@ const (
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
 	ConditionTypeLocalDNSReady          = "LocalDNSReady"
 )
+
+// RecentlyUsedVersion contains a previously effective node image version and the Kubernetes version it was paired with.
+type RecentlyUsedVersion struct {
+	// timestampUsed is when this image version was last effective.
+	// +optional
+	TimestampUsed *metav1.Time `json:"timestampUsed,omitempty"`
+	// imageVersion is the node image version suffix.
+	// +required
+	ImageVersion *string `json:"imageVersion"`
+	// kubernetesVersion is the Kubernetes version paired with the image version.
+	// +required
+	KubernetesVersion *string `json:"kubernetesVersion"`
+}
+
+// VersionsStatus contains the resolved Kubernetes and node image versions for the NodeClass.
+type VersionsStatus struct {
+	// controlPlaneKubernetesVersion is the latest observed control plane version.
+	// +optional
+	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
+	// latestImageVersion is the latest node image version resolved from the gallery.
+	// +optional
+	LatestImageVersion string `json:"latestImageVersion,omitempty"`
+	// recentlyUsedVersions contains previously effective node image versions.
+	// +optional
+	RecentlyUsedVersions []RecentlyUsedVersion `json:"recentlyUsedVersions,omitempty"`
+}
 
 // LocalDNSState is the resolved enable/disable decision for LocalDNS on the
 // NodeClass. It represents the current LocalDNS enablement state at the
@@ -72,6 +99,9 @@ type AKSNodeClassStatus struct {
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	Images []NodeImage `json:"images,omitempty"`
+	// Versions contains observed and historical version information.
+	// +optional
+	Versions *VersionsStatus `json:"versions,omitempty"`
 	// kubernetesVersion contains the current kubernetes version which should be
 	// used for nodes provisioned for the NodeClass
 	// +optional

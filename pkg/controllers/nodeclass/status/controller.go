@@ -39,6 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type reconciler interface {
@@ -50,6 +51,7 @@ type Controller struct {
 
 	kubernetesVersion *KubernetesVersionReconciler
 	nodeImage         *NodeImageReconciler
+	pinning           *PinningReconciler
 	subnet            *SubnetReconciler
 	validation        *ValidationReconciler
 	localDNS          *LocalDNSReconciler
@@ -70,12 +72,14 @@ func NewController(
 	networkPolicy string,
 	networkPlugin string,
 ) *Controller {
+	nodeImageReconciler := NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface)
 	return &Controller{
 
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
-		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
+		nodeImage:         nodeImageReconciler,
+		pinning:           NewPinningReconciler(kubernetesVersionProvider, nodeImageProvider, nodeImageReconciler),
 		subnet:            NewSubnetReconciler(subnetClient),
 		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
@@ -95,20 +99,24 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	stored := nodeClass.DeepCopy()
 
 	var results []reconcile.Result
+	var reconcilers []reconciler
 	var errs error
-	for _, reconciler := range []reconciler{
-		c.kubernetesVersion,
-		c.nodeImage,
-		c.subnet,
-		c.validation,
-		c.localDNS,
-	} {
+
+	if nodeImagePinningRequested(nodeClass) {
+		reconcilers = append(reconcilers, c.pinning)
+	} else {
+		reconcilers = append(reconcilers, c.kubernetesVersion, c.nodeImage)
+	}
+	reconcilers = append(reconcilers, c.subnet, c.validation, c.localDNS)
+
+	for _, reconciler := range reconcilers {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
 		results = append(results, res)
 	}
 
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
+		snapshotRecentlyUsed(stored, nodeClass)
 		// We use client.MergeFromWithOptimisticLock because patching a list with a JSON merge patch
 		// can cause races due to the fact that it fully replaces the list on a change
 		// Here, we are updating the status condition list
@@ -133,4 +141,41 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
+}
+
+func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
+	oldImages := oldNodeClass.Status.Images
+	newImages := newNodeClass.Status.Images
+
+	if len(oldImages) == 0 {
+		return
+	}
+	oldSuffix := parseVersion(oldImages[0].ID)
+
+	var newSuffix string
+	if len(newImages) > 0 {
+		newSuffix = parseVersion(newImages[0].ID)
+	}
+
+	if newSuffix != oldSuffix {
+		if newNodeClass.Status.Versions == nil {
+			newNodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+		}
+
+		now := metav1.Now()
+		newNodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+			{
+				ImageVersion:      &oldSuffix,
+				TimestampUsed:     &now,
+				KubernetesVersion: oldNodeClass.Status.KubernetesVersion,
+			},
+		}
+	}
+}
+
+func nodeImagePinningRequested(nodeClass *v1beta1.AKSNodeClass) bool {
+	if nodeClass == nil || nodeClass.Spec.Versions == nil {
+		return false
+	}
+	return nodeClass.Spec.Versions.KubernetesVersion != nil || nodeClass.Spec.Versions.NodeImageVersion != nil
 }

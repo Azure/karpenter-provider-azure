@@ -37,6 +37,10 @@ type AKSAgentPoolsAPI interface {
 	BeginDeleteMachines(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachines armcontainerservice.AgentPoolDeleteMachinesParameter, options *armcontainerservice.AgentPoolsClientBeginDeleteMachinesOptions) (*runtime.Poller[armcontainerservice.AgentPoolsClientDeleteMachinesResponse], error)
 }
 
+type AKSManagedClustersAPI interface {
+	ListKubernetesVersions(ctx context.Context, location string, options *armcontainerservice.ManagedClustersClientListKubernetesVersionsOptions) (armcontainerservice.ManagedClustersClientListKubernetesVersionsResponse, error)
+}
+
 type VirtualMachinesAPI interface {
 	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error)
 	Get(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientGetOptions) (armcompute.VirtualMachinesClientGetResponse, error)

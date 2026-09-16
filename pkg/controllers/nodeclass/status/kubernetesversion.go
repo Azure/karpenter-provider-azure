@@ -74,10 +74,17 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(kubernetesVersionReconcilerName))
 	logger := log.FromContext(ctx).WithValues("existingKubernetesVersion", nodeClass.Status.KubernetesVersion)
 
-	goalK8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
+	controlPlaneVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
 	}
+
+	// Set controlPlaneVersion
+	if nodeClass.Status.Versions == nil {
+		nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+	}
+	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &controlPlaneVersion
+	goalK8sVersion := controlPlaneVersion
 
 	// Handles case 1: init, update kubernetes status to API server version found
 	if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == nil || *nodeClass.Status.KubernetesVersion == "" {
@@ -92,8 +99,9 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("parsing current kubernetes version, %w", err)
 		}
-		// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
+
 		if newK8sVersion.GT(currentK8sVersion) {
+			// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 			logger.V(1).Info("kubernetes upgrade detected", "currentKubernetesVersion", currentK8sVersion.String(), "discoveredKubernetesVersion", newK8sVersion.String())
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
 		} else if newK8sVersion.LT(currentK8sVersion) {

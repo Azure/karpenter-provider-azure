@@ -1745,6 +1745,27 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              versions:
+                description: |-
+                  Versions controls the Kubernetes and node image versions for the NodeClass.
+                  If omitted, both versions follow their automatic defaults.
+                properties:
+                  kubernetesVersion:
+                    description: |-
+                      kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+                      If omitted, the observed control plane version is used.
+                    pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+                    type: string
+                  nodeImageVersion:
+                    description: |-
+                      nodeImageVersion is the status-backed node image version to use for the NodeClass.
+                      If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: kubernetesVersion must be set when nodeImageVersion is
+                    set
+                  rule: '!has(self.nodeImageVersion) || has(self.kubernetesVersion)'
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -1928,8 +1949,55 @@ spec:
                 - Enabled
                 - Disabled
                 type: string
+              versions:
+                description: Versions contains observed and historical version information.
+                properties:
+                  controlPlaneKubernetesVersion:
+                    description: controlPlaneKubernetesVersion is the latest observed
+                      control plane version.
+                    type: string
+                  latestImageVersion:
+                    description: latestImageVersion is the latest node image version
+                      resolved from the gallery.
+                    type: string
+                  recentlyUsedVersions:
+                    description: recentlyUsedVersions contains previously effective
+                      node image versions.
+                    items:
+                      description: RecentlyUsedVersion contains a previously effective
+                        node image version and the Kubernetes version it was paired
+                        with.
+                      properties:
+                        imageVersion:
+                          description: imageVersion is the node image version suffix.
+                          type: string
+                        kubernetesVersion:
+                          description: kubernetesVersion is the Kubernetes version
+                            paired with the image version.
+                          type: string
+                        timestampUsed:
+                          description: timestampUsed is when this image version was
+                            last effective.
+                          format: date-time
+                          type: string
+                      required:
+                      - imageVersion
+                      - kubernetesVersion
+                      type: object
+                    type: array
+                type: object
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: nodeImageVersion must match the current image, latest image, or
+            a recently used image paired with the requested kubernetesVersion
+          rule: 'has(self.spec.versions) && has(self.spec.versions.nodeImageVersion)
+            ? self.status.images.exists(image, image.id.endsWith(''/versions/'' +
+            self.spec.versions.nodeImageVersion)) || (has(self.status.versions) &&
+            self.status.versions.latestImageVersion == self.spec.versions.nodeImageVersion)
+            || (has(self.status.versions) && self.status.versions.recentlyUsedVersions.exists(version,
+            version.imageVersion == self.spec.versions.nodeImageVersion && version.kubernetesVersion
+            == self.spec.versions.kubernetesVersion)) : true'
     served: true
     storage: true
     subresources:

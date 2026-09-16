@@ -123,10 +123,26 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{}, nil
 	}
 
+	if nodeClass.Status.Versions == nil || nodeClass.Status.Versions.ControlPlaneKubernetesVersion == nil {
+		return reconcile.Result{}, fmt.Errorf("control plane Kubernetes version is not set in node class status")
+	}
+
+	controlPlaneVersion := *nodeClass.Status.Versions.ControlPlaneKubernetesVersion
+	latestImages, err := listImagesForVersion(ctx, r.nodeImageProvider, *nodeClass, controlPlaneVersion)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("getting latest images, %w", err)
+	}
+
+	if len(latestImages) > 0 {
+		imgVersion := parseVersion(latestImages[0].ID)
+		nodeClass.Status.Versions.LatestImageVersion = imgVersion
+	}
+
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
+
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
@@ -139,6 +155,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 			}
 			return reqs[i].Key < reqs[j].Key
 		})
+
 		return v1beta1.NodeImage{
 			ID:           nodeImage.ID,
 			Requirements: reqs,
@@ -174,6 +191,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
 		logger.Info("new available images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
 	}
+
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -303,4 +321,23 @@ func trimVersionSuffix(imageID string) string {
 	imageIDParts := strings.Split(imageID, "/")
 	baseID := strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
 	return baseID
+}
+
+// Trims off the version prefix, and leaves just the image version
+// Examples:
+//
+// - CIG:
+//   - Input: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+//
+// - SIG:
+//   - Input: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+func parseVersion(imageID string) string {
+	imageIDParts := strings.Split(imageID, "/")
+	if len(imageIDParts) < 2 {
+		return ""
+	}
+	version := imageIDParts[len(imageIDParts)-1]
+	return version
 }

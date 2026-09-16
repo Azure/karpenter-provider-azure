@@ -106,6 +106,10 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
+	// Versions controls the Kubernetes and node image versions for the NodeClass.
+	// If omitted, both versions follow their automatic defaults.
+	// +optional
+	Versions *Versions `json:"versions,omitempty" hash:"ignore"`
 	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
@@ -168,6 +172,23 @@ type AKSNodeClassSpec struct {
 	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 	// +optional
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
+}
+
+// Versions controls the Kubernetes and node image versions used by the NodeClass.
+// If omitted, nodes follow the observed control plane version and automatic latest node image selection.
+// Versions controls the Kubernetes and node image versions used by the NodeClass.
+// If omitted, nodes follow the observed control plane version and automatic latest node image selection.
+// +kubebuilder:validation:XValidation:message="kubernetesVersion must be set when nodeImageVersion is set",rule="!has(self.nodeImageVersion) || has(self.kubernetesVersion)"
+type Versions struct {
+	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+	// If omitted, the observed control plane version is used.
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
+	// +optional
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+	// nodeImageVersion is the status-backed node image version to use for the NodeClass.
+	// If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+	// +optional
+	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
 }
 
 // TrustedLaunch configures Trusted Launch security features for provisioned nodes.
@@ -719,6 +740,7 @@ type SysctlConfiguration struct {
 // +kubebuilder:printcolumn:name="ImageFamily",type=string,JSONPath=".spec.imageFamily",priority=1
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:validation:XValidation:message="nodeImageVersion must match the current image, latest image, or a recently used image paired with the requested kubernetesVersion",rule="has(self.spec.versions) && has(self.spec.versions.nodeImageVersion) ? self.status.images.exists(image, image.id.endsWith('/versions/' + self.spec.versions.nodeImageVersion)) || (has(self.status.versions) && self.status.versions.latestImageVersion == self.spec.versions.nodeImageVersion) || (has(self.status.versions) && self.status.versions.recentlyUsedVersions.exists(version, version.imageVersion == self.spec.versions.nodeImageVersion && version.kubernetesVersion == self.spec.versions.kubernetesVersion)) : true"
 type AKSNodeClass struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is standard object metadata.
