@@ -48,7 +48,12 @@ func (a AzureContainerLinux) Name() string {
 	return v1beta1.AzureContainerLinuxImageFamily
 }
 
-func (a AzureContainerLinux) DefaultImages(_ bool, fipsMode *v1beta1.FIPSMode, _ bool) []types.DefaultImageOutput {
+func (a AzureContainerLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
+	// ACL requires Machine API, whose image conversion currently supports only SIG IDs.
+	// ACL has no non-Trusted Launch or Kata variants.
+	if !useSIG || !trustedLaunch || kataEnabled {
+		return []types.DefaultImageOutput{}
+	}
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		return []types.DefaultImageOutput{
 			azureContainerLinuxImage(AzureContainerLinuxGen2FIPSImageDefinition, "aks-acl-gen2-fips-tl", karpv1.ArchitectureAmd64),
@@ -63,7 +68,6 @@ func (a AzureContainerLinux) DefaultImages(_ bool, fipsMode *v1beta1.FIPSMode, _
 
 func azureContainerLinuxImage(imageDefinition, distro, architecture string) types.DefaultImageOutput {
 	return types.DefaultImageOutput{
-		PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
 		GalleryResourceGroup: AKSAzureLinuxResourceGroup,
 		GalleryName:          AKSAzureLinuxGalleryName,
 		ImageDefinition:      imageDefinition,
@@ -107,6 +111,7 @@ func (a AzureContainerLinux) CustomScriptsNodeBootstrapping(
 	_ string,
 	_ types.NodeBootstrappingAPI,
 	_ *v1beta1.FIPSMode,
+	_ *v1beta1.WorkloadRuntime,
 	_ *v1beta1.LocalDNS,
 	_ *v1beta1.ArtifactStreaming,
 	_ *v1beta1.LinuxOSConfiguration,

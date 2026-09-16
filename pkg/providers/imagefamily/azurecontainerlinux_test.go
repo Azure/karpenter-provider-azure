@@ -23,6 +23,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 func TestAzureContainerLinux(t *testing.T) {
@@ -33,18 +35,25 @@ func TestAzureContainerLinux(t *testing.T) {
 	})
 
 	t.Run("default images", func(t *testing.T) {
-		images := family.DefaultImages(false, nil, true)
+		images := family.DefaultImages(true, nil, true, false)
 		g := NewWithT(t)
 		g.Expect(images).To(HaveLen(2))
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.AzureContainerLinuxGen2ImageDefinition))
 		g.Expect(images[0].Distro).To(Equal("aks-acl-gen2-tl"))
 		g.Expect(images[1].ImageDefinition).To(Equal(imagefamily.AzureContainerLinuxGen2ArmImageDefinition))
 		g.Expect(images[1].Distro).To(Equal("aks-acl-arm64-gen2-tl"))
+		g.Expect(images[0].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureAmd64))
+		g.Expect(images[1].Requirements.Get(v1.LabelArchStable).Values()).To(ConsistOf(karpv1.ArchitectureArm64))
+		for _, image := range images {
+			g.Expect(image.GalleryName).To(Equal("AKSAzureLinux"))
+			g.Expect(image.GalleryResourceGroup).To(Equal("AKS-AzureLinux"))
+			g.Expect(image.Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
+		}
 	})
 
 	t.Run("FIPS images", func(t *testing.T) {
 		fips := v1beta1.FIPSModeFIPS
-		images := family.DefaultImages(true, &fips, true)
+		images := family.DefaultImages(true, &fips, true, false)
 		g := NewWithT(t)
 		g.Expect(images).To(HaveLen(2))
 		g.Expect(images[0].ImageDefinition).To(Equal(imagefamily.AzureContainerLinuxGen2FIPSImageDefinition))
@@ -53,13 +62,22 @@ func TestAzureContainerLinux(t *testing.T) {
 		g.Expect(images[1].Distro).To(Equal("aks-acl-arm64-gen2-fips-tl"))
 	})
 
+	for _, fips := range []*v1beta1.FIPSMode{nil, &v1beta1.FIPSModeDisabled, &v1beta1.FIPSModeFIPS} {
+		t.Run("requires Trusted Launch", func(t *testing.T) {
+			NewWithT(t).Expect(family.DefaultImages(true, fips, false, false)).To(BeEmpty())
+		})
+		t.Run("does not support Kata", func(t *testing.T) {
+			NewWithT(t).Expect(family.DefaultImages(true, fips, true, true)).To(BeEmpty())
+		})
+	}
+
 	t.Run("scriptless bootstrap is unsupported", func(t *testing.T) {
 		_, err := family.ScriptlessCustomData(nil, nil, nil, nil, nil).Script()
 		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("requires an AKS Machine API provision mode")))
 	})
 
 	t.Run("custom scripts bootstrap is unsupported", func(t *testing.T) {
-		_, _, err := family.CustomScriptsNodeBootstrapping(nil, nil, nil, nil, nil, "", "", nil, nil, nil, nil, nil, nil, nil).GetCustomDataAndCSE(t.Context())
+		_, _, err := family.CustomScriptsNodeBootstrapping(nil, nil, nil, nil, nil, "", "", nil, nil, nil, nil, nil, nil, nil, nil).GetCustomDataAndCSE(t.Context())
 		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("requires an AKS Machine API provision mode")))
 	})
 }

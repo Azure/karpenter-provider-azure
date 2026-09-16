@@ -187,22 +187,6 @@ func TestAzureContainerLinuxGPUSupport(t *testing.T) {
 	g.Expect(IsGPUSKUSupportedOnOS("standard_nv4ads_v710_v5", "azurecontainerlinux")).To(BeFalse())
 }
 
-func TestLegacyA100GPUSupport(t *testing.T) {
-	for _, sku := range []string{
-		"standard_nd112asr_a100_v4",
-		"standard_nd120asr_a100_v4",
-		"standard_nd112amsr_a100_v4",
-		"standard_nd120amsr_a100_v4",
-	} {
-		t.Run(sku, func(t *testing.T) {
-			g := NewWithT(t)
-			g.Expect(IsNvidiaEnabledSKU(sku)).To(BeTrue())
-			g.Expect(IsGPUSKUSupportedOnOS(sku, "ubuntu")).To(BeTrue())
-			g.Expect(IsGPUSKUSupportedOnOS(sku, "azurelinux3")).To(BeTrue())
-		})
-	}
-}
-
 func TestGetGPUManufacturer(t *testing.T) {
 	tests := []struct {
 		name   string

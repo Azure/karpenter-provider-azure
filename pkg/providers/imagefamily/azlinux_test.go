@@ -70,6 +70,8 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 	var vTPMEnabled *bool                            // to test with nil
 	var secureBootEnabled *bool                      // to test with nil
 
+	var workloadRuntime *v1beta1.WorkloadRuntime // default OCIContainer
+
 	bootstrapper := azureLinux.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
 		taints,
@@ -80,6 +82,7 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		workloadRuntime,
 		localDNS,
 		artifactStreaming,
 		linuxOSConfig,
@@ -122,4 +125,16 @@ func TestAzureLinux_Name(t *testing.T) {
 	g := NewWithT(t)
 	azureLinux := imagefamily.AzureLinux{}
 	g.Expect(azureLinux.Name()).To(Equal("AzureLinux2"))
+}
+
+func TestAzureLinux_DefaultImages_Kata(t *testing.T) {
+	g := NewWithT(t)
+	azureLinux := imagefamily.AzureLinux{}
+
+	// AKS only publishes a Kata image for AzureLinux 3, so AzureLinux 2 offers none.
+	g.Expect(azureLinux.DefaultImages(true, nil, false, true)).To(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(false, nil, false, true)).To(BeEmpty())
+	g.Expect(azureLinux.DefaultImages(true, &v1beta1.FIPSModeFIPS, false, true)).To(BeEmpty())
+
+	g.Expect(azureLinux.DefaultImages(true, nil, false, false)).ToNot(BeEmpty())
 }

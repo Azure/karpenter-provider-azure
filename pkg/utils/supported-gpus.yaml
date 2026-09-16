@@ -265,60 +265,36 @@ standard_nd128isr_gb300_v6:
   gpu: nvidia
   os: ["ubuntu"]
 
-# NC RTX PRO 6000 Blackwell Server Edition v6 family (GRID v20 / 595.x driver, Ubuntu-only)
-# General Purpose (ds) sizes
-standard_nc36ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc72ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc144ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc288ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-# Compute Optimized (lds) sizes
+# StandardNCRTXPRO6000BSEv6Family:
 standard_nc24lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc36ds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
 standard_nc36lds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
+standard_nc72ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
 standard_nc72lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
+standard_nc144ds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
 standard_nc144lds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
+standard_nc288ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu"]
 standard_nc288lds_xl_rtxpro6000bse_v6:
   gpu: nvidia
   os: ["ubuntu"]
-# Preview sizes (128/256/320 vCPU), renamed to the GA sizes above and no longer
-# deployable, but retained as backward-compat aliases so any existing nodepool
-# still carrying a preview VMSize is consistently recognized as an NVIDIA
-# GRID-v20 GPU SKU by RP validation.
-standard_nc128ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc128lds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc256ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc256lds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc320ds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
-standard_nc320lds_xl_rtxpro6000bse_v6:
-  gpu: nvidia
-  os: ["ubuntu"]
 
-# NVads V710 v5-series
+# NVads V710 v5-series (AMD GPU)
 standard_nv4ads_v710_v5:
   gpu: amd
   os: ["ubuntu"]
@@ -335,7 +311,7 @@ standard_nv28adms_v710_v5:
   gpu: amd
   os: ["ubuntu"]
 
-# ND-MI300X-v5 series
+# ND-MI300X-v5 series (AMD GPU)
 standard_nd96isr_mi300x_v5:
   gpu: amd
   os: ["ubuntu"]

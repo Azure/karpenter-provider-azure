@@ -34,6 +34,10 @@ func NewDefaultOfferingRankStage() Stage {
 }
 
 func (s *defaultOfferingRankStage) Process(_ context.Context, instanceOfferings []InstanceOffering) []InstanceOffering {
+	return rankInstanceOfferings(instanceOfferings)
+}
+
+func rankInstanceOfferings(instanceOfferings []InstanceOffering) []InstanceOffering {
 	for idx := range instanceOfferings {
 		rankOfferings(instanceOfferings[idx].Offerings)
 	}
