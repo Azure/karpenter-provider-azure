@@ -153,21 +153,22 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	var nodeImages []imagefamily.NodeImage
 	var err error
 
-	if reqK8sVer != "" && lo.FromPtr(nodeClass.Status.KubernetesVersion) != reqK8sVer {
+	kubernetesVersionChanging := reqK8sVer != "" && lo.FromPtr(nodeClass.Status.KubernetesVersion) != reqK8sVer
+	if kubernetesVersionChanging {
 		nodeImages, err = r.listImagesForVersion(ctx, *nodeClass, reqK8sVer)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
-		}
-		if len(nodeImages) == 0 {
-			return reconcile.Result{}, fmt.Errorf("no node images found for Kubernetes version %s", reqK8sVer)
-		}
-
 		pinningShouldUpdate = true
 	} else {
 		nodeImages, err = r.nodeImageProvider.List(ctx, nodeClass)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
-		}
+	}
+
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
+	}
+
+	if len(nodeImages) == 0 && (kubernetesVersionChanging || reqImgVer != "") {
+		err = fmt.Errorf("%w: no node images found for Kubernetes version %s", errRequestedNodeImageVersionUnavailable, reqK8sVer)
+		setStatusConditionByErr(nodeClass, err)
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
@@ -198,7 +199,9 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if reqImgVer != "" {
 		goalImages, err = replaceSuffixes(goalImages, reqImgVer)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("%w: replacing image suffixes: %v", errRequestedNodeImageVersionUnavailable, err)
+			err = fmt.Errorf("%w: replacing image suffixes: %v", errRequestedNodeImageVersionUnavailable, err)
+			setStatusConditionByErr(nodeClass, err)
+			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
 
 		alreadySet := len(nodeClass.Status.Images) > 0 && parseVersion(nodeClass.Status.Images[0].ID) == reqImgVer
