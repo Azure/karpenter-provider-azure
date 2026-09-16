@@ -423,7 +423,7 @@ func memoryEvictionThreshold(totalMemoryMiB int64, enableNodeHardening bool, ove
 	}
 	if strings.HasSuffix(value, "%") {
 		if percentage, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64); err == nil && !math.IsNaN(percentage) && percentage >= 0 && percentage <= 100 {
-			memory = *resource.NewQuantity(int64(math.Ceil(float64(totalMemoryMiB)*percentage/100))*bytesPerMiB, resource.BinarySI)
+			memory = *resource.NewQuantity(int64(float64(totalMemoryMiB*bytesPerMiB)*float64(float32(percentage)/100)), resource.BinarySI)
 		}
 	} else if quantity, err := resource.ParseQuantity(value); err == nil {
 		memory = quantity

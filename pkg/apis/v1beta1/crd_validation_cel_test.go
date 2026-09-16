@@ -163,6 +163,22 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("duration below minimum", &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("1%")}, &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("29s"))}, false),
 		)
 
+		It("should preserve supported fields", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{
+					KubeReserved:              &v1beta1.KubeReserved{CPUMillicores: lo.ToPtr(int32(250)), MemoryMB: lo.ToPtr(int32(750))},
+					EvictionSoft:              &v1beta1.EvictionThreshold{MemoryAvailable: lo.ToPtr("500Mi")},
+					EvictionSoftGracePeriod:   &v1beta1.EvictionSoftGracePeriod{MemoryAvailable: lo.ToPtr(karpv1.MustParseNillableDuration("30s"))},
+					EvictionMaxPodGracePeriod: lo.ToPtr(int32(60)),
+				}},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			persisted := &v1beta1.AKSNodeClass{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), persisted)).To(Succeed())
+			Expect(persisted.Spec.Kubelet.KubeReserved.CPUMillicores).To(Equal(lo.ToPtr(int32(250))))
+		})
+
 		It("should reject mismatched soft eviction and grace period signals", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
