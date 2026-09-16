@@ -116,14 +116,16 @@ var _ = Describe("Windows", func() {
 			service := serviceForWindowsDeployment(deployment)
 			clientPod := windowsServiceClient(service)
 
-			env.ExpectCreated(nodeClass, nodePool, deployment, service, clientPod)
+			env.ExpectCreated(nodeClass, nodePool)
+			resolvedImages := expectResolvedWindowsImages(nodeClass)
+			env.ExpectCreated(deployment, service, clientPod)
 
 			// Windows nodes take noticeably longer to provision and pull images than Linux.
 			pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
 			env.EventuallyExpectHealthyWithTimeout(25*time.Minute, clientPod)
 			env.ExpectCreatedNodeCount("==", 1)
 
-			expectWindowsProvisioningRelationships(settings, nodePool, append(pods, clientPod), 1)
+			expectWindowsProvisioningRelationships(settings, resolvedImages, nodePool, append(pods, clientPod), 1)
 		})
 	}
 
@@ -149,13 +151,15 @@ var _ = Describe("Windows", func() {
 			},
 		}
 
-		env.ExpectCreated(nodeClass, nodePool, deployment)
+		env.ExpectCreated(nodeClass, nodePool)
+		resolvedImages := expectResolvedWindowsImages(nodeClass)
+		env.ExpectCreated(deployment)
 
 		pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
 		selector := labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels)
 		env.EventuallyExpectUniqueNodeNames(selector, 2)
 		env.ExpectCreatedNodeCount("==", 2)
-		expectWindowsProvisioningRelationships(settings, nodePool, pods, 2)
+		expectWindowsProvisioningRelationships(settings, resolvedImages, nodePool, pods, 2)
 	})
 })
 

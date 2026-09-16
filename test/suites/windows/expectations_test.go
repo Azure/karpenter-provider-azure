@@ -21,7 +21,9 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	nodeutils "sigs.k8s.io/karpenter/pkg/utils/node"
 
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
@@ -31,7 +33,22 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
-func expectWindowsProvisioningRelationships(settings windowsImageSettings, nodePool *karpv1.NodePool, pods []*corev1.Pod, expectedCount int) {
+func expectResolvedWindowsImages(nodeClass *v1beta1.AKSNodeClass) []v1beta1.NodeImage {
+	GinkgoHelper()
+
+	var images []v1beta1.NodeImage
+	Eventually(func(g Gomega) {
+		resolvedNodeClass := &v1beta1.AKSNodeClass{}
+		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), resolvedNodeClass)).To(Succeed())
+		var err error
+		images, err = resolvedNodeClass.GetImages()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(images).ToNot(BeEmpty())
+	}).Should(Succeed())
+	return append([]v1beta1.NodeImage(nil), images...)
+}
+
+func expectWindowsProvisioningRelationships(settings windowsImageSettings, images []v1beta1.NodeImage, nodePool *karpv1.NodePool, pods []*corev1.Pod, expectedCount int) {
 	GinkgoHelper()
 
 	nodePoolSelector := labels.SelectorFromSet(map[string]string{karpv1.NodePoolLabelKey: nodePool.Name})
@@ -98,10 +115,23 @@ func expectWindowsProvisioningRelationships(settings windowsImageSettings, nodeP
 		Expect(*machine.Properties.Kubernetes.NodeName).To(Equal(node.Name))
 		Expect(node.Spec.ProviderID).To(Equal(nodeClaim.Status.ProviderID))
 
+		expectedNodeImageVersion := ""
+		nodeRequirements := scheduling.NewLabelRequirements(node.Labels)
+		for _, image := range images {
+			if nodeRequirements.Compatible(scheduling.NewNodeSelectorRequirements(image.Requirements...), v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil {
+				var err error
+				expectedNodeImageVersion, err = utils.GetAKSMachineNodeImageVersionFromImageID(image.ID)
+				Expect(err).ToNot(HaveOccurred())
+				break
+			}
+		}
+		Expect(expectedNodeImageVersion).ToNot(BeEmpty(), "expected a NodeClass status image compatible with node %s", node.Name)
+		Expect(expectedNodeImageVersion).To(MatchRegexp(settings.expectedImagePattern))
+
 		Expect(machine.Properties.NodeImageVersion).ToNot(BeNil())
-		Expect(*machine.Properties.NodeImageVersion).To(MatchRegexp(settings.expectedImagePattern))
-		Expect(nodeClaim.Status.ImageID).To(Equal(*machine.Properties.NodeImageVersion))
-		Expect(node.Labels).To(HaveKeyWithValue("kubernetes.azure.com/node-image-version", *machine.Properties.NodeImageVersion))
+		Expect(*machine.Properties.NodeImageVersion).To(Equal(expectedNodeImageVersion))
+		Expect(nodeClaim.Status.ImageID).To(Equal(expectedNodeImageVersion))
+		Expect(node.Labels).To(HaveKeyWithValue("kubernetes.azure.com/node-image-version", expectedNodeImageVersion))
 
 		Expect(machine.Properties.OperatingSystem).ToNot(BeNil())
 		Expect(machine.Properties.OperatingSystem.OSType).ToNot(BeNil())

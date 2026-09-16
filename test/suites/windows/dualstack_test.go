@@ -112,7 +112,9 @@ var _ = Describe("Windows DualStack", func() {
 			deployment := windowsServerDeployment("windows-dualstack", 1)
 			service := common.DualStackServiceForDeployment(deployment, windowsServicePort)
 
-			env.ExpectCreated(nodeClass, nodePool, deployment, service)
+			env.ExpectCreated(nodeClass, nodePool)
+			resolvedImages := expectResolvedWindowsImages(nodeClass)
+			env.ExpectCreated(deployment, service)
 
 			pods := env.EventuallyExpectHealthyDeploymentWithTimeout(25*time.Minute, deployment)
 			expectPodHasIPv4AndIPv6PodIPs(pods[0])
@@ -134,7 +136,7 @@ var _ = Describe("Windows DualStack", func() {
 				10*time.Minute,
 				windowsPodOptions(map[string]string{"app": "dualstack-service-probe-windows"}),
 			)
-			expectWindowsProvisioningRelationships(settings, nodePool, pods, 1)
+			expectWindowsProvisioningRelationships(settings, resolvedImages, nodePool, pods, 1)
 		})
 	}
 })
