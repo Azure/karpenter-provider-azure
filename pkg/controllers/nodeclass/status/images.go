@@ -412,16 +412,14 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 		latestImgVer = nodeClass.Status.Versions.LatestImageVersion
 	}
 
-	if reqImgVer != currentImgVer && reqImgVer != latestImgVer {
-		return validRollback(reqK8sVer, reqImgVer, nodeClass)
+	if reqImgVer == currentImgVer || reqImgVer == latestImgVer {
+		curVer := nodeClass.Status.KubernetesVersion
+		if curVer != nil && reqK8sVer == *curVer {
+			return nil
+		}
 	}
 
-	curVer := nodeClass.Status.KubernetesVersion
-	if curVer == nil || reqK8sVer != *curVer {
-		return fmt.Errorf("%w: requested image does not match the effective kubernetes version", errNodeImageVersionInvalid)
-	}
-
-	return nil
+	return validRollback(reqK8sVer, reqImgVer, nodeClass)
 }
 
 func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) error {

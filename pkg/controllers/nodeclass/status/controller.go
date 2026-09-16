@@ -147,11 +147,16 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 	oldImages := oldNodeClass.Status.Images
 	newImages := newNodeClass.Status.Images
 
-	if len(oldImages) == 0 || len(newImages) == 0 {
+	if len(oldImages) == 0 {
 		return
 	}
+
 	oldSuffix := parseVersion(oldImages[0].ID)
-	newSuffix := parseVersion(newImages[0].ID)
+
+	var newSuffix string
+	if len(newImages) > 0 {
+		newSuffix = parseVersion(newImages[0].ID)
+	}
 
 	oldK8sVer := lo.FromPtr(oldNodeClass.Status.KubernetesVersion)
 	newK8sVer := lo.FromPtr(newNodeClass.Status.KubernetesVersion)
