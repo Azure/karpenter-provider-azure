@@ -17,6 +17,8 @@ limitations under the License.
 package status_test
 
 import (
+	"context"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -28,6 +30,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
+
+type testKubernetesVersionProvider struct {
+	controlPlaneVersion string
+	supportedVersions   map[string]bool
+}
+
+func (p *testKubernetesVersionProvider) KubeServerVersion(context.Context) (string, error) {
+	return p.controlPlaneVersion, nil
+}
+
+func (p *testKubernetesVersionProvider) IsSupported(_ context.Context, version string) (bool, error) {
+	return p.supportedVersions[version], nil
+}
 
 var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 	var nodeClass *v1beta1.AKSNodeClass
@@ -85,6 +100,72 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 			Expect(*nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
 			Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
+		})
+
+		When("a Kubernetes version is requested", func() {
+			BeforeEach(func() {
+				k8sReconciler = status.NewKubernetesVersionReconciler(&testKubernetesVersionProvider{
+					controlPlaneVersion: testK8sVersion,
+					supportedVersions: map[string]bool{
+						oldK8sVersion: true,
+					},
+				})
+			})
+
+			It("should validate the requested version without publishing it before images resolve", func() {
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(oldK8sVersion),
+				}
+
+				result, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal(reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}))
+
+				Expect(nodeClass.Status.KubernetesVersion).To(PointTo(Equal(testK8sVersion)))
+				Expect(nodeClass.Status.Versions.ControlPlaneKubernetesVersion).To(PointTo(Equal(testK8sVersion)))
+				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
+			})
+
+			It("should reject an invalid version format", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr("invalid"),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("KubernetesVersionInvalidFormat"))
+			})
+
+			It("should reject a version incompatible with the control plane", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr("2.0.0"),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("KubernetesVersionControlPlaneIncompatible"))
+			})
+
+			It("should reject an unsupported version", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("KubernetesVersionUnsupported"))
+			})
 		})
 	})
 })
