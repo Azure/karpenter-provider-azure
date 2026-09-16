@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -180,7 +181,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				// Deprecated Labels
 				corev1.LabelFailureDomainBetaRegion: env.Region,
 				corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
-				"topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
+				zones.LabelAzureDiskCSIZone:         fmt.Sprintf("%s-1", env.Region),
+				zones.LabelAzureElasticSANCSIZone:   fmt.Sprintf("%s-1", env.Region),
 				"beta.kubernetes.io/arch":           "amd64",
 				"beta.kubernetes.io/os":             "linux",
 			}
