@@ -189,11 +189,9 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		}
 	})
 
-	if len((goalImages)) > 0 {
-		if nodeClass.Status.Versions == nil {
-			nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
-		}
-		nodeClass.Status.Versions.LatestImageVersion = parseVersion(goalImages[0].ID)
+	latestImageVersion := ""
+	if len(goalImages) > 0 {
+		latestImageVersion = parseVersion(goalImages[0].ID)
 	}
 
 	if reqImgVer != "" {
@@ -244,6 +242,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	}
 
 	nodeClass.Status.Images = goalImages
+	nodeClass.Status.Versions.LatestImageVersion = latestImageVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 	if condition.Reason == "NodeImageVersionInvalid" || condition.Reason == "RollbackTargetKubernetesVersionMismatch" {
