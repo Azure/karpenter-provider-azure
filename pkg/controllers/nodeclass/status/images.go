@@ -242,6 +242,9 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	}
 
 	nodeClass.Status.Images = goalImages
+	if nodeClass.Status.Versions == nil {
+		nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+	}
 	nodeClass.Status.Versions.LatestImageVersion = latestImageVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
@@ -506,11 +509,6 @@ func validateImagePinning(reqK8sVer string, reqImgVer string, nodeClass *v1beta1
 		kubernetesVersionCondition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady)
 		if !kubernetesVersionCondition.IsTrue() || kubernetesVersionCondition.ObservedGeneration != nodeClass.Generation {
 			return fmt.Errorf("kubernetes version not ready")
-		}
-
-		validationCondition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-		if validationCondition.IsFalse() && !imageValidationReasonOwned(validationCondition.Reason) {
-			return fmt.Errorf("nodeclass validation failed")
 		}
 	}
 
