@@ -136,7 +136,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 
 	reqImgVer, reqK8sVer := requestedVersions(nodeClass)
 	if err := validateImagePinning(reqK8sVer, reqImgVer, nodeClass); err != nil {
-		setImageStatusConditionByErr(nodeClass, err)
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
@@ -238,10 +237,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	}
 	nodeClass.Status.Versions.LatestImageVersion = latestImageVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-	condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-	if condition.Reason == "NodeImageVersionInvalid" || condition.Reason == "RollbackTargetKubernetesVersionMismatch" {
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
-	}
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
@@ -493,12 +488,14 @@ func validateImagePinning(reqK8sVer string, reqImgVer string, nodeClass *v1beta1
 
 	if reqImgVer != "" {
 		if err := validatePinning(reqImgVer, reqK8sVer, nodeClass); err != nil {
-			return fmt.Errorf("image pinning validation failed: %w", err)
+			err = fmt.Errorf("image pinning validation failed: %w", err)
+			setImageStatusConditionByErr(nodeClass, err)
+			return err
 		}
 	}
+	condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+	if condition.Reason == "NodeImageVersionInvalid" || condition.Reason == "RollbackTargetKubernetesVersionMismatch" {
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+	}
 	return nil
-}
-
-func imageValidationReasonOwned(reason string) bool {
-	return reason == "NodeImageVersionInvalid" || reason == "RollbackTargetKubernetesVersionMismatch"
 }
