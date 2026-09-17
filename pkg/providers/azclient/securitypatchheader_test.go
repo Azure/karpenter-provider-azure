@@ -53,6 +53,7 @@ func TestSecurityPatchOnlyPolicy_SetsHeader(t *testing.T) {
 	_, err = pipeline.Do(req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(seen).To(Equal("true"))
+	g.Expect(req.Raw().Header.Get(capturedImagesOnlyHeader)).To(Equal("true"))
 }
 
 // TestNoSecurityPatchOnlyPolicy_HeaderAbsent guards the default path: without the policy attached the
@@ -72,4 +73,5 @@ func TestNoSecurityPatchOnlyPolicy_HeaderAbsent(t *testing.T) {
 	_, err = pipeline.Do(req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(seen).To(BeEmpty())
+	g.Expect(req.Raw().Header.Get(capturedImagesOnlyHeader)).To(BeEmpty())
 }
