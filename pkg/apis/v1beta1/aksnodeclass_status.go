@@ -55,6 +55,7 @@ type VersionsStatus struct {
 	LatestImageVersion string `json:"latestImageVersion,omitempty"`
 	// recentlyUsedVersions contains previously effective node image versions.
 	// +optional
+	// +listType=atomic
 	RecentlyUsedVersions []RecentlyUsedVersion `json:"recentlyUsedVersions,omitempty"`
 }
 

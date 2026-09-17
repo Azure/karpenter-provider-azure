@@ -18,7 +18,6 @@ package status
 
 import (
 	"context"
-	stderrors "errors"
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -135,8 +134,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, version, controlPlaneVersion string) (bool, error) {
 	versionSemver, err := semver.Parse(version)
 	if err != nil {
-		err = fmt.Errorf("%w: %v", errKubernetesVersionInvalidFormat, err)
-		setKubernetesStatusConditionByErr(nodeClass, err)
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", fmt.Sprintf("invalid kubernetes version format: %v", err))
 		return false, nil
 	}
 	controlPlaneVersionSemver, err := semver.Parse(controlPlaneVersion)
@@ -146,29 +144,25 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 
 	// major versions must match
 	if versionSemver.Major != controlPlaneVersionSemver.Major {
-		err = fmt.Errorf("%w: kubernetes version major mismatch: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Major, controlPlaneVersionSemver.Major)
-		setKubernetesStatusConditionByErr(nodeClass, err)
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version major mismatch: node %d vs control-plane %d", versionSemver.Major, controlPlaneVersionSemver.Major))
 		return false, nil
 	}
 
 	// node minor must not be greater than control-plane minor
 	if versionSemver.Minor > controlPlaneVersionSemver.Minor {
-		err = fmt.Errorf("%w: kubernetes version minor too new: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Minor, controlPlaneVersionSemver.Minor)
-		setKubernetesStatusConditionByErr(nodeClass, err)
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version minor too new: node %d vs control-plane %d", versionSemver.Minor, controlPlaneVersionSemver.Minor))
 		return false, nil
 	}
 
 	// node minor must be at most three minors behind control-plane minor
 	if controlPlaneVersionSemver.Minor-versionSemver.Minor > 3 {
-		err = fmt.Errorf("%w: kubernetes version minor too old: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Minor, controlPlaneVersionSemver.Minor)
-		setKubernetesStatusConditionByErr(nodeClass, err)
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version minor too old: node %d vs control-plane %d", versionSemver.Minor, controlPlaneVersionSemver.Minor))
 		return false, nil
 	}
 
 	// when both are on the same minor, node patch must not be greater than control-plane patch
 	if versionSemver.Minor == controlPlaneVersionSemver.Minor && versionSemver.Patch > controlPlaneVersionSemver.Patch {
-		err = fmt.Errorf("%w: kubernetes version patch too new: node %d vs control-plane %d", errKubernetesVersionControlPlaneIncompatible, versionSemver.Patch, controlPlaneVersionSemver.Patch)
-		setKubernetesStatusConditionByErr(nodeClass, err)
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version patch too new: node %d vs control-plane %d", versionSemver.Patch, controlPlaneVersionSemver.Patch))
 		return false, nil
 	}
 
@@ -178,8 +172,7 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 		return false, fmt.Errorf("checking if kubernetes version is supported: %w", err)
 	}
 	if !supported {
-		err = fmt.Errorf("%w: kubernetes version %s is not supported", errKubernetesVersionUnsupported, version)
-		setKubernetesStatusConditionByErr(nodeClass, err)
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnsupported", fmt.Sprintf("kubernetes version %s is not supported", version))
 		return false, nil
 	}
 
@@ -194,17 +187,6 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 	return true, nil
-}
-
-func setKubernetesStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
-	switch {
-	case stderrors.Is(err, errKubernetesVersionInvalidFormat):
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", err.Error())
-	case stderrors.Is(err, errKubernetesVersionControlPlaneIncompatible):
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", err.Error())
-	case stderrors.Is(err, errKubernetesVersionUnsupported):
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnsupported", err.Error())
-	}
 }
 
 func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string) {
