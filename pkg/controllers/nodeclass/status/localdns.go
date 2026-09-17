@@ -138,7 +138,18 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 // and the static + cluster gates. Split out of Reconcile to keep its
 // cyclomatic complexity below the lint threshold.
 func (r *LocalDNSReconciler) reconcilePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	// Sticky-Enabled: if already Enabled under Preferred, keep Enabled.
+	// Sticky-Enabled: once Preferred has resolved to Enabled, it stays Enabled
+	// for as long as Mode=Preferred, and the gates below are never re-evaluated.
+	//
+	// This is deliberate, and mirrors AKS Standard: "once AKS enables LocalDNS in
+	// Preferred mode, it remains enabled during subsequent unrelated node pool
+	// updates" (aka.ms/aks/localdns). The gates answer "is it safe to turn
+	// LocalDNS on here", which is a different question from "is it safe to leave
+	// it on". Re-running them would let an unrelated later change -- someone
+	// installing a NetworkPolicy, or the upstream node-local-dns DaemonSet
+	// landing in kube-system -- silently move DNS resolution out from under
+	// workloads already running against it. A user who wants LocalDNS off sets
+	// Mode=Disabled; that is an explicit action and takes effect immediately.
 	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return reconcile.Result{}, nil
