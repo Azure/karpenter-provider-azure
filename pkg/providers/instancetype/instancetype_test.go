@@ -17,15 +17,156 @@ limitations under the License.
 package instancetype
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	//nolint:staticcheck // deprecated package used by skewer
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
+	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
+
+func TestAKSKubeReservedMemoryMiB(t *testing.T) {
+	tests := []struct {
+		name      string
+		maxPods   int32
+		memoryMiB int64
+		wantMiB   int64
+	}{
+		{name: "30 pods", maxPods: 30, memoryMiB: 64 * 1024, wantMiB: 650},
+		{name: "110 pods", maxPods: 110, memoryMiB: 64 * 1024, wantMiB: 2250},
+		{name: "250 pods", maxPods: 250, memoryMiB: 192 * 1024, wantMiB: 5050},
+		{name: "4 GiB cap", maxPods: 250, memoryMiB: 4 * 1024, wantMiB: 1024},
+		{name: "8 GiB cap", maxPods: 110, memoryMiB: 8 * 1024, wantMiB: 2048},
+		{name: "below cap boundary", maxPods: 30, memoryMiB: 2599, wantMiB: 649},
+		{name: "at cap boundary", maxPods: 30, memoryMiB: 2600, wantMiB: 650},
+		{name: "above cap boundary", maxPods: 30, memoryMiB: 2601, wantMiB: 650},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			NewWithT(t).Expect(aksKubeReservedMemoryMiB(test.maxPods, test.memoryMiB)).To(Equal(test.wantMiB))
+		})
+	}
+}
+
+func TestAKSMemoryReservationProfile(t *testing.T) {
+	tests := []struct {
+		name                string
+		provisionMode       string
+		version             string
+		enableNodeHardening bool
+		want                bool
+		wantError           bool
+	}{
+		{name: "scriptless", provisionMode: consts.ProvisionModeAKSScriptless, version: "1.34.0"},
+		{name: "scriptless without version", provisionMode: consts.ProvisionModeAKSScriptless},
+		{name: "legacy AKS", provisionMode: consts.ProvisionModeAKSMachineAPI, version: "1.28.15"},
+		{name: "AKS boundary", provisionMode: consts.ProvisionModeAKSMachineAPI, version: "1.29.0", want: true},
+		{name: "prefixed version", provisionMode: consts.ProvisionModeAKSMachineAPI, version: "v1.34.10", want: true},
+		{name: "batched machines", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, version: "1.34.0", want: true},
+		{name: "bootstrap client", provisionMode: consts.ProvisionModeBootstrappingClient, version: "1.34.0", want: true},
+		{name: "hardened scriptless", provisionMode: consts.ProvisionModeAKSScriptless, version: "1.34.0", enableNodeHardening: true},
+		{name: "hardened machines", provisionMode: consts.ProvisionModeAKSMachineAPI, version: "1.34.0", enableNodeHardening: true},
+		{name: "hardened batched machines", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, version: "1.34.0", enableNodeHardening: true},
+		{name: "bootstrap client does not apply hardening", provisionMode: consts.ProvisionModeBootstrappingClient, version: "1.34.0", enableNodeHardening: true, want: true},
+		{name: "missing version", provisionMode: consts.ProvisionModeAKSMachineAPI, wantError: true},
+		{name: "invalid version", provisionMode: consts.ProvisionModeAKSMachineAPI, version: "invalid", wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := options.ToContext(context.Background(), &options.Options{
+				ProvisionMode:       test.provisionMode,
+				EnableNodeHardening: test.enableNodeHardening,
+			})
+			nodeClass := &v1beta1.AKSNodeClass{}
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(test.version)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+			actual, err := usesAKSMemoryReservations(ctx, nodeClass)
+			if test.wantError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			g.Expect(actual).To(Equal(test.want))
+		})
+	}
+
+	t.Run("rejects stale version readiness", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := options.ToContext(context.Background(), &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI})
+		nodeClass := &v1beta1.AKSNodeClass{}
+		nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+		nodeClass.Generation++
+		actual, err := usesAKSMemoryReservations(ctx, nodeClass)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(actual).To(BeFalse())
+	})
+}
+
+func TestInstanceTypeMemoryReservations(t *testing.T) {
+	sku := skewer.SKU(compute.ResourceSku{
+		Name: lo.ToPtr("Standard_D48as_v6"),
+		Size: lo.ToPtr("D48as_v6"),
+		Capabilities: &[]compute.ResourceSkuCapabilities{
+			{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("48")},
+			{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("192")},
+		},
+	})
+	vmsize := lo.Must(sku.GetVMSize())
+	// Four synthetic 10-CPU/42-GiB pods plus 1 CPU/3 GiB of per-node overhead.
+	requests := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("41"),
+		corev1.ResourceMemory: resource.MustParse("171Gi"),
+	}
+	tests := []struct {
+		name                string
+		useAKSReservations  bool
+		enableNodeHardening bool
+		wantKubeMiB         int64
+		wantSystemMiB       int64
+		wantEvictionMiB     int64
+		wantFits            bool
+	}{
+		{name: "legacy", wantKubeMiB: 10854, wantEvictionMiB: 750},
+		{name: "AKS 1.29+", useAKSReservations: true, wantKubeMiB: 5050, wantEvictionMiB: 100, wantFits: true},
+		{name: "hardening takes precedence", useAKSReservations: true, enableNodeHardening: true, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := options.ToContext(context.Background(), &options.Options{
+				ProvisionMode:           consts.ProvisionModeAKSMachineAPI,
+				EnableNodeHardening:     test.enableNodeHardening,
+				NetworkPlugin:           consts.NetworkPluginAzure,
+				VMMemoryOverheadPercent: 0.075,
+			})
+			instanceType := newInstanceType(ctx, &sku, vmsize, "westus3", nil, &instanceTypeParameters{
+				ImageFamily:              v1beta1.Ubuntu2204ImageFamily,
+				OSDiskSizeGB:             128,
+				MaxPods:                  250,
+				UseAKSMemoryReservations: test.useAKSReservations,
+			}, "x64")
+			g.Expect(instanceType.Capacity.Memory().Value()).To(Equal(int64(190_696_547_942)))
+			g.Expect(instanceType.Overhead.KubeReserved.Cpu().MilliValue()).To(Equal(int64(580)))
+			g.Expect(instanceType.Overhead.KubeReserved.Memory().Value()).To(Equal(test.wantKubeMiB * bytesPerMiB))
+			g.Expect(instanceType.Overhead.SystemReserved.Memory().Value()).To(Equal(test.wantSystemMiB * bytesPerMiB))
+			g.Expect(instanceType.Overhead.EvictionThreshold.Memory().Value()).To(Equal(test.wantEvictionMiB * bytesPerMiB))
+			g.Expect(instanceType.Overhead.EvictionThreshold.StorageEphemeral().Value()).To(Equal(int64(12_800_000_190)))
+			g.Expect(resources.Fits(requests, instanceType.Allocatable())).To(Equal(test.wantFits))
+		})
+	}
+}
 
 // These cases mirror the hardened kube-reserved memory calculation in the AKS RP.
 func TestKubeReservedResourcesHardeningParity(t *testing.T) {

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver/v4"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 
@@ -37,6 +38,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
@@ -57,7 +59,7 @@ const (
 	skuRetirementHorizonMonths = 6
 )
 
-// instanceTypeParameters contains the resolved set of AKSNodeClass fields that affect
+// instanceTypeParameters contains the resolved parameters that affect
 // instance-type construction. The instance-type cache key is derived by hashing this
 // struct; adding a new field here automatically incorporates it into the key.
 type instanceTypeParameters struct {
@@ -71,6 +73,7 @@ type instanceTypeParameters struct {
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
 	KataEnabled              bool
+	UseAKSMemoryReservations bool
 }
 
 type instanceTypesSourceDataGeneration struct {
@@ -145,6 +148,11 @@ func (p *DefaultProvider) List(
 		return nil, fmt.Errorf("no instance types found")
 	}
 
+	useAKSMemoryReservations, err := usesAKSMemoryReservations(ctx, nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("resolving memory reservations, %w", err)
+	}
+
 	// Compute fully initialized instance types hash key
 	instanceTypeParams := &instanceTypeParameters{
 		ImageFamily:              lo.FromPtr(nodeClass.Spec.ImageFamily),
@@ -157,6 +165,7 @@ func (p *DefaultProvider) List(
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
 		KataEnabled:              nodeClass.IsKataEnabled(),
+		UseAKSMemoryReservations: useAKSMemoryReservations,
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	key := fmt.Sprintf("%016x", paramsHash)
@@ -180,6 +189,25 @@ func (p *DefaultProvider) List(
 	p.instanceTypesCache.SetDefault(key, result)
 	// Return a shallow copy, matching the cache-hit path, so a caller reordering its slice doesn't reorder the cached one.
 	return append([]*cloudprovider.InstanceType{}, result...), nil
+}
+
+func usesAKSMemoryReservations(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, error) {
+	opts := options.FromContext(ctx)
+	// Scriptless explicitly configures the legacy reservations. The other modes
+	// delegate kubelet reservations to AKS; hardened nodes have a separate policy.
+	if opts.ShouldUseNodeHardening() ||
+		(opts.ProvisionMode != consts.ProvisionModeBootstrappingClient && !opts.IsAKSMachineAPIMode()) {
+		return false, nil
+	}
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return false, err
+	}
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		return false, fmt.Errorf("parsing Kubernetes version %q, %w", kubernetesVersion, err)
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 29}), nil
 }
 
 func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {

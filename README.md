@@ -9,6 +9,7 @@
 Table of contents:
 - [Features Overview](#features-overview)
 - [Node Auto Provisioning (NAP) vs. Self-hosted](#node-auto-provisioning-nap-vs-self-hosted)
+- [Node memory reservations](#node-memory-reservations)
 - [Known limitations](#known-limitations)
 - [Installation (self-hosted)](#installation-self-hosted)
   - [Install utilities](#install-utilities)
@@ -47,6 +48,22 @@ Karpenter provider for AKS can be used in two modes:
   * VM OS disk updates
   * node image upgrades (Linux)
 * **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment, use custom Helm charts, or integrate non-standard workflows. Self-hosted mode requires users to directly manage upgrades, token rotation, and helm charts.
+
+## Node memory reservations
+
+For non-hardened nodes using `bootstrappingclient`, `aksmachineapi`, or
+`aksmachineapiheaderbatch`, the provider estimates memory reservations using the
+resolved node Kubernetes version and `maxPods`. AKS 1.29 and later use
+`min(20 * maxPods + 50, 25% of node memory)` MiB for kube-reserved memory and
+a 100 MiB hard-eviction threshold. Earlier versions retain the bracketed
+reservation and 750 MiB threshold. See the
+[AKS node resource reservations documentation](https://learn.microsoft.com/azure/aks/node-resource-reservations).
+
+This aligns new-node and replacement-node scheduling estimates with AKS-owned
+bootstrap defaults; it does not change those defaults on the node. Scriptless
+provisioning retains its explicitly configured legacy reservations, and
+node-hardening reservations remain unchanged. CPU reservations and the separate
+`VM_MEMORY_OVERHEAD_PERCENT` safety margin are also unchanged.
 
 ## Known limitations
 
