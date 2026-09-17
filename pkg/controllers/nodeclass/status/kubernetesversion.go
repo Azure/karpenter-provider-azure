@@ -94,6 +94,9 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 			return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 		}
 		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+	} else if nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason == "KubernetesVersionInvalidFormat" {
+		// Conditions persist across reconciles, so clear a validation failure from a removed pin.
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	}
 
 	// Handles case 1: init, update kubernetes status to API server version found
