@@ -264,7 +264,113 @@ var _ = Describe("LocalDNS", func() {
 
 		By("✓ Verified an above-floor SKU runs LocalDNS under Preferred")
 	})
+
+	// Mode=Required is a direct user instruction to run LocalDNS, so a VM size
+	// that cannot carry it is genuinely not a candidate. The SKU filter still
+	// applies here -- this is the one case where the floor starves a NodePool,
+	// and that is the intended outcome.
+	It("should not provision a below-floor SKU under Mode=Required", func() {
+		By("Pinning the NodePool to a VM size too small for LocalDNS")
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{belowFloorVMSize},
+		})
+
+		By("Configuring the NodeClass with Mode=Required")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode:             v1beta1.LocalDNSModeRequired,
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
+		}
+
+		By("Creating an unschedulable pod")
+		pod := createDNSTestPod("microsoft.com", nil)
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Expecting no node to provision -- every candidate SKU is below the LocalDNS floor")
+		env.ConsistentlyExpectCreatedNodeCount("==", 0, requiredStarvationWindow)
+
+		By("✓ Verified Required refuses to launch a node that cannot run LocalDNS")
+	})
+
+	// The decision is per node, so one NodeClass can legitimately produce both
+	// outcomes at once. This is the case the old NodeClass-wide SKU filter could
+	// not express: it had to either starve the small pool or mislabel the large
+	// one.
+	It("should resolve LocalDNS per node across a mixed-SKU NodeClass under Mode=Preferred", func() {
+		By("Configuring a single NodeClass with Mode=Preferred")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode:             v1beta1.LocalDNSModePreferred,
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
+		}
+
+		By("Creating two NodePools on that NodeClass, either side of the floor")
+		belowPool := pinnedNodePool(nodePool, "localdns-below-floor", belowFloorVMSize)
+		abovePool := pinnedNodePool(nodePool, "localdns-above-floor", aboveFloorVMSize)
+
+		By("Creating one pod per NodePool")
+		belowPod := createDNSTestPod("microsoft.com", map[string]string{karpv1.NodePoolLabelKey: belowPool.Name})
+		abovePod := createDNSTestPod("microsoft.com", map[string]string{karpv1.NodePoolLabelKey: abovePool.Name})
+		env.ExpectCreated(nodeClass, belowPool, abovePool, belowPod, abovePod)
+
+		By("Expecting both nodes to provision -- neither pool starves")
+		nodes := env.EventuallyExpectCreatedNodeCount("==", 2)
+		env.EventuallyExpectHealthy(belowPod, abovePod)
+
+		bySKU := map[string]*corev1.Node{}
+		for _, node := range nodes {
+			bySKU[node.Labels[corev1.LabelInstanceTypeStable]] = node
+		}
+		Expect(bySKU).To(HaveKey(belowFloorVMSize))
+		Expect(bySKU).To(HaveKey(aboveFloorVMSize))
+
+		By("Expecting the two nodes to disagree, each according to its own VM size")
+		expectNodeLocalDNSLabel(bySKU[belowFloorVMSize], "disabled")
+		expectNodeLocalDNSLabel(bySKU[aboveFloorVMSize], "enabled")
+
+		By("Verifying each node's DNS matches its own label")
+		expectDNSResult(getDNSResultFromNode(bySKU[belowFloorVMSize]), azureDNSIP, "Below-floor node should use default DNS")
+		expectDNSResult(getDNSResultFromNode(bySKU[aboveFloorVMSize]), localDNSNodeListenerIP, "Above-floor node should use LocalDNS node listener")
+
+		By("✓ Verified one NodeClass resolves LocalDNS independently per node")
+	})
+
+	It("should report LocalDNS off when the NodeClass does not configure it", func() {
+		By("Leaving LocalDNS unset on the NodeClass")
+		nodeClass.Spec.LocalDNS = nil
+
+		By("Creating an unschedulable pod to trigger provisioning")
+		pod := createDNSTestPod("microsoft.com", nil)
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		env.EventuallyExpectHealthy(pod)
+
+		By("Expecting the node to report LocalDNS off")
+		expectNodeLocalDNSLabel(node, "disabled")
+
+		By("Verifying DNS on the node uses the default resolvers")
+		expectDNSResult(getDNSResultFromNode(node), azureDNSIP, "Host network DNS should use default DNS")
+		expectDNSResult(getDNSResultFromPod(pod), coreDNSServiceIP, "Test pod should use default DNS")
+
+		By("✓ Verified an unconfigured NodeClass leaves LocalDNS off")
+	})
 })
+
+// pinnedNodePool derives a NodePool from base that can only launch vmSize.
+// Used to force a specific SKU onto a shared NodeClass.
+func pinnedNodePool(base *karpv1.NodePool, name, vmSize string) *karpv1.NodePool {
+	pool := base.DeepCopy()
+	pool.Name = name
+	pool.Spec.Template.Spec.Requirements = append(pool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+		Key:      corev1.LabelInstanceTypeStable,
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{vmSize},
+	})
+	return pool
+}
 
 const (
 	// VM sizes either side of the LocalDNS floor (v1beta1.LocalDNSMinVCPU /
@@ -282,6 +388,12 @@ const (
 
 	// Test timeouts
 	dnsTestTimeout = 3 * time.Minute
+
+	// requiredStarvationWindow is how long we insist no node appears when every
+	// candidate SKU is below the LocalDNS floor under Mode=Required. Long enough
+	// that a launch would have been observed, short enough not to dominate the
+	// suite.
+	requiredStarvationWindow = 3 * time.Minute
 )
 
 // DNSTestResult holds the results of DNS resolution tests
