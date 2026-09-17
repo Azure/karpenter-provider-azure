@@ -23,6 +23,7 @@ import (
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -165,6 +166,22 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady)
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("KubernetesVersionControlPlaneIncompatible"))
+			})
+
+			It("should reject a version more than three minors behind the control plane", func() {
+				tooOldVersion := lo.Must(semver.Parse(testK8sVersion))
+				tooOldVersion.Minor -= 4
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(tooOldVersion.String()),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("KubernetesVersionControlPlaneIncompatible"))
+				Expect(nodeClass.Status.KubernetesVersion).To(BeNil())
 			})
 
 			It("should reject an unsupported version", func() {

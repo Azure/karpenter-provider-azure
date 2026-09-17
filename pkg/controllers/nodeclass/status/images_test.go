@@ -300,6 +300,38 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 
+			It("should reject an image version that was not found in status", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr("not-found"),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("NodeImageVersionInvalid"))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
+			})
+
+			It("should reject a malformed image version", func() {
+				malformedImageVersion := "invalid/version"
+				nodeClass.Status.Versions.LatestImageVersion = malformedImageVersion
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(malformedImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("RequestedNodeImageVersionUnavailable"))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
+			})
+
 			It("should roll back to a recently used image version outside the maintenance window", func() {
 				nodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 					{
