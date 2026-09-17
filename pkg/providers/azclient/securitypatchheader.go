@@ -23,14 +23,17 @@ import (
 )
 
 const securityPatchOnlyHeader = "SecurityPatchOnly"
+const capturedImagesOnlyHeader = "CapturedImagesOnly"
 
 var _ policy.Policy = &securityPatchOnlyPolicy{}
 
 // securityPatchOnlyPolicy sets the SecurityPatchOnly header so the service returns node image
 // versions from the security-patch lineage instead of the standard node image lineage.
+// New nodes require captured images, rather than abstract targets usable only for upgrades.
 type securityPatchOnlyPolicy struct{}
 
 func (p *securityPatchOnlyPolicy) Do(req *policy.Request) (*http.Response, error) {
 	req.Raw().Header.Set(securityPatchOnlyHeader, "true")
+	req.Raw().Header.Set(capturedImagesOnlyHeader, "true")
 	return req.Next()
 }
