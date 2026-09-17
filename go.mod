@@ -57,8 +57,8 @@ require (
 	k8s.io/client-go v0.37.0
 	k8s.io/component-base v0.37.0
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
-	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.22.2
-	sigs.k8s.io/controller-runtime v0.25.0
+	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.23.0
+	sigs.k8s.io/controller-runtime v0.25.1
 	sigs.k8s.io/karpenter v1.14.0
 )
 
