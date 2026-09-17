@@ -270,7 +270,10 @@ var _ = Describe("InstanceType Provider", func() {
 			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
 			Expect(getInstanceType()).To(BeIdenticalTo(modern))
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(110))
-			Expect(getInstanceType().Overhead.KubeReserved.Memory().String()).To(Equal("2Gi"))
+			capped := getInstanceType()
+			Expect(capped.Requirements.Get(v1beta1.LabelSKUMemory).Any()).To(Equal("8192"))
+			// The 8 GiB fixture caps the 2250 MiB pod-based reservation at 2048 MiB.
+			Expect(capped.Overhead.KubeReserved.Memory().Cmp(resource.MustParse("2048Mi"))).To(BeZero())
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
 			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.28.15")
 			Expect(getInstanceType()).To(BeIdenticalTo(legacy))

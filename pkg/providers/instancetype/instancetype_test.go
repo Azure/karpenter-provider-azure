@@ -115,36 +115,48 @@ func TestAKSMemoryReservationProfile(t *testing.T) {
 }
 
 func TestInstanceTypeMemoryReservations(t *testing.T) {
-	sku := skewer.SKU(compute.ResourceSku{
-		Name: lo.ToPtr("Standard_D48as_v6"),
-		Size: lo.ToPtr("D48as_v6"),
-		Capabilities: &[]compute.ResourceSkuCapabilities{
-			{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("48")},
-			{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("192")},
-		},
-	})
-	vmsize := lo.Must(sku.GetVMSize())
-	// Four synthetic 10-CPU/42-GiB pods plus 1 CPU/3 GiB of per-node overhead.
-	requests := corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("41"),
-		corev1.ResourceMemory: resource.MustParse("171Gi"),
+	// Synthetic 10-CPU/42-GiB pods plus 1 CPU/3 GiB of per-node overhead.
+	requestsFor := func(pods int64) corev1.ResourceList {
+		return corev1.ResourceList{
+			corev1.ResourceCPU:    *resource.NewQuantity(10*pods+1, resource.DecimalSI),
+			corev1.ResourceMemory: *resource.NewQuantity((42*pods+3)*1024*bytesPerMiB, resource.BinarySI),
+		}
 	}
 	tests := []struct {
 		name                string
+		vcpus               int64
+		memoryGiB           int64
 		useAKSReservations  bool
 		enableNodeHardening bool
+		wantCapacityBytes   int64
+		wantCPUMilli        int64
 		wantKubeMiB         int64
 		wantSystemMiB       int64
 		wantEvictionMiB     int64
-		wantFits            bool
+		wantMaxPods         int64
 	}{
-		{name: "legacy", wantKubeMiB: 10854, wantEvictionMiB: 750},
-		{name: "AKS 1.29+", useAKSReservations: true, wantKubeMiB: 5050, wantEvictionMiB: 100, wantFits: true},
-		{name: "hardening takes precedence", useAKSReservations: true, enableNodeHardening: true, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512},
+		{name: "D16 legacy", vcpus: 16, memoryGiB: 64, wantCapacityBytes: 63_565_515_980, wantCPUMilli: 260, wantKubeMiB: 5611, wantEvictionMiB: 750, wantMaxPods: 1},
+		{name: "D16 AKS 1.29+", vcpus: 16, memoryGiB: 64, useAKSReservations: true, wantCapacityBytes: 63_565_515_980, wantCPUMilli: 260, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 1},
+		{name: "D32 legacy", vcpus: 32, memoryGiB: 128, wantCapacityBytes: 127_131_031_961, wantCPUMilli: 420, wantKubeMiB: 9543, wantEvictionMiB: 750, wantMaxPods: 2},
+		{name: "D32 AKS 1.29+", vcpus: 32, memoryGiB: 128, useAKSReservations: true, wantCapacityBytes: 127_131_031_961, wantCPUMilli: 420, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 2},
+		{name: "legacy", vcpus: 48, memoryGiB: 192, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 10854, wantEvictionMiB: 750, wantMaxPods: 3},
+		{name: "AKS 1.29+", vcpus: 48, memoryGiB: 192, useAKSReservations: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 4},
+		{name: "hardening takes precedence", vcpus: 48, memoryGiB: 192, useAKSReservations: true, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512, wantMaxPods: 3},
+		{name: "D64 legacy", vcpus: 64, memoryGiB: 256, wantCapacityBytes: 254_262_063_923, wantCPUMilli: 740, wantKubeMiB: 12165, wantEvictionMiB: 750, wantMaxPods: 5},
+		{name: "D64 AKS 1.29+", vcpus: 64, memoryGiB: 256, useAKSReservations: true, wantCapacityBytes: 254_262_063_923, wantCPUMilli: 740, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 5},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
+			sku := skewer.SKU(compute.ResourceSku{
+				Name: lo.ToPtr(fmt.Sprintf("Standard_D%das_v6", test.vcpus)),
+				Size: lo.ToPtr(fmt.Sprintf("D%das_v6", test.vcpus)),
+				Capabilities: &[]compute.ResourceSkuCapabilities{
+					{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr(fmt.Sprint(test.vcpus))},
+					{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr(fmt.Sprint(test.memoryGiB))},
+				},
+			})
+			vmsize := lo.Must(sku.GetVMSize())
 			ctx := options.ToContext(context.Background(), &options.Options{
 				ProvisionMode:           consts.ProvisionModeAKSMachineAPI,
 				EnableNodeHardening:     test.enableNodeHardening,
@@ -157,13 +169,15 @@ func TestInstanceTypeMemoryReservations(t *testing.T) {
 				MaxPods:                  250,
 				UseAKSMemoryReservations: test.useAKSReservations,
 			}, "x64")
-			g.Expect(instanceType.Capacity.Memory().Value()).To(Equal(int64(190_696_547_942)))
-			g.Expect(instanceType.Overhead.KubeReserved.Cpu().MilliValue()).To(Equal(int64(580)))
+			g.Expect(instanceType.Capacity.Memory().Value()).To(Equal(test.wantCapacityBytes))
+			g.Expect(instanceType.Overhead.KubeReserved.Cpu().MilliValue()).To(Equal(test.wantCPUMilli))
 			g.Expect(instanceType.Overhead.KubeReserved.Memory().Value()).To(Equal(test.wantKubeMiB * bytesPerMiB))
 			g.Expect(instanceType.Overhead.SystemReserved.Memory().Value()).To(Equal(test.wantSystemMiB * bytesPerMiB))
 			g.Expect(instanceType.Overhead.EvictionThreshold.Memory().Value()).To(Equal(test.wantEvictionMiB * bytesPerMiB))
 			g.Expect(instanceType.Overhead.EvictionThreshold.StorageEphemeral().Value()).To(Equal(int64(12_800_000_190)))
-			g.Expect(resources.Fits(requests, instanceType.Allocatable())).To(Equal(test.wantFits))
+			g.Expect(resources.Fits(requestsFor(4), instanceType.Allocatable())).To(Equal(test.wantMaxPods >= 4))
+			g.Expect(resources.Fits(requestsFor(test.wantMaxPods), instanceType.Allocatable())).To(BeTrue())
+			g.Expect(resources.Fits(requestsFor(test.wantMaxPods+1), instanceType.Allocatable())).To(BeFalse())
 		})
 	}
 }
