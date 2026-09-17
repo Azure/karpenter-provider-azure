@@ -82,7 +82,8 @@ func (r *recordingClient) snapshot() []recordedCall {
 // test helpers
 // ---------------------------------------------------------------------------
 
-func tpl(vmSize string, zones []string, tags map[string]string) *armcontainerservice.Machine {
+func tpl(zones []string, tags map[string]string) *armcontainerservice.Machine {
+	vmSize := "Standard_D2s_v3"
 	m := &armcontainerservice.Machine{
 		Properties: &armcontainerservice.MachineProperties{
 			Hardware: &armcontainerservice.MachineHardwareProfile{VMSize: &vmSize},
@@ -147,9 +148,9 @@ func TestExecutorSingleAPICallForBatch(t *testing.T) {
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"env": "test"}))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, map[string]string{"env": "test"}))
-	r3 := makeReq("m-3", tpl("Standard_D2s_v3", []string{"1", "2"}, map[string]string{"env": "staging"}))
+	r1 := makeReq("m-1", tpl([]string{"1"}, map[string]string{"env": "test"}))
+	r2 := makeReq("m-2", tpl([]string{"2"}, map[string]string{"env": "test"}))
+	r3 := makeReq("m-3", tpl([]string{"1", "2"}, map[string]string{"env": "staging"}))
 
 	exec.executeBatch(context.Background(), makeBatch(r1, r2, r3))
 
@@ -165,7 +166,7 @@ func TestExecutorClearsPerMachineFieldsFromBody(t *testing.T) {
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"k": "v"}))
+	r1 := makeReq("m-1", tpl([]string{"1"}, map[string]string{"k": "v"}))
 	exec.executeBatch(context.Background(), makeBatch(r1))
 
 	calls := mock.snapshot()
@@ -182,8 +183,8 @@ func TestExecutorAttachesPerMachineEntriesToContext(t *testing.T) {
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, map[string]string{"a": "1"}))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2", "3"}, map[string]string{"b": "2"}))
+	r1 := makeReq("m-1", tpl([]string{"1"}, map[string]string{"a": "1"}))
+	r2 := makeReq("m-2", tpl([]string{"2", "3"}, map[string]string{"b": "2"}))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	calls := mock.snapshot()
@@ -207,8 +208,8 @@ func TestExecutorDistributesErrorToAllCallers(t *testing.T) {
 	mock := &recordingClient{err: fmt.Errorf("azure boom")}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
@@ -237,7 +238,7 @@ func TestConcurrentRequestsBatchThroughClient(t *testing.T) {
 		MaxBatchSize: 50,
 	})
 
-	tmpl := tpl("Standard_D2s_v3", []string{"1"}, nil)
+	tmpl := tpl([]string{"1"}, nil)
 
 	const n = 5
 	var wg sync.WaitGroup
@@ -263,7 +264,7 @@ func TestDifferentResourcePathsSeparateBatches(t *testing.T) {
 	mock := &recordingClient{}
 	exec := newExecutor(mock)
 
-	tmpl := tpl("Standard_D2s_v3", []string{"1"}, nil)
+	tmpl := tpl([]string{"1"}, nil)
 
 	r1 := &batcher.BatchedRequest[aksMachineCreatePayload, *offerings.HandlableError]{
 		Payload: aksMachineCreatePayload{
@@ -370,9 +371,9 @@ func TestExecutorBatchClientError_PartialFailure(t *testing.T) {
 	})}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
-	r3 := makeReq("m-3", tpl("Standard_D2s_v3", []string{"3"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
+	r3 := makeReq("m-3", tpl([]string{"3"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2, r3))
 
 	resps := awaitAll(t, r1, r2, r3)
@@ -397,8 +398,8 @@ func TestExecutorBatchClientError_AllFail(t *testing.T) {
 	})}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	resps := awaitAll(t, r1, r2)
@@ -418,8 +419,8 @@ func TestExecutorBatchInternalServerError_PartialFailure(t *testing.T) {
 	})}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	resps := awaitAll(t, r1, r2)
@@ -439,8 +440,8 @@ func TestExecutorBatchInternalServerError_AllFail(t *testing.T) {
 	})}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	resps := awaitAll(t, r1, r2)
@@ -457,8 +458,8 @@ func TestExecutorNonBatchError_FallsBackToDistributeAll(t *testing.T) {
 	mock := &recordingClient{err: fmt.Errorf("plain error")}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
@@ -484,8 +485,8 @@ func TestExecutorUnknownBatchErrorCode_DistributesAsSingleAPIError(t *testing.T)
 	}()}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
@@ -509,8 +510,8 @@ func TestExecutorBatchErrorMalformedBody_DistributesAsOperationalError(t *testin
 	}}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
@@ -529,8 +530,8 @@ func TestExecutorBatchErrorNoRawResponse_DistributesAsOperationalError(t *testin
 	}}
 	exec := newExecutor(mock)
 
-	r1 := makeReq("m-1", tpl("Standard_D2s_v3", []string{"1"}, nil))
-	r2 := makeReq("m-2", tpl("Standard_D2s_v3", []string{"2"}, nil))
+	r1 := makeReq("m-1", tpl([]string{"1"}, nil))
+	r2 := makeReq("m-2", tpl([]string{"2"}, nil))
 	exec.executeBatch(context.Background(), makeBatch(r1, r2))
 
 	for _, resp := range awaitAll(t, r1, r2) {
