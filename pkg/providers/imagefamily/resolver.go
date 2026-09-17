@@ -194,7 +194,7 @@ func (r *defaultResolver) Resolve(
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
 			nodeClass.Spec.WorkloadRuntime,
-			nodeClass.ResolvedLocalDNSForWire(),
+			nodeClass.ResolvedLocalDNSForWire(instanceType.Requirements),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
 			vtpmEnabled,

@@ -171,7 +171,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Priority: priority,
 
 			Tags:            tags,
-			LocalDNSProfile: configureLocalDNSProfile(nodeClass),
+			LocalDNSProfile: configureLocalDNSProfile(nodeClass, instanceType),
 		},
 	}, nil
 }
@@ -214,14 +214,16 @@ func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instance
 	return nil
 }
 
-func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LocalDNSProfile {
-	// Use the wire-resolved spec so Karpenter's Preferred-mode decision
-	// (recorded on the AKSNodeClass via Status.LocalDNSState) is honored
-	// end-to-end downstream. This guarantees a deterministic and consistent
-	// LocalDNS decision across Machines spawned from the same NodeClass:
-	// Preferred is never sent downstream, so it can never be re-interpreted.
+func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.LocalDNSProfile {
+	// Resolve the wire Mode against this Machine's VM size. Preferred is never
+	// sent downstream: the aks-rp API would re-interpret it against the single VM
+	// size of an agent pool, which is not the shape Karpenter provisions in, so
+	// Karpenter resolves it here and sends the concrete Required/Disabled it
+	// decided on. Passing the instance type is what makes Preferred mean what it
+	// means in AKS -- LocalDNS on nodes whose SKU can carry it, off on the ones
+	// that cannot, rather than one verdict for every Machine off the NodeClass.
 	// See AKSNodeClass.ResolvedLocalDNSForWire for the full rationale.
-	spec := nodeClass.ResolvedLocalDNSForWire()
+	spec := nodeClass.ResolvedLocalDNSForWire(instanceType.Requirements)
 	if spec == nil {
 		return nil
 	}

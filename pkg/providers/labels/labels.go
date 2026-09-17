@@ -97,6 +97,7 @@ func Get(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	arch string,
+	instanceTypeRequirements scheduling.Requirements,
 ) (map[string]string, error) {
 	labels := map[string]string{}
 	opts := options.FromContext(ctx)
@@ -163,7 +164,11 @@ func Get(
 		labels[AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
 	}
 
-	if nodeClass.IsLocalDNSEnabled() {
+	// LocalDNS is a per-node decision, not a per-NodeClass one: under
+	// Mode=Preferred a VM size below the LocalDNS floor runs without it while its
+	// larger siblings in the same NodePool run with it. Label what this node
+	// actually gets, so the fleet is inspectable and workloads can select on it.
+	if nodeClass.IsLocalDNSEnabledForInstanceType(instanceTypeRequirements) {
 		labels[AKSLocalDNSStateLabelKey] = "enabled"
 	} else {
 		labels[AKSLocalDNSStateLabelKey] = "disabled"

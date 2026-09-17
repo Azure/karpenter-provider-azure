@@ -185,219 +185,93 @@ var _ = Describe("LocalDNS", func() {
 
 		By("✓ Verified LocalDNS is properly disabled and DNS falls back to default configuration")
 	})
-})
 
-// =========================================================================
-// Mode=Preferred instance type gate
-//
-// Status.LocalDNSState=Enabled feeds instanceTypeParameters.LocalDNSEnabled,
-// which activates a hard instance type filter (>= 4 vCPU). A NodePool pinned
-// to smaller SKUs therefore loses every candidate the moment LocalDNS turns
-// on, and its pods stay Pending behind karpenter core's generic "no instance
-// type satisfied requirements". The gate refuses to enable in that case.
-// =========================================================================
-var _ = Describe("LocalDNS Preferred instance type gate", func() {
-	BeforeEach(func() {
-		if !env.IsMachineModeOrNPS() {
-			Skip("LocalDNS tests require NPS (Node Provisioning Service) - only supported in NAP/managed Karpenter mode")
+	// =========================================================================
+	// PREFERRED MODE: the LocalDNS decision is made per node, not per NodeClass
+	// =========================================================================
+	//
+	// Mode=Preferred means "run LocalDNS wherever the node can carry it". A VM
+	// size below the LocalDNS floor is still a valid provisioning target -- it
+	// just comes up without LocalDNS. This is the AKS behavior we're matching:
+	// the "VM SKU capacity" compatibility check leaves LocalDNS disabled rather
+	// than blocking the pool. See aka.ms/aks/localdns.
+	It("should provision a below-floor SKU without LocalDNS under Mode=Preferred", func() {
+		By("Pinning the NodePool to a VM size too small for LocalDNS")
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{belowFloorVMSize},
+		})
+
+		By("Configuring the NodeClass with Mode=Preferred")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode:             v1beta1.LocalDNSModePreferred,
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
 		}
-		skipUnlessPreferredReachesInstanceTypeGate()
-	})
 
-	It("should resolve Preferred to Disabled when the NodePool admits no LocalDNS-compatible instance type", func() {
-		By("Configuring the NodeClass with LocalDNS Mode=Preferred")
-		nodeClass.Spec.LocalDNS = preferredLocalDNS()
+		By("Creating an unschedulable pod to trigger provisioning")
+		externalPod := createDNSTestPod("microsoft.com", nil)
+		env.ExpectCreated(nodeClass, nodePool, externalPod)
 
-		By(fmt.Sprintf("Pinning the NodePool to %s, which is below the LocalDNS resource floor", localDNSIncompatibleSKU))
-		pinNodePoolToSKU(nodePool, localDNSIncompatibleSKU)
-
-		env.ExpectCreated(nodeClass, nodePool)
-
-		By("Expecting the gate to resolve LocalDNS to Disabled with reason NoCompatibleInstanceTypes")
-		expectLocalDNSResolution(nodeClass, v1beta1.LocalDNSStateDisabled, "NoCompatibleInstanceTypes")
-
-		By("Expecting the NodePool to still provision - the whole point of the gate")
-		pod := createDNSTestPod("microsoft.com", nil)
-		env.ExpectCreated(pod)
+		By("Expecting the node to provision anyway -- Preferred must not starve the NodePool")
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectHealthy(pod)
+		env.EventuallyExpectHealthy(externalPod)
+		Expect(node.Labels[corev1.LabelInstanceTypeStable]).To(Equal(belowFloorVMSize))
 
-		Expect(node.Labels[corev1.LabelInstanceTypeStable]).To(Equal(localDNSIncompatibleSKU),
-			"node should have been provisioned with the pinned SKU")
-
-		By("Verifying LocalDNS is off on the provisioned node")
+		By("Expecting the node to report LocalDNS off, because its VM size can't carry it")
 		expectNodeLocalDNSLabel(node, "disabled")
+
+		By("Verifying DNS on the node falls back to the default resolvers")
 		expectDNSResult(getDNSResultFromNode(node), azureDNSIP, "Host network DNS should use default DNS")
-		expectDNSResult(getDNSResultFromPod(pod), coreDNSServiceIP, "Test pod should use default DNS")
+		expectDNSResult(getDNSResultFromPod(externalPod), coreDNSServiceIP, "Test pod should use default DNS")
 
-		By("✓ Verified LocalDNS stayed off and the NodePool kept provisioning")
+		By("✓ Verified a below-floor SKU provisions and runs without LocalDNS under Preferred")
 	})
 
-	It("should resolve Preferred to Enabled when the NodePool admits a LocalDNS-compatible instance type", func() {
-		By("Configuring the NodeClass with LocalDNS Mode=Preferred")
-		nodeClass.Spec.LocalDNS = preferredLocalDNS()
+	It("should enable LocalDNS on an above-floor SKU under Mode=Preferred", func() {
+		By("Pinning the NodePool to a VM size that clears the LocalDNS floor")
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{aboveFloorVMSize},
+		})
 
-		By(fmt.Sprintf("Pinning the NodePool to %s, which meets the LocalDNS resource floor", localDNSCompatibleSKU))
-		pinNodePoolToSKU(nodePool, localDNSCompatibleSKU)
+		By("Configuring the NodeClass with Mode=Preferred")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode:             v1beta1.LocalDNSModePreferred,
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
+		}
 
-		env.ExpectCreated(nodeClass, nodePool)
+		By("Creating unschedulable pods to trigger provisioning")
+		externalPod := createDNSTestPod("microsoft.com", nil)
+		internalPod := createDNSTestPod("kubernetes.default.svc.cluster.local", nil)
+		env.ExpectCreated(nodeClass, nodePool, externalPod, internalPod)
 
-		By("Expecting the gate to pass and LocalDNS to resolve to Enabled")
-		expectLocalDNSResolution(nodeClass, v1beta1.LocalDNSStateEnabled, v1beta1.ConditionTypeLocalDNSReady)
-
-		By("Provisioning a node and verifying LocalDNS is active on it")
-		pod := createDNSTestPod("microsoft.com", nil)
-		env.ExpectCreated(pod)
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectHealthy(pod)
+		env.EventuallyExpectHealthy(externalPod)
+		env.EventuallyExpectHealthy(internalPod)
+		Expect(node.Labels[corev1.LabelInstanceTypeStable]).To(Equal(aboveFloorVMSize))
 
-		Expect(node.Labels[corev1.LabelInstanceTypeStable]).To(Equal(localDNSCompatibleSKU),
-			"node should have been provisioned with the pinned SKU")
-
+		By("Expecting the node to report LocalDNS on")
 		expectNodeLocalDNSLabel(node, "enabled")
+
+		By("Verifying LocalDNS is actually serving on the node")
 		expectDNSResult(getDNSResultFromNode(node), localDNSNodeListenerIP, "Host network DNS should use LocalDNS node listener")
-		expectDNSResult(getDNSResultFromPod(pod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener")
+		expectDNSResult(getDNSResultFromPod(externalPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener for external DNS")
+		expectDNSResult(getDNSResultFromPod(internalPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener for internal DNS")
 
-		By("✓ Verified LocalDNS was enabled and is serving DNS on the node")
-	})
-
-	It("should keep LocalDNS Enabled when the NodePool is narrowed to small SKUs afterwards", func() {
-		By("Configuring the NodeClass with LocalDNS Mode=Preferred and a compatible NodePool")
-		nodeClass.Spec.LocalDNS = preferredLocalDNS()
-		pinNodePoolToSKU(nodePool, localDNSCompatibleSKU)
-		env.ExpectCreated(nodeClass, nodePool)
-
-		expectLocalDNSResolution(nodeClass, v1beta1.LocalDNSStateEnabled, v1beta1.ConditionTypeLocalDNSReady)
-
-		By(fmt.Sprintf("Narrowing the NodePool to %s, below the LocalDNS resource floor", localDNSIncompatibleSKU))
-		pinNodePoolToSKU(nodePool, localDNSIncompatibleSKU)
-		env.ExpectUpdated(nodePool)
-
-		By("Expecting LocalDNS to stay Enabled across at least one Preferred requeue interval")
-		// Sticky-Enabled is deliberate: flipping back to Disabled would change the
-		// NodeClass hash, drift every NodeClaim, and reimage the whole pool. The
-		// window has to exceed the 5m Preferred requeue to prove the gate re-ran.
-		Consistently(func(g Gomega) {
-			var nc v1beta1.AKSNodeClass
-			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), &nc)).To(Succeed())
-			g.Expect(lo.FromPtr(nc.Status.LocalDNSState)).To(Equal(v1beta1.LocalDNSStateEnabled))
-		}).WithTimeout(6 * time.Minute).WithPolling(30 * time.Second).Should(Succeed())
-
-		By("✓ Verified sticky-Enabled survives a NodePool narrowing")
-	})
-
-	It("should resolve Preferred to Disabled when no NodePool references the AKSNodeClass", func() {
-		By("Creating a Preferred NodeClass with no NodePool referencing it")
-		nodeClass.Spec.LocalDNS = preferredLocalDNS()
-		env.ExpectCreated(nodeClass)
-
-		By("Expecting LocalDNS to resolve to Disabled with reason NoReferencingNodePools")
-		expectLocalDNSResolution(nodeClass, v1beta1.LocalDNSStateDisabled, "NoReferencingNodePools")
-
-		By("✓ Verified the gate defers rather than enabling with nothing to evaluate against")
+		By("✓ Verified an above-floor SKU runs LocalDNS under Preferred")
 	})
 })
 
 const (
-	// localDNSIncompatibleSKU is below the LocalDNS resource floor (2 vCPU), so
-	// enabling LocalDNS would filter it out of the instance type list entirely.
-	localDNSIncompatibleSKU = "Standard_D2s_v3"
-	// localDNSCompatibleSKU meets the LocalDNS resource floor (4 vCPU).
-	localDNSCompatibleSKU = "Standard_D4s_v3"
+	// VM sizes either side of the LocalDNS floor (v1beta1.LocalDNSMinVCPU /
+	// LocalDNSMinMemoryMiB). Standard_D2s_v3 has 2 vCPU, Standard_D4s_v3 has 4.
+	belowFloorVMSize = "Standard_D2s_v3"
+	aboveFloorVMSize = "Standard_D4s_v3"
 
-	// localDNSResolutionTimeout bounds how long we wait for the nodeclass.status
-	// controller to resolve Mode=Preferred. The gate specs create the NodeClass
-	// and its NodePool together, and the gate's verdict depends on the NodePool
-	// being visible. Resolution is event-driven on both objects, but the two
-	// creates race, so the first reconcile can still land before the NodePool is
-	// observed and record NoReferencingNodePools. This has to leave room for the
-	// requeue that corrects that -- keep it above the 3m floor set by
-	// subnet.go's healthyRequeueInterval, which is the smallest interval
-	// result.Min picks across the status subreconcilers.
-	localDNSResolutionTimeout = 6 * time.Minute
-)
-
-// preferredLocalDNS returns the LocalDNS spec used by the gate tests: Preferred
-// mode with the same complete override set the happy-path test uses, so that a
-// gate failure is the only thing that can keep LocalDNS off.
-func preferredLocalDNS() *v1beta1.LocalDNS {
-	return &v1beta1.LocalDNS{
-		Mode:             v1beta1.LocalDNSModePreferred,
-		KubeDNSOverrides: completeKubeDNSOverrides,
-		VnetDNSOverrides: completeVnetDNSOverrides,
-	}
-}
-
-// pinNodePoolToSKU restricts the NodePool to exactly one instance type. The
-// default NodePool already requires sku-family D, so both SKUs used here stay
-// consistent with it.
-func pinNodePoolToSKU(nodePool *karpv1.NodePool, sku string) {
-	coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-		Key:      corev1.LabelInstanceTypeStable,
-		Operator: corev1.NodeSelectorOpIn,
-		Values:   []string{sku},
-	})
-}
-
-// expectLocalDNSResolution waits for the nodeclass.status controller to commit a
-// LocalDNS state and asserts both the state and the reason recorded on
-// LocalDNSReady. The reason is what an operator sees when a NodePool stops
-// provisioning, so it is part of the contract, not incidental detail.
-func expectLocalDNSResolution(nodeClass *v1beta1.AKSNodeClass, expectedState v1beta1.LocalDNSState, expectedReason string) {
-	Eventually(func(g Gomega) {
-		var nc v1beta1.AKSNodeClass
-		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), &nc)).To(Succeed())
-
-		g.Expect(nc.Status.LocalDNSState).ToNot(BeNil(), "LocalDNSState should have been resolved")
-		g.Expect(*nc.Status.LocalDNSState).To(Equal(expectedState))
-
-		condition := nc.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
-		g.Expect(condition).ToNot(BeNil(), "LocalDNSReady condition should be set")
-		g.Expect(condition.Reason).To(Equal(expectedReason),
-			fmt.Sprintf("LocalDNSReady reason was %q with message %q", condition.Reason, condition.Message))
-
-		By(fmt.Sprintf("✓ LocalDNSState=%s, LocalDNSReady reason=%s", *nc.Status.LocalDNSState, condition.Reason))
-	}).WithTimeout(localDNSResolutionTimeout).WithPolling(10 * time.Second).Should(Succeed())
-}
-
-// skipUnlessPreferredReachesInstanceTypeGate skips the gate specs when this
-// cluster's Karpenter build cannot resolve Mode=Preferred as far as the
-// instance type gate. Every gate ahead of it (k8s version floor, BYO CNI,
-// Ubuntu 20.04, conflicting NetworkPolicy, upstream node-local-dns DaemonSet)
-// short-circuits to Disabled with a bare LocalDNSReady reason, so a Preferred
-// NodeClass with nothing referencing it lands on NoReferencingNodePools exactly
-// when the gate is reachable. Probing beats hardcoding a version here: the
-// version floor is a controller-side constant this suite cannot read.
-func skipUnlessPreferredReachesInstanceTypeGate() {
-	probe := env.DefaultAKSNodeClass()
-	probe.Spec.LocalDNS = preferredLocalDNS()
-	env.ExpectCreated(probe)
-	defer env.ExpectDeleted(probe)
-
-	var reason string
-	Eventually(func(g Gomega) {
-		var nc v1beta1.AKSNodeClass
-		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(probe), &nc)).To(Succeed())
-		// Readiness cannot be the "resolution finished" signal here: every
-		// Preferred outcome reports LocalDNSReady=True, including the transient
-		// ones, because a LocalDNS verdict must never cost the NodeClass its
-		// readiness. A committed LocalDNSState is the signal instead -- it is
-		// written only on the terminal paths, so it also rules out reading the
-		// reason mid retry, when it is still AwaitingReconciliation or
-		// CheckingClusterRequirementsFailed.
-		g.Expect(nc.Status.LocalDNSState).ToNot(BeNil(), "LocalDNS resolution has not committed a state yet")
-		condition := nc.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
-		g.Expect(condition).ToNot(BeNil())
-		reason = condition.Reason
-	}).WithTimeout(localDNSResolutionTimeout).WithPolling(10 * time.Second).Should(Succeed())
-
-	if reason != "NoReferencingNodePools" {
-		Skip(fmt.Sprintf("Mode=Preferred resolves before the instance type gate on this cluster (LocalDNSReady reason=%q); "+
-			"the gate specs cannot exercise anything here", reason))
-	}
-}
-
-const (
 	// LocalDNS listener IPs
 	localDNSClusterListenerIP = "169.254.10.11" // Handles external DNS and in-cluster DNS
 	localDNSNodeListenerIP    = "169.254.10.10" // Handles external DNS from CoreDNS pods
