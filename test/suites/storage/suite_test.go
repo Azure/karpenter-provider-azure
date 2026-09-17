@@ -52,6 +52,7 @@ var nodePool *karpv1.NodePool
 const (
 	defaultStorageARMZone   = "1"
 	secondaryStorageARMZone = "2"
+	elasticSANCSIDriverName = "san.csi.azure.com"
 )
 
 func TestStorage(t *testing.T) {
@@ -153,6 +154,79 @@ var _ = Describe("Persistent Volumes", func() {
 
 			// Verify the node is in the correct zone
 			Expect(env.GetNode(pods[0].Spec.NodeName).Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+		})
+		It("should create a zonal node for Elastic SAN CSI topology on a bound PV", func() {
+			zone := storageTopologyZone()
+			pvTopologyRequirement := corev1.NodeSelectorRequirement{
+				Key:      zones.LabelAzureElasticSANCSIZone,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{zone},
+			}
+			pv := staticPersistentVolume(test.PersistentVolumeOptions{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+					MatchExpressions: []corev1.NodeSelectorRequirement{pvTopologyRequirement},
+				}},
+			})
+			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
+				VolumeName:       pv.Name,
+				StorageClassName: lo.ToPtr(""),
+			})
+			pod := env.Pod(test.PodOptions{PersistentVolumeClaims: []string{pvc.Name}})
+
+			driver := &storagev1.CSIDriver{}
+			err := env.Client.Get(env.Context, client.ObjectKey{Name: elasticSANCSIDriverName}, driver)
+			Expect(errors.IsNotFound(err)).To(BeTrue(), "this scenario requires the Elastic SAN CSI driver to be absent")
+
+			env.ExpectCreated(nodeClass, nodePool, pv, pvc)
+			boundPV := env.EventuallyExpectPVCBound(pvc)
+			Expect(boundPV.Spec.NodeAffinity).ToNot(BeNil())
+			Expect(boundPV.Spec.NodeAffinity.Required).ToNot(BeNil())
+			Expect(boundPV.Spec.NodeAffinity.Required.NodeSelectorTerms).To(HaveLen(1))
+			Expect(boundPV.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions).To(ConsistOf(pvTopologyRequirement))
+
+			env.ExpectCreated(pod)
+			defer env.ExpectDeleted(pod)
+
+			nodePoolLabels := client.MatchingLabels{karpv1.NodePoolLabelKey: nodePool.Name}
+			nodeClaims := &karpv1.NodeClaimList{}
+			Eventually(func(g Gomega) {
+				g.Expect(env.Client.List(env.Context, nodeClaims, nodePoolLabels)).To(Succeed())
+				g.Expect(nodeClaims.Items).To(HaveLen(1))
+			}).Should(Succeed())
+			nodeClaim := nodeClaims.Items[0].DeepCopy()
+			zoneRequirement, ok := lo.Find(nodeClaim.Spec.Requirements, func(requirement karpv1.NodeSelectorRequirementWithMinValues) bool {
+				return requirement.Key == corev1.LabelTopologyZone
+			})
+			Expect(ok).To(BeTrue())
+			Expect(zoneRequirement.Operator).To(Equal(corev1.NodeSelectorOpIn))
+			Expect(zoneRequirement.Values).To(ConsistOf(zone))
+
+			env.EventuallyExpectNodeClaimsReady(nodeClaim)
+			Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClaim), nodeClaim)).To(Succeed())
+			Expect(nodeClaim.Status.NodeName).ToNot(BeEmpty())
+
+			// Provisionable pods are requeued every 10 seconds. Observe two further cycles to catch repeated scale-up.
+			Consistently(func(g Gomega) {
+				currentNodeClaims := &karpv1.NodeClaimList{}
+				g.Expect(env.Client.List(env.Context, currentNodeClaims, nodePoolLabels)).To(Succeed())
+				g.Expect(currentNodeClaims.Items).To(HaveLen(1))
+				g.Expect(currentNodeClaims.Items[0].Name).To(Equal(nodeClaim.Name))
+				g.Expect(currentNodeClaims.Items[0].StatusConditions().Root().IsTrue()).To(BeTrue())
+				g.Expect(currentNodeClaims.Items[0].Status.NodeName).To(Equal(nodeClaim.Status.NodeName))
+
+				currentNodes := &corev1.NodeList{}
+				g.Expect(env.Client.List(env.Context, currentNodes, nodePoolLabels)).To(Succeed())
+				g.Expect(currentNodes.Items).To(HaveLen(1))
+				g.Expect(currentNodes.Items[0].Name).To(Equal(nodeClaim.Status.NodeName))
+				g.Expect(currentNodes.Items[0].Labels).To(HaveKeyWithValue(karpv1.NodeInitializedLabelKey, "true"))
+				g.Expect(currentNodes.Items[0].Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zone))
+				g.Expect(currentNodes.Items[0].Labels).ToNot(HaveKey(zones.LabelAzureElasticSANCSIZone))
+
+				currentPod := &corev1.Pod{}
+				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(pod), currentPod)).To(Succeed())
+				g.Expect(currentPod.Status.Phase).To(Equal(corev1.PodPending))
+				g.Expect(currentPod.Spec.NodeName).To(BeEmpty())
+			}, 25*time.Second, time.Second).Should(Succeed())
 		})
 		It("should run a pod with a generic ephemeral volume", func() {
 			pv := staticPersistentVolume(test.PersistentVolumeOptions{
