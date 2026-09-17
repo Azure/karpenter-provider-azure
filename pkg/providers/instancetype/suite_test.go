@@ -258,7 +258,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(legacy.Overhead.KubeReserved.Memory().String()).To(Equal("1843Mi"))
 			Expect(legacy.Overhead.EvictionThreshold.Memory().String()).To(Equal("750Mi"))
 
-			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.29.0")
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.29.0-azure")
 			modern := getInstanceType()
 			Expect(modern.Overhead.KubeReserved.Memory().String()).To(Equal("650Mi"))
 			Expect(modern.Overhead.EvictionThreshold.Memory().String()).To(Equal("100Mi"))
@@ -267,6 +267,8 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(modern.Overhead.SystemReserved).To(Equal(legacy.Overhead.SystemReserved))
 			Expect(modern.Overhead.EvictionThreshold.StorageEphemeral().Cmp(*legacy.Overhead.EvictionThreshold.StorageEphemeral())).To(BeZero())
 
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.29.0")
+			Expect(getInstanceType()).To(BeIdenticalTo(modern))
 			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
 			Expect(getInstanceType()).To(BeIdenticalTo(modern))
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(110))

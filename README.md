@@ -53,7 +53,8 @@ Karpenter provider for AKS can be used in two modes:
 
 For non-hardened nodes using `bootstrappingclient`, `aksmachineapi`, or
 `aksmachineapiheaderbatch`, the provider estimates memory reservations using the
-resolved node Kubernetes version and `maxPods`. AKS 1.29 and later use
+resolved node Kubernetes major/minor version and `maxPods`. Vendor suffixes such
+as `1.29.0-azure` do not change the reservation policy. AKS 1.29 and later use
 `min(20 * maxPods + 50, 25% of node memory)` MiB for kube-reserved memory and
 a 100 MiB hard-eviction threshold. Earlier versions retain the bracketed
 reservation and 750 MiB threshold. See the

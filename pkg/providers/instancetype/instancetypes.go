@@ -207,7 +207,8 @@ func usesAKSMemoryReservations(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	if err != nil {
 		return false, fmt.Errorf("parsing Kubernetes version %q, %w", kubernetesVersion, err)
 	}
-	return version.GE(semver.Version{Major: 1, Minor: 29}), nil
+	// AKS reservation policy follows major/minor, not SemVer ordering of vendor suffixes.
+	return version.Major > 1 || (version.Major == 1 && version.Minor >= 29), nil
 }
 
 func (p *DefaultProvider) buildInstanceTypes(ctx context.Context, params *instanceTypeParameters) []*cloudprovider.InstanceType {
