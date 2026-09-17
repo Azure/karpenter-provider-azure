@@ -120,6 +120,8 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 // and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
 // store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
 // selection will work, which is seen as worth the tradeoff.
+//
+//nolint:gocyclo // Keep the established automatic image update flow together; pinning is isolated in helpers below.
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
@@ -139,26 +141,12 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
-	pinningShouldUpdate := false
-	var nodeImages []imagefamily.NodeImage
-	var err error
-
-	kubernetesVersionChanging := reqK8sVer != "" && lo.FromPtr(nodeClass.Status.KubernetesVersion) != reqK8sVer
-	if kubernetesVersionChanging {
-		nodeImages, err = r.listImagesForVersion(ctx, *nodeClass, reqK8sVer)
-		pinningShouldUpdate = true
-	} else {
-		nodeImages, err = r.nodeImageProvider.List(ctx, nodeClass)
-	}
-
+	nodeImages, pinningShouldUpdate, err := r.listImagesForRequestedVersion(ctx, nodeClass, reqK8sVer, reqImgVer)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
-	}
-
-	if len(nodeImages) == 0 && (kubernetesVersionChanging || reqImgVer != "") {
-		err = fmt.Errorf("%w: no node images found for Kubernetes version %s", errRequestedNodeImageVersionUnavailable, reqK8sVer)
-		setImageStatusConditionByErr(nodeClass, err)
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+		if stderrors.Is(err, errRequestedNodeImageVersionUnavailable) {
+			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+		}
+		return reconcile.Result{}, err
 	}
 
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
@@ -184,17 +172,11 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		latestImageVersion = parseVersion(goalImages[0].ID)
 	}
 
-	if reqImgVer != "" {
-		goalImages, err = replaceSuffixes(goalImages, reqImgVer)
-		if err != nil {
-			err = fmt.Errorf("%w: replacing image suffixes: %v", errRequestedNodeImageVersionUnavailable, err)
-			setImageStatusConditionByErr(nodeClass, err)
-			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-		}
-
-		alreadySet := len(nodeClass.Status.Images) > 0 && parseVersion(nodeClass.Status.Images[0].ID) == reqImgVer
-		pinningShouldUpdate = pinningShouldUpdate || !alreadySet
+	goalImages, imagePinningShouldUpdate, err := applyImagePinning(nodeClass, goalImages, reqImgVer)
+	if err != nil {
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
+	pinningShouldUpdate = pinningShouldUpdate || imagePinningShouldUpdate
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
 	//
@@ -460,11 +442,45 @@ func (r *NodeImageReconciler) listImagesForVersion(ctx context.Context, nodeClas
 	}
 
 	nodeClass.Status.KubernetesVersion = &k8sVersion
-	nodeImages, err := r.nodeImageProvider.List(ctx, &nodeClass)
-	if err != nil {
-		return nil, fmt.Errorf("getting nodeimages, %w", err)
+	return r.nodeImageProvider.List(ctx, &nodeClass)
+}
+
+func (r *NodeImageReconciler) listImagesForRequestedVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, reqK8sVer, reqImgVer string) ([]imagefamily.NodeImage, bool, error) {
+	kubernetesVersionChanging := reqK8sVer != "" && lo.FromPtr(nodeClass.Status.KubernetesVersion) != reqK8sVer
+
+	var nodeImages []imagefamily.NodeImage
+	var err error
+	if kubernetesVersionChanging {
+		nodeImages, err = r.listImagesForVersion(ctx, *nodeClass, reqK8sVer)
+	} else {
+		nodeImages, err = r.nodeImageProvider.List(ctx, nodeClass)
 	}
-	return nodeImages, nil
+	if err != nil {
+		return nil, false, fmt.Errorf("getting nodeimages, %w", err)
+	}
+
+	if len(nodeImages) == 0 && (kubernetesVersionChanging || reqImgVer != "") {
+		err = fmt.Errorf("%w: no node images found for Kubernetes version %s", errRequestedNodeImageVersionUnavailable, reqK8sVer)
+		setImageStatusConditionByErr(nodeClass, err)
+		return nil, false, err
+	}
+	return nodeImages, kubernetesVersionChanging, nil
+}
+
+func applyImagePinning(nodeClass *v1beta1.AKSNodeClass, goalImages []v1beta1.NodeImage, reqImgVer string) ([]v1beta1.NodeImage, bool, error) {
+	if reqImgVer == "" {
+		return goalImages, false, nil
+	}
+
+	pinnedImages, err := replaceSuffixes(goalImages, reqImgVer)
+	if err != nil {
+		err = fmt.Errorf("%w: replacing image suffixes: %v", errRequestedNodeImageVersionUnavailable, err)
+		setImageStatusConditionByErr(nodeClass, err)
+		return nil, false, err
+	}
+
+	alreadySet := len(nodeClass.Status.Images) > 0 && parseVersion(nodeClass.Status.Images[0].ID) == reqImgVer
+	return pinnedImages, !alreadySet, nil
 }
 
 func setImageStatusConditionByErr(nodeClass *v1beta1.AKSNodeClass, err error) {
