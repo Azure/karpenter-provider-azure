@@ -112,7 +112,14 @@ func (env *Environment) EventuallyExpectDualStackServiceConnectivity(service *co
 		g.Expect(readyAddresses[discoveryv1.AddressTypeIPv6]).To(ContainElement(podIPs.IPv6))
 	}).WithTimeout(timeout).WithPolling(5 * time.Second).Should(Succeed())
 
-	linuxProbeOptions := test.PodOptions{
+	env.eventuallyExpectDualStackConnectivityProbe(service, serviceIPs, podIPs, port, timeout, linuxDualStackProbeOptions(), true)
+	for _, probeOptions := range additionalProbeOptions {
+		env.eventuallyExpectDualStackConnectivityProbe(service, serviceIPs, podIPs, port, timeout, probeOptions, false)
+	}
+}
+
+func linuxDualStackProbeOptions() test.PodOptions {
+	return test.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{"app": "dualstack-service-probe-linux"},
 		},
@@ -122,8 +129,7 @@ func (env *Environment) EventuallyExpectDualStackServiceConnectivity(service *co
 		},
 		Tolerations: []corev1.Toleration{{
 			Key:      "CriticalAddonsOnly",
-			Operator: corev1.TolerationOpEqual,
-			Value:    "true",
+			Operator: corev1.TolerationOpExists,
 			Effect:   corev1.TaintEffectNoSchedule,
 		}},
 		ResourceRequirements: corev1.ResourceRequirements{
@@ -132,10 +138,6 @@ func (env *Environment) EventuallyExpectDualStackServiceConnectivity(service *co
 				corev1.ResourceMemory: resource.MustParse("64Mi"),
 			},
 		},
-	}
-	env.eventuallyExpectDualStackConnectivityProbe(service, serviceIPs, podIPs, port, timeout, linuxProbeOptions, true)
-	for _, probeOptions := range additionalProbeOptions {
-		env.eventuallyExpectDualStackConnectivityProbe(service, serviceIPs, podIPs, port, timeout, probeOptions, false)
 	}
 }
 
