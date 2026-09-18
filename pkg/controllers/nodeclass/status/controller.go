@@ -144,6 +144,10 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 		return
 	}
 
+	if oldNodeClass.Status.KubernetesVersion == nil {
+		return
+	}
+
 	oldImages := oldNodeClass.Status.Images
 	newImages := newNodeClass.Status.Images
 
