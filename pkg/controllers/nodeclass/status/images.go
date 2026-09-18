@@ -384,10 +384,10 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 		}
 	}
 
-	return validRollback(reqK8sVer, reqImgVer, nodeClass)
+	return validateRollback(reqK8sVer, reqImgVer, nodeClass)
 }
 
-func validRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) bool {
+func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) bool {
 	if nodeClass.Status.Versions == nil || nodeClass.Status.Versions.RecentlyUsedVersions == nil {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", fmt.Sprintf("requested image version %s was not found", reqImageVersion))
 		return false
