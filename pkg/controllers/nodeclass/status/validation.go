@@ -18,6 +18,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -34,6 +35,10 @@ import (
 
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	// ImageFamilyKubernetesVersionIncompatible is the stable reason used when
+	// spec.imageFamily explicitly pins an OS version that the ready discovered
+	// Kubernetes version does not support.
+	ImageFamilyKubernetesVersionIncompatible = "ImageFamilyKubernetesVersionIncompatible"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -71,32 +76,18 @@ func NewValidationReconciler(
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
-	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
-	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
-	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
-	// as defense-in-depth.
-	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeValidationSucceeded,
-			KataPodSandboxingUnsupportedProvisionMode,
-			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
-		)
+	// Validation for KATA
+	if validationFailed, err := validateKata(ctx, nodeClass); err != nil {
+		return reconcile.Result{}, err
+	} else if validationFailed {
 		return reconcile.Result{}, nil
 	}
-	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
-		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
-		}
-		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
-			nodeClass.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeValidationSucceeded,
-				KataRequiresAzureLinux3,
-				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
-			)
-			return reconcile.Result{}, nil
-		}
+
+	// Validation for image family compatibility
+	if validationFailed, err := validateImageFamilyCompatibility(ctx, nodeClass); err != nil {
+		return reconcile.Result{}, err
+	} else if validationFailed {
+		return reconcile.Result{}, nil
 	}
 
 	// Check BYOK RBAC if DES ID is configured
@@ -123,6 +114,72 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+func validateKata(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, error) {
+	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
+	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
+	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
+	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
+	// as defense-in-depth.
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			KataPodSandboxingUnsupportedProvisionMode,
+			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+		)
+		return true, nil
+	}
+	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return false, fmt.Errorf("getting kubernetes version, %w", err)
+		}
+		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				KataRequiresAzureLinux3,
+				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
+			)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func validateImageFamilyCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, error) {
+	// Image family compatibility only constrains explicitly version-pinned families, so the
+	// discovered Kubernetes version is only needed - and only required to be ready - for
+	// those. A generic/unset Ubuntu or AzureLinux NodeClass must not be blocked from the
+	// remaining validations just because the Kubernetes version isn't available yet.
+	if !imagefamily.RequiresKubernetesVersionCompatibility(nodeClass) {
+		return false, nil
+	}
+
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return false, fmt.Errorf("getting kubernetes version: %w", err)
+	}
+	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, kubernetesVersion); err != nil {
+		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
+		if errors.As(err, &incompatibleErr) {
+			// This incompatibility is static: it can only change when the NodeClass spec or
+			// the discovered Kubernetes version changes, and both of those already trigger a
+			// reconcile. Polling would burn reconciles without ever observing a difference.
+			log.FromContext(ctx).V(1).Info("image family compatibility validation failed", "error", err)
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				ImageFamilyKubernetesVersionIncompatible,
+				err.Error(),
+			)
+			return true, nil
+		}
+
+		// Any other error is unexpected; leave the condition alone and let controller-runtime retry.
+		log.FromContext(ctx).Error(err, "image family compatibility validation encountered unexpected error")
+		return false, fmt.Errorf("validating image family compatibility: %w", err)
+	}
+	return false, nil
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
