@@ -171,9 +171,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		latestImageVersion = parseVersion(goalImages[0].ID)
 	}
 
-	goalImages, pinningShouldUpdate, valid := applyImagePinning(nodeClass, goalImages, reqImgVer)
-	if !valid {
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	var pinningShouldUpdate bool
+	if reqImgVer != "" {
+		var valid bool
+		goalImages, pinningShouldUpdate, valid = applyImagePinning(nodeClass, goalImages, reqImgVer)
+		if !valid {
+			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+		}
 	}
 	pinningShouldUpdate = kubernetesVersionChanging || pinningShouldUpdate
 
