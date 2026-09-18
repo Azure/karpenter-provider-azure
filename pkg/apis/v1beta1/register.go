@@ -22,7 +22,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-const Group = "karpenter.azure.com"
+const (
+	Group = "karpenter.azure.com"
+	// AKSNodeClassKind is the Kind a NodeClaim's NodeClassRef carries when it is
+	// backed by this provider. Matched as a string rather than resolved through
+	// the scheme because NodeClassRef is a loose reference, not a typed object.
+	AKSNodeClassKind = "AKSNodeClass"
+)
 
 var (
 	SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: "v1beta1"}

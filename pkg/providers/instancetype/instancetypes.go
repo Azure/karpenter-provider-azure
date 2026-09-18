@@ -69,7 +69,7 @@ type instanceTypeParameters struct {
 	GPUMode                  v1beta1.GPUMode
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
-	LocalDNSEnabled          bool
+	LocalDNSRequired         bool
 	KataEnabled              bool
 }
 
@@ -155,7 +155,7 @@ func (p *DefaultProvider) List(
 		GPUMode:                  nodeClass.GetGPUMode(),
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
-		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+		LocalDNSRequired:         nodeClass.IsLocalDNSRequired(),
 		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
@@ -415,20 +415,28 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, params *instanceTypeParameters) bool {
-	// Read the resolved state from Status.LocalDNSState. The
-	// nodeclass.localdns sub-reconciler is the sole writer.
-	// If LocalDNS won't be enabled, all instance types are supported
-	if !params.LocalDNSEnabled {
+	// Only Mode=Required makes the LocalDNS VM size floor a constraint on
+	// instance type selection. Required means "enforce LocalDNS, and fail if the
+	// prerequisites are not met", so a SKU that cannot run LocalDNS is not a
+	// viable candidate and is filtered out here.
+	//
+	// Under Mode=Preferred the floor is deliberately NOT applied. Preferred means
+	// "enable LocalDNS where the node can support it" (see the "VM SKU capacity"
+	// row of the compatibility checks at aka.ms/aks/localdns): a node below the
+	// floor still provisions, it just runs without LocalDNS. Filtering here would
+	// instead delete those sizes from the candidate list, so a NodePool pinned to
+	// small SKUs would lose every candidate the moment LocalDNS resolved to
+	// Enabled and its pods would sit Pending behind karpenter core's generic "no
+	// instance type satisfied requirements". The per-node decision is made at
+	// launch time by AKSNodeClass.IsLocalDNSEnabledForInstanceType.
+	if !params.LocalDNSRequired {
 		return true
 	}
-
-	// LocalDNS requires at least 4 vCPUs and 256 MB (244.140625 MiB) of memory
 	cpu, err := sku.VCPU()
-	if err != nil || cpu < 4 {
+	if err != nil {
 		return false
 	}
-
-	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
+	return v1beta1.SKUSupportsLocalDNS(cpu, memoryMiB(sku))
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, params *instanceTypeParameters) bool {

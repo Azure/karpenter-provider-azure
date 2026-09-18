@@ -764,8 +764,12 @@ var _ = Describe("InstanceType Provider", func() {
 			},
 			Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
 				v1beta1.LocalDNSModeRequired, "", false, true),
-			Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
-				v1beta1.LocalDNSModePreferred, "1.36.0", false, true),
+			// Preferred never filters: a SKU below the LocalDNS floor stays a valid
+			// candidate and simply runs without LocalDNS (resolved per node at
+			// launch). Filtering here would strip every candidate from a NodePool
+			// pinned to small SKUs, which is not what Preferred means in AKS.
+			Entry("when LocalDNS is preferred with k8s >= 1.36 - includes all SKUs",
+				v1beta1.LocalDNSModePreferred, "1.36.0", true, true),
 			Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
 				v1beta1.LocalDNSModePreferred, "1.35.0", true, true),
 			Entry("when LocalDNS is disabled - includes all SKUs",

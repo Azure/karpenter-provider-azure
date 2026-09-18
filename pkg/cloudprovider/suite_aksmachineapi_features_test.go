@@ -1193,10 +1193,15 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeDisabled))
 			})
 
-			It("should rewrite Preferred to Required on the wire when Status.LocalDNSState=Enabled", func() {
+			It("should rewrite Preferred to Required on the wire when Status.LocalDNSState=Enabled and the VM size clears the LocalDNS floor", func() {
 				// Preferred is never sent downstream — Karpenter is the only kube-aware
 				// resolver, so ResolvedLocalDNSForWire rewrites Mode to the terminal
-				// value implied by Status.LocalDNSState. Enabled => Required.
+				// value implied by Status.LocalDNSState and the node's own VM size.
+				// Enabled + a SKU above the floor => Required.
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D4s_v3"}})
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 					Mode:             v1beta1.LocalDNSModePreferred,
 					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
@@ -1216,6 +1221,38 @@ var _ = Describe("CloudProvider", func() {
 
 				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
 				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeRequired))
+			})
+
+			It("should rewrite Preferred to Disabled on the wire when the VM size is below the LocalDNS floor", func() {
+				// The other half of Preferred: a NodePool pinned to a sub-floor SKU
+				// still provisions — the SKU is not filtered out — and the Machine goes
+				// out with LocalDNS off. This is what "Preferred" means in AKS: the VM
+				// SKU capacity check leaves LocalDNS disabled rather than blocking the
+				// pool.
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2s_v3"}})
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode:             v1beta1.LocalDNSModePreferred,
+					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+					KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+				}
+				nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(lo.FromPtr(aksMachine.Properties.Hardware.VMSize)).To(Equal("Standard_D2s_v3"))
+				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeDisabled))
 			})
 
 			It("should rewrite Preferred to Disabled on the wire when Status.LocalDNSState is unset", func() {

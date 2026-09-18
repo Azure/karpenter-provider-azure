@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -185,9 +187,95 @@ var _ = Describe("LocalDNS", func() {
 
 		By("✓ Verified LocalDNS is properly disabled and DNS falls back to default configuration")
 	})
+
+	// =========================================================================
+	// PREFERRED MODE: the LocalDNS decision is made per node, not per NodeClass
+	// =========================================================================
+	//
+	// Mode=Preferred means "run LocalDNS wherever the node can carry it". A VM
+	// size below the LocalDNS floor is still a valid provisioning target -- it
+	// just comes up without LocalDNS. This is the AKS behavior we're matching:
+	// the "VM SKU capacity" compatibility check leaves LocalDNS disabled rather
+	// than blocking the pool. See aka.ms/aks/localdns.
+	It("should provision a below-floor SKU without LocalDNS under Mode=Preferred", func() {
+		By("Pinning the NodePool to a VM size too small for LocalDNS")
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{belowFloorVMSize},
+		})
+
+		By("Configuring the NodeClass with Mode=Preferred")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode:             v1beta1.LocalDNSModePreferred,
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
+		}
+
+		By("Creating an unschedulable pod to trigger provisioning")
+		externalPod := createDNSTestPod("microsoft.com", nil)
+		env.ExpectCreated(nodeClass, nodePool, externalPod)
+
+		By("Expecting the node to provision anyway -- Preferred must not starve the NodePool")
+		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		env.EventuallyExpectHealthy(externalPod)
+		Expect(refreshNode(node).Labels[corev1.LabelInstanceTypeStable]).To(Equal(belowFloorVMSize))
+
+		By("Expecting the node to report LocalDNS off, because its VM size can't carry it")
+		expectNodeLocalDNSLabel(node, "disabled")
+
+		By("Verifying DNS on the node falls back to the default resolvers")
+		expectDNSResult(getDNSResultFromNode(node), azureDNSIP, "Host network DNS should use default DNS")
+		expectDNSResult(getDNSResultFromPod(externalPod), coreDNSServiceIP, "Test pod should use default DNS")
+
+		By("✓ Verified a below-floor SKU provisions and runs without LocalDNS under Preferred")
+	})
+
+	It("should enable LocalDNS on an above-floor SKU under Mode=Preferred", func() {
+		skipIfBelowPreferredThreshold()
+
+		By("Pinning the NodePool to a VM size that clears the LocalDNS floor")
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{aboveFloorVMSize},
+		})
+
+		By("Configuring the NodeClass with Mode=Preferred")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode:             v1beta1.LocalDNSModePreferred,
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
+		}
+
+		By("Creating unschedulable pods to trigger provisioning")
+		externalPod := createDNSTestPod("microsoft.com", nil)
+		internalPod := createDNSTestPod("kubernetes.default.svc.cluster.local", nil)
+		env.ExpectCreated(nodeClass, nodePool, externalPod, internalPod)
+
+		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		env.EventuallyExpectHealthy(externalPod)
+		env.EventuallyExpectHealthy(internalPod)
+		Expect(refreshNode(node).Labels[corev1.LabelInstanceTypeStable]).To(Equal(aboveFloorVMSize))
+
+		By("Expecting the node to report LocalDNS on")
+		expectNodeLocalDNSLabel(node, "enabled")
+
+		By("Verifying LocalDNS is actually serving on the node")
+		expectDNSResult(getDNSResultFromNode(node), localDNSNodeListenerIP, "Host network DNS should use LocalDNS node listener")
+		expectDNSResult(getDNSResultFromPod(externalPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener for external DNS")
+		expectDNSResult(getDNSResultFromPod(internalPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener for internal DNS")
+
+		By("✓ Verified an above-floor SKU runs LocalDNS under Preferred")
+	})
 })
 
 const (
+	// VM sizes either side of the LocalDNS floor (v1beta1.LocalDNSMinVCPU /
+	// LocalDNSMinMemoryMiB). Standard_D2s_v3 has 2 vCPU, Standard_D4s_v3 has 4.
+	belowFloorVMSize = "Standard_D2s_v3"
+	aboveFloorVMSize = "Standard_D4s_v3"
+
 	// LocalDNS listener IPs
 	localDNSClusterListenerIP = "169.254.10.11" // Handles external DNS and in-cluster DNS
 	localDNSNodeListenerIP    = "169.254.10.10" // Handles external DNS from CoreDNS pods
@@ -220,6 +308,21 @@ func expectDNSResult(result DNSTestResult, expectedDNSIP string, description str
 		fmt.Sprintf("%s (%s), but found %s", description, expectedDNSIP, result.DNSIP))
 }
 
+// refreshNode re-reads a node and waits for the cloud-provider node controller to
+// apply node.kubernetes.io/instance-type. The node handed back by
+// EventuallyExpectCreatedNodeCount is a snapshot taken the instant the object first
+// appeared -- while it still carries the node.cloudprovider.kubernetes.io/uninitialized
+// taint and none of the cloud labels -- so its VM size cannot be read directly.
+func refreshNode(node *corev1.Node) *corev1.Node {
+	var currentNode corev1.Node
+	Eventually(func(g Gomega) {
+		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: node.Name}, &currentNode)).To(Succeed())
+		g.Expect(currentNode.Labels).To(HaveKey(corev1.LabelInstanceTypeStable),
+			fmt.Sprintf("Node %s should have the instance-type label", node.Name))
+	}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+	return &currentNode
+}
+
 // expectNodeLocalDNSLabel verifies that a node has the expected localdns-state label value.
 // This function waits for the label to appear on the node with the correct value.
 func expectNodeLocalDNSLabel(node *corev1.Node, expectedValue string) {
@@ -234,6 +337,24 @@ func expectNodeLocalDNSLabel(node *corev1.Node, expectedValue string) {
 
 		By(fmt.Sprintf("✓ Node %s has localdns-state=%s label", node.Name, expectedValue))
 	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+}
+
+// skipIfBelowPreferredThreshold skips a case that expects Mode=Preferred to have
+// resolved to Enabled, when the cluster's Kubernetes version is below the
+// threshold that gates Preferred. Without this the case asserts localdns-state
+// =enabled on a NodeClass the controller has correctly left Disabled, and fails
+// for a reason that has nothing to do with the code under test.
+func skipIfBelowPreferredThreshold() {
+	GinkgoHelper()
+	threshold := lo.Must(semver.ParseTolerant(status.LocalDNSPreferredK8sVersionThreshold))
+	serverVersion, err := env.KubeClient.Discovery().ServerVersion()
+	Expect(err).ToNot(HaveOccurred())
+	current, err := semver.ParseTolerant(serverVersion.GitVersion)
+	Expect(err).ToNot(HaveOccurred())
+	if current.LT(threshold) {
+		Skip(fmt.Sprintf("cluster is k8s %s, below the LocalDNS Preferred threshold %s -- Preferred resolves Disabled here",
+			current, threshold))
+	}
 }
 
 // createDNSTestPod creates a pod that performs a DNS lookup for a specific domain.
