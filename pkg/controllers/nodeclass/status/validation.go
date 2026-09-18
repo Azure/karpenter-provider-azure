@@ -68,6 +68,7 @@ func NewValidationReconciler(
 	}
 }
 
+//nolint:gocyclo // Keep validation checks together to preserve reconciler ownership.
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 

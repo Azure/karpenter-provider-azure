@@ -70,6 +70,8 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 //  1. Newly created AKSNodeClass, will select the version discovered from the API server
 //  2. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
 //     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the Images readiness.
+//
+//nolint:gocyclo // Keep pinned and automatic Kubernetes version status ownership in this reconciler.
 func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(kubernetesVersionReconcilerName))
 	logger := log.FromContext(ctx).WithValues("existingKubernetesVersion", nodeClass.Status.KubernetesVersion)
