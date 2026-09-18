@@ -367,7 +367,7 @@ func TestLocalDNSLabels(t *testing.T) {
 		{
 			// Required filters sub-floor SKUs out of the candidate list entirely,
 			// so this combination is unreachable in practice. Pinned anyway: if
-			// the filter ever regresses, the node must still be labelled honestly
+			// the filter ever regresses, the node must still be labeled honestly
 			// rather than claiming LocalDNS it cannot run.
 			name: "Required, SKU below the floor -> disabled on this node",
 			localDNS: &v1beta1.LocalDNS{
