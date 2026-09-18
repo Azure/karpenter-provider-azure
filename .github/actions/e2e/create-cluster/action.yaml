@@ -37,6 +37,10 @@ inputs:
     description: "When 'true', create a dedicated Windows-capable cluster (Azure CNI overlay + windowsProfile) instead of the default Cilium cluster"
     required: false
     default: "false"
+  dual_stack:
+    description: "When 'true', create the cluster with IPv4 and IPv6 pod and service CIDRs"
+    required: false
+    default: "false"
   aks_machines_pool_name:
     description: "Name of the AKS 'machines' mode agent pool to create (machine API modes only). Windows requires a name <= 6 chars."
     required: false
@@ -58,6 +62,7 @@ runs:
         AZURE_VM_SIZE: ${{ inputs.azure_vm_size }}
         K8S_VERSION: ${{ inputs.k8s_version }}
         PROVISION_MODE: ${{ inputs.provision_mode }}
+        AKS_DUAL_STACK: ${{ inputs.dual_stack }}
         AKS_MACHINES_POOL_NAME: ${{ inputs.aks_machines_pool_name }}
       run: |
         if [ "${{ inputs.windows }}" = "true" ]; then

@@ -50,6 +50,7 @@ const TestingFinalizer = "testing/finalizer"
 var (
 	CleanableObjects = []client.Object{
 		&corev1.Pod{},
+		&corev1.Service{},
 		&appsv1.Deployment{},
 		&appsv1.StatefulSet{},
 		&appsv1.DaemonSet{},
