@@ -138,7 +138,7 @@ func newInstanceType(
 		Capacity:     capacity,
 		Overhead: &cloudprovider.InstanceTypeOverhead{
 			KubeReserved:   KubeReservedResources(lo.Must(sku.VCPU()), totalMemoryMiB, params.MaxPods, enableNodeHardening),
-			SystemReserved: SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening),
+			SystemReserved: SystemReservedResources(totalMemoryMiB, opts.NetworkPlugin, enableNodeHardening, managedGPUCount(sku, params.GPUMode)),
 			EvictionThreshold: EvictionThreshold(
 				totalMemoryMiB,
 				capacity[corev1.ResourceEphemeralStorage],
@@ -322,6 +322,17 @@ func gpuTotalCount(sku *skewer.SKU) *resource.Quantity {
 	return resources.Quantity(fmt.Sprint(count))
 }
 
+func managedGPUCount(sku *skewer.SKU, gpuMode v1beta1.GPUMode) int64 {
+	if gpuMode != v1beta1.GPUModeDriver || !utils.IsNvidiaEnabledSKU(sku.GetName()) {
+		return 0
+	}
+	count, err := sku.GPU()
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
 func vcpuCount(sku *skewer.SKU) int64 {
 	return lo.Must(sku.VCPU())
 }
@@ -358,7 +369,7 @@ func pods(params *instanceTypeParameters) *resource.Quantity {
 	return resource.NewQuantity(int64(params.MaxPods), resource.DecimalSI)
 }
 
-func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableNodeHardening bool) corev1.ResourceList {
+func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableNodeHardening bool, managedGPUCount int64) corev1.ResourceList {
 	if !enableNodeHardening {
 		return corev1.ResourceList{
 			corev1.ResourceCPU:    resource.Quantity{},
@@ -367,7 +378,7 @@ func SystemReservedResources(totalMemoryMiB int64, networkPlugin string, enableN
 	}
 	return corev1.ResourceList{
 		corev1.ResourceCPU:              *resource.NewScaledQuantity(systemReservedCPUMillicores, resource.Milli),
-		corev1.ResourceMemory:           *resource.NewQuantity(systemReservedMemoryMiB(totalMemoryMiB, networkPlugin == consts.NetworkPluginAzure)*bytesPerMiB, resource.BinarySI),
+		corev1.ResourceMemory:           *resource.NewQuantity(systemReservedMemoryMiB(totalMemoryMiB, networkPlugin == consts.NetworkPluginAzure, managedGPUCount)*bytesPerMiB, resource.BinarySI),
 		corev1.ResourceEphemeralStorage: resource.MustParse(systemReservedEphemeralStorage),
 	}
 }
