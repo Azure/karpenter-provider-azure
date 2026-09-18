@@ -217,7 +217,7 @@ var _ = Describe("LocalDNS", func() {
 		By("Expecting the node to provision anyway -- Preferred must not starve the NodePool")
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(externalPod)
-		Expect(node.Labels[corev1.LabelInstanceTypeStable]).To(Equal(belowFloorVMSize))
+		Expect(refreshNode(node).Labels[corev1.LabelInstanceTypeStable]).To(Equal(belowFloorVMSize))
 
 		By("Expecting the node to report LocalDNS off, because its VM size can't carry it")
 		expectNodeLocalDNSLabel(node, "disabled")
@@ -252,7 +252,7 @@ var _ = Describe("LocalDNS", func() {
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(externalPod)
 		env.EventuallyExpectHealthy(internalPod)
-		Expect(node.Labels[corev1.LabelInstanceTypeStable]).To(Equal(aboveFloorVMSize))
+		Expect(refreshNode(node).Labels[corev1.LabelInstanceTypeStable]).To(Equal(aboveFloorVMSize))
 
 		By("Expecting the node to report LocalDNS on")
 		expectNodeLocalDNSLabel(node, "enabled")
@@ -321,7 +321,7 @@ var _ = Describe("LocalDNS", func() {
 
 		bySKU := map[string]*corev1.Node{}
 		for _, node := range nodes {
-			bySKU[node.Labels[corev1.LabelInstanceTypeStable]] = node
+			bySKU[refreshNode(node).Labels[corev1.LabelInstanceTypeStable]] = node
 		}
 		Expect(bySKU).To(HaveKey(belowFloorVMSize))
 		Expect(bySKU).To(HaveKey(aboveFloorVMSize))
@@ -414,6 +414,21 @@ func expectDNSResult(result DNSTestResult, expectedDNSIP string, description str
 	By(fmt.Sprintf("DNS logs:\n%s", result.Logs))
 	Expect(result.DNSIP).To(Equal(expectedDNSIP),
 		fmt.Sprintf("%s (%s), but found %s", description, expectedDNSIP, result.DNSIP))
+}
+
+// refreshNode re-reads a node and waits for the cloud-provider node controller to
+// apply node.kubernetes.io/instance-type. The node handed back by
+// EventuallyExpectCreatedNodeCount is a snapshot taken the instant the object first
+// appeared -- while it still carries the node.cloudprovider.kubernetes.io/uninitialized
+// taint and none of the cloud labels -- so its VM size cannot be read directly.
+func refreshNode(node *corev1.Node) *corev1.Node {
+	var currentNode corev1.Node
+	Eventually(func(g Gomega) {
+		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: node.Name}, &currentNode)).To(Succeed())
+		g.Expect(currentNode.Labels).To(HaveKey(corev1.LabelInstanceTypeStable),
+			fmt.Sprintf("Node %s should have the instance-type label", node.Name))
+	}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+	return &currentNode
 }
 
 // expectNodeLocalDNSLabel verifies that a node has the expected localdns-state label value.
