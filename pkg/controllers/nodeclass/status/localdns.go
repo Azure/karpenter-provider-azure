@@ -42,6 +42,11 @@ import (
 // for LocalDNS to be enabled under Mode=Preferred.
 var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(localDNSPreferredK8sVersionThreshold))
 
+// LocalDNSPreferredK8sVersionThreshold exposes the Preferred-mode threshold to
+// the e2e suite, which must skip Preferred expectations on clusters below it.
+// An alias rather than a rename so the value keeps a single home.
+const LocalDNSPreferredK8sVersionThreshold = localDNSPreferredK8sVersionThreshold
+
 const (
 	// localDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
 	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred.

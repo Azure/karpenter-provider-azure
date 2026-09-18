@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -230,6 +232,8 @@ var _ = Describe("LocalDNS", func() {
 	})
 
 	It("should enable LocalDNS on an above-floor SKU under Mode=Preferred", func() {
+		skipIfBelowPreferredThreshold()
+
 		By("Pinning the NodePool to a VM size that clears the LocalDNS floor")
 		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      corev1.LabelInstanceTypeStable,
@@ -333,6 +337,24 @@ func expectNodeLocalDNSLabel(node *corev1.Node, expectedValue string) {
 
 		By(fmt.Sprintf("✓ Node %s has localdns-state=%s label", node.Name, expectedValue))
 	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+}
+
+// skipIfBelowPreferredThreshold skips a case that expects Mode=Preferred to have
+// resolved to Enabled, when the cluster's Kubernetes version is below the
+// threshold that gates Preferred. Without this the case asserts localdns-state
+// =enabled on a NodeClass the controller has correctly left Disabled, and fails
+// for a reason that has nothing to do with the code under test.
+func skipIfBelowPreferredThreshold() {
+	GinkgoHelper()
+	threshold := lo.Must(semver.ParseTolerant(status.LocalDNSPreferredK8sVersionThreshold))
+	serverVersion, err := env.KubeClient.Discovery().ServerVersion()
+	Expect(err).ToNot(HaveOccurred())
+	current, err := semver.ParseTolerant(serverVersion.GitVersion)
+	Expect(err).ToNot(HaveOccurred())
+	if current.LT(threshold) {
+		Skip(fmt.Sprintf("cluster is k8s %s, below the LocalDNS Preferred threshold %s -- Preferred resolves Disabled here",
+			current, threshold))
+	}
 }
 
 // createDNSTestPod creates a pod that performs a DNS lookup for a specific domain.
