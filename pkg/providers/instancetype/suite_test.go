@@ -221,6 +221,77 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("AKS memory reservations", func() {
+		It("should provision a pod that fits the AKS reservation but not the legacy estimate", func() {
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v3"},
+				})
+			ExpectApplied(ctxBootstrap, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{ResourceRequirements: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("100m"),
+					v1.ResourceMemory: resource.MustParse("6Gi"),
+				},
+			}})
+			ExpectProvisionedAndWaitForPromises(ctxBootstrap, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, azureEnvBootstrap, pod)
+			node := ExpectScheduled(ctxBootstrap, env.Client, pod)
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v3"))
+		})
+
+		DescribeTable("should invalidate cached reservations when the AKS policy or maxPods changes", func(provisionMode string) {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{ProvisionMode: lo.ToPtr(provisionMode)}))
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.28.15")
+			getInstanceType := func() *corecloudprovider.InstanceType {
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).NotTo(HaveOccurred())
+				instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool {
+					return it.Name == "Standard_D2_v3"
+				})
+				Expect(found).To(BeTrue())
+				return instanceType
+			}
+
+			legacy := getInstanceType()
+			Expect(legacy.Overhead.KubeReserved.Memory().String()).To(Equal("1843Mi"))
+			Expect(legacy.Overhead.EvictionThreshold.Memory().String()).To(Equal("750Mi"))
+
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.29.0-azure")
+			modern := getInstanceType()
+			Expect(modern.Overhead.KubeReserved.Memory().String()).To(Equal("650Mi"))
+			Expect(modern.Overhead.EvictionThreshold.Memory().String()).To(Equal("100Mi"))
+			Expect(modern.Capacity).To(Equal(legacy.Capacity))
+			Expect(modern.Overhead.KubeReserved.Cpu().Cmp(*legacy.Overhead.KubeReserved.Cpu())).To(BeZero())
+			Expect(modern.Overhead.SystemReserved).To(Equal(legacy.Overhead.SystemReserved))
+			Expect(modern.Overhead.EvictionThreshold.StorageEphemeral().Cmp(*legacy.Overhead.EvictionThreshold.StorageEphemeral())).To(BeZero())
+
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.29.0")
+			Expect(getInstanceType()).To(BeIdenticalTo(modern))
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
+			Expect(getInstanceType()).To(BeIdenticalTo(modern))
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(110))
+			capped := getInstanceType()
+			Expect(capped.Requirements.Get(v1beta1.LabelSKUMemory).Any()).To(Equal("8192"))
+			// The 8 GiB fixture caps the 2250 MiB pod-based reservation at 2048 MiB.
+			Expect(capped.Overhead.KubeReserved.Memory().Cmp(resource.MustParse("2048Mi"))).To(BeZero())
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
+			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.28.15")
+			Expect(getInstanceType()).To(BeIdenticalTo(legacy))
+
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "NotReady", "version is not ready")
+			_, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+		},
+			Entry("bootstrap client", consts.ProvisionModeBootstrappingClient),
+			Entry("AKS machines", consts.ProvisionModeAKSMachineAPI),
+			Entry("batched AKS machines", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+	})
+
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.

@@ -131,7 +131,7 @@ func newInstanceType(
 	totalMemoryMiB := memoryMiB(sku)
 	enableNodeHardening := opts.ShouldUseNodeHardening()
 	capacity := computeCapacity(ctx, sku, params)
-	return &cloudprovider.InstanceType{
+	instanceType := &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(opts, sku, vmsize, architecture, offerings, region, params),
 		Offerings:    offerings,
@@ -146,6 +146,12 @@ func newInstanceType(
 			),
 		},
 	}
+	if params.UseAKSMemoryReservations && !enableNodeHardening {
+		instanceType.Overhead.KubeReserved[corev1.ResourceMemory] = *resource.NewQuantity(
+			aksKubeReservedMemoryMiB(params.MaxPods, totalMemoryMiB)*bytesPerMiB, resource.BinarySI)
+		instanceType.Overhead.EvictionThreshold[corev1.ResourceMemory] = resource.MustParse("100Mi")
+	}
+	return instanceType
 }
 func computeRequirements(
 	opts *options.Options,
@@ -386,6 +392,12 @@ func KubeReservedResources(vcpus, totalMemoryMiB int64, maxPods int32, enableNod
 	}
 
 	return resources
+}
+
+// AKS 1.29+ reserves min(20*maxPods + 50, 25% of memory) MiB on non-hardened nodes.
+// https://learn.microsoft.com/azure/aks/node-resource-reservations#memory-reservations
+func aksKubeReservedMemoryMiB(maxPods int32, totalMemoryMiB int64) int64 {
+	return min(20*int64(maxPods)+50, totalMemoryMiB/4)
 }
 
 func EvictionThreshold(totalMemoryMiB int64, ephemeralStorageCapacity resource.Quantity, enableNodeHardening bool) corev1.ResourceList {
