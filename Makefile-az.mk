@@ -154,6 +154,19 @@ az-mkacr: az-mkrg ## Create test ACR
 	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) \
 		--sku Basic --admin-enabled --output none
 	az acr login  --name $(AZURE_ACR_NAME)
+	@for attempt in $$(seq 1 20); do \
+		if az acr show --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --output none 2>/dev/null; then \
+			echo "ACR $(AZURE_ACR_NAME) is visible; waiting 120s for dependent control planes"; \
+			sleep 120; \
+			break; \
+		fi; \
+		if [ $$attempt -eq 20 ]; then \
+			echo "ACR $(AZURE_ACR_NAME) did not become visible after 20 attempts"; \
+			exit 1; \
+		fi; \
+		echo "Waiting for ACR $(AZURE_ACR_NAME) visibility (attempt $$attempt/20)"; \
+		sleep 15; \
+	done
 
 az-acrimport: ## Imports an image to an acr registry
 	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6" --force
