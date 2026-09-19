@@ -305,9 +305,10 @@ func (p *DefaultProvider) capacityReservationPlacements(ctx context.Context, nod
 	return lo.Uniq(placements)
 }
 
-// capacityReservationZones indexes the resolved member reservations by VM size. A nil
-// result means no Capacity Reservation Group is configured; a non-nil but empty result
-// means one is configured that can back nothing, which must yield no offerings at all.
+// capacityReservationZones maps each reserved VM size to the zones where an eligible
+// member reservation is available. A nil result means no Capacity Reservation Group is
+// configured; a non-nil but empty result means one is configured that can back nothing,
+// which must yield no offerings at all.
 func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Set[string] {
 	if params.CapacityReservationGroupID == "" {
 		return nil
