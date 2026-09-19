@@ -47,17 +47,31 @@ get_vnet_json() {
     local aks_json=$2
 
     local vnet_json
-    vnet_json=$(az network vnet list --resource-group "$resource_group" --output json | jq -r ".[0]")
+    local subnet_id
+    local vnet_id
+    for attempt in $(seq 1 20); do
+        vnet_json=$(az network vnet list --resource-group "$resource_group" --output json | jq -c ".[0] // empty")
+        if [[ -n "$vnet_json" ]] && jq -e '.subnets[0].id | strings | select(length > 0)' <<< "$vnet_json" >/dev/null; then
+            echo "$vnet_json"
+            return 0
+        fi
 
-    if [[ -z "$vnet_json" || "$vnet_json" == "null" ]]; then
-        local subnet_id
-        subnet_id=$(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$aks_json")
-        local vnet_id
-        vnet_id=${subnet_id%/subnets/*}
-        vnet_json=$(az network vnet show --ids "$vnet_id" --output json)
-    fi
+        subnet_id=$(jq -r ".agentPoolProfiles[0].vnetSubnetId // empty" <<< "$aks_json")
+        if [[ -n "$subnet_id" ]]; then
+            vnet_id=${subnet_id%/subnets/*}
+            vnet_json=$(az network vnet show --ids "$vnet_id" --output json 2>/dev/null || true)
+            if [[ -n "$vnet_json" ]] && jq -e '.subnets[0].id | strings | select(length > 0)' <<< "$vnet_json" >/dev/null; then
+                echo "$vnet_json"
+                return 0
+            fi
+        fi
 
-    echo "$vnet_json"
+        echo "Waiting for AKS VNet discovery (attempt $attempt/20)" >&2
+        sleep 30
+    done
+
+    echo "AKS VNet did not become discoverable after 20 attempts" >&2
+    return 1
 }
 
 # Retrieve VNET JSON
