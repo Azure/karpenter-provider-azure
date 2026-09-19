@@ -121,7 +121,7 @@ var _ = Describe("CapacityReservation", func() {
 		})
 
 		By("Pointing a NodeClass at the group")
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(groupID)
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}
 		nodePool := env.DefaultNodePool(nodeClass)
 		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
@@ -204,7 +204,7 @@ var _ = Describe("CapacityReservation", func() {
 		})
 
 		By("Pointing a NodeClass at the group")
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(groupID)
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}
 		nodePool := env.DefaultNodePool(nodeClass)
 		test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{reservedVMSize}},
@@ -232,9 +232,9 @@ var _ = Describe("CapacityReservation", func() {
 
 	It("should keep the NodeClass NotReady when the group cannot be resolved", func(ctx SpecContext) {
 		By("Pointing a NodeClass at a group that was never created")
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(fmt.Sprintf(
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(fmt.Sprintf(
 			"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/capacityReservationGroups/karpenter-e2e-crg-does-not-exist",
-			env.SubscriptionID, env.NodeResourceGroup))
+			env.SubscriptionID, env.NodeResourceGroup))}
 		nodePool := env.DefaultNodePool(nodeClass)
 		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(nodeClass, nodePool, deployment)
@@ -298,7 +298,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 		})
 
 		By("Creating a static NodePool with headroom for a replacement")
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(groupID)
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}
 		// One replica, limit at N+1: enough to exercise the recipe and the surge that drift
 		// needs, without paying for a second full replacement cycle in every run.
 		nodePool := reservedNodePool(nodeClass, expectedNodeZone, reservedVMSize)
@@ -362,7 +362,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 		})
 
 		By("Pricing the expensive size at zero for this NodePool")
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(groupID)
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}
 		nodePool := reservedNodePool(nodeClass, expectedNodeZone, reservedVMSize, expensiveReservedVMSize)
 		overlay := &v1alpha1.NodeOverlay{
 			ObjectMeta: metav1.ObjectMeta{Name: "crg-overlay-" + strings.ToLower(strings.ReplaceAll(expensiveReservedVMSize, "_", "-"))},

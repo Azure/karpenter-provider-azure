@@ -77,7 +77,7 @@ type instanceTypeLister interface {
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
 }
 
-// CapacityReservationGroupReconciler resolves spec.capacityReservationGroupID into
+// CapacityReservationGroupReconciler resolves spec.capacityReservation.groupID into
 // status.capacityReservationGroup: the group's placement and the member reservations
 // that can back offerings. It deliberately resolves only the static shape of the
 // group. Utilization is volatile and must not become a per-node guarantee.
@@ -108,7 +108,7 @@ func NewCapacityReservationGroupReconciler(
 
 //nolint:gocyclo
 func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	if nodeClass.Spec.CapacityReservationGroupID == nil {
+	if nodeClass.Spec.CapacityReservation == nil {
 		nodeClass.Status.CapacityReservationGroup = nil
 		// The condition is not a dependent of Ready while no group is configured, but
 		// clear any stale value left behind by a previous configuration.
@@ -116,7 +116,7 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		return reconcile.Result{}, nil
 	}
 
-	crgID := lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID)
+	crgID := nodeClass.GetCapacityReservationGroupID()
 	logger := log.FromContext(ctx).WithName(capacityReservationGroupReconcilerName).WithValues("capacityReservationGroupID", crgID)
 
 	// The AKS Machine API does not yet expose a per-Machine capacity reservation
@@ -124,15 +124,15 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 	// rather than silently dropping the association.
 	if options.FromContext(ctx).IsAKSMachineAPIMode() {
 		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode,
-			"capacityReservationGroupID is not supported in AKS Machine API provisioning mode")
+			"capacityReservation.groupID is not supported in AKS Machine API provisioning mode")
 		return reconcile.Result{}, nil
 	}
 
 	resourceID, err := arm.ParseResourceID(crgID)
 	if err != nil || !strings.EqualFold(resourceID.ResourceType.Type, capacityReservationGroupResourceType) {
-		logger.Error(err, "failed to parse capacityReservationGroupID")
+		logger.Error(err, "failed to parse capacityReservation.groupID")
 		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonIDInvalid,
-			fmt.Sprintf("Failed to parse capacityReservationGroupID %s", crgID))
+			fmt.Sprintf("Failed to parse capacityReservation.groupID %s", crgID))
 		return reconcile.Result{}, nil
 	}
 
@@ -140,7 +140,7 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 	// an ID or one of its segments is case-insensitive.
 	if !strings.EqualFold(resourceID.SubscriptionID, r.subscriptionID) {
 		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonSubscriptionMismatch,
-			fmt.Sprintf("capacityReservationGroupID must be in subscription %s", r.subscriptionID))
+			fmt.Sprintf("capacityReservation.groupID must be in subscription %s", r.subscriptionID))
 		return reconcile.Result{}, nil
 	}
 	if r.unsupportedCloud.Load() {

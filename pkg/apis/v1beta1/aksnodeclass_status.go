@@ -31,7 +31,7 @@ const (
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
 	ConditionTypeLocalDNSReady          = "LocalDNSReady"
 	// ConditionTypeCapacityReservationGroupReady is only a dependent of the Ready
-	// condition when spec.capacityReservationGroupID is set.
+	// condition when spec.capacityReservation.groupID is set.
 	ConditionTypeCapacityReservationGroupReady = "CapacityReservationGroupReady"
 )
 
@@ -89,7 +89,7 @@ func (in CapacityReservation) IsEligible() bool {
 }
 
 // CapacityReservationGroup is the resolved shape of the Capacity Reservation
-// Group named by spec.capacityReservationGroupID. It describes which VM sizes
+// Group named by spec.capacityReservation.groupID. It describes which VM sizes
 // and placements the group can back; it deliberately does not describe how much
 // of the reserved capacity is currently in use, because that is volatile and
 // must not be treated as a per-node guarantee.
@@ -175,7 +175,7 @@ type AKSNodeClassStatus struct {
 	// +kubebuilder:validation:Enum:=Enabled;Disabled
 	LocalDNSState *LocalDNSState `json:"localDNSState,omitempty"`
 	// capacityReservationGroup is the resolved shape of the capacity reservation
-	// group named by spec.capacityReservationGroupID. It is unset when no group is
+	// group named by spec.capacityReservation.groupID. It is unset when no group is
 	// configured.
 	// +optional
 	CapacityReservationGroup *CapacityReservationGroup `json:"capacityReservationGroup,omitempty"`
@@ -191,7 +191,7 @@ func (in *AKSNodeClass) StatusConditions(opts ...status.ForOption) status.Condit
 	}
 	// Only gate readiness on the capacity reservation group when one is configured,
 	// so NodeClasses that do not use the feature are unaffected by it.
-	if in.Spec.CapacityReservationGroupID != nil {
+	if in.Spec.CapacityReservation != nil {
 		conds = append(conds, ConditionTypeCapacityReservationGroupReady)
 	}
 	return status.NewReadyConditions(conds...).For(in, opts...)

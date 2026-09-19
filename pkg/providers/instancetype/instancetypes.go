@@ -170,7 +170,7 @@ func (p *DefaultProvider) List(
 		ArtifactStreamingEnabled:   nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                   lo.FromPtr(nodeClass.Spec.FIPSMode),
 		LocalDNSEnabled:            nodeClass.IsLocalDNSEnabled(),
-		CapacityReservationGroupID: lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID),
+		CapacityReservationGroupID: nodeClass.GetCapacityReservationGroupID(),
 		CapacityReservations:       p.capacityReservationPlacements(ctx, nodeClass),
 		KataEnabled:                nodeClass.IsKataEnabled(),
 	}
@@ -284,7 +284,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // NodePool per member, so a member that stops backing offerings has to stay visible with
 // the reason, not disappear.
 func (p *DefaultProvider) capacityReservationPlacements(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) []capacityReservationPlacement {
-	if nodeClass.Spec.CapacityReservationGroupID == nil || nodeClass.Status.CapacityReservationGroup == nil {
+	if nodeClass.Spec.CapacityReservation == nil || nodeClass.Status.CapacityReservationGroup == nil {
 		return nil
 	}
 	placements := []capacityReservationPlacement{}

@@ -718,11 +718,12 @@ func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachi
 // reservation. A regional group requires the VM to carry no zone, which
 // zones.MakeARMZonesFromAKSLabelZone already guarantees for the regional placement.
 func setVMPropertiesCapacityReservation(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.CapacityReservationGroupID == nil {
+	groupID := nodeClass.GetCapacityReservationGroupID()
+	if groupID == "" {
 		return
 	}
 	vmProperties.CapacityReservation = &armcompute.CapacityReservationProfile{
-		CapacityReservationGroup: &armcompute.SubResource{ID: nodeClass.Spec.CapacityReservationGroupID},
+		CapacityReservationGroup: &armcompute.SubResource{ID: lo.ToPtr(groupID)},
 	}
 }
 
@@ -743,7 +744,7 @@ func validateExistingCapacityReservation(vm *armcompute.VirtualMachine, nodeClas
 		actual = lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)
 	}
 	// ARM echoes resource IDs back with different casing than it was given.
-	if desired := lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID); !strings.EqualFold(actual, desired) {
+	if desired := nodeClass.GetCapacityReservationGroupID(); !strings.EqualFold(actual, desired) {
 		return fmt.Errorf("existing VM %q is associated with capacity reservation group %q, but the NodeClass now specifies %q",
 			lo.FromPtr(vm.Name), actual, desired)
 	}
@@ -921,7 +922,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		if skuErr != nil {
 			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
-		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID), err)
+		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, nodeClass.GetCapacityReservationGroupID(), err)
 		if handledError != nil {
 			// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 			// Thus the error needs to be returned.
@@ -965,7 +966,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
-				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID), err)
+				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, nodeClass.GetCapacityReservationGroupID(), err)
 				if handledError != nil {
 					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 					// Thus the error needs to be returned.

@@ -190,7 +190,7 @@ func TestSetVMPropertiesCapacityReservation(t *testing.T) {
 		{
 			name: "configured group is passed through to ARM",
 			nodeClass: &v1beta1.AKSNodeClass{
-				Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)},
+				Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}},
 			},
 			expected: lo.ToPtr(groupID),
 		},
@@ -243,23 +243,23 @@ func TestValidateExistingCapacityReservation(t *testing.T) {
 		{
 			name:      "same group",
 			vm:        vmInGroup(groupID),
-			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}}},
 		},
 		{
 			name:      "same group, different casing as ARM echoes it",
 			vm:        vmInGroup(strings.ToUpper(groupID)),
-			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}}},
 		},
 		{
 			name:      "the NodeClass changed groups since the VM was created",
 			vm:        vmInGroup(groupID),
-			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(otherGroupID)}},
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(otherGroupID)}}},
 			wantErr:   true,
 		},
 		{
 			name:      "the NodeClass gained a group since the VM was created",
 			vm:        vmInGroup(""),
-			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}}},
 			wantErr:   true,
 		},
 		{

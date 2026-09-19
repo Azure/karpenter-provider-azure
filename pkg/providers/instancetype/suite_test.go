@@ -3743,14 +3743,15 @@ var _ = Describe("InstanceType Provider", func() {
 		// reserve points the NodeClass at a group whose member reservations cover the
 		// given {VM size, ARM zones} pairs. Empty zones mean a regional reservation.
 		reserve := func(placements ...lo.Tuple2[string, []string]) {
-			nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(
-				"/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg")
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
+				GroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/crg-rg/providers/Microsoft.Compute/capacityReservationGroups/crg"),
+			}
 			nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
-				ID:       lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID),
+				ID:       nodeClass.GetCapacityReservationGroupID(),
 				Location: fake.Region,
 				CapacityReservations: lo.Map(placements, func(p lo.Tuple2[string, []string], i int) v1beta1.CapacityReservation {
 					return v1beta1.CapacityReservation{
-						ID:     fmt.Sprintf("%s/capacityReservations/r%d", lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID), i),
+						ID:     fmt.Sprintf("%s/capacityReservations/r%d", nodeClass.GetCapacityReservationGroupID(), i),
 						Name:   fmt.Sprintf("r%d", i),
 						VMSize: p.A,
 						Zones:  p.B,
@@ -3928,7 +3929,7 @@ var _ = Describe("InstanceType Provider", func() {
 				reserve(lo.T2(reservedSKU, []string{"1"}))
 				vm := provisionVM()
 				Expect(lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)).
-					To(Equal(lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID)))
+					To(Equal(nodeClass.GetCapacityReservationGroupID()))
 				Expect(lo.Map(vm.Zones, func(z *string, _ int) string { return lo.FromPtr(z) })).To(ConsistOf("1"))
 			})
 
@@ -3936,7 +3937,7 @@ var _ = Describe("InstanceType Provider", func() {
 				reserve(lo.T2(reservedSKU, []string(nil)))
 				vm := provisionVM()
 				Expect(lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)).
-					To(Equal(lo.FromPtr(nodeClass.Spec.CapacityReservationGroupID)))
+					To(Equal(nodeClass.GetCapacityReservationGroupID()))
 				Expect(vm.Zones).To(BeEmpty())
 			})
 

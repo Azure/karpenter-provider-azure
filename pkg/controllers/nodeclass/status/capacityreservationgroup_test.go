@@ -73,7 +73,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(testCRGID())
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(testCRGID())}
 		lister = &stubInstanceTypeLister{instanceTypes: []*cloudprovider.InstanceType{{Name: "Standard_D2s_v3"}}}
 		reconciler = status.NewCapacityReservationGroupReconciler(
 			azureEnv.CapacityReservationGroupsAPI,
@@ -209,7 +209,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 			// The prospective status, not the one the object had on entry.
 			Expect(lister.received.Status.CapacityReservationGroup).ToNot(BeNil())
 			Expect(lister.received.Status.CapacityReservationGroup.CapacityReservations).To(HaveLen(1))
-			Expect(lister.received.Spec.CapacityReservationGroupID).To(Equal(nodeClass.Spec.CapacityReservationGroupID))
+			Expect(lister.received.Spec.CapacityReservation).To(Equal(nodeClass.Spec.CapacityReservation))
 		})
 
 		It("should be ready when the projection yields instance types", func() {
@@ -269,7 +269,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 			"/providers/Microsoft.Compute/capacityReservationGroups/" + testCRGName
 
 		BeforeEach(func() {
-			nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(regionalCRGID)
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(regionalCRGID)}
 			azureEnv.CapacityReservationGroupsAPI.GetFunc = func(_ context.Context, rg, name string, _ *armcompute.CapacityReservationGroupsClientGetOptions) (armcompute.CapacityReservationGroupsClientGetResponse, error) {
 				return armcompute.CapacityReservationGroupsClientGetResponse{
 					CapacityReservationGroup: armcompute.CapacityReservationGroup{
@@ -375,10 +375,9 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 	// ARM returns resource IDs with inconsistent casing, so comparisons against the
 	// configured subscription must be case-insensitive.
 	It("should tolerate mixed-case resource IDs", func() {
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(
-			"/SUBSCRIPTIONS/" + testCRGSubscriptionID +
-				"/RESOURCEGROUPS/" + testCRGResourceGroup +
-				"/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/" + testCRGName)
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/SUBSCRIPTIONS/" + testCRGSubscriptionID +
+			"/RESOURCEGROUPS/" + testCRGResourceGroup +
+			"/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/" + testCRGName)}
 
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
@@ -386,7 +385,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 	})
 
 	It("should do nothing when no group is configured", func() {
-		nodeClass.Spec.CapacityReservationGroupID = nil
+		nodeClass.Spec.CapacityReservation = nil
 
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
@@ -447,7 +446,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 	})
 
 	It("should reject a malformed resource ID", func() {
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr("not-a-resource-id")
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("not-a-resource-id")}
 
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
@@ -455,10 +454,9 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 	})
 
 	It("should reject an ID for a different resource type", func() {
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(
-			"/subscriptions/" + testCRGSubscriptionID +
-				"/resourceGroups/" + testCRGResourceGroup +
-				"/providers/Microsoft.Compute/diskEncryptionSets/foo")
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/" + testCRGSubscriptionID +
+			"/resourceGroups/" + testCRGResourceGroup +
+			"/providers/Microsoft.Compute/diskEncryptionSets/foo")}
 
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
@@ -466,10 +464,9 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 	})
 
 	It("should reject a group in another subscription", func() {
-		nodeClass.Spec.CapacityReservationGroupID = lo.ToPtr(
-			"/subscriptions/00000000-0000-0000-0000-000000000000" +
-				"/resourceGroups/" + testCRGResourceGroup +
-				"/providers/Microsoft.Compute/capacityReservationGroups/" + testCRGName)
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/00000000-0000-0000-0000-000000000000" +
+			"/resourceGroups/" + testCRGResourceGroup +
+			"/providers/Microsoft.Compute/capacityReservationGroups/" + testCRGName)}
 
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())

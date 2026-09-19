@@ -71,18 +71,25 @@ spec:
                       If not specified, defaults to false.
                     type: boolean
                 type: object
-              capacityReservationGroupID:
+              capacityReservation:
                 description: |-
-                  capacityReservationGroupID is the ARM resource ID of the Capacity Reservation
-                  Group that instances provisioned by this NodeClass are associated with.
-                  The group must be in the same subscription and region as the cluster, and must
-                  be of the Targeted reservation type.
-                  Association is a launch constraint, not a preference: when set, every instance
-                  from this NodeClass targets the group. Azure may allocate instances beyond the
-                  reserved quantity, in which case the excess is ordinary On-Demand capacity that
-                  is not covered by the capacity reservation SLA.
-                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
-                type: string
+                  capacityReservation configures the Capacity Reservation Group that instances
+                  provisioned by this NodeClass target.
+                properties:
+                  groupID:
+                    description: |-
+                      groupID is the ARM resource ID of the Capacity Reservation Group.
+                      The group must be in the same subscription and region as the cluster, and
+                      must be of the Targeted reservation type.
+                      Association is a launch constraint, not a preference: every instance from
+                      this NodeClass targets the group. Azure may allocate instances beyond the
+                      reserved quantity, in which case the excess is ordinary On-Demand capacity
+                      that is not covered by the capacity reservation SLA.
+                    pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                    type: string
+                required:
+                - groupID
+                type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -859,7 +866,7 @@ spec:
               capacityReservationGroup:
                 description: |-
                   capacityReservationGroup is the resolved shape of the capacity reservation
-                  group named by spec.capacityReservationGroupID. It is unset when no group is
+                  group named by spec.capacityReservation.groupID. It is unset when no group is
                   configured.
                 properties:
                   capacityReservations:
@@ -1120,18 +1127,25 @@ spec:
                       If not specified, defaults to false.
                     type: boolean
                 type: object
-              capacityReservationGroupID:
+              capacityReservation:
                 description: |-
-                  capacityReservationGroupID is the ARM resource ID of the Capacity Reservation
-                  Group that instances provisioned by this NodeClass are associated with.
-                  The group must be in the same subscription and region as the cluster, and must
-                  be of the Targeted reservation type.
-                  Association is a launch constraint, not a preference: when set, every instance
-                  from this NodeClass targets the group. Azure may allocate instances beyond the
-                  reserved quantity, in which case the excess is ordinary On-Demand capacity that
-                  is not covered by the capacity reservation SLA.
-                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
-                type: string
+                  capacityReservation configures the Capacity Reservation Group that instances
+                  provisioned by this NodeClass target.
+                properties:
+                  groupID:
+                    description: |-
+                      groupID is the ARM resource ID of the Capacity Reservation Group.
+                      The group must be in the same subscription and region as the cluster, and
+                      must be of the Targeted reservation type.
+                      Association is a launch constraint, not a preference: every instance from
+                      this NodeClass targets the group. Azure may allocate instances beyond the
+                      reserved quantity, in which case the excess is ordinary On-Demand capacity
+                      that is not covered by the capacity reservation SLA.
+                    pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$
+                    type: string
+                required:
+                - groupID
+                type: object
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -1908,7 +1922,7 @@ spec:
               capacityReservationGroup:
                 description: |-
                   capacityReservationGroup is the resolved shape of the capacity reservation
-                  group named by spec.capacityReservationGroupID. It is unset when no group is
+                  group named by spec.capacityReservation.groupID. It is unset when no group is
                   configured.
                 properties:
                   capacityReservations:

@@ -84,7 +84,8 @@ metadata:
   name: reserved
 spec:
   imageFamily: Ubuntu
-  capacityReservationGroupID: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Compute/capacityReservationGroups/<name>
+  capacityReservation:
+    groupID: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Compute/capacityReservationGroups/<name>
 ```
 
 Setting the field is the opt-in; there is no feature flag. It is a launch constraint, not a
@@ -281,7 +282,7 @@ az capacity reservation show \
 | Clouds whose ARM endpoint does not expose capacity reservation groups | Fails readiness with `CapacityReservationGroupUnsupportedCloud`; the unsupported capability is cached after the first ARM response |
 | Cross-subscription (shared) groups | Not supported yet; same-subscription Targeted groups only |
 | Association changed outside Karpenter | **Not detected and not reconciled.** Manage association only through the NodeClass. These VMs live in the AKS node resource group, where direct edits are unsupported and are blocked outright when node resource group lockdown is enabled |
-| Changing `capacityReservationGroupID` | Drifts affected nodes and replaces them through ordinary disruption, paced by disruption budgets |
+| Changing `capacityReservation.groupID` | Drifts affected nodes and replaces them through ordinary disruption, paced by disruption budgets |
 
 Setting the field on a NodeClass that already has nodes drifts all of them. On a busy
 cluster, prefer a new NodeClass when that churn is unwelcome.

@@ -47,7 +47,9 @@ var _ = Describe("CapacityReservationGroup readiness gating", func() {
 		nodeClass := &v1beta1.AKSNodeClass{
 			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
 			Spec: v1beta1.AKSNodeClassSpec{
-				CapacityReservationGroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"),
+				CapacityReservation: &v1beta1.CapacityReservationConfiguration{
+					GroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"),
+				},
 			},
 		}
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)

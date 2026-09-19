@@ -186,7 +186,7 @@ func TestSetAdditionalAnnotationsForNewNodeClaim_CapacityReservationGroup(t *tes
 		},
 		{
 			name:      "records the configured group",
-			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservationGroupID: lo.ToPtr(groupID)}},
+			nodeClass: &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(groupID)}}},
 			expected:  groupID,
 		},
 	}
