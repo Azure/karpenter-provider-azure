@@ -55,6 +55,9 @@ const (
 	// WindowsUnsupportedNetworkDataplane is the condition reason set when a Windows NodeClass is
 	// configured on a cluster that uses an unsupported network dataplane.
 	WindowsUnsupportedNetworkDataplane = "WindowsUnsupportedNetworkDataplane"
+	// WindowsUnsupportedProvisionMode is the condition reason set when a Windows NodeClass is
+	// configured on a cluster that does not provision through the AKS Machine API.
+	WindowsUnsupportedProvisionMode = "WindowsUnsupportedProvisionMode"
 )
 
 type ValidationReconciler struct {
@@ -138,11 +141,20 @@ func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNod
 	if !v1beta1.IsWindowsImageFamily(imageFamily) {
 		return true
 	}
-	if networkDataplane := options.FromContext(ctx).NetworkDataplane; networkDataplane == consts.NetworkDataplaneCilium {
+	providerOptions := options.FromContext(ctx)
+	if providerOptions.NetworkDataplane == consts.NetworkDataplaneCilium {
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeValidationSucceeded,
 			WindowsUnsupportedNetworkDataplane,
-			fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, networkDataplane),
+			fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, providerOptions.NetworkDataplane),
+		)
+		return false
+	}
+	if !providerOptions.IsAKSMachineAPIMode() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			WindowsUnsupportedProvisionMode,
+			fmt.Sprintf("imageFamily %q is not supported with provision-mode %q; Windows requires an AKS Machine API provision mode", imageFamily, providerOptions.ProvisionMode),
 		)
 		return false
 	}
