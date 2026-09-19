@@ -32,6 +32,11 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 
 PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= mpool
+AKS_DUAL_STACK ?= false
+AKS_DUAL_STACK_ARGS :=
+ifeq ($(AKS_DUAL_STACK),true)
+  AKS_DUAL_STACK_ARGS := --ip-families IPv4,IPv6 --pod-cidrs 10.244.0.0/16,fd12:3456:789a::/64 --service-cidrs 10.0.0.0/16,fd12:3456:789a:1::/108
+endif
 # pre-pull base images for skaffold/ko build, as a workaround for https://github.com/GoogleContainerTools/skaffold/issues/10106
 KO_BASE_IMAGE ?= mcr.microsoft.com/azurelinux/distroless/base:3.0.20260909@sha256:4377af4aa7a810b7d59f691eae5066895a71aa3eee4cfb4eba527bbebff16479
 KO_BASE_IMAGE_AMD64 ?= mcr.microsoft.com/azurelinux/distroless/base:3.0.20260909-amd64@sha256:0198b6345e0aeffd6c2e455ebc4c74b1d644ac1dfcb5aa5236972f17fd281f27
@@ -203,6 +208,7 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			$(AKS_DUAL_STACK_ARGS) \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
@@ -254,6 +260,7 @@ az-mkaks-windows: az-mkacr ## Create a Windows-capable test AKS cluster (Azure C
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-plugin azure --network-plugin-mode overlay \
+			$(AKS_DUAL_STACK_ARGS) \
 			--windows-admin-username $(WINDOWS_ADMIN_USERNAME) --windows-admin-password '$(WINDOWS_ADMIN_PASSWORD)' \
 			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
