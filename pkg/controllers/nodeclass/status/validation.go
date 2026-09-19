@@ -24,6 +24,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -52,6 +53,9 @@ const (
 	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
 	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
 	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
+	// WindowsUnsupportedNetworkDataplane is the condition reason set when a Windows NodeClass is
+	// configured on a cluster that uses an unsupported network dataplane.
+	WindowsUnsupportedNetworkDataplane = "WindowsUnsupportedNetworkDataplane"
 )
 
 type ValidationReconciler struct {
@@ -69,9 +73,14 @@ func NewValidationReconciler(
 	}
 }
 
+//nolint:gocyclo // Keep ordered validation and condition handling together in this reconciler.
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	if !validateFIPS(ctx, nodeClass) {
+		return reconcile.Result{}, nil
+	}
+
+	if !validateWindowsCompatibility(ctx, nodeClass) {
 		return reconcile.Result{}, nil
 	}
 
@@ -135,6 +144,22 @@ func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
 			v1beta1.ConditionTypeValidationSucceeded,
 			FIPSRequired,
 			"AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level",
+		)
+		return false
+	}
+	return true
+}
+
+func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+	imageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
+	if !v1beta1.IsWindowsImageFamily(imageFamily) {
+		return true
+	}
+	if networkDataplane := options.FromContext(ctx).NetworkDataplane; networkDataplane == consts.NetworkDataplaneCilium {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			WindowsUnsupportedNetworkDataplane,
+			fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, networkDataplane),
 		)
 		return false
 	}
