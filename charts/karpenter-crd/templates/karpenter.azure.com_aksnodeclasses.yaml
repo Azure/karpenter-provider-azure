@@ -1792,12 +1792,6 @@ spec:
             - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
-            - message: TrustedLaunch is required for FIPS support with Ubuntu2204
-              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
-                && (self.imageFamily != ''Ubuntu2204'' || (has(self.security) && has(self.security.trustedLaunch)
-                && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm)
-                || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)))))
-                : true'
             - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
                 and Ubuntu2204
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
@@ -1995,16 +1989,6 @@ spec:
                 type: object
             type: object
         type: object
-        x-kubernetes-validations:
-        - message: nodeImageVersion must match the current image, latest image, or
-            a recently used image paired with the requested kubernetesVersion
-          rule: 'has(self.spec.versions) && has(self.spec.versions.nodeImageVersion)
-            ? self.status.images.exists(image, image.id.endsWith(''/versions/'' +
-            self.spec.versions.nodeImageVersion)) || (has(self.status.versions) &&
-            self.status.versions.latestImageVersion == self.spec.versions.nodeImageVersion)
-            || (has(self.status.versions) && self.status.versions.recentlyUsedVersions.exists(version,
-            version.imageVersion == self.spec.versions.nodeImageVersion && version.kubernetesVersion
-            == self.spec.versions.kubernetesVersion)) : true'
     served: true
     storage: true
     subresources:
