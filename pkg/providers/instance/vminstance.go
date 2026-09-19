@@ -713,10 +713,8 @@ func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachi
 }
 
 // setVMPropertiesCapacityReservation associates the VM with the Capacity Reservation
-// Group named by the NodeClass. Offerings are already restricted to VM sizes and
-// placements the group can back, so ARM only has to match the request to a member
-// reservation. A regional group requires the VM to carry no zone, which
-// zones.MakeARMZonesFromAKSLabelZone already guarantees for the regional placement.
+// Group named by the NodeClass. A regional group requires the VM to carry no zone,
+// which zones.MakeARMZonesFromAKSLabelZone guarantees for the regional placement.
 func setVMPropertiesCapacityReservation(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
 	groupID := nodeClass.GetCapacityReservationGroupID()
 	if groupID == "" {
