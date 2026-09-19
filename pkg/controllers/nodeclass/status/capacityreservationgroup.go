@@ -243,7 +243,7 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 	// rules here and let the two copies drift, ask the projection itself what it would
 	// produce for the status about to be written. List does not read the Ready condition,
 	// so this is not recursive, and it warms the cache key the launch path uses next.
-	instanceTypes, err := r.instanceTypes.List(ctx, candidateWithResolvedGroup(nodeClass))
+	instanceTypes, err := r.instanceTypes.List(ctx, nodeClass)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
 			CapacityReservationGroupUnreadyReasonUnknownError,
@@ -312,11 +312,4 @@ func capacityReservationFromARM(cr *armcompute.CapacityReservation) (v1beta1.Cap
 func (r *CapacityReservationGroupReconciler) setFalse(nodeClass *v1beta1.AKSNodeClass, reason, message string) {
 	nodeClass.Status.CapacityReservationGroup = nil
 	nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady, reason, message)
-}
-
-// candidateWithResolvedGroup is the NodeClass as it would be once this reconciliation is
-// persisted. The copy keeps the speculative projection from touching the object the rest
-// of the reconcile chain is still working on.
-func candidateWithResolvedGroup(nodeClass *v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
-	return nodeClass.DeepCopy()
 }
