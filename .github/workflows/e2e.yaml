@@ -177,15 +177,19 @@ jobs:
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}
+          PROVISION_MODE: ${{ inputs.provision_mode }}
         run: |
-          RG_NAME=$(echo karpenter-e2e-"$SUITE"-${{ github.run_id }} | awk '{print tolower($0)}')
+          RESOURCE_CASE=$(printf '%s-%s' "$SUITE" "$PROVISION_MODE" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
+          RG_NAME="karpenter-e2e-${RESOURCE_CASE}-${{ github.run_id }}"
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
         env:
           SUITE: ${{ inputs.suite }}
+          PROVISION_MODE: ${{ inputs.provision_mode }}
         run: |
-          ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
+          RESOURCE_KEY=$(printf '%s:%s' "$SUITE" "$PROVISION_MODE" | sha256sum | cut -c1-12)
+          ACR_NAME="kpe2e${RESOURCE_KEY}${{ github.run_id }}"
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: cleanup leftover resources, if any (e.g. from a previous run that failed to clean up)
