@@ -93,6 +93,7 @@ func markOfferingsUnavailableForCapacityTypeAndPlacement(
 		if getOfferingCapacityType(offering) != capacityType || zones.PlacementScopeForOffering(offering) != selectedPlacementScope {
 			continue
 		}
+		// Each CRG zone is backed by a separate member reservation, so only block the attempted zone.
 		if unavailableOfferings.IsScoped() && getOfferingZone(offering) != zone {
 			continue
 		}
@@ -121,6 +122,7 @@ func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 			continue
 		}
 		offeringZone := getOfferingZone(offering)
+		// Each CRG zone is backed by a separate member reservation, so only block the attempted zone.
 		if unavailableOfferings.IsScoped() && offeringZone != zone {
 			continue
 		}
