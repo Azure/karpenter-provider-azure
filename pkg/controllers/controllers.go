@@ -54,6 +54,8 @@ func NewControllers(
 	mgr manager.Manager,
 	clk clock.Clock,
 	kubeClient client.Client,
+	location string,
+	subscriptionID string,
 	recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider,
 	vmInstanceProvider instance.VMProvider,
@@ -69,8 +71,6 @@ func NewControllers(
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
 	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
 	capacityReservationsClient azapi.CapacityReservationsAPI,
-	subscriptionID string,
-	location string,
 	parsedDiskEncryptionSetID *arm.ResourceID,
 	networkPolicy string,
 	networkPlugin string,
@@ -78,7 +78,7 @@ func NewControllers(
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, managedKubernetesInterface, managedDynamicInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID, networkPolicy, networkPlugin,
-			nodeclassstatus.NewCapacityReservationGroupReconciler(capacityReservationGroupsClient, capacityReservationsClient, instanceTypesProvider, subscriptionID, location)),
+			nodeclassstatus.NewCapacityReservationGroupReconciler(subscriptionID, location, capacityReservationGroupsClient, capacityReservationsClient, instanceTypesProvider)),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),

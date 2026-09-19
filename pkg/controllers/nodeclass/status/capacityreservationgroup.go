@@ -91,11 +91,11 @@ type CapacityReservationGroupReconciler struct {
 }
 
 func NewCapacityReservationGroupReconciler(
+	subscriptionID string,
+	location string,
 	groupsClient azapi.CapacityReservationGroupsAPI,
 	reservationsClient azapi.CapacityReservationsAPI,
 	instanceTypes instanceTypeLister,
-	subscriptionID string,
-	location string,
 ) *CapacityReservationGroupReconciler {
 	return &CapacityReservationGroupReconciler{
 		groupsClient:       groupsClient,

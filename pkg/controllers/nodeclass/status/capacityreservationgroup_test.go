@@ -76,11 +76,11 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(testCRGID())}
 		lister = &stubInstanceTypeLister{instanceTypes: []*cloudprovider.InstanceType{{Name: "Standard_D2s_v3"}}}
 		reconciler = status.NewCapacityReservationGroupReconciler(
+			testCRGSubscriptionID,
+			testCRGLocation,
 			azureEnv.CapacityReservationGroupsAPI,
 			azureEnv.CapacityReservationsAPI,
 			lister,
-			testCRGSubscriptionID,
-			testCRGLocation,
 		)
 	})
 
@@ -281,11 +281,11 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 				}, nil
 			}
 			realReconciler = status.NewCapacityReservationGroupReconciler(
+				testCRGSubscriptionID,
+				fake.Region,
 				azureEnv.CapacityReservationGroupsAPI,
 				azureEnv.CapacityReservationsAPI,
 				azureEnv.InstanceTypesProvider,
-				testCRGSubscriptionID,
-				fake.Region,
 			)
 			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 		})
