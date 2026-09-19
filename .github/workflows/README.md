@@ -12,7 +12,7 @@
 > suite is special-cased in `workflows/e2e.yaml`: it always runs in `aksmachineapi` mode (Windows is
 > only provisionable via the AKS Machine API) on a dedicated cluster (`ci-mkcluster-all-windows`,
 > `az-mkaks-windows`) because Windows does not support the Cilium dataplane, and it uses a machines
-> pool name `<= 6` chars (`winmp`) to satisfy the Windows machine-name limit. Follow that pattern if a
+> pool name `<= 6` chars (`mpool`) to satisfy the Windows machine-name limit. Follow that pattern if a
 > new suite needs its own cluster shape or provisioning mode.
 
 ### Running the test case
