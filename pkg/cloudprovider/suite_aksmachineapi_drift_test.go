@@ -48,8 +48,9 @@ var _ = Describe("CloudProvider", func() {
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{
-				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
-				UseSIG:        lo.ToPtr(true),
+				ProvisionMode:    lo.ToPtr(consts.ProvisionModeAKSMachineAPIHeaderBatch),
+				UseSIG:           lo.ToPtr(true),
+				NetworkDataplane: lo.ToPtr(consts.NetworkDataplaneAzure),
 			})
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
