@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -109,6 +110,9 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// see batch_field_registry.go — ClearPerMachineFields must cover any new per-machine
 	// MachineProperties field so batch grouping and header extraction stay correct.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
+	// TODO: Resolve one effective kubelet configuration for scheduling, AKSScriptless, and
+	// AKSMachineAPI so omitted defaults cannot drift. This can be done when Node Hardening becomes GA.
+	kubeletConfig := configureKubeletConfig(nodeClass)
 
 	return &armcontainerservice.Machine{
 		// BATCH: Zones is a per-machine field (selected from instance type offerings).
@@ -153,7 +157,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeLabels:          nodeLabels,
 				OrchestratorVersion: lo.ToPtr(orchestratorVersion),
 				// KubeletDiskType:          "",
-				KubeletConfig:            configureKubeletConfig(nodeClass),
+				KubeletConfig:            kubeletConfig,
 				NodeInitializationTaints: nodeInitializationTaints,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
@@ -441,7 +445,67 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 
 	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
 
+	if nodeClass.Spec.Kubelet.KubeReserved != nil {
+		kubeletConfig.KubeReserved = configureAKSMachineKubeReserved(nodeClass.Spec.Kubelet.KubeReserved)
+	}
+	if nodeClass.Spec.Kubelet.EvictionHard != nil {
+		kubeletConfig.HardEvictionThreshold = configureAKSMachineHardEviction(nodeClass.Spec.Kubelet.EvictionHard)
+	}
+	if nodeClass.Spec.Kubelet.EvictionSoft != nil {
+		kubeletConfig.SoftEvictionThreshold = configureAKSMachineSoftEviction(nodeClass.Spec.Kubelet.EvictionSoft)
+	}
+	if nodeClass.Spec.Kubelet.EvictionSoftGracePeriod != nil {
+		kubeletConfig.SoftEvictionGracePeriod = configureAKSMachineSoftEvictionGracePeriod(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod)
+	}
+	if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
+		kubeletConfig.EvictionMaxPodGracePeriodInSeconds = lo.ToPtr(*nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod)
+	}
+
 	return kubeletConfig
+}
+
+func configureAKSMachineKubeReserved(config *v1beta1.KubeReserved) *armcontainerservice.KubeReserved {
+	return &armcontainerservice.KubeReserved{
+		CPUMillicores: config.CPUMillicores,
+		MemoryMB:      config.MemoryMB,
+	}
+}
+
+func configureAKSMachineHardEviction(config *v1beta1.EvictionThreshold) *armcontainerservice.HardEvictionThreshold {
+	return &armcontainerservice.HardEvictionThreshold{
+		MemoryAvailable:  config.MemoryAvailable,
+		NodeFsAvailable:  config.NodeFsAvailable,
+		NodeFsInodesFree: config.NodeFsInodesFree,
+	}
+}
+
+func configureAKSMachineSoftEviction(config *v1beta1.EvictionThreshold) *armcontainerservice.SoftEvictionThreshold {
+	return &armcontainerservice.SoftEvictionThreshold{
+		MemoryAvailable:  config.MemoryAvailable,
+		NodeFsAvailable:  config.NodeFsAvailable,
+		NodeFsInodesFree: config.NodeFsInodesFree,
+	}
+}
+
+func configureAKSMachineSoftEvictionGracePeriod(config *v1beta1.EvictionSoftGracePeriod) *armcontainerservice.SoftEvictionGracePeriod {
+	return &armcontainerservice.SoftEvictionGracePeriod{
+		MemoryAvailable:  durationString(config.MemoryAvailable),
+		NodeFsAvailable:  durationString(config.NodeFsAvailable),
+		NodeFsInodesFree: durationString(config.NodeFsInodesFree),
+	}
+}
+
+func durationString(value *karpv1.NillableDuration) *string {
+	if value == nil || value.Duration == nil {
+		return nil
+	}
+	if value.Raw != nil {
+		var raw string
+		if err := json.Unmarshal(value.Raw, &raw); err == nil {
+			return lo.ToPtr(raw)
+		}
+	}
+	return lo.ToPtr(value.String())
 }
 
 // convertContainerLogMaxSizeToMB converts string size to MB integer

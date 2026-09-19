@@ -283,7 +283,56 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 		kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
 		kubeletConfig.EvictionHard[instancetype.PIDAvailable] = instancetype.HardEvictionPIDAvailable
 	}
+
+	overlayKubeletConfiguration(kubeletConfig, nodeClass.Spec.Kubelet)
 	return kubeletConfig
+}
+
+func overlayKubeletConfiguration(kubeletConfig *bootstrap.KubeletConfiguration, overrides *v1beta1.KubeletConfiguration) {
+	if overrides == nil {
+		return
+	}
+	kubeletConfig.KubeReserved = lo.Assign(kubeletConfig.KubeReserved, instancetype.KubeReservedOverrides(overrides.KubeReserved))
+	kubeletConfig.EvictionHard = lo.Assign(kubeletConfig.EvictionHard, evictionThresholdMap(overrides.EvictionHard))
+	kubeletConfig.EvictionSoft = lo.Assign(kubeletConfig.EvictionSoft, evictionThresholdMap(overrides.EvictionSoft))
+	kubeletConfig.EvictionSoftGracePeriod = lo.Assign(kubeletConfig.EvictionSoftGracePeriod, evictionGracePeriodMap(overrides.EvictionSoftGracePeriod))
+	if overrides.EvictionMaxPodGracePeriod != nil {
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(*overrides.EvictionMaxPodGracePeriod)
+	}
+}
+
+func evictionThresholdMap(config *v1beta1.EvictionThreshold) map[string]string {
+	if config == nil {
+		return nil
+	}
+	result := map[string]string{}
+	if config.MemoryAvailable != nil {
+		result[instancetype.MemoryAvailable] = *config.MemoryAvailable
+	}
+	if config.NodeFsAvailable != nil {
+		result[instancetype.NodeFSAvailable] = *config.NodeFsAvailable
+	}
+	if config.NodeFsInodesFree != nil {
+		result[instancetype.NodeFSInodesFree] = *config.NodeFsInodesFree
+	}
+	return result
+}
+
+func evictionGracePeriodMap(config *v1beta1.EvictionSoftGracePeriod) map[string]metav1.Duration {
+	if config == nil {
+		return nil
+	}
+	result := map[string]metav1.Duration{}
+	if config.MemoryAvailable != nil && config.MemoryAvailable.Duration != nil {
+		result[instancetype.MemoryAvailable] = metav1.Duration{Duration: *config.MemoryAvailable.Duration}
+	}
+	if config.NodeFsAvailable != nil && config.NodeFsAvailable.Duration != nil {
+		result[instancetype.NodeFSAvailable] = metav1.Duration{Duration: *config.NodeFsAvailable.Duration}
+	}
+	if config.NodeFsInodesFree != nil && config.NodeFsInodesFree.Duration != nil {
+		result[instancetype.NodeFSInodesFree] = metav1.Duration{Duration: *config.NodeFsInodesFree.Duration}
+	}
+	return result
 }
 
 func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
