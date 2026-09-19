@@ -123,8 +123,7 @@ func PickRepresentativeSize(skus []instancetype.SKUEntry) instancetype.SKUEntry 
 		candidates = skus
 	}
 
-	sorted := make([]instancetype.SKUEntry, len(candidates))
-	copy(sorted, candidates)
+	sorted := slices.Clone(candidates)
 	sort.Slice(sorted, func(i, j int) bool {
 		featuresI, featuresJ := FeatureCount(sorted[i].Name), FeatureCount(sorted[j].Name)
 		if featuresI != featuresJ {
