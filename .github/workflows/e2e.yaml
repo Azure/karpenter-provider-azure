@@ -64,6 +64,7 @@ on:
           - southcentralus
           - eastus
           - westus2
+          - westcentralus
           - eastus2euap
           - centraluseuap
       k8s_version:
