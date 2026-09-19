@@ -1055,7 +1055,11 @@ spec:
                 type: object
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  Windows node support is a preview feature. When Windows2022 or Windows2025 is selected, any
+                  NodePool-level behavior for NodePools that reference this AKSNodeClass may break at any time,
+                  including new node provisioning stopping and existing nodes ceasing to work.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
