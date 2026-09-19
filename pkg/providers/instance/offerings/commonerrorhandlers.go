@@ -31,6 +31,7 @@ import (
 
 var (
 	SubscriptionQuotaReachedReason              = "SubscriptionQuotaReached"
+	RegionalQuotaReachedReason                  = "RegionalQuotaReached"
 	AllocationFailureReason                     = "AllocationFailure"
 	ZonalAllocationFailureReason                = "ZonalAllocationFailure"
 	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
@@ -49,6 +50,11 @@ var (
 	// that works.
 	// TODO: If/when we factor in actual quota API usage we may be able to reduce this TTL and use the quota API data to inform which sizes we try first.
 	LowQuotaTTL = 10 * time.Minute
+	// CapacityReservationQuotaReachedTTL controls how often to retry a capacity reservation
+	// member that had no reserved headroom when total regional quota prevented overallocation.
+	// This limits repeated failed creates while periodically probing for returned reserved
+	// headroom or newly available regional quota.
+	CapacityReservationQuotaReachedTTL = 10 * time.Minute
 	// SubscriptionQuotaReachedTTL is the TTL for offerings that return a quota error with a limit of 0, meaning there is no quota available for that SKU family at all in the subscription.
 	// This is often the case if the user doesn't have any quota for that offering at all, hence the longer TTL.
 	// TODO: If/when we factor in actual quota API usage in the future we may be able to get rid of this longer TTL and just rely on LowQuotaTTL.
@@ -315,18 +321,19 @@ func handleRegionalQuotaError(
 	errorCode,
 	errorMessage string,
 ) error {
-	// Regional vCPU quota is subscription-wide, so for unreserved capacity no other size or
-	// zone helps and nothing is worth marking. Inside a capacity reservation group the
-	// attempted member is now known to be full: consumption up to a member's reserved
-	// quantity is quota-exempt, so reaching regional quota means this launch was already an
-	// overallocation. Marking it lets the next attempt reach a sibling member that may still
-	// have reserved headroom. The TTL is short because that headroom returns as soon as one
-	// of the member's nodes is released.
+	// Total regional vCPU quota applies to every unreserved launch, so marking one
+	// unreserved size or zone would not expose a viable alternative. Capacity reservation
+	// members are different: their quota was consumed when the reservation was created, so
+	// using reserved headroom requires no incremental quota. A regional quota error while
+	// targeting a group therefore means the member matching this size and placement had no
+	// reserved headroom and the request would have required overallocation. Mark only that
+	// member so a sibling size or placement with reserved headroom remains available.
 	if unavailableOfferings.IsScoped() {
-		unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReachedReason, sku, zone, capacityType, LowQuotaTTL)
+		unavailableOfferings.MarkUnavailableWithTTL(ctx, RegionalQuotaReachedReason, sku, zone, capacityType, CapacityReservationQuotaReachedTTL)
 	}
 
-	// InsufficientCapacityError is appropriate here because trying any other instance type will not help
+	// Return an InsufficientCapacityError after recording the scoped availability result so
+	// the next attempt can select a viable sibling member, if one exists.
 	return corecloudprovider.NewInsufficientCapacityError(
 		fmt.Errorf(
 			"regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests",
