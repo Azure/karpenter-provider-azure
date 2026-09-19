@@ -292,6 +292,8 @@ func (p *DefaultProvider) capacityReservationPlacements(ctx context.Context, nod
 		if !reservation.IsEligible() {
 			continue
 		}
+		// The SDK models zones as a slice, but ARM permits at most one zone per member.
+		// A group spans zones through separate member reservations.
 		zone, err := zones.MakeAKSLabelZoneFromARMZones(p.region, lo.ToSlicePtr(reservation.Zones))
 		if err != nil {
 			log.FromContext(ctx).Error(err, "resolving capacity reservation placement", "capacityReservation", reservation.ID)
