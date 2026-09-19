@@ -71,7 +71,7 @@ type instanceTypeParameters struct {
 	FIPSMode                 v1beta1.FIPSMode
 	LocalDNSEnabled          bool
 	// These two carry only the static shape of the Capacity Reservation Group: which VM
-	// sizes and placements it can back. Reserved quantities and utilization are
+	// sizes and zones it can back. Reserved quantities and utilization are
 	// deliberately excluded, because they change on every launch and would invalidate the
 	// whole instance-type cache.
 	CapacityReservationGroupID string
@@ -79,9 +79,9 @@ type instanceTypeParameters struct {
 	KataEnabled                bool
 }
 
-// capacityReservationPlacement is one {VM size, placement} pair that a member reservation
-// of the configured Capacity Reservation Group can back. VMSize is lowercased because ARM
-// is inconsistent about SKU name casing.
+// capacityReservationPlacement is one {VM size, zone} pair that a member reservation
+// of the configured Capacity Reservation Group can back. Regional reservations use
+// zones.Regional. VMSize is lowercased because ARM is inconsistent about SKU name casing.
 type capacityReservationPlacement struct {
 	VMSize string
 	Zone   string
@@ -277,7 +277,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 }
 
 // capacityReservationPlacements projects the Capacity Reservation Group resolved in
-// status into the {VM size, placement} pairs its member reservations can back. A nil
+// status into the {VM size, zone} pairs its member reservations can back. A nil
 // result means no group is configured, which leaves offerings unrestricted.
 //
 // Ineligible members are skipped rather than dropped from status: an operator authors one
