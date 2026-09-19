@@ -162,11 +162,11 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 			case http.StatusNotFound:
 				r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNotFound,
 					fmt.Sprintf("resource not found: %s", crgID))
-				return reconcile.Result{RequeueAfter: time.Minute}, nil
+				return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
 			case http.StatusForbidden, http.StatusUnauthorized:
 				r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonAccessDenied,
 					fmt.Sprintf("access denied reading capacity reservation group: %s", crgID))
-				return reconcile.Result{RequeueAfter: time.Minute}, nil
+				return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
 			}
 		}
 		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnknownError,
@@ -197,7 +197,7 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 			(azErr.StatusCode == http.StatusForbidden || azErr.StatusCode == http.StatusUnauthorized) {
 			r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonAccessDenied,
 				fmt.Sprintf("access denied listing capacity reservations in group: %s", crgID))
-			return reconcile.Result{RequeueAfter: time.Minute}, nil
+			return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
 		}
 		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnknownError,
 			fmt.Sprintf("unknown error listing capacity reservations: %s", err.Error()))
@@ -235,7 +235,7 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
 			CapacityReservationGroupUnreadyReasonNoEligibleReservations,
 			fmt.Sprintf("no capacity reservation in group is provisioned: %s", crgID))
-		return reconcile.Result{RequeueAfter: time.Minute}, nil
+		return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
 	}
 
 	// Being provisioned is not the same as being usable: a member can reserve a size this
