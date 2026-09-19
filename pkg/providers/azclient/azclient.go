@@ -49,15 +49,17 @@ import (
 )
 
 type AZClient struct {
-	azureResourceGraphClient       azapi.AzureResourceGraphAPI
-	virtualMachinesClient          azapi.VirtualMachinesAPI
-	aksMachinesClient              azapi.AKSMachinesAPI
-	aksMachinesBatchClient         aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
-	agentPoolsClient               azapi.AKSAgentPoolsAPI
-	virtualMachinesExtensionClient azapi.VirtualMachineExtensionsAPI
-	networkInterfacesClient        azapi.NetworkInterfacesAPI
-	subnetsClient                  azapi.SubnetsAPI
-	diskEncryptionSetsClient       azapi.DiskEncryptionSetsAPI
+	azureResourceGraphClient        azapi.AzureResourceGraphAPI
+	virtualMachinesClient           azapi.VirtualMachinesAPI
+	aksMachinesClient               azapi.AKSMachinesAPI
+	aksMachinesBatchClient          aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
+	agentPoolsClient                azapi.AKSAgentPoolsAPI
+	virtualMachinesExtensionClient  azapi.VirtualMachineExtensionsAPI
+	networkInterfacesClient         azapi.NetworkInterfacesAPI
+	subnetsClient                   azapi.SubnetsAPI
+	diskEncryptionSetsClient        azapi.DiskEncryptionSetsAPI
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI
+	capacityReservationsClient      azapi.CapacityReservationsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -78,6 +80,14 @@ func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
 
 func (c *AZClient) DiskEncryptionSetsClient() azapi.DiskEncryptionSetsAPI {
 	return c.diskEncryptionSetsClient
+}
+
+func (c *AZClient) CapacityReservationGroupsClient() azapi.CapacityReservationGroupsAPI {
+	return c.capacityReservationGroupsClient
+}
+
+func (c *AZClient) CapacityReservationsClient() azapi.CapacityReservationsAPI {
+	return c.capacityReservationsClient
 }
 
 func (c *AZClient) AKSMachinesClient() azapi.AKSMachinesAPI {
@@ -118,6 +128,8 @@ func NewAZClientFromAPI(
 	interfacesClient azapi.NetworkInterfacesAPI,
 	subnetsClient azapi.SubnetsAPI,
 	diskEncryptionSetsClient azapi.DiskEncryptionSetsAPI,
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
+	capacityReservationsClient azapi.CapacityReservationsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
@@ -139,6 +151,8 @@ func NewAZClientFromAPI(
 		networkInterfacesClient:            interfacesClient,
 		subnetsClient:                      subnetsClient,
 		diskEncryptionSetsClient:           diskEncryptionSetsClient,
+		capacityReservationGroupsClient:    capacityReservationGroupsClient,
+		capacityReservationsClient:         capacityReservationsClient,
 		ImageVersionsClient:                imageVersionsClient,
 		NodeImageVersionsClient:            nodeImageVersionsClient,
 		NodeBootstrappingClient:            nodeBootstrappingClient,
@@ -216,6 +230,16 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	diskEncryptionSetsClient, err := armcompute.NewDiskEncryptionSetsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	capacityReservationGroupsClient, err := armcompute.NewCapacityReservationGroupsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	capacityReservationsClient, err := armcompute.NewCapacityReservationsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -318,6 +342,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		interfacesClient,
 		subnetsClient,
 		diskEncryptionSetsClient,
+		capacityReservationGroupsClient,
+		capacityReservationsClient,
 		loadBalancersClient,
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,

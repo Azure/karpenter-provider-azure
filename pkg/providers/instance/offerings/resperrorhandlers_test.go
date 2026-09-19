@@ -65,6 +65,11 @@ func (b *testCaseBuilder) withZoneAndCapacity(zone, capacityType string) *testCa
 	return b
 }
 
+func (b *testCaseBuilder) withCapacityReservationGroup(id string) *testCaseBuilder {
+	b.tc.capacityReservationGroupID = id
+	return b
+}
+
 func (b *testCaseBuilder) withResponseError(errorCode, errorMessage string) *testCaseBuilder {
 	b.tc.responseErr = createResponseError(errorCode, errorMessage)
 	return b
@@ -100,6 +105,7 @@ type responseErrorTestCase struct {
 	originalRequestSKU                      *skewer.SKU
 	zone                                    string
 	capacityType                            string
+	capacityReservationGroupID              string
 	responseErr                             error
 	expectedErr                             error
 	expectedReason                          string
@@ -149,19 +155,26 @@ func newTestResponseErrorHandling() *ResponseErrorHandler {
 	return NewResponseErrorHandler(cache.NewUnavailableOfferings())
 }
 
-func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, unavailable, available []offeringToCheck) {
+func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, scope string, unavailable, available []offeringToCheck) {
 	t.Helper()
 	g := NewWithT(t)
+	scoped := unavailableOfferings.ForCapacityReservationGroup(scope)
 
 	for _, info := range unavailable {
-		g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeTrue(),
+		g.Expect(scoped.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeTrue(),
 			"Expected offering %s in zone %s with capacity type %s to be unavailable",
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)
+		if scope != "" {
+			g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
+				"Expected unreserved offering %s in zone %s with capacity type %s to be unaffected by a capacity reservation group failure",
+				info.skuToCheck.GetName(), info.zone, info.capacityType,
+			)
+		}
 	}
 
 	for _, info := range available {
-		g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
+		g.Expect(scoped.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
 			"Expected offering %s in zone %s with capacity type %s to be available",
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)
@@ -197,14 +210,21 @@ func setupTestCases() []responseErrorTestCase {
 			).
 			build(),
 
-		newTestCase("SKU family quota 0 CPUs").
+		// The assertion also checks that unreserved capacity is left alone, so this
+		// covers both directions of the scoping. Only the attempted zone is marked:
+		// another zonal member of the same group is separately reserved capacity, and a
+		// quota this launch exhausted does not govern it.
+		newTestCase("Failure launching into a capacity reservation group stays in that group and zone").
 			withInstanceType(zone2OnDemand, zone3OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
-			withResponseError(sdkerrors.OperationNotAllowed, "Family Cores quota Current Limit: 0").
+			withCapacityReservationGroup("/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg").
+			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.SKUFamilyQuotaExceededTerm).
 			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
 			expectReason(SubscriptionQuotaReachedReason).
 			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+			).
+			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 			).
 			build(),
@@ -293,6 +313,23 @@ func setupTestCases() []responseErrorTestCase {
 			expectError(cloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).
 			build(),
 
+		// Nothing is marked for unreserved capacity above, since regional quota admits no
+		// alternative. Inside a group the attempted member is full and a sibling may not be,
+		// so the bucket is marked to let the next attempt move on.
+		newTestCase("Regional quota exceeded inside a capacity reservation group").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup("/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg").
+			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.RegionalQuotaExceededTerm).
+			expectError(cloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+			).
+			expectAvailable(
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+			).
+			build(),
+
 		newTestCase("Unknown error code - no handler matches").
 			withInstanceType(zone2OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
@@ -329,11 +366,12 @@ func TestHandleResponseErrors(t *testing.T) {
 				tc.instanceType,
 				tc.zone,
 				tc.capacityType,
+				tc.capacityReservationGroupID,
 				tc.responseErr,
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, provider.UnavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, provider.UnavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }

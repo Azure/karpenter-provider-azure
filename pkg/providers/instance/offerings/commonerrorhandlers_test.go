@@ -174,7 +174,7 @@ func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement(t *testing.T) {
 	instanceType := createCommonErrorInstanceType(
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
 
-	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings, sku, instanceType, testZone1, karpv1.CapacityTypeSpot, AllocationFailureReason, AllocationFailureTTL)
+	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, unavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, testZone1, karpv1.CapacityTypeSpot, AllocationFailureReason, AllocationFailureTTL)
 
 	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
 	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
@@ -190,10 +190,47 @@ func TestMarkOfferingsUnavailableForRegionalPlacement(t *testing.T) {
 	instanceType := createCommonErrorInstanceType(
 		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
 
-	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, unavailableOfferings, sku, instanceType, zones.Regional, AllocationFailureReason, AllocationFailureTTL)
+	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, unavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, zones.Regional, AllocationFailureReason, AllocationFailureTTL)
 
 	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeOnDemand)).To(BeTrue())
 	g.Expect(unavailableOfferings.IsUnavailable(sku, zones.Regional, karpv1.CapacityTypeSpot)).To(BeTrue())
 	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone2, karpv1.CapacityTypeSpot)).To(BeFalse())
+}
+
+// The two helpers below widen across sibling zones for unreserved capacity, which the two
+// tests above cover. Inside a capacity reservation group they must not: siblings are
+// separate member reservations. On-demand only, because reserved capacity is never spot.
+const testHelperCRGID = "/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+
+func TestMarkOfferingsUnavailableForCapacityTypeAndPlacement_CapacityReservationGroup(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	unavailableOfferings := cache.NewUnavailableOfferings()
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
+	scoped := unavailableOfferings.ForCapacityReservationGroup(testHelperCRGID)
+
+	markOfferingsUnavailableForCapacityTypeAndPlacement(ctx, scoped, sku, instanceType, testZone1, karpv1.CapacityTypeOnDemand, AllocationFailureReason, AllocationFailureTTL)
+
+	g.Expect(scoped.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(scoped.IsUnavailable(sku, testZone2, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+}
+
+func TestMarkOfferingsUnavailableForPlacementForBothCapacityTypes_CapacityReservationGroup(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	unavailableOfferings := cache.NewUnavailableOfferings()
+	sku := createDefaultCommonErrorTestSKU()
+	instanceType := createCommonErrorInstanceType(
+		zone1OnDemand, zone1Spot, zone2OnDemand, zone2Spot, regionalOnDemand, regionalSpot)
+	scoped := unavailableOfferings.ForCapacityReservationGroup(testHelperCRGID)
+
+	markOfferingsUnavailableForPlacementForBothCapacityTypes(ctx, scoped, sku, instanceType, testZone1, AllocationFailureReason, AllocationFailureTTL)
+
+	g.Expect(scoped.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(scoped.IsUnavailable(sku, testZone2, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(sku, testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 }

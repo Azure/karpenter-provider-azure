@@ -19,6 +19,7 @@ package cache
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -171,7 +172,7 @@ func TestUnavailableOfferingsVMFamilyBlocksAll(t *testing.T) {
 
 func TestUnavailableOfferings_KeyGeneration(t *testing.T) {
 	expectedKey := "spot:NV16as_v4:westus"
-	key := singleInstanceKey("NV16as_v4", "westus", "spot")
+	key := singleInstanceKey("", "NV16as_v4", "westus", "spot")
 	if key != expectedKey {
 		t.Errorf("Expected key to be %s, but got %s", expectedKey, key)
 	}
@@ -239,6 +240,80 @@ func TestUnavailableOfferingsRestrictiveLimitPreservation(t *testing.T) {
 	}
 }
 
+func TestUnavailableOfferings_CapacityReservationGroupScope(t *testing.T) {
+	const groupID = "/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+	sku := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+
+	t.Run("a failure launching into a group does not poison unreserved capacity", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.ForCapacityReservationGroup(groupID).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if !u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the reserved offering to be unavailable")
+		}
+		if u.IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected unreserved capacity to be unaffected by a capacity reservation group failure")
+		}
+	})
+
+	// This is the direction that matters most: reserved capacity is guaranteed precisely
+	// when general capacity is short, so a general shortage must not disable it.
+	t.Run("a general capacity shortage does not suppress a reserved offering", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if !u.IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the unreserved offering to be unavailable")
+		}
+		if u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the reserved offering to survive a general capacity shortage")
+		}
+	})
+
+	t.Run("groups do not affect each other", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.ForCapacityReservationGroup(groupID).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if u.ForCapacityReservationGroup(groupID+"-other").IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected a different capacity reservation group to be unaffected")
+		}
+	})
+
+	t.Run("group scope is case insensitive, because ARM is inconsistent about ID casing", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		u.ForCapacityReservationGroup(strings.ToUpper(groupID)).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+
+		if !u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the same group in different casing to share a scope")
+		}
+	})
+}
+
+// Each member of a group is a separately reserved block, so a failure on one size must not
+// suppress a larger sibling the user has also reserved.
+func TestUnavailableOfferings_CapacityReservationGroupDoesNotWidenByFamily(t *testing.T) {
+	const groupID = "/subscriptions/1234/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg"
+	small := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+	large := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+
+	u := NewUnavailableOfferings()
+	scoped := u.ForCapacityReservationGroup(groupID)
+	scoped.MarkUnavailable(context.TODO(), "test reason", small, "westus-1", karpv1.CapacityTypeOnDemand)
+
+	if !scoped.IsUnavailable(small, "westus-1", karpv1.CapacityTypeOnDemand) {
+		t.Error("expected the failed size to be unavailable within the group")
+	}
+	if scoped.IsUnavailable(large, "westus-1", karpv1.CapacityTypeOnDemand) {
+		t.Error("expected a larger reserved member of the same family to stay available")
+	}
+
+	// Outside a group the widening heuristic is unchanged.
+	u.MarkUnavailable(context.TODO(), "test reason", small, "westus-1", karpv1.CapacityTypeOnDemand)
+	if !u.IsUnavailable(large, "westus-1", karpv1.CapacityTypeOnDemand) {
+		t.Error("expected unreserved capacity to still widen to larger sizes of the family")
+	}
+}
+
 func TestUnavailableOfferingsSeqNumChangesOnlyWhenAvailabilityChanges(t *testing.T) {
 	singleInstanceCache := cache.New(time.Hour, time.Hour)
 	vmFamilyCache := cache.New(time.Hour, time.Hour)
@@ -253,14 +328,14 @@ func TestUnavailableOfferingsSeqNumChangesOnlyWhenAvailabilityChanges(t *testing
 		t.Fatalf("expected first mark to advance one generation, got %d", got)
 	}
 
-	_, singleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey(nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
-	_, familyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey(nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, singleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey("", nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, familyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey("", nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
 	u.MarkUnavailableWithTTL(context.TODO(), "test reason", nv16, "westus-1", karpv1.CapacityTypeOnDemand, 2*time.Hour)
 	if got := u.SeqNum(); got != 1 {
 		t.Fatalf("expected duplicate mark to keep generation 1, got %d", got)
 	}
-	_, refreshedSingleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey(nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
-	_, refreshedFamilyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey(nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, refreshedSingleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey("", nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, refreshedFamilyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey("", nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
 	if !refreshedSingleExpiration.After(singleExpiration) || !refreshedFamilyExpiration.After(familyExpiration) {
 		t.Fatal("expected duplicate mark to refresh both cache expirations")
 	}
