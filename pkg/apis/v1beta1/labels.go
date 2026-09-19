@@ -188,8 +188,8 @@ var (
 	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
 
 	// AnnotationCapacityReservationGroupID records the group the NodeClass specified when
-	// this NodeClaim launched. It is audit metadata, not evidence of the VM's current
-	// association: nothing refreshes it, and Karpenter does not reconcile a VM whose
+	// this NodeClaim launched. It is audit metadata, intended for user visibility only.
+	// Nothing refreshes it, and Karpenter does not reconcile a VM whose
 	// association is changed outside Karpenter.
 	AnnotationCapacityReservationGroupID = apis.Group + "/capacity-reservation-group-id"
 )
