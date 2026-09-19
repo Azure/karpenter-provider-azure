@@ -17,7 +17,7 @@ on:
         default: "aksscriptless"
       k8s_version:
         type: string
-        description: "the kubernetes version to use (e.g., 1.30). If empty, uses AKS default."
+        description: "the kubernetes version to use (e.g., 1.31). If empty, uses AKS default."
       azure_vm_size:
         type: string
         description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
@@ -70,13 +70,13 @@ on:
         description: "Kubernetes version ('default' = AKS default)"
         options:
           - "default"
-          - "1.30"
           - "1.31"
           - "1.32"
           - "1.33"
           - "1.34"
           - "1.35"
           - "1.36"
+          - "1.37"
       provision_mode:
         type: choice
         description: "Karpenter provisioning mode"

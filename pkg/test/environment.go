@@ -69,27 +69,28 @@ const (
 
 type Environment struct {
 	// API
-	VirtualMachinesAPI          *fake.VirtualMachinesAPI
-	AzureResourceGraphAPI       *fake.AzureResourceGraphAPI
-	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
-	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
-	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
-	NodeImageVersionsAPI        *fake.NodeImageVersionsAPI
-	SKUsAPI                     *fake.ResourceSKUsAPI
-	PricingAPI                  *fake.PricingAPI
-	LoadBalancersAPI            *fake.LoadBalancersAPI
-	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
-	SubnetsAPI                  *fake.SubnetsAPI
-	DiskEncryptionSetsAPI       *fake.DiskEncryptionSetsAPI
-	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
-	SubscriptionAPI             *fake.SubscriptionsAPI
-	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
-	AKSMachinesAPI              *fake.AKSMachinesAPI
-	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
-	AKSManagedClustersAPI       *fake.AKSManagedClustersAPI
-	UsageAPI                    *fake.UsageAPI
-	SKUMixPlacementScoresAPI    *fake.SKUMixPlacementScoresAPI
-	DynamicInterface            dynamic.Interface
+	VirtualMachinesAPI              *fake.VirtualMachinesAPI
+	AzureResourceGraphAPI           *fake.AzureResourceGraphAPI
+	VirtualMachineExtensionsAPI     *fake.VirtualMachineExtensionsAPI
+	NetworkInterfacesAPI            *fake.NetworkInterfacesAPI
+	CommunityImageVersionsAPI       *fake.CommunityGalleryImageVersionsAPI
+	NodeImageVersionsAPI            *fake.NodeImageVersionsAPI
+	SKUsAPI                         *fake.ResourceSKUsAPI
+	PricingAPI                      *fake.PricingAPI
+	LoadBalancersAPI                *fake.LoadBalancersAPI
+	NetworkSecurityGroupAPI         *fake.NetworkSecurityGroupAPI
+	SubnetsAPI                      *fake.SubnetsAPI
+	DiskEncryptionSetsAPI           *fake.DiskEncryptionSetsAPI
+	AuxiliaryTokenServer            *fake.AuxiliaryTokenServer
+	SubscriptionAPI                 *fake.SubscriptionsAPI
+	NodeBootstrappingAPI            *fake.NodeBootstrappingAPI
+	AKSMachinesAPI                  *fake.AKSMachinesAPI
+	AKSAgentPoolsAPI                *fake.AKSAgentPoolsAPI
+	AKSManagedClustersAPI           *fake.AKSManagedClustersAPI
+	UsageAPI                        *fake.UsageAPI
+	QuotaCategoryVMFamilyMappingAPI *fake.QuotaCategoryVMFamilyMappingAPI
+	SKUMixPlacementScoresAPI        *fake.SKUMixPlacementScoresAPI
+	DynamicInterface                dynamic.Interface
 
 	// Fake data stores for the APIs
 	AKSDataStorage *fake.AKSDataStorage
@@ -159,6 +160,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
 	usageAPI := &fake.UsageAPI{}
+	quotaCategoryVMFamilyMappingAPI := &fake.QuotaCategoryVMFamilyMappingAPI{}
 	skuMixPlacementScoresAPI := &fake.SKUMixPlacementScoresAPI{}
 
 	aksDataStorage := fake.NewAKSDataStorage()
@@ -180,7 +182,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache, aksManagedClustersAPI, region)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
-	quotaProvider := quota.NewProvider(usageAPI, region)
+	quotaProvider := quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, region)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,
@@ -245,6 +247,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 		usageAPI,
+		quotaCategoryVMFamilyMappingAPI,
 		skuMixPlacementScoresAPI,
 	)
 	capacityRecommendationProvider := capacityrecommendation.NewProvider(
@@ -323,27 +326,28 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkSecurityGroupAPI.NSGs.Store(lo.FromPtr(nsg.ID), nsg)
 
 	return &Environment{
-		VirtualMachinesAPI:          virtualMachinesAPI,
-		AuxiliaryTokenServer:        auxiliaryTokenServer,
-		AzureResourceGraphAPI:       azureResourceGraphAPI,
-		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
-		NetworkInterfacesAPI:        networkInterfacesAPI,
-		CommunityImageVersionsAPI:   communityImageVersionsAPI,
-		NodeImageVersionsAPI:        nodeImageVersionsAPI,
-		LoadBalancersAPI:            loadBalancersAPI,
-		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
-		SubnetsAPI:                  subnetsAPI,
-		DiskEncryptionSetsAPI:       diskEncryptionSetsAPI,
-		SKUsAPI:                     skusAPI,
-		PricingAPI:                  pricingAPI,
-		SubscriptionAPI:             subscriptionAPI,
-		NodeBootstrappingAPI:        nodeBootstrappingAPI,
-		AKSMachinesAPI:              aksMachinesAPI,
-		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
-		AKSManagedClustersAPI:       aksManagedClustersAPI,
-		UsageAPI:                    usageAPI,
-		SKUMixPlacementScoresAPI:    skuMixPlacementScoresAPI,
-		DynamicInterface:            dynamic.NewForConfigOrDie(env.Config),
+		VirtualMachinesAPI:              virtualMachinesAPI,
+		AuxiliaryTokenServer:            auxiliaryTokenServer,
+		AzureResourceGraphAPI:           azureResourceGraphAPI,
+		VirtualMachineExtensionsAPI:     virtualMachinesExtensionsAPI,
+		NetworkInterfacesAPI:            networkInterfacesAPI,
+		CommunityImageVersionsAPI:       communityImageVersionsAPI,
+		NodeImageVersionsAPI:            nodeImageVersionsAPI,
+		LoadBalancersAPI:                loadBalancersAPI,
+		NetworkSecurityGroupAPI:         networkSecurityGroupAPI,
+		SubnetsAPI:                      subnetsAPI,
+		DiskEncryptionSetsAPI:           diskEncryptionSetsAPI,
+		SKUsAPI:                         skusAPI,
+		PricingAPI:                      pricingAPI,
+		SubscriptionAPI:                 subscriptionAPI,
+		NodeBootstrappingAPI:            nodeBootstrappingAPI,
+		AKSMachinesAPI:                  aksMachinesAPI,
+		AKSAgentPoolsAPI:                aksAgentPoolsAPI,
+		AKSManagedClustersAPI:           aksManagedClustersAPI,
+		UsageAPI:                        usageAPI,
+		QuotaCategoryVMFamilyMappingAPI: quotaCategoryVMFamilyMappingAPI,
+		SKUMixPlacementScoresAPI:        skuMixPlacementScoresAPI,
+		DynamicInterface:                dynamic.NewForConfigOrDie(env.Config),
 
 		AKSDataStorage: aksDataStorage,
 
@@ -398,6 +402,7 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.AKSAgentPoolsAPI.Reset()
 	env.AKSManagedClustersAPI.Reset()
 	env.UsageAPI.Reset()
+	env.QuotaCategoryVMFamilyMappingAPI.Reset()
 	env.SKUMixPlacementScoresAPI.Reset()
 	env.QuotaProvider.Reset()
 
