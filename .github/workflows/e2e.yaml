@@ -230,6 +230,7 @@ jobs:
           # Windows contexts in Drift and Consolidation need the dedicated non-Cilium cluster,
           # but scriptless runs retain the default Linux-only topology and skip those contexts.
           windows: ${{ inputs.suite == 'Windows' || ((inputs.suite == 'Drift' || inputs.suite == 'Consolidation') && (inputs.provision_mode == 'aksmachineapi' || inputs.provision_mode == 'aksmachineapiheaderbatch')) }}
+          dual_stack: ${{ inputs.suite == 'Integration' || inputs.suite == 'Windows' }}
           # The shared mpool name already satisfies the Windows machines-pool limit of six characters.
           aks_machines_pool_name: mpool
       - name: install karpenter
@@ -255,6 +256,7 @@ jobs:
           GIT_REF: ${{ github.sha }}
           PROVISION_MODE: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
           AKS_MACHINES_POOL_NAME: mpool
+          E2E_EXPECT_DUAL_STACK: ${{ (inputs.suite == 'Integration' || inputs.suite == 'Windows') && 'true' || 'false' }}
         run: |
           make az-creds
           make e2etests
