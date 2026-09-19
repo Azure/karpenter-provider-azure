@@ -185,7 +185,11 @@ jobs:
         env:
           SUITE: ${{ inputs.suite }}
         run: |
-          ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
+          ACR_PREFIX=$(echo "$SUITE" | awk '{print tolower($0)}')
+          if [[ "$ACR_PREFIX" == *windows* ]]; then
+            ACR_PREFIX="${ACR_PREFIX//windows/win}"
+          fi
+          ACR_NAME="${ACR_PREFIX}acr${{ github.run_id }}"
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: cleanup leftover resources, if any (e.g. from a previous run that failed to clean up)
