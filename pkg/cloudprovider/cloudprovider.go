@@ -524,10 +524,16 @@ func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
 	return []status.Object{&v1beta1.AKSNodeClass{}}
 }
 
-// TODO: review repair policies
 func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 	return []cloudprovider.RepairPolicy{
-		// Supported Kubelet fields
+		// React immediately to Azure VM scheduled events (spot preemption, redeploy, terminate)
+		// detected by node-problem-detector via IMDS. This triggers Karpenter's drain flow
+		// (cordon → evict pods with SIGTERM → delete VM) so pods get graceful shutdown.
+		{
+			ConditionType:      "VMEventScheduled",
+			ConditionStatus:    corev1.ConditionTrue,
+			TolerationDuration: 0,
+		},
 		{
 			ConditionType:      corev1.NodeReady,
 			ConditionStatus:    corev1.ConditionFalse,
