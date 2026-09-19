@@ -135,7 +135,7 @@ func (env *Environment) ExpectCreatedCapacityReservationGroup(ctx context.Contex
 }
 
 func (env *Environment) deleteCapacityReservationGroup(groupName string, reservationNames []string) error {
-	ctx := context.Background()
+	ctx := env.Context
 	// VM deletion is asynchronous and outlives the Kubernetes objects, so both deletes can
 	// be refused with 409 while instances are still releasing the reservation. Re-deleting
 	// a member the previous attempt already removed is safe: ARM answers 204, not 404.
