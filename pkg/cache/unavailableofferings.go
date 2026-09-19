@@ -91,9 +91,10 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 // ForCapacityReservationGroup returns a view of the cache whose entries are namespaced to
 // one capacity reservation group. An empty id yields the unreserved view.
 //
-// The read side is the load-bearing part: a general capacity shortage must not suppress a
+// The read side is the most important: a general capacity shortage must not suppress a
 // reserved offering, because reserved capacity is what the user bought in order to survive
-// exactly that.
+// exactly that. IsUnavailable for a CRG-scoped on-demand offering only returns true if
+// that failure was recorded for the same CRG.
 //
 // The write side is a closer call, and deliberately conservative. Every error that reaches
 // this cache is a quota or capacity fact about the subscription or the region, not about
