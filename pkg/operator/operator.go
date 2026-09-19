@@ -201,7 +201,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
-	quotaProvider := quota.NewProvider(azClient.UsageClient, azConfig.Location)
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azClient.QuotaCategoryVMFamilyMappingClient, azConfig.Location)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
