@@ -177,8 +177,6 @@ type AKSNodeClassSpec struct {
 
 // Versions controls the Kubernetes and node image versions used by the NodeClass.
 // If omitted, nodes follow the observed control plane version and automatic latest node image selection.
-// Versions controls the Kubernetes and node image versions used by the NodeClass.
-// If omitted, nodes follow the observed control plane version and automatic latest node image selection.
 // +kubebuilder:validation:XValidation:message="kubernetesVersion must be set when nodeImageVersion is set",rule="!has(self.nodeImageVersion) || has(self.kubernetesVersion)"
 type Versions struct {
 	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
