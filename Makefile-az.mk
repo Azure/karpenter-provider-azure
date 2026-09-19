@@ -274,7 +274,9 @@ az-mkaks-windows: az-mkacr ## Create a Windows-capable test AKS cluster (Azure C
 	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-windows; \
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
-		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+		ACR_ID=$$(az acr show --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query id --output tsv); \
+		if [ -z "$$ACR_ID" ]; then echo "Unable to resolve ACR $(AZURE_ACR_NAME) resource ID"; exit 1; fi; \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr "$$ACR_ID" \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys \
 			--network-plugin azure --network-plugin-mode overlay \
 			--windows-admin-username $(WINDOWS_ADMIN_USERNAME) --windows-admin-password '$(WINDOWS_ADMIN_PASSWORD)' \
