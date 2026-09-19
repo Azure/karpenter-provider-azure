@@ -57,6 +57,7 @@ require (
 	k8s.io/apimachinery v0.37.0
 	k8s.io/client-go v0.37.0
 	k8s.io/component-base v0.37.0
+	k8s.io/klog/v2 v2.140.0
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.23.0
 	sigs.k8s.io/controller-runtime v0.25.1
@@ -172,7 +173,6 @@ require (
 	k8s.io/component-helpers v0.35.0 // indirect
 	k8s.io/csi-translation-lib v0.35.0 // indirect
 	k8s.io/dynamic-resource-allocation v0.35.0 // indirect
-	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect

@@ -39,6 +39,7 @@ test: ## Run tests
 		--focus="${FOCUS}" \
 		--randomize-all \
 		./pkg/...
+	go test ./test/pkg/environment/common
 
 deflake: ## Run randomized, racing, code-covered tests to deflake failures
 	for i in $(shell seq 1 5); do make test || exit 1; done
