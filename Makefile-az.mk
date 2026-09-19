@@ -174,7 +174,17 @@ az-mkacr: az-mkrg ## Create test ACR
 	done
 
 az-acrimport: ## Imports an image to an acr registry
-	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6" --force
+	@for attempt in $$(seq 1 20); do \
+		if az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6" --force; then \
+			break; \
+		fi; \
+		if [ $$attempt -eq 20 ]; then \
+			echo "Failed to import the pause image after 20 attempts"; \
+			exit 1; \
+		fi; \
+		echo "Waiting to import into ACR $(AZURE_ACR_NAME) (attempt $$attempt/20)"; \
+		sleep 30; \
+	done
 
 az-cleanenv: az-rmnodeclaims-fin az-rmnodeclasses-fin ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses)
 	kubectl delete deployments -n default --all
