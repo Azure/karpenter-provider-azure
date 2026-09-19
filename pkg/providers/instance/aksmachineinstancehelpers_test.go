@@ -114,6 +114,22 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			})
 		})
 
+		Context("AzureContainerLinux Image Family", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+			})
+
+			It("should configure AzureContainerLinux", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.34.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureContainerLinux))
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeFalse())
+			})
+		})
+
 		Context("AzureLinux Image Family with FIPS Mode", func() {
 			BeforeEach(func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)

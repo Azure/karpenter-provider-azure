@@ -1055,12 +1055,15 @@ spec:
                 type: object
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                - AzureContainerLinux
                 type: string
               kubelet:
                 description: |-
@@ -1722,12 +1725,16 @@ spec:
                       provisioned nodes.
                     properties:
                       secureBoot:
-                        description: secureBoot specifies whether Secure Boot should
-                          be enabled for provisioned nodes.
+                        description: |-
+                          secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+                          Defaults to true for AzureContainerLinux and false for other image families.
+                          AzureContainerLinux does not allow explicitly disabling Secure Boot.
                         type: boolean
                       vtpm:
-                        description: vtpm specifies whether virtual TPM should be
-                          enabled for provisioned nodes.
+                        description: |-
+                          vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+                          Defaults to true for AzureContainerLinux and false for other image families.
+                          AzureContainerLinux does not allow explicitly disabling vTPM.
                         type: boolean
                     type: object
                 type: object
@@ -1771,14 +1778,22 @@ spec:
             - message: FIPS is not yet supported for Ubuntu2404
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
                 && self.imageFamily != ''Ubuntu2404'') : true'
-            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu
-                and Ubuntu2204
+            - message: TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu,
+                Ubuntu2204, and AzureContainerLinux
               rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' && has(self.security)
                 && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily)
-                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204'')
-                : true'
+                || self.imageFamily == ''Ubuntu'' || self.imageFamily == ''Ubuntu2204''
+                || self.imageFamily == ''AzureContainerLinux'') : true'
+            - message: AzureContainerLinux requires Secure Boot and vTPM
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || !has(self.security) || !has(self.security.trustedLaunch) || ((!has(self.security.trustedLaunch.vtpm)
+                || self.security.trustedLaunch.vtpm) && (!has(self.security.trustedLaunch.secureBoot)
+                || self.security.trustedLaunch.secureBoot))'
+            - message: AzureContainerLinux requires an OS disk of at least 60 GB
+              rule: '!has(self.imageFamily) || self.imageFamily != ''AzureContainerLinux''
+                || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60'
             - message: kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize
                 is specified
               rule: '!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize)

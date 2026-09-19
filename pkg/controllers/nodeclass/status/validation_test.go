@@ -79,6 +79,34 @@ var _ = Describe("Validation Reconciler", func() {
 		}
 	})
 
+	Context("provision mode compatibility", func() {
+		DescribeTable("validates image family compatibility",
+			func(imageFamily, provisionMode string, valid bool) {
+				ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: provisionMode})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if valid {
+					Expect(condition.IsTrue()).To(BeTrue())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal(status.IncompatibleProvisionMode))
+					Expect(condition.Message).To(ContainSubstring("requires an AKS Machine API provision mode"))
+					Expect(result).To(Equal(reconcile.Result{}))
+				}
+			},
+			Entry("ACL with Machine API", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, true),
+			Entry("ACL with batched Machine API", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+			Entry("ACL with bootstrapping client", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, false),
+			Entry("ACL with local scriptless", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, false),
+			Entry("Ubuntu with bootstrapping client", v1beta1.UbuntuImageFamily, consts.ProvisionModeBootstrappingClient, true),
+			Entry("Azure Linux with local scriptless", v1beta1.AzureLinuxImageFamily, consts.ProvisionModeAKSScriptless, true),
+		)
+	})
+
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.
 	// The ValidationReconciler is a skeleton for future runtime validations that cannot be
 	// expressed in the CRD schema (e.g., external API calls, cross-resource checks, etc.).

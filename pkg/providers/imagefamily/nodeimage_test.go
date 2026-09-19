@@ -216,6 +216,23 @@ var _ = Describe("NodeImageProvider tests", func() {
 			ctx = options.ToContext(ctx, testOptions)
 		})
 
+		DescribeTable("should resolve AzureContainerLinux SIG images",
+			func(fipsMode *v1beta1.FIPSMode, amd64Definition, arm64Definition string) {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+				nodeClass.Spec.FIPSMode = fipsMode
+				nodeClass.Spec.Security = nil
+
+				images, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(images).To(HaveLen(2))
+				Expect(images[0].ID).To(Equal(imagefamily.BuildImageIDSIG(sigSubscription, "AKS-AzureLinux", "AKSAzureLinux", amd64Definition, sigImageVersion)))
+				Expect(images[1].ID).To(Equal(imagefamily.BuildImageIDSIG(sigSubscription, "AKS-AzureLinux", "AKSAzureLinux", arm64Definition, sigImageVersion)))
+			},
+			Entry("default", nil, "aclgen2TL", "aclgen2arm64TL"),
+			Entry("FIPS disabled", &v1beta1.FIPSModeDisabled, "aclgen2TL", "aclgen2arm64TL"),
+			Entry("FIPS enabled", &v1beta1.FIPSModeFIPS, "aclgen2fipsTL", "aclgen2arm64fipsTL"),
+		)
+
 		Context("List TrustedLaunch Images", func() {
 			BeforeEach(func() {
 				nodeClass.Spec.FIPSMode = nil
