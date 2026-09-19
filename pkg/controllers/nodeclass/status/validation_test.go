@@ -19,6 +19,7 @@ package status_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -112,6 +113,46 @@ var _ = Describe("Validation Reconciler", func() {
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
+		})
+	})
+
+	Context("Windows network dataplane validation", func() {
+		DescribeTable("should fail validation for Windows image families on Cilium",
+			func(imageFamily string) {
+				ctx = options.ToContext(ctx, &options.Options{NetworkDataplane: consts.NetworkDataplaneCilium})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.WindowsUnsupportedNetworkDataplane))
+				Expect(condition.Message).To(Equal(fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, consts.NetworkDataplaneCilium)))
+			},
+			Entry("Windows2022", v1beta1.Windows2022ImageFamily),
+			Entry("Windows2025", v1beta1.Windows2025ImageFamily),
+		)
+
+		It("should pass validation for Windows on the Azure dataplane", func() {
+			ctx = options.ToContext(ctx, &options.Options{NetworkDataplane: consts.NetworkDataplaneAzure})
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		It("should pass validation for Linux on Cilium", func() {
+			ctx = options.ToContext(ctx, &options.Options{NetworkDataplane: consts.NetworkDataplaneCilium})
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
 		})
 	})
 
