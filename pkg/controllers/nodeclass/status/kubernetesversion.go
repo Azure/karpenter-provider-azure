@@ -70,6 +70,8 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 //  1. Newly created AKSNodeClass, will select the version discovered from the API server
 //  2. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
 //     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the Images readiness.
+//
+//nolint:gocyclo // Keep pinned and automatic Kubernetes version status ownership in this reconciler.
 func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(kubernetesVersionReconcilerName))
 	logger := log.FromContext(ctx).WithValues("existingKubernetesVersion", nodeClass.Status.KubernetesVersion)
@@ -77,6 +79,23 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	goalK8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
+	}
+
+	if nodeClass.Status.Versions == nil {
+		nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+	}
+	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &goalK8sVersion
+
+	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
+		err := r.validatePinnedK8sVersion(ctx, nodeClass, reqK8sVer, goalK8sVersion)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+	} else if nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason == "KubernetesVersionInvalidFormat" {
+		// Conditions persist across reconciles, so clear a validation failure from a removed pin.
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	}
 
 	// Handles case 1: init, update kubernetes status to API server version found
@@ -108,4 +127,83 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		logger.WithValues("newKubernetesVersion", nodeClass.Status.KubernetesVersion).Info("new kubernetes version updated for nodeclass")
 	}
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
+}
+
+// validatePinnedK8sVersion validates a requested Kubernetes version and updates the corresponding
+// NodeClass readiness conditions. Operational errors are returned.
+func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, version, controlPlaneVersion string) error {
+	versionSemver, err := semver.Parse(version)
+	if err != nil {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", fmt.Sprintf("invalid kubernetes version format: %v", err))
+		return nil
+	}
+	controlPlaneVersionSemver, err := semver.Parse(controlPlaneVersion)
+	if err != nil {
+		return fmt.Errorf("parsing control-plane kubernetes version: %w", err)
+	}
+
+	if !validateKubernetesVersionSkew(nodeClass, versionSemver, controlPlaneVersionSemver) {
+		return nil
+	}
+
+	// Check that this exists
+	supported, err := r.kubernetesVersionProvider.IsSupported(ctx, version)
+	if err != nil {
+		return fmt.Errorf("checking if kubernetes version is supported: %w", err)
+	}
+	if !supported {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnsupported", fmt.Sprintf("kubernetes version %s is not supported", version))
+		return nil
+	}
+
+	if nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason == "KubernetesVersionInvalidFormat" {
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
+	}
+	currentK8sVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
+	if currentK8sVersion != version {
+		log.FromContext(ctx).V(1).Info("requested Kubernetes version differs from current version", "currentKubernetesVersion", currentK8sVersion, "requestedKubernetesVersion", version)
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesPinning", "Performing kubernetes version change, need to get latest images")
+	}
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+
+	return nil
+}
+
+func validateKubernetesVersionSkew(nodeClass *v1beta1.AKSNodeClass, version, controlPlaneVersion semver.Version) bool {
+	// major versions must match
+	if version.Major != controlPlaneVersion.Major {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version major mismatch: node %d vs control-plane %d", version.Major, controlPlaneVersion.Major))
+		return false
+	}
+
+	// node minor must not be greater than control-plane minor
+	if version.Minor > controlPlaneVersion.Minor {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version minor too new: node %d vs control-plane %d", version.Minor, controlPlaneVersion.Minor))
+		return false
+	}
+
+	// node minor must be at most three minors behind control-plane minor
+	if controlPlaneVersion.Minor-version.Minor > 3 {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version minor too old: node %d vs control-plane %d", version.Minor, controlPlaneVersion.Minor))
+		return false
+	}
+
+	// when both are on the same minor, node patch must not be greater than control-plane patch
+	if version.Minor == controlPlaneVersion.Minor && version.Patch > controlPlaneVersion.Patch {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionControlPlaneIncompatible", fmt.Sprintf("kubernetes version patch too new: node %d vs control-plane %d", version.Patch, controlPlaneVersion.Patch))
+		return false
+	}
+
+	return true
+}
+
+func requestedVersions(nodeClass *v1beta1.AKSNodeClass) (string, string) {
+	if nodeClass == nil || nodeClass.Spec.Versions == nil {
+		return "", ""
+	}
+
+	reqImgVer := lo.FromPtr(nodeClass.Spec.Versions.NodeImageVersion)
+	reqK8sVer := lo.FromPtr(nodeClass.Spec.Versions.KubernetesVersion)
+
+	return reqImgVer, reqK8sVer
 }
