@@ -148,6 +148,7 @@ var _ = Describe("CEL/Validation", func() {
 						KubernetesVersion: kubernetesVersion,
 						NodeImageVersion:  nodeImageVersion,
 					},
+				},
 			}
 			if expected {
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
