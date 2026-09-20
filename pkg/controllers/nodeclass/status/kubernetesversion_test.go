@@ -184,6 +184,41 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 				Expect(nodeClass.Status.KubernetesVersion).To(BeNil())
 			})
 
+			It("should accept a version exactly three minors behind the control plane", func() {
+				oldestCompatibleVersion := lo.Must(semver.Parse(testK8sVersion))
+				oldestCompatibleVersion.Minor -= 3
+				requestedVersion := oldestCompatibleVersion.String()
+				k8sReconciler = status.NewKubernetesVersionReconciler(&testKubernetesVersionProvider{
+					controlPlaneVersion: testK8sVersion,
+					supportedVersions:   map[string]bool{requestedVersion: true},
+				})
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(requestedVersion),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
+			})
+
+			It("should reject a newer patch version on the control-plane minor", func() {
+				newerPatchVersion := lo.Must(semver.Parse(testK8sVersion))
+				newerPatchVersion.Patch++
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(newerPatchVersion.String()),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("KubernetesVersionControlPlaneIncompatible"))
+				Expect(nodeClass.Status.KubernetesVersion).To(BeNil())
+			})
+
 			It("should reject an unsupported version", func() {
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),
