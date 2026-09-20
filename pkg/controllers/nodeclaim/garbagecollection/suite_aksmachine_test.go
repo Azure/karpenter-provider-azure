@@ -17,21 +17,35 @@ limitations under the License.
 package garbagecollection_test
 
 import (
+	"net/http"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/termination"
+	"sigs.k8s.io/karpenter/pkg/controllers/node/termination/terminator"
+	coregarbagecollection "sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/garbagecollection"
+	"sigs.k8s.io/karpenter/pkg/controllers/nodeclaim/lifecycle"
+	"sigs.k8s.io/karpenter/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/state/nodepoolhealth"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
@@ -134,6 +148,187 @@ var _ = Describe("Instance Garbage Collection", func() {
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 
 			ExpectNotFound(ctx, env.Client, node)
+		})
+
+		Context("registered machines with missing backing VMs", func() {
+			var nodeClaim *karpv1.NodeClaim
+			var node *corev1.Node
+
+			BeforeEach(func() {
+				aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot)
+				aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Hour))
+				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+				nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+					Spec:   karpv1.NodeClaimSpec{NodeClassRef: nodePool.Spec.Template.Spec.NodeClassRef},
+					Status: karpv1.NodeClaimStatus{ProviderID: providerID},
+				})
+				nodeClaim.Annotations = map[string]string{v1beta1.AnnotationAKSMachineResourceID: lo.FromPtr(aksMachine.ID)}
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+				node = coretest.Node(coretest.NodeOptions{
+					ProviderID:  providerID,
+					ReadyStatus: corev1.ConditionUnknown,
+				})
+				node.Labels = nodeClaim.Labels
+				ExpectApplied(ctx, env.Client, nodeClaim, node)
+			})
+
+			DescribeTable("should collect an evicted machine despite its registered NodeClaim", func(mode string, ready corev1.ConditionStatus) {
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					ProvisionMode:             lo.ToPtr(mode),
+					ManageExistingAKSMachines: lo.ToPtr(true),
+				}))
+				node.Status.Conditions[0].Status = ready
+				ExpectApplied(ctx, env.Client, node)
+
+				// The entire pool is unhealthy, but confirmed missing VMs are garbage collection, not node repair.
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				_, err := cloudProvider.Get(ctx, providerID)
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+				ExpectNotFound(ctx, env.Client, node)
+				ExpectSingletonReconciled(ctx, coregarbagecollection.NewController(fakeClock, env.Client, cloudProvider))
+				ExpectNotFound(ctx, env.Client, nodeClaim)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+			},
+				Entry("machine API, unknown node", consts.ProvisionModeAKSMachineAPI, corev1.ConditionUnknown),
+				Entry("machine API, not-ready node", consts.ProvisionModeAKSMachineAPI, corev1.ConditionFalse),
+				Entry("batched machine API", consts.ProvisionModeAKSMachineAPIHeaderBatch, corev1.ConditionUnknown),
+				Entry("existing machine in VM mode", consts.ProvisionModeAKSScriptless, corev1.ConditionUnknown),
+			)
+
+			It("should also collect an on-demand machine with a missing VM", func() {
+				aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				_, err := cloudProvider.Get(ctx, providerID)
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+				ExpectNotFound(ctx, env.Client, node)
+			})
+
+			It("should preserve a ready node without querying its VM", func() {
+				node.Status.Conditions[0].Status = corev1.ConditionTrue
+				ExpectApplied(ctx, env.Client, node)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				ExpectExists(ctx, env.Client, node)
+				_, err := cloudProvider.Get(ctx, providerID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Calls()).To(BeZero())
+			})
+
+			It("should preserve a machine whose NodeClaim is not registered", func() {
+				nodeClaim.StatusConditions().SetUnknown(karpv1.ConditionTypeRegistered)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				ExpectExists(ctx, env.Client, node)
+				_, err := cloudProvider.Get(ctx, providerID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Calls()).To(BeZero())
+			})
+
+			It("should preserve an unhealthy node whose VM still exists", func() {
+				vmName, err := nodeclaimutils.GetVMName(providerID)
+				Expect(err).NotTo(HaveOccurred())
+				vm := test.VirtualMachine(test.VirtualMachineOptions{Name: vmName, Tags: map[string]*string{}})
+				azureEnv.VirtualMachinesAPI.Instances.Store(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName), *vm)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				ExpectExists(ctx, env.Client, node)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Calls()).To(Equal(1))
+			})
+
+			DescribeTable("should propagate VM lookup errors without deleting", func(status int) {
+				lookupErr := &azcore.ResponseError{StatusCode: status}
+				azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Error.Set(lookupErr)
+				_, err := InstanceGCController.Reconcile(ctx)
+				Expect(err).To(MatchError(ContainSubstring("getting azure VM")))
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeFalse())
+				ExpectExists(ctx, env.Client, node)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).NotTo(HaveOccurred())
+			},
+				Entry("forbidden", http.StatusForbidden),
+				Entry("throttled", http.StatusTooManyRequests),
+				Entry("server unavailable", http.StatusServiceUnavailable),
+			)
+
+			It("should preserve ambiguous node mappings", func() {
+				duplicate := coretest.Node(coretest.NodeOptions{ProviderID: providerID})
+				ExpectApplied(ctx, env.Client, duplicate)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				ExpectExists(ctx, env.Client, node)
+				ExpectExists(ctx, env.Client, duplicate)
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Calls()).To(BeZero())
+			})
+
+			It("should preserve ambiguous NodeClaim mappings", func() {
+				duplicate := coretest.NodeClaim(karpv1.NodeClaim{Status: karpv1.NodeClaimStatus{ProviderID: providerID}})
+				duplicate.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+				ExpectApplied(ctx, env.Client, duplicate)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				ExpectExists(ctx, env.Client, node)
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Calls()).To(BeZero())
+			})
+
+			It("should preserve a machine without a node readiness signal", func() {
+				node.Status.Conditions = nil
+				ExpectApplied(ctx, env.Client, node)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				ExpectExists(ctx, env.Client, node)
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Calls()).To(BeZero())
+			})
+
+			It("should preserve a machine without a matching node", func() {
+				Expect(env.Client.Delete(ctx, node)).To(Succeed())
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				_, err := cloudProvider.Get(ctx, providerID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.Calls()).To(BeZero())
+			})
+
+			It("should retain the node and retry when deleting the machine fails", func() {
+				azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.BeginError.Set(
+					&azcore.ResponseError{StatusCode: http.StatusServiceUnavailable}, fake.MaxCalls(1))
+				_, err := InstanceGCController.Reconcile(ctx)
+				Expect(err).To(MatchError(ContainSubstring("failed to begin delete AKS machine")))
+				ExpectExists(ctx, env.Client, node)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).NotTo(HaveOccurred())
+
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				ExpectNotFound(ctx, env.Client, node)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+			})
+
+			It("should let existing termination controllers finish without draining a deleted VM", func() {
+				fakeClock.SetTime(time.Now())
+				node.Finalizers = []string{karpv1.TerminationFinalizer}
+				nodeClaim.Finalizers = []string{karpv1.TerminationFinalizer}
+				pod := coretest.Pod()
+				pod.Spec.NodeName = node.Name
+				pod.Annotations = map[string]string{karpv1.DoNotDisruptAnnotationKey: "true"}
+				ExpectApplied(ctx, env.Client, nodeClaim, node, pod)
+
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+				node = ExpectExists(ctx, env.Client, node)
+				Expect(node.DeletionTimestamp.IsZero()).To(BeFalse())
+				Expect(node.Finalizers).To(ContainElement(karpv1.TerminationFinalizer))
+
+				recorder := events.NewRecorder(&record.FakeRecorder{})
+				queue := terminator.NewQueue(env.Client, recorder)
+				terminationController := termination.NewController(fakeClock, env.Client, cloudProvider,
+					terminator.NewTerminator(fakeClock, env.Client, queue, recorder), recorder)
+				_, err := terminationController.Reconcile(ctx, node)
+				Expect(err).NotTo(HaveOccurred())
+				ExpectNotFound(ctx, env.Client, node)
+				ExpectExists(ctx, env.Client, pod)
+
+				nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+				lifecycleController := lifecycle.NewController(fakeClock, env.Client, cloudProvider, recorder, nodepoolhealth.NewState(), nil)
+				_, err = lifecycleController.Reconcile(ctx, nodeClaim)
+				Expect(err).NotTo(HaveOccurred())
+				ExpectNotFound(ctx, env.Client, nodeClaim)
+			})
 		})
 
 	})

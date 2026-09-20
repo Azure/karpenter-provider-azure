@@ -82,11 +82,14 @@ var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
-	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	env = coretest.NewEnvironment(
+		coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...),
+		coretest.WithFieldIndexers(coretest.NodeProviderIDFieldIndexer(ctx), coretest.NodeClaimProviderIDFieldIndexer(ctx)),
+	)
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider)
+	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider, azureEnv.VMInstanceProvider)
 	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider)
 	networkInterfaceGCController = garbagecollection.NewNetworkInterface(env.Client, azureEnv.VMInstanceProvider)
 	fakeClock = &clock.FakeClock{}

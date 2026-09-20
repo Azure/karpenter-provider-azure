@@ -334,6 +334,8 @@ If you delete a node with kubectl, Karpenter will gracefully cordon, drain, and 
 kubectl delete node $NODE_NAME
 ```
 
+For AKS Machine API nodes, an AKS Machine resource can remain after its backing VM is deleted, including after Spot eviction. The existing instance garbage collector removes such a machine only when a uniquely matched, registered NodeClaim has an unhealthy node and a direct Compute lookup confirms that the VM is not found. Ready nodes, VMs that still exist, and failed or throttled lookups are not treated as orphaned; normal Node and NodeClaim finalization completes cleanup without changing node-repair thresholds.
+
 ## Cleanup (self-hosted)
 
 ### Delete the cluster
