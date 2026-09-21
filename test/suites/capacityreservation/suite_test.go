@@ -175,7 +175,7 @@ var _ = Describe("CapacityReservation", func() {
 			g.Expect(node.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationCapacityReservationGroupID, groupID))
 		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		if env.IsAKSMachineAPIMode() {
-			claims := currentNodeClaims(ctx, Default, nodePool)
+			claims := env.ExpectLiveNodeClaimsForNodePool(ctx, Default, nodePool)
 			Expect(claims).To(HaveLen(1))
 			expectAKSMachineOnReservedCapacity(claims[0], groupID)
 		}
@@ -328,7 +328,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 		By("Waiting for every original NodeClaim to be replaced")
 		// The pool has limits at N+1, so replacement surges to 3 and settles back to 2.
 		Eventually(func(g Gomega) {
-			claims := currentNodeClaims(ctx, g, nodePool)
+			claims := env.ExpectLiveNodeClaimsForNodePool(ctx, g, nodePool)
 			names := sets.New(lo.Map(claims, func(nc *karpv1.NodeClaim, _ int) string { return nc.Name })...)
 			g.Expect(names.Intersection(originalNames)).To(BeEmpty(), "original claims should all be replaced")
 			g.Expect(names).To(HaveLen(1), "the pool should settle back to its replica count")
@@ -445,21 +445,11 @@ func reservedNodePool(nodeClass *v1beta1.AKSNodeClass, nodeZone string, vmSizes 
 	return nodePool
 }
 
-// currentNodeClaims lists the pool's live NodeClaims. The environment monitor accumulates
-// every node the test ever created, which would include the ones drift just replaced.
-func currentNodeClaims(ctx SpecContext, g Gomega, nodePool *karpv1.NodePool) []*karpv1.NodeClaim {
-	list := &karpv1.NodeClaimList{}
-	g.Expect(env.Client.List(ctx, list, client.MatchingLabels{karpv1.NodePoolLabelKey: nodePool.Name})).To(Succeed())
-	return lo.FilterMap(list.Items, func(nc karpv1.NodeClaim, _ int) (*karpv1.NodeClaim, bool) {
-		return &nc, nc.DeletionTimestamp.IsZero()
-	})
-}
-
 // expectNodeClaimsOnReservedCapacity asserts every live NodeClaim in the pool is backed by
 // a VM in the group, and returns their names.
 func expectNodeClaimsOnReservedCapacity(ctx SpecContext, nodePool *karpv1.NodePool, groupID, expectedNodeZone string, expected int) sets.Set[string] {
 	GinkgoHelper()
-	claims := currentNodeClaims(ctx, Default, nodePool)
+	claims := env.ExpectLiveNodeClaimsForNodePool(ctx, Default, nodePool)
 	Expect(claims).To(HaveLen(expected))
 	for _, claim := range claims {
 		Expect(claim.Status.NodeName).ToNot(BeEmpty(), "%s has no node yet", claim.Name)
