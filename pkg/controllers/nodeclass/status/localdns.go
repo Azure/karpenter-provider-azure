@@ -47,7 +47,7 @@ const (
 	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred. It is
 	// exported because the e2e suite has to skip Preferred expectations on
 	// clusters below it.
-	LocalDNSPreferredK8sVersionThreshold = "1.99.0"
+	LocalDNSPreferredK8sVersionThreshold = "1.36.0"
 
 	// konnectivityAgentPolicy{Name,Namespace} identify the AKS-managed
 	// NetworkPolicy that is allow-listed when scanning for conflicting
