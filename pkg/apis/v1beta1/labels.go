@@ -132,7 +132,7 @@ var (
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
-	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
+	LabelSKUMemory = Group + "/sku-memory" // sku memory in MiB
 	// AKS domain.
 	AKSLabelCPU    = AKSLabelDomain + "/sku-cpu"    // Same value as sku-cpu.
 	AKSLabelMemory = AKSLabelDomain + "/sku-memory" // Same value as sku-memory.
