@@ -31,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -159,7 +160,9 @@ var _ = Describe("CapacityReservation", func() {
 		} else {
 			Expect(lo.Map(vm.Zones, func(z *string, _ int) string { return lo.FromPtr(z) })).To(ConsistOf(armZone))
 		}
-		Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(expectedNodeZone))
+		env.EventuallyExpectCreatedNodeCountWithSelector("==", 1, labels.SelectorFromSet(map[string]string{
+			corev1.LabelTopologyZone: expectedNodeZone,
+		}))
 
 		By("Verifying the configured group is recorded on the NodeClaim and the Node")
 		// Core copies NodeClaim annotations onto the Node at registration, so the Node picks
@@ -405,7 +408,9 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 			"the overlay should have pulled scheduling onto the more expensive reserved size")
 		expectVMOnReservedCapacity(vm, groupID)
 		Expect(nodes[0].Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
-		Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(expectedNodeZone))
+		env.EventuallyExpectCreatedNodeCountWithSelector("==", 1, labels.SelectorFromSet(map[string]string{
+			corev1.LabelTopologyZone: expectedNodeZone,
+		}))
 	})
 })
 
