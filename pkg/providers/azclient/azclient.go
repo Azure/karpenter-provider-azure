@@ -23,7 +23,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	armrecommender "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -62,12 +63,13 @@ type AZClient struct {
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
 	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
-	SKUClient                   skewer.ResourceClient
-	LoadBalancersClient         loadbalancer.LoadBalancersAPI
-	NetworkSecurityGroupsClient networksecuritygroup.API
-	SubscriptionsClient         zone.SubscriptionsAPI
-	UsageClient                 quota.UsageAPI
-	SKUMixPlacementClient       capacityrecommendation.SKUMixPlacementScoresAPI
+	SKUClient                          skewer.ResourceClient
+	LoadBalancersClient                loadbalancer.LoadBalancersAPI
+	NetworkSecurityGroupsClient        networksecuritygroup.API
+	SubscriptionsClient                zone.SubscriptionsAPI
+	UsageClient                        quota.UsageAPI
+	QuotaCategoryVMFamilyMappingClient quota.QuotaCategoryVMFamilyMappingAPI
+	SKUMixPlacementClient              capacityrecommendation.SKUMixPlacementScoresAPI
 }
 
 func (c *AZClient) SubnetsClient() azapi.SubnetsAPI {
@@ -124,27 +126,29 @@ func NewAZClientFromAPI(
 	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
 	usageClient quota.UsageAPI,
+	quotaCategoryVMFamilyMappingClient quota.QuotaCategoryVMFamilyMappingAPI,
 	skuMixPlacementClient capacityrecommendation.SKUMixPlacementScoresAPI,
 ) *AZClient {
 	return &AZClient{
-		virtualMachinesClient:          virtualMachinesClient,
-		azureResourceGraphClient:       azureResourceGraphClient,
-		aksMachinesClient:              aksMachinesClient,
-		aksMachinesBatchClient:         aksMachinesBatchClient,
-		agentPoolsClient:               agentPoolsClient,
-		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
-		networkInterfacesClient:        interfacesClient,
-		subnetsClient:                  subnetsClient,
-		diskEncryptionSetsClient:       diskEncryptionSetsClient,
-		ImageVersionsClient:            imageVersionsClient,
-		NodeImageVersionsClient:        nodeImageVersionsClient,
-		NodeBootstrappingClient:        nodeBootstrappingClient,
-		SKUClient:                      skuClient,
-		LoadBalancersClient:            loadBalancersClient,
-		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
-		SubscriptionsClient:            subscriptionsClient,
-		UsageClient:                    usageClient,
-		SKUMixPlacementClient:          skuMixPlacementClient,
+		virtualMachinesClient:              virtualMachinesClient,
+		azureResourceGraphClient:           azureResourceGraphClient,
+		aksMachinesClient:                  aksMachinesClient,
+		aksMachinesBatchClient:             aksMachinesBatchClient,
+		agentPoolsClient:                   agentPoolsClient,
+		virtualMachinesExtensionClient:     virtualMachinesExtensionClient,
+		networkInterfacesClient:            interfacesClient,
+		subnetsClient:                      subnetsClient,
+		diskEncryptionSetsClient:           diskEncryptionSetsClient,
+		ImageVersionsClient:                imageVersionsClient,
+		NodeImageVersionsClient:            nodeImageVersionsClient,
+		NodeBootstrappingClient:            nodeBootstrappingClient,
+		SKUClient:                          skuClient,
+		LoadBalancersClient:                loadBalancersClient,
+		NetworkSecurityGroupsClient:        networkSecurityGroupsClient,
+		SubscriptionsClient:                subscriptionsClient,
+		UsageClient:                        usageClient,
+		QuotaCategoryVMFamilyMappingClient: quotaCategoryVMFamilyMappingClient,
+		SKUMixPlacementClient:              skuMixPlacementClient,
 	}
 }
 
@@ -223,6 +227,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	//   * It is functionally identical to the Microsoft.Quota API.
 	// See designs/0012-quota-fungibility-reactivity-improvements.md for more details.
 	usageClient, err := armcompute.NewUsageClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+	quotaCategoryVMFamilyMappingAPI, err := armcomputelimit.NewVMFamiliesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -318,6 +326,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		skuClient,
 		subscriptionsClient,
 		usageClient,
+		quotaCategoryVMFamilyMappingAPI,
 		skuMixPlacementClient,
 	), nil
 }

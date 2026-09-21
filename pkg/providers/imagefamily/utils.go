@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
-	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
@@ -46,22 +45,22 @@ func UseUbuntu2404(kubernetesVersion string) bool {
 	return version.GE(semver.Version{Major: 1, Minor: 34})
 }
 
-// ResolvesToUbuntu2004 returns true if the given image-family + FIPS-mode
-// combination would resolve to the Ubuntu2004 ImageFamily implementation
-// in defaultUbuntu (see resolver.go).
-//
-// Today, Ubuntu2004 is reachable only when the legacy/unset Ubuntu image
-// family is selected together with FIPS mode and without TrustedLaunch. Callers outside of the
-// resolver use this to make decisions that depend on whether a NodeClass
-// will ultimately be backed by 20.04 (e.g. the LocalDNS state reconciler,
-// since LocalDNS is unsupported on 20.04).
-//
-// NOTE: this helper duplicates the rule that lives in defaultUbuntu — it is
-// intentionally not used from defaultUbuntu itself, to keep that function's
-// existing logic flow untouched. If the rule in defaultUbuntu ever changes,
-// update this helper to match.
-func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) bool {
-	family := lo.FromPtr(familyName)
-	isUbuntuLegacyOrUnset := family == "" || family == v1beta1.UbuntuImageFamily
-	return isUbuntuLegacyOrUnset && lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS && !trustedLaunch
+// UseUbuntu2204FIPS returns true when generic Ubuntu + FIPS should resolve to Ubuntu 22.04 for the given Kubernetes version / Trusted Launch setting.
+func UseUbuntu2204FIPS(kubernetesVersion string, trustedLaunch bool) bool {
+	if trustedLaunch {
+		return true
+	}
+
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 35})
+}
+
+// ResolvesToUbuntu2004 returns true if the inputs resolve to Ubuntu2004.
+func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string) bool {
+	resolved := GetImageFamily(familyName, fipsMode, trustedLaunch, kubernetesVersion, nil)
+	_, isUbuntu2004 := resolved.(*Ubuntu2004)
+	return isUbuntu2004
 }

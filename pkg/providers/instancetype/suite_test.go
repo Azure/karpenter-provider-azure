@@ -57,6 +57,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/skewer"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -76,6 +77,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -1237,12 +1239,15 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 				kubeletFlags := ExpectKubeletFlagsPassed(customData)
 				ExpectSoftEvictionThresholds(customData, "500Mi")
-				ExpectHardEvictionThresholds(customData, "250Mi")
+				Expect(kubeletFlags).To(ContainSubstring("memory.available<250Mi"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.available<10%"))
+				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree<5%"))
 				Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period="))
 				Expect(kubeletFlags).To(ContainSubstring("memory.available=30s"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.available=2m0s"))
 				Expect(kubeletFlags).To(ContainSubstring("nodefs.inodesFree=2m0s"))
-				Expect(kubeletFlags).To(ContainSubstring("pid=1000"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("pid="))
+				Expect(kubeletFlags).ToNot(ContainSubstring("pid.available<"))
 			})
 		})
 
@@ -1883,6 +1888,64 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(vm).NotTo(BeNil())
 				Expect(vm.Zones).To(ConsistOf(&vmZone))
 			})
+			// csi-provisioner writes the CSI driver's own topology key onto every dynamically provisioned PV as
+			// required nodeAffinity. Karpenter only knows the values of labels it can enumerate, so unless the
+			// driver's key is normalized onto topology.kubernetes.io/zone the pod is rejected with
+			// `label "..." does not have known values` and no node is ever provisioned.
+			DescribeTable("should launch in the zone required by a bound PV constrained on a CSI zone label",
+				func(csiZoneLabel string) {
+					zone, vmZone := fmt.Sprintf("%s-3", fake.Region), "3"
+					pv := coretest.PersistentVolume(coretest.PersistentVolumeOptions{
+						NodeSelectorTerms: []v1.NodeSelectorTerm{{
+							MatchExpressions: []v1.NodeSelectorRequirement{
+								{Key: csiZoneLabel, Operator: v1.NodeSelectorOpIn, Values: []string{zone}},
+							},
+						}},
+					})
+					pvc := coretest.PersistentVolumeClaim(coretest.PersistentVolumeClaimOptions{VolumeName: pv.Name})
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass, pv, pvc)
+
+					pod := coretest.UnschedulablePod(coretest.PodOptions{PersistentVolumeClaims: []string{pvc.Name}})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					node := ExpectScheduled(ctx, env.Client, pod)
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
+
+					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+					Expect(vm).NotTo(BeNil())
+					Expect(vm.Zones).To(ConsistOf(&vmZone))
+				},
+				Entry("Azure Disk CSI", zones.LabelAzureDiskCSIZone),
+				Entry("Azure Elastic SAN CSI", zones.LabelAzureElasticSANCSIZone),
+			)
+			DescribeTable("should launch a regional node for a bound PV whose CSI zone is empty",
+				func(csiZoneLabel string) {
+					// Non-zonal SKU, so the only offering carries the regional zone "0".
+					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC6s_v3"}})
+					pv := coretest.PersistentVolume(coretest.PersistentVolumeOptions{
+						NodeSelectorTerms: []v1.NodeSelectorTerm{{
+							MatchExpressions: []v1.NodeSelectorRequirement{
+								{Key: csiZoneLabel, Operator: v1.NodeSelectorOpIn, Values: []string{""}},
+							},
+						}},
+					})
+					pvc := coretest.PersistentVolumeClaim(coretest.PersistentVolumeClaimOptions{VolumeName: pv.Name})
+					ExpectApplied(ctx, env.Client, nodePool, nodeClass, pv, pvc)
+
+					pod := coretest.UnschedulablePod(coretest.PodOptions{PersistentVolumeClaims: []string{pvc.Name}})
+					ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+					node := ExpectScheduled(ctx, env.Client, pod)
+					Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zones.Regional))
+
+					vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+					Expect(vm).NotTo(BeNil())
+					Expect(vm.Zones).To(BeEmpty())
+				},
+				Entry("Azure Disk CSI", zones.LabelAzureDiskCSIZone),
+				Entry("Azure Elastic SAN CSI", zones.LabelAzureElasticSANCSIZone),
+			)
 			It("should support provisioning in non-zonal regions", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
@@ -3047,7 +3110,8 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: "beta.kubernetes.io/arch", Label: "beta.kubernetes.io/arch", ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 				{Name: "beta.kubernetes.io/os", Label: "beta.kubernetes.io/os", ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 				{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
-				{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
+				{Name: zones.LabelAzureDiskCSIZone, Label: zones.LabelAzureDiskCSIZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
+				{Name: zones.LabelAzureElasticSANCSIZone, Label: zones.LabelAzureElasticSANCSIZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 				// Unsupported labels
 				{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
 				// Cluster Label
@@ -3404,6 +3468,54 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
 		})
 
+		It("should exclude on-demand offering when family (in quota category) quota is exhausted", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](0),
+					Limit:        lo.ToPtr[int64](1000),
+				},
+				// generalPurpose category triggers usage of quota categories
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(quota.GeneralPurposeCategory)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+			)
+			azureEnv.QuotaCategoryVMFamilyMappingAPI.VMFamilies.Append(&armcomputelimit.VMFamily{
+				Name: lo.ToPtr(targetFamily),
+				Properties: &armcomputelimit.VMFamilyProperties{
+					Category:          lo.ToPtr(quota.GeneralPurposeCategory),
+					ProvisioningState: lo.ToPtr(armcomputelimit.ResourceProvisioningStateSucceeded),
+				},
+			})
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, instanceType := range instanceTypes {
+				sku := fake.MakeSKU(instanceType.Name)
+				if sku.GetFamilyName() != targetFamily {
+					continue
+				}
+				foundFamily = true
+				for _, offering := range instanceType.Offerings {
+					if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+						Expect(offering.Available).To(BeFalse(), fmt.Sprintf("on-demand offering for %s should be unavailable due to category quota", instanceType.Name))
+					}
+					if sku.IsLowPriorityCapable() && offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot) {
+						Expect(offering.Available).To(BeTrue(), fmt.Sprintf("Spot offering for %s should not use category quota", instanceType.Name))
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the mapped family")
+		})
+
 		It("should allow on-demand offering when family has enough quota", func() {
 			targetFamily := defaultTestSKU.GetFamilyName()
 			Expect(targetFamily).ToNot(BeEmpty())
@@ -3433,6 +3545,51 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 			}
 			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the target family")
+		})
+
+		It("should allow on-demand offering when family (in quota category) has enough quota", func() {
+			targetFamily := defaultTestSKU.GetFamilyName()
+			Expect(targetFamily).ToNot(BeEmpty())
+
+			azureEnv.UsageAPI.Usages.Append(
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(targetFamily)},
+					CurrentValue: lo.ToPtr[int32](100),
+					Limit:        lo.ToPtr[int64](100),
+				},
+				// generalPurpose category triggers usage of quota categories
+				&armcompute.Usage{
+					Name:         &armcompute.UsageName{Value: lo.ToPtr(quota.GeneralPurposeCategory)},
+					CurrentValue: lo.ToPtr[int32](0),
+					Limit:        lo.ToPtr[int64](1000),
+				},
+			)
+			azureEnv.QuotaCategoryVMFamilyMappingAPI.VMFamilies.Append(&armcomputelimit.VMFamily{
+				Name: lo.ToPtr(targetFamily),
+				Properties: &armcomputelimit.VMFamilyProperties{
+					Category:          lo.ToPtr(quota.GeneralPurposeCategory),
+					ProvisioningState: lo.ToPtr(armcomputelimit.ResourceProvisioningStateSucceeded),
+				},
+			})
+			lo.Must0(azureEnv.QuotaProvider.Update(ctx))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).To(BeNil())
+
+			foundFamily := false
+			for _, instanceType := range instanceTypes {
+				sku := fake.MakeSKU(instanceType.Name)
+				if sku.GetFamilyName() != targetFamily {
+					continue
+				}
+				foundFamily = true
+				for _, offering := range instanceType.Offerings {
+					if offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeOnDemand) {
+						Expect(offering.Available).To(BeTrue(), fmt.Sprintf("on-demand offering for %s should be available with sufficient category quota", instanceType.Name))
+					}
+				}
+			}
+			Expect(foundFamily).To(BeTrue(), "expected to find instance types in the mapped family")
 		})
 
 		It("should block large sizes but allow small sizes in the same family", func() {

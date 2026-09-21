@@ -26,6 +26,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,12 +37,23 @@ type UsageAPI interface {
 	NewListPager(location string, options *armcompute.UsageClientListOptions) *runtime.Pager[armcompute.UsageClientListResponse]
 }
 
+type QuotaCategoryVMFamilyMappingAPI interface {
+	NewListBySubscriptionLocationResourcePager(
+		location string,
+		options *armcomputelimit.VMFamiliesClientListBySubscriptionLocationResourceOptions,
+	) *runtime.Pager[armcomputelimit.VMFamiliesClientListBySubscriptionLocationResourceResponse]
+}
+
+// GeneralPurposeCategory is the quota category for general purpose VM families when "quota categories" is enabled.
+const GeneralPurposeCategory = "generalPurposeCategory"
+
 // Provider exposes Azure compute quota/usage data for a given region.
 type Provider interface {
 	// Update fetches the latest quota usage data from the Azure Compute Usage API.
 	Update(ctx context.Context) error
-	// GetUsage returns the usage entry for the given VM family name (e.g. "standardBSFamily").
-	// The bool indicates whether the family was found.
+	// GetUsage returns the effective usage entry for the given VM family name (e.g. "standardBSFamily").
+	// If the family belongs to a quota category, it returns that category's usage entry.
+	// The bool indicates whether the effective usage entry was found.
 	GetUsage(familyName string) (bool, *armcompute.Usage)
 	// GetTotalRegionalUsage returns the total regional vCPU usage (the "cores" entry).
 	// The bool indicates whether the entry was found.
@@ -62,57 +74,133 @@ type Provider interface {
 var _ Provider = &DefaultProvider{}
 
 type DefaultProvider struct {
-	usageClient UsageAPI
-	location    string
-	mu          sync.RWMutex
-	usages      map[string]*armcompute.Usage
-	cm          *pretty.ChangeMonitor
-	seqNum      atomic.Uint64
+	usageClient                        UsageAPI
+	quotaCategoryVMFamilyMappingClient QuotaCategoryVMFamilyMappingAPI
+	location                           string
+	mu                                 sync.RWMutex
+	snapshot                           snapshot
+	cm                                 *pretty.ChangeMonitor
+	seqNum                             atomic.Uint64
 }
 
-func NewProvider(usageClient UsageAPI, location string) *DefaultProvider {
+type snapshot struct {
+	usages            map[string]*armcompute.Usage
+	familyToQuotaName map[string]string
+}
+
+func NewProvider(usageClient UsageAPI, quotaCategoryVMFamilyMappingClient QuotaCategoryVMFamilyMappingAPI, location string) *DefaultProvider {
 	return &DefaultProvider{
-		usageClient: usageClient,
-		location:    location,
-		usages:      map[string]*armcompute.Usage{},
-		cm:          pretty.NewChangeMonitor(),
+		usageClient:                        usageClient,
+		quotaCategoryVMFamilyMappingClient: quotaCategoryVMFamilyMappingClient,
+		location:                           location,
+		snapshot: snapshot{
+			usages:            map[string]*armcompute.Usage{},
+			familyToQuotaName: map[string]string{},
+		},
+		cm: pretty.NewChangeMonitor(),
 	}
 }
 
 func (p *DefaultProvider) Update(ctx context.Context) error {
-	freshUsages := map[string]*armcompute.Usage{}
-
-	pager := p.usageClient.NewListPager(p.location, nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
+	freshUsages, err := p.listUsages(ctx)
+	if err != nil {
+		return err
+	}
+	// Build mapping of family to quota (for quota categories)
+	freshFamilyToQuotaName := map[string]string{}
+	if _, enabled := freshUsages[GeneralPurposeCategory]; enabled {
+		familyToCategory, err := p.listQuotaCategoryToFamilyMappings(ctx)
 		if err != nil {
 			return err
 		}
-		for _, usage := range page.Value {
-			// Note that the usages API also returns entries for non-family categories, such as
-			// "cores" (total regional vCPU usage), "PremiumDiskCount", etc.
-			// We currently include these in our map as it doesn't harm anything, although they are not used currently.
-			if usage != nil && usage.Name != nil && usage.Name.Value != nil {
-				freshUsages[*usage.Name.Value] = usage
+		for familyName, categoryName := range familyToCategory {
+			if _, ok := freshUsages[categoryName]; ok {
+				freshFamilyToQuotaName[familyName] = categoryName
 			}
 		}
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.usages = freshUsages
-	if p.cm.HasChanged("quota-usages", freshUsages) {
+	p.snapshot = snapshot{
+		usages:            freshUsages,
+		familyToQuotaName: freshFamilyToQuotaName,
+	}
+	usagesChanged := p.cm.HasChanged("quota-usages", freshUsages)
+	mappingsChanged := p.cm.HasChanged("quota-family-mappings", freshFamilyToQuotaName)
+	if usagesChanged || mappingsChanged {
 		p.seqNum.Add(1)
+	}
+	if usagesChanged {
 		log.FromContext(ctx).V(1).Info("updated quota usages", "familyQuotas", formatFamilyQuotas(freshUsages))
 	}
+	if mappingsChanged {
+		log.FromContext(ctx).V(1).Info("updated quota category VM family mappings", "mappedFamilies", len(freshFamilyToQuotaName))
+	}
 	return nil
+}
+
+func (p *DefaultProvider) listUsages(ctx context.Context) (map[string]*armcompute.Usage, error) {
+	usages := map[string]*armcompute.Usage{}
+	pager := p.usageClient.NewListPager(p.location, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, usage := range page.Value {
+			// Note that the usages API also returns entries for non-family categories, such as
+			// "cores" (total regional vCPU usage), "PremiumDiskCount", etc.
+			// We currently include these in our map as it doesn't harm anything, although they are not used currently.
+			if usage != nil && usage.Name != nil && usage.Name.Value != nil {
+				usages[*usage.Name.Value] = usage
+			}
+		}
+	}
+	return usages, nil
+}
+
+func (p *DefaultProvider) listQuotaCategoryToFamilyMappings(ctx context.Context) (map[string]string, error) {
+	familyToCategory := map[string]string{}
+	pager := p.quotaCategoryVMFamilyMappingClient.NewListBySubscriptionLocationResourcePager(p.location, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing Compute Limit VM families: %w", err)
+		}
+		for _, family := range page.Value {
+			familyName, categoryName := resolveFamilyQuotaName(family)
+			if familyName == "" || categoryName == "" {
+				continue
+			}
+			familyToCategory[familyName] = categoryName
+		}
+	}
+	return familyToCategory, nil
+}
+
+func resolveFamilyQuotaName(family *armcomputelimit.VMFamily) (string, string) {
+	if family == nil || family.Properties == nil {
+		return "", ""
+	}
+	familyName := lo.FromPtr(family.Name)
+	categoryName := lo.FromPtr(family.Properties.Category)
+	if familyName == "" || categoryName == "" || lo.FromPtr(family.Properties.ProvisioningState) != armcomputelimit.ResourceProvisioningStateSucceeded {
+		return "", ""
+	}
+	return familyName, categoryName
 }
 
 func (p *DefaultProvider) GetUsage(familyName string) (bool, *armcompute.Usage) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	usage, ok := p.usages[familyName]
-	return ok, usage
+	quotaName := familyName
+	// handle quota categories
+	if categoryName, ok := p.snapshot.familyToQuotaName[familyName]; ok {
+		quotaName = categoryName
+	}
+	usage, found := p.snapshot.usages[quotaName]
+	return found, usage
 }
 
 func (p *DefaultProvider) GetTotalRegionalUsage() (bool, *armcompute.Usage) {
@@ -130,12 +218,13 @@ func (p *DefaultProvider) HasQuotaFor(ctx context.Context, sku *skewer.SKU) bool
 		log.FromContext(ctx).V(1).Info("WARNING: cannot check quota for SKU, vCPU count unavailable; assuming quota available", "sku", sku.GetName(), "error", err)
 		return true // fail open
 	}
+	// Note that this may return a quota category usage object if appropriate
 	found, usage := p.GetUsage(familyName)
 	if !found {
 		return true // fail open
 	}
 	if usage.Limit == nil || usage.CurrentValue == nil {
-		log.FromContext(ctx).V(1).Info("WARNING: quota entry has nil Limit or CurrentValue; assuming quota available", "family", familyName)
+		log.FromContext(ctx).V(1).Info("WARNING: quota entry has nil Limit or CurrentValue; assuming quota available", "quotaName", lo.FromPtr(usage.Name.Value))
 		return true // fail open
 	}
 	remaining := *usage.Limit - int64(*usage.CurrentValue)
@@ -149,10 +238,13 @@ func (p *DefaultProvider) SeqNum() uint64 {
 func (p *DefaultProvider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.usages) == 0 {
+	if len(p.snapshot.usages) == 0 && len(p.snapshot.familyToQuotaName) == 0 {
 		return
 	}
-	p.usages = map[string]*armcompute.Usage{}
+	p.snapshot = snapshot{
+		usages:            map[string]*armcompute.Usage{},
+		familyToQuotaName: map[string]string{},
+	}
 	p.cm = pretty.NewChangeMonitor()
 	p.seqNum.Add(1)
 }
