@@ -60,6 +60,8 @@ type Controller struct {
 // into some kind of builder struct to make the calling code easier to read.
 func NewController(
 	kubeClient client.Client,
+	subscriptionID string,
+	location string,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
@@ -70,7 +72,9 @@ func NewController(
 	parsedDiskEncryptionSetID *arm.ResourceID,
 	networkPolicy string,
 	networkPlugin string,
-	capacityReservationGroupReconciler *CapacityReservationGroupReconciler,
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
+	capacityReservationsClient azapi.CapacityReservationsAPI,
+	instanceTypes instanceTypeLister,
 ) *Controller {
 	return &Controller{
 
@@ -81,7 +85,7 @@ func NewController(
 		subnet:                   NewSubnetReconciler(subnetClient),
 		validation:               NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		localDNS:                 NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
-		capacityReservationGroup: capacityReservationGroupReconciler,
+		capacityReservationGroup: NewCapacityReservationGroupReconciler(subscriptionID, location, capacityReservationGroupsClient, capacityReservationsClient, instanceTypes),
 	}
 }
 
@@ -105,9 +109,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 		c.subnet,
 		c.validation,
 		c.localDNS,
-	}
-	if c.capacityReservationGroup != nil {
-		reconcilers = append(reconcilers, c.capacityReservationGroup)
+		c.capacityReservationGroup,
 	}
 	for _, reconciler := range reconcilers {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
