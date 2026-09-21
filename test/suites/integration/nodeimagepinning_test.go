@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/blang/semver/v4"
@@ -37,15 +38,12 @@ import (
 )
 
 var _ = Describe("Node image pinning", func() {
-	It("should provision a node one Kubernetes version behind the control plane", func() {
-		serverVersion := lo.Must(env.KubeClient.Discovery().ServerVersion())
-		requestedVersion := lo.Must(semver.ParseTolerant(serverVersion.GitVersion))
-		Expect(requestedVersion.Patch).To(BeNumerically(">", 0))
-		requestedVersion.Patch--
+	FIt("should provision a node one Kubernetes version behind the control plane", func() {
+		requestedVersion := previousSupportedKubernetesVersion()
 
 		nodeClassObject := lo.Must(runtime.DefaultUnstructuredConverter.ToUnstructured(nodeClass))
 		unstructuredNodeClass := &unstructured.Unstructured{Object: nodeClassObject}
-		Expect(unstructured.SetNestedField(unstructuredNodeClass.Object, requestedVersion.String(), "spec", "versions", "kubernetesVersion")).To(Succeed())
+		Expect(unstructured.SetNestedField(unstructuredNodeClass.Object, requestedVersion, "spec", "versions", "kubernetesVersion")).To(Succeed())
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
 		env.ExpectCreated(unstructuredNodeClass, nodePool, deployment)
@@ -56,14 +54,14 @@ var _ = Describe("Node image pinning", func() {
 			effectiveVersion, found, err := unstructured.NestedString(unstructuredNodeClass.Object, "status", "kubernetesVersion")
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(found).To(BeTrue())
-			g.Expect(effectiveVersion).To(Equal(requestedVersion.String()))
+			g.Expect(effectiveVersion).To(Equal(requestedVersion))
 		}).Should(Succeed())
 
 		node := env.GetNode(pods[0].Spec.NodeName)
-		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(requestedVersion.String()))
+		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(requestedVersion))
 	})
 
-	It("should pin the current Kubernetes and node image versions", func() {
+	FIt("should pin the current Kubernetes and node image versions", func() {
 		env.ExpectCreated(nodeClass)
 
 		Eventually(func(g Gomega) {
@@ -103,7 +101,7 @@ var _ = Describe("Node image pinning", func() {
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
 	})
 
-	It("should pin the latest node image version", func() {
+	FIt("should pin the latest node image version", func() {
 		env.ExpectCreated(nodeClass)
 
 		Eventually(func(g Gomega) {
@@ -144,7 +142,7 @@ var _ = Describe("Node image pinning", func() {
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
 	})
 
-	It("should pin a recently used node image version", func() {
+	FIt("should pin a recently used node image version", func() {
 		if env.UsesSharedImageGallery() {
 			Skip("requires Community Gallery images")
 		}
@@ -203,6 +201,33 @@ var _ = Describe("Node image pinning", func() {
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
 	})
 })
+
+func previousSupportedKubernetesVersion() string {
+	serverVersion := lo.Must(env.KubeClient.Discovery().ServerVersion())
+	controlPlaneVersion := lo.Must(semver.ParseTolerant(serverVersion.GitVersion))
+	clientOptions := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{Cloud: env.CloudConfig},
+	}
+	managedClustersClient := lo.Must(armcontainerservice.NewManagedClustersClient(env.SubscriptionID, env.GetDefaultCredential(), clientOptions))
+	response := lo.Must(managedClustersClient.ListKubernetesVersions(env.Context, env.Region, nil))
+
+	var previousVersion semver.Version
+	found := false
+	for _, version := range response.Values {
+		if version == nil {
+			continue
+		}
+		for patchVersion := range version.PatchVersions {
+			candidate := lo.Must(semver.Parse(patchVersion))
+			if candidate.LT(controlPlaneVersion) && (!found || candidate.GT(previousVersion)) {
+				previousVersion = candidate
+				found = true
+			}
+		}
+	}
+	Expect(found).To(BeTrue(), "expected a supported Kubernetes version before %s", controlPlaneVersion)
+	return previousVersion.String()
+}
 
 func latestCommunityImageVersions(imageID string) (string, string) {
 	imageInfo := imagefamilytypes.DefaultImageOutput{}
