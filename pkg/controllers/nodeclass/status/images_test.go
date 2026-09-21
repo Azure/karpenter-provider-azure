@@ -359,7 +359,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				Expect(nodeClass.Status.Versions.LatestImageVersion).To(Equal(newCIGImageVersion))
+				Expect(lo.FromPtr(nodeClass.Status.Versions.LatestImageVersion)).To(Equal(newCIGImageVersion))
 			})
 		})
 
