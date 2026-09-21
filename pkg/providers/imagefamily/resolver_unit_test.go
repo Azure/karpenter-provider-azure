@@ -34,6 +34,22 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 )
 
+func TestRequiresFIPS1403Encryption(t *testing.T) {
+	for distro, want := range map[string]bool{
+		"aks-ubuntu-fips-containerd-22.04":         true,
+		"aks-ubuntu-fips-containerd-22.04-gen2":    true,
+		"aks-ubuntu-fips-containerd-22.04-tl-gen2": true,
+		"aks-ubuntu-containerd-22.04-gen2":         false,
+		"aks-ubuntu-fips-containerd-20.04-gen2":    false,
+		"aks-azurelinux-v3-fips-gen2":              false,
+		"":                                         false,
+	} {
+		t.Run(distro, func(t *testing.T) {
+			NewWithT(t).Expect(requiresFIPS1403Encryption(distro)).To(Equal(want))
+		})
+	}
+}
+
 func prepareTestKubeletConfiguration(enableNodeHardening bool, provisionMode string) *bootstrap.KubeletConfiguration {
 	instanceType := &cloudprovider.InstanceType{
 		Requirements: scheduling.NewRequirements(

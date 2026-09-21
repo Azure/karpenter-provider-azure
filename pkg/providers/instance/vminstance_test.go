@@ -17,17 +17,47 @@ limitations under the License.
 package instance
 
 import (
+	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
+
+func TestVMFIPS1403EncryptionPayload(t *testing.T) {
+	for _, fips := range []bool{false, true} {
+		for _, ultraSSD := range []bool{false, true} {
+			g := NewWithT(t)
+			vm := newVMObject(&createVMOptions{
+				Zone:            "eastus2-1",
+				NodeClass:       &v1beta1.AKSNodeClass{},
+				InstanceType:    &cloudprovider.InstanceType{Name: "Standard_D4s_v5"},
+				LaunchTemplate:  &launchtemplate.Template{EnableFIPS1403Encryption: fips},
+				UltraSSDEnabled: ultraSSD,
+			})
+			payload, err := json.Marshal(vm)
+			g.Expect(err).ToNot(HaveOccurred())
+			var decoded map[string]interface{}
+			g.Expect(json.Unmarshal(payload, &decoded)).To(Succeed())
+			properties := decoded["properties"].(map[string]interface{})
+			if !fips && !ultraSSD {
+				g.Expect(properties).ToNot(HaveKey("additionalCapabilities"))
+				continue
+			}
+			capabilities := properties["additionalCapabilities"].(map[string]interface{})
+			g.Expect(capabilities["enableFips1403Encryption"] == true).To(Equal(fips))
+			g.Expect(capabilities["ultraSSDEnabled"] == true).To(Equal(ultraSSD))
+		}
+	}
+}
 
 func TestResolveUltraSSDRequested(t *testing.T) {
 	t.Parallel()
