@@ -108,8 +108,8 @@ func NewCapacityReservationGroupReconciler(
 func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	if nodeClass.Spec.CapacityReservation == nil {
 		nodeClass.Status.CapacityReservationGroup = nil
-		// The condition is not a dependent of Ready while no group is configured, but
-		// clear any stale value left behind by a previous configuration.
+		// StatusConditions only includes this condition as a Ready dependency while
+		// capacityReservation is configured. Clear the stale persisted condition.
 		_ = nodeClass.StatusConditions().Clear(v1beta1.ConditionTypeCapacityReservationGroupReady)
 		return reconcile.Result{}, nil
 	}
