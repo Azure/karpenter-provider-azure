@@ -278,12 +278,17 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 
 // capacityReservationPlacements projects the Capacity Reservation Group resolved in
 // status into the {VM size, zone} pairs its member reservations can back. A nil
-// result means no group is configured, which leaves offerings unrestricted.
+// result means no group is configured, which leaves offerings unrestricted. An
+// empty result means the configured group has no current resolved placements.
 // Status retains ineligible members for diagnostics; this projection includes only
 // eligible members.
 func (p *DefaultProvider) capacityReservationPlacements(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) []capacityReservationPlacement {
-	if nodeClass.Spec.CapacityReservation == nil || nodeClass.Status.CapacityReservationGroup == nil {
+	if nodeClass.Spec.CapacityReservation == nil {
 		return nil
+	}
+	if nodeClass.Status.CapacityReservationGroup == nil ||
+		!strings.EqualFold(nodeClass.Status.CapacityReservationGroup.ID, nodeClass.GetCapacityReservationGroupID()) {
+		return []capacityReservationPlacement{}
 	}
 	placements := []capacityReservationPlacement{}
 	for _, reservation := range nodeClass.Status.CapacityReservationGroup.CapacityReservations {

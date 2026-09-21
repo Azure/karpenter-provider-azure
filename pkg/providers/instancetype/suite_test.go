@@ -3835,9 +3835,25 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
 		})
 
+		It("should tolerate ARM returning a differently cased group ID", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			nodeClass.Status.CapacityReservationGroup.ID = strings.ToUpper(nodeClass.Status.CapacityReservationGroup.ID)
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(offeringZones(instanceTypes)).To(ConsistOf(reservedZone))
+		})
+
 		It("should offer nothing while the group is unresolved, rather than falling back to unreserved capacity", func() {
 			reserve()
 			nodeClass.Status.CapacityReservationGroup = nil
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(BeEmpty())
+		})
+
+		It("should offer nothing while resolved status belongs to the previously configured group", func() {
+			reserve(lo.T2(reservedSKU, []string{"1"}))
+			nodeClass.Spec.CapacityReservation.GroupID = lo.ToPtr(nodeClass.GetCapacityReservationGroupID() + "-replacement")
 			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(instanceTypes).To(BeEmpty())
