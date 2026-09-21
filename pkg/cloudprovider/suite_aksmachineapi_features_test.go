@@ -1195,7 +1195,7 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should rewrite Preferred to Required on the wire when Status.LocalDNSState=Enabled and the VM size clears the LocalDNS floor", func() {
 				// Preferred is never sent downstream — Karpenter is the only kube-aware
-				// resolver, so ResolvedLocalDNSForWire rewrites Mode to the terminal
+				// resolver, so localdns.ResolveForWire rewrites Mode to the terminal
 				// value implied by Status.LocalDNSState and the node's own VM size.
 				// Enabled + a SKU above the floor => Required.
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1269,7 +1269,7 @@ var _ = Describe("CloudProvider", func() {
 				// The status sub-reconciler resolves Preferred to Enabled in this
 				// test env (no cluster conflicts). Wipe LocalDNSState back to nil
 				// via a status Patch to drive the "Status not yet resolved"
-				// branch of ResolvedLocalDNSForWire. Re-fetch first because the
+				// branch of localdns.ResolveForWire. Re-fetch first because the
 				// reconcile bumped the resource version.
 				Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
 				stored := nodeClass.DeepCopy()

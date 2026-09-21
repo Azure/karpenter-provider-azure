@@ -42,6 +42,7 @@ import (
 	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 
@@ -424,11 +425,10 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, par
 	// "enable LocalDNS where the node can support it" (see the "VM SKU capacity"
 	// row of the compatibility checks at aka.ms/aks/localdns): a node below the
 	// floor still provisions, it just runs without LocalDNS. Filtering here would
-	// instead delete those sizes from the candidate list, so a NodePool pinned to
-	// small SKUs would lose every candidate the moment LocalDNS resolved to
-	// Enabled and its pods would sit Pending behind karpenter core's generic "no
-	// instance type satisfied requirements". The per-node decision is made at
-	// launch time by AKSNodeClass.IsLocalDNSEnabledForInstanceType.
+	// delete those sizes from the candidate list, so a NodePool pinned to small
+	// SKUs would lose every candidate and its pods would sit Pending. The
+	// per-node decision is made at launch time by
+	// localdns.IsSupportedForInstanceType.
 	if !params.LocalDNSRequired {
 		return true
 	}
@@ -436,7 +436,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, par
 	if err != nil {
 		return false
 	}
-	return v1beta1.SKUSupportsLocalDNS(cpu, memoryMiB(sku))
+	return localdns.SKUMeetsFloor(cpu, memoryMiB(sku))
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, params *instanceTypeParameters) bool {

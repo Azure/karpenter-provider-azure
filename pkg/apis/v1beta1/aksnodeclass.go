@@ -18,13 +18,11 @@ package v1beta1
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 type FIPSMode string
@@ -812,61 +810,6 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 		*in.Spec.ArtifactStreaming.Enabled
 }
 
-// LocalDNS VM size floor. AKS only runs LocalDNS on a node whose VM SKU has
-// enough headroom for the proxy; see the "VM SKU capacity" row of the Preferred
-// compatibility checks at aka.ms/aks/localdns.
-const (
-	LocalDNSMinVCPU = 4
-	// 256 MB = 244.140625 MiB.
-	LocalDNSMinMemoryMiB = 244
-)
-
-// SKUSupportsLocalDNS reports whether a VM SKU with the given vCPU count and
-// memory (in MiB) clears the LocalDNS floor. This is the single definition of
-// that floor: the instance type provider applies it to skewer SKU data when
-// filtering for Mode=Required, and SupportsLocalDNS applies it to an already
-// built instance type when resolving Mode=Preferred per node.
-func SKUSupportsLocalDNS(vcpu, memoryMiB int64) bool {
-	return vcpu >= LocalDNSMinVCPU && memoryMiB >= LocalDNSMinMemoryMiB
-}
-
-// SupportsLocalDNS reports whether the VM size described by reqs can run
-// LocalDNS. It reads the SKU's vCPU count and memory off the well-known
-// requirements the instance type provider stamps on every instance type, which
-// carry the raw skewer values -- the same two numbers the provider's own filter
-// reads. Capacity is deliberately not used: Capacity[memory] has
-// VMMemoryOverheadPercent subtracted from it, so judging the floor against it
-// would make a fixed AKS threshold vary with a Karpenter option.
-//
-// An instance type missing either requirement is reported as unsupported: the
-// provider always sets both, so their absence means we cannot establish that
-// the node clears the floor, and LocalDNS-off is the safe answer.
-func SupportsLocalDNS(reqs scheduling.Requirements) bool {
-	value := func(key string) (int64, bool) {
-		if !reqs.Has(key) {
-			return 0, false
-		}
-		values := reqs.Get(key).Values()
-		if len(values) != 1 {
-			return 0, false
-		}
-		parsed, err := strconv.ParseInt(values[0], 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		return parsed, true
-	}
-	vcpu, ok := value(LabelSKUCPU)
-	if !ok {
-		return false
-	}
-	memoryMiB, ok := value(LabelSKUMemory)
-	if !ok {
-		return false
-	}
-	return SKUSupportsLocalDNS(vcpu, memoryMiB)
-}
-
 // IsLocalDNSRequired reports whether the user asked for LocalDNS unconditionally.
 //
 // This is the only mode in which the VM size floor is a hard constraint on
@@ -874,7 +817,8 @@ func SupportsLocalDNS(reqs scheduling.Requirements) bool {
 // prerequisites are not met", so a SKU that cannot run LocalDNS is not a
 // candidate at all. Under Preferred the floor is not a constraint -- a node too
 // small for LocalDNS simply runs without it -- so the provider must not filter
-// on it. See SupportsLocalDNS for the per-node Preferred decision.
+// on it. The per-node Preferred decision lives in pkg/providers/localdns, which
+// is where the VM size floor and everything that reads it now live.
 func (in *AKSNodeClass) IsLocalDNSRequired() bool {
 	return in.Spec.LocalDNS != nil && in.Spec.LocalDNS.Mode == LocalDNSModeRequired
 }
@@ -890,7 +834,7 @@ func (in *AKSNodeClass) IsLocalDNSRequired() bool {
 // This is the NodeClass-wide half of the decision. Under Preferred it is
 // necessary but not sufficient: the node's own VM size has to clear the LocalDNS
 // floor as well, which is why the provisioning path calls
-// IsLocalDNSEnabledForInstanceType rather than this.
+// localdns.IsSupportedForInstanceType rather than this.
 //
 // If Status.LocalDNSState has not yet been written, this returns false as a
 // safe default. Karpenter core gates provisioning on the AKSNodeClass
@@ -898,48 +842,6 @@ func (in *AKSNodeClass) IsLocalDNSRequired() bool {
 // the provisioning path will not observe the unresolved state.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
-}
-
-// IsLocalDNSEnabledForInstanceType returns whether LocalDNS should be enabled on
-// a node of the VM size described by reqs.
-//
-// Under Required the provider has already filtered out every SKU below the
-// floor, so this is equivalent to IsLocalDNSEnabled. Under Preferred it is
-// strictly narrower, and that difference is the point: Preferred means "enable
-// LocalDNS where the node can support it", so a NodePool that admits both large
-// and small VM sizes gets LocalDNS on the large nodes and plain cluster DNS on
-// the small ones, rather than losing the small sizes as provisioning candidates.
-func (in *AKSNodeClass) IsLocalDNSEnabledForInstanceType(reqs scheduling.Requirements) bool {
-	return in.IsLocalDNSEnabled() && SupportsLocalDNS(reqs)
-}
-
-// ResolvedLocalDNSForWire translates Status.LocalDNSState (the source of
-// truth, written by Karpenter) into a deterministic Mode to send downstream for
-// a node of the VM size described by reqs.
-//
-// In the aks-rp API contract, LocalDNS state is read-only; only Mode is
-// accepted as input. Preferred must therefore never be sent over the wire --
-// downstream would otherwise re-interpret it against the single VM size of an
-// agent pool, which is not the shape Karpenter provisions in.
-//
-// Rules:
-//   - Mode == Disabled or Required: return Spec as-is.
-//   - Mode == Preferred: Required when this NodeClass resolved to Enabled *and*
-//     this VM size clears the LocalDNS floor; Disabled otherwise.
-func (in *AKSNodeClass) ResolvedLocalDNSForWire(reqs scheduling.Requirements) *LocalDNS {
-	if in.Spec.LocalDNS == nil {
-		return nil
-	}
-	if in.Spec.LocalDNS.Mode != LocalDNSModePreferred {
-		return in.Spec.LocalDNS
-	}
-	out := in.Spec.LocalDNS.DeepCopy()
-	if in.IsLocalDNSEnabledForInstanceType(reqs) {
-		out.Mode = LocalDNSModeRequired
-	} else {
-		out.Mode = LocalDNSModeDisabled
-	}
-	return out
 }
 
 // GetGPUMode returns the effective GPU mode.

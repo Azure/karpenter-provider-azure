@@ -131,8 +131,11 @@ var (
 	LabelSKUSeries  = Group + "/sku-series"  // Dpls_v6
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
-	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
-	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
+	LabelSKUCPU = Group + "/sku-cpu" // sku.vCPUs
+	// sku.MemoryGB, converted to MiB. The unit matters: the LocalDNS VM size
+	// floor in pkg/providers/localdns reads this label and compares it against a
+	// MiB threshold.
+	LabelSKUMemory = Group + "/sku-memory"
 	// AKS domain.
 	AKSLabelCPU    = AKSLabelDomain + "/sku-cpu"    // Same value as sku-cpu.
 	AKSLabelMemory = AKSLabelDomain + "/sku-memory" // Same value as sku-memory.

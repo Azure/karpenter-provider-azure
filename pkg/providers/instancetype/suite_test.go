@@ -76,6 +76,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -3426,6 +3427,14 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(normalNode.Capacity.Memory().Value()).To(Equal(int64(7 * 1024 * 1024 * 1024)))                    // 7GiB in bytes
 				Expect(gpuNode.Requirements.Get(v1beta1.LabelSKUMemory).Values()).To(ConsistOf(fmt.Sprint(220 * 1024)))  // 220GiB in MiB
 				Expect(gpuNode.Capacity.Memory().Value()).To(Equal(int64(220 * 1024 * 1024 * 1024)))                     // 220GiB in bytes
+
+				// Round-trip the LocalDNS floor against the values just asserted.
+				// pkg/providers/localdns reads these two requirements as a vCPU count
+				// and a MiB count, so if the producer ever switched sku-memory to GiB
+				// the 220GiB SKU would read as 220 -- below the 244 MiB floor -- and
+				// this assertion fails instead of the floor silently moving.
+				Expect(localdns.InstanceTypeMeetsFloor(normalNode.Requirements)).To(BeFalse())
+				Expect(localdns.InstanceTypeMeetsFloor(gpuNode.Requirements)).To(BeTrue())
 
 				// GPU -- Number of GPUs
 				gpuQuantity, ok := gpuNode.Capacity["nvidia.com/gpu"]

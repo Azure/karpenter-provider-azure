@@ -40,17 +40,14 @@ import (
 
 // localDNSPreferredVersionThreshold is the minimum Kubernetes version required
 // for LocalDNS to be enabled under Mode=Preferred.
-var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(localDNSPreferredK8sVersionThreshold))
-
-// LocalDNSPreferredK8sVersionThreshold exposes the Preferred-mode threshold to
-// the e2e suite, which must skip Preferred expectations on clusters below it.
-// An alias rather than a rename so the value keeps a single home.
-const LocalDNSPreferredK8sVersionThreshold = localDNSPreferredK8sVersionThreshold
+var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(LocalDNSPreferredK8sVersionThreshold))
 
 const (
-	// localDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
-	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred.
-	localDNSPreferredK8sVersionThreshold = "1.99.0"
+	// LocalDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
+	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred. It is
+	// exported because the e2e suite has to skip Preferred expectations on
+	// clusters below it.
+	LocalDNSPreferredK8sVersionThreshold = "1.99.0"
 
 	// konnectivityAgentPolicy{Name,Namespace} identify the AKS-managed
 	// NetworkPolicy that is allow-listed when scanning for conflicting

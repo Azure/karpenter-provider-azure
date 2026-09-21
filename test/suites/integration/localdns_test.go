@@ -21,11 +21,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +39,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	gomegatypes "github.com/onsi/gomega/types"
 )
 
 var (
@@ -198,12 +201,8 @@ var _ = Describe("LocalDNS", func() {
 	// the "VM SKU capacity" compatibility check leaves LocalDNS disabled rather
 	// than blocking the pool. See aka.ms/aks/localdns.
 	It("should provision a below-floor SKU without LocalDNS under Mode=Preferred", func() {
-		By("Pinning the NodePool to a VM size too small for LocalDNS")
-		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      corev1.LabelInstanceTypeStable,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{belowFloorVMSize},
-		})
+		By("Constraining the NodePool to VM sizes too small for LocalDNS")
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, belowFloorRequirements()...)
 
 		By("Configuring the NodeClass with Mode=Preferred")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
@@ -217,9 +216,9 @@ var _ = Describe("LocalDNS", func() {
 		env.ExpectCreated(nodeClass, nodePool, externalPod)
 
 		By("Expecting the node to provision anyway -- Preferred must not starve the NodePool")
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(externalPod)
-		Expect(refreshNode(node).Labels[corev1.LabelInstanceTypeStable]).To(Equal(belowFloorVMSize))
+		expectNodeVCPU(node, BeNumerically("<", localdns.MinVCPU))
 
 		By("Expecting the node to report LocalDNS off, because its VM size can't carry it")
 		expectNodeLocalDNSLabel(node, "disabled")
@@ -234,12 +233,8 @@ var _ = Describe("LocalDNS", func() {
 	It("should enable LocalDNS on an above-floor SKU under Mode=Preferred", func() {
 		skipIfBelowPreferredThreshold()
 
-		By("Pinning the NodePool to a VM size that clears the LocalDNS floor")
-		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      corev1.LabelInstanceTypeStable,
-			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{aboveFloorVMSize},
-		})
+		By("Constraining the NodePool to VM sizes that clear the LocalDNS floor")
+		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, aboveFloorRequirements()...)
 
 		By("Configuring the NodeClass with Mode=Preferred")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
@@ -253,10 +248,10 @@ var _ = Describe("LocalDNS", func() {
 		internalPod := createDNSTestPod("kubernetes.default.svc.cluster.local", nil)
 		env.ExpectCreated(nodeClass, nodePool, externalPod, internalPod)
 
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(externalPod)
 		env.EventuallyExpectHealthy(internalPod)
-		Expect(refreshNode(node).Labels[corev1.LabelInstanceTypeStable]).To(Equal(aboveFloorVMSize))
+		expectNodeVCPU(node, BeNumerically(">=", localdns.MinVCPU))
 
 		By("Expecting the node to report LocalDNS on")
 		expectNodeLocalDNSLabel(node, "enabled")
@@ -271,11 +266,6 @@ var _ = Describe("LocalDNS", func() {
 })
 
 const (
-	// VM sizes either side of the LocalDNS floor (v1beta1.LocalDNSMinVCPU /
-	// LocalDNSMinMemoryMiB). Standard_D2s_v3 has 2 vCPU, Standard_D4s_v3 has 4.
-	belowFloorVMSize = "Standard_D2s_v3"
-	aboveFloorVMSize = "Standard_D4s_v3"
-
 	// LocalDNS listener IPs
 	localDNSClusterListenerIP = "169.254.10.11" // Handles external DNS and in-cluster DNS
 	localDNSNodeListenerIP    = "169.254.10.10" // Handles external DNS from CoreDNS pods
@@ -286,7 +276,58 @@ const (
 
 	// Test timeouts
 	dnsTestTimeout = 3 * time.Minute
+
+	// minUsableVCPU / minUsableMemoryMiB keep the below-floor spec off the very
+	// smallest B-series sizes. They have nothing to do with LocalDNS -- they just
+	// leave room for the DaemonSets and the DNS test pod so the spec is exercising
+	// the LocalDNS decision rather than a failure to schedule.
+	minUsableVCPU      = 2
+	minUsableMemoryMiB = 4096
 )
+
+// belowFloorRequirements constrains a NodePool to VM sizes that cannot run
+// LocalDNS, and aboveFloorRequirements to ones that can. Both are derived from
+// localdns.MinVCPU / localdns.MinMemoryMiB rather than naming specific SKUs, so
+// the specs keep testing the floor the product actually enforces even if the
+// floor moves or a size is retired in some region.
+func belowFloorRequirements() []karpv1.NodeSelectorRequirementWithMinValues {
+	return []karpv1.NodeSelectorRequirementWithMinValues{
+		// Lt is exclusive, so this is vCPU < MinVCPU: below the floor whatever the
+		// SKU's memory turns out to be.
+		{
+			Key:      v1beta1.LabelSKUCPU,
+			Operator: corev1.NodeSelectorOpLt,
+			Values:   []string{strconv.Itoa(localdns.MinVCPU)},
+		},
+		{
+			Key:      v1beta1.LabelSKUCPU,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{strconv.Itoa(minUsableVCPU - 1)},
+		},
+		{
+			Key:      v1beta1.LabelSKUMemory,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{strconv.Itoa(minUsableMemoryMiB - 1)},
+		},
+	}
+}
+
+func aboveFloorRequirements() []karpv1.NodeSelectorRequirementWithMinValues {
+	return []karpv1.NodeSelectorRequirementWithMinValues{
+		// Gt is exclusive, so Gt(Min-1) is >= Min: exactly the floor the provider
+		// applies.
+		{
+			Key:      v1beta1.LabelSKUCPU,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{strconv.Itoa(localdns.MinVCPU - 1)},
+		},
+		{
+			Key:      v1beta1.LabelSKUMemory,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{strconv.Itoa(localdns.MinMemoryMiB - 1)},
+		},
+	}
+}
 
 // DNSTestResult holds the results of DNS resolution tests
 type DNSTestResult struct {
@@ -308,19 +349,16 @@ func expectDNSResult(result DNSTestResult, expectedDNSIP string, description str
 		fmt.Sprintf("%s (%s), but found %s", description, expectedDNSIP, result.DNSIP))
 }
 
-// refreshNode re-reads a node and waits for the cloud-provider node controller to
-// apply node.kubernetes.io/instance-type. The node handed back by
-// EventuallyExpectCreatedNodeCount is a snapshot taken the instant the object first
-// appeared -- while it still carries the node.cloudprovider.kubernetes.io/uninitialized
-// taint and none of the cloud labels -- so its VM size cannot be read directly.
-func refreshNode(node *corev1.Node) *corev1.Node {
-	var currentNode corev1.Node
-	Eventually(func(g Gomega) {
-		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: node.Name}, &currentNode)).To(Succeed())
-		g.Expect(currentNode.Labels).To(HaveKey(corev1.LabelInstanceTypeStable),
-			fmt.Sprintf("Node %s should have the instance-type label", node.Name))
-	}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-	return &currentNode
+// expectNodeVCPU asserts the vCPU count of the VM size Karpenter actually
+// picked, read off the same label the production floor check reads. The specs
+// constrain the NodePool rather than pinning one SKU, so this is what says which
+// side of the floor the scheduler landed on.
+func expectNodeVCPU(node *corev1.Node, matcher gomegatypes.GomegaMatcher) {
+	value, ok := node.Labels[v1beta1.LabelSKUCPU]
+	Expect(ok).To(BeTrue(), fmt.Sprintf("Node %s should have the %s label", node.Name, v1beta1.LabelSKUCPU))
+	vcpu, err := strconv.Atoi(value)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(vcpu).To(matcher, fmt.Sprintf("Node %s has %d vCPU", node.Name, vcpu))
 }
 
 // expectNodeLocalDNSLabel verifies that a node has the expected localdns-state label value.

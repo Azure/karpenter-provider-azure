@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -222,8 +223,8 @@ func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *cor
 	// decided on. Passing the instance type is what makes Preferred mean what it
 	// means in AKS -- LocalDNS on nodes whose SKU can carry it, off on the ones
 	// that cannot, rather than one verdict for every Machine off the NodeClass.
-	// See AKSNodeClass.ResolvedLocalDNSForWire for the full rationale.
-	spec := nodeClass.ResolvedLocalDNSForWire(instanceType.Requirements)
+	// See localdns.ResolveForWire for the full rationale.
+	spec := localdns.ResolveForWire(nodeClass, instanceType.Requirements)
 	if spec == nil {
 		return nil
 	}
