@@ -51,6 +51,7 @@ jobs:
           - Storage
           - Subnet
           - Utilization
+          - Windows
     permissions:
       contents: read
       statuses: write

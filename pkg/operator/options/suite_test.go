@@ -133,7 +133,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "12345678-1234-1234-1234-123456789012")
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
-			os.Setenv("AKS_MACHINES_POOL_NAME", "testmpool")
+			os.Setenv("AKS_MACHINES_POOL_NAME", "mpool")
 			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
 			os.Setenv("PROVIDER_BATCH_IDLE_DURATION", "1500ms")
 			os.Setenv("PROVIDER_BATCH_MAX_DURATION", "6s")
@@ -168,7 +168,7 @@ var _ = Describe("Options", func() {
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
 				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
 				ManageExistingAKSMachines:      lo.ToPtr(true),
-				AKSMachinesPoolName:            lo.ToPtr("testmpool"),
+				AKSMachinesPoolName:            lo.ToPtr("mpool"),
 				ProviderBatchIdleDuration:      lo.ToPtr(1500 * time.Millisecond),
 				ProviderBatchMaxDuration:       lo.ToPtr(6 * time.Second),
 				ProviderBatchMaxSize:           lo.ToPtr(42),
@@ -187,7 +187,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
 				"--provision-mode", "aksmachineapiheaderbatch",
-				"--aks-machines-pool-name", "testmpool",
+				"--aks-machines-pool-name", "mpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 				"--provider-batch-idle-duration", "6s",
@@ -207,7 +207,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
 				"--provision-mode", "aksmachineapiheaderbatch",
-				"--aks-machines-pool-name", "testmpool",
+				"--aks-machines-pool-name", "mpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 				"--provider-batch-max-size", "0",
@@ -832,7 +832,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
 				"--provision-mode", "aksmachineapi",
-				"--aks-machines-pool-name", "testmpool",
+				"--aks-machines-pool-name", "mpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 			)
@@ -894,7 +894,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--manage-existing-aks-machines",
 				"--provision-mode", "aksmachineapi",
-				"--aks-machines-pool-name", "testmpool",
+				"--aks-machines-pool-name", "mpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 			)
@@ -912,7 +912,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
 				"--provision-mode", "aksmachineapiheaderbatch",
-				"--aks-machines-pool-name", "testmpool",
+				"--aks-machines-pool-name", "mpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 			)

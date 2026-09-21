@@ -58,6 +58,16 @@ func UseUbuntu2204FIPS(kubernetesVersion string, trustedLaunch bool) bool {
 	return version.GE(semver.Version{Major: 1, Minor: 35})
 }
 
+// SupportsWindows2025 reports whether the Kubernetes version supports the Windows2025 image family,
+// which AKS offers from 1.32.0 onwards.
+func SupportsWindows2025(kubernetesVersion string) bool {
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 32})
+}
+
 // ResolvesToUbuntu2004 returns true if the inputs resolve to Ubuntu2004.
 func ResolvesToUbuntu2004(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string) bool {
 	resolved := GetImageFamily(familyName, fipsMode, trustedLaunch, kubernetesVersion, nil)
