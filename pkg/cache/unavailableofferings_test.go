@@ -171,10 +171,29 @@ func TestUnavailableOfferingsVMFamilyBlocksAll(t *testing.T) {
 }
 
 func TestUnavailableOfferings_KeyGeneration(t *testing.T) {
-	expectedKey := "spot:NV16as_v4:westus"
-	key := singleInstanceKey("", "NV16as_v4", "westus", "spot")
-	if key != expectedKey {
-		t.Errorf("Expected key to be %s, but got %s", expectedKey, key)
+	tests := []struct {
+		name     string
+		scope    unavailableOfferingsScope
+		expected string
+	}{
+		{
+			name:     "unscoped",
+			scope:    unreservedScope,
+			expected: "spot:NV16as_v4:westus",
+		},
+		{
+			name:     "capacity reservation group",
+			scope:    capacityReservationGroupScope("group-id"),
+			expected: "crg:group-id:spot:NV16as_v4:westus",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := singleInstanceKey(tt.scope, "NV16as_v4", "westus", "spot")
+			if key != tt.expected {
+				t.Errorf("Expected key to be %s, but got %s", tt.expected, key)
+			}
+		})
 	}
 }
 
@@ -328,14 +347,14 @@ func TestUnavailableOfferingsSeqNumChangesOnlyWhenAvailabilityChanges(t *testing
 		t.Fatalf("expected first mark to advance one generation, got %d", got)
 	}
 
-	_, singleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey("", nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
-	_, familyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey("", nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, singleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey(unreservedScope, nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, familyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey(unreservedScope, nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
 	u.MarkUnavailableWithTTL(context.TODO(), "test reason", nv16, "westus-1", karpv1.CapacityTypeOnDemand, 2*time.Hour)
 	if got := u.SeqNum(); got != 1 {
 		t.Fatalf("expected duplicate mark to keep generation 1, got %d", got)
 	}
-	_, refreshedSingleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey("", nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
-	_, refreshedFamilyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey("", nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, refreshedSingleExpiration, _ := singleInstanceCache.GetWithExpiration(singleInstanceKey(unreservedScope, nv16.GetName(), "westus-1", karpv1.CapacityTypeOnDemand))
+	_, refreshedFamilyExpiration, _ := vmFamilyCache.GetWithExpiration(vmFamilyKey(unreservedScope, nv16.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand))
 	if !refreshedSingleExpiration.After(singleExpiration) || !refreshedFamilyExpiration.After(familyExpiration) {
 		t.Fatal("expected duplicate mark to refresh both cache expirations")
 	}

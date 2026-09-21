@@ -155,17 +155,17 @@ func newTestResponseErrorHandling() *ResponseErrorHandler {
 	return NewResponseErrorHandler(cache.NewUnavailableOfferings())
 }
 
-func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, scope string, unavailable, available []offeringToCheck) {
+func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, capacityReservationGroupID string, unavailable, available []offeringToCheck) {
 	t.Helper()
 	g := NewWithT(t)
-	scoped := unavailableOfferings.ForCapacityReservationGroup(scope)
+	view := unavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID)
 
 	for _, info := range unavailable {
-		g.Expect(scoped.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeTrue(),
+		g.Expect(view.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeTrue(),
 			"Expected offering %s in zone %s with capacity type %s to be unavailable",
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)
-		if scope != "" {
+		if capacityReservationGroupID != "" {
 			g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
 				"Expected unreserved offering %s in zone %s with capacity type %s to be unaffected by a capacity reservation group failure",
 				info.skuToCheck.GetName(), info.zone, info.capacityType,
@@ -174,7 +174,7 @@ func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableO
 	}
 
 	for _, info := range available {
-		g.Expect(scoped.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
+		g.Expect(view.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
 			"Expected offering %s in zone %s with capacity type %s to be available",
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)

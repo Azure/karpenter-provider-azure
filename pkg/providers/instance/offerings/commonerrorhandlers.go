@@ -71,7 +71,7 @@ var (
 	SKUNotAvailableOnDemandTTL = 23 * time.Hour
 )
 
-type errorHandle func(ctx context.Context, unavailableOfferings *cache.ScopedOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
+type errorHandle func(ctx context.Context, unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
 
 // markOfferingsUnavailableForCapacityTypeAndPlacement marks every offering for
 // the attempted capacity type within the attempted placement scope. The zone
@@ -80,7 +80,7 @@ type errorHandle func(ctx context.Context, unavailableOfferings *cache.ScopedOff
 // inside a capacity reservation group, where sibling zones are separate members.
 func markOfferingsUnavailableForCapacityTypeAndPlacement(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone string,
@@ -94,7 +94,7 @@ func markOfferingsUnavailableForCapacityTypeAndPlacement(
 			continue
 		}
 		// Each CRG zone is backed by a separate member reservation, so only block the attempted zone.
-		if unavailableOfferings.IsScoped() && getOfferingZone(offering) != zone {
+		if unavailableOfferings.IsForCapacityReservationGroup() && getOfferingZone(offering) != zone {
 			continue
 		}
 		unavailableOfferings.MarkUnavailableWithTTL(ctx, reason, sku, getOfferingZone(offering), capacityType, ttl)
@@ -108,7 +108,7 @@ func markOfferingsUnavailableForCapacityTypeAndPlacement(
 // inside a capacity reservation group, where sibling zones are separate members.
 func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone string,
@@ -123,7 +123,7 @@ func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 		}
 		offeringZone := getOfferingZone(offering)
 		// Each CRG zone is backed by a separate member reservation, so only block the attempted zone.
-		if unavailableOfferings.IsScoped() && offeringZone != zone {
+		if unavailableOfferings.IsForCapacityReservationGroup() && offeringZone != zone {
 			continue
 		}
 		zonesToBlock[offeringZone] = struct{}{}
@@ -139,7 +139,7 @@ func markOfferingsUnavailableForPlacementForBothCapacityTypes(
 // attempted zonal or regional placement.
 func markAllPlacementsUnavailableForBothCapacityTypes(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	reason string,
@@ -158,7 +158,7 @@ func markAllPlacementsUnavailableForBothCapacityTypes(
 
 func handleLowPriorityQuotaError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -174,7 +174,7 @@ func handleLowPriorityQuotaError(
 
 func handleSKUFamilyQuotaError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -192,7 +192,7 @@ func handleSKUFamilyQuotaError(
 		// Family quota is regional, so it normally implicates every zone. Not inside a
 		// capacity reservation group: another member's reserved units were paid for when the
 		// reservation was created and are not governed by the quota this launch exhausted.
-		if unavailableOfferings.IsScoped() && getOfferingZone(offering) != zone {
+		if unavailableOfferings.IsForCapacityReservationGroup() && getOfferingZone(offering) != zone {
 			continue
 		}
 		// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.
@@ -209,7 +209,7 @@ func handleSKUFamilyQuotaError(
 
 func handleSKUNotAvailableError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -238,7 +238,7 @@ func handleSKUNotAvailableError(
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
 func handleZonalAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -264,7 +264,7 @@ func handleZonalAllocationFailureError(
 // requested scope.
 func handleAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -281,7 +281,7 @@ func handleAllocationFailureError(
 // OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
 func handleOverconstrainedZonalAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -299,7 +299,7 @@ func handleOverconstrainedZonalAllocationFailureError(
 // OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
 func handleOverconstrainedAllocationFailureError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -315,7 +315,7 @@ func handleOverconstrainedAllocationFailureError(
 
 func handleRegionalQuotaError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
@@ -330,7 +330,7 @@ func handleRegionalQuotaError(
 	// targeting a group therefore means the member matching this size and placement had no
 	// reserved headroom and the request would have required overallocation. Mark only that
 	// member so a sibling size or placement with reserved headroom remains available.
-	if unavailableOfferings.IsScoped() {
+	if unavailableOfferings.IsForCapacityReservationGroup() {
 		unavailableOfferings.MarkUnavailableWithTTL(ctx, RegionalQuotaReachedReason, sku, zone, capacityType, CapacityReservationQuotaReachedTTL)
 	}
 

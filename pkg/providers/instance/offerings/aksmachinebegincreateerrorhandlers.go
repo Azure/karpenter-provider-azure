@@ -98,7 +98,7 @@ func (h *AKSMachineBeginCreateErrorHandler) Handle(ctx context.Context, sku *ske
 // spot-only due to capacity — here the error is a hard subscription restriction.
 func handleSKUNotAvailableForSubscriptionError(
 	ctx context.Context,
-	unavailableOfferings *cache.ScopedOfferings,
+	unavailableOfferings *cache.CapacityReservationGroupUnavailableOfferings,
 	sku *skewer.SKU,
 	instanceType *corecloudprovider.InstanceType,
 	zone,
