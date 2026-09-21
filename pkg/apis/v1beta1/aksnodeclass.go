@@ -106,7 +106,7 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
-	// Versions controls the Kubernetes and node image versions for the NodeClass.
+	// versions controls the Kubernetes and node image versions for the NodeClass.
 	// If omitted, both versions follow their automatic defaults.
 	// +optional
 	Versions *Versions `json:"versions,omitempty" hash:"ignore"`

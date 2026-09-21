@@ -1747,7 +1747,7 @@ spec:
                   rule: self.all(k, size(self[k]) <= 256)
               versions:
                 description: |-
-                  Versions controls the Kubernetes and node image versions for the NodeClass.
+                  versions controls the Kubernetes and node image versions for the NodeClass.
                   If omitted, both versions follow their automatic defaults.
                 properties:
                   kubernetesVersion:
@@ -1950,7 +1950,7 @@ spec:
                 - Disabled
                 type: string
               versions:
-                description: Versions contains observed and historical version information.
+                description: versions contains observed and historical version information.
                 properties:
                   controlPlaneKubernetesVersion:
                     description: controlPlaneKubernetesVersion is the latest observed
@@ -1975,9 +1975,9 @@ spec:
                           description: kubernetesVersion is the Kubernetes version
                             paired with the image version.
                           type: string
-                        timestampUsed:
-                          description: timestampUsed is when this image version was
-                            last effective.
+                        timeUsed:
+                          description: timeUsed is when this image version was last
+                            effective.
                           format: date-time
                           type: string
                       required:

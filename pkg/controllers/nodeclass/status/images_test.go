@@ -229,7 +229,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 				nodeClass.Status.Versions = &v1beta1.VersionsStatus{
 					ControlPlaneKubernetesVersion: lo.ToPtr(testK8sVersion),
-					LatestImageVersion:            newCIGImageVersion,
+					LatestImageVersion:            lo.ToPtr(newCIGImageVersion),
 				}
 				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 			})
@@ -317,7 +317,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			It("should reject a malformed image version", func() {
 				malformedImageVersion := "invalid/version"
-				nodeClass.Status.Versions.LatestImageVersion = malformedImageVersion
+				nodeClass.Status.Versions.LatestImageVersion = &malformedImageVersion
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),
 					NodeImageVersion:  lo.ToPtr(malformedImageVersion),

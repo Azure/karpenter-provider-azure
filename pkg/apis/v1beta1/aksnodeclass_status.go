@@ -34,15 +34,15 @@ const (
 
 // RecentlyUsedVersion contains a previously effective node image version and the Kubernetes version it was paired with.
 type RecentlyUsedVersion struct {
-	// timestampUsed is when this image version was last effective.
+	// timeUsed is when this image version was last effective.
 	// +optional
-	TimestampUsed *metav1.Time `json:"timestampUsed,omitempty"`
+	TimeUsed *metav1.Time `json:"timeUsed,omitempty"`
 	// imageVersion is the node image version suffix.
 	// +required
-	ImageVersion *string `json:"imageVersion"`
+	ImageVersion *string `json:"imageVersion,omitempty"`
 	// kubernetesVersion is the Kubernetes version paired with the image version.
 	// +required
-	KubernetesVersion *string `json:"kubernetesVersion"`
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 }
 
 // VersionsStatus contains the resolved Kubernetes and node image versions for the NodeClass.
@@ -52,7 +52,7 @@ type VersionsStatus struct {
 	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
 	// latestImageVersion is the latest node image version resolved from the gallery.
 	// +optional
-	LatestImageVersion string `json:"latestImageVersion,omitempty"`
+	LatestImageVersion *string `json:"latestImageVersion,omitempty"`
 	// recentlyUsedVersions contains previously effective node image versions.
 	// +optional
 	// +listType=atomic
@@ -100,7 +100,7 @@ type AKSNodeClassStatus struct {
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	Images []NodeImage `json:"images,omitempty"`
-	// Versions contains observed and historical version information.
+	// versions contains observed and historical version information.
 	// +optional
 	Versions *VersionsStatus `json:"versions,omitempty"`
 	// kubernetesVersion contains the current kubernetes version which should be

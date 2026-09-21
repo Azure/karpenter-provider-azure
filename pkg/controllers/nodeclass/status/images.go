@@ -220,7 +220,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if nodeClass.Status.Versions == nil {
 		nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
 	}
-	nodeClass.Status.Versions.LatestImageVersion = latestImageVersion
+	nodeClass.Status.Versions.LatestImageVersion = &latestImageVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
@@ -378,7 +378,7 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 
 	latestImgVer := ""
 	if nodeClass.Status.Versions != nil {
-		latestImgVer = nodeClass.Status.Versions.LatestImageVersion
+		latestImgVer = lo.FromPtr(nodeClass.Status.Versions.LatestImageVersion)
 	}
 
 	if reqImgVer == currentImgVer || reqImgVer == latestImgVer {
