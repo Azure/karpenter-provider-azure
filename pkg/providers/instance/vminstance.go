@@ -765,6 +765,9 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	resp, err := p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, opts.VMName, nil)
 	// If status == ok, we want to return the existing vmm
 	if err == nil {
+		// TODO: Replace this field-specific check with ownership and launch-intent
+		// validation before reusing an existing VM. Other NodeClass inputs that configure
+		// immutable VM properties can also change between creation attempts.
 		if err := validateExistingCapacityReservation(&resp.VirtualMachine, opts.NodeClass); err != nil {
 			return nil, err
 		}
