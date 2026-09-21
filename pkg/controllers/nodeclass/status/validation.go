@@ -36,8 +36,7 @@ import (
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
 	// ImageFamilyKubernetesVersionIncompatible is the stable reason used when
-	// spec.imageFamily explicitly pins an OS version that the ready discovered
-	// Kubernetes version does not support.
+	// spec.imageFamily explicitly pins an OS version that the Kubernetes version does not support.
 	ImageFamilyKubernetesVersionIncompatible = "ImageFamilyKubernetesVersionIncompatible"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
