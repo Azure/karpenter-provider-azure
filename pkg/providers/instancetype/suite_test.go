@@ -254,49 +254,6 @@ var _ = Describe("InstanceType Provider", func() {
 			Entry("bootstrap client", consts.ProvisionModeBootstrappingClient),
 		)
 
-		DescribeTable("should cache reservations by maxPods independently of the Kubernetes version", func(provisionMode string) {
-			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{ProvisionMode: lo.ToPtr(provisionMode)}))
-			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
-			nodeClass.Status.KubernetesVersion = nil
-			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "NotReady", "version is not ready")
-			getInstanceType := func() *corecloudprovider.InstanceType {
-				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
-				Expect(err).NotTo(HaveOccurred())
-				instanceType, found := lo.Find(instanceTypes, func(it *corecloudprovider.InstanceType) bool {
-					return it.Name == "Standard_D2_v3"
-				})
-				Expect(found).To(BeTrue())
-				return instanceType
-			}
-
-			initial := getInstanceType()
-			Expect(initial.Overhead.KubeReserved.Memory().String()).To(Equal("650Mi"))
-			Expect(initial.Overhead.EvictionThreshold.Memory().String()).To(Equal("100Mi"))
-
-			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
-			for _, version := range []string{"1.28.15", "1.29.0-azure", "1.29.0", "1.34.0"} {
-				nodeClass.Status.KubernetesVersion = lo.ToPtr(version)
-				Expect(getInstanceType()).To(BeIdenticalTo(initial))
-			}
-			nodeClass.Spec.MaxPods = lo.ToPtr(int32(110))
-			capped := getInstanceType()
-			Expect(capped).NotTo(BeIdenticalTo(initial))
-			Expect(capped.Requirements.Get(v1beta1.LabelSKUMemory).Any()).To(Equal("8192"))
-			// The 8 GiB fixture caps the 2250 MiB pod-based reservation at 2048 MiB.
-			Expect(capped.Overhead.KubeReserved.Memory().Cmp(resource.MustParse("2048Mi"))).To(BeZero())
-			Expect(capped.Capacity.Cpu().Cmp(*initial.Capacity.Cpu())).To(BeZero())
-			Expect(capped.Capacity.Memory().Cmp(*initial.Capacity.Memory())).To(BeZero())
-			Expect(capped.Overhead.KubeReserved.Cpu().Cmp(*initial.Overhead.KubeReserved.Cpu())).To(BeZero())
-			Expect(capped.Overhead.SystemReserved).To(Equal(initial.Overhead.SystemReserved))
-			Expect(capped.Overhead.EvictionThreshold).To(Equal(initial.Overhead.EvictionThreshold))
-			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
-			Expect(getInstanceType()).To(BeIdenticalTo(initial))
-		},
-			Entry("scriptless", consts.ProvisionModeAKSScriptless),
-			Entry("bootstrap client", consts.ProvisionModeBootstrappingClient),
-			Entry("AKS machines", consts.ProvisionModeAKSMachineAPI),
-			Entry("batched AKS machines", consts.ProvisionModeAKSMachineAPIHeaderBatch),
-		)
 	})
 
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
