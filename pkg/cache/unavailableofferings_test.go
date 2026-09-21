@@ -306,6 +306,32 @@ func TestUnavailableOfferings_CapacityReservationGroupScope(t *testing.T) {
 			t.Error("expected the same group in different casing to share a scope")
 		}
 	})
+
+	t.Run("invalidating a group leaves other scopes unchanged", func(t *testing.T) {
+		u := NewUnavailableOfferings()
+		otherGroupID := groupID + "-other"
+		u.ForCapacityReservationGroup(groupID).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+		u.ForCapacityReservationGroup(groupID).MarkFamilyUnavailable(context.TODO(), sku, "westus-2", karpv1.CapacityTypeOnDemand, time.Hour)
+		u.ForCapacityReservationGroup(otherGroupID).MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+		u.MarkUnavailable(context.TODO(), "test reason", sku, "westus-1", karpv1.CapacityTypeOnDemand)
+		generation := u.SeqNum()
+
+		u.InvalidateCapacityReservationGroup(strings.ToUpper(groupID))
+
+		if u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the group's offering to be invalidated")
+		}
+		if u.ForCapacityReservationGroup(groupID).IsUnavailable(sku, "westus-2", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected the group's family entry to be invalidated")
+		}
+		if !u.ForCapacityReservationGroup(otherGroupID).IsUnavailable(sku, "westus-1", karpv1.CapacityTypeOnDemand) {
+			t.Error("expected another group to be unaffected")
+		}
+		assertOfferingUnavailable(t, u, sku, "westus-1", karpv1.CapacityTypeOnDemand, "Expected unreserved capacity to be unaffected")
+		if u.SeqNum() <= generation {
+			t.Error("expected invalidation to advance the cache generation")
+		}
+	})
 }
 
 // Each member of a group is a separately reserved block, so a failure on one size must not

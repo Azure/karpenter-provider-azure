@@ -75,6 +75,7 @@ func NewController(
 	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
 	capacityReservationsClient azapi.CapacityReservationsAPI,
 	instanceTypes instanceTypeLister,
+	unavailableOfferings capacityReservationGroupOfferingsInvalidator,
 ) *Controller {
 	return &Controller{
 
@@ -85,7 +86,7 @@ func NewController(
 		subnet:                   NewSubnetReconciler(subnetClient),
 		validation:               NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 		localDNS:                 NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
-		capacityReservationGroup: NewCapacityReservationGroupReconciler(subscriptionID, location, capacityReservationGroupsClient, capacityReservationsClient, instanceTypes),
+		capacityReservationGroup: NewCapacityReservationGroupReconciler(subscriptionID, location, capacityReservationGroupsClient, capacityReservationsClient, instanceTypes, unavailableOfferings),
 	}
 }
 

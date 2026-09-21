@@ -333,6 +333,30 @@ func (u *UnavailableOfferings) Flush() {
 	u.seqNum.Add(1)
 }
 
+// InvalidateCapacityReservationGroup removes cached launch failures for one Capacity
+// Reservation Group without affecting unreserved offerings or other groups.
+func (u *UnavailableOfferings) InvalidateCapacityReservationGroup(id string) {
+	scope := capacityReservationGroupScope(id)
+	if scope == unreservedScope {
+		return
+	}
+
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	prefix := fmt.Sprintf("crg:%s:", scope)
+	for key := range u.singleOfferingCache.Items() {
+		if strings.HasPrefix(key, prefix) {
+			u.singleOfferingCache.Delete(key)
+		}
+	}
+	for key := range u.vmFamilyCache.Items() {
+		if strings.HasPrefix(key, prefix) {
+			u.vmFamilyCache.Delete(key)
+		}
+	}
+}
+
 func capacityReservationGroupScope(id string) unavailableOfferingsScope {
 	return unavailableOfferingsScope(strings.ToLower(id))
 }

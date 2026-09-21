@@ -1416,7 +1416,7 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				ctx = options.ToContext(ctx)
 				statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin,
-					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider)
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1466,7 +1466,7 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 				ctx = options.ToContext(ctx)
 				statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, options.ParsedDiskEncryptionSetID, options.NetworkPolicy, options.NetworkPlugin,
-					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider)
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1499,7 +1499,7 @@ var _ = Describe("InstanceType Provider", func() {
 			DescribeTable("should select the right image for a given instance type",
 				func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 					statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
-						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider)
+						azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 						Key:      v1.LabelInstanceTypeStable,
@@ -2092,7 +2092,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
 				statusController := status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
-					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider)
+					azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)

@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -75,17 +77,22 @@ type instanceTypeLister interface {
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
 }
 
+type capacityReservationGroupOfferingsInvalidator interface {
+	InvalidateCapacityReservationGroup(string)
+}
+
 // CapacityReservationGroupReconciler resolves spec.capacityReservation.groupID into
 // status.capacityReservationGroup: the group's placement and the member reservations
 // that can back offerings. It deliberately resolves only the static shape of the
 // group. Utilization is volatile and must not become a per-node guarantee.
 type CapacityReservationGroupReconciler struct {
-	groupsClient       azapi.CapacityReservationGroupsAPI
-	reservationsClient azapi.CapacityReservationsAPI
-	instanceTypes      instanceTypeLister
-	subscriptionID     string
-	location           string
-	unsupportedCloud   atomic.Bool
+	groupsClient         azapi.CapacityReservationGroupsAPI
+	reservationsClient   azapi.CapacityReservationsAPI
+	instanceTypes        instanceTypeLister
+	unavailableOfferings capacityReservationGroupOfferingsInvalidator
+	subscriptionID       string
+	location             string
+	unsupportedCloud     atomic.Bool
 }
 
 func NewCapacityReservationGroupReconciler(
@@ -94,13 +101,15 @@ func NewCapacityReservationGroupReconciler(
 	groupsClient azapi.CapacityReservationGroupsAPI,
 	reservationsClient azapi.CapacityReservationsAPI,
 	instanceTypes instanceTypeLister,
+	unavailableOfferings capacityReservationGroupOfferingsInvalidator,
 ) *CapacityReservationGroupReconciler {
 	return &CapacityReservationGroupReconciler{
-		groupsClient:       groupsClient,
-		reservationsClient: reservationsClient,
-		instanceTypes:      instanceTypes,
-		subscriptionID:     subscriptionID,
-		location:           location,
+		groupsClient:         groupsClient,
+		reservationsClient:   reservationsClient,
+		instanceTypes:        instanceTypes,
+		unavailableOfferings: unavailableOfferings,
+		subscriptionID:       subscriptionID,
+		location:             location,
 	}
 }
 
@@ -197,7 +206,6 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 	// A group with no members can never back an offering. AKS associates a node pool
 	// with a warning in this case; we fail closed instead.
 	if len(reservations) == 0 {
-		nodeClass.Status.CapacityReservationGroup = nil
 		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNoReservations,
 			fmt.Sprintf("capacity reservation group has no capacity reservations: %s", crgID))
 		// Short interval, not the healthy one: a group is commonly listed empty while the
@@ -208,14 +216,20 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 	// Recorded before eligibility is judged: when nothing can back an offering, the member
 	// names and their states are exactly what the operator needs to see, and a NodePool has
 	// been authored against each of them.
-	nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
+	resolvedGroup := &v1beta1.CapacityReservationGroup{
 		// Falling back to the requested ID keeps a required field populated; it is the same
 		// group, and ARM may echo it with different casing.
 		ID:                   lo.CoalesceOrEmpty(lo.FromPtr(group.ID), crgID),
 		Location:             lo.FromPtr(group.Location),
-		Zones:                lo.FilterMap(group.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
+		Zones:                sortedNonNilStrings(group.Zones),
 		CapacityReservations: reservations,
 	}
+	if previous := nodeClass.Status.CapacityReservationGroup; previous != nil &&
+		strings.EqualFold(previous.ID, resolvedGroup.ID) &&
+		!equality.Semantic.DeepEqual(previous, resolvedGroup) {
+		r.unavailableOfferings.InvalidateCapacityReservationGroup(crgID)
+	}
+	nodeClass.Status.CapacityReservationGroup = resolvedGroup
 
 	// Members that are not yet provisioned back no offerings, so a group made up entirely
 	// of them would otherwise report Ready and project nothing, which reaches the user as
@@ -267,6 +281,9 @@ func (r *CapacityReservationGroupReconciler) listReservations(ctx context.Contex
 			}
 		}
 	}
+	slices.SortFunc(reservations, func(a, b v1beta1.CapacityReservation) int {
+		return strings.Compare(a.ID, b.ID)
+	})
 	return reservations, nil
 }
 
@@ -292,13 +309,24 @@ func capacityReservationFromARM(cr *armcompute.CapacityReservation) (v1beta1.Cap
 		ID:                lo.FromPtr(cr.ID),
 		Name:              lo.FromPtr(cr.Name),
 		VMSize:            lo.FromPtr(cr.SKU.Name),
-		Zones:             lo.FilterMap(cr.Zones, func(z *string, _ int) (string, bool) { return lo.FromPtr(z), z != nil }),
+		Zones:             sortedNonNilStrings(cr.Zones),
 		Quantity:          quantity,
 		ProvisioningState: provisioningState,
 	}, true
 }
 
+func sortedNonNilStrings(values []*string) []string {
+	result := lo.FilterMap(values, func(value *string, _ int) (string, bool) {
+		return lo.FromPtr(value), value != nil
+	})
+	slices.Sort(result)
+	return result
+}
+
 func (r *CapacityReservationGroupReconciler) setFalse(nodeClass *v1beta1.AKSNodeClass, reason, message string) {
+	if nodeClass.Status.CapacityReservationGroup != nil {
+		r.unavailableOfferings.InvalidateCapacityReservationGroup(nodeClass.GetCapacityReservationGroupID())
+	}
 	nodeClass.Status.CapacityReservationGroup = nil
 	nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady, reason, message)
 }

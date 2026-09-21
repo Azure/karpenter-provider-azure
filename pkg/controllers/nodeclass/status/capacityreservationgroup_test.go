@@ -66,21 +66,32 @@ func (s *stubInstanceTypeLister) List(_ context.Context, nodeClass *v1beta1.AKSN
 	return s.instanceTypes, s.err
 }
 
+type stubCapacityReservationGroupOfferingsInvalidator struct {
+	groupIDs []string
+}
+
+func (s *stubCapacityReservationGroupOfferingsInvalidator) InvalidateCapacityReservationGroup(id string) {
+	s.groupIDs = append(s.groupIDs, id)
+}
+
 var _ = Describe("CapacityReservationGroupStatus", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	var reconciler *status.CapacityReservationGroupReconciler
 	var lister *stubInstanceTypeLister
+	var invalidator *stubCapacityReservationGroupOfferingsInvalidator
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
 		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(testCRGID())}
 		lister = &stubInstanceTypeLister{instanceTypes: []*cloudprovider.InstanceType{{Name: "Standard_D2s_v3"}}}
+		invalidator = &stubCapacityReservationGroupOfferingsInvalidator{}
 		reconciler = status.NewCapacityReservationGroupReconciler(
 			testCRGSubscriptionID,
 			testCRGLocation,
 			azureEnv.CapacityReservationGroupsAPI,
 			azureEnv.CapacityReservationsAPI,
 			lister,
+			invalidator,
 		)
 	})
 
@@ -104,6 +115,90 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		Expect(crg.CapacityReservations[0].VMSize).To(Equal("Standard_D2s_v3"))
 		Expect(crg.CapacityReservations[0].Zones).To(ConsistOf("1"))
 		Expect(lo.FromPtr(crg.CapacityReservations[0].Quantity)).To(Equal(int64(1)))
+	})
+
+	It("should invalidate cached group failures when a reservation changes", func() {
+		_, err := reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(invalidator.groupIDs).To(BeEmpty())
+
+		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+			return []*armcompute.CapacityReservation{
+				fake.NewCapacityReservation(rg, group, "reservation", "Standard_D2s_v3", 2, "1"),
+			}, nil
+		}
+		_, err = reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(invalidator.groupIDs).To(ConsistOf(testCRGID()))
+	})
+
+	It("should invalidate cached group failures when a reservation is replaced at the same placement", func() {
+		_, err := reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(invalidator.groupIDs).To(BeEmpty())
+
+		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+			return []*armcompute.CapacityReservation{
+				fake.NewCapacityReservation(rg, group, "replacement", "Standard_D2s_v3", 1, "1"),
+			}, nil
+		}
+		_, err = reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(invalidator.groupIDs).To(ConsistOf(testCRGID()))
+	})
+
+	It("should retain cached group failures when the reservations are unchanged", func() {
+		for range 2 {
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+		}
+		Expect(invalidator.groupIDs).To(BeEmpty())
+	})
+
+	It("should normalize ARM response order before storing status", func() {
+		reversed := false
+		azureEnv.CapacityReservationGroupsAPI.GetFunc = func(_ context.Context, _, name string, _ *armcompute.CapacityReservationGroupsClientGetOptions) (armcompute.CapacityReservationGroupsClientGetResponse, error) {
+			zones := []string{"2", "1"}
+			if reversed {
+				zones = []string{"1", "2"}
+			}
+			return armcompute.CapacityReservationGroupsClientGetResponse{
+				CapacityReservationGroup: armcompute.CapacityReservationGroup{
+					ID:         lo.ToPtr(testCRGID()),
+					Name:       lo.ToPtr(name),
+					Location:   lo.ToPtr(testCRGLocation),
+					Zones:      lo.Map(zones, func(zone string, _ int) *string { return lo.ToPtr(zone) }),
+					Properties: &armcompute.CapacityReservationGroupProperties{},
+				},
+			}, nil
+		}
+		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
+			first := fake.NewCapacityReservation(rg, group, "first", "Standard_D2s_v3", 1, "3", "1")
+			second := fake.NewCapacityReservation(rg, group, "second", "Standard_D4s_v3", 1, "2", "1")
+			if reversed {
+				first.Zones = []*string{lo.ToPtr("1"), lo.ToPtr("3")}
+				second.Zones = []*string{lo.ToPtr("1"), lo.ToPtr("2")}
+				return []*armcompute.CapacityReservation{first, second}, nil
+			}
+			return []*armcompute.CapacityReservation{second, first}, nil
+		}
+
+		_, err := reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		crg := nodeClass.Status.CapacityReservationGroup
+		Expect(crg.Zones).To(Equal([]string{"1", "2"}))
+		Expect(lo.Map(crg.CapacityReservations, func(member v1beta1.CapacityReservation, _ int) string {
+			return member.Name
+		})).To(Equal([]string{"first", "second"}))
+		Expect(crg.CapacityReservations[0].Zones).To(Equal([]string{"1", "3"}))
+		Expect(crg.CapacityReservations[1].Zones).To(Equal([]string{"1", "2"}))
+		firstStatus := nodeClass.DeepCopy().Status.CapacityReservationGroup
+
+		reversed = true
+		_, err = reconciler.Reconcile(ctx, nodeClass)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nodeClass.Status.CapacityReservationGroup).To(Equal(firstStatus))
+		Expect(invalidator.groupIDs).To(BeEmpty())
 	})
 
 	// Azure accepts a zero-quantity reservation; it can be associated and then
@@ -286,6 +381,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 				azureEnv.CapacityReservationGroupsAPI,
 				azureEnv.CapacityReservationsAPI,
 				azureEnv.InstanceTypesProvider,
+				azureEnv.UnavailableOfferingsCache,
 			)
 			Expect(azureEnv.InstanceTypesProvider.UpdateInstanceTypes(ctx)).To(Succeed())
 		})
@@ -584,5 +680,6 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		_, err = reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
 		expectUnready(status.CapacityReservationGroupUnreadyReasonNoReservations)
+		Expect(invalidator.groupIDs).To(ConsistOf(testCRGID()))
 	})
 })

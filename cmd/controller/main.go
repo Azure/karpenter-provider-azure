@@ -94,6 +94,7 @@ func main() {
 			op.KubernetesVersionProvider,
 			op.ImageProvider,
 			op.InstanceTypesProvider,
+			op.UnavailableOfferingsCache,
 			op.QuotaProvider,
 			op.InClusterKubernetesInterface,
 			op.KubernetesInterface,
