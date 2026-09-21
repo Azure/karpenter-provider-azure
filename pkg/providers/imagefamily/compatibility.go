@@ -26,7 +26,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
-// kubernetesVersionPolicy is the Kubernetes version window in which one explicitly
+// kubernetesVersionPolicy is the Kubernetes version window in which an explicitly
 // version-pinned spec.imageFamily value is usable.
 //
 // The bounds follow the AKS node OS support windows documented at
