@@ -147,14 +147,6 @@ func validateKata(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, e
 }
 
 func validateImageFamilyCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (bool, error) {
-	// Image family compatibility only constrains explicitly version-pinned families, so the
-	// discovered Kubernetes version is only needed - and only required to be ready - for
-	// those. A generic/unset Ubuntu or AzureLinux NodeClass must not be blocked from the
-	// remaining validations just because the Kubernetes version isn't available yet.
-	if !imagefamily.RequiresKubernetesVersionCompatibility(nodeClass) {
-		return false, nil
-	}
-
 	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass); err != nil {
 		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
 		if errors.As(err, &incompatibleErr) {
@@ -174,6 +166,7 @@ func validateImageFamilyCompatibility(ctx context.Context, nodeClass *v1beta1.AK
 		log.FromContext(ctx).Error(err, "image family compatibility validation encountered unexpected error")
 		return false, fmt.Errorf("validating image family compatibility: %w", err)
 	}
+
 	return false, nil
 }
 

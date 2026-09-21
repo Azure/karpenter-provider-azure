@@ -105,18 +105,6 @@ func kubernetesVersionPolicyFor(nodeClass *v1beta1.AKSNodeClass) (kubernetesVers
 	return policy, found
 }
 
-// RequiresKubernetesVersionCompatibility reports whether the image family requested by
-// spec.imageFamily is explicitly version pinned, and so needs the discovered cluster
-// Kubernetes version in order to be validated.
-//
-// Callers use this to avoid making Kubernetes version readiness a precondition for
-// NodeClasses that no compatibility policy applies to: for those, an unavailable or
-// malformed Kubernetes version must not block the rest of validation.
-func RequiresKubernetesVersionCompatibility(nodeClass *v1beta1.AKSNodeClass) bool {
-	_, found := kubernetesVersionPolicyFor(nodeClass)
-	return found
-}
-
 // ImageFamilyKubernetesVersionIncompatibleError indicates the image family
 // explicitly requested by spec.imageFamily pins an Ubuntu version that the
 // discovered cluster Kubernetes version does not support.
@@ -127,8 +115,8 @@ func RequiresKubernetesVersionCompatibility(nodeClass *v1beta1.AKSNodeClass) boo
 type ImageFamilyKubernetesVersionIncompatibleError struct {
 	// RequestedImageFamily is the value of spec.imageFamily that was validated.
 	RequestedImageFamily string
-	// KubernetesVersion is the discovered cluster Kubernetes version, as discovered (unparsed).
-	KubernetesVersion string
+	// RequestedKubernetesVersion is the discovered cluster Kubernetes version, as discovered (unparsed).
+	RequestedKubernetesVersion string
 	// policy is the Kubernetes version policy that was applied to the requested image family.
 	policy kubernetesVersionPolicy
 }
@@ -141,7 +129,7 @@ func (e *ImageFamilyKubernetesVersionIncompatibleError) Error() string {
 	return fmt.Sprintf(
 		"requested image family %s is not supported with discovered Kubernetes version %q; supported range is %s",
 		e.policy.description,
-		e.KubernetesVersion,
+		e.RequestedKubernetesVersion,
 		supportedRange,
 	)
 }
@@ -187,8 +175,8 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 	}
 
 	return &ImageFamilyKubernetesVersionIncompatibleError{
-		RequestedImageFamily: lo.FromPtr(nodeClass.Spec.ImageFamily),
-		KubernetesVersion:    kubernetesVersion,
-		policy:               policy,
+		RequestedImageFamily:       lo.FromPtr(nodeClass.Spec.ImageFamily),
+		RequestedKubernetesVersion: kubernetesVersion,
+		policy:                     policy,
 	}
 }
