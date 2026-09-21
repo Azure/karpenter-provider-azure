@@ -156,11 +156,7 @@ func validateImageFamilyCompatibility(ctx context.Context, nodeClass *v1beta1.AK
 		return false, nil
 	}
 
-	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-	if err != nil {
-		return false, fmt.Errorf("getting kubernetes version: %w", err)
-	}
-	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, kubernetesVersion); err != nil {
+	if err := imagefamily.ValidateImageFamilyCompatibility(nodeClass); err != nil {
 		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
 		if errors.As(err, &incompatibleErr) {
 			// This incompatibility is static: it can only change when the NodeClass spec or

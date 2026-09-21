@@ -215,7 +215,11 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 					ImageFamily: tc.imageFamily,
 					FIPSMode:    tc.fipsMode,
 				},
+				Status: v1beta1.AKSNodeClassStatus{
+					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
+				},
 			}
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 			if tc.trustedLaunch {
 				nodeClass.Spec.Security = &v1beta1.Security{
 					TrustedLaunch: &v1beta1.TrustedLaunch{
@@ -224,7 +228,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 				}
 			}
 
-			err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, tc.kubernetesVersion)
+			err := imagefamily.ValidateImageFamilyCompatibility(nodeClass)
 			if len(tc.wantErr) == 0 {
 				g.Expect(err).ToNot(HaveOccurred())
 				return
@@ -251,9 +255,13 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 				FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
 			},
+			Status: v1beta1.AKSNodeClassStatus{
+				KubernetesVersion: lo.ToPtr("1.39.0"),
+			},
 		}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
-		err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, "1.39.0")
+		err := imagefamily.ValidateImageFamilyCompatibility(nodeClass)
 		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
 		g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
 		g.Expect(incompatibleErr.FIPS).To(BeTrue())
@@ -265,9 +273,13 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			Spec: v1beta1.AKSNodeClassSpec{
 				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2404ImageFamily),
 			},
+			Status: v1beta1.AKSNodeClassStatus{
+				KubernetesVersion: lo.ToPtr("1.31.0"),
+			},
 		}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
-		err = imagefamily.ValidateImageFamilyCompatibility(nodeClass, "1.31.0")
+		err = imagefamily.ValidateImageFamilyCompatibility(nodeClass)
 		g.Expect(errors.As(err, &incompatibleErr)).To(BeTrue())
 		g.Expect(incompatibleErr.FIPS).To(BeFalse())
 		g.Expect(incompatibleErr.MinimumVersion.String()).To(Equal("1.32.0"))
@@ -282,9 +294,13 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			Spec: v1beta1.AKSNodeClassSpec{
 				ImageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily),
 			},
+			Status: v1beta1.AKSNodeClassStatus{
+				KubernetesVersion: lo.ToPtr("1.32.x"),
+			},
 		}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
-		err := imagefamily.ValidateImageFamilyCompatibility(nodeClass, "1.32.x")
+		err := imagefamily.ValidateImageFamilyCompatibility(nodeClass)
 		g.Expect(err).To(MatchError(ContainSubstring(`malformed discovered Kubernetes version "1.32.x": expected a semantic version like 1.32.0`)))
 
 		var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
@@ -295,7 +311,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 		t.Parallel()
 
 		g := NewWithT(t)
-		err := imagefamily.ValidateImageFamilyCompatibility(nil, "1.32.0")
+		err := imagefamily.ValidateImageFamilyCompatibility(nil)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err).To(MatchError(ContainSubstring("AKSNodeClass is required")))
 	})

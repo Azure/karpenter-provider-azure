@@ -162,9 +162,14 @@ func (e *ImageFamilyKubernetesVersionIncompatibleError) Error() string {
 //
 // It returns *ImageFamilyKubernetesVersionIncompatibleError for a pinned family
 // outside its supported range.
-func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass, kubernetesVersion string) error {
+func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 	if nodeClass == nil {
 		return errors.New("AKSNodeClass is required to validate image family compatibility")
+	}
+
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return fmt.Errorf("getting kubernetes version: %w", err)
 	}
 
 	policy, found := kubernetesVersionPolicyFor(nodeClass)
