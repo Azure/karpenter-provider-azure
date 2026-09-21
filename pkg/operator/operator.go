@@ -58,6 +58,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
@@ -192,7 +193,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
-	quotaProvider := quota.NewProvider(azClient.UsageClient, azConfig.Location)
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azClient.QuotaCategoryVMFamilyMappingClient, azConfig.Location)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
@@ -237,7 +238,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	allocationStrategyProvider := allocationstrategy.NewProvider()
+	capacityRecommendationProvider := capacityrecommendation.NewProvider(
+		azClient.SKUMixPlacementClient,
+		cache.New(cache.NoExpiration, azurecache.DefaultCleanupInterval),
+		azConfig.Location,
+	)
+	allocationStrategyProvider := allocationstrategy.NewProvider(
+		capacityRecommendationProvider,
+		options.FromContext(ctx).ComputeRecommendationMode,
+	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,

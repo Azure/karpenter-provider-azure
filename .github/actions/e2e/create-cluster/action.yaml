@@ -2,7 +2,7 @@ name: CreateCluster
 description: 'Installs Go Downloads and installs Karpenter Dependencies'
 inputs:
   k8s_version:
-    description: "Version of Kubernetes to use for the launched cluster (e.g., 1.30). If empty, uses AKS default."
+    description: "Version of Kubernetes to use for the launched cluster (e.g., 1.31). If empty, uses AKS default."
     required: false
   subscription_id:
     description: "ID of the subscription to create the cluster in"

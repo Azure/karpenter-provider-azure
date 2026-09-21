@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -132,6 +133,41 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					ImageFamily: &invalidImageFamily,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("OSDiskType", func() {
+		It("should accept Managed OSDiskType", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: lo.ToPtr(v1beta1.OSDiskTypeManaged),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept omitted OSDiskType", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// OSDiskType is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			Expect(nodeClass.Spec.OSDiskType).To(BeNil())
+		})
+
+		It("should reject invalid OSDiskType", func() {
+			invalidOSDiskType := v1beta1.OSDiskType("asdf")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: &invalidOSDiskType,
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
