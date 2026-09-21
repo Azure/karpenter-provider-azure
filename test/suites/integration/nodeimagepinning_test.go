@@ -17,9 +17,14 @@ limitations under the License.
 package integration_test
 
 import (
+	"sort"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -138,4 +143,90 @@ var _ = Describe("Node image pinning", func() {
 		node := env.GetNode(pods[0].Spec.NodeName)
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
 	})
+
+	It("should pin a recently used node image version", func() {
+		if env.UsesSharedImageGallery() {
+			Skip("requires Community Gallery images")
+		}
+
+		env.ExpectCreated(nodeClass)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.GetKubernetesVersion()).ToNot(BeEmpty())
+			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
+			g.Expect(nodeClass.Status.Versions).ToNot(BeNil())
+			g.Expect(nodeClass.Status.Versions.LatestImageVersion).ToNot(BeEmpty())
+		}).Should(Succeed())
+
+		currentKubernetesVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
+		latestNodeImageVersion := nodeClass.Status.Versions.LatestImageVersion
+		latestCommunityImageVersion, previousNodeImageVersion := latestCommunityImageVersions(nodeClass.Status.Images[0].ID)
+		Expect(latestNodeImageVersion).To(Equal(latestCommunityImageVersion))
+
+		stored := nodeClass.DeepCopy()
+		nodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+			{
+				KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
+				ImageVersion:      lo.ToPtr(previousNodeImageVersion),
+			},
+		}
+		Expect(env.Client.Status().Patch(env.Context, nodeClass, client.MergeFrom(stored))).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(lo.ContainsBy(nodeClass.Status.Versions.RecentlyUsedVersions, func(version v1beta1.RecentlyUsedVersion) bool {
+				return lo.FromPtr(version.KubernetesVersion) == currentKubernetesVersion && lo.FromPtr(version.ImageVersion) == previousNodeImageVersion
+			})).To(BeTrue())
+		}).Should(Succeed())
+
+		nodeClass.Spec.Versions = &v1beta1.Versions{
+			KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
+			NodeImageVersion:  lo.ToPtr(previousNodeImageVersion),
+		}
+		env.ExpectUpdated(nodeClass)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).ObservedGeneration).To(Equal(nodeClass.Generation))
+			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).ObservedGeneration).To(Equal(nodeClass.Generation))
+			g.Expect(nodeClass.Status.Images[0].ID).To(HaveSuffix(previousNodeImageVersion))
+		}).Should(Succeed())
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+
+		Expect(nodeClaim.Status.ImageID).To(HaveSuffix(previousNodeImageVersion))
+		node := env.GetNode(pods[0].Spec.NodeName)
+		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
+	})
 })
+
+func latestCommunityImageVersions(imageID string) (string, string) {
+	imageInfo := imagefamilytypes.DefaultImageOutput{}
+	imageInfo.PopulateImageTraitsFromID(imageID)
+	Expect(imageInfo.PublicGalleryURL).ToNot(BeEmpty())
+	Expect(imageInfo.ImageDefinition).ToNot(BeEmpty())
+
+	clientOptions := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{Cloud: env.CloudConfig},
+	}
+	versionsClient := lo.Must(armcompute.NewCommunityGalleryImageVersionsClient(env.SubscriptionID, env.GetDefaultCredential(), clientOptions))
+	pager := versionsClient.NewListPager(env.Region, imageInfo.PublicGalleryURL, imageInfo.ImageDefinition, nil)
+
+	var versions []*armcompute.CommunityGalleryImageVersion
+	for pager.More() {
+		page := lo.Must(pager.NextPage(env.Context))
+		versions = append(versions, lo.Filter(page.Value, func(version *armcompute.CommunityGalleryImageVersion, _ int) bool {
+			return version != nil && version.Name != nil && version.Properties != nil && version.Properties.PublishedDate != nil
+		})...)
+	}
+	Expect(len(versions)).To(BeNumerically(">=", 2))
+
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].Properties.PublishedDate.After(*versions[j].Properties.PublishedDate)
+	})
+	return lo.FromPtr(versions[0].Name), lo.FromPtr(versions[1].Name)
+}
