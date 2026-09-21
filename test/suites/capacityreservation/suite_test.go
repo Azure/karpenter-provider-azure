@@ -224,7 +224,10 @@ var _ = Describe("CapacityReservation", func() {
 		})
 
 		By("Waiting for the node to join and the workload to become healthy")
-		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
+		nodes := env.EventuallyExpectCreatedNodeCountWithSelector("==", 1, labels.SelectorFromSet(map[string]string{
+			corev1.LabelTopologyZone:    zones.Regional,
+			v1beta1.LabelPlacementScope: v1beta1.PlacementScopeRegional,
+		}))
 		env.EventuallyExpectHealthyDeployment(deployment)
 
 		By("Verifying the launch carried no zone and targeted the group")
@@ -232,8 +235,6 @@ var _ = Describe("CapacityReservation", func() {
 		expectVMOnReservedCapacity(vm, groupID)
 		Expect(string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))).To(Equal(reservedVMSize))
 		Expect(vm.Zones).To(BeEmpty(), "a regional group requires the VM to carry no zone")
-		Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zones.Regional))
-		Expect(nodes[0].Labels[v1beta1.LabelPlacementScope]).To(Equal(v1beta1.PlacementScopeRegional))
 	})
 
 	It("should keep the NodeClass NotReady when the group cannot be resolved", func(ctx SpecContext) {
