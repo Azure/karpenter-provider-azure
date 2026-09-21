@@ -19,6 +19,8 @@ package utils
 import (
 	"fmt"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // this parsing function replaces three different functions in different packages that all had bugs. Please don't use a regex to parse these
@@ -30,16 +32,27 @@ type VnetSubnetResource struct {
 }
 
 func (v VnetSubnetResource) IsSameVNET(cmp VnetSubnetResource) bool {
-	if v.SubscriptionID != cmp.SubscriptionID {
-		return false
+	return strings.EqualFold(v.SubscriptionID, cmp.SubscriptionID) &&
+		strings.EqualFold(v.ResourceGroupName, cmp.ResourceGroupName) &&
+		strings.EqualFold(v.VNetName, cmp.VNetName)
+}
+
+// ValidateLabelValues checks components used verbatim in pod-subnet network labels.
+func (v VnetSubnetResource) ValidateLabelValues() error {
+	for _, component := range []struct {
+		name  string
+		value string
+	}{
+		{name: "subscription ID", value: v.SubscriptionID},
+		{name: "resource group name", value: v.ResourceGroupName},
+		{name: "virtual network name", value: v.VNetName},
+		{name: "subnet name", value: v.SubnetName},
+	} {
+		if errs := validation.IsValidLabelValue(component.value); len(errs) != 0 {
+			return fmt.Errorf("%s is not a valid Kubernetes label value: %s", component.name, strings.Join(errs, "; "))
+		}
 	}
-	if v.ResourceGroupName != cmp.ResourceGroupName {
-		return false
-	}
-	if v.VNetName != cmp.VNetName {
-		return false
-	}
-	return true
+	return nil
 }
 
 // GetSubnetResourceID constructs the subnet resource id

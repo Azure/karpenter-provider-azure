@@ -80,12 +80,28 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with TrustedLaunch",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))) : true"
+// +kubebuilder:validation:XValidation:message="podSubnetID and podIPAllocationMode must be specified together",rule="has(self.podIPAllocationMode) == has(self.podSubnetID)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// podSubnetID is the subnet pods on nodes provisioned with this nodeclass get their IPs from,
+	// overriding the cluster-level --pod-subnet-id, for clusters using Azure CNI with pod subnet.
+	// Must be in the same virtual network as the node subnet, and requires the cluster-level
+	// --pod-subnet-id and --pod-ip-allocation-mode to be set.
+	// Must be specified together with podIPAllocationMode. If both are omitted, the cluster-level
+	// pod subnet and allocation mode are used.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
+	// +optional
+	PodSubnetID *string `json:"podSubnetID,omitempty"`
+	// podIPAllocationMode controls how pod IPs are allocated from podSubnetID.
+	// Must be specified together with podSubnetID.
+	// Azure requires every node using a pod subnet to use the same allocation mode.
+	// +kubebuilder:validation:Enum:={DynamicIndividual,StaticBlock}
+	// +optional
+	PodIPAllocationMode *string `json:"podIPAllocationMode,omitempty"`
 	// osDiskType is the type of disk to use for the OS.
 	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
 	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
@@ -764,6 +780,22 @@ type AKSNodeClassList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AKSNodeClass `json:"items"`
+}
+
+// GetPodSubnetID returns the pod subnet for this node class, falling back to the cluster default.
+func (in *AKSNodeClass) GetPodSubnetID(defaultPodSubnetID string) string {
+	if in.Spec.PodSubnetID != nil {
+		return *in.Spec.PodSubnetID
+	}
+	return defaultPodSubnetID
+}
+
+// GetPodIPAllocationMode returns the allocation mode for the explicit pod subnet, or the cluster default.
+func (in *AKSNodeClass) GetPodIPAllocationMode(defaultMode string) string {
+	if in.Spec.PodSubnetID != nil {
+		return lo.FromPtr(in.Spec.PodIPAllocationMode)
+	}
+	return defaultMode
 }
 
 // GetEncryptionAtHost returns whether encryption at host is enabled for the node class.

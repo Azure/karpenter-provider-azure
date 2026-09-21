@@ -32,6 +32,16 @@ func (o *Options) IsNetworkPluginNone() bool {
 	return o.NetworkPlugin == consts.NetworkPluginNone
 }
 
+func (o *Options) IsAzureCNIPodSubnet() bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && o.PodSubnetID != ""
+}
+
+// IsAzureCNIPodSubnetFor reports pod subnet mode for a specific effective pod subnet, which may come
+// from an AKSNodeClass rather than the cluster default
+func (o *Options) IsAzureCNIPodSubnetFor(podSubnetID string) bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && podSubnetID != ""
+}
+
 // SupportsWorkloadRuntime reports whether the configured provision mode can provision a non-default
 // workloadRuntime (AKS Pod Sandboxing). The AKS machine API carries it on the machine object and the
 // bootstrapping client carries it in the node bootstrapping request. The aksscriptless path builds

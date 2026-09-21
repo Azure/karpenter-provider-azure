@@ -126,6 +126,33 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
+	Context("PodSubnetID", func() {
+		const podSubnetID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/virtualNetworks/vnet/subnets/podsubnet"
+
+		DescribeTable("Should validate pod subnet allocation mode", func(podSubnetIDValue *string, podIPAllocationMode *string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					PodSubnetID:         podSubnetIDValue,
+					PodIPAllocationMode: podIPAllocationMode,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("both fields omitted inherit cluster defaults", nil, nil, true),
+			Entry("pod subnet without allocation mode", lo.ToPtr(podSubnetID), nil, false),
+			Entry("DynamicIndividual override", lo.ToPtr(podSubnetID), lo.ToPtr("DynamicIndividual"), true),
+			Entry("StaticBlock override", lo.ToPtr(podSubnetID), lo.ToPtr("StaticBlock"), true),
+			Entry("allocation mode without pod subnet", nil, lo.ToPtr("DynamicIndividual"), false),
+			Entry("empty allocation mode", lo.ToPtr(podSubnetID), lo.ToPtr(""), false),
+			Entry("unknown allocation mode", lo.ToPtr(podSubnetID), lo.ToPtr("Unknown"), false),
+		)
+	})
+
 	Context("ImageFamily", func() {
 		It("should reject invalid ImageFamily", func() {
 			invalidImageFamily := "123"
