@@ -34,34 +34,21 @@ import (
 // only usable while AKS still publishes node images for it on the cluster's
 // Kubernetes version.
 type kubernetesVersionPolicy struct {
+	// description is description of the policy
+	description string
 	// minimumVersion is the inclusive lower bound.
 	minimumVersion semver.Version
 	// maximumVersion is the exclusive upper bound, or nil when unbounded.
 	maximumVersion *semver.Version
-	// fipsMaximumVersion is the exclusive upper bound applied instead of maximumVersion
-	// when FIPS is requested, or nil when FIPS does not change the upper bound.
-	fipsMaximumVersion *semver.Version
-}
-
-// upperBound returns the exclusive upper bound to apply, and reports whether the
-// FIPS-specific bound was the one applied. When no FIPS-specific bound is registered,
-// FIPS does not change the reported range, so it is not flagged on the error either.
-func (p kubernetesVersionPolicy) upperBound(fips bool) (maximumVersion *semver.Version, fipsApplied bool) {
-	if fips && p.fipsMaximumVersion != nil {
-		return lo.ToPtr(*p.fipsMaximumVersion), true
-	}
-	if p.maximumVersion == nil {
-		return nil, false
-	}
-	return lo.ToPtr(*p.maximumVersion), false
 }
 
 // permits reports whether version falls within [minimumVersion, maximumVersion).
-func (p kubernetesVersionPolicy) permits(version semver.Version, maximumVersion *semver.Version) bool {
+func (p kubernetesVersionPolicy) permits(version semver.Version) bool {
 	if version.LT(p.minimumVersion) {
 		return false
 	}
-	return maximumVersion == nil || version.LT(*maximumVersion)
+
+	return p.maximumVersion == nil || version.LT(*p.maximumVersion)
 }
 
 // kubernetesVersionPinnedImageFamilies is the single source of truth for which
@@ -79,22 +66,41 @@ func (p kubernetesVersionPolicy) permits(version semver.Version, maximumVersion 
 // resolution. AzureLinux is likewise unpinned.
 var kubernetesVersionPinnedImageFamilies = map[string]kubernetesVersionPolicy{
 	v1beta1.Ubuntu2204ImageFamily: {
-		minimumVersion:     semver.MustParse("1.25.2"),
-		maximumVersion:     lo.ToPtr(semver.MustParse("1.37.0")),
-		fipsMaximumVersion: lo.ToPtr(semver.MustParse("1.39.0")),
+		description:    "Ubuntu 22.04",
+		minimumVersion: semver.MustParse("1.25.2"),
+		maximumVersion: lo.ToPtr(semver.MustParse("1.37.0")),
 	},
 	v1beta1.Ubuntu2404ImageFamily: {
-		// Ubuntu2404 has no upper bound, and no FIPS-specific bound today.
+		description:    "Ubuntu 24.04",
 		minimumVersion: semver.MustParse("1.32.0"),
+	},
+}
+
+// kubernetesFIPSVersionPinnedImageFamilies is a similar source of truth for FIPS-specific bounds on image families.
+var kubernetesFIPSVersionPinnedImageFamilies = map[string]kubernetesVersionPolicy{
+	v1beta1.Ubuntu2204ImageFamily: {
+		description:    "Ubuntu 22.04 FIPS",
+		minimumVersion: semver.MustParse("1.25.2"),
+		maximumVersion: lo.ToPtr(semver.MustParse("1.39.0")),
 	},
 }
 
 // kubernetesVersionPolicyFor looks up the policy registered for the image family
 // requested by spec.imageFamily, if any.
 func kubernetesVersionPolicyFor(nodeClass *v1beta1.AKSNodeClass) (kubernetesVersionPolicy, bool) {
+	// If no nodeclass, there is no image family to check, so return false.
 	if nodeClass == nil {
 		return kubernetesVersionPolicy{}, false
 	}
+
+	// If the nodeclass specifies FIPS mode, check the FIPS-specific policy first.
+	usesFIPS := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
+	if usesFIPS {
+		if policy, found := kubernetesFIPSVersionPinnedImageFamilies[lo.FromPtr(nodeClass.Spec.ImageFamily)]; found {
+			return policy, found
+		}
+	}
+
 	policy, found := kubernetesVersionPinnedImageFamilies[lo.FromPtr(nodeClass.Spec.ImageFamily)]
 	return policy, found
 }
@@ -123,27 +129,18 @@ type ImageFamilyKubernetesVersionIncompatibleError struct {
 	RequestedImageFamily string
 	// KubernetesVersion is the discovered cluster Kubernetes version, as discovered (unparsed).
 	KubernetesVersion string
-	// FIPS reports whether the FIPS-specific bounds were applied.
-	FIPS bool
-	// MinimumVersion is the inclusive lower bound for the requested image family.
-	MinimumVersion semver.Version
-	// MaximumVersion is the exclusive upper bound for the requested image family, or nil when unbounded.
-	MaximumVersion *semver.Version
+	// policy is the Kubernetes version policy that was applied to the requested image family.
+	policy kubernetesVersionPolicy
 }
 
 func (e *ImageFamilyKubernetesVersionIncompatibleError) Error() string {
-	fipsSuffix := ""
-	if e.FIPS {
-		fipsSuffix = " with FIPS"
-	}
-	supportedRange := fmt.Sprintf(">= %s", e.MinimumVersion)
-	if e.MaximumVersion != nil {
-		supportedRange = fmt.Sprintf("%s and < %s", supportedRange, e.MaximumVersion)
+	supportedRange := fmt.Sprintf(">= %s", e.policy.minimumVersion)
+	if e.policy.maximumVersion != nil {
+		supportedRange = fmt.Sprintf("%s and < %s", supportedRange, e.policy.maximumVersion)
 	}
 	return fmt.Sprintf(
-		"requested image family %q%s is not supported with discovered Kubernetes version %q; supported range is %s",
-		e.RequestedImageFamily,
-		fipsSuffix,
+		"requested image family %s is not supported with discovered Kubernetes version %q; supported range is %s",
+		e.policy.description,
 		e.KubernetesVersion,
 		supportedRange,
 	)
@@ -166,32 +163,32 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 		return errors.New("AKSNodeClass is required to validate image family compatibility")
 	}
 
-	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-	if err != nil {
-		return fmt.Errorf("getting kubernetes version: %w", err)
-	}
-
+	// Try to find a policy to apply; if none is found, the image family is unrestricted.
 	policy, found := kubernetesVersionPolicyFor(nodeClass)
 	if !found {
 		return nil
 	}
 
+	// Get the Kubernetes version from the node class status.
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return fmt.Errorf("getting kubernetes version: %w", err)
+	}
+
+	// Parse the Kubernetes version using semver.
 	version, err := semver.ParseTolerant(kubernetesVersion)
 	if err != nil {
 		return err
 	}
 
-	fips := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
-	maximumVersion, fipsApplied := policy.upperBound(fips)
-	if policy.permits(version, maximumVersion) {
+	// Check if the parsed version is permitted by the policy.
+	if policy.permits(version) {
 		return nil
 	}
 
 	return &ImageFamilyKubernetesVersionIncompatibleError{
 		RequestedImageFamily: lo.FromPtr(nodeClass.Spec.ImageFamily),
 		KubernetesVersion:    kubernetesVersion,
-		FIPS:                 fipsApplied,
-		MinimumVersion:       policy.minimumVersion,
-		MaximumVersion:       maximumVersion,
+		policy:               policy,
 	}
 }
