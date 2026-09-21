@@ -19,7 +19,6 @@ package imagefamily
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -177,7 +176,7 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 		return nil
 	}
 
-	version, err := parseKubernetesVersionTolerant(kubernetesVersion)
+	version, err := semver.ParseTolerant(kubernetesVersion)
 	if err != nil {
 		return err
 	}
@@ -195,16 +194,4 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 		MinimumVersion:       policy.minimumVersion,
 		MaximumVersion:       maximumVersion,
 	}
-}
-
-func parseKubernetesVersionTolerant(kubernetesVersion string) (semver.Version, error) {
-	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
-	if err != nil {
-		return semver.Version{}, fmt.Errorf(
-			"malformed discovered Kubernetes version %q: expected a semantic version like 1.32.0: %w",
-			kubernetesVersion,
-			err,
-		)
-	}
-	return version, nil
 }
