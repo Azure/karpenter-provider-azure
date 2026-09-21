@@ -33,8 +33,9 @@ import (
 )
 
 const (
-	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
-	IncompatibleProvisionMode    = "IncompatibleProvisionMode"
+	DiskEncryptionSetRBACMissing      = "DiskEncryptionSetRBACMissing"
+	IncompatibleProvisionMode         = "IncompatibleProvisionMode"
+	SIGRequiredForAzureContainerLinux = "SIGRequiredForAzureContainerLinux"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -71,11 +72,11 @@ func NewValidationReconciler(
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
-	if incompatibleACLProvisionMode(ctx, nodeClass) {
+	if reason := incompatibleACLConfiguration(ctx, nodeClass); reason != "" {
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeValidationSucceeded,
-			IncompatibleProvisionMode,
-			"AzureContainerLinux requires an AKS Machine API provision mode",
+			reason,
+			"AzureContainerLinux requires an AKS Machine API provision mode and shared image gallery access (UseSIG=true)",
 		)
 		return reconcile.Result{}, nil
 	}
@@ -134,9 +135,18 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
 }
 
-func incompatibleACLProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
-	return lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureContainerLinuxImageFamily &&
-		!options.FromContext(ctx).IsAKSMachineAPIMode()
+func incompatibleACLConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) string {
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) != v1beta1.AzureContainerLinuxImageFamily {
+		return ""
+	}
+	opts := options.FromContext(ctx)
+	if !opts.IsAKSMachineAPIMode() {
+		return IncompatibleProvisionMode
+	}
+	if !opts.UseSIG {
+		return SIGRequiredForAzureContainerLinux
+	}
+	return ""
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {

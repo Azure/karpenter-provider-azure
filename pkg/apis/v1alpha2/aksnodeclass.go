@@ -58,7 +58,9 @@ type ArtifactStreaming struct {
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
-// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
+// +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu, Ubuntu2204, and AzureContainerLinux",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204' || self.imageFamily == 'AzureContainerLinux') : true"
+// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires Secure Boot and vTPM",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.security) || !has(self.security.trustedLaunch) || ((!has(self.security.trustedLaunch.vtpm) || self.security.trustedLaunch.vtpm) && (!has(self.security.trustedLaunch.secureBoot) || self.security.trustedLaunch.secureBoot))"
+// +kubebuilder:validation:XValidation:message="AzureContainerLinux requires an OS disk of at least 60 GB",rule="!has(self.imageFamily) || self.imageFamily != 'AzureContainerLinux' || !has(self.osDiskSizeGB) || self.osDiskSizeGB >= 60"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
@@ -85,8 +87,9 @@ type AKSNodeClassSpec struct {
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
+	// AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
 	// +default="Ubuntu"
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,AzureContainerLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// fipsMode controls FIPS compliance for the provisioned nodes
@@ -156,9 +159,13 @@ type AKSNodeClassSpec struct {
 // TrustedLaunch configures Trusted Launch security features for provisioned nodes.
 type TrustedLaunch struct {
 	// vtpm specifies whether virtual TPM should be enabled for provisioned nodes.
+	// Defaults to true for AzureContainerLinux and false for other image families.
+	// AzureContainerLinux does not allow explicitly disabling vTPM.
 	// +optional
 	VTPM *bool `json:"vtpm,omitempty"`
 	// secureBoot specifies whether Secure Boot should be enabled for provisioned nodes.
+	// Defaults to true for AzureContainerLinux and false for other image families.
+	// AzureContainerLinux does not allow explicitly disabling Secure Boot.
 	// +optional
 	SecureBoot *bool `json:"secureBoot,omitempty"`
 }
@@ -761,14 +768,14 @@ func (in *AKSNodeClass) IsVTPMEnabled() bool {
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.VTPM != nil {
 		return *in.Spec.Security.TrustedLaunch.VTPM
 	}
-	return false
+	return lo.FromPtr(in.Spec.ImageFamily) == AzureContainerLinuxImageFamily
 }
 
 func (in *AKSNodeClass) IsSecureBootEnabled() bool {
 	if in.Spec.Security != nil && in.Spec.Security.TrustedLaunch != nil && in.Spec.Security.TrustedLaunch.SecureBoot != nil {
 		return *in.Spec.Security.TrustedLaunch.SecureBoot
 	}
-	return false
+	return lo.FromPtr(in.Spec.ImageFamily) == AzureContainerLinuxImageFamily
 }
 
 // IsTrustedLaunchEnabled returns whether any Trusted Launch-backed setting is enabled.
