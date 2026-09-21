@@ -51,20 +51,21 @@ Karpenter provider for AKS can be used in two modes:
 
 ## Node memory reservations
 
-For non-hardened nodes using `bootstrappingclient`, `aksmachineapi`, or
-`aksmachineapiheaderbatch`, the provider estimates memory reservations using the
-resolved node Kubernetes major/minor version and `maxPods`. Vendor suffixes such
-as `1.29.0-azure` do not change the reservation policy. AKS 1.29 and later use
-`min(20 * maxPods + 50, 25% of node memory)` MiB for kube-reserved memory and
-a 100 MiB hard-eviction threshold. Earlier versions retain the bracketed
-reservation and 750 MiB threshold. See the
+All provisioning modes (`aksscriptless`, `bootstrappingclient`, `aksmachineapi`,
+and `aksmachineapiheaderbatch`) use the same memory reservation policy for
+non-hardened nodes: `min(20 * maxPods + 50, totalMemoryMiB / 4)` MiB of
+kube-reserved memory and a 100 MiB hard-eviction threshold. `totalMemoryMiB`
+is the nominal SKU memory in MiB. This policy applies without a Kubernetes
+version gate and follows the
 [AKS node resource reservations documentation](https://learn.microsoft.com/azure/aks/node-resource-reservations).
 
-This aligns new-node and replacement-node scheduling estimates with AKS-owned
-bootstrap defaults; it does not change those defaults on the node. Scriptless
-provisioning retains its explicitly configured legacy reservations, and
-node-hardening reservations remain unchanged. CPU reservations and the separate
-`VM_MEMORY_OVERHEAD_PERCENT` safety margin are also unchanged.
+Scriptless provisioning uses these values both for scheduling estimates and for
+the generated kubelet configuration on newly created nodes. Other provisioning
+modes retain their AKS-owned bootstrap defaults; the provider's estimates align
+with those defaults. Existing nodes are not reconfigured by this change.
+
+Node-hardening reservations, CPU and system reservations, storage thresholds,
+and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
 
 ## Known limitations
 

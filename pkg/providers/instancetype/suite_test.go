@@ -220,7 +220,13 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("AKS memory reservations", func() {
-		It("should provision a pod that fits the AKS reservation but not the legacy estimate", func() {
+		DescribeTable("should provision a pod that fits the AKS reservation but not the legacy estimate", func(provisionMode string) {
+			provisionCtx, provisionEnv := ctx, azureEnv
+			provisionCluster, provisionCloudProvider, provisioner := cluster, cloudProvider, coreProvisioner
+			if provisionMode == consts.ProvisionModeBootstrappingClient {
+				provisionCtx, provisionEnv = ctxBootstrap, azureEnvBootstrap
+				provisionCluster, provisionCloudProvider, provisioner = clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap
+			}
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
 				karpv1.NodeSelectorRequirementWithMinValues{
@@ -228,22 +234,31 @@ var _ = Describe("InstanceType Provider", func() {
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D2_v3"},
 				})
-			ExpectApplied(ctxBootstrap, env.Client, nodePool, nodeClass)
+			ExpectApplied(provisionCtx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{ResourceRequirements: v1.ResourceRequirements{
 				Requests: v1.ResourceList{
 					v1.ResourceCPU:    resource.MustParse("100m"),
 					v1.ResourceMemory: resource.MustParse("6Gi"),
 				},
 			}})
-			ExpectProvisionedAndWaitForPromises(ctxBootstrap, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, azureEnvBootstrap, pod)
-			node := ExpectScheduled(ctxBootstrap, env.Client, pod)
+			ExpectProvisionedAndWaitForPromises(provisionCtx, env.Client, provisionCluster, provisionCloudProvider, provisioner, provisionEnv, pod)
+			node := ExpectScheduled(provisionCtx, env.Client, pod)
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v3"))
-		})
+			if provisionMode == consts.ProvisionModeAKSScriptless {
+				customData := ExpectDecodedCustomData(provisionEnv)
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=650Mi", "pid=1000")
+				ExpectHardEvictionThresholds(customData, "100Mi")
+			}
+		},
+			Entry("scriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrap client", consts.ProvisionModeBootstrappingClient),
+		)
 
-		DescribeTable("should invalidate cached reservations when the AKS policy or maxPods changes", func(provisionMode string) {
+		DescribeTable("should cache reservations by maxPods independently of the Kubernetes version", func(provisionMode string) {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{ProvisionMode: lo.ToPtr(provisionMode)}))
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
-			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.28.15")
+			nodeClass.Status.KubernetesVersion = nil
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "NotReady", "version is not ready")
 			getInstanceType := func() *corecloudprovider.InstanceType {
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 				Expect(err).NotTo(HaveOccurred())
@@ -254,36 +269,30 @@ var _ = Describe("InstanceType Provider", func() {
 				return instanceType
 			}
 
-			legacy := getInstanceType()
-			Expect(legacy.Overhead.KubeReserved.Memory().String()).To(Equal("1843Mi"))
-			Expect(legacy.Overhead.EvictionThreshold.Memory().String()).To(Equal("750Mi"))
+			initial := getInstanceType()
+			Expect(initial.Overhead.KubeReserved.Memory().String()).To(Equal("650Mi"))
+			Expect(initial.Overhead.EvictionThreshold.Memory().String()).To(Equal("100Mi"))
 
-			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.29.0-azure")
-			modern := getInstanceType()
-			Expect(modern.Overhead.KubeReserved.Memory().String()).To(Equal("650Mi"))
-			Expect(modern.Overhead.EvictionThreshold.Memory().String()).To(Equal("100Mi"))
-			Expect(modern.Capacity).To(Equal(legacy.Capacity))
-			Expect(modern.Overhead.KubeReserved.Cpu().Cmp(*legacy.Overhead.KubeReserved.Cpu())).To(BeZero())
-			Expect(modern.Overhead.SystemReserved).To(Equal(legacy.Overhead.SystemReserved))
-			Expect(modern.Overhead.EvictionThreshold.StorageEphemeral().Cmp(*legacy.Overhead.EvictionThreshold.StorageEphemeral())).To(BeZero())
-
-			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.29.0")
-			Expect(getInstanceType()).To(BeIdenticalTo(modern))
-			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.34.0")
-			Expect(getInstanceType()).To(BeIdenticalTo(modern))
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+			for _, version := range []string{"1.28.15", "1.29.0-azure", "1.29.0", "1.34.0"} {
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(version)
+				Expect(getInstanceType()).To(BeIdenticalTo(initial))
+			}
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(110))
 			capped := getInstanceType()
+			Expect(capped).NotTo(BeIdenticalTo(initial))
 			Expect(capped.Requirements.Get(v1beta1.LabelSKUMemory).Any()).To(Equal("8192"))
 			// The 8 GiB fixture caps the 2250 MiB pod-based reservation at 2048 MiB.
 			Expect(capped.Overhead.KubeReserved.Memory().Cmp(resource.MustParse("2048Mi"))).To(BeZero())
+			Expect(capped.Capacity.Cpu().Cmp(*initial.Capacity.Cpu())).To(BeZero())
+			Expect(capped.Capacity.Memory().Cmp(*initial.Capacity.Memory())).To(BeZero())
+			Expect(capped.Overhead.KubeReserved.Cpu().Cmp(*initial.Overhead.KubeReserved.Cpu())).To(BeZero())
+			Expect(capped.Overhead.SystemReserved).To(Equal(initial.Overhead.SystemReserved))
+			Expect(capped.Overhead.EvictionThreshold).To(Equal(initial.Overhead.EvictionThreshold))
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
-			nodeClass.Status.KubernetesVersion = lo.ToPtr("1.28.15")
-			Expect(getInstanceType()).To(BeIdenticalTo(legacy))
-
-			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "NotReady", "version is not ready")
-			_, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
-			Expect(err).To(HaveOccurred())
+			Expect(getInstanceType()).To(BeIdenticalTo(initial))
 		},
+			Entry("scriptless", consts.ProvisionModeAKSScriptless),
 			Entry("bootstrap client", consts.ProvisionModeBootstrappingClient),
 			Entry("AKS machines", consts.ProvisionModeAKSMachineAPI),
 			Entry("batched AKS machines", consts.ProvisionModeAKSMachineAPIHeaderBatch),
@@ -1356,12 +1365,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				ExpectHardEvictionThresholds(customData, "750Mi")
+				ExpectHardEvictionThresholds(customData, "100Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=2Gi", "pid=1000")
 			})
 		})
 
@@ -1427,12 +1436,12 @@ var _ = Describe("InstanceType Provider", func() {
 					"pod-max-pids":            "99",
 				}
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				ExpectHardEvictionThresholds(customData, "750Mi")
+				ExpectHardEvictionThresholds(customData, "100Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=2Gi", "pid=1000")
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -1469,12 +1478,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				ExpectHardEvictionThresholds(customData, "750Mi")
+				ExpectHardEvictionThresholds(customData, "100Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=350Mi", "pid=1000")
 			})
 		})
 
@@ -3715,13 +3724,13 @@ var _ = Describe("InstanceType Provider", func() {
 
 var _ = Describe("Tax Calculator", func() {
 	Context("KubeReservedResources", func() {
-		It("should have 4 cores, 7GiB", func() {
+		It("should reserve resources for 4 cores, 7GiB and 30 pods", func() {
 			cpus := int64(4) // 4 cores
 			memory := int64(7 * 1024)
 			expectedCPU := "140m"
-			expectedMemory := "1638Mi"
+			expectedMemory := "650Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 30, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3729,13 +3738,13 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(gotMemory.String()).To(Equal(expectedMemory))
 		})
 
-		It("should have 2 cores, 8GiB", func() {
+		It("should cap memory reserved for 2 cores, 8GiB and 110 pods", func() {
 			cpus := int64(2) // 2 cores
 			memory := int64(8 * 1024)
 			expectedCPU := "100m"
-			expectedMemory := "1843Mi"
+			expectedMemory := "2Gi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 110, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3743,13 +3752,13 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(gotMemory.String()).To(Equal(expectedMemory))
 		})
 
-		It("should have 3 cores, 64GiB", func() {
+		It("should reserve resources for 3 cores, 64GiB and 250 pods", func() {
 			cpus := int64(3) // 3 cores
 			memory := int64(64 * 1024)
 			expectedCPU := "120m"
-			expectedMemory := "5611Mi"
+			expectedMemory := "5050Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 250, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
