@@ -1,6 +1,6 @@
 # Capacity Reservations
 
-Status: available on the direct-VM provisioning path
+Status: available in direct-VM and AKS Machine API provisioning modes
 
 An `AKSNodeClass` can name one Azure Capacity Reservation Group (CRG). Every VM that
 NodeClass launches then targets that group, so a Karpenter-managed cluster consumes
@@ -24,19 +24,27 @@ VM holds an SLA-backed reserved unit, so Karpenter does not claim one does.
 
 ## Grant access to the group
 
-The Karpenter identity needs three actions on the group:
+Karpenter always needs the two read actions so it can resolve the group and project
+eligible offerings:
 
 | Action | Needed for |
 | --- | --- |
 | `Microsoft.Compute/capacityReservationGroups/read` | resolving the group |
 | `Microsoft.Compute/capacityReservationGroups/capacityReservations/read` | listing its members |
-| `Microsoft.Compute/capacityReservationGroups/deploy/action` | launching into it |
 
-`Contributor` on the group covers all three, through its `*` action, and is what AKS asks
-for today. It is the simplest grant and more than the feature needs.
+In direct-VM provisioning modes, the Karpenter identity also needs
+`Microsoft.Compute/capacityReservationGroups/deploy/action` to launch into the group.
+`Contributor` on the group covers all three through its `*` action. It is the simplest
+grant and more than the feature needs.
 
-To grant only the three, define a custom role. No built-in role is scoped to capacity
-reservations, so this is the narrow option:
+In AKS Machine API provisioning modes, AKS performs the VM association. The Karpenter
+identity therefore needs only the read actions; the AKS cluster identity must be a
+user-assigned managed identity with `Contributor` on the resource group containing the
+CRG, as described in the
+[AKS capacity reservation documentation](https://learn.microsoft.com/azure/aks/use-capacity-reservation-groups).
+
+For direct-VM mode, define a custom role to grant only the three required actions. No
+built-in role is scoped to capacity reservations, so this is the narrow option:
 
 ```bash
 az role definition create --role-definition '{
@@ -71,9 +79,9 @@ effective. Until it does, the NodeClass reports `CapacityReservationGroupAccessD
 a launch fails with `LinkedAuthorizationFailed`. Both clear on their own; the NodeClass is
 retried every minute. Do not re-grant in response.
 
-Read access is verified at readiness, but deploy access is not — nothing can check it
-before a launch. An identity with read but not deploy reports `Ready` and then fails every
-launch.
+Read access is verified at readiness, but association access is not — nothing can check
+it before a launch. A direct-VM identity with read but not deploy, or an AKS cluster
+identity without the required access, reports `Ready` and then fails every launch.
 
 ## Point a NodeClass at the group
 
@@ -278,7 +286,7 @@ az capacity reservation show \
 | Case | Behaviour |
 | --- | --- |
 | Spot, Ultra Disk, proximity placement groups | Azure does not support these with capacity reservations, so those offerings are not emitted for a configured NodeClass |
-| AKS Machine API provisioning mode | Fails readiness with `CapacityReservationGroupUnsupportedProvisionMode`. The per-Machine field is not published yet |
+| AKS Machine API authorization failure | AKS performs the VM association with the cluster's user-assigned managed identity. Missing `Contributor` access on the CRG's resource group surfaces as a Machine provisioning failure |
 | Clouds whose ARM endpoint does not expose capacity reservation groups | Fails readiness with `CapacityReservationGroupUnsupportedCloud`; the unsupported capability is cached after the first ARM response |
 | Cross-subscription (shared) groups | Not supported yet; same-subscription Targeted groups only |
 | Association changed outside Karpenter | **Not detected and not reconciled.** Manage association only through the NodeClass. These VMs live in the AKS node resource group, where direct edits are unsupported and are blocked outright when node resource group lockdown is enabled |
@@ -303,7 +311,6 @@ cluster, prefer a new NodeClass when that churn is unwelcome.
 | `CapacityReservationGroupNoReservations` | The group has no member reservations yet |
 | `CapacityReservationGroupNoEligibleReservations` | Members exist but none has provisioned successfully |
 | `CapacityReservationGroupNoCompatibleReservations` | No member reserves a VM size this NodeClass can use — check the region offers the size, and that the NodeClass does not exclude it |
-| `CapacityReservationGroupUnsupportedProvisionMode` | AKS Machine API mode; see above |
 | `CapacityReservationGroupUnsupportedCloud` | This cloud's ARM endpoint does not expose capacity reservation groups |
 | `CapacityReservationGroupUnknownError` | Unexpected Azure error; the message carries the detail |
 
