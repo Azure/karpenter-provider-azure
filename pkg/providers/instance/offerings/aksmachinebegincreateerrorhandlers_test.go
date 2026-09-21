@@ -55,6 +55,11 @@ func (b *aksMachineBeginCreateErrorTestCaseBuilder) withZoneAndCapacity(zone, ca
 	return b
 }
 
+func (b *aksMachineBeginCreateErrorTestCaseBuilder) withCapacityReservationGroup(id string) *aksMachineBeginCreateErrorTestCaseBuilder {
+	b.tc.capacityReservationGroupID = id
+	return b
+}
+
 func (b *aksMachineBeginCreateErrorTestCaseBuilder) withHandlableError(code, message string) *aksMachineBeginCreateErrorTestCaseBuilder {
 	b.tc.he = &HandlableError{Code: code, Message: message}
 	return b
@@ -85,6 +90,7 @@ type aksMachineBeginCreateErrorTestCase struct {
 	originalRequestSKU                      *skewer.SKU
 	zone                                    string
 	capacityType                            string
+	capacityReservationGroupID              string
 	he                                      *HandlableError
 	expectedErr                             error
 	expectedReason                          string
@@ -111,6 +117,19 @@ func setupAKSMachineBeginCreateErrorTestCases() []aksMachineBeginCreateErrorTest
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(zones.Regional, karpv1.CapacityTypeSpot),
+			).
+			build(),
+
+		newAKSMachineBeginCreateErrorTestCase("VMSizeNotSupported for a capacity reservation group").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withCapacityReservationGroup(testCapacityReservationGroupID).
+			withHandlableError("VMSizeNotSupported", "not supported").
+			expectError(fmt.Errorf(errMsgSKUNotAvailableForSubscriptionFmt, testInstanceName)).
+			expectReason(SKUNotAvailableReason).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 			).
 			build(),
 
@@ -177,11 +196,12 @@ func TestHandleMachineAPISyncErrors(t *testing.T) {
 				tc.instanceType,
 				tc.zone,
 				tc.capacityType,
+				tc.capacityReservationGroupID,
 				tc.he,
 			)
 
 			assertHandledError(t, err, tc.expectedErr, tc.expectedReason)
-			assertOfferingsState(t, handler.unavailableOfferings, "", tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
+			assertOfferingsState(t, handler.unavailableOfferings, tc.capacityReservationGroupID, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }

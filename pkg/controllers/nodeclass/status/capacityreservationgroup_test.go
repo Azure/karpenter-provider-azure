@@ -393,14 +393,16 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady)).To(BeNil())
 	})
 
-	It("should fail closed in AKS Machine API provisioning mode", func() {
+	It("should resolve in AKS Machine API provisioning mode", func() {
 		machinesCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
 			ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 		}))
 
 		_, err := reconciler.Reconcile(machinesCtx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
-		expectUnready(status.CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode)
+		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		Expect(nodeClass.Status.CapacityReservationGroup).ToNot(BeNil())
+		Expect(lister.called).To(BeTrue())
 	})
 
 	DescribeTable("should detect and cache an unsupported cloud",

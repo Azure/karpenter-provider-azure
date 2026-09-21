@@ -61,6 +61,66 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		}
 	})
 
+	Context("configureCapacityReservation", func() {
+		It("should omit the profile when no group is configured", func() {
+			Expect(configureCapacityReservation(nodeClass)).To(BeNil())
+		})
+
+		It("should omit the profile when the group ID is empty", func() {
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{}
+
+			Expect(configureCapacityReservation(nodeClass)).To(BeNil())
+		})
+
+		It("should configure the capacity reservation group", func() {
+			groupID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
+				GroupID: lo.ToPtr(groupID),
+			}
+
+			profile := configureCapacityReservation(nodeClass)
+
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.CapacityReservationGroup).ToNot(BeNil())
+			Expect(lo.FromPtr(profile.CapacityReservationGroup.ID)).To(Equal(groupID))
+		})
+	})
+
+	DescribeTable("validateExistingAKSMachineCapacityReservation",
+		func(actualGroupID, desiredGroupID string, wantError bool) {
+			machine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{},
+			}
+			if actualGroupID != "" {
+				machine.Properties.CapacityReservation = &armcontainerservice.CapacityReservation{
+					CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+						ID: lo.ToPtr(actualGroupID),
+					},
+				}
+			}
+			nodeClass.Spec.CapacityReservation = nil
+			if desiredGroupID != "" {
+				nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
+					GroupID: lo.ToPtr(desiredGroupID),
+				}
+			}
+
+			err := validateExistingAKSMachineCapacityReservation(machine, nodeClass)
+
+			if wantError {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).ToNot(HaveOccurred())
+			}
+		},
+		Entry("when neither is reserved", "", "", false),
+		Entry("when the groups match", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", false),
+		Entry("when ARM changes resource ID casing", "/SUBSCRIPTIONS/SUB/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/RESERVED", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", false),
+		Entry("when the NodeClass changes groups", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/old", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/new", true),
+		Entry("when the NodeClass adds a group", "", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", true),
+		Entry("when AKS applies a pool-level group to an unreserved NodeClass", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", "", false),
+	)
+
 	Context("configureOSSKUAndFIPs", func() {
 		Context("Ubuntu2204 Image Family", func() {
 			BeforeEach(func() {

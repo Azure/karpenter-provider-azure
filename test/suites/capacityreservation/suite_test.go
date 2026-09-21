@@ -51,16 +51,18 @@ var env *azure.Environment
 // grantedRoleAssignmentID is the capacity reservation grant this suite created, if any,
 // so AfterSuite can remove it again.
 var grantedRoleAssignmentID string
+var machineAPICapacityReservationUnsupportedReason string
 
 func TestCapacityReservation(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
+		if env.InClusterController && env.IsAKSMachineAPIMode() && !env.IsClusterUserAssignedIdentity(env.Context) {
+			machineAPICapacityReservationUnsupportedReason = "AKS Machine API capacity reservations require a user-assigned cluster identity"
+		}
 		// Once, before any spec: an assignment can take many minutes to become effective,
-		// and every group these specs create inherits this one. Machine API modes never
-		// resolve a group, so they need no access and must not require the caller to hold
-		// roleAssignments/write.
-		if env.InClusterController && !env.IsAKSMachineAPIMode() {
+		// and every group these specs create inherits this one.
+		if env.InClusterController {
 			grantedRoleAssignmentID = env.ExpectCapacityReservationAccessGranted(env.Context)
 		}
 	})
@@ -107,9 +109,7 @@ var _ = Describe("CapacityReservation", func() {
 		if !env.InClusterController {
 			Skip("requires granting the Karpenter workload identity a role on the capacity reservation group")
 		}
-		if env.IsAKSMachineAPIMode() {
-			Skip("the AKS Machine API cannot pass a capacity reservation group through yet; the NodeClass fails closed instead")
-		}
+		requireCapacityReservationLaunchSupport()
 
 		By("Reserving capacity in Azure")
 		armZone, expectedNodeZone := reservationPlacement()
@@ -174,6 +174,11 @@ var _ = Describe("CapacityReservation", func() {
 			g.Expect(env.Client.Get(ctx, client.ObjectKey{Name: nodes[0].Name}, node)).To(Succeed())
 			g.Expect(node.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationCapacityReservationGroupID, groupID))
 		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		if env.IsAKSMachineAPIMode() {
+			claims := currentNodeClaims(ctx, Default, nodePool)
+			Expect(claims).To(HaveLen(1))
+			expectAKSMachineOnReservedCapacity(claims[0], groupID)
+		}
 
 		By("Verifying Azure reports the reservation as consumed")
 		Eventually(func(g Gomega) {
@@ -192,9 +197,7 @@ var _ = Describe("CapacityReservation", func() {
 		if !env.InClusterController {
 			Skip("requires granting the Karpenter workload identity a role on the capacity reservation group")
 		}
-		if env.IsAKSMachineAPIMode() {
-			Skip("the AKS Machine API cannot pass a capacity reservation group through yet; the NodeClass fails closed instead")
-		}
+		requireCapacityReservationLaunchSupport()
 
 		By("Reserving capacity in Azure without a zone")
 		groupName := fmt.Sprintf("karpenter-e2e-crg-regional-%d", time.Now().UnixNano())
@@ -248,9 +251,6 @@ var _ = Describe("CapacityReservation", func() {
 			nodeclassstatus.CapacityReservationGroupUnreadyReasonNotFound,
 			nodeclassstatus.CapacityReservationGroupUnreadyReasonAccessDenied,
 		}
-		if env.IsAKSMachineAPIMode() {
-			expectedReasons = []string{nodeclassstatus.CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode}
-		}
 		expectCapacityReservationGroupCondition(ctx, nodeClass, func(g Gomega, condition *status.Condition) {
 			g.Expect(condition.IsFalse()).To(BeTrue(), "expected the group to fail to resolve")
 			g.Expect(condition.Reason).To(BeElementOf(expectedReasons))
@@ -276,9 +276,7 @@ var _ = Describe("CapacityReservation operational shapes", func() {
 		if !env.InClusterController {
 			Skip("requires granting the Karpenter workload identity a role on the capacity reservation group")
 		}
-		if env.IsAKSMachineAPIMode() {
-			Skip("the AKS Machine API cannot pass a capacity reservation group through yet")
-		}
+		requireCapacityReservationLaunchSupport()
 		nodeClass = env.DefaultAKSNodeClass()
 	})
 
@@ -473,6 +471,9 @@ func expectNodeClaimsOnReservedCapacity(ctx SpecContext, nodePool *karpv1.NodePo
 		Expect(claim.Labels[corev1.LabelInstanceTypeStable]).To(Equal(reservedVMSize))
 		Expect(claim.Labels[corev1.LabelTopologyZone]).To(Equal(expectedNodeZone))
 		Expect(claim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+		if env.IsAKSMachineAPIMode() {
+			expectAKSMachineOnReservedCapacity(claim, groupID)
+		}
 	}
 	return sets.New(lo.Map(claims, func(nc *karpv1.NodeClaim, _ int) string { return nc.Name })...)
 }
@@ -483,6 +484,25 @@ func expectVMOnReservedCapacity(vm armcompute.VirtualMachine, groupID string) {
 	Expect(vm.Properties.CapacityReservation.CapacityReservationGroup).ToNot(BeNil())
 	actual := lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)
 	Expect(strings.EqualFold(actual, groupID)).To(BeTrue(), "expected the VM to target %s, got %s", groupID, actual)
+}
+
+func expectAKSMachineOnReservedCapacity(claim *karpv1.NodeClaim, groupID string) {
+	GinkgoHelper()
+	machineID, ok := claim.Annotations[v1beta1.AnnotationAKSMachineResourceID]
+	Expect(ok).To(BeTrue(), "NodeClaim %s has no AKS Machine resource ID", claim.Name)
+	machine := env.ExpectMachineByID(machineID)
+	Expect(machine.Properties).ToNot(BeNil())
+	Expect(machine.Properties.CapacityReservation).ToNot(BeNil(), "AKS Machine was launched without a capacity reservation profile")
+	Expect(machine.Properties.CapacityReservation.CapacityReservationGroup).ToNot(BeNil())
+	actual := lo.FromPtr(machine.Properties.CapacityReservation.CapacityReservationGroup.ID)
+	Expect(strings.EqualFold(actual, groupID)).To(BeTrue(), "expected the AKS Machine to target %s, got %s", groupID, actual)
+}
+
+func requireCapacityReservationLaunchSupport() {
+	GinkgoHelper()
+	if machineAPICapacityReservationUnsupportedReason != "" {
+		Skip(machineAPICapacityReservationUnsupportedReason)
+	}
 }
 
 // reservationPlacement returns the ARM zone to reserve in and the zone label the

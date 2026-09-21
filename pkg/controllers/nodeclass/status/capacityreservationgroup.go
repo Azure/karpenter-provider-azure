@@ -33,7 +33,6 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
@@ -56,7 +55,6 @@ const (
 	// member reserves something this NodeClass cannot use: a size absent from the region,
 	// or one its own filters exclude.
 	CapacityReservationGroupUnreadyReasonNoCompatibleReservations = "CapacityReservationGroupNoCompatibleReservations"
-	CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode = "CapacityReservationGroupUnsupportedProvisionMode"
 	CapacityReservationGroupUnreadyReasonUnsupportedCloud         = "CapacityReservationGroupUnsupportedCloud"
 	CapacityReservationGroupUnreadyReasonUnknownError             = "CapacityReservationGroupUnknownError"
 )
@@ -118,15 +116,6 @@ func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, node
 
 	crgID := nodeClass.GetCapacityReservationGroupID()
 	logger := log.FromContext(ctx).WithName(capacityReservationGroupReconcilerName).WithValues("capacityReservationGroupID", crgID)
-
-	// The AKS Machine API does not yet expose a per-Machine capacity reservation
-	// field, so association cannot be honored in that provisioning mode. Fail closed
-	// rather than silently dropping the association.
-	if options.FromContext(ctx).IsAKSMachineAPIMode() {
-		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedProvisionMode,
-			"capacityReservation.groupID is not supported in AKS Machine API provisioning mode")
-		return reconcile.Result{}, nil
-	}
 
 	resourceID, err := arm.ParseResourceID(crgID)
 	if err != nil || !strings.EqualFold(resourceID.ResourceType.Type, capacityReservationGroupResourceType) {

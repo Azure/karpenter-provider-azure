@@ -34,12 +34,13 @@ import (
 )
 
 const (
-	testInstanceName       = "Standard_D2s_v3"
-	testInstanceVMSize     = "D2s_v3"
-	testInstanceFamilyName = "standardDsv3Family"
-	testZone1              = "westus-1"
-	testZone2              = "westus-2"
-	testZone3              = "westus-3"
+	testInstanceName               = "Standard_D2s_v3"
+	testInstanceVMSize             = "D2s_v3"
+	testInstanceFamilyName         = "standardDsv3Family"
+	testZone1                      = "westus-1"
+	testZone2                      = "westus-2"
+	testZone3                      = "westus-3"
+	testCapacityReservationGroupID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
 
 	errMsgLowPriorityQuota                  = "this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota"
 	errMsgSKUFamilyQuotaFmt                 = "subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)"

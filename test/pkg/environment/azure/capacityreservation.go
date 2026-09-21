@@ -32,7 +32,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const contributorRoleDefinitionID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+const (
+	contributorRoleDefinitionID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+	readerRoleDefinitionID      = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
+)
 
 // CapacityReservationMember is one reservation within a group. Azure allows only one
 // per VM size per placement.
@@ -59,9 +62,11 @@ type CapacityReservationGroupOptions struct {
 	ARMZones []string
 }
 
-// ExpectCapacityReservationAccessGranted grants the Karpenter workload identity Contributor
-// on the node resource group, which every group these tests create inherits. It returns the
-// ID of the assignment it created, or "" when the identity already held the role.
+// ExpectCapacityReservationAccessGranted grants the Karpenter workload identity access
+// to the node resource group, which every group these tests create inherits. Direct-VM
+// mode needs Contributor for deploy/action; Machine API mode needs only Reader because
+// AKS performs the VM association. It returns the ID of the assignment it created, or ""
+// when the identity already held the role.
 //
 // Granted once for the suite rather than once per group because the grant is the slow
 // part: within a single run Azure made one assignment effective immediately and another
@@ -71,9 +76,15 @@ func (env *Environment) ExpectCapacityReservationAccessGranted(ctx context.Conte
 	GinkgoHelper()
 
 	scope := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", env.SubscriptionID, env.NodeResourceGroup)
-	roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, contributorRoleDefinitionID)
+	roleName := "Contributor"
+	roleID := contributorRoleDefinitionID
+	if env.IsAKSMachineAPIMode() {
+		roleName = "Reader"
+		roleID = readerRoleDefinitionID
+	}
+	roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, roleID)
 	assignmentID, err := env.RBACManager.EnsureRoleReportingCreate(ctx, scope, roleDefinitionID, env.GetKarpenterWorkloadIdentity(ctx), "")
-	Expect(err).ToNot(HaveOccurred(), "failed to grant Contributor on %s", scope)
+	Expect(err).ToNot(HaveOccurred(), "failed to grant %s on %s", roleName, scope)
 	return assignmentID
 }
 

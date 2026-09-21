@@ -93,13 +93,13 @@ func (h *ErrorDetailHandler) extractErrorCodeAndMessage(errorDetail armcontainer
 	return code, message
 }
 
-func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, errorDetail armcontainerservice.ErrorDetail) error {
+// Handle records the failure against capacityReservationGroupID, or against unreserved
+// capacity when it is empty, so the two never mask each other.
+func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, errorDetail armcontainerservice.ErrorDetail) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(errorDetail) {
 			errorCode, errorMessage := h.extractErrorCodeAndMessage(errorDetail)
-			// The AKS Machine API cannot pass a capacity reservation group yet, so these
-			// failures are always unreserved.
-			return handler.handle(ctx, h.UnavailableOfferings.ForCapacityReservationGroup(""), sku, instanceType, zone, capacityType, errorCode, errorMessage)
+			return handler.handle(ctx, h.UnavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID), sku, instanceType, zone, capacityType, errorCode, errorMessage)
 		}
 	}
 
