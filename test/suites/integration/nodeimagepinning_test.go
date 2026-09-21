@@ -28,8 +28,6 @@ import (
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -40,21 +38,15 @@ import (
 var _ = Describe("Node image pinning", func() {
 	FIt("should provision a node one Kubernetes version behind the control plane", func() {
 		requestedVersion := previousSupportedKubernetesVersion()
-
-		nodeClassObject := lo.Must(runtime.DefaultUnstructuredConverter.ToUnstructured(nodeClass))
-		unstructuredNodeClass := &unstructured.Unstructured{Object: nodeClassObject}
-		Expect(unstructured.SetNestedField(unstructuredNodeClass.Object, requestedVersion, "spec", "versions", "kubernetesVersion")).To(Succeed())
+		nodeClass.Spec.Versions = &v1beta1.Versions{KubernetesVersion: lo.ToPtr(requestedVersion)}
 
 		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
-		env.ExpectCreated(unstructuredNodeClass, nodePool, deployment)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
 		pods := env.EventuallyExpectHealthyDeployment(deployment)
 
 		Eventually(func(g Gomega) {
-			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(unstructuredNodeClass), unstructuredNodeClass)).To(Succeed())
-			effectiveVersion, found, err := unstructured.NestedString(unstructuredNodeClass.Object, "status", "kubernetesVersion")
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(effectiveVersion).To(Equal(requestedVersion))
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.GetKubernetesVersion()).To(Equal(requestedVersion))
 		}).Should(Succeed())
 
 		node := env.GetNode(pods[0].Spec.NodeName)
