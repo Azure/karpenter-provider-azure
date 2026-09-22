@@ -133,8 +133,8 @@ var _ = Describe("CapacityReservation", func() {
 		})
 
 		By("Verifying ARM reports the member's provisioning state in the list response")
-		// Eligibility fails open on an absent state, so if ARM omitted this field the gate
-		// would silently never gate. Only a live list call can show that it does not.
+		// Eligibility requires an explicit Succeeded state. Only a live list call verifies
+		// that ARM has reported the member ready to back offerings.
 		resolved := &v1beta1.AKSNodeClass{}
 		Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), resolved)).To(Succeed())
 		Expect(resolved.Status.CapacityReservationGroup.CapacityReservations).To(HaveLen(1))

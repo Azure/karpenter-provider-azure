@@ -64,6 +64,17 @@ var _ = Describe("CapacityReservationGroup readiness gating", func() {
 	})
 })
 
+var _ = DescribeTable("CapacityReservation eligibility",
+	func(provisioningState *string, eligible bool) {
+		Expect(v1beta1.CapacityReservation{ProvisioningState: provisioningState}.IsEligible()).To(Equal(eligible))
+	},
+	Entry("when provisioning succeeded", lo.ToPtr("Succeeded"), true),
+	Entry("when ARM changes provisioning state casing", lo.ToPtr("succeeded"), true),
+	Entry("when provisioning is still in progress", lo.ToPtr("Creating"), false),
+	Entry("when provisioning state is empty", lo.ToPtr(""), false),
+	Entry("when provisioning state is absent", nil, false),
+)
+
 var _ = Describe("Status, successful outcomes", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	BeforeEach(func() {

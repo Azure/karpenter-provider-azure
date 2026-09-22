@@ -280,9 +280,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		Expect(lo.FromPtr(crg.CapacityReservations[0].ProvisioningState)).To(Equal("Creating"))
 	})
 
-	// ARM documents provisioningState as always present in the response, so an absent
-	// value is treated as usable rather than turning an optional field into an outage.
-	It("should treat a member with no provisioning state as eligible", func() {
+	It("should treat a member with no provisioning state as ineligible", func() {
 		azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
 			bare := fake.NewCapacityReservation(rg, group, "bare", "Standard_D2s_v3", 1, "1")
 			bare.Properties = nil
@@ -291,7 +289,11 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 
 		_, err := reconciler.Reconcile(ctx, nodeClass)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady).IsTrue()).To(BeTrue())
+		condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeCapacityReservationGroupReady)
+		Expect(condition.IsFalse()).To(BeTrue())
+		Expect(condition.Reason).To(Equal(status.CapacityReservationGroupUnreadyReasonNoEligibleReservations))
+		Expect(lister.called).To(BeFalse())
+		Expect(nodeClass.Status.CapacityReservationGroup.CapacityReservations).To(HaveLen(1))
 		Expect(nodeClass.Status.CapacityReservationGroup.CapacityReservations[0].ProvisioningState).To(BeNil())
 	})
 

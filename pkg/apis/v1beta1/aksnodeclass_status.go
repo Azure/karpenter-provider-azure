@@ -62,10 +62,9 @@ type CapacityReservation struct {
 	// +optional
 	Quantity *int64 `json:"quantity,omitempty"`
 	// provisioningState is the ARM provisioning state of the capacity reservation.
-	// A reservation with an explicit state other than Succeeded does not back offerings;
-	// one reported as Succeeded, or with no state reported, does. Members that cannot back
-	// offerings are still listed here, so that a NodePool authored against one shows why it
-	// stopped placing.
+	// Only a reservation explicitly reported as Succeeded backs offerings. Members that
+	// cannot back offerings are still listed here, so that a NodePool authored against one
+	// shows why it stopped placing.
 	// +optional
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
@@ -75,17 +74,9 @@ type CapacityReservation struct {
 const CapacityReservationProvisioningStateSucceeded = "Succeeded"
 
 // IsEligible reports whether this member can currently back offerings.
-//
-// An absent state counts as eligible. The field is read-only and populated in every
-// observed response, so treating a missing value as ineligible would turn an optional
-// field into a hard provisioning outage; and unlike association itself, guessing wrong
-// here cannot launch an unreserved node, it can only cost a launch attempt that ARM
-// rejects.
 func (in CapacityReservation) IsEligible() bool {
-	if in.ProvisioningState == nil || *in.ProvisioningState == "" {
-		return true
-	}
-	return strings.EqualFold(*in.ProvisioningState, CapacityReservationProvisioningStateSucceeded)
+	return in.ProvisioningState != nil &&
+		strings.EqualFold(*in.ProvisioningState, CapacityReservationProvisioningStateSucceeded)
 }
 
 // CapacityReservationGroup is the resolved shape of the Capacity Reservation
