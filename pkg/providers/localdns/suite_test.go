@@ -14,27 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package localdns_test
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-const (
-	Group            = "karpenter.azure.com"
-	AKSNodeClassKind = "AKSNodeClass"
-)
-
-var (
-	SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: "v1beta1"}
-	SchemeBuilder      = runtime.NewSchemeBuilder(func(scheme *runtime.Scheme) error {
-		scheme.AddKnownTypes(SchemeGroupVersion,
-			&AKSNodeClass{},
-			&AKSNodeClassList{},
-		)
-		metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
-		return nil
-	})
-)
+func TestLocalDNS(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "LocalDNS")
+}

@@ -42,6 +42,7 @@ import (
 	skuutil "github.com/Azure/karpenter-provider-azure/pkg/utils/sku"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 
@@ -69,7 +70,7 @@ type instanceTypeParameters struct {
 	GPUMode                  v1beta1.GPUMode
 	ArtifactStreamingEnabled bool
 	FIPSMode                 v1beta1.FIPSMode
-	LocalDNSEnabled          bool
+	LocalDNSRequired         bool
 	KataEnabled              bool
 }
 
@@ -155,7 +156,7 @@ func (p *DefaultProvider) List(
 		GPUMode:                  nodeClass.GetGPUMode(),
 		ArtifactStreamingEnabled: nodeClass.IsArtifactStreamingExplicitlyEnabled(),
 		FIPSMode:                 lo.FromPtr(nodeClass.Spec.FIPSMode),
-		LocalDNSEnabled:          nodeClass.IsLocalDNSEnabled(),
+		LocalDNSRequired:         nodeClass.IsLocalDNSRequired(),
 		KataEnabled:              nodeClass.IsKataEnabled(),
 	}
 	paramsHash, _ := hashstructure.Hash(instanceTypeParams, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
@@ -415,20 +416,27 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, params *instanceTypeParameters) bool {
-	// Read the resolved state from Status.LocalDNSState. The
-	// nodeclass.localdns sub-reconciler is the sole writer.
-	// If LocalDNS won't be enabled, all instance types are supported
-	if !params.LocalDNSEnabled {
+	// Only Mode=Required makes the LocalDNS VM size floor a constraint on
+	// instance type selection. Required means "enforce LocalDNS, and fail if the
+	// prerequisites are not met", so a SKU that cannot run LocalDNS is not a
+	// viable candidate and is filtered out here.
+	//
+	// Under Mode=Preferred the floor is deliberately NOT applied. Preferred means
+	// "enable LocalDNS where the node can support it" (see the "VM SKU capacity"
+	// row of the compatibility checks at aka.ms/aks/localdns): a node below the
+	// floor still provisions, it just runs without LocalDNS. Filtering here would
+	// delete those sizes from the candidate list, so a NodePool pinned to small
+	// SKUs would lose every candidate and its pods would sit Pending. The
+	// per-node decision is made at launch time by
+	// localdns.IsSupportedForInstanceType.
+	if !params.LocalDNSRequired {
 		return true
 	}
-
-	// LocalDNS requires at least 4 vCPUs and 256 MB (244.140625 MiB) of memory
 	cpu, err := sku.VCPU()
-	if err != nil || cpu < 4 {
+	if err != nil {
 		return false
 	}
-
-	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
+	return localdns.SKUMeetsFloor(cpu, memoryMiB(sku))
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByGPUDriverMode(sku *skewer.SKU, params *instanceTypeParameters) bool {
