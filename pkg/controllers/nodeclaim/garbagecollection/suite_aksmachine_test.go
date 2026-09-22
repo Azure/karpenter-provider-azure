@@ -133,7 +133,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		})
 
 		DescribeTable("should delete a recent AKS machine whose VM is deleted even if a matching NodeClaim exists", func(provisionMode string, manageExisting bool) {
-			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+			testCtx := options.ToContext(ctx, test.Options(test.OptionsFields{
 				ProvisionMode:             lo.ToPtr(provisionMode),
 				ManageExistingAKSMachines: lo.ToPtr(manageExisting),
 			}))
@@ -149,15 +149,15 @@ var _ = Describe("Instance Garbage Collection", func() {
 			node := coretest.Node(coretest.NodeOptions{
 				ProviderID: providerID,
 			})
-			ExpectApplied(ctx, env.Client, nodeClaim, node)
+			ExpectApplied(testCtx, env.Client, nodeClaim, node)
 
-			ExpectSingletonReconciled(ctx, InstanceGCController)
+			ExpectSingletonReconciled(testCtx, InstanceGCController)
 
-			_, err := cloudProvider.Get(ctx, providerID)
+			_, err := cloudProvider.Get(testCtx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-			ExpectNotFound(ctx, env.Client, node)
-			ExpectExists(ctx, env.Client, nodeClaim)
+			ExpectNotFound(testCtx, env.Client, node)
+			ExpectExists(testCtx, env.Client, nodeClaim)
 		},
 			Entry("machine API mode", consts.ProvisionModeAKSMachineAPI, false),
 			Entry("machine API header batch mode", consts.ProvisionModeAKSMachineAPIHeaderBatch, false),
