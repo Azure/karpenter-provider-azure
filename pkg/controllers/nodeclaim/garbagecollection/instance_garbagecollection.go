@@ -24,6 +24,8 @@ import (
 	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
@@ -57,14 +59,14 @@ func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 
 	// We LIST instances on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
-	// This works since our CloudProvider instances are deleted based on whether the NodeClaim exists or not, not vice-versa
+	// when evaluating whether an instance is orphaned.
 	cloudNodeClaims, err := c.cloudProvider.List(ctx)
 	if err != nil {
 		return reconciler.Result{}, fmt.Errorf("listing cloudprovider instances, %w", err)
 	}
 
 	cloudNodeClaims = lo.Filter(cloudNodeClaims, func(nc *karpv1.NodeClaim, _ int) bool {
-		return nc.DeletionTimestamp.IsZero()
+		return nc.DeletionTimestamp.IsZero() || isAKSMachineVMDeleted(nc)
 	})
 	clusterNodeClaims := &karpv1.NodeClaimList{}
 	if err = c.kubeClient.List(ctx, clusterNodeClaims); err != nil {
@@ -79,12 +81,14 @@ func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	})...)
 	errs := make([]error, len(cloudNodeClaims))
 	workqueue.ParallelizeUntil(ctx, 100, len(cloudNodeClaims), func(i int) {
-		// Garbage collect if the cloud instance has been around for more than 5 minutes, yet still no matching (per ProviderID) cluster NodeClaim.
+		// Garbage collect if the underlying AKS Machine VM is deleted, or if the cloud instance has been around for more than
+		// 5 minutes yet still has no matching (per ProviderID) cluster NodeClaim.
 		// Note that the "match" occurs after cloudprovider.Create() returns and cluster NodeClaim ProviderID is populated as a result.
 		// Although, the intention of garbage collection is to clear instances with missing/deleted NodeClaim.
 		// This 5m is more of a grace period for newly-created instances that have yet to populate NodeClaim after.
-		if !clusterProviderIDs.Has(cloudNodeClaims[i].Status.ProviderID) &&
-			time.Since(cloudNodeClaims[i].CreationTimestamp.Time) > time.Minute*5 {
+		if isAKSMachineVMDeleted(cloudNodeClaims[i]) ||
+			(!clusterProviderIDs.Has(cloudNodeClaims[i].Status.ProviderID) &&
+				time.Since(cloudNodeClaims[i].CreationTimestamp.Time) > time.Minute*5) {
 			errs[i] = c.garbageCollect(ctx, cloudNodeClaims[i], nodeList)
 			// In the case that CreationTimestamp is irretrievable (technically, when CreationTimestamp = 0 = epoch), grace period will effectively be disabled.
 			// Which could be dangerous if the instance is legitimately awaiting NodeClaim population.
@@ -94,6 +98,10 @@ func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 		return reconciler.Result{}, err
 	}
 	return reconciler.Result{RequeueAfter: time.Minute * 2}, nil
+}
+
+func isAKSMachineVMDeleted(nodeClaim *karpv1.NodeClaim) bool {
+	return nodeClaim.Annotations[v1beta1.AnnotationAKSMachineVMState] == string(armcontainerservice.VMStateDeleted)
 }
 
 func (c *Instance) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {

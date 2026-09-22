@@ -101,6 +101,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 		It("should not delete the AKS machine or node if it already has a nodeClaim that matches it", func() {
 			// Launch time was 10m ago
 			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10))
+			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateRunning)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
@@ -117,6 +118,30 @@ var _ = Describe("Instance Garbage Collection", func() {
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectExists(ctx, env.Client, node)
+		})
+
+		It("should delete a recent AKS machine whose VM is deleted even if a matching NodeClaim exists", func() {
+			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(instance.NewAKSMachineTimestamp())
+			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
+			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				Status: karpv1.NodeClaimStatus{
+					ProviderID: providerID,
+				},
+			})
+			node := coretest.Node(coretest.NodeOptions{
+				ProviderID: providerID,
+			})
+			ExpectApplied(ctx, env.Client, nodeClaim, node)
+
+			ExpectSingletonReconciled(ctx, InstanceGCController)
+
+			_, err := cloudProvider.Get(ctx, providerID)
+			Expect(err).To(HaveOccurred())
+			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+			ExpectNotFound(ctx, env.Client, node)
+			ExpectExists(ctx, env.Client, nodeClaim)
 		})
 
 		It("should delete an AKS machine along with the node if there is no NodeClaim owner (to quicken scheduling)", func() {

@@ -126,7 +126,17 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels).To(HaveKeyWithValue(v1beta1.LabelPlacementScope, v1beta1.PlacementScopeZonal))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationAKSMachineVMState))
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
+		})
+
+		It("should propagate AKS machine VM state to the NodeClaim", func() {
+			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
+
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSMachineVMState, string(armcontainerservice.VMStateDeleted)))
 		})
 
 		It("should handle missing zone gracefully", func() {
