@@ -266,7 +266,6 @@ yet, so read it from Azure — a member is overallocated when the allocated coun
 reserved quantity:
 
 az capacity reservation show --output json \
-az capacity reservation show \
   --resource-group <rg> --capacity-reservation-group <name> --name <member> \
   --instance-view \
   --query '{reserved: sku.capacity, allocated: length(instanceView.utilizationInfo.virtualMachinesAllocated || `[]`)}'
