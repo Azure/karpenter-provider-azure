@@ -117,15 +117,6 @@ kubectl get aksnodeclass reserved -o jsonpath='{.status.capacityReservationGroup
 }
 ```
 
-Each launched NodeClaim and Node is annotated with the group the NodeClass named at launch:
-
-```
-karpenter.azure.com/capacity-reservation-group-id: /subscriptions/.../prod-eastus
-```
-
-That is audit metadata only. Nothing refreshes it, and it is not evidence of the VM's
-current association.
-
 ## One NodePool per member reservation
 
 A group is a container. The unit that carries a quantity is the **member reservation**,
