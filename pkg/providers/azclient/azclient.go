@@ -271,7 +271,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	if o.IsAKSMachineAPIMode() || o.ManageExistingAKSMachines {
 		// copy the options to avoid modifying the original
 		var machinesClientOptions = *opts
-		machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{})
+		machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{}, &machinesListExpandPolicy{})
 		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, &machinesClientOptions)
 		if err != nil {
 			return nil, err
