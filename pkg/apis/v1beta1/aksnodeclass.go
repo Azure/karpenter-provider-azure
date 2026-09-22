@@ -841,6 +841,19 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 		*in.Spec.ArtifactStreaming.Enabled
 }
 
+// IsLocalDNSRequired reports whether the user asked for LocalDNS unconditionally.
+//
+// This is the only mode in which the VM size floor is a hard constraint on
+// instance type selection: Required means "enforce LocalDNS, and fail if the
+// prerequisites are not met", so a SKU that cannot run LocalDNS is not a
+// candidate at all. Under Preferred the floor is not a constraint -- a node too
+// small for LocalDNS simply runs without it -- so the provider must not filter
+// on it. The per-node Preferred decision lives in pkg/providers/localdns, which
+// is where the VM size floor and everything that reads it now live.
+func (in *AKSNodeClass) IsLocalDNSRequired() bool {
+	return in.Spec.LocalDNS != nil && in.Spec.LocalDNS.Mode == LocalDNSModeRequired
+}
+
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // The decision is sourced from Status.LocalDNSState, which is resolved by the
 // nodeclass.localdns status sub-reconciler:
@@ -849,39 +862,17 @@ func (in *AKSNodeClass) IsArtifactStreamingExplicitlyEnabled() bool {
 //   - Mode=Preferred -> resolved against cluster gates with sticky-Enabled
 //     (once Enabled, stays Enabled while Mode=Preferred).
 //
+// This is the NodeClass-wide half of the decision. Under Preferred it is
+// necessary but not sufficient: the node's own VM size has to clear the LocalDNS
+// floor as well, which is why the provisioning path calls
+// localdns.IsSupportedForInstanceType rather than this.
+//
 // If Status.LocalDNSState has not yet been written, this returns false as a
 // safe default. Karpenter core gates provisioning on the AKSNodeClass
 // aggregate Ready condition (which includes LocalDNSReady), so callers in
 // the provisioning path will not observe the unresolved state.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	return in.Status.LocalDNSState != nil && *in.Status.LocalDNSState == LocalDNSStateEnabled
-}
-
-// ResolvedLocalDNSForWire translates Status.LocalDNSState (the source of
-// truth, written by Karpenter) into a deterministic Mode to send downstream.
-// In the aks-rp API contract, LocalDNS state is read-only; only Mode is
-// accepted as input. Preferred must therefore never be sent over the wire --
-// downstream would otherwise re-interpret it and could resolve to a different
-// value than our source of truth.
-//
-// Rules:
-//   - Mode != Preferred: return Spec as-is.
-//   - Mode == Preferred + Status.LocalDNSState == Enabled: Mode=Required.
-//   - Mode == Preferred + Status.LocalDNSState == Disabled or unset: Mode=Disabled.
-func (in *AKSNodeClass) ResolvedLocalDNSForWire() *LocalDNS {
-	if in.Spec.LocalDNS == nil {
-		return nil
-	}
-	if in.Spec.LocalDNS.Mode != LocalDNSModePreferred {
-		return in.Spec.LocalDNS
-	}
-	out := in.Spec.LocalDNS.DeepCopy()
-	if lo.FromPtr(in.Status.LocalDNSState) == LocalDNSStateEnabled {
-		out.Mode = LocalDNSModeRequired
-	} else {
-		out.Mode = LocalDNSModeDisabled
-	}
-	return out
 }
 
 // GetGPUMode returns the effective GPU mode.

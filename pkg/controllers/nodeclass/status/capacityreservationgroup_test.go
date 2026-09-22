@@ -413,8 +413,8 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 		})
 
 		It("should reject a size the NodeClass filters out", func() {
-			// LocalDNS needs at least four vCPUs, and the reserved size has two.
-			nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+			// Required LocalDNS needs at least four vCPUs, and the reserved size has two.
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}
 			azureEnv.CapacityReservationsAPI.ListFunc = func(rg, group string) ([]*armcompute.CapacityReservation, error) {
 				return []*armcompute.CapacityReservation{
 					fake.NewCapacityReservation(rg, group, "small", "Standard_D2s_v3", 1, "1"),
