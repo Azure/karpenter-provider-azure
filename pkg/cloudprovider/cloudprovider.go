@@ -260,6 +260,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
 			return toCreateError(err, "creating standalone instance failed")
 		}
+		return nil
 	}
 	// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
 	// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter

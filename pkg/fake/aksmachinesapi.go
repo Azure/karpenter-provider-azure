@@ -86,6 +86,7 @@ type AKSMachinesBehavior struct {
 	// When any per-machine errors are returned, the fake produces a batch error response
 	// (BatchMachineClientError or BatchMachineInternalServerError) matching the real Azure API format.
 	BatchMachineErrorFunc func(machineName string) (errorCode string, errorMessage string)
+	BatchCreateSizes      AtomicPtrStack[int]
 }
 
 var AKSMachineAPIErrorFromAKSMachineNotFound = &azcore.ResponseError{
@@ -102,6 +103,14 @@ var AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted = &azcore.R
 }
 var AKSMachineAPIErrorAny = &azcore.ResponseError{
 	ErrorCode: "SomeRandomError",
+}
+
+func cloneResponseError(err *azcore.ResponseError) *azcore.ResponseError {
+	return &azcore.ResponseError{
+		ErrorCode:   err.ErrorCode,
+		StatusCode:  err.StatusCode,
+		RawResponse: err.RawResponse,
+	}
 }
 
 func AKSMachineAPIErrorVMSizeNotSupported(vmSize, subscription, location string) *azcore.ResponseError {
@@ -271,6 +280,7 @@ func (c *AKSMachinesAPI) Reset() {
 	c.aksDataStorage.AKSMachines.Clear()
 	c.AfterPollProvisioningErrorOverride = nil
 	c.BatchMachineErrorFunc = nil
+	c.BatchCreateSizes.Reset()
 }
 
 func (c *AKSMachinesAPI) BeginCreateOrUpdate(
@@ -293,7 +303,7 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 
 	// Validate parent AgentPool
 	if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
-		return nil, AKSMachineAPIErrorFromAKSMachinesPoolNotFound
+		return nil, cloneResponseError(AKSMachineAPIErrorFromAKSMachinesPoolNotFound)
 	}
 
 	// If batch entries are present, create a machine for each entry.
@@ -343,6 +353,9 @@ func (c *AKSMachinesAPI) createSingleMachine(input *AKSMachineCreateOrUpdateInpu
 //   - If only internal errors (5xx-style): returns 500 BatchMachineInternalServerError
 //   - If all succeed: returns success as before
 func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInput, template armcontainerservice.Machine, entries []aksmachinesheaderbatch.MachineEntry) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
+	batchSize := len(entries)
+	c.BatchCreateSizes.Add(&batchSize)
+
 	// Collect per-machine errors if the error function is set
 	var perMachineErrors []fakeBatchMachineError
 	failedMachines := make(map[string]bool)
@@ -429,7 +442,7 @@ func (c *AKSMachinesAPI) createOneBatchMachine(input *AKSMachineCreateOrUpdateIn
 	// Check if AKS machine already exists — if so, check for immutable property conflicts
 	if existing, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
 		if c.doImmutablePropertiesChanged(&existing, &machine) {
-			return armcontainerservice.Machine{}, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
+			return armcontainerservice.Machine{}, cloneResponseError(AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted)
 		}
 	}
 
@@ -529,7 +542,7 @@ func (c *AKSMachinesAPI) updateExistingAKSMachine(input *AKSMachineCreateOrUpdat
 
 	// Validate immutable properties not violated
 	if c.doImmutablePropertiesChanged(&existing, &aksMachine) {
-		return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
+		return nil, cloneResponseError(AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted)
 	}
 
 	// Patch with new values
@@ -560,7 +573,7 @@ func (c *AKSMachinesAPI) simulateCreateStatusAtAsync(aksMachine armcontainerserv
 			aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
 		}
 		aksMachine.Properties.Status.ProvisioningError = c.AfterPollProvisioningErrorOverride
-		pollingError = AKSMachineAPIErrorAny
+		pollingError = cloneResponseError(AKSMachineAPIErrorAny)
 	} else {
 		aksMachine.Properties.ProvisioningState = lo.ToPtr(consts.ProvisioningStateSucceeded)
 	}
@@ -587,7 +600,7 @@ func (c *AKSMachinesAPI) Get(
 	return c.AKSMachineGetBehavior.Invoke(input, func(input *AKSMachineGetInput) (armcontainerservice.MachinesClientGetResponse, error) {
 		// Validate that the agent pool exists before attempting to get machines
 		if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
-			return armcontainerservice.MachinesClientGetResponse{}, AKSMachineAPIErrorFromAKSMachinesPoolNotFound
+			return armcontainerservice.MachinesClientGetResponse{}, cloneResponseError(AKSMachineAPIErrorFromAKSMachinesPoolNotFound)
 		}
 
 		// First try direct lookup using the standard machine ID format
@@ -597,7 +610,7 @@ func (c *AKSMachinesAPI) Get(
 				Machine: aksMachine,
 			}, nil
 		} else {
-			return armcontainerservice.MachinesClientGetResponse{}, AKSMachineAPIErrorFromAKSMachineNotFound
+			return armcontainerservice.MachinesClientGetResponse{}, cloneResponseError(AKSMachineAPIErrorFromAKSMachineNotFound)
 		}
 	})
 }
@@ -624,7 +637,7 @@ func (c *AKSMachinesAPI) NewListPager(
 				// Check if the agent pool exists when fetching the page
 				if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
 					// AKS machines pool not found. Return ARM not found error to match real API behavior.
-					return armcontainerservice.MachinesClientListResponse{}, AKSMachineAPIErrorFromAKSMachinesPoolNotFound
+					return armcontainerservice.MachinesClientListResponse{}, cloneResponseError(AKSMachineAPIErrorFromAKSMachinesPoolNotFound)
 				}
 
 				var aksMachines []*armcontainerservice.Machine
