@@ -130,14 +130,17 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 		})
 
-		It("should propagate AKS machine VM state to the NodeClaim", func() {
-			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
+		DescribeTable("should propagate AKS machine VM state to the NodeClaim", func(vmState armcontainerservice.VMState) {
+			aksMachine.Properties.Status.VMState = lo.ToPtr(vmState)
 
 			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSMachineVMState, string(armcontainerservice.VMStateDeleted)))
-		})
+			Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSMachineVMState, string(vmState)))
+		},
+			Entry("running", armcontainerservice.VMStateRunning),
+			Entry("deleted", armcontainerservice.VMStateDeleted),
+		)
 
 		It("should handle missing zone gracefully", func() {
 			aksMachine.Zones = []*string{}

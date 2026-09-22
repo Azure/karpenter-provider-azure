@@ -78,6 +78,7 @@ type AKSMachinesBehavior struct {
 	AKSMachineCreateOrUpdateBehavior   MockedLRO[AKSMachineCreateOrUpdateInput, armcontainerservice.MachinesClientCreateOrUpdateResponse]
 	AKSMachineGetBehavior              MockedFunction[AKSMachineGetInput, armcontainerservice.MachinesClientGetResponse]
 	AKSMachineNewListPagerBehavior     MockedFunction[AKSMachineListInput, *runtime.Pager[armcontainerservice.MachinesClientListResponse]]
+	AKSMachineListPageErrorOverride    error
 	AfterPollProvisioningErrorOverride *armcontainerservice.ErrorDetail
 
 	// BatchMachineErrorFunc, if set, is called during batch creation to determine per-machine
@@ -268,6 +269,7 @@ func (c *AKSMachinesAPI) Reset() {
 	c.AKSMachineCreateOrUpdateBehavior.Reset()
 	c.AKSMachineGetBehavior.Reset()
 	c.AKSMachineNewListPagerBehavior.Reset()
+	c.AKSMachineListPageErrorOverride = nil
 	c.aksDataStorage.AKSMachines.Clear()
 	c.AfterPollProvisioningErrorOverride = nil
 	c.BatchMachineErrorFunc = nil
@@ -621,6 +623,9 @@ func (c *AKSMachinesAPI) NewListPager(
 				return false // Single page for fake implementation
 			},
 			Fetcher: func(ctx context.Context, page *armcontainerservice.MachinesClientListResponse) (armcontainerservice.MachinesClientListResponse, error) {
+				if c.AKSMachineListPageErrorOverride != nil {
+					return armcontainerservice.MachinesClientListResponse{}, c.AKSMachineListPageErrorOverride
+				}
 				// Check if the agent pool exists when fetching the page
 				if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
 					// AKS machines pool not found. Return ARM not found error to match real API behavior.
