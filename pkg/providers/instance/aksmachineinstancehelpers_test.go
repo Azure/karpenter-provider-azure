@@ -118,7 +118,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		Entry("when ARM changes resource ID casing", "/SUBSCRIPTIONS/SUB/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/RESERVED", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", false),
 		Entry("when the NodeClass changes groups", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/old", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/new", true),
 		Entry("when the NodeClass adds a group", "", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", true),
-		Entry("when AKS applies a pool-level group to an unreserved NodeClass", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", "", false),
+		Entry("when the NodeClass drops its group after the Machine was created", "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved", "", true),
 	)
 
 	Context("configureOSSKUAndFIPs", func() {

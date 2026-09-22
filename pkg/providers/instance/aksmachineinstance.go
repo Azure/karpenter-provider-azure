@@ -19,7 +19,6 @@ package instance
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -646,7 +645,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
 	}
 	if err := validateExistingAKSMachineCapacityReservation(existingAKSMachine, nodeClass); err != nil {
-		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
+		return nil, fmt.Errorf("found existing AKS machine %s, but it %w", aksMachineName, err)
 	}
 	if existingAKSMachine.Properties.Tags == nil || existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil {
 		// This is not included in validateRetrievedAKSMachineBasicProperties as inplaceupdate can repair it.
@@ -710,22 +709,14 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	), nil
 }
 
-// validateExistingAKSMachineCapacityReservation prevents a reserved NodeClass from
-// adopting a Machine associated with another group. An unreserved NodeClass may see a
-// pool-level association inherited from AKS, so it does not reject a non-empty actual ID.
+// validateExistingAKSMachineCapacityReservation refuses to adopt a Machine left behind
+// by an earlier attempt whose capacity reservation group differs from the NodeClass.
 func validateExistingAKSMachineCapacityReservation(machine *armcontainerservice.Machine, nodeClass *v1beta1.AKSNodeClass) error {
-	desired := nodeClass.GetCapacityReservationGroupID()
-	if desired == "" {
-		return nil
-	}
 	var actual string
 	if machine.Properties != nil && machine.Properties.CapacityReservation != nil && machine.Properties.CapacityReservation.CapacityReservationGroup != nil {
 		actual = lo.FromPtr(machine.Properties.CapacityReservation.CapacityReservationGroup.ID)
 	}
-	if !strings.EqualFold(actual, desired) {
-		return fmt.Errorf("its capacity reservation group is %q, but the NodeClass now specifies %q", actual, desired)
-	}
-	return nil
+	return validateCapacityReservationGroupAssociation(actual, nodeClass.GetCapacityReservationGroupID())
 }
 
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, capacityReservationGroupID string) (*armcontainerservice.Machine, error) {

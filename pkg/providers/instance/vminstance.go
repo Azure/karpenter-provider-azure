@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -741,10 +740,8 @@ func validateExistingCapacityReservation(vm *armcompute.VirtualMachine, nodeClas
 	if vm.Properties != nil && vm.Properties.CapacityReservation != nil && vm.Properties.CapacityReservation.CapacityReservationGroup != nil {
 		actual = lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)
 	}
-	// ARM echoes resource IDs back with different casing than it was given.
-	if desired := nodeClass.GetCapacityReservationGroupID(); !strings.EqualFold(actual, desired) {
-		return fmt.Errorf("existing VM %q is associated with capacity reservation group %q, but the NodeClass now specifies %q",
-			lo.FromPtr(vm.Name), actual, desired)
+	if err := validateCapacityReservationGroupAssociation(actual, nodeClass.GetCapacityReservationGroupID()); err != nil {
+		return fmt.Errorf("existing VM %q %w", lo.FromPtr(vm.Name), err)
 	}
 	return nil
 }
