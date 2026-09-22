@@ -42,7 +42,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.25.1",
 			wantErr: []string{
 				"requested image family",
-				"Ubuntu 22.04",
+				"Ubuntu2204",
 				"1.25.1",
 				"supported range is >= 1.25.2 and < 1.37.0",
 			},
@@ -60,7 +60,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.37.0",
 			wantErr: []string{
 				"requested image family",
-				"Ubuntu 22.04",
+				"Ubuntu2204",
 				"1.37.0",
 				"supported range is >= 1.25.2 and < 1.37.0",
 			},
@@ -71,7 +71,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.37.0",
 			wantErr: []string{
 				"requested image family",
-				"Ubuntu 22.04",
+				"Ubuntu2204",
 				"1.37.0",
 				"supported range is >= 1.25.2 and < 1.37.0",
 			},
@@ -87,7 +87,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.39.0",
 			wantErr: []string{
 				"requested image family",
-				"Ubuntu 22.04",
+				"Ubuntu2204",
 				"1.39.0",
 				"FIPS",
 				"supported range is >= 1.25.2 and < 1.39.0",
@@ -100,7 +100,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.39.0",
 			wantErr: []string{
 				"requested image family",
-				"Ubuntu 22.04",
+				"Ubuntu2204",
 				"1.39.0",
 				"FIPS",
 				"supported range is >= 1.25.2 and < 1.39.0",
@@ -113,7 +113,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.31.9",
 			wantErr: []string{
 				"requested image family",
-				"Ubuntu 24.04",
+				"Ubuntu2404",
 				"1.31.9",
 				"supported range is >= 1.32.0",
 			},
@@ -193,7 +193,7 @@ func TestValidateImageFamilyCompatibility(t *testing.T) {
 			kubernetesVersion: "1.31",
 			wantErr: []string{
 				"requested image family",
-				"Ubuntu 24.04",
+				"Ubuntu2404",
 				"1.31",
 				"supported range is >= 1.32.0",
 			},

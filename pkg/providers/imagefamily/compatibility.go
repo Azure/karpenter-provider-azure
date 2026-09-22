@@ -66,12 +66,12 @@ func (p kubernetesVersionPolicy) permits(version semver.Version) bool {
 // resolution. AzureLinux is likewise unpinned.
 var kubernetesVersionPinnedImageFamilies = map[string]kubernetesVersionPolicy{
 	v1beta1.Ubuntu2204ImageFamily: {
-		description:    "Ubuntu 22.04",
+		description:    "Ubuntu2204",
 		minimumVersion: semver.MustParse("1.25.2"),
 		maximumVersion: lo.ToPtr(semver.MustParse("1.37.0")),
 	},
 	v1beta1.Ubuntu2404ImageFamily: {
-		description:    "Ubuntu 24.04",
+		description:    "Ubuntu2404",
 		minimumVersion: semver.MustParse("1.32.0"),
 	},
 }
@@ -79,7 +79,7 @@ var kubernetesVersionPinnedImageFamilies = map[string]kubernetesVersionPolicy{
 // kubernetesFIPSVersionPinnedImageFamilies is a similar source of truth for FIPS-specific bounds on image families.
 var kubernetesFIPSVersionPinnedImageFamilies = map[string]kubernetesVersionPolicy{
 	v1beta1.Ubuntu2204ImageFamily: {
-		description:    "Ubuntu 22.04 FIPS",
+		description:    "Ubuntu2204 FIPS",
 		minimumVersion: semver.MustParse("1.25.2"),
 		maximumVersion: lo.ToPtr(semver.MustParse("1.39.0")),
 	},
@@ -166,7 +166,7 @@ func ValidateImageFamilyCompatibility(nodeClass *v1beta1.AKSNodeClass) error {
 	// Parse the Kubernetes version using semver.
 	version, err := semver.ParseTolerant(kubernetesVersion)
 	if err != nil {
-		return err
+		return fmt.Errorf("malformed Kubernetes version %q: %w", kubernetesVersion, err)
 	}
 
 	// Check if the parsed version is permitted by the policy.

@@ -212,7 +212,7 @@ var _ = Describe("Validation Reconciler", func() {
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
 			Expect(condition.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
-			Expect(condition.Message).To(Equal(`requested image family "Ubuntu2404" is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`))
+			Expect(condition.Message).To(Equal(`requested image family Ubuntu2404 is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`))
 		})
 
 		It("should reject Ubuntu2204 on Kubernetes 1.37", func() {
@@ -226,7 +226,7 @@ var _ = Describe("Validation Reconciler", func() {
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
 			Expect(condition.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
-			Expect(condition.Message).To(Equal(`requested image family "Ubuntu2204" is not supported with discovered Kubernetes version "1.37"; supported range is >= 1.25.2 and < 1.37.0`))
+			Expect(condition.Message).To(Equal(`requested image family Ubuntu2204 is not supported with discovered Kubernetes version "1.37"; supported range is >= 1.25.2 and < 1.37.0`))
 		})
 
 		DescribeTable("should pass compatible boundary combinations",
@@ -444,7 +444,9 @@ var _ = Describe("Validation Reconciler", func() {
 			initialCondition := *nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
-			Expect(err).To(MatchError(ContainSubstring(`validating image family compatibility: malformed discovered Kubernetes version "1.32.x"`)))
+			Expect(err).To(MatchError(ContainSubstring(`validating image family compatibility:`)))
+			Expect(err).To(MatchError(ContainSubstring(`malformed Kubernetes version "1.32.x"`)))
+			Expect(err).To(MatchError(ContainSubstring(`Invalid character(s) found in patch number "x"`)))
 			// An unexpected (non-incompatibility) error must never masquerade as a static
 			// incompatibility: it is returned for retry rather than latched onto the condition.
 			var incompatibleErr *imagefamily.ImageFamilyKubernetesVersionIncompatibleError
@@ -623,7 +625,7 @@ var _ = Describe("NodeClass Status Controller image family compatibility", func(
 		validationCondition := pinnedNodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 		Expect(validationCondition.IsFalse()).To(BeTrue())
 		Expect(validationCondition.Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
-		Expect(validationCondition.Message).To(ContainSubstring(`requested image family "Ubuntu2404"`))
+		Expect(validationCondition.Message).To(ContainSubstring(`requested image family Ubuntu2404`))
 
 		// The other status reconcilers succeed, so the NodeClass is not Ready specifically
 		// because of the image family incompatibility.
