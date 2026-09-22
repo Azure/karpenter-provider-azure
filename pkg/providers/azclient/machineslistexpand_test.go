@@ -22,7 +22,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +36,15 @@ type capturingTransport struct {
 	request *http.Request
 }
 
+type fakeCredential struct{}
+
+func (fakeCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{
+		Token:     "token",
+		ExpiresOn: time.Now().Add(time.Hour),
+	}, nil
+}
+
 func (t *capturingTransport) Do(req *http.Request) (*http.Response, error) {
 	t.request = req.Clone(req.Context())
 	return &http.Response{
@@ -41,6 +53,23 @@ func (t *capturingTransport) Do(req *http.Request) (*http.Response, error) {
 		Body:       io.NopCloser(strings.NewReader("{}")),
 		Request:    req,
 	}, nil
+}
+
+func TestNewAKSMachinesClientIncludesListExpansion(t *testing.T) {
+	t.Parallel()
+
+	transport := &capturingTransport{}
+	options := &arm.ClientOptions{}
+	options.Transport = transport
+
+	client, err := newAKSMachinesClient("subscription", fakeCredential{}, options)
+	require.NoError(t, err)
+
+	_, err = client.NewListPager("resource-group", "cluster", "pool", nil).NextPage(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, transport.request)
+	assert.Equal(t, "instanceView", transport.request.URL.Query().Get("$expand"))
+	assert.Empty(t, options.PerCallPolicies)
 }
 
 func TestMachinesListExpandPolicy(t *testing.T) {

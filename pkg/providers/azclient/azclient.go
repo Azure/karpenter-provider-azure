@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
@@ -106,6 +107,15 @@ func (c *AZClient) NetworkInterfacesClient() azapi.NetworkInterfacesAPI {
 
 func (c *AZClient) AzureResourceGraphClient() azapi.AzureResourceGraphAPI {
 	return c.azureResourceGraphClient
+}
+
+func newAKSMachinesClient(subscriptionID string, cred azcore.TokenCredential, opts *arm.ClientOptions) (*armcontainerservice.MachinesClient, error) {
+	machinesClientOptions := opts.Clone()
+	if machinesClientOptions == nil {
+		machinesClientOptions = &arm.ClientOptions{}
+	}
+	machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{}, &machinesListExpandPolicy{})
+	return armcontainerservice.NewMachinesClient(subscriptionID, cred, machinesClientOptions)
 }
 
 func NewAZClientFromAPI(
@@ -269,10 +279,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
 	if o.IsAKSMachineAPIMode() || o.ManageExistingAKSMachines {
-		// copy the options to avoid modifying the original
-		var machinesClientOptions = *opts
-		machinesClientOptions.PerCallPolicies = append(machinesClientOptions.PerCallPolicies, &spotSystemNodePolicy{}, &machinesListExpandPolicy{})
-		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, &machinesClientOptions)
+		aksMachinesClient, err = newAKSMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			return nil, err
 		}
