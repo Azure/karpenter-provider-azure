@@ -31,6 +31,8 @@ type machinesListExpandPolicy struct{}
 func (p *machinesListExpandPolicy) Do(req *policy.Request) (*http.Response, error) {
 	rawRequest := req.Raw()
 	pathSegments := strings.Split(strings.Trim(rawRequest.URL.Path, "/"), "/")
+	// CloudProvider.List currently bypasses the Machine cache. If List starts serving cached entries,
+	// expand Machine GETs too so a GET fallback cannot replace an expanded entry with one missing instance-view fields.
 	if rawRequest.Method == http.MethodGet &&
 		len(pathSegments) >= 3 &&
 		pathSegments[len(pathSegments)-1] == "machines" &&
