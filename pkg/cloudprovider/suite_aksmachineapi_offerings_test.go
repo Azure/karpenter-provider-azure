@@ -478,6 +478,27 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
 			})
 
+			It("should return a NodeClassNotReadyError before instance creation when validation marks the NodeClass incompatible with the Kubernetes version", func() {
+				// Mirrors the message the ValidationReconciler sets for a pinned image family
+				// the discovered Kubernetes version does not support.
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				message := `requested image family "Ubuntu2404" is not supported with discovered Kubernetes version "1.31"; supported range is >= 1.32.0`
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, status.ImageFamilyKubernetesVersionIncompatible, message)
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason).To(Equal(status.ImageFamilyKubernetesVersionIncompatible))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Message).To(Equal(message))
+				Expect(nodeClass.StatusConditions().Get(corestatus.ConditionReady).IsFalse()).To(BeTrue())
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+				claim, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(corecloudprovider.IsNodeClassNotReadyError(err)).To(BeTrue())
+				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.NodeClassNotReadyError{}))
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("%s=False", v1beta1.ConditionTypeValidationSucceeded)))
+				Expect(claim).To(BeNil())
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
 			// Ported from VM test: "should return error when instance type resolution fails"
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller

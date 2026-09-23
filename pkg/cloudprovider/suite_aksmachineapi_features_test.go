@@ -1079,6 +1079,13 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		Context("Create - LocalDNS", func() {
+			BeforeEach(func() {
+				// Switch LocalDNS tests to use the Azure Linux image family
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			})
+
 			It("should set LocalDNSProfile with mode Required", func() {
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 					Mode:             v1beta1.LocalDNSModeRequired,
