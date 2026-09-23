@@ -3768,10 +3768,11 @@ var _ = Describe("InstanceType Provider", func() {
 				Location: fake.Region,
 				CapacityReservations: lo.Map(placements, func(p lo.Tuple2[string, []string], i int) v1beta1.CapacityReservation {
 					return v1beta1.CapacityReservation{
-						ID:     fmt.Sprintf("%s/capacityReservations/r%d", nodeClass.GetCapacityReservationGroupID(), i),
-						Name:   fmt.Sprintf("r%d", i),
-						VMSize: p.A,
-						Zones:  p.B,
+						ID:                fmt.Sprintf("%s/capacityReservations/r%d", nodeClass.GetCapacityReservationGroupID(), i),
+						Name:              fmt.Sprintf("r%d", i),
+						VMSize:            p.A,
+						Zones:             p.B,
+						ProvisioningState: lo.ToPtr(v1beta1.CapacityReservationProvisioningStateSucceeded),
 					}
 				}),
 			}
