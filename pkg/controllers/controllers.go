@@ -25,7 +25,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/clock"
 
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,7 +54,7 @@ func NewControllers(
 	clk clock.Clock,
 	kubeClient client.Client,
 	recorder events.Recorder,
-	cloudProvider cloudprovider.CloudProvider,
+	cloudProvider nodeclaimgarbagecollection.CloudProvider,
 	vmInstanceProvider instance.VMProvider,
 	aksMachineInstanceProvider instance.AKSMachineProvider,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
@@ -76,7 +75,7 @@ func NewControllers(
 		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, managedKubernetesInterface, managedDynamicInterface, subnetsClient, diskEncryptionSetsClient, parsedDiskEncryptionSetID, networkPolicy, networkPlugin),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
-		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider, clk),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
 
 		// TODO: nodeclaim tagging

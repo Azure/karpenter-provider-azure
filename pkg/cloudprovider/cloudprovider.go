@@ -365,10 +365,19 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
+	return c.list(ctx)
+}
+
+// ListWithAKSMachineVMState lists cloud instances while requesting the VM state field for AKS Machines.
+func (c *CloudProvider) ListWithAKSMachineVMState(ctx context.Context) ([]*karpv1.NodeClaim, error) {
+	return c.list(ctx, instance.WithMachineVMStateExpansion())
+}
+
+func (c *CloudProvider) list(ctx context.Context, aksMachineOptions ...instance.Option) ([]*karpv1.NodeClaim, error) {
 	var nodeClaims []*karpv1.NodeClaim
 
 	// List AKS machine-based nodes
-	aksMachineInstances, err := c.aksMachineInstanceProvider.List(ctx)
+	aksMachineInstances, err := c.aksMachineInstanceProvider.List(ctx, aksMachineOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("listing AKS machine instances, %w", err)
 	}

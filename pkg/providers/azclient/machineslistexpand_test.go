@@ -28,6 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,7 +56,7 @@ func (t *capturingTransport) Do(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-func TestNewAKSMachinesClientIncludesListExpansion(t *testing.T) {
+func TestNewAKSMachinesClientSupportsOptInListExpansion(t *testing.T) {
 	t.Parallel()
 
 	transport := &capturingTransport{}
@@ -66,6 +67,11 @@ func TestNewAKSMachinesClientIncludesListExpansion(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = client.NewListPager("resource-group", "cluster", "pool", nil).NextPage(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, transport.request)
+	assert.Empty(t, transport.request.URL.Query().Get("$expand"))
+
+	_, err = client.NewListPager("resource-group", "cluster", "pool", nil).NextPage(azapi.WithAKSMachineVMStateExpansion(context.Background()))
 	require.NoError(t, err)
 	require.NotNil(t, transport.request)
 	assert.Equal(t, "properties.status.vmState", transport.request.URL.Query().Get("$expand"))
@@ -79,29 +85,39 @@ func TestMachinesListExpandPolicy(t *testing.T) {
 		name           string
 		method         string
 		url            string
+		expandVMState  bool
 		expectedExpand string
 	}{
+		{
+			name:   "does not expand a machine list request by default",
+			method: http.MethodGet,
+			url:    "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines?api-version=2026-06-02-preview",
+		},
 		{
 			name:           "adds VM state expansion to a machine list request",
 			method:         http.MethodGet,
 			url:            "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines?api-version=2026-06-02-preview",
+			expandVMState:  true,
 			expectedExpand: "properties.status.vmState",
 		},
 		{
 			name:           "adds VM state expansion to a continuation request",
 			method:         http.MethodGet,
 			url:            "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines?api-version=2026-06-02-preview&skipToken=token",
+			expandVMState:  true,
 			expectedExpand: "properties.status.vmState",
 		},
 		{
-			name:   "does not expand a machine get request",
-			method: http.MethodGet,
-			url:    "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines/machine?api-version=2026-06-02-preview",
+			name:          "does not expand a machine get request",
+			method:        http.MethodGet,
+			url:           "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines/machine?api-version=2026-06-02-preview",
+			expandVMState: true,
 		},
 		{
-			name:   "does not expand a machine create request",
-			method: http.MethodPut,
-			url:    "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines?api-version=2026-06-02-preview",
+			name:          "does not expand a machine create request",
+			method:        http.MethodPut,
+			url:           "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines?api-version=2026-06-02-preview",
+			expandVMState: true,
 		},
 	}
 
@@ -114,7 +130,11 @@ func TestMachinesListExpandPolicy(t *testing.T) {
 				Transport:       transport,
 				PerCallPolicies: []policy.Policy{&machinesListExpandPolicy{}},
 			})
-			req, err := runtime.NewRequest(context.Background(), tt.method, tt.url)
+			ctx := context.Background()
+			if tt.expandVMState {
+				ctx = azapi.WithAKSMachineVMStateExpansion(ctx)
+			}
+			req, err := runtime.NewRequest(ctx, tt.method, tt.url)
 			require.NoError(t, err)
 
 			_, err = pipeline.Do(req)

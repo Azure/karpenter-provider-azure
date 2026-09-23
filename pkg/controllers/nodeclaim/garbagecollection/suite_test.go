@@ -93,10 +93,10 @@ var _ = BeforeSuite(func() {
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider)
+	fakeClock = clock.NewFakeClock(time.Now())
+	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider, fakeClock)
 	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider)
 	networkInterfaceGCController = garbagecollection.NewNetworkInterface(env.Client, azureEnv.VMInstanceProvider)
-	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
 
@@ -127,6 +127,8 @@ var _ = BeforeEach(func() {
 
 	cluster.Reset()
 	azureEnv.Reset(ctx)
+	fakeClock.SetTime(time.Now())
+	InstanceGCController = garbagecollection.NewInstance(env.Client, cloudProvider, fakeClock)
 })
 
 var _ = AfterEach(func() {
