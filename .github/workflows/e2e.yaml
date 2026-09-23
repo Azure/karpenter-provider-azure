@@ -84,7 +84,7 @@ on:
         options:
           - aksscriptless
           - aksmachineapi
-          - aksmachineapiheaderbatch
+          # - aksmachineapiheaderbatch # Removed currently as only aksmanagedap can do batch anyway
       azure_vm_size:
         type: string
         description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"

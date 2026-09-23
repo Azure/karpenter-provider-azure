@@ -58,7 +58,7 @@ const (
 	skuRetirementHorizonMonths = 6
 )
 
-// instanceTypeParameters contains the resolved set of AKSNodeClass fields that affect
+// instanceTypeParameters contains the resolved parameters that affect
 // instance-type construction. The instance-type cache key is derived by hashing this
 // struct; adding a new field here automatically incorporates it into the key.
 type instanceTypeParameters struct {
