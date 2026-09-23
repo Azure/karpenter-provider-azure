@@ -222,6 +222,43 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("AKS memory reservations", func() {
+		DescribeTable("should provision a pod that fits the AKS reservation but not the legacy estimate", func(provisionMode string) {
+			provisionCtx, provisionEnv := ctx, azureEnv
+			provisionCluster, provisionCloudProvider, provisioner := cluster, cloudProvider, coreProvisioner
+			if provisionMode == consts.ProvisionModeBootstrappingClient {
+				provisionCtx, provisionEnv = ctxBootstrap, azureEnvBootstrap
+				provisionCluster, provisionCloudProvider, provisioner = clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap
+			}
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(30))
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v3"},
+				})
+			ExpectApplied(provisionCtx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{ResourceRequirements: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("100m"),
+					v1.ResourceMemory: resource.MustParse("6Gi"),
+				},
+			}})
+			ExpectProvisionedAndWaitForPromises(provisionCtx, env.Client, provisionCluster, provisionCloudProvider, provisioner, provisionEnv, pod)
+			node := ExpectScheduled(provisionCtx, env.Client, pod)
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v3"))
+			if provisionMode == consts.ProvisionModeAKSScriptless {
+				customData := ExpectDecodedCustomData(provisionEnv)
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=650Mi", "pid=1000")
+				ExpectHardEvictionThresholds(customData, "100Mi")
+			}
+		},
+			Entry("scriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrap client", consts.ProvisionModeBootstrappingClient),
+		)
+
+	})
+
 	// Attention: tests under "ProvisionMode = AKSScriptless" are not applicable to ProvisionMode = AKSMachineAPI option.
 	// Due to different assumptions, not all tests can be shared. Add tests for AKS machine instances in a different Context/file.
 	// If ProvisionMode = AKSScriptless is no longer supported, their code/tests will be replaced with ProvisionMode = AKSMachineAPI.
@@ -1292,12 +1329,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				ExpectHardEvictionThresholds(customData, "750Mi")
+				ExpectHardEvictionThresholds(customData, "100Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=2Gi", "pid=1000")
 			})
 		})
 
@@ -1363,12 +1400,12 @@ var _ = Describe("InstanceType Provider", func() {
 					"pod-max-pids":            "99",
 				}
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				ExpectHardEvictionThresholds(customData, "750Mi")
+				ExpectHardEvictionThresholds(customData, "100Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=2Gi", "pid=1000")
 			})
 			It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 				nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
@@ -1405,12 +1442,12 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 
 				ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-				ExpectHardEvictionThresholds(customData, "750Mi")
+				ExpectHardEvictionThresholds(customData, "100Mi")
 				Expect(customData).To(SatisfyAny( // AKS default
 					ContainSubstring("--system-reserved=cpu=0,memory=0"),
 					ContainSubstring("--system-reserved=memory=0,cpu=0"),
 				))
-				ExpectKubeReservedResources(customData, "cpu=100m", "memory=1843Mi", "pid=1000")
+				ExpectKubeReservedResources(customData, "cpu=100m", "memory=350Mi", "pid=1000")
 			})
 		})
 
@@ -3752,13 +3789,13 @@ var _ = Describe("InstanceType Provider", func() {
 
 var _ = Describe("Tax Calculator", func() {
 	Context("KubeReservedResources", func() {
-		It("should have 4 cores, 7GiB", func() {
+		It("should reserve resources for 4 cores, 7GiB and 30 pods", func() {
 			cpus := int64(4) // 4 cores
 			memory := int64(7 * 1024)
 			expectedCPU := "140m"
-			expectedMemory := "1638Mi"
+			expectedMemory := "650Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 30, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3766,13 +3803,13 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(gotMemory.String()).To(Equal(expectedMemory))
 		})
 
-		It("should have 2 cores, 8GiB", func() {
+		It("should cap memory reserved for 2 cores, 8GiB and 110 pods", func() {
 			cpus := int64(2) // 2 cores
 			memory := int64(8 * 1024)
 			expectedCPU := "100m"
-			expectedMemory := "1843Mi"
+			expectedMemory := "2Gi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 110, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -3780,13 +3817,13 @@ var _ = Describe("Tax Calculator", func() {
 			Expect(gotMemory.String()).To(Equal(expectedMemory))
 		})
 
-		It("should have 3 cores, 64GiB", func() {
+		It("should reserve resources for 3 cores, 64GiB and 250 pods", func() {
 			cpus := int64(3) // 3 cores
 			memory := int64(64 * 1024)
 			expectedCPU := "120m"
-			expectedMemory := "5611Mi"
+			expectedMemory := "5050Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory, 0, false)
+			resources := instancetype.KubeReservedResources(cpus, memory, 250, false)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
