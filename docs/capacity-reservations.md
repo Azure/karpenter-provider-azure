@@ -265,6 +265,7 @@ only signal that a pool has allocated past what you prepaid. Karpenter does not 
 yet, so read it from Azure — a member is overallocated when the allocated count exceeds its
 reserved quantity:
 
+```bash
 az capacity reservation show --output json \
   --resource-group <rg> --capacity-reservation-group <name> --name <member> \
   --instance-view \
