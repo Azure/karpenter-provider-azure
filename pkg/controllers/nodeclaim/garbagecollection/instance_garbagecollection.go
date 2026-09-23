@@ -117,11 +117,7 @@ func (c *Instance) listCloudNodeClaims(ctx context.Context) ([]*karpv1.NodeClaim
 	if c.lastMachineVMStateListAttempt.IsZero() || c.clock.Since(c.lastMachineVMStateListAttempt) >= AKSMachineVMStateListInterval {
 		// Record attempts before calling Azure so controller error retries cannot cause an expanded LIST storm.
 		c.lastMachineVMStateListAttempt = c.clock.Now()
-		nodeClaims, err := c.cloudProvider.ListWithAKSMachineVMState(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("listing AKS Machines with VM state, %w", err)
-		}
-		return nodeClaims, nil
+		return c.cloudProvider.ListWithAKSMachineVMState(ctx)
 	}
 	return c.cloudProvider.List(ctx)
 }

@@ -220,7 +220,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("listing cloudprovider instances"))
-			Expect(err.Error()).To(ContainSubstring("listing AKS Machines with VM state"))
+			Expect(err.Error()).To(ContainSubstring("listing AKS machine instances"))
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectExists(ctx, env.Client, node)
