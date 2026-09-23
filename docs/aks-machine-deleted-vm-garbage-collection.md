@@ -11,7 +11,7 @@ AKS Machine therefore remains indefinitely while its `NodeClaim` still exists.
 
 The existing instance garbage collector remains the single cleanup path:
 
-1. The AKS Machines SDK client adds `$expand=instanceView` to Machine list requests through a
+1. The AKS Machines SDK client adds `$expand=properties.status.vmState` to Machine list requests through a
    per-call Azure SDK policy. The generated SDK does not yet expose this REST option.
 2. `BuildNodeClaimFromAKSMachine` copies `Machine.Properties.Status.VMState` to the synthetic cloud
    `NodeClaim` annotation `karpenter.azure.com/aks-machine-vm-state` when the state is present.
@@ -60,7 +60,7 @@ directly.
 ## Verification
 
 - Verify the request policy preserves `api-version` and continuation parameters while adding
-  `$expand=instanceView`.
+  `$expand=properties.status.vmState`.
 - Verify missing, running, and deleted VM states are converted correctly.
 - Verify a recent deleted Machine is removed even with a matching cluster `NodeClaim`.
 - Verify running Machines with matching cluster `NodeClaim`s remain.

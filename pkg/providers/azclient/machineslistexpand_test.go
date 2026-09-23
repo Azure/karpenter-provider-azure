@@ -68,7 +68,7 @@ func TestNewAKSMachinesClientIncludesListExpansion(t *testing.T) {
 	_, err = client.NewListPager("resource-group", "cluster", "pool", nil).NextPage(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, transport.request)
-	assert.Equal(t, "instanceView", transport.request.URL.Query().Get("$expand"))
+	assert.Equal(t, "properties.status.vmState", transport.request.URL.Query().Get("$expand"))
 	assert.Empty(t, options.PerCallPolicies)
 }
 
@@ -82,16 +82,16 @@ func TestMachinesListExpandPolicy(t *testing.T) {
 		expectedExpand string
 	}{
 		{
-			name:           "adds instance view expansion to a machine list request",
+			name:           "adds VM state expansion to a machine list request",
 			method:         http.MethodGet,
 			url:            "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines?api-version=2026-06-02-preview",
-			expectedExpand: "instanceView",
+			expectedExpand: "properties.status.vmState",
 		},
 		{
-			name:           "adds instance view expansion to a continuation request",
+			name:           "adds VM state expansion to a continuation request",
 			method:         http.MethodGet,
 			url:            "https://management.azure.com/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines?api-version=2026-06-02-preview&skipToken=token",
-			expectedExpand: "instanceView",
+			expectedExpand: "properties.status.vmState",
 		},
 		{
 			name:   "does not expand a machine get request",

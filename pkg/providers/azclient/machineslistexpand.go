@@ -32,13 +32,13 @@ func (p *machinesListExpandPolicy) Do(req *policy.Request) (*http.Response, erro
 	rawRequest := req.Raw()
 	pathSegments := strings.Split(strings.Trim(rawRequest.URL.Path, "/"), "/")
 	// CloudProvider.List currently bypasses the Machine cache. If List starts serving cached entries,
-	// expand Machine GETs too so a GET fallback cannot replace an expanded entry with one missing instance-view fields.
+	// expand Machine GETs too so a GET fallback cannot replace an expanded entry with one missing VM state.
 	if rawRequest.Method == http.MethodGet &&
 		len(pathSegments) >= 3 &&
 		pathSegments[len(pathSegments)-1] == "machines" &&
 		pathSegments[len(pathSegments)-3] == "agentPools" {
 		query := rawRequest.URL.Query()
-		query.Set("$expand", "instanceView")
+		query.Set("$expand", "properties.status.vmState")
 		rawRequest.URL.RawQuery = query.Encode()
 	}
 	return req.Next()
