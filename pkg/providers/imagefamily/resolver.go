@@ -228,9 +228,14 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 	return consts.StorageProfileManagedDisks, nil, nil
 }
 
-// Ubuntu 22.04 FIPS images require Compute's FIPS 140-3 encryption for guest-agent
-// certificates and protected extension settings. Use the resolved distro so generic
-// Ubuntu and explicit Ubuntu2204 NodeClasses receive the same capability.
+// Ubuntu 22.04 FIPS images require Compute's FIPS 140-3 encryption for
+// guest-agent certificates and protected extension settings. This applies
+// to all currently supported variants: Gen1, Gen2, and Trusted Launch Gen2.
+// Use the resolved distro so generic Ubuntu and explicit Ubuntu2204 receive
+// the same behavior.
+//
+// Revisit this mapping when adding image families or FIPS image variants;
+// FIPS mode alone does not imply this capability is required.
 func requiresFIPS1403Encryption(distro string) bool {
 	switch distro {
 	case "aks-ubuntu-fips-containerd-22.04", "aks-ubuntu-fips-containerd-22.04-gen2", "aks-ubuntu-fips-containerd-22.04-tl-gen2":
