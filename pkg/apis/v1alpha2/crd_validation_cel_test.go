@@ -92,6 +92,34 @@ var _ = Describe("CEL/Validation", func() {
 			},
 		}
 	})
+	Context("CapacityReservation", func() {
+		DescribeTable("Should only accept a valid CapacityReservation GroupID", func(crgID string, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					CapacityReservation: &v1alpha2.CapacityReservationConfiguration{GroupID: lo.ToPtr(crgID)},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid CapacityReservation GroupID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg", true),
+			// ARM returns resource IDs with inconsistent casing, so the pattern must be case-insensitive.
+			Entry("uppercase segments", "/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/RGNAME/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/CRG", true),
+			Entry("mixed-case resource group and group name", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/MyResourceGroup/providers/Microsoft.Compute/capacityReservationGroups/MyGroup", true),
+			Entry("resource group with parentheses", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/contains.(parentheses)/providers/Microsoft.Compute/capacityReservationGroups/crg", true),
+			Entry("wrong provider namespace", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/capacityReservationGroups/crg", false),
+			Entry("wrong resource type", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/diskEncryptionSets/des", false),
+			Entry("child capacity reservation rather than the group", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg/capacityReservations/cr", false),
+			Entry("missing resourceGroups segment", "/subscriptions/12345678-1234-1234-1234-123456789012/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg", false),
+			Entry("resource group ending with a dot", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends.with.dot./providers/Microsoft.Compute/capacityReservationGroups/crg", false),
+			Entry("not a resource ID", "crg", false),
+			Entry("empty group ID", "", false),
+		)
+	})
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{

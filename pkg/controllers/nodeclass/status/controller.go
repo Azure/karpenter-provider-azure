@@ -50,17 +50,20 @@ type reconciler interface {
 type Controller struct {
 	kubeClient client.Client
 
-	kubernetesVersion *KubernetesVersionReconciler
-	nodeImage         *NodeImageReconciler
-	subnet            *SubnetReconciler
-	validation        *ValidationReconciler
-	localDNS          *LocalDNSReconciler
+	kubernetesVersion        *KubernetesVersionReconciler
+	nodeImage                *NodeImageReconciler
+	subnet                   *SubnetReconciler
+	validation               *ValidationReconciler
+	localDNS                 *LocalDNSReconciler
+	capacityReservationGroup *CapacityReservationGroupReconciler
 }
 
 // TODO: Consider splitting this (and other similar constructors)
 // into some kind of builder struct to make the calling code easier to read.
 func NewController(
 	kubeClient client.Client,
+	subscriptionID string,
+	location string,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
@@ -71,16 +74,21 @@ func NewController(
 	parsedDiskEncryptionSetID *arm.ResourceID,
 	networkPolicy string,
 	networkPlugin string,
+	capacityReservationGroupsClient azapi.CapacityReservationGroupsAPI,
+	capacityReservationsClient azapi.CapacityReservationsAPI,
+	instanceTypes instanceTypeLister,
+	unavailableOfferings capacityReservationGroupOfferingsInvalidator,
 ) *Controller {
 	return &Controller{
 
 		kubeClient: kubeClient,
 
-		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
-		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
-		subnet:            NewSubnetReconciler(subnetClient),
-		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
-		localDNS:          NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
+		kubernetesVersion:        NewKubernetesVersionReconciler(kubernetesVersionProvider),
+		nodeImage:                NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
+		subnet:                   NewSubnetReconciler(subnetClient),
+		validation:               NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
+		localDNS:                 NewLocalDNSReconciler(managedKubernetesInterface, managedDynamicInterface, networkPolicy, networkPlugin),
+		capacityReservationGroup: NewCapacityReservationGroupReconciler(subscriptionID, location, capacityReservationGroupsClient, capacityReservationsClient, instanceTypes, unavailableOfferings),
 	}
 }
 
@@ -98,13 +106,15 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 
 	var results []reconcile.Result
 	var errs error
-	for _, reconciler := range []reconciler{
+	reconcilers := []reconciler{
 		c.kubernetesVersion,
 		c.nodeImage,
 		c.subnet,
 		c.validation,
 		c.localDNS,
-	} {
+		c.capacityReservationGroup,
+	}
+	for _, reconciler := range reconcilers {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
 		results = append(results, res)
