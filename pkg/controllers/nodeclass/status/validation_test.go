@@ -113,22 +113,6 @@ var _ = Describe("Validation Reconciler", func() {
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
-
-		It("should preserve validation failures owned by another reconciler", func() {
-			nodeClass.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeValidationSucceeded,
-				"NodeImageVersionInvalid",
-				"requested node image version is invalid",
-			)
-
-			result, err := reconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
-
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal("NodeImageVersionInvalid"))
-		})
 	})
 
 	Context("Kata Pod Sandboxing (workloadRuntime) validation", func() {

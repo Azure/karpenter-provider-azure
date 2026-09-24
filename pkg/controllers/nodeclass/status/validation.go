@@ -68,7 +68,6 @@ func NewValidationReconciler(
 	}
 }
 
-//nolint:gocyclo // Keep validation checks together to preserve reconciler ownership.
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -121,23 +120,9 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		}
 	}
 
-	// All validations passed - clear only failures owned by this reconciler.
-	condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-	if !condition.IsFalse() || validationReasonOwned(condition.Reason) {
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
-	}
+	// All validations passed - requeue to detect permission revocations
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
-}
-
-func validationReasonOwned(reason string) bool {
-	switch reason {
-	case DiskEncryptionSetRBACMissing,
-		KataPodSandboxingUnsupportedProvisionMode,
-		KataRequiresAzureLinux3:
-		return true
-	default:
-		return false
-	}
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
