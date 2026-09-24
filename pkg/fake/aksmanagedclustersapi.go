@@ -18,21 +18,29 @@ package fake
 
 import (
 	"context"
+	"maps"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 )
 
 type AKSManagedClustersAPI struct {
-	DefaultSupportedVersions  []string
-	OverrideSupportedVersions []string
-	Error                     error
+	SupportedVersions        map[string]*armcontainerservice.KubernetesPatchVersion
+	Error                    error
+	defaultSupportedVersions map[string]*armcontainerservice.KubernetesPatchVersion
 }
 
 var _ azapi.AKSManagedClustersAPI = &AKSManagedClustersAPI{}
 
 func NewAKSManagedClustersAPI(defaultSupportedVersions ...string) *AKSManagedClustersAPI {
-	return &AKSManagedClustersAPI{DefaultSupportedVersions: defaultSupportedVersions}
+	supportedVersions := map[string]*armcontainerservice.KubernetesPatchVersion{}
+	for _, version := range defaultSupportedVersions {
+		supportedVersions[version] = &armcontainerservice.KubernetesPatchVersion{}
+	}
+	return &AKSManagedClustersAPI{
+		SupportedVersions:        maps.Clone(supportedVersions),
+		defaultSupportedVersions: supportedVersions,
+	}
 }
 
 func (api *AKSManagedClustersAPI) ListKubernetesVersions(
@@ -44,23 +52,14 @@ func (api *AKSManagedClustersAPI) ListKubernetesVersions(
 		return armcontainerservice.ManagedClustersClientListKubernetesVersionsResponse{}, api.Error
 	}
 
-	versions := api.DefaultSupportedVersions
-	if api.OverrideSupportedVersions != nil {
-		versions = api.OverrideSupportedVersions
-	}
-	patchVersions := map[string]*armcontainerservice.KubernetesPatchVersion{}
-	for _, version := range versions {
-		patchVersions[version] = &armcontainerservice.KubernetesPatchVersion{}
-	}
-
 	return armcontainerservice.ManagedClustersClientListKubernetesVersionsResponse{
 		KubernetesVersionListResult: armcontainerservice.KubernetesVersionListResult{
-			Values: []*armcontainerservice.KubernetesVersion{{PatchVersions: patchVersions}},
+			Values: []*armcontainerservice.KubernetesVersion{{PatchVersions: api.SupportedVersions}},
 		},
 	}, nil
 }
 
 func (api *AKSManagedClustersAPI) Reset() {
-	api.OverrideSupportedVersions = nil
+	api.SupportedVersions = maps.Clone(api.defaultSupportedVersions)
 	api.Error = nil
 }
