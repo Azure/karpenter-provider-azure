@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	kubernetesVersionCacheKey = "kubernetesVersion"
+	kubernetesVersionCacheKey           = "kubernetesVersion"
+	supportedKubernetesVersionsCacheKey = "supportedKubernetesVersions"
 )
 
 type KubernetesVersionProvider interface {
@@ -74,18 +75,27 @@ func (p *kubernetesVersionProvider) IsSupported(
 	ctx context.Context,
 	kubernetesVersion string,
 ) (bool, error) {
+	if supportedVersions, ok := p.kubernetesVersionCache.Get(supportedKubernetesVersionsCacheKey); ok {
+		_, supported := supportedVersions.(map[string]struct{})[kubernetesVersion]
+		return supported, nil
+	}
+
 	resp, err := p.managedClustersClient.ListKubernetesVersions(ctx, p.location, nil)
 	if err != nil {
 		return false, err
 	}
 
+	supportedVersions := map[string]struct{}{}
 	for _, version := range resp.Values {
 		if version == nil {
 			continue
 		}
-		if _, ok := version.PatchVersions[kubernetesVersion]; ok {
-			return true, nil
+		for patchVersion := range version.PatchVersions {
+			supportedVersions[patchVersion] = struct{}{}
 		}
 	}
-	return false, nil
+	p.kubernetesVersionCache.SetDefault(supportedKubernetesVersionsCacheKey, supportedVersions)
+
+	_, supported := supportedVersions[kubernetesVersion]
+	return supported, nil
 }
