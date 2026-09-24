@@ -14,10 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package instance
 
-// Annotations
-var (
-	AnnotationInPlaceUpdateHash = Group + "/in-place-update-hash"
-	AnnotationAKSMachineVMState = Group + "/aks-machine-vm-state"
+import (
+	"fmt"
+	"strings"
 )
+
+func validateCapacityReservationGroupAssociation(actual, desired string) error {
+	// ARM echoes resource IDs back with different casing than it was given.
+	if !strings.EqualFold(actual, desired) {
+		return fmt.Errorf("is associated with capacity reservation group %q, but the NodeClass now specifies %q", actual, desired)
+	}
+	return nil
+}

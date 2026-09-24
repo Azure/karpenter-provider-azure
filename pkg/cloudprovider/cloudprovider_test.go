@@ -23,12 +23,27 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestValidateNodeClassRejectsNonFIPSBeforeStatusReconciliation(t *testing.T) {
+	g := NewWithT(t)
+	ctx := options.ToContext(context.Background(), test.Options(test.OptionsFields{EnableFIPS: lo.ToPtr(true)}))
+	nodeClass := &v1beta1.AKSNodeClass{
+		Spec: v1beta1.AKSNodeClassSpec{},
+	}
+	nodeClass.StatusConditions().SetTrue("Ready")
+
+	err := (&CloudProvider{}).validateNodeClass(ctx, nodeClass)
+
+	g.Expect(err).To(MatchError(ContainSubstring("spec.fipsMode must be set to FIPS")))
+}
 
 func TestGenerateNodeClaimName(t *testing.T) {
 	tests := []struct {

@@ -37,6 +37,7 @@ jobs:
           - ACR
           - BYOK
           - CapacityBuffer
+          - CapacityReservation
           - Chaos
           - Consolidation
           - Drift
