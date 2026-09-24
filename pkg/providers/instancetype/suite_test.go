@@ -2667,6 +2667,8 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_F16s_v2"))))
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				// Standard_NC16as_T4_v3 supports Direct Virtualization instead of Nested Virtualization.
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
 			})
 
 			// Karpenter advertises the Kata node label AKS will stamp so it can scale up for pending
