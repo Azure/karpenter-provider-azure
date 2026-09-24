@@ -382,7 +382,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByKata(sku *skewer.SKU, archite
 	if getArchitecture(architecture) != karpv1.ArchitectureAmd64 {
 		return false
 	}
-	return sku.IsNestedVirtualizationSupported()
+	return sku.IsNestedVirtualizationSupported() || sku.IsDirectVirtualizationSupported()
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, params *instanceTypeParameters) bool {
