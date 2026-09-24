@@ -170,6 +170,7 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		CSEConfigKubeletScriptFilepath:          "/opt/azure/containers/provision_configs_kubelet.sh",                // s
 		CSEConfigNetworkScriptFilepath:          "/opt/azure/containers/provision_configs_network.sh",                // s
 		CSEConfigAddonsScriptFilepath:           "/opt/azure/containers/provision_configs_addons.sh",                 // s
+		CSEConfigChronyScriptFilepath:           "/opt/azure/containers/provision_configs_chrony.sh",                 // s
 		AzurePrivateRegistryServer:              "",                                                                  // cd
 		HasCustomSearchDomain:                   false,                                                               // cd
 		CustomSearchDomainFilepath:              "/opt/azure/containers/setup-custom-search-domains.sh",              // s
