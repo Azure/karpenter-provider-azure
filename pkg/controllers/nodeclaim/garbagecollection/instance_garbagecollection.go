@@ -31,6 +31,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -43,14 +44,26 @@ import (
 )
 
 type Instance struct {
-	kubeClient    client.Client
-	cloudProvider corecloudprovider.CloudProvider
+	kubeClient                    client.Client
+	cloudProvider                 CloudProvider
+	clock                         clock.PassiveClock
+	lastMachineVMStateListAttempt time.Time
 }
 
-func NewInstance(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *Instance {
+// AKSMachineVMStateListInterval limits expensive Machine LIST requests that expand VM state.
+const AKSMachineVMStateListInterval = 5 * time.Minute
+
+// CloudProvider includes the provider-specific expanded Machine LIST used by instance garbage collection.
+type CloudProvider interface {
+	corecloudprovider.CloudProvider
+	ListWithAKSMachineVMState(context.Context) ([]*karpv1.NodeClaim, error)
+}
+
+func NewInstance(kubeClient client.Client, cloudProvider CloudProvider, clk clock.PassiveClock) *Instance {
 	return &Instance{
 		kubeClient:    kubeClient,
 		cloudProvider: cloudProvider,
+		clock:         clk,
 	}
 }
 
@@ -60,7 +73,7 @@ func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	// We LIST instances on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
 	// when evaluating whether an instance is orphaned.
-	cloudNodeClaims, err := c.cloudProvider.List(ctx)
+	cloudNodeClaims, err := c.listCloudNodeClaims(ctx)
 	if err != nil {
 		return reconciler.Result{}, fmt.Errorf("listing cloudprovider instances, %w", err)
 	}
@@ -98,6 +111,15 @@ func (c *Instance) Reconcile(ctx context.Context) (reconciler.Result, error) {
 		return reconciler.Result{}, err
 	}
 	return reconciler.Result{RequeueAfter: time.Minute * 2}, nil
+}
+
+func (c *Instance) listCloudNodeClaims(ctx context.Context) ([]*karpv1.NodeClaim, error) {
+	if c.lastMachineVMStateListAttempt.IsZero() || c.clock.Since(c.lastMachineVMStateListAttempt) >= AKSMachineVMStateListInterval {
+		// Record attempts before calling Azure so controller error retries cannot cause an expanded LIST storm.
+		c.lastMachineVMStateListAttempt = c.clock.Now()
+		return c.cloudProvider.ListWithAKSMachineVMState(ctx)
+	}
+	return c.cloudProvider.List(ctx)
 }
 
 func isAKSMachineVMDeleted(nodeClaim *karpv1.NodeClaim) bool {

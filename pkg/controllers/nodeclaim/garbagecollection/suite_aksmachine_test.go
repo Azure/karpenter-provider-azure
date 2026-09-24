@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -179,6 +180,32 @@ var _ = Describe("Instance Garbage Collection", func() {
 			ExpectExists(ctx, env.Client, nodeClaim)
 		})
 
+		It("should only delete a Machine with a deleted VM after the VM state list interval", func() {
+			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateRunning)
+			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				Status: karpv1.NodeClaimStatus{ProviderID: providerID},
+			})
+			node := coretest.Node(coretest.NodeOptions{ProviderID: providerID})
+			ExpectApplied(ctx, env.Client, nodeClaim, node)
+
+			ExpectSingletonReconciled(ctx, InstanceGCController)
+
+			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
+			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
+			_, err := cloudProvider.Get(ctx, providerID)
+			Expect(err).ToNot(HaveOccurred())
+			ExpectExists(ctx, env.Client, node)
+
+			fakeClock.Step(garbagecollection.AKSMachineVMStateListInterval)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
+			_, err = cloudProvider.Get(ctx, providerID)
+			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+			ExpectNotFound(ctx, env.Client, node)
+			ExpectExists(ctx, env.Client, nodeClaim)
+		})
+
 		DescribeTable("should preserve resources when the expanded Machine list fails", func(statusCode int) {
 			aksMachine.Properties.Status.VMState = lo.ToPtr(armcontainerservice.VMStateDeleted)
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
@@ -193,12 +220,19 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("listing cloudprovider instances"))
+			Expect(err.Error()).To(ContainSubstring("listing AKS machine instances"))
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectExists(ctx, env.Client, node)
 			ExpectExists(ctx, env.Client, nodeClaim)
 
 			azureEnv.AKSMachinesAPI.AKSMachineListPageErrorOverride = nil
+			ExpectSingletonReconciled(ctx, InstanceGCController)
+			_, err = cloudProvider.Get(ctx, providerID)
+			Expect(err).ToNot(HaveOccurred())
+			ExpectExists(ctx, env.Client, node)
+
+			fakeClock.Step(garbagecollection.AKSMachineVMStateListInterval)
 			ExpectSingletonReconciled(ctx, InstanceGCController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -232,6 +266,12 @@ var _ = Describe("Instance Garbage Collection", func() {
 			ExpectExists(ctx, env.Client, node)
 			ExpectExists(ctx, env.Client, nodeClaim)
 
+			ExpectSingletonReconciled(ctx, InstanceGCController)
+			_, err = cloudProvider.Get(ctx, providerID)
+			Expect(err).ToNot(HaveOccurred())
+			ExpectExists(ctx, env.Client, node)
+
+			fakeClock.Step(garbagecollection.AKSMachineVMStateListInterval)
 			ExpectSingletonReconciled(ctx, InstanceGCController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())

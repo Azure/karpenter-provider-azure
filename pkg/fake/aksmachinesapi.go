@@ -637,6 +637,13 @@ func (c *AKSMachinesAPI) NewListPager(
 					input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
 				c.aksDataStorage.AKSMachines.Range(func(machineID string, aksMachine armcontainerservice.Machine) bool {
 					if strings.HasPrefix(machineID, expectedIDPrefix) {
+						if !azapi.IsAKSMachineVMStateExpansionEnabled(ctx) && aksMachine.Properties != nil && aksMachine.Properties.Status != nil {
+							properties := *aksMachine.Properties
+							status := *properties.Status
+							status.VMState = nil
+							properties.Status = &status
+							aksMachine.Properties = &properties
+						}
 						aksMachines = append(aksMachines, &aksMachine)
 					}
 					return true
