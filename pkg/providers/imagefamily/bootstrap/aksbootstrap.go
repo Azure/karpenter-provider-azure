@@ -194,6 +194,7 @@ type NodeBootstrapVariables struct {
 	CSEConfigKubeletScriptFilepath          string   // s   static
 	CSEConfigNetworkScriptFilepath          string   // s   static
 	CSEConfigAddonsScriptFilepath           string   // s   static
+	CSEConfigChronyScriptFilepath           string   // s   static
 	AzurePrivateRegistryServer              string   // c   user input
 	HasCustomSearchDomain                   bool     // c   user input
 	CustomSearchDomainFilepath              string   // s   static
