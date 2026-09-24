@@ -88,9 +88,12 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		// Handles case 0: requested Kubernetes version is pinned
-		err := r.validatePinnedK8sVersion(ctx, nodeClass, reqK8sVer, goalK8sVersion)
+		valid, err := r.validatePinnedK8sVersion(ctx, nodeClass, reqK8sVer, goalK8sVersion)
 		if err != nil {
 			return reconcile.Result{}, err
+		}
+		if !valid {
+			return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 		}
 		goalK8sVersion = reqK8sVer
 	} else if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == nil || *nodeClass.Status.KubernetesVersion == "" {
@@ -126,29 +129,29 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 // validatePinnedK8sVersion validates a requested Kubernetes version and updates the corresponding
 // NodeClass readiness conditions. Operational errors are returned.
-func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, reqK8sVer, controlPlaneVersion string) error {
+func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, reqK8sVer, controlPlaneVersion string) (bool, error) {
 	versionSemver, err := semver.Parse(reqK8sVer)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalidFormat", fmt.Sprintf("invalid kubernetes version format: %v", err))
-		return nil
+		return false, nil
 	}
 	controlPlaneVersionSemver, err := semver.Parse(controlPlaneVersion)
 	if err != nil {
-		return fmt.Errorf("parsing control-plane kubernetes version: %w", err)
+		return false, fmt.Errorf("parsing control-plane kubernetes version: %w", err)
 	}
 
 	if !validateKubernetesVersionSkew(nodeClass, versionSemver, controlPlaneVersionSemver) {
-		return nil
+		return false, nil
 	}
 
 	// Check that this exists
 	supported, err := r.kubernetesVersionProvider.IsSupported(ctx, reqK8sVer)
 	if err != nil {
-		return fmt.Errorf("checking if kubernetes version is supported: %w", err)
+		return false, fmt.Errorf("checking if kubernetes version is supported: %w", err)
 	}
 	if !supported {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionUnsupported", fmt.Sprintf("kubernetes version %s is not supported", reqK8sVer))
-		return nil
+		return false, nil
 	}
 
 	currentK8sVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
@@ -157,7 +160,7 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesPinning", "Performing kubernetes version change, need to get latest images")
 	}
 
-	return nil
+	return true, nil
 }
 
 func validateKubernetesVersionSkew(nodeClass *v1beta1.AKSNodeClass, version, controlPlaneVersion semver.Version) bool {
