@@ -382,6 +382,11 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 }
 
 func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) bool {
+	if nodeClass.Status.Versions == nil {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "NodeImageVersionInvalid", "requested node image version cannot be validated because version status is unavailable")
+		return false
+	}
+
 	imageFound := false
 
 	for _, used := range nodeClass.Status.Versions.RecentlyUsedVersions {
