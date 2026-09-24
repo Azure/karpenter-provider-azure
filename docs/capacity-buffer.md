@@ -14,7 +14,42 @@ settings:
     capacityBuffer: true
 ```
 
-The main chart and standalone CRD chart both ship `autoscaling.x-k8s.io/v1beta1`. Keep the controller and CRD chart on the same release. When using the standalone CRD chart, upgrade it before enabling the controller gate.
+The main chart and standalone CRD chart both ship the
+`autoscaling.x-k8s.io/v1beta1` CapacityBuffer CRD. On a fresh main-chart
+installation, Helm installs it automatically. On `helm upgrade`, Helm does
+not install new CRDs or update existing ones from the main chart's `crds/`
+directory. **Before enabling the gate on an existing self-hosted
+installation, install the CRD from the controller's target release:**
+
+- If you already use the standalone `karpenter-crd` chart, upgrade that chart
+  to the matching release first.
+- If you use only the main chart, apply its release-matched CapacityBuffer
+  CRD before upgrading the controller. For the published chart and
+  `KARPENTER_VERSION` used in the [self-hosted installation instructions](../README.md#install-karpenter):
+
+  ```bash
+  (
+    set -e
+    chart_dir="$(mktemp -d)"
+    trap 'rm -r "$chart_dir"' EXIT
+    helm pull oci://mcr.microsoft.com/aks/karpenter/karpenter \
+      --version "${KARPENTER_VERSION}" --untar --untardir "$chart_dir"
+    kubectl apply -f "$chart_dir/karpenter/crds/autoscaling.x-k8s.io_capacitybuffers.yaml"
+  )
+  ```
+
+  For a snapshot installation, use its matching chart URL and version instead.
+
+After either path, verify that the CapacityBuffer CRD is established before
+enabling `capacityBuffer` and upgrading the main chart:
+
+```bash
+kubectl wait --for=condition=Established \
+  crd/capacitybuffers.autoscaling.x-k8s.io --timeout=60s
+```
+
+Otherwise, the enabled controller times out waiting for the missing CRD
+at startup.
 
 Enabling the gate also grants the controller permission to read CapacityBuffers and PodTemplates and update CapacityBuffer status.
 

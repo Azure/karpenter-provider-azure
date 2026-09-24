@@ -217,6 +217,8 @@ settings:
   featureGates:
     # -- capacityBuffer is ALPHA and is disabled by default.
     # Setting this to true enables provisioning and lifecycle management for CapacityBuffer resources.
+    # On upgrades, install the release-matched CapacityBuffer CRD first; Helm does not install CRDs on upgrade.
+    # See docs/capacity-buffer.md for the standalone CRD chart and main-chart upgrade paths.
     capacityBuffer: false
     # -- reservedCapacity is BETA and is disabled until Azure provider support is implemented.
     # Setting this to true only enables the core feature gate; Azure reserved capacity provisioning is not implemented yet.
