@@ -17,8 +17,9 @@ limitations under the License.
 package v1alpha2
 
 const (
-	UbuntuImageFamily     = "Ubuntu"
-	Ubuntu2204ImageFamily = "Ubuntu2204"
-	Ubuntu2404ImageFamily = "Ubuntu2404"
-	AzureLinuxImageFamily = "AzureLinux"
+	UbuntuImageFamily              = "Ubuntu"
+	Ubuntu2204ImageFamily          = "Ubuntu2204"
+	Ubuntu2404ImageFamily          = "Ubuntu2404"
+	AzureLinuxImageFamily          = "AzureLinux"
+	AzureContainerLinuxImageFamily = "AzureContainerLinux"
 )

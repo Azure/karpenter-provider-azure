@@ -79,6 +79,55 @@ var _ = Describe("Validation Reconciler", func() {
 		}
 	})
 
+	Context("provision mode compatibility", func() {
+		DescribeTable("validates image family compatibility",
+			func(imageFamily, provisionMode string, useSIG bool, expectedReason string) {
+				ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: provisionMode, UseSIG: useSIG})
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				if expectedReason == "" {
+					Expect(condition.IsTrue()).To(BeTrue())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.IsFalse()).To(BeTrue())
+					Expect(condition.Reason).To(Equal(expectedReason))
+					Expect(condition.Message).To(ContainSubstring("requires an AKS Machine API provision mode"))
+					Expect(condition.Message).To(ContainSubstring("shared image gallery access (UseSIG=true)"))
+					Expect(result).To(Equal(reconcile.Result{}))
+				}
+			},
+			Entry("ACL with Machine API and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, true, ""),
+			Entry("ACL with batched Machine API and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, true, ""),
+			Entry("ACL with Machine API without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPI, false, status.SIGRequiredForAzureContainerLinux),
+			Entry("ACL with batched Machine API without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSMachineAPIHeaderBatch, false, status.SIGRequiredForAzureContainerLinux),
+			Entry("ACL with bootstrapping client and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, true, status.IncompatibleProvisionMode),
+			Entry("ACL with local scriptless and SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, true, status.IncompatibleProvisionMode),
+			Entry("ACL with bootstrapping client without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeBootstrappingClient, false, status.IncompatibleProvisionMode),
+			Entry("ACL with local scriptless without SIG", v1beta1.AzureContainerLinuxImageFamily, consts.ProvisionModeAKSScriptless, false, status.IncompatibleProvisionMode),
+			Entry("Ubuntu with bootstrapping client", v1beta1.UbuntuImageFamily, consts.ProvisionModeBootstrappingClient, false, ""),
+			Entry("Azure Linux with local scriptless", v1beta1.AzureLinuxImageFamily, consts.ProvisionModeAKSScriptless, false, ""),
+		)
+
+		It("should recover after SIG access is enabled and fail again if disabled", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+			for _, useSIG := range []bool{false, true, false} {
+				ctx = options.ToContext(context.Background(), &options.Options{ProvisionMode: consts.ProvisionModeAKSMachineAPI, UseSIG: useSIG})
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsTrue()).To(Equal(useSIG))
+				if useSIG {
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				} else {
+					Expect(condition.Reason).To(Equal(status.SIGRequiredForAzureContainerLinux))
+				}
+			}
+		})
+	})
+
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.
 	// The ValidationReconciler is a skeleton for future runtime validations that cannot be
 	// expressed in the CRD schema (e.g., external API calls, cross-resource checks, etc.).

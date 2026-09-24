@@ -790,6 +790,75 @@ var _ = Describe("CEL/Validation", func() {
 		)
 	})
 
+	Context("AzureContainerLinux", func() {
+		DescribeTable("should validate security defaults",
+			func(security *v1alpha2.Security, valid bool) {
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily),
+						Security:    security,
+					},
+				}
+				if valid {
+					Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+					Expect(nodeClass.IsVTPMEnabled()).To(BeTrue())
+					Expect(nodeClass.IsSecureBootEnabled()).To(BeTrue())
+				} else {
+					Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires Secure Boot and vTPM")))
+				}
+			},
+			Entry("omitted security", nil, true),
+			Entry("empty security", &v1alpha2.Security{}, true),
+			Entry("empty Trusted Launch", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{}}, true),
+			Entry("only vTPM enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true)}}, true),
+			Entry("only Secure Boot enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("both enabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}, true),
+			Entry("vTPM disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("vTPM enabled but Secure Boot disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(false)}}, false),
+			Entry("Secure Boot enabled but vTPM disabled", &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(true)}}, false),
+		)
+
+		DescribeTable("should support FIPS with implicit or explicit Trusted Launch", func(explicit bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily),
+					FIPSMode:    &v1alpha2.FIPSModeFIPS,
+				},
+			}
+			if explicit {
+				nodeClass.Spec.Security = &v1alpha2.Security{TrustedLaunch: &v1alpha2.TrustedLaunch{VTPM: lo.ToPtr(true), SecureBoot: lo.ToPtr(true)}}
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		}, Entry("implicit", false), Entry("explicit", true))
+
+		DescribeTable("should require at least a 60 GB OS disk", func(size *int32, valid bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily), OSDiskSizeGB: size},
+			}
+			if valid {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				Expect(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)).To(Equal(lo.FromPtrOr(size, int32(128))))
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("AzureContainerLinux requires an OS disk of at least 60 GB")))
+			}
+		}, Entry("below minimum", lo.ToPtr(int32(59)), false), Entry("minimum", lo.ToPtr(int32(60)), true), Entry("default", nil, true))
+
+		It("should reject Kata", func() {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1alpha2.AzureContainerLinuxImageFamily),
+					WorkloadRuntime: lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(MatchError(ContainSubstring("workloadRuntime KataVmIsolation requires imageFamily AzureLinux")))
+		})
+	})
+
 	Context("WorkloadRuntime and ImageFamily", func() {
 		DescribeTable("should only accept valid WorkloadRuntime and ImageFamily combinations", func(imageFamily string, workloadRuntime *v1alpha2.WorkloadRuntime, expected bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
