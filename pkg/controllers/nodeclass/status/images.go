@@ -378,34 +378,31 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 		}
 	}
 
-	valid, _ := validateRollback(reqK8sVer, reqImgVer, nodeClass)
-	return valid
+	return validateRollback(reqK8sVer, reqImgVer, nodeClass)
 }
 
-// validateRollback checks if the requested Kubernetes version and image version combination is a valid rollback.
-// It returns two booleans:
-// - The first boolean indicates if the rollback is valid.
-// - The second boolean indicates if the requested image version was found in the recently used versions. If the second boolean is true,
-// it means that the kubernetes version is not valid.
-func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) (bool, bool) {
-	foundImageVersion := false
+func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) bool {
+	imageFound := false
+
 	for _, used := range nodeClass.Status.Versions.RecentlyUsedVersions {
-
-		if lo.FromPtr(used.ImageVersion) == reqImageVersion {
-			foundImageVersion = true
+		if lo.FromPtr(used.ImageVersion) != reqImageVersion {
+			continue
 		}
+
+		imageFound = true
 		if lo.FromPtr(used.KubernetesVersion) == reqK8sVersion {
-			return true, true
+			return true
 		}
 	}
 
-	if foundImageVersion {
-		return false, true
+	if imageFound {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RollbackTargetKubernetesVersionMismatch", "requested image version is not paired with the requested Kubernetes version")
+	} else {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "NodeImageVersionInvalid", "requested image version was not found")
 	}
 
-	return false, false
+	return false
 }
-
 func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
 	if newSuffix == "" || strings.Contains(newSuffix, "/") {
 		return nil, fmt.Errorf("invalid image version suffix %q", newSuffix)
