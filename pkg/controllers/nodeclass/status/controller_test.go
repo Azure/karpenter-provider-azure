@@ -50,12 +50,12 @@ var _ = Describe("Recently Used Versions", func() {
 			snapshotRecentlyUsed(oldNodeClass, newNodeClass)
 
 			if !expectSnapshot {
-				Expect(newNodeClass.Status.Versions).To(BeNil())
+				Expect(newNodeClass.Status.ObservedVersions).To(BeNil())
 				return
 			}
-			Expect(newNodeClass.Status.Versions.RecentlyUsedVersions).To(HaveLen(1))
-			Expect(newNodeClass.Status.Versions.RecentlyUsedVersions[0].KubernetesVersion).To(Equal(lo.ToPtr(oldKubernetesVersion)))
-			Expect(newNodeClass.Status.Versions.RecentlyUsedVersions[0].ImageVersion).To(Equal(lo.ToPtr(oldImageVersion)))
+			Expect(newNodeClass.Status.ObservedVersions.RecentlyUsedVersions).To(HaveLen(1))
+			Expect(newNodeClass.Status.ObservedVersions.RecentlyUsedVersions[0].KubernetesVersion).To(Equal(lo.ToPtr(oldKubernetesVersion)))
+			Expect(newNodeClass.Status.ObservedVersions.RecentlyUsedVersions[0].ImageVersion).To(Equal(lo.ToPtr(oldImageVersion)))
 		},
 		Entry("when the image changes", "1.31.0", "1.31.0", "202601.01.0", "202602.01.0", true, true, true),
 		Entry("when the Kubernetes version changes", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", true, true, true),

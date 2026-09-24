@@ -58,26 +58,26 @@ There are three Kubernetes version concepts in this design.
 
 | Concept | Source | Meaning |
 |---|---|---|
-| Desired Kubernetes version | `spec.versions.kubernetesVersion` when set; otherwise `status.versions.controlPlaneKubernetesVersion` | Version the NodeClass is trying to use for nodes |
+| Desired Kubernetes version | `spec.versions.kubernetesVersion` when set; otherwise `status.observedVersions.controlPlaneKubernetesVersion` | Version the NodeClass is trying to use for nodes |
 | Effective node Kubernetes version | `status.kubernetesVersion` | Last accepted node Kubernetes version used for provisioning, image resolution, and drift |
-| Observed control plane Kubernetes version | `status.versions.controlPlaneKubernetesVersion` | Latest control-plane version observed by the reconciler |
+| Observed control plane Kubernetes version | `status.observedVersions.controlPlaneKubernetesVersion` | Latest control-plane version observed by the reconciler |
 
 For Kubernetes versions, the design uses one existing and one proposed status field.
 
 | Field | API state | Meaning |
 |---|---|---|
 | `status.kubernetesVersion` | Existing | Effective node Kubernetes version currently used by provisioning, image resolution, and drift |
-| `status.versions.controlPlaneKubernetesVersion` | Proposed | Latest observed control-plane version used for compatibility checks and fallback behavior |
+| `status.observedVersions.controlPlaneKubernetesVersion` | Proposed | Latest observed control-plane version used for compatibility checks and fallback behavior |
 
 For node images, the design uses one existing and two proposed status views.
 
 | Field | API state | Meaning |
 |---|---|---|
 | `status.images` | Existing | Effective image set currently used for provisioning and drift |
-| `status.versions.latestImageVersion` | Proposed | Latest gallery version known to the reconciler |
-| `status.versions.recentlyUsedVersions` | Proposed | Recently effective image/Kubernetes version pairs; the controller initially retains one entry |
+| `status.observedVersions.latestImageVersion` | Proposed | Latest gallery version known to the reconciler |
+| `status.observedVersions.recentlyUsedVersions` | Proposed | Recently effective image/Kubernetes version pairs; the controller initially retains one entry |
 
-The existing effective fields remain top-level for compatibility. The new observed and historical fields are grouped under `status.versions` so future version metadata has a stable home without moving existing fields.
+The existing effective fields remain top-level for compatibility. The new observed and historical fields are grouped under `status.observedVersions` so future version metadata has a stable home without moving existing fields.
 
 The key invariant is:
 
@@ -135,7 +135,7 @@ The `versions` wrapper keeps the v1 surface narrow and leaves a natural home for
 +    KubernetesVersion *string `json:"kubernetesVersion"`
 +}
 +
-+type VersionsStatus struct {
++type ObservedVersionsStatus struct {
 +    // controlPlaneKubernetesVersion is the latest observed control plane version.
 +    // +optional
 +    ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
@@ -154,9 +154,10 @@ type AKSNodeClassStatus struct {
     // kubernetesVersion contains the current kubernetes version which should be used for nodes provisioned for the NodeClass.
     // +optional
     KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
-+    // versions contains observed and historical version information.
++    // observedVersions contains observed version metadata and previously effective
++    // Kubernetes and node image version pairs.
 +    // +optional
-+    Versions *VersionsStatus `json:"versions,omitempty"`
++    ObservedVersions *ObservedVersionsStatus `json:"observedVersions,omitempty"`
 }
 ```
 
@@ -212,8 +213,8 @@ Node Kubernetes version downgrade is allowed when selecting the retained image/K
 Valid values are only:
 
 1. the current effective image version from `status.images[]`
-2. the latest resolved image version from `status.versions.latestImageVersion`
-3. a previously effective version from `status.versions.recentlyUsedVersions[*].imageVersion`
+2. the latest resolved image version from `status.observedVersions.latestImageVersion`
+3. a previously effective version from `status.observedVersions.recentlyUsedVersions[*].imageVersion`
 
 `nodeImageVersion` is only valid when `spec.versions.kubernetesVersion` is also set. Anything else is invalid.
 
@@ -224,7 +225,7 @@ Requiring an explicit pair preserves an AKS compatibility invariant: an image pu
 If `spec.versions.nodeImageVersion` is unset:
 
 - NAP continues its existing automatic image-selection behavior
-- `status.versions.latestImageVersion` keeps tracking the newest gallery version
+- `status.observedVersions.latestImageVersion` keeps tracking the newest gallery version
 - `status.images` remains governed by existing maintenance-window behavior for automatic gallery updates
 
 ### Pinning behavior
@@ -232,19 +233,19 @@ If `spec.versions.nodeImageVersion` is unset:
 If `spec.versions.nodeImageVersion` equals:
 
 - the current effective image version: pin to current
-- the current `status.versions.latestImageVersion`: pin to that specific latest value at update time
+- the current `status.observedVersions.latestImageVersion`: pin to that specific latest value at update time
 
 In both cases, automatic image roll-forward pauses until the customer changes or clears the pin.
 
 ### Rollback behavior
 
-If `spec.versions.nodeImageVersion` matches an entry in `status.versions.recentlyUsedVersions[*].imageVersion`, the request is a rollback request.
+If `spec.versions.nodeImageVersion` matches an entry in `status.observedVersions.recentlyUsedVersions[*].imageVersion`, the request is a rollback request.
 
 Rollback is allowed only when the selected historical entry is **rollback-compatible**.
 
 **Rollback-compatible Kubernetes version** means:
 
-- the current desired Kubernetes version exactly equals the selected `status.versions.recentlyUsedVersions[*].kubernetesVersion`
+- the current desired Kubernetes version exactly equals the selected `status.observedVersions.recentlyUsedVersions[*].kubernetesVersion`
 
 This is exact equality, not a looser skew-compatible rule.
 
@@ -255,22 +256,22 @@ This is exact equality, not a looser skew-compatible rule.
 Rules:
 
 1. `status.kubernetesVersion` is the source of truth for provisioning, image resolution, and drift.
-2. `status.versions.controlPlaneKubernetesVersion` is used for skew validation and observability.
-3. A control-plane refresh always updates `status.versions.controlPlaneKubernetesVersion`, even if the effective node version remains pinned or becomes incompatible.
+2. `status.observedVersions.controlPlaneKubernetesVersion` is used for skew validation and observability.
+3. A control-plane refresh always updates `status.observedVersions.controlPlaneKubernetesVersion`, even if the effective node version remains pinned or becomes incompatible.
 
 ### Image status fields
 
 Rules:
 
-1. `status.versions.latestImageVersion` is always a gallery-view field, not a guarantee of what is currently effective.
+1. `status.observedVersions.latestImageVersion` is always a gallery-view field, not a guarantee of what is currently effective.
 2. `status.images` is the only image source used by provisioning and drift.
-3. `status.versions.recentlyUsedVersions` stores historical effective pairs, not just image versions. The controller initially retains only the most recent pair.
+3. `status.observedVersions.recentlyUsedVersions` stores historical effective pairs, not just image versions. The controller initially retains only the most recent pair.
 
 ## Reconciliation Model
 
 ### Snapshot trigger
 
-A snapshot into `status.versions.recentlyUsedVersions` is taken whenever the effective image set moves to a different image version suffix.
+A snapshot into `status.observedVersions.recentlyUsedVersions` is taken whenever the effective image set moves to a different image version suffix.
 
 Triggers:
 
@@ -288,7 +289,7 @@ When reconcile is about to move the effective node Kubernetes version and/or eff
 3. snapshot the old effective pair from `status.kubernetesVersion` and `status.images`
 4. publish the new effective pair
 
-This ensures `status.versions.recentlyUsedVersions[*].kubernetesVersion` records the Kubernetes version with which the historical image was actually used.
+This ensures `status.observedVersions.recentlyUsedVersions[*].kubernetesVersion` records the Kubernetes version with which the historical image was actually used.
 
 ## Explicit Image Version Changes
 
@@ -303,7 +304,7 @@ This flow applies to both rollback and pinning, and only when `spec.versions.kub
 7. if representative images resolve and their IDs have the expected versioned shape, publish the rewritten set into `status.images`
 8. if no representative image resolves or an ID cannot be rewritten safely, set the NodeClass unready and do not publish
 
-The initial implementation does not ask Azure to revalidate the rewritten historical image IDs. The requested version is considered safe because admission accepts only a version previously observed in `status.versions.latestImageVersion`, `status.images`, or `status.versions.recentlyUsedVersions`.
+The initial implementation does not ask Azure to revalidate the rewritten historical image IDs. The requested version is considered safe because admission accepts only a version previously observed in `status.observedVersions.latestImageVersion`, `status.images`, or `status.observedVersions.recentlyUsedVersions`.
 
 TODO: Extend the image `List()` API to support filtering by image ID or version, then use that filter to revalidate each rewritten image ID.
 
@@ -319,7 +320,7 @@ Automatic updates keep the existing maintenance-window behavior.
 
 That means:
 
-1. reconcile may discover a newer gallery version and publish it into `status.versions.latestImageVersion`
+1. reconcile may discover a newer gallery version and publish it into `status.observedVersions.latestImageVersion`
 2. `status.images` may remain on the previous effective set while the maintenance window is closed
 3. once the maintenance window opens, reconcile may publish the newer effective set into `status.images`
 
@@ -349,7 +350,7 @@ This preserves the current separation between “latest known” and “currentl
 | Rule | CEL admission | Reconcile failure |
 |---|---|---|
 | Value is full `major.minor.patch` | Reject | `ValidationSucceeded=False`, `KubernetesVersionInvalidFormat` |
-| Request satisfies AKS skew relative to `status.versions.controlPlaneKubernetesVersion` | Reject | `KubernetesVersionReady=False`, `KubernetesVersionControlPlaneIncompatible` |
+| Request satisfies AKS skew relative to `status.observedVersions.controlPlaneKubernetesVersion` | Reject | `KubernetesVersionReady=False`, `KubernetesVersionControlPlaneIncompatible` |
 | Requested patch exists in AKS-supported metadata | Not checked | `KubernetesVersionReady=False`, `KubernetesVersionUnsupported` |
 
 Notes:
@@ -410,7 +411,7 @@ For Kubernetes version drift:
 
 - when only `spec.versions.kubernetesVersion` is set, drift follows the accepted effective version in `status.kubernetesVersion`, with latest compatible image version resolution for that Kubernetes version
 - when both `spec.versions.kubernetesVersion` and `spec.versions.nodeImageVersion` are set, drift follows the accepted explicit pair
-- when it is unset, drift follows the effective version published from `status.versions.controlPlaneKubernetesVersion`
+- when it is unset, drift follows the effective version published from `status.observedVersions.controlPlaneKubernetesVersion`
 
 Replacement must not proceed until the NodeClass is `Ready` for the current generation and the effective status for that generation has been published.
 

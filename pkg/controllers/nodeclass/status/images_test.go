@@ -227,7 +227,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
 				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
 
-				nodeClass.Status.Versions = &v1beta1.VersionsStatus{
+				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{
 					ControlPlaneKubernetesVersion: lo.ToPtr(testK8sVersion),
 					LatestImageVersion:            lo.ToPtr(newCIGImageVersion),
 				}
@@ -287,7 +287,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			It("should reject a malformed image version", func() {
 				malformedImageVersion := "invalid/version"
-				nodeClass.Status.Versions.LatestImageVersion = &malformedImageVersion
+				nodeClass.Status.ObservedVersions.LatestImageVersion = &malformedImageVersion
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),
 					NodeImageVersion:  lo.ToPtr(malformedImageVersion),
@@ -303,7 +303,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 
 			It("should roll back to a recently used image version outside the maintenance window", func() {
-				nodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+				nodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 					{
 						ImageVersion:      lo.ToPtr(rollbackImageVersion),
 						KubernetesVersion: lo.ToPtr(testK8sVersion),
@@ -321,7 +321,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 
 			It("should reject a rollback image paired with a different Kubernetes version", func() {
-				nodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+				nodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 					{
 						ImageVersion:      lo.ToPtr(rollbackImageVersion),
 						KubernetesVersion: lo.ToPtr(oldK8sVersion),
@@ -350,7 +350,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				Expect(lo.FromPtr(nodeClass.Status.Versions.LatestImageVersion)).To(Equal(newCIGImageVersion))
+				Expect(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)).To(Equal(newCIGImageVersion))
 			})
 		})
 

@@ -44,8 +44,9 @@ type RecentlyUsedVersion struct {
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 }
 
-// VersionsStatus contains the resolved Kubernetes and node image versions for the NodeClass.
-type VersionsStatus struct {
+// ObservedVersionsStatus contains version metadata used to default and validate spec.versions.
+// The effective Kubernetes version and images are reported through status.kubernetesVersion and status.images.
+type ObservedVersionsStatus struct {
 	// controlPlaneKubernetesVersion is the latest observed control plane version.
 	// +optional
 	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
@@ -99,9 +100,10 @@ type AKSNodeClassStatus struct {
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	Images []NodeImage `json:"images,omitempty"`
-	// versions contains observed and historical version information.
+	// observedVersions contains observed version metadata and previously effective
+	// Kubernetes and node image version pairs.
 	// +optional
-	Versions *VersionsStatus `json:"versions,omitempty"`
+	ObservedVersions *ObservedVersionsStatus `json:"observedVersions,omitempty"`
 	// kubernetesVersion contains the current kubernetes version which should be
 	// used for nodes provisioned for the NodeClass
 	// +optional

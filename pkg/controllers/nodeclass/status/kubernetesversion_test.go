@@ -124,7 +124,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 				Expect(result).To(Equal(reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}))
 
 				Expect(nodeClass.Status.KubernetesVersion).To(Equal(lo.ToPtr(oldK8sVersion)))
-				Expect(nodeClass.Status.Versions.ControlPlaneKubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
+				Expect(nodeClass.Status.ObservedVersions.ControlPlaneKubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
 				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
 			})

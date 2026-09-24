@@ -171,13 +171,13 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 	newK8sVer := lo.FromPtr(newNodeClass.Status.KubernetesVersion)
 
 	if newSuffix != oldSuffix || newK8sVer != oldK8sVer {
-		if newNodeClass.Status.Versions == nil {
-			newNodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+		if newNodeClass.Status.ObservedVersions == nil {
+			newNodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
 		}
 
 		now := metav1.Now()
 		// For now, we only keep the most recent version in the RecentlyUsedVersions list.
-		newNodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+		newNodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 			{
 				ImageVersion:      &oldSuffix,
 				TimeUsed:          &now,

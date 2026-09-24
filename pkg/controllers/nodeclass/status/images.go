@@ -202,10 +202,10 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	}
 
 	nodeClass.Status.Images = goalImages
-	if nodeClass.Status.Versions == nil {
-		nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+	if nodeClass.Status.ObservedVersions == nil {
+		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
 	}
-	nodeClass.Status.Versions.LatestImageVersion = &latestImageVersion
+	nodeClass.Status.ObservedVersions.LatestImageVersion = &latestImageVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	return reconcile.Result{RequeueAfter: requeueTime}, nil
 }
@@ -363,8 +363,8 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 	}
 
 	latestImgVer := ""
-	if nodeClass.Status.Versions != nil {
-		latestImgVer = lo.FromPtr(nodeClass.Status.Versions.LatestImageVersion)
+	if nodeClass.Status.ObservedVersions != nil {
+		latestImgVer = lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)
 	}
 
 	// We consider the pinning valid if the requested image version matches either the current or latest image version,
@@ -382,14 +382,14 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 }
 
 func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) bool {
-	if nodeClass.Status.Versions == nil {
+	if nodeClass.Status.ObservedVersions == nil {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "NodeImageVersionInvalid", "requested node image version cannot be validated because version status is unavailable")
 		return false
 	}
 
 	imageFound := false
 
-	for _, used := range nodeClass.Status.Versions.RecentlyUsedVersions {
+	for _, used := range nodeClass.Status.ObservedVersions.RecentlyUsedVersions {
 		if lo.FromPtr(used.ImageVersion) != reqImageVersion {
 			continue
 		}

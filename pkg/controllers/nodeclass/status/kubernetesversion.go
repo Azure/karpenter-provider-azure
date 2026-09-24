@@ -81,10 +81,10 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		return reconcile.Result{}, fmt.Errorf("getting control plane kubernetes version, %w", err)
 	}
 
-	if nodeClass.Status.Versions == nil {
-		nodeClass.Status.Versions = &v1beta1.VersionsStatus{}
+	if nodeClass.Status.ObservedVersions == nil {
+		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
 	}
-	nodeClass.Status.Versions.ControlPlaneKubernetesVersion = &goalK8sVersion
+	nodeClass.Status.ObservedVersions.ControlPlaneKubernetesVersion = &goalK8sVersion
 
 	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		// Handles case 0: requested Kubernetes version is pinned
