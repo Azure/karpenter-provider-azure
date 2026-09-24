@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
@@ -109,7 +110,8 @@ func (p *AKSMachinePromise) GetInstanceName() string {
 }
 
 type opt struct {
-	useCache bool
+	useCache             bool
+	expandMachineVMState bool
 }
 
 // Option defines a functional option for configuring AKSMachineProvider methods that accept optional behavior.
@@ -120,6 +122,13 @@ type Option func(*opt)
 func WithCache() Option {
 	return func(o *opt) {
 		o.useCache = true
+	}
+}
+
+// WithMachineVMStateExpansion requests the VM state field when listing AKS machines.
+func WithMachineVMStateExpansion() Option {
+	return func(o *opt) {
+		o.expandMachineVMState = true
 	}
 }
 
@@ -309,8 +318,12 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context, opts ...Option) ([
 	for _, opt := range opts {
 		opt(&options)
 	}
+	if options.expandMachineVMState {
+		ctx = azapi.WithAKSMachineVMStateExpansion(ctx)
+	}
 
-	aksMachines, err := p.machineCache.ListWithFallback(ctx, options.useCache)
+	// Cache entries come from ordinary lists and cannot satisfy a VM-state expansion request.
+	aksMachines, err := p.machineCache.ListWithFallback(ctx, options.useCache && !options.expandMachineVMState)
 	if err != nil {
 		return nil, err
 	}
