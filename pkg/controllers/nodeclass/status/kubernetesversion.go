@@ -91,7 +91,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		// DELETE ME: nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	}
 
-	if reqImgVer, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
+	if _, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		// Handles case 0: requested Kubernetes version is pinned
 		err := r.validatePinnedK8sVersion(ctx, nodeClass, reqK8sVer, goalK8sVersion)
 		if err != nil {
@@ -131,7 +131,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 // validatePinnedK8sVersion validates a requested Kubernetes version and updates the corresponding
 // NodeClass readiness conditions. Operational errors are returned.
-func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, reqK8sVer, reqImgVer, controlPlaneVersion string) error {
+func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, reqK8sVer, controlPlaneVersion string) error {
 	versionSemver, err := semver.Parse(reqK8sVer)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalidFormat", fmt.Sprintf("invalid kubernetes version format: %v", err))
