@@ -45,7 +45,7 @@ type kubernetesVersionProvider struct {
 	cm                     *pretty.ChangeMonitor
 }
 
-func NewKubernetesVersionProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, managedClustersClient azapi.AKSManagedClustersAPI, location string) *kubernetesVersionProvider {
+func NewKubernetesVersionProvider(location string, kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, managedClustersClient azapi.AKSManagedClustersAPI) *kubernetesVersionProvider {
 	return &kubernetesVersionProvider{
 		kubernetesInterface:    kubernetesInterface,
 		kubernetesVersionCache: kubernetesVersionCache,

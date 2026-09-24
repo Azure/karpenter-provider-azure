@@ -180,7 +180,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
-	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache, aksManagedClustersAPI, region)
+	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(region, env.KubernetesInterface, kubernetesVersionCache, aksManagedClustersAPI)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
 	quotaProvider := quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, region)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
