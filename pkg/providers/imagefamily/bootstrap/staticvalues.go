@@ -66,7 +66,7 @@ func getBaseKubeletFlags() map[string]string {
 		"--cluster-domain":                    "cluster.local",
 		"--enforce-node-allocatable":          "pods",
 		"--event-qps":                         "0",
-		"--eviction-hard":                     "memory.available<750Mi,nodefs.available<10%,nodefs.inodesFree<5%",
+		"--eviction-hard":                     "memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5%",
 		"--image-gc-high-threshold":           "85",
 		"--image-gc-low-threshold":            "80",
 		"--kubeconfig":                        "/var/lib/kubelet/kubeconfig",
@@ -165,6 +165,11 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		CSEInstallFilepath:                      "/opt/azure/containers/provision_installs.sh",                       // s
 		CSEDistroInstallFilepath:                "/opt/azure/containers/provision_installs_distro.sh",                // s
 		CSEConfigFilepath:                       "/opt/azure/containers/provision_configs.sh",                        // s
+		CSEConfigGPUScriptFilepath:              "/opt/azure/containers/provision_configs_gpu.sh",                    // s
+		CSEConfigLocalDNSScriptFilepath:         "/opt/azure/containers/provision_configs_localdns.sh",               // s
+		CSEConfigKubeletScriptFilepath:          "/opt/azure/containers/provision_configs_kubelet.sh",                // s
+		CSEConfigNetworkScriptFilepath:          "/opt/azure/containers/provision_configs_network.sh",                // s
+		CSEConfigAddonsScriptFilepath:           "/opt/azure/containers/provision_configs_addons.sh",                 // s
 		AzurePrivateRegistryServer:              "",                                                                  // cd
 		HasCustomSearchDomain:                   false,                                                               // cd
 		CustomSearchDomainFilepath:              "/opt/azure/containers/setup-custom-search-domains.sh",              // s

@@ -17,15 +17,116 @@ limitations under the License.
 package instancetype
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	//nolint:staticcheck // deprecated package used by skewer
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
+	"github.com/Azure/skewer"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
+
+func TestKubeReservedResources(t *testing.T) {
+	tests := []struct {
+		name      string
+		maxPods   int32
+		memoryMiB int64
+		wantMiB   int64
+	}{
+		{name: "30 pods", maxPods: 30, memoryMiB: 64 * 1024, wantMiB: 650},
+		{name: "110 pods", maxPods: 110, memoryMiB: 64 * 1024, wantMiB: 2250},
+		{name: "250 pods", maxPods: 250, memoryMiB: 192 * 1024, wantMiB: 5050},
+		{name: "4 GiB cap", maxPods: 250, memoryMiB: 4 * 1024, wantMiB: 1024},
+		{name: "8 GiB cap", maxPods: 110, memoryMiB: 8 * 1024, wantMiB: 2048},
+		{name: "below cap boundary", maxPods: 30, memoryMiB: 2599, wantMiB: 649},
+		{name: "at cap boundary", maxPods: 30, memoryMiB: 2600, wantMiB: 650},
+		{name: "above cap boundary", maxPods: 30, memoryMiB: 2601, wantMiB: 650},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			reserved := KubeReservedResources(2, test.memoryMiB, test.maxPods, false)
+			g.Expect(reserved.Memory().Value()).To(Equal(test.wantMiB * bytesPerMiB))
+			g.Expect(reserved.Cpu().MilliValue()).To(Equal(int64(100)))
+		})
+	}
+}
+
+func TestInstanceTypeMemoryReservations(t *testing.T) {
+	// Synthetic 10-CPU/42-GiB pods plus 1 CPU/3 GiB of per-node overhead.
+	requestsFor := func(pods int64) corev1.ResourceList {
+		return corev1.ResourceList{
+			corev1.ResourceCPU:    *resource.NewQuantity(10*pods+1, resource.DecimalSI),
+			corev1.ResourceMemory: *resource.NewQuantity((42*pods+3)*1024*bytesPerMiB, resource.BinarySI),
+		}
+	}
+	tests := []struct {
+		name                string
+		provisionMode       string
+		vcpus               int64
+		memoryGiB           int64
+		enableNodeHardening bool
+		wantCapacityBytes   int64
+		wantCPUMilli        int64
+		wantKubeMiB         int64
+		wantSystemMiB       int64
+		wantEvictionMiB     int64
+		wantMaxPods         int64
+	}{
+		{name: "D16 scriptless", provisionMode: consts.ProvisionModeAKSScriptless, vcpus: 16, memoryGiB: 64, wantCapacityBytes: 63_565_515_980, wantCPUMilli: 260, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 1},
+		{name: "D32 bootstrap client", provisionMode: consts.ProvisionModeBootstrappingClient, vcpus: 32, memoryGiB: 128, wantCapacityBytes: 127_131_031_961, wantCPUMilli: 420, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 2},
+		{name: "D48 AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPI, vcpus: 48, memoryGiB: 192, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 4},
+		{name: "D64 batched AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, vcpus: 64, memoryGiB: 256, wantCapacityBytes: 254_262_063_923, wantCPUMilli: 740, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 5},
+		{name: "D96 scriptless", provisionMode: consts.ProvisionModeAKSScriptless, vcpus: 96, memoryGiB: 384, wantCapacityBytes: 381_393_095_884, wantCPUMilli: 1060, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 8},
+		{name: "hardened scriptless", provisionMode: consts.ProvisionModeAKSScriptless, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512, wantMaxPods: 3},
+		{name: "hardened AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPI, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512, wantMaxPods: 3},
+		{name: "hardened batched AKS machines", provisionMode: consts.ProvisionModeAKSMachineAPIHeaderBatch, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 12682, wantSystemMiB: 900, wantEvictionMiB: 512, wantMaxPods: 3},
+		{name: "bootstrap client does not apply hardening", provisionMode: consts.ProvisionModeBootstrappingClient, vcpus: 48, memoryGiB: 192, enableNodeHardening: true, wantCapacityBytes: 190_696_547_942, wantCPUMilli: 580, wantKubeMiB: 5050, wantEvictionMiB: 100, wantMaxPods: 4},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			sku := skewer.SKU(compute.ResourceSku{
+				Name: lo.ToPtr(fmt.Sprintf("Standard_D%das_v6", test.vcpus)),
+				Size: lo.ToPtr(fmt.Sprintf("D%das_v6", test.vcpus)),
+				Capabilities: &[]compute.ResourceSkuCapabilities{
+					{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr(fmt.Sprint(test.vcpus))},
+					{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr(fmt.Sprint(test.memoryGiB))},
+				},
+			})
+			vmsize := lo.Must(sku.GetVMSize())
+			ctx := options.ToContext(context.Background(), &options.Options{
+				ProvisionMode:           test.provisionMode,
+				EnableNodeHardening:     test.enableNodeHardening,
+				NetworkPlugin:           consts.NetworkPluginAzure,
+				VMMemoryOverheadPercent: 0.075,
+			})
+			instanceType := newInstanceType(ctx, &sku, vmsize, "westus3", nil, &instanceTypeParameters{
+				ImageFamily:  v1beta1.Ubuntu2204ImageFamily,
+				OSDiskSizeGB: 128,
+				MaxPods:      250,
+			}, "x64")
+			g.Expect(instanceType.Capacity.Memory().Value()).To(Equal(test.wantCapacityBytes))
+			g.Expect(instanceType.Overhead.KubeReserved.Cpu().MilliValue()).To(Equal(test.wantCPUMilli))
+			g.Expect(instanceType.Overhead.KubeReserved.Memory().Value()).To(Equal(test.wantKubeMiB * bytesPerMiB))
+			g.Expect(instanceType.Overhead.SystemReserved.Memory().Value()).To(Equal(test.wantSystemMiB * bytesPerMiB))
+			g.Expect(instanceType.Overhead.EvictionThreshold.Memory().Value()).To(Equal(test.wantEvictionMiB * bytesPerMiB))
+			g.Expect(instanceType.Overhead.EvictionThreshold.StorageEphemeral().Value()).To(Equal(int64(12_800_000_190)))
+			g.Expect(resources.Fits(requestsFor(4), instanceType.Allocatable())).To(Equal(test.wantMaxPods >= 4))
+			g.Expect(resources.Fits(requestsFor(test.wantMaxPods), instanceType.Allocatable())).To(BeTrue())
+			g.Expect(resources.Fits(requestsFor(test.wantMaxPods+1), instanceType.Allocatable())).To(BeFalse())
+		})
+	}
+}
 
 // These cases mirror the hardened kube-reserved memory calculation in the AKS RP.
 func TestKubeReservedResourcesHardeningParity(t *testing.T) {
@@ -137,7 +238,7 @@ func TestEvictionThreshold(t *testing.T) {
 		{name: "small hardened node", memoryMiB: 8 * 1024, enableNodeHardening: true, want: "250Mi"},
 		{name: "medium hardened node", memoryMiB: 16 * 1024, enableNodeHardening: true, want: "375Mi"},
 		{name: "large hardened node", memoryMiB: 32 * 1024, enableNodeHardening: true, want: "512Mi"},
-		{name: "hardening disabled", memoryMiB: 32 * 1024, want: DefaultMemoryAvailable},
+		{name: "hardening disabled", memoryMiB: 32 * 1024, want: "100Mi"},
 	}
 
 	for _, test := range tests {

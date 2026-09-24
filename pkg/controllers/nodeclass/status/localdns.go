@@ -40,12 +40,14 @@ import (
 
 // localDNSPreferredVersionThreshold is the minimum Kubernetes version required
 // for LocalDNS to be enabled under Mode=Preferred.
-var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(localDNSPreferredK8sVersionThreshold))
+var localDNSPreferredVersionThreshold = lo.Must(semver.ParseTolerant(LocalDNSPreferredK8sVersionThreshold))
 
 const (
-	// localDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
-	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred.
-	localDNSPreferredK8sVersionThreshold = "1.99.0"
+	// LocalDNSPreferredK8sVersionThreshold is the minimum Kubernetes version
+	// required to auto-enable LocalDNS when Spec.LocalDNS.Mode=Preferred. It is
+	// exported because the e2e suite has to skip Preferred expectations on
+	// clusters below it.
+	LocalDNSPreferredK8sVersionThreshold = "1.99.0"
 
 	// konnectivityAgentPolicy{Name,Namespace} identify the AKS-managed
 	// NetworkPolicy that is allow-listed when scanning for conflicting
@@ -138,7 +140,18 @@ func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nc *v1beta1.AKSNodeC
 // and the static + cluster gates. Split out of Reconcile to keep its
 // cyclomatic complexity below the lint threshold.
 func (r *LocalDNSReconciler) reconcilePreferred(ctx context.Context, nc *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	// Sticky-Enabled: if already Enabled under Preferred, keep Enabled.
+	// Sticky-Enabled: once Preferred has resolved to Enabled, it stays Enabled
+	// for as long as Mode=Preferred, and the gates below are never re-evaluated.
+	//
+	// This is deliberate, and mirrors AKS Standard: "once AKS enables LocalDNS in
+	// Preferred mode, it remains enabled during subsequent unrelated node pool
+	// updates" (aka.ms/aks/localdns). The gates answer "is it safe to turn
+	// LocalDNS on here", which is a different question from "is it safe to leave
+	// it on". Re-running them would let an unrelated later change -- someone
+	// installing a NetworkPolicy, or the upstream node-local-dns DaemonSet
+	// landing in kube-system -- silently move DNS resolution out from under
+	// workloads already running against it. A user who wants LocalDNS off sets
+	// Mode=Disabled; that is an explicit action and takes effect immediately.
 	if nc.Status.LocalDNSState != nil && *nc.Status.LocalDNSState == v1beta1.LocalDNSStateEnabled {
 		nc.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
 		return reconcile.Result{}, nil

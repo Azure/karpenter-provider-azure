@@ -26,6 +26,30 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// The instance-type-aware half of the LocalDNS decision lives in
+// pkg/providers/localdns and is tested there; what's left here is the part that
+// is a pure read of the AKSNodeClass.
+
+var _ = Describe("IsLocalDNSRequired", func() {
+	var nodeClass *v1beta1.AKSNodeClass
+
+	BeforeEach(func() {
+		nodeClass = test.AKSNodeClass()
+	})
+
+	DescribeTable("reads from Spec.LocalDNS.Mode",
+		func(localDNS *v1beta1.LocalDNS, expected bool) {
+			nodeClass.Spec.LocalDNS = localDNS
+			Expect(nodeClass.IsLocalDNSRequired()).To(Equal(expected))
+		},
+		Entry("nil spec", (*v1beta1.LocalDNS)(nil), false),
+		Entry("Required", &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}, true),
+		Entry("Preferred", &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModePreferred}, false),
+		Entry("Disabled", &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}, false),
+		Entry("empty mode", &v1beta1.LocalDNS{}, false),
+	)
+})
+
 var _ = Describe("IsLocalDNSEnabled", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 
