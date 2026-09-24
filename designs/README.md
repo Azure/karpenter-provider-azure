@@ -8,6 +8,7 @@ These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
 
+- [Safe Azure-selected zone placement](./0014-azure-selected-zone-placement.md)
 - [Ultra SSD support](./0013-ultra-ssd-support.md)
 
 ## Completed
