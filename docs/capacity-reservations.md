@@ -7,7 +7,7 @@ NodeClass launches then targets that group, so a Karpenter-managed cluster consu
 capacity you have already reserved and are already paying for.
 
 Nodes stay labelled `karpenter.sh/capacity-type: on-demand`. Azure does not report which
-VM holds an SLA-backed reserved unit, so Karpenter does not claim one does.
+VM holds an SLA-backed reserved unit, so Karpenter does not either.
 
 ## Contents
 
@@ -18,24 +18,25 @@ VM holds an SLA-backed reserved unit, so Karpenter does not claim one does.
 - [Elastic: dynamic NodePools](#elastic-dynamic-nodepools)
 - [Flexible: a NodeOverlay](#flexible-a-nodeoverlay)
 - [Costs](#costs)
-- [Not supported, and not reconciled](#not-supported-and-not-reconciled)
+- [Not supported](#not-supported)
 - [Troubleshooting](#troubleshooting)
 - [Feature gates](#feature-gates)
 
 ## Grant access to the group
 
-Karpenter always needs the two read actions so it can resolve the group and project
-eligible offerings:
+The Karpenter identity needs the read actions in both NAP and self-hosted
+deployments. Direct-VM provisioning is used only in self-hosted deployments
+and also requires the deploy action:
 
-| Action | Needed for |
-| --- | --- |
-| `Microsoft.Compute/capacityReservationGroups/read` | resolving the group |
-| `Microsoft.Compute/capacityReservationGroups/capacityReservations/read` | listing its members |
+| Action | Needed for | Applies to |
+| --- | --- | --- |
+| `Microsoft.Compute/capacityReservationGroups/read` | resolving the group | NAP and self-hosted |
+| `Microsoft.Compute/capacityReservationGroups/capacityReservations/read` | listing its members | NAP and self-hosted |
+| `Microsoft.Compute/capacityReservationGroups/deploy/action` | launching VMs into the group | Self-hosted (direct-VM modes only) |
 
-In direct-VM provisioning modes, the Karpenter identity also needs
-`Microsoft.Compute/capacityReservationGroups/deploy/action` to launch into the group.
-`Contributor` on the group covers all three through its `*` action. It is the simplest
-grant and more than the feature needs.
+In direct-VM provisioning modes, `Contributor` on the group covers all three
+actions through its `*` action. It is the simplest grant and more than the
+feature needs.
 
 In AKS Machine API provisioning modes, AKS performs the VM association. The Karpenter
 identity therefore needs only the read actions; the AKS cluster identity must be a
@@ -119,14 +120,17 @@ kubectl get aksnodeclass reserved -o jsonpath='{.status.capacityReservationGroup
 
 ## One NodePool per member reservation
 
-A group is a container. The unit that carries a quantity is the **member reservation**,
-which is one VM size in one placement. A NodePool admitting several sizes or zones spans
-several members and nothing keeps it balanced — it can fill one member while the others sit
-idle.
-
-Pin each reservation-backed NodePool to exactly one VM size and one placement, and give a
-group covering four buckets four NodePools. Only then does a node count mean anything about
-a reserved quantity.
+A group is a container. Each
+**[member reservation](https://learn.microsoft.com/cli/azure/capacity/reservation)**
+holds a quantity for one VM size and one placement (a zone, or regional for a
+zone-less group). A NodePool can admit several sizes or placements and therefore
+span several members, but Karpenter does not balance nodes among them: one
+member can be overallocated while another sits idle. For precise per-member
+management using the approaches below, give each member its own NodePool pinned
+to its size and placement. This gives each pool a specific reserved-capacity
+target, so you can size or limit its node count against that member’s quantity
+instead of using a group-wide count that can hide an empty member alongside an
+overallocated one.
 
 For a regional (zone-less) group, pin the placement scope rather than a zone:
 
@@ -173,8 +177,7 @@ spec:
 > before removing the node it replaces, and reserves against `limits.nodes` without
 > bursting over. With `replicas: N` and `limits.nodes: N`, drift **stalls indefinitely** —
 > and it is silent: nodes report drifted, nothing replaces them, and the NodePool still
-> reports `Ready=True`. Image and security updates stop landing on exactly the nodes you
-> care most about. During a replacement the member is transiently overallocated by one,
+> reports `Ready=True`. During a replacement the member is transiently overallocated by one,
 > which needs ordinary quota and regional capacity.
 
 `expireAfter: Never` matters too. Expiration is not skipped for static pools and defaults to
@@ -217,8 +220,8 @@ state, so it lags, and it counts only the nodes this cluster creates — anythin
 consuming the group is invisible to it.
 
 A `0` budget keeps *occupied* units occupied. It does not keep every unit occupied: empty
-reserved nodes are still consolidated, and demand still governs how many exist. Guaranteed
-occupancy is what the static option buys.
+reserved nodes are still consolidated, and demand still governs how many exist. If you need
+static capacity that is never deallocated, see [static node pools option](#stable-baseline-a-static-nodepool).
 
 ## Flexible: a NodeOverlay
 
@@ -272,7 +275,7 @@ az capacity reservation show --output json \
   --query '{reserved: sku.capacity, allocated: length(instanceView.utilizationInfo.virtualMachinesAllocated || `[]`)}'
 ```
 
-## Not supported, and not reconciled
+## Not supported
 
 | Case | Behaviour |
 | --- | --- |
