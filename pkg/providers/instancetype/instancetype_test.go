@@ -165,6 +165,7 @@ func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 		name          string
 		memoryMiB     int64
 		networkPlugin string
+		gpuCount      int64
 		wantMemoryMiB int64
 	}{
 		{name: "7 GiB without Azure CNI", memoryMiB: 7 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 200},
@@ -173,12 +174,14 @@ func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 		{name: "32 GiB with Azure CNI", memoryMiB: 32 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 400},
 		{name: "64 GiB without Azure CNI", memoryMiB: 64 * 1024, networkPlugin: consts.NetworkPluginNone, wantMemoryMiB: 400},
 		{name: "128 GiB with Azure CNI", memoryMiB: 128 * 1024, networkPlugin: consts.NetworkPluginAzure, wantMemoryMiB: 700},
+		{name: "one managed GPU", memoryMiB: 32 * 1024, networkPlugin: consts.NetworkPluginAzure, gpuCount: 1, wantMemoryMiB: 976},
+		{name: "eight managed GPUs", memoryMiB: 900 * 1024, networkPlugin: consts.NetworkPluginAzure, gpuCount: 8, wantMemoryMiB: 3932},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			resources := SystemReservedResources(test.memoryMiB, test.networkPlugin, true)
+			resources := SystemReservedResources(test.memoryMiB, test.networkPlugin, true, test.gpuCount)
 			cpu := resources[corev1.ResourceCPU]
 			memory := resources[corev1.ResourceMemory]
 			ephemeralStorage := resources[corev1.ResourceEphemeralStorage]
@@ -192,9 +195,15 @@ func TestSystemReservedResourcesHardeningParity(t *testing.T) {
 	}
 }
 
+func TestManagedGPUSystemReservedMemoryMiB(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(managedGPUSystemReservedMemoryMiB(1)).To(Equal(int64(576)))
+	g.Expect(managedGPUSystemReservedMemoryMiB(8)).To(Equal(int64(832)))
+}
+
 func TestSystemReservedResourcesDisabledPreservesLegacyValues(t *testing.T) {
 	g := NewWithT(t)
-	resources := SystemReservedResources(64*1024, consts.NetworkPluginAzure, false)
+	resources := SystemReservedResources(64*1024, consts.NetworkPluginAzure, false, 1)
 	cpu, hasCPU := resources[corev1.ResourceCPU]
 	memory, hasMemory := resources[corev1.ResourceMemory]
 	g.Expect(resources).To(HaveLen(2))
@@ -274,7 +283,7 @@ func TestEvictionThresholdEphemeralStorage(t *testing.T) {
 
 	capacity := resource.MustParse("128G")
 	eviction := EvictionThreshold(32*1024, capacity, true)[corev1.ResourceEphemeralStorage]
-	system := SystemReservedResources(32*1024, consts.NetworkPluginAzure, true)[corev1.ResourceEphemeralStorage]
+	system := SystemReservedResources(32*1024, consts.NetworkPluginAzure, true, 0)[corev1.ResourceEphemeralStorage]
 	g.Expect(eviction.Value()).To(Equal(int64(12_800_000_190)))
 	g.Expect(system.String()).To(Equal("1Gi"))
 }
