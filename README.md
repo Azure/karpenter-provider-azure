@@ -10,6 +10,7 @@ Table of contents:
 - [Features Overview](#features-overview)
 - [Node Auto Provisioning (NAP) vs. Self-hosted](#node-auto-provisioning-nap-vs-self-hosted)
 - [Node memory reservations](#node-memory-reservations)
+- [Spot interruptions](#spot-interruptions)
 - [Known limitations](#known-limitations)
 - [Installation (self-hosted)](#installation-self-hosted)
   - [Install utilities](#install-utilities)
@@ -66,6 +67,34 @@ with those defaults. Existing nodes are not reconfigured by this change.
 
 Node-hardening reservations, CPU and system reservations, storage thresholds,
 and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
+
+## Spot interruptions
+
+The provider handles the AKS node-problem-detector's `PreemptionScheduled=True`
+condition separately from node repair, in both NAP and self-hosted deployments
+and across provisioning modes. It does not require the `NodeRepair` feature gate.
+`SpotRebalanceRecommendation Advisory:` messages leave the node running: they
+do not cordon, drain, terminate, or request replacement capacity, even when the
+message includes a date.
+
+An explicit `Preempt Scheduled:` message starts termination using the published
+RFC 1123 GMT/UTC `NotBefore` time. The provider records that deadline before
+deleting the NodeClaim, allowing the existing Karpenter termination lifecycle to
+use the remaining notice for pod shutdown. An earlier known termination deadline
+is never extended. `Preempt Started:` means eviction is already underway and
+initiates immediate cleanup, as does an explicit scheduled Preempt with a
+malformed deadline (with an `UnknownSpotEvictionDeadline` warning).
+
+Unknown or empty messages are not proof of mandatory eviction and leave the node
+unchanged, emitting an `UnknownSpotInterruption` warning. Custom node agents must
+emit an explicit supported event type/status, not just set the condition or its
+`SpotEvictionIncoming` reason. Ordinary `NodeReady` and `NodeHealthy` repairs are
+unchanged.
+
+This does not guarantee replacement capacity is ready before draining, or a pod's
+full configured grace period beyond the actual Azure eviction deadline. The
+provider neither acknowledges Scheduled Events to accelerate eviction nor
+creates replacement nodes in response to an advisory.
 
 ## Known limitations
 

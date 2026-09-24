@@ -543,16 +543,8 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 			ConditionStatus:    corev1.ConditionFalse,
 			TolerationDuration: 0,
 		},
-		// Fast-path repair for Azure Spot VMs that received a platform eviction signal.
-		// The condition is emitted by a node-level agent that polls the Instance Metadata
-		// Service for SpotRebalanceRecommendation / Preempt events. Spot eviction notice
-		// is ~30s, so toleration is 0 — we want to start the replacement immediately
-		// rather than waiting for the NodeReady=Unknown 10-minute backstop.
-		{
-			ConditionType:      SpotConditionPreemptionScheduled,
-			ConditionStatus:    corev1.ConditionTrue,
-			TolerationDuration: 0,
-		},
+		// PreemptionScheduled also covers non-binding Spot rebalance advisories.
+		// node.interruption distinguishes actual preemption and preserves its deadline.
 	}
 }
 
