@@ -35,20 +35,21 @@ const (
 	startedNotice   noticeKind = "started"
 )
 
-// NPD forwards "<EventType> <EventStatus>: <NotBefore>. ..." in the condition message.
+// NPD forwards "<EventType> <EventStatus>[: <NotBefore>]. ..." in the condition message,
+// omitting the colon and NotBefore when the date is absent.
 // Both advisory and mandatory events set PreemptionScheduled=True with SpotEvictionIncoming.
 // Classify the leading event before interpreting any date; neither the condition nor its reason
 // alone proves that Azure is reclaiming the VM.
 func parseNotice(message string) (noticeKind, time.Time, error) {
 	message = strings.Join(strings.Fields(message), " ")
-	if strings.HasPrefix(message, "SpotRebalanceRecommendation Advisory:") {
+	if _, ok := noticePayload(message, "SpotRebalanceRecommendation Advisory"); ok {
 		return advisoryNotice, time.Time{}, nil
 	}
-	if strings.HasPrefix(message, "Preempt Started:") {
+	if _, ok := noticePayload(message, "Preempt Started"); ok {
 		// Started means eviction is already in progress, even if NotBefore is absent or in the future.
 		return startedNotice, time.Time{}, nil
 	}
-	raw, ok := strings.CutPrefix(message, "Preempt Scheduled:")
+	raw, ok := noticePayload(message, "Preempt Scheduled")
 	if !ok {
 		return unknownNotice, time.Time{}, fmt.Errorf("unrecognized spot event type or status")
 	}
@@ -65,4 +66,16 @@ func parseNotice(message string) (noticeKind, time.Time, error) {
 		return scheduledNotice, time.Time{}, fmt.Errorf("invalid RFC 1123 spot eviction deadline")
 	}
 	return scheduledNotice, deadline.UTC(), nil
+}
+
+func noticePayload(message, header string) (string, bool) {
+	suffix, ok := strings.CutPrefix(message, header)
+	if !ok {
+		return "", false
+	}
+	if raw, ok := strings.CutPrefix(suffix, ":"); ok {
+		return raw, true
+	}
+	// A description is not a date. Require its delimiter rather than accepting header lookalikes.
+	return "", suffix == "." || strings.HasPrefix(suffix, ". ")
 }

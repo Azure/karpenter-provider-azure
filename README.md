@@ -73,17 +73,21 @@ and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
 The provider handles the AKS node-problem-detector's `PreemptionScheduled=True`
 condition separately from node repair, in both NAP and self-hosted deployments
 and across provisioning modes. It does not require the `NodeRepair` feature gate.
-`SpotRebalanceRecommendation Advisory:` messages leave the node running: they
+`SpotRebalanceRecommendation Advisory` messages leave the node running: they
 do not cordon, drain, terminate, or request replacement capacity, even when the
-message includes a date.
+message includes a date. The optional `: NotBefore` field is omitted when no
+date is available; the event/status is then followed directly by `. ` and the
+description.
 
-An explicit `Preempt Scheduled:` message starts termination using the published
+An explicit `Preempt Scheduled` message starts termination using the published
 RFC 1123 GMT/UTC `NotBefore` time. The provider records that deadline before
 deleting the NodeClaim, allowing the existing Karpenter termination lifecycle to
-use the remaining notice for pod shutdown. An earlier known termination deadline
-is never extended. `Preempt Started:` means eviction is already underway and
+use the remaining notice for pod shutdown. A configured `terminationGracePeriod`
+caps this first handoff, before deletion starts; zero requests immediate cleanup,
+while an unset value leaves the notice as the cap. An earlier known termination
+deadline is never extended. `Preempt Started` means eviction is already underway and
 initiates immediate cleanup, as does an explicit scheduled Preempt with a
-malformed deadline (with an `UnknownSpotEvictionDeadline` warning).
+missing or malformed deadline (with an `UnknownSpotEvictionDeadline` warning).
 
 Unknown or empty messages are not proof of mandatory eviction and leave the node
 unchanged, emitting an `UnknownSpotInterruption` warning. Custom node agents must

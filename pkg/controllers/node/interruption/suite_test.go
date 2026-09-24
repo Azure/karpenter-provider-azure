@@ -126,10 +126,16 @@ var _ = Describe("Spot Interruption", func() {
 		Expect(recorder.Calls(eventReason)).To(BeNumerically(">", 0))
 	},
 		Entry("advisory without a date", "SpotRebalanceRecommendation Advisory: . For more information, see https://example.com.", "SpotRebalanceAdvisory"),
+		Entry("advisory without a date separator", "SpotRebalanceRecommendation Advisory. For more information, see https://example.com.", "SpotRebalanceAdvisory"),
 		Entry("advisory with a date", "SpotRebalanceRecommendation Advisory: Sat, 01 Aug 2026 12:00:30 GMT.", "SpotRebalanceAdvisory"),
 		Entry("empty message", "", "UnknownSpotInterruption"),
 		Entry("ambiguous message", "Spot eviction may happen soon", "UnknownSpotInterruption"),
 		Entry("other event", "Reboot Scheduled: Sat, 01 Aug 2026 12:00:30 GMT.", "UnknownSpotInterruption"),
+		Entry("embedded Started", "Unknown event: Preempt Started. For more information, see https://example.com.", "UnknownSpotInterruption"),
+		Entry("unknown Preempt status", "Preempt Advisory. For more information, see https://example.com.", "UnknownSpotInterruption"),
+		Entry("Started lookalike", "Preempt StartedSomething. For more information, see https://example.com.", "UnknownSpotInterruption"),
+		Entry("Scheduled lookalike", "Preempt ScheduledSomething. For more information, see https://example.com.", "UnknownSpotInterruption"),
+		Entry("missing status boundary", "Preempt Started.Something", "UnknownSpotInterruption"),
 	)
 
 	DescribeTable("preserves the published notice", func(notice time.Duration) {
@@ -150,14 +156,18 @@ var _ = Describe("Spot Interruption", func() {
 		claim = ExpectExists(ctx, env.Client, claim)
 		Expect(claim.Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, env.Clock.Now().Format(time.RFC3339)))
 		Expect(claim.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(tracked.operations).To(Equal([]string{"patch", "delete"}))
+		Expect(recorder.Calls("UnknownSpotInterruption")).To(BeZero())
 		if warning != "" {
 			Expect(recorder.Calls(warning)).To(BeNumerically(">", 0))
 		}
 	},
 		Entry("Started without a date", "Preempt Started: .", ""),
+		Entry("Started without a date separator", "Preempt Started. For more information, see https://example.com.", ""),
 		Entry("Started ignores future date", "Preempt Started: Tue, 01 Jan 2097 00:00:00 GMT.", ""),
 		Entry("Scheduled malformed deadline", "Preempt Scheduled: soon.", "UnknownSpotEvictionDeadline"),
 		Entry("Scheduled missing deadline", "Preempt Scheduled:", "UnknownSpotEvictionDeadline"),
+		Entry("Scheduled without a date separator", "Preempt Scheduled. For more information, see https://example.com.", "UnknownSpotEvictionDeadline"),
 	)
 
 	It("handles advisory -> Preempt without a status or transition-time change", func() {
@@ -209,6 +219,40 @@ var _ = Describe("Spot Interruption", func() {
 		ExpectObjectReconciled(ctx, env.Client, controller, node)
 		Expect(ExpectExists(ctx, env.Client, claim).Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, expected.Format(time.RFC3339)))
 		Expect(tracked.deletes).To(BeZero())
+	})
+
+	It("never extends a configured deadline across a failed deletion and restart", func() {
+		claim.Spec.TerminationGracePeriod = &metav1.Duration{Duration: 5 * time.Second}
+		ExpectApplied(ctx, env.Client, pool, claim, node)
+		expected := env.Clock.Now().Add(5 * time.Second).Format(time.RFC3339)
+		tracked.fail = "delete"
+		_, err := controller.Reconcile(ctx, node)
+		Expect(err).To(MatchError(ContainSubstring("synthetic API failure")))
+		claim = ExpectExists(ctx, env.Client, claim)
+		Expect(claim.Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, expected))
+		Expect(claim.DeletionTimestamp.IsZero()).To(BeTrue())
+
+		env.Clock.Step(2 * time.Second)
+		tracked.fail = ""
+		controller = interruption.NewController(tracked, provider, recorder, env.Clock)
+		ExpectObjectReconciled(ctx, env.Client, controller, node)
+		ExpectObjectReconciled(ctx, env.Client, controller, node)
+		claim = ExpectExists(ctx, env.Client, claim)
+		Expect(claim.Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, expected))
+		Expect(claim.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(tracked.patches).To(Equal(1))
+	})
+
+	It("preserves an annotation earlier than both the configured grace and Azure notice", func() {
+		claim.Spec.TerminationGracePeriod = &metav1.Duration{Duration: 5 * time.Second}
+		expected := env.Clock.Now().Add(2 * time.Second).Format(time.RFC3339)
+		claim.Annotations = map[string]string{karpv1.NodeClaimTerminationTimestampAnnotationKey: expected}
+		ExpectApplied(ctx, env.Client, pool, claim, node)
+		ExpectObjectReconciled(ctx, env.Client, controller, node)
+		claim = ExpectExists(ctx, env.Client, claim)
+		Expect(claim.Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, expected))
+		Expect(claim.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(tracked.operations).To(Equal([]string{"delete"}))
 	})
 
 	It("converges across repeated reconciles and a controller restart", func() {
@@ -320,10 +364,14 @@ var _ = Describe("Spot Interruption", func() {
 		Expect(tracked.operations).To(BeEmpty())
 	})
 
-	DescribeTable("passes available notice through upstream lifecycle and pod termination", func(grace int64, notice, elapsed time.Duration, expected int64) {
+	DescribeTable("passes available notice through upstream lifecycle and pod termination", func(grace int64, claimGrace *metav1.Duration, notice, elapsed time.Duration, expected int64) {
 		deadline = env.Clock.Now().Add(notice)
 		setNotice(node, preemptMessage(deadline))
-		claim.Spec.TerminationGracePeriod = &metav1.Duration{Duration: time.Hour}
+		claim.Spec.TerminationGracePeriod = claimGrace
+		expectedDeadline := deadline
+		if claimGrace != nil && env.Clock.Now().Add(claimGrace.Duration).Before(expectedDeadline) {
+			expectedDeadline = env.Clock.Now().Add(claimGrace.Duration)
+		}
 		claim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
 		pod := coretest.Pod(coretest.PodOptions{
 			NodeName:                      node.Name,
@@ -336,7 +384,7 @@ var _ = Describe("Spot Interruption", func() {
 
 		lifecycleController := lifecycle.NewController(env.Clock, env.Client, provider, recorder, nil, nil)
 		ExpectObjectReconciled(ctx, env.Client, lifecycleController, claim)
-		Expect(ExpectExists(ctx, env.Client, claim).Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, deadline.Format(time.RFC3339)))
+		Expect(ExpectExists(ctx, env.Client, claim).Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, expectedDeadline.Format(time.RFC3339)))
 		Expect(ExpectExists(ctx, env.Client, node).DeletionTimestamp.IsZero()).To(BeFalse())
 		env.Clock.Step(elapsed)
 		queue := terminator.NewQueue(env.Client, recorder)
@@ -346,11 +394,18 @@ var _ = Describe("Spot Interruption", func() {
 		pod = ExpectExists(ctx, env.Client, pod)
 		Expect(pod.DeletionGracePeriodSeconds).ToNot(BeNil())
 		Expect(*pod.DeletionGracePeriodSeconds).To(Equal(expected))
+		Expect(tracked.operations).To(Equal([]string{"patch", "delete"}))
 	},
-		Entry("180s pod gets remaining 25s, not 1s", int64(180), 30*time.Second, 5*time.Second, int64(25)),
-		Entry("360s pod gets remaining 25s, not 1s", int64(360), 30*time.Second, 5*time.Second, int64(25)),
-		Entry("short notice remains short", int64(180), 5*time.Second, 2*time.Second, int64(3)),
-		Entry("expired notice keeps the upstream 1s floor", int64(360), -time.Minute, time.Duration(0), int64(1)),
+		Entry("180s pod gets remaining 25s, not 1s", int64(180), &metav1.Duration{Duration: time.Hour}, 30*time.Second, 5*time.Second, int64(25)),
+		Entry("360s pod gets remaining 25s, not 1s", int64(360), &metav1.Duration{Duration: time.Hour}, 30*time.Second, 5*time.Second, int64(25)),
+		Entry("short notice remains short", int64(180), &metav1.Duration{Duration: time.Hour}, 5*time.Second, 2*time.Second, int64(3)),
+		Entry("expired notice keeps the upstream 1s floor", int64(360), &metav1.Duration{Duration: time.Hour}, -time.Minute, time.Duration(0), int64(1)),
+		Entry("first drain caps a 180s pod to the configured 5s", int64(180), &metav1.Duration{Duration: 5 * time.Second}, 30*time.Second, time.Duration(0), int64(5)),
+		Entry("first drain caps a 360s pod to the configured 5s", int64(360), &metav1.Duration{Duration: 5 * time.Second}, 30*time.Second, time.Duration(0), int64(5)),
+		Entry("zero configured grace uses the upstream 1s floor", int64(180), &metav1.Duration{}, 30*time.Second, time.Duration(0), int64(1)),
+		Entry("nil configured grace preserves the notice", int64(360), (*metav1.Duration)(nil), 30*time.Second, 5*time.Second, int64(25)),
+		Entry("configured 5s cannot extend a 3s notice", int64(180), &metav1.Duration{Duration: 5 * time.Second}, 3*time.Second, time.Duration(0), int64(3)),
+		Entry("configured 5s cannot extend an expired notice", int64(360), &metav1.Duration{Duration: 5 * time.Second}, -time.Minute, time.Duration(0), int64(1)),
 	)
 
 	It("retains exactly the non-Spot repair policies", func() {

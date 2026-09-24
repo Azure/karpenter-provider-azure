@@ -144,9 +144,14 @@ func (c *Controller) evictionDeadline(ctx context.Context, node *corev1.Node, me
 }
 
 func (c *Controller) annotateDeadline(ctx context.Context, node *corev1.Node, nodeClaim *karpv1.NodeClaim, deadline time.Time) (string, error) {
-	// Also honor a termination already in progress if lifecycle has not annotated it yet.
-	if !nodeClaim.DeletionTimestamp.IsZero() && nodeClaim.Spec.TerminationGracePeriod != nil {
-		deadline = earlier(deadline, nodeClaim.DeletionTimestamp.Add(nodeClaim.Spec.TerminationGracePeriod.Duration))
+	// Cap the first handoff before deletion; upstream lifecycle preserves an existing annotation.
+	// Once deletion has started, use its timestamp rather than restarting the configured grace.
+	if nodeClaim.Spec.TerminationGracePeriod != nil {
+		start := c.clock.Now()
+		if !nodeClaim.DeletionTimestamp.IsZero() {
+			start = nodeClaim.DeletionTimestamp.Time
+		}
+		deadline = earlier(deadline, start.Add(nodeClaim.Spec.TerminationGracePeriod.Duration))
 	}
 	if value, ok := nodeClaim.Annotations[karpv1.NodeClaimTerminationTimestampAnnotationKey]; ok {
 		existing, err := time.Parse(time.RFC3339, value)
