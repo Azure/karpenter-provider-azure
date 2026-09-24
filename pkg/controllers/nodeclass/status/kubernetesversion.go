@@ -78,7 +78,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 	goalK8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
+		return reconcile.Result{}, fmt.Errorf("getting control plane kubernetes version, %w", err)
 	}
 
 	if nodeClass.Status.Versions == nil {
