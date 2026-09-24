@@ -134,7 +134,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, version, controlPlaneVersion string) error {
 	versionSemver, err := semver.Parse(version)
 	if err != nil {
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "KubernetesVersionInvalidFormat", fmt.Sprintf("invalid kubernetes version format: %v", err))
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalidFormat", fmt.Sprintf("invalid kubernetes version format: %v", err))
 		return nil
 	}
 	controlPlaneVersionSemver, err := semver.Parse(controlPlaneVersion)
@@ -156,9 +156,6 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 		return nil
 	}
 
-	if nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).Reason == "KubernetesVersionInvalidFormat" {
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
-	}
 	currentK8sVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
 	if currentK8sVersion != version {
 		log.FromContext(ctx).V(1).Info("requested Kubernetes version differs from current version", "currentKubernetesVersion", currentK8sVersion, "requestedKubernetesVersion", version)
