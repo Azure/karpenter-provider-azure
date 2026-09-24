@@ -33,6 +33,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/node/interruption"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -78,6 +79,7 @@ func NewControllers(
 
 		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
+		interruption.NewController(kubeClient, cloudProvider, recorder, clk),
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
