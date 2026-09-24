@@ -18,6 +18,7 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -806,6 +807,18 @@ func (env *Environment) EventuallyExpectRegisteredNodeClaimCountWithSelector(com
 			fmt.Sprintf("expected %d nodeclaims, had %d (%v)", count, len(nodeClaimList.Items), NodeClaimNames(lo.ToSlicePtr(nodeClaimList.Items))))
 	}).Should(Succeed())
 	return lo.ToSlicePtr(nodeClaimList.Items)
+}
+
+// ExpectLiveNodeClaimsForNodePool returns the non-terminating NodeClaims in the current test
+// that belong to the NodePool. It performs one list operation so callers can compose it within
+// a larger Eventually assertion without nesting retry loops.
+func (env *Environment) ExpectLiveNodeClaimsForNodePool(ctx context.Context, g Gomega, nodePool *karpv1.NodePool) []*karpv1.NodeClaim {
+	GinkgoHelper()
+	nodeClaimList := &karpv1.NodeClaimList{}
+	g.Expect(env.Client.List(ctx, nodeClaimList, client.HasLabels{test.DiscoveryLabel}, client.MatchingLabels{karpv1.NodePoolLabelKey: nodePool.Name})).To(Succeed())
+	return lo.FilterMap(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) (*karpv1.NodeClaim, bool) {
+		return &nc, nc.DeletionTimestamp.IsZero()
+	})
 }
 
 func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {

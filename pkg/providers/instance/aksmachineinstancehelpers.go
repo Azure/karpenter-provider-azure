@@ -171,10 +171,23 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			},
 			Priority: priority,
 
-			Tags:            tags,
-			LocalDNSProfile: configureLocalDNSProfile(nodeClass, instanceType),
+			Tags:                tags,
+			LocalDNSProfile:     configureLocalDNSProfile(nodeClass, instanceType),
+			CapacityReservation: configureCapacityReservation(nodeClass),
 		},
 	}, nil
+}
+
+func configureCapacityReservation(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.CapacityReservation {
+	groupID := nodeClass.GetCapacityReservationGroupID()
+	if groupID == "" {
+		return nil
+	}
+	return &armcontainerservice.CapacityReservation{
+		CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+			ID: lo.ToPtr(groupID),
+		},
+	}
 }
 
 func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.GPUProfile {
