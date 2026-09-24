@@ -92,7 +92,7 @@ type AKSNodeClassSpec struct {
 	// versions controls the Kubernetes and node image versions for the NodeClass.
 	// If omitted, both versions follow their automatic defaults.
 	// +optional
-	Versions *Versions `json:"versions,omitempty" hash:"ignore"`
+	Versions *Versions `json:"versions,omitempty" hash:"ignore"` // Version changes are handled through resolved status and intentionally excluded from the NodeClass hash.
 	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional

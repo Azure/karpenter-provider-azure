@@ -231,25 +231,9 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 					ControlPlaneKubernetesVersion: lo.ToPtr(testK8sVersion),
 					LatestImageVersion:            lo.ToPtr(newCIGImageVersion),
 				}
-				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 			})
 
-			It("should initialize images using the requested Kubernetes version", func() {
-				nodeClass.Status.KubernetesVersion = nil
-				nodeClass.Spec.Versions = &v1beta1.Versions{
-					KubernetesVersion: lo.ToPtr(testK8sVersion),
-				}
-
-				_, err := imageReconciler.Reconcile(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-
-				Expect(nodeClass.Status.KubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
-				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
-			})
-
-			It("should initialize images while validation is unknown", func() {
-				nodeClass.Status.KubernetesVersion = nil
-				nodeClass.StatusConditions().SetUnknown(v1beta1.ConditionTypeValidationSucceeded)
+			It("should initialize images using the effective Kubernetes version", func() {
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),
 				}
@@ -262,7 +246,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 
 			It("should recover after an invalid image version is corrected", func() {
-				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeValidationSucceeded, "NodeImageVersionInvalid", "invalid image version")
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "NodeImageVersionInvalid", "invalid image version")
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),
 					NodeImageVersion:  lo.ToPtr(newCIGImageVersion),
@@ -272,20 +256,6 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
-				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeValidationSucceeded)).To(BeTrue())
-			})
-
-			It("should not publish images with stale Kubernetes version readiness", func() {
-				nodeClass.Generation++
-				nodeClass.Spec.Versions = &v1beta1.Versions{
-					KubernetesVersion: lo.ToPtr(testK8sVersion),
-					NodeImageVersion:  lo.ToPtr(newCIGImageVersion),
-				}
-
-				_, err := imageReconciler.Reconcile(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-
-				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
 			})
 
 			It("should pin the requested image version outside the maintenance window", func() {
@@ -309,7 +279,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 
-				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("NodeImageVersionInvalid"))
 				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
@@ -348,6 +318,27 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				ExpectReadyWithCIGImages(nodeClass, rollbackImageVersion)
+			})
+
+			It("should reject a rollback image paired with a different Kubernetes version", func() {
+				nodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+					{
+						ImageVersion:      lo.ToPtr(rollbackImageVersion),
+						KubernetesVersion: lo.ToPtr(oldK8sVersion),
+					},
+				}
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(rollbackImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("RollbackTargetKubernetesVersionMismatch"))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
 			})
 
 			It("should keep the effective image version when an image pin is removed outside the maintenance window", func() {
