@@ -80,6 +80,8 @@ type Environment struct {
 	NetworkSecurityGroupAPI         *fake.NetworkSecurityGroupAPI
 	SubnetsAPI                      *fake.SubnetsAPI
 	DiskEncryptionSetsAPI           *fake.DiskEncryptionSetsAPI
+	CapacityReservationGroupsAPI    *fake.CapacityReservationGroupsAPI
+	CapacityReservationsAPI         *fake.CapacityReservationsAPI
 	AuxiliaryTokenServer            *fake.AuxiliaryTokenServer
 	SubscriptionAPI                 *fake.SubscriptionsAPI
 	NodeBootstrappingAPI            *fake.NodeBootstrappingAPI
@@ -213,6 +215,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
 	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
+	capacityReservationGroupsAPI := &fake.CapacityReservationGroupsAPI{}
+	capacityReservationsAPI := &fake.CapacityReservationsAPI{}
 
 	// Set up batching if provision mode is header batch
 	var aksMachinesBatchAPI aksmachinesheaderbatch.AKSMachinesHeaderBatchAPI
@@ -234,6 +238,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkInterfacesAPI,
 		subnetsAPI,
 		diskEncryptionSetsAPI,
+		capacityReservationGroupsAPI,
+		capacityReservationsAPI,
 		loadBalancersAPI,
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
@@ -332,6 +338,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NetworkSecurityGroupAPI:         networkSecurityGroupAPI,
 		SubnetsAPI:                      subnetsAPI,
 		DiskEncryptionSetsAPI:           diskEncryptionSetsAPI,
+		CapacityReservationGroupsAPI:    capacityReservationGroupsAPI,
+		CapacityReservationsAPI:         capacityReservationsAPI,
 		SKUsAPI:                         skusAPI,
 		PricingAPI:                      pricingAPI,
 		SubscriptionAPI:                 subscriptionAPI,
@@ -386,6 +394,8 @@ func (env *Environment) Reset(ctx context.Context) {
 	env.LoadBalancersAPI.Reset()
 	env.NetworkSecurityGroupAPI.Reset()
 	env.SubnetsAPI.Reset()
+	env.CapacityReservationGroupsAPI.Reset()
+	env.CapacityReservationsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
 	env.NodeImageVersionsAPI.Reset()
 	env.NodeBootstrappingAPI.Reset()

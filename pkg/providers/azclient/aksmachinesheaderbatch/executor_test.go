@@ -177,6 +177,30 @@ func TestExecutorClearsPerMachineFieldsFromBody(t *testing.T) {
 		"shared template fields must remain")
 }
 
+func TestExecutorPreservesCapacityReservationInBody(t *testing.T) {
+	t.Parallel()
+	g := gomega.NewWithT(t)
+	mock := &recordingClient{}
+	exec := newExecutor(mock)
+
+	groupID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+	template := tpl("Standard_D2s_v3", []string{"1"}, nil)
+	template.Properties.CapacityReservation = &armcontainerservice.CapacityReservation{
+		CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+			ID: &groupID,
+		},
+	}
+	request := makeReq("m-1", template)
+
+	exec.executeBatch(context.Background(), makeBatch(request))
+
+	calls := mock.snapshot()
+	g.Expect(calls).To(gomega.HaveLen(1))
+	g.Expect(calls[0].parameters.Properties.CapacityReservation).ToNot(gomega.BeNil())
+	g.Expect(calls[0].parameters.Properties.CapacityReservation.CapacityReservationGroup).ToNot(gomega.BeNil())
+	g.Expect(calls[0].parameters.Properties.CapacityReservation.CapacityReservationGroup.ID).To(gomega.Equal(&groupID))
+}
+
 func TestExecutorAttachesPerMachineEntriesToContext(t *testing.T) {
 	t.Parallel()
 	g := gomega.NewWithT(t)

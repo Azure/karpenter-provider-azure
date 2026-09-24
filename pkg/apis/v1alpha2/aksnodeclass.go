@@ -55,6 +55,20 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// CapacityReservationConfiguration configures the Capacity Reservation Group
+// that instances provisioned by this NodeClass target.
+type CapacityReservationConfiguration struct {
+	// groupID is the ARM resource ID of the Capacity Reservation Group.
+	// The group must be in the same subscription and region as the cluster, and
+	// must be of the Targeted reservation type. When set, every instance from
+	// this NodeClass targets the reservation group. Azure may allocate instances beyond the
+	// reserved quantity, in which case the excess is ordinary On-Demand capacity
+	// that is not covered by the capacity reservation SLA.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$`
+	// +required
+	GroupID *string `json:"groupID,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
@@ -69,6 +83,10 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// capacityReservation configures the Capacity Reservation Group that instances
+	// provisioned by this NodeClass target.
+	// +optional
+	CapacityReservation *CapacityReservationConfiguration `json:"capacityReservation,omitempty"`
 	// osDiskType is the type of disk to use for the OS.
 	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
 	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
@@ -755,6 +773,15 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// GetCapacityReservationGroupID returns the configured Capacity Reservation
+// Group ARM resource ID, or an empty string when none is configured.
+func (in *AKSNodeClass) GetCapacityReservationGroupID() string {
+	if in.Spec.CapacityReservation == nil {
+		return ""
+	}
+	return lo.FromPtr(in.Spec.CapacityReservation.GroupID)
 }
 
 func (in *AKSNodeClass) IsVTPMEnabled() bool {

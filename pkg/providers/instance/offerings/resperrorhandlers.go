@@ -88,11 +88,13 @@ func (h *ResponseErrorHandler) extractErrorCodeAndMessage(err error) (string, st
 	return "", err.Error()
 }
 
-func (h *ResponseErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
+// Handle records the failure against capacityReservationGroupID, or against unreserved
+// capacity when it is empty, so the two never mask each other.
+func (h *ResponseErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, capacityReservationGroupID string, responseError error) error {
 	for _, handler := range h.HandlerEntries {
 		if handler.match(responseError) {
 			errorCode, errorMessage := h.extractErrorCodeAndMessage(responseError)
-			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, errorCode, errorMessage)
+			return handler.handle(ctx, h.UnavailableOfferings.ForCapacityReservationGroup(capacityReservationGroupID), sku, instanceType, zone, capacityType, errorCode, errorMessage)
 		}
 	}
 
