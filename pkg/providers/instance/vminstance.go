@@ -616,6 +616,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSSDEnabled, opts.LaunchTemplate.EnableFIPS1403Encryption)
+	setVMPropertiesCapacityReservation(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -713,9 +714,39 @@ func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachi
 	}
 }
 
+// setVMPropertiesCapacityReservation associates the VM with the Capacity Reservation
+// Group named by the NodeClass. A regional group requires the VM to carry no zone,
+// which zones.MakeARMZonesFromAKSLabelZone guarantees for the regional placement.
+func setVMPropertiesCapacityReservation(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
+	groupID := nodeClass.GetCapacityReservationGroupID()
+	if groupID == "" {
+		return
+	}
+	vmProperties.CapacityReservation = &armcompute.CapacityReservationProfile{
+		CapacityReservationGroup: &armcompute.SubResource{ID: lo.ToPtr(groupID)},
+	}
+}
+
 type createResult struct {
 	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
 	VM     *armcompute.VirtualMachine
+}
+
+// validateExistingCapacityReservation refuses to adopt a VM left behind by an earlier
+// attempt whose capacity reservation group differs from what the NodeClass asks for now.
+// Adopting it would record the current group on the NodeClaim along with the current
+// NodeClass hash, so the claim would assert an association the VM does not have and drift
+// would never notice. Returning an error instead deletes it, since BeginCreate cleans up
+// the VM and its NIC on a synchronous launch failure.
+func validateExistingCapacityReservation(vm *armcompute.VirtualMachine, nodeClass *v1beta1.AKSNodeClass) error {
+	var actual string
+	if vm.Properties != nil && vm.Properties.CapacityReservation != nil && vm.Properties.CapacityReservation.CapacityReservationGroup != nil {
+		actual = lo.FromPtr(vm.Properties.CapacityReservation.CapacityReservationGroup.ID)
+	}
+	if err := validateCapacityReservationGroupAssociation(actual, nodeClass.GetCapacityReservationGroupID()); err != nil {
+		return fmt.Errorf("existing VM %q %w", lo.FromPtr(vm.Name), err)
+	}
+	return nil
 }
 
 // createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
@@ -734,6 +765,12 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	resp, err := p.azClient.VirtualMachinesClient().Get(ctx, p.resourceGroup, opts.VMName, nil)
 	// If status == ok, we want to return the existing vmm
 	if err == nil {
+		// TODO: Replace this field-specific check with ownership and launch-intent
+		// validation before reusing an existing VM. Other NodeClass inputs that configure
+		// immutable VM properties can also change between creation attempts.
+		if err := validateExistingCapacityReservation(&resp.VirtualMachine, opts.NodeClass); err != nil {
+			return nil, err
+		}
 		return &createResult{VM: &resp.VirtualMachine}, nil
 	}
 	// if status != ok, and for a reason other than we did not find the vm
@@ -886,7 +923,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		if skuErr != nil {
 			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
-		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, nodeClass.GetCapacityReservationGroupID(), err)
 		if handledError != nil {
 			// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 			// Thus the error needs to be returned.
@@ -930,7 +967,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
-				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
+				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, nodeClass.GetCapacityReservationGroupID(), err)
 				if handledError != nil {
 					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 					// Thus the error needs to be returned.

@@ -153,7 +153,7 @@ func (p *Provider) getStaticParameters(
 	}
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-	baseLabels, err := karplabels.Get(ctx, nodeClass, arch)
+	baseLabels, err := karplabels.Get(ctx, nodeClass, arch, instanceType.Requirements)
 	if err != nil {
 		return nil, err
 	}

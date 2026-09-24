@@ -37,6 +37,7 @@ import (
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -194,7 +195,7 @@ func (r *defaultResolver) Resolve(
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
 			nodeClass.Spec.WorkloadRuntime,
-			nodeClass.ResolvedLocalDNSForWire(),
+			localdns.ResolveForWire(nodeClass, instanceType.Requirements),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
 			vtpmEnabled,
