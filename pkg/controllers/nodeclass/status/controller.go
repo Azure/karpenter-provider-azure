@@ -144,6 +144,11 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 		return
 	}
 
+	if !newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() ||
+		!newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue() {
+		return
+	}
+
 	if oldNodeClass.Status.KubernetesVersion == nil {
 		return
 	}
@@ -171,6 +176,7 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 		}
 
 		now := metav1.Now()
+		// For now, we only keep the most recent version in the RecentlyUsedVersions list.
 		newNodeClass.Status.Versions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 			{
 				ImageVersion:      &oldSuffix,
