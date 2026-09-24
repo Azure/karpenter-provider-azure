@@ -802,7 +802,11 @@ spec:
                     type: string
                   nodeImageVersion:
                     description: |-
-                      nodeImageVersion is the status-backed node image version to use for the NodeClass.
+                      nodeImageVersion is the node image ID suffix to use for the NodeClass.
+                      It must match the suffix of a currently resolved image in status.images,
+                      status.observedVersions.latestImageVersion, or an imageVersion in status.observedVersions.recentlyUsedVersions.
+                      When set, kubernetesVersion must also be set. A recently used image version must be paired
+                      with its recorded Kubernetes version.
                       If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
                     type: string
                 type: object
@@ -993,8 +997,10 @@ spec:
                 - Enabled
                 - Disabled
                 type: string
-              versions:
-                description: versions contains observed and historical version information.
+              observedVersions:
+                description: |-
+                  observedVersions contains observed version metadata and previously effective
+                  Kubernetes and node image version pairs.
                 properties:
                   controlPlaneKubernetesVersion:
                     description: controlPlaneKubernetesVersion is the latest observed
@@ -1817,7 +1823,11 @@ spec:
                     type: string
                   nodeImageVersion:
                     description: |-
-                      nodeImageVersion is the status-backed node image version to use for the NodeClass.
+                      nodeImageVersion is the node image ID suffix to use for the NodeClass.
+                      It must match the suffix of a currently resolved image in status.images,
+                      status.observedVersions.latestImageVersion, or an imageVersion in status.observedVersions.recentlyUsedVersions.
+                      When set, kubernetesVersion must also be set. A recently used image version must be paired
+                      with its recorded Kubernetes version.
                       If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
                     type: string
                 type: object
@@ -2008,8 +2018,10 @@ spec:
                 - Enabled
                 - Disabled
                 type: string
-              versions:
-                description: versions contains observed and historical version information.
+              observedVersions:
+                description: |-
+                  observedVersions contains observed version metadata and previously effective
+                  Kubernetes and node image version pairs.
                 properties:
                   controlPlaneKubernetesVersion:
                     description: controlPlaneKubernetesVersion is the latest observed
