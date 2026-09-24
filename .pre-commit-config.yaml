@@ -19,7 +19,7 @@ repos:
   - id: trailing-whitespace
 - repo: local
   hooks:
-  # Invoke the customer golangci-lint installed by `make toolchain`
+  # Invoke the custom golangci-lint installed by `make toolchain`
   - id: golangci-lint-custom
     name: golangci-lint-custom
     entry: bash -c 'exec "$(go env GOPATH)/bin/golangci-lint-custom" run --new-from-rev HEAD --fix'
