@@ -142,7 +142,7 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 		return fmt.Errorf("parsing control-plane kubernetes version: %w", err)
 	}
 
-	if !validateKubernetesVersionSkew(nodeClass, versionSemver, controlPlaneVersionSemver) && !validateRollback(reqK8sVer, reqImgVer, nodeClass) {
+	if !validateKubernetesVersionSkew(nodeClass, versionSemver, controlPlaneVersionSemver) {
 		return nil
 	}
 
