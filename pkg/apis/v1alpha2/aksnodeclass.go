@@ -166,7 +166,11 @@ type Versions struct {
 	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
 	// +optional
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
-	// nodeImageVersion is the status-backed node image version to use for the NodeClass.
+	// nodeImageVersion is the node image ID suffix to use for the NodeClass.
+	// It must match the suffix of a currently resolved image in status.images,
+	// status.versions.latestImageVersion, or an imageVersion in status.versions.recentlyUsedVersions.
+	// When set, kubernetesVersion must also be set. A recently used image version must be paired
+	// with its recorded Kubernetes version.
 	// If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
 	// +optional
 	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
