@@ -81,7 +81,7 @@ var _ = Describe("CapacityReservationGroupStatus", func() {
 	var invalidator *stubCapacityReservationGroupOfferingsInvalidator
 
 	BeforeEach(func() {
-		nodeClass = test.AKSNodeClass()
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(testCRGID())}
 		lister = &stubInstanceTypeLister{instanceTypes: []*cloudprovider.InstanceType{{Name: "Standard_D2s_v3"}}}
 		invalidator = &stubCapacityReservationGroupOfferingsInvalidator{}

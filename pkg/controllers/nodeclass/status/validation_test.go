@@ -31,7 +31,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/samber/lo"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -71,13 +70,7 @@ var _ = Describe("Validation Reconciler", func() {
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
 
 		reconciler = status.NewValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
-		nodeClass = &v1beta1.AKSNodeClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       "test-nodeclass",
-				Generation: 1,
-			},
-			Spec: v1beta1.AKSNodeClassSpec{},
-		}
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	})
 
 	// All LocalDNS validations are now handled declaratively by CEL and kubebuilder markers.

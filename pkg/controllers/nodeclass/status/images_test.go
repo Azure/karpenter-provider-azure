@@ -143,7 +143,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	BeforeEach(func() {
 		var cigImageVersionTest = newCIGImageVersion
 		azureEnv.CommunityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
-		nodeClass = test.AKSNodeClass()
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	})
 
 	It("should init Images and its readiness on AKSNodeClass", func() {

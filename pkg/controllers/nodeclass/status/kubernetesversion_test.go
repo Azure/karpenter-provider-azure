@@ -32,7 +32,7 @@ import (
 var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	BeforeEach(func() {
-		nodeClass = test.AKSNodeClass()
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	})
 
 	It("Should init KubernetesVersion and its readiness on AKSNodeClass", func() {

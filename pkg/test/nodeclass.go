@@ -28,6 +28,7 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/version"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -43,12 +44,6 @@ func AKSNodeClass(options ...AKSNodeClassOption) *v1beta1.AKSNodeClass {
 	result := v1beta1.AKSNodeClass{}
 	for _, applyOption := range options {
 		applyOption(&result)
-	}
-
-	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
-	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
-	if result.Spec.ImageFamily == nil {
-		result.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 	}
 
 	return &v1beta1.AKSNodeClass{
@@ -106,6 +101,24 @@ func WithMergedSpec(spec v1beta1.AKSNodeClassSpec) AKSNodeClassOption {
 	return func(nodeClass *v1beta1.AKSNodeClass) {
 		if err := mergo.Merge(&nodeClass.Spec, spec, mergo.WithOverride); err != nil {
 			panic(fmt.Sprintf("Failed to merge spec: %s", err))
+		}
+	}
+}
+
+// WithVersionBasedDefaults applies default values to the AKSNodeClass based on the provided Kubernetes version.
+// For now, the version is ignored, but we can use it in the future.
+func WithVersionBasedDefaults(kubernetesVersion *version.Version) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		// Currently, we are not using the Kubernetes version to set any defaults.
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+	}
+}
+
+// withAll is a wrapper used internally to combine multiple AKSNodeClassOption functions into a single option.
+func withAll(options ...AKSNodeClassOption) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		for _, option := range options {
+			option(nodeClass)
 		}
 	}
 }
