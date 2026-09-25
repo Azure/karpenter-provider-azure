@@ -270,6 +270,24 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 
+			It("should immediately return to the latest image when the pin is removed", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(oldcigImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason).To(Equal("NodeImageVersionPinned"))
+
+				nodeClass.Spec.Versions.NodeImageVersion = nil
+				_, err = imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason).NotTo(Equal("NodeImageVersionPinned"))
+			})
+
 			It("should reject an image version that was not found in status", func() {
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),

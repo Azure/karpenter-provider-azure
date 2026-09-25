@@ -55,6 +55,7 @@ const (
 	nodeOSMaintenanceWindowChannel = "aksManagedNodeOSUpgradeSchedule"
 	configMapStartTimeFormat       = "%s-start"
 	configMapEndTimeFormat         = "%s-end"
+	nodeImageVersionPinnedReason    = "NodeImageVersionPinned"
 
 	requeueTime = 5 * time.Minute
 )
@@ -131,6 +132,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if reqImgVer != "" && !validatePinning(reqImgVer, reqK8sVer, nodeClass) {
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
+	unpinning := reqImgVer == "" && nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason == nodeImageVersionPinnedReason
 
 	kubernetesVersionChanging := reqK8sVer != "" && lo.FromPtr(nodeClass.Status.KubernetesVersion) != reqK8sVer
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
@@ -176,7 +178,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
-	shouldUpdate := imageVersionsUnready(nodeClass) || pinningShouldUpdate
+	shouldUpdate := imageVersionsUnready(nodeClass) || pinningShouldUpdate || unpinning
 	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
 		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
@@ -206,7 +208,11 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
 	}
 	nodeClass.Status.ObservedVersions.LatestImageVersion = &latestImageVersion
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	if reqImgVer != "" {
+		nodeClass.StatusConditions().SetTrueWithReason(v1beta1.ConditionTypeImagesReady, nodeImageVersionPinnedReason, "Node image version is pinned")
+	} else {
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	}
 	return reconcile.Result{RequeueAfter: requeueTime}, nil
 }
 
