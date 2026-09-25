@@ -46,7 +46,9 @@ var _ = Describe("Node image pinning", func() {
 
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
-			g.Expect(nodeClass.GetKubernetesVersion()).To(Equal(requestedVersion))
+			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(kubernetesVersion).To(Equal(requestedVersion))
 		}).Should(Succeed())
 
 		node := env.GetNode(pods[0].Spec.NodeName)
@@ -58,7 +60,9 @@ var _ = Describe("Node image pinning", func() {
 
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
-			g.Expect(nodeClass.GetKubernetesVersion()).ToNot(BeEmpty())
+			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(kubernetesVersion).ToNot(BeEmpty())
 			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
 			g.Expect(nodeClass.Status.ObservedVersions).ToNot(BeNil())
 			g.Expect(nodeClass.Status.ObservedVersions.LatestImageVersion).ToNot(BeEmpty())
@@ -81,7 +85,9 @@ var _ = Describe("Node image pinning", func() {
 			}))
 			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).ObservedGeneration).To(Equal(nodeClass.Generation))
 			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).ObservedGeneration).To(Equal(nodeClass.Generation))
-			g.Expect(nodeClass.GetKubernetesVersion()).To(Equal(currentKubernetesVersion))
+			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(kubernetesVersion).To(Equal(currentKubernetesVersion))
 			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
 			g.Expect(nodeClass.Status.Images[0].ID).To(HaveSuffix(currentNodeImageVersion))
 		}).Should(Succeed())
@@ -105,7 +111,9 @@ var _ = Describe("Node image pinning", func() {
 
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
-			g.Expect(nodeClass.GetKubernetesVersion()).ToNot(BeEmpty())
+			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(kubernetesVersion).ToNot(BeEmpty())
 			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
 			g.Expect(nodeClass.Status.ObservedVersions).ToNot(BeNil())
 			g.Expect(nodeClass.Status.ObservedVersions.LatestImageVersion).ToNot(BeEmpty())
@@ -142,7 +150,9 @@ var _ = Describe("Node image pinning", func() {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
 			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).ObservedGeneration).To(Equal(nodeClass.Generation))
 			g.Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).ObservedGeneration).To(Equal(nodeClass.Generation))
-			g.Expect(nodeClass.GetKubernetesVersion()).To(Equal(currentKubernetesVersion))
+			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(kubernetesVersion).To(Equal(currentKubernetesVersion))
 			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
 			g.Expect(nodeClass.Status.Images[0].ID).To(HaveSuffix(previousNodeImageVersion))
 		}).Should(Succeed())
