@@ -154,11 +154,6 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 		return
 	}
 
-	if !newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() ||
-		!newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue() {
-		return
-	}
-
 	if oldNodeClass.Status.KubernetesVersion == nil {
 		return
 	}
@@ -180,6 +175,9 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 	oldK8sVer := lo.FromPtr(oldNodeClass.Status.KubernetesVersion)
 	newK8sVer := lo.FromPtr(newNodeClass.Status.KubernetesVersion)
 
+	// Snapshot the previous ready pair even when the new pair is not ready. On the next
+	// reconcile, the partially updated status becomes the old state and can no longer
+	// provide the last verified pair.
 	if newSuffix != oldSuffix || newK8sVer != oldK8sVer {
 		if newNodeClass.Status.ObservedVersions == nil {
 			newNodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
