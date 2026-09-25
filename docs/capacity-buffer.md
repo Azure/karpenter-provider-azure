@@ -16,11 +16,9 @@ settings:
     capacityBuffer: true
 ```
 
-The main chart and standalone CRD chart both ship the
-`autoscaling.x-k8s.io/v1beta1` CapacityBuffer CRD. On a fresh main-chart
-installation, Helm installs it automatically. On `helm upgrade`, Helm does
-not install new CRDs or update existing ones from the main chart's `crds/`
-directory. **Before enabling the gate on an existing self-hosted
+On a fresh main-chart installation, Helm installs CapacityBuffer CRD automatically.
+On `helm upgrade`, Helm does not install new CRDs or  update existing ones from the
+main chart's `crds/` directory. **Before enabling the gate on an existing self-hosted
 installation, install the CRD from the controller's target release:**
 
 - If you already use the standalone `karpenter-crd` chart, upgrade that chart
