@@ -55,7 +55,7 @@ const (
 	nodeOSMaintenanceWindowChannel = "aksManagedNodeOSUpgradeSchedule"
 	configMapStartTimeFormat       = "%s-start"
 	configMapEndTimeFormat         = "%s-end"
-	nodeImageVersionPinnedReason    = "NodeImageVersionPinned"
+	nodeImageVersionPinnedReason   = "NodeImageVersionPinned"
 
 	requeueTime = 5 * time.Minute
 )
@@ -373,15 +373,10 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 		latestImgVer = lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)
 	}
 
-	// We consider the pinning valid if the requested image version matches either the current or latest image version,
-	// and the requested Kubernetes version matches the current Kubernetes version. For these two cases, the requested Kubernetes version
-	// must match the current Kubernetes version or be a valid rollback, otherwise the pinning is considered invalid because we cannot
-	// determine if the requested image and Kubernetes version combination is valid.
+	// We already check that the Kubernetes version matches the current version before considering the pinning valid,
+	// so we only need to check if the requested image version matches the current or latest image version.
 	if reqImgVer == currentImgVer || reqImgVer == latestImgVer {
-		curK8sVer := nodeClass.Status.KubernetesVersion
-		if curK8sVer != nil && reqK8sVer == *curK8sVer {
-			return true
-		}
+		return true
 	}
 
 	return validateRollback(reqK8sVer, reqImgVer, nodeClass)

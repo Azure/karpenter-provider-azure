@@ -167,6 +167,10 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 	return true, nil
 }
 
+// We consider the pinning valid if the requested image version matches either the current or latest image version,
+// and the requested Kubernetes version matches the current Kubernetes version. For these two cases, the requested Kubernetes version
+// must match the current Kubernetes version or be a valid rollback, otherwise the pinning is considered invalid because we cannot
+// determine if the requested image and Kubernetes version combination is valid.
 func validateCurrentOrLatestImagePin(nodeClass *v1beta1.AKSNodeClass, currentK8sVersion, reqK8sVer, reqImgVer string) bool {
 	currentImageVersion := ""
 	if len(nodeClass.Status.Images) > 0 {
