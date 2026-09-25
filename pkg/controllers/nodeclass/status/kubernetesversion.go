@@ -76,7 +76,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(kubernetesVersionReconcilerName))
 	logger := log.FromContext(ctx).WithValues("existingKubernetesVersion", nodeClass.Status.KubernetesVersion)
 
-	goalK8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
+	controlPlaneVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting control plane kubernetes version, %w", err)
 	}
@@ -84,8 +84,9 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	if nodeClass.Status.ObservedVersions == nil {
 		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
 	}
-	nodeClass.Status.ObservedVersions.ControlPlaneKubernetesVersion = &goalK8sVersion
+	nodeClass.Status.ObservedVersions.ControlPlaneKubernetesVersion = &controlPlaneVersion
 
+	goalK8sVersion := controlPlaneVersion
 	if reqImgVer, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
 		// Handles case 0: requested Kubernetes version is pinned
 		valid, err := r.validatePinnedK8sVersion(ctx, nodeClass, reqK8sVer, reqImgVer, goalK8sVersion)
