@@ -136,12 +136,12 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionInvalidFormat", fmt.Sprintf("invalid kubernetes version format: %v", err))
 		return false, nil
 	}
-	controlPlaneVersionSemver, err := semver.Parse(controlPlaneVersion)
+	controlPlaneK8sVersionSemver, err := semver.Parse(controlPlaneVersion)
 	if err != nil {
 		return false, fmt.Errorf("parsing control-plane kubernetes version: %w", err)
 	}
 
-	if !validateKubernetesVersionSkew(nodeClass, versionSemver, controlPlaneVersionSemver) {
+	if !validateKubernetesVersionSkew(nodeClass, versionSemver, controlPlaneK8sVersionSemver) {
 		return false, nil
 	}
 
