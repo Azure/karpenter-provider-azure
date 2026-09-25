@@ -86,8 +86,8 @@ var _ = Describe("CloudProvider", func() {
 			azureEnvNonZonal.Reset(ctx)
 		})
 
-		runCapacityBufferTests(func() {
-			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		runCapacityBufferTests(func(expectedCalls int) {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(expectedCalls))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
 

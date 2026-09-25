@@ -280,7 +280,7 @@ func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
 	}
 }
 
-func runCapacityBufferTests(expectCreateCalls func()) {
+func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 	Context("CapacityBuffer", func() {
 		It("should launch capacity for a PodTemplate-backed buffer", func() {
 			ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{
@@ -329,7 +329,7 @@ func runCapacityBufferTests(expectCreateCalls func()) {
 				HaveField("Key", v1.LabelOSStable),
 				HaveField("Values", ContainElement(string(v1.Linux))),
 			)))
-			expectCreateCalls()
+			expectCreateCalls(1)
 		})
 	})
 }
@@ -362,8 +362,8 @@ var _ = Describe("CloudProvider", func() {
 			azureEnv.Reset(ctx)
 		})
 
-		runCapacityBufferTests(func() {
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		runCapacityBufferTests(func(expectedCalls int) {
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(expectedCalls))
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
 
