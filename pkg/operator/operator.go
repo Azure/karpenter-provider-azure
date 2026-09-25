@@ -189,9 +189,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(
+		azConfig.Location,
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
 			azurecache.DefaultCleanupInterval),
+		azClient.ManagedClustersClient(),
 	)
 	imageProvider := imagefamily.NewProvider(
 		azClient.ImageVersionsClient,

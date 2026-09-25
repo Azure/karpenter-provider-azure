@@ -55,6 +55,9 @@ const (
 	nodeOSMaintenanceWindowChannel = "aksManagedNodeOSUpgradeSchedule"
 	configMapStartTimeFormat       = "%s-start"
 	configMapEndTimeFormat         = "%s-end"
+	nodeImageVersionPinnedReason   = "NodeImageVersionPinned"
+
+	requeueTime = 5 * time.Minute
 )
 
 type NodeImageReconciler struct {
@@ -109,6 +112,8 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 // and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
 // store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
 // selection will work, which is seen as worth the tradeoff.
+//
+//nolint:gocyclo // Keep the established automatic image update flow together; pinning is isolated in helpers below.
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
@@ -123,10 +128,17 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{}, nil
 	}
 
+	reqImgVer, reqK8sVer := requestedVersions(nodeClass)
+	if reqImgVer != "" && !validatePinning(reqImgVer, reqK8sVer, nodeClass) {
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+	unpinning := reqImgVer == "" && nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason == nodeImageVersionPinnedReason
+
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
+
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
@@ -145,12 +157,26 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		}
 	})
 
+	latestImageVersion := ""
+	if len(goalImages) > 0 {
+		latestImageVersion = parseVersion(goalImages[0].ID)
+	}
+
+	var pinningShouldUpdate bool
+	if reqImgVer != "" {
+		var valid bool
+		goalImages, pinningShouldUpdate, valid = applyImagePinning(nodeClass, goalImages, reqImgVer)
+		if !valid {
+			return reconcile.Result{RequeueAfter: requeueTime}, nil
+		}
+	}
+
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
 	//
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
-	shouldUpdate := imageVersionsUnready(nodeClass)
+	shouldUpdate := imageVersionsUnready(nodeClass) || pinningShouldUpdate || unpinning
 	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
 		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
@@ -167,16 +193,25 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		nodeClass.Status.Images = nil
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
 		logger.Info("no available node images")
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+		return reconcile.Result{RequeueAfter: requeueTime}, nil
 	}
 
 	// We care about the ordering of the slices here, as it translates to priority during selection, so not treating them as sets
 	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
 		logger.Info("new available images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
 	}
+
 	nodeClass.Status.Images = goalImages
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	if nodeClass.Status.ObservedVersions == nil {
+		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
+	}
+	nodeClass.Status.ObservedVersions.LatestImageVersion = &latestImageVersion
+	if reqImgVer != "" {
+		nodeClass.StatusConditions().SetTrueWithReason(v1beta1.ConditionTypeImagesReady, nodeImageVersionPinnedReason, "Node image version is pinned")
+	} else {
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	}
+	return reconcile.Result{RequeueAfter: requeueTime}, nil
 }
 
 // Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
@@ -303,4 +338,107 @@ func trimVersionSuffix(imageID string) string {
 	imageIDParts := strings.Split(imageID, "/")
 	baseID := strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
 	return baseID
+}
+
+// Trims off the version prefix, and leaves just the image version
+// Examples:
+//
+// - CIG:
+//   - Input: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+//
+// - SIG:
+//   - Input: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
+//   - Output: 2022.10.03
+func parseVersion(imageID string) string {
+	imageIDParts := strings.Split(imageID, "/")
+	if len(imageIDParts) < 2 {
+		return ""
+	}
+	version := imageIDParts[len(imageIDParts)-1]
+	return version
+}
+
+// ValidatePinning validates that the request image/ kubernetes version pair is acceptable.
+func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClass) bool {
+	currentImgVer := ""
+	if len(nodeClass.Status.Images) > 0 {
+		currentImgVer = parseVersion(nodeClass.Status.Images[0].ID)
+	}
+
+	latestImgVer := ""
+	if nodeClass.Status.ObservedVersions != nil {
+		latestImgVer = lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)
+	}
+
+	// We already check that the Kubernetes version matches the current version before considering the pinning valid,
+	// so we only need to check if the requested image version matches the current or latest image version.
+	if reqImgVer == currentImgVer || reqImgVer == latestImgVer {
+		return true
+	}
+
+	return validateRollback(reqK8sVer, reqImgVer, nodeClass)
+}
+
+func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) bool {
+	if nodeClass.Status.ObservedVersions == nil {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "NodeImageVersionInvalid", "requested node image version cannot be validated because version status is unavailable")
+		return false
+	}
+
+	imageFound := false
+
+	for _, used := range nodeClass.Status.ObservedVersions.RecentlyUsedVersions {
+		if lo.FromPtr(used.ImageVersion) != reqImageVersion {
+			continue
+		}
+
+		imageFound = true
+		if lo.FromPtr(used.KubernetesVersion) == reqK8sVersion {
+			return true
+		}
+	}
+
+	if imageFound {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RollbackTargetKubernetesVersionMismatch", "requested image version is not paired with the requested Kubernetes version")
+	} else {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "NodeImageVersionInvalid", "requested image version was not found")
+	}
+
+	return false
+}
+func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
+	if newSuffix == "" || strings.Contains(newSuffix, "/") {
+		return nil, fmt.Errorf("invalid image version suffix %q", newSuffix)
+	}
+
+	updated := make([]v1beta1.NodeImage, len(images))
+	copy(updated, images)
+
+	for i := range updated {
+		parts := strings.Split(updated[i].ID, "/")
+		if len(parts) < 3 || parts[len(parts)-2] != "versions" || parts[len(parts)-1] == "" {
+			return nil, fmt.Errorf("image ID does not have expected versions suffix: %s", updated[i].ID)
+		}
+
+		parts[len(parts)-1] = newSuffix
+		updated[i].ID = strings.Join(parts, "/")
+	}
+
+	return updated, nil
+}
+
+func applyImagePinning(nodeClass *v1beta1.AKSNodeClass, defaultImages []v1beta1.NodeImage, reqImgVer string) ([]v1beta1.NodeImage, bool, bool) {
+	if reqImgVer == "" {
+		return defaultImages, false, true
+	}
+
+	pinnedImages, err := replaceSuffixes(defaultImages, reqImgVer)
+	if err != nil {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", fmt.Sprintf("replacing image suffixes: %v", err))
+		return nil, false, false
+	}
+
+	alreadySet := len(nodeClass.Status.Images) > 0 && parseVersion(nodeClass.Status.Images[0].ID) == reqImgVer
+	return pinnedImages, !alreadySet, true
 }
