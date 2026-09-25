@@ -39,25 +39,77 @@ const (
 	DefaultSIGImageVersion = "202410.09.0"
 )
 
-func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
-	options := v1beta1.AKSNodeClass{}
-	for _, override := range overrides {
-		if err := mergo.Merge(&options, override, mergo.WithOverride); err != nil {
-			panic(fmt.Sprintf("Failed to merge settings: %s", err))
-		}
+func AKSNodeClass(options ...AKSNodeClassOption) *v1beta1.AKSNodeClass {
+	result := v1beta1.AKSNodeClass{}
+	for _, applyOption := range options {
+		applyOption(&result)
 	}
+
 	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
 	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
-	if options.Spec.OSDiskSizeGB == nil {
-		options.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+	if result.Spec.OSDiskSizeGB == nil {
+		result.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 	}
-	if options.Spec.ImageFamily == nil {
-		options.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+	if result.Spec.ImageFamily == nil {
+		result.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 	}
+
 	return &v1beta1.AKSNodeClass{
-		ObjectMeta: coretest.ObjectMeta(options.ObjectMeta),
-		Spec:       options.Spec,
-		Status:     options.Status,
+		ObjectMeta: coretest.ObjectMeta(result.ObjectMeta),
+		Spec:       result.Spec,
+		Status:     result.Status,
+	}
+}
+
+// AKSNodeClassOption is a function that applies modifications to an AKSNodeClass,
+// allowing easy configuration of new instances in tests.
+type AKSNodeClassOption func(*v1beta1.AKSNodeClass)
+
+// WithName sets the Name field of the AKSNodeClass.
+func WithName(name string) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		nodeClass.ObjectMeta.Name = name
+	}
+}
+
+// WithOSDiskSizeGB sets the OSDiskSizeGB field of the AKSNodeClass.
+func WithOSDiskSizeGB(size int32) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr(size)
+	}
+}
+
+// WithImageFamily sets the ImageFamily field of the AKSNodeClass.
+func WithImageFamily(imageFamily string) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+	}
+}
+
+// WithTags sets the Tags field of the AKSNodeClass.
+// tags is a sequence of key-value pairs representing the tags to be applied to the AKSNodeClass.
+func WithTags(pairs ...string) AKSNodeClassOption {
+	if len(pairs)%2 != 0 {
+		panic("WithTags requires an even number of arguments representing key-value pairs")
+	}
+
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		tags := map[string]string{}
+		for i := 0; i < len(pairs); i += 2 {
+			tags[pairs[i]] = pairs[i+1]
+		}
+
+		nodeClass.Spec.Tags = tags
+	}
+}
+
+// WithMergedSpec merges the provided spec into the AKSNodeClass, overriding existing fields.
+// Non-zero fields in the provided spec will overwrite the corresponding fields in the AKSNodeClass.
+func WithMergedSpec(spec v1beta1.AKSNodeClassSpec) AKSNodeClassOption {
+	return func(nodeClass *v1beta1.AKSNodeClass) {
+		if err := mergo.Merge(&nodeClass.Spec, spec, mergo.WithOverride); err != nil {
+			panic(fmt.Sprintf("Failed to merge spec: %s", err))
+		}
 	}
 }
 
