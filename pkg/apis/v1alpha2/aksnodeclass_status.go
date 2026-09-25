@@ -95,9 +95,9 @@ type CapacityReservationGroup struct {
 
 // RecentlyUsedVersion contains a previously effective node image version and the Kubernetes version it was paired with.
 type RecentlyUsedVersion struct {
-	// timestampUsed is when this image version was last effective.
+	// timeUsed is when this image version was last effective.
 	// +optional
-	TimestampUsed *metav1.Time `json:"timestampUsed,omitempty"`
+	TimeUsed *metav1.Time `json:"timeUsed,omitempty"`
 	// imageVersion is the node image version suffix.
 	// +required
 	ImageVersion *string `json:"imageVersion,omitempty"`
