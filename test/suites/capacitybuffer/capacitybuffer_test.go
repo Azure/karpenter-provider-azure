@@ -699,7 +699,7 @@ var _ = Describe("CapacityBuffer", func() {
 		env.ConsistentlyExpectNoDisruptions(1, 45*time.Second)
 
 		env.ExpectDeleted(buffer)
-		eventuallyExpectNodeClaimDeleted(nodeClaim, 3*time.Minute)
+		env.EventuallyExpectNotFoundWithTimeout(3*time.Minute, nodeClaim)
 	})
 
 	PIt("should release empty-node protection after the backing reference is deleted without unrelated scheduling activity", func() {
@@ -720,7 +720,7 @@ var _ = Describe("CapacityBuffer", func() {
 
 		env.ExpectDeleted(podTemplate)
 		EventuallyExpectCapacityBufferNotReady(env, env.Client, buffer, "PodTemplateNotFound")
-		eventuallyExpectNodeClaimDeleted(nodeClaim, 3*time.Minute)
+		env.EventuallyExpectNotFoundWithTimeout(3*time.Minute, nodeClaim)
 	})
 })
 
@@ -792,16 +792,6 @@ func provisioningTransitionTime(buffer *autoscalingv1beta1.CapacityBuffer) metav
 	condition := apimeta.FindStatusCondition(current.Status.Conditions, autoscalingv1beta1.ProvisioningCondition)
 	Expect(condition).ToNot(BeNil())
 	return condition.LastTransitionTime
-}
-
-func eventuallyExpectNodeClaimDeleted(nodeClaim *karpv1.NodeClaim, timeout time.Duration) {
-	GinkgoHelper()
-	Eventually(func(g Gomega) {
-		current := &karpv1.NodeClaim{}
-		err := env.Client.Get(env, client.ObjectKeyFromObject(nodeClaim), current)
-		g.Expect(client.IgnoreNotFound(err)).To(Succeed())
-		g.Expect(err).To(HaveOccurred())
-	}).WithTimeout(timeout).Should(Succeed())
 }
 
 func eventuallyExpectNodeClaimCPUWithin(limit resource.Quantity) {
