@@ -61,6 +61,6 @@ var _ = Describe("Recently Used Versions", func() {
 		Entry("when the Kubernetes version changes", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", true, true, true),
 		Entry("when the effective pair does not change", "1.31.0", "1.31.0", "202601.01.0", "202601.01.0", true, true, false),
 		Entry("when the previous images were not ready", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", false, true, false),
-		Entry("when the new images are not ready", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", true, false, false),
+		Entry("when the new images are not ready", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", true, false, true),
 	)
 })

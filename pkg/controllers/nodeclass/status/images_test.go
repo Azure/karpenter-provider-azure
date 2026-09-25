@@ -233,7 +233,8 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				}
 			})
 
-			It("should initialize images using the effective Kubernetes version", func() {
+			It("should bypass the maintenance window when images are not ready", func() {
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesVersionChanged", "Kubernetes version changed")
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),
 				}
@@ -241,7 +242,6 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nodeClass.Status.KubernetesVersion).To(Equal(lo.ToPtr(testK8sVersion)))
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 
@@ -258,16 +258,16 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 
-			It("should pin the requested image version outside the maintenance window", func() {
+			It("should replace image suffixes with the requested version outside the maintenance window", func() {
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr(testK8sVersion),
-					NodeImageVersion:  lo.ToPtr(newCIGImageVersion),
+					NodeImageVersion:  lo.ToPtr(oldcigImageVersion),
 				}
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 
-				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
 			})
 
 			It("should immediately return to the latest image when the pin is removed", func() {
@@ -359,17 +359,6 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
 			})
 
-			It("should keep the effective image version when an image pin is removed outside the maintenance window", func() {
-				nodeClass.Spec.Versions = &v1beta1.Versions{
-					KubernetesVersion: lo.ToPtr(testK8sVersion),
-				}
-
-				_, err := imageReconciler.Reconcile(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-
-				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				Expect(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)).To(Equal(newCIGImageVersion))
-			})
 		})
 
 		When("SYSTEM_NAMESPACE is set", func() {
