@@ -4,9 +4,11 @@ Status: alpha, opt-in for self-hosted deployments
 
 CapacityBuffer lets Karpenter maintain spare schedulable capacity before real workloads need it. Karpenter resolves a workload shape, creates virtual Pods in memory, and provisions or preserves nodes for that demand. It does not create placeholder Pods in the Kubernetes API.
 
+For the upstream concepts and behavior, see the [Karpenter CapacityBuffers documentation](https://karpenter.sh/docs/concepts/capacitybuffers/). This document covers Azure-specific setup and limitations.
+
 ## Enable The Feature
 
-CapacityBuffer is disabled by default. Enable it when installing or upgrading the self-hosted Karpenter chart:
+CapacityBuffer is disabled by default in self-hosted deployments. Enable it when installing or upgrading the self-hosted Karpenter chart:
 
 ```yaml
 settings:
@@ -66,7 +68,7 @@ by this change.
 
 ## Create A Buffer
 
-Apply the bounded PodTemplate example:
+Apply the CapacityBuffer example:
 
 ```bash
 kubectl apply -f examples/v1/capacity-buffer.yaml
@@ -77,7 +79,34 @@ The example creates a dedicated AKSNodeClass and NodePool, then requests two
 chunks of spare capacity, each shaped as 1 CPU and 1 GiB of memory. Both the
 CapacityBuffer and NodePool include limits that bound possible cloud spend.
 
-A CapacityBuffer can instead reference a Deployment, ReplicaSet, or StatefulSet through `spec.scalableRef`. References must be in the same namespace. Karpenter periodically resolves scalable workload size and computes the requested buffer percentage.
+A CapacityBuffer can instead reference a Deployment, ReplicaSet, or StatefulSet
+through `spec.scalableRef`. References must be in the same namespace. Karpenter
+periodically resolves scalable workload size and computes the requested buffer
+percentage.
+
+## How Buffered Capacity Is Placed and Used
+
+Neither a CapacityBuffer nor a PodTemplate references a NodePool directly.
+Karpenter simulates virtual pods using the referenced PodTemplate's resource
+requests and scheduling constraints (or the workload's pod template with
+`scalableRef`). They can fit on compatible existing nodes without creating new
+ones; if there is not enough room, Karpenter can provision from any compatible
+NodePool. At the same time, without additional configuration, nothing prevents
+other workloads from using that newly provisioned capacity.
+
+This means that if you intend to provide workload-specific headroom - a very
+common use case - you must use appropriate selectors, taints, and tolerations
+to enforce that isolation. That is what the example does: its PodTemplate
+selects the `intent=capacity-buffer` label on the NodePool
+and tolerates its `intent=capacity-buffer:NoSchedule` taint. (These are ordinary
+example values, not CapacityBuffer-specific keys.) The selector keeps virtual
+demand on nodes with that label; the taint stops pods without a matching
+toleration from scheduling there. The real workload intended to use this
+headroom also needs the toleration and, if it must run on this pool, a matching
+node selector.
+
+For shared headroom, remove the example's `intent` selector, taint, and
+toleration together; the now-unused NodePool label can go too.
 
 ## Status
 
