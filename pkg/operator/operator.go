@@ -446,7 +446,10 @@ func getCredential(env *auth.Environment) (azcore.TokenCredential, error) {
 func getRequiredGVKs(ctx context.Context) []schema.GroupVersionKind {
 	// controller-runtime internal, ignore them as we don't watch them
 	internalTypes := []string{"WatchEvent", "UpdateOptions", "DeleteOptions", "ListOptions", "CreateOptions", "PatchOptions", "GetOptions"}
-	capacityBufferEnabled := coreoptions.FromContext(ctx).FeatureGates.CapacityBuffer
+	requiredGroups := []string{karpapis.Group, v1beta1.Group}
+	if coreoptions.FromContext(ctx).FeatureGates.CapacityBuffer {
+		requiredGroups = append(requiredGroups, autoscalingv1beta1.Group)
+	}
 	requiredGVKs := lo.Filter(lo.Keys(scheme.Scheme.AllKnownTypes()), func(gvk schema.GroupVersionKind, _ int) bool {
 		if lo.Contains(internalTypes, gvk.Kind) {
 			return false
@@ -457,8 +460,7 @@ func getRequiredGVKs(ctx context.Context) []schema.GroupVersionKind {
 			return false
 		}
 
-		return gvk.Group == karpapis.Group || gvk.Group == v1beta1.Group ||
-			(capacityBufferEnabled && gvk.Group == autoscalingv1beta1.Group)
+		return lo.Contains(requiredGroups, gvk.Group)
 	})
 	return requiredGVKs
 }
