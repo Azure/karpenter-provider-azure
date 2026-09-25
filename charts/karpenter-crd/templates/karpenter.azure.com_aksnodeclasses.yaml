@@ -1123,9 +1123,9 @@ spec:
                           description: kubernetesVersion is the Kubernetes version
                             paired with the image version.
                           type: string
-                        timeUsed:
-                          description: timeUsed is when this image version was last
-                            effective.
+                        timestampUsed:
+                          description: timestampUsed is when this image version was
+                            last effective.
                           format: date-time
                           type: string
                       required:
@@ -2242,9 +2242,9 @@ spec:
                           description: kubernetesVersion is the Kubernetes version
                             paired with the image version.
                           type: string
-                        timeUsed:
-                          description: timeUsed is when this image version was last
-                            effective.
+                        timestampUsed:
+                          description: timestampUsed is when this image version was
+                            last effective.
                           format: date-time
                           type: string
                       required:
