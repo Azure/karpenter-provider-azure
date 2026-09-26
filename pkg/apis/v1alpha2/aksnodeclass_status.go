@@ -109,9 +109,10 @@ type RecentlyUsedVersion struct {
 // ObservedVersionsStatus contains version metadata used to default and validate spec.versions.
 // The effective Kubernetes version and images are reported through status.kubernetesVersion and status.images.
 type ObservedVersionsStatus struct {
-	// controlPlaneKubernetesVersion is the latest observed control plane version.
+	// currentControlPlaneKubernetesVersion is the current Kubernetes version of the control plane.
+	// It can differ from status.kubernetesVersion when spec.versions.kubernetesVersion is pinned.
 	// +optional
-	ControlPlaneKubernetesVersion *string `json:"controlPlaneKubernetesVersion,omitempty"`
+	CurrentControlPlaneKubernetesVersion *string `json:"currentControlPlaneKubernetesVersion,omitempty"`
 	// latestImageVersion is the latest node image version resolved from the gallery.
 	// +optional
 	LatestImageVersion *string `json:"latestImageVersion,omitempty"`

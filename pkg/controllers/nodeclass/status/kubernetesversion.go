@@ -84,7 +84,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	if nodeClass.Status.ObservedVersions == nil {
 		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
 	}
-	nodeClass.Status.ObservedVersions.ControlPlaneKubernetesVersion = &controlPlaneVersion
+	nodeClass.Status.ObservedVersions.CurrentControlPlaneKubernetesVersion = &controlPlaneVersion
 
 	goalK8sVersion := controlPlaneVersion
 	if reqImgVer, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {

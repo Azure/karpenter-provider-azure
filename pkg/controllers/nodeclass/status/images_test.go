@@ -228,8 +228,8 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
 
 				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{
-					ControlPlaneKubernetesVersion: lo.ToPtr(testK8sVersion),
-					LatestImageVersion:            lo.ToPtr(newCIGImageVersion),
+					CurrentControlPlaneKubernetesVersion: lo.ToPtr(testK8sVersion),
+					LatestImageVersion:                   lo.ToPtr(newCIGImageVersion),
 				}
 			})
 
