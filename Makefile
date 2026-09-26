@@ -13,6 +13,7 @@ KARPENTER_NAMESPACE ?= kube-system
 MOD_DIRS = $(shell find . -name go.mod -type f ! -path "./test/*" | xargs dirname)
 KARPENTER_CORE_DIR = $(shell go list -m -f '{{ .Dir }}' sigs.k8s.io/karpenter)
 KARPENTER_CORE_CRDS = \
+	autoscaling.x-k8s.io_capacitybuffers.yaml \
 	karpenter.sh_nodeclaims.yaml \
 	karpenter.sh_nodeoverlays.yaml \
 	karpenter.sh_nodepools.yaml
@@ -95,12 +96,18 @@ verify: tidy download ## Verify code. Includes dependencies, linting, formatting
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
-	cp $(addprefix $(KARPENTER_CORE_DIR)/pkg/apis/crds/,$(KARPENTER_CORE_CRDS)) pkg/apis/crds
+	# Copy pinned core CRDs and make the local copies writable
+	cp -f $(addprefix $(KARPENTER_CORE_DIR)/pkg/apis/crds/,$(KARPENTER_CORE_CRDS)) pkg/apis/crds
+	chmod u+w $(addprefix pkg/apis/crds/,$(KARPENTER_CORE_CRDS))
+	# Apply provider-specific CRD changes before packaging them
 	hack/validation/kubelet.sh
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
 	hack/mutation/kubectl_get_ux.sh
-	cp $(addprefix pkg/apis/crds/,$(SUPPORTED_CRDS)) charts/karpenter-crd/templates
+	# Package the adjusted CRDs, then validate CapacityBuffer chart delivery
+	cp -f $(addprefix pkg/apis/crds/,$(SUPPORTED_CRDS)) charts/karpenter-crd/templates
+	chmod u+w $(addprefix charts/karpenter-crd/templates/,$(SUPPORTED_CRDS))
+	hack/validation/capacitybuffer.sh
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint-custom run $(newline))
 	@git diff --quiet ||\
@@ -163,7 +170,7 @@ define newline
 endef
 
 # Announce all explicit targets as they run to allow easier tracing of issues
-# 
+#
 # Every target is preceded by a blank line and a header like this:
 # ----- <target> ----
 #
@@ -181,4 +188,3 @@ $(ANNOUNCED_TARGETS): %: | .announce-%
 	@printf '\n----- %s -----\n' '$*'
 
 FORCE:
-

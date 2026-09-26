@@ -1,0 +1,95 @@
+# CapacityBuffer is alpha and must be enabled with
+# settings.featureGates.capacityBuffer=true in the Karpenter Helm chart.
+---
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: capacity-buffer
+spec:
+  imageFamily: Ubuntu
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: capacity-buffer
+spec:
+  limits:
+    cpu: "4"
+    memory: 8Gi
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
+  template:
+    metadata:
+      labels:
+        intent: capacity-buffer
+        kubernetes.azure.com/ebpf-dataplane: cilium
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: capacity-buffer
+      taints:
+        - key: intent
+          value: capacity-buffer
+          effect: NoSchedule
+      startupTaints:
+        - key: node.cilium.io/agent-not-ready
+          effect: NoExecute
+          value: "true"
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.azure.com/sku-family
+          operator: In
+          values: ["D"]
+---
+apiVersion: v1
+kind: PodTemplate
+metadata:
+  name: general-purpose-buffer
+  namespace: default
+template:
+  spec:
+    # This template describes the capacity to reserve; its container is not run, and the image used does not matter.
+    containers:
+      - name: workload
+        image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        resources:
+          requests:
+            cpu: "1"
+            memory: 1Gi
+    # This arbitrary label matches the NodePool label above, restricting virtual
+    # buffer pods to nodes with that label. For shared headroom, remove this
+    # label selector and the dedicated taint and toleration together.
+    nodeSelector:
+      intent: capacity-buffer
+      kubernetes.io/os: linux
+    # Match the NodePool's NoSchedule taint so virtual pods can fit there.
+    # Real workloads also need this toleration to use the warmed nodes.
+    tolerations:
+      - key: intent
+        operator: Equal
+        value: capacity-buffer
+        effect: NoSchedule
+---
+apiVersion: autoscaling.x-k8s.io/v1beta1
+kind: CapacityBuffer
+metadata:
+  name: general-purpose-buffer
+  namespace: default
+spec:
+  provisioningStrategy: buffer.x-k8s.io/active-capacity
+  podTemplateRef:
+    name: general-purpose-buffer
+  replicas: 2
+  limits:
+    cpu: "2"
+    memory: 2Gi
