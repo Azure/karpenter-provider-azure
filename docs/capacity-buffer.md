@@ -6,6 +6,14 @@ CapacityBuffer lets Karpenter maintain spare schedulable capacity before real wo
 
 For the upstream concepts and behavior, see the [Karpenter CapacityBuffers documentation](https://karpenter.sh/docs/concepts/capacitybuffers/). This document covers Azure-specific setup and limitations.
 
+> [!WARNING]
+> Karpenter core v1.14.1 has a known deletion/reference-loss defect tracked in
+> [kubernetes-sigs/karpenter#3258](https://github.com/kubernetes-sigs/karpenter/issues/3258).
+> On an otherwise idle cluster, stale in-memory buffer placement can delay
+> `WhenEmpty` disruption after a CapacityBuffer or its backing reference is
+> deleted. Keep the feature limited to alpha evaluation until a fixed core
+> revision is adopted. Restarting the controller rebuilds this in-memory state.
+
 ## Enable The Feature
 
 CapacityBuffer is disabled by default in self-hosted deployments. Enable it when installing or upgrading the self-hosted Karpenter chart:
@@ -56,14 +64,6 @@ Enabling the gate also grants the controller permission to read CapacityBuffers 
 AKS-managed NAP activation is configured outside this chart and is not enabled
 by this change.
 
-> [!WARNING]
-> Karpenter core v1.14.1 has a known deletion/reference-loss defect tracked in
-> [kubernetes-sigs/karpenter#3258](https://github.com/kubernetes-sigs/karpenter/issues/3258).
-> On an otherwise idle cluster, stale in-memory buffer placement can delay
-> `WhenEmpty` disruption after a CapacityBuffer or its backing reference is
-> deleted. Keep the feature limited to alpha evaluation until a fixed core
-> revision is adopted. Restarting the controller rebuilds this in-memory state.
-
 ## Create A Buffer
 
 Apply the CapacityBuffer example:
@@ -74,13 +74,27 @@ kubectl get capacitybuffers.autoscaling.x-k8s.io
 ```
 
 The example creates a dedicated AKSNodeClass and NodePool, then requests two
-chunks of spare capacity, each shaped as 1 CPU and 1 GiB of memory. Both the
-CapacityBuffer and NodePool include limits that bound possible cloud spend.
+buffer chunks, each represented by a virtual Pod requesting 1 CPU and 1 GiB
+of memory. Both the CapacityBuffer and NodePool include limits that bound
+possible cloud spend.
 
 A CapacityBuffer can instead reference a Deployment, ReplicaSet, or StatefulSet
 through `spec.scalableRef`. References must be in the same namespace. Karpenter
 periodically resolves scalable workload size and computes the requested buffer
 percentage.
+
+> [!NOTE]
+> With Karpenter core v1.14.1, the CapacityBuffer CRD descriptions differ from
+> controller behavior: when both `replicas` and `percentage` are set, Karpenter
+> uses the larger count (capped by `limits`), not the smaller.
+>
+> Percentage-derived counts round up: 33% of 10 workload replicas is 3.3,
+> so Karpenter requests 4 chunks. Setting `percentage: 0` contributes no
+> percentage-derived chunks, despite the CRD's "minimum of 1" wording.
+>
+> An omitted `scalableRef.apiGroup` means `apps`, not the core API group.
+> Set `apiGroup: apps` explicitly for supported workloads; core-group
+> references are not supported.
 
 ## How Buffered Capacity Is Placed and Used
 
