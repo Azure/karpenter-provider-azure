@@ -41,7 +41,7 @@ rules:
   - apiGroups: ["apps"]
     resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
     verbs: ["list", "watch", "get"]
-  {{- if eq (toString (dig "capacityBuffer" false .Values.settings.featureGates)) "true" }}
+  {{- if dig "capacityBuffer" false .Values.settings.featureGates }}
   - apiGroups: ["autoscaling.x-k8s.io"]
     resources: ["capacitybuffers"]
     verbs: ["get", "list", "watch"]
@@ -75,7 +75,7 @@ rules:
   - apiGroups: ["karpenter.sh"]
     resources: ["nodepools", "nodepools/status", "nodeoverlays/status"]
     verbs: ["update", "patch"]
-  {{- if eq (toString (dig "capacityBuffer" false .Values.settings.featureGates)) "true" }}
+  {{- if dig "capacityBuffer" false .Values.settings.featureGates }}
   - apiGroups: ["autoscaling.x-k8s.io"]
     resources: ["capacitybuffers/status"]
     verbs: ["update", "patch"]

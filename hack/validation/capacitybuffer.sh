@@ -4,7 +4,7 @@ set -euo pipefail
 # Validates the CapacityBuffer chart compatibility and CRD packaging contract.
 #
 # This complements, rather than duplicates, runtime tests:
-# - feature-gate rendering is safe for defaults, explicit boolean/string values,
+# - feature-gate rendering is safe for defaults, explicit boolean values,
 #   and legacy Helm values that do not contain the newly added key;
 # - public and generated self-hosted values remain default-disabled;
 # - CapacityBuffer and PodTemplate RBAC is present only when the gate is enabled;
@@ -20,9 +20,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 disabled_render="$tmp_dir/disabled.yaml"
 explicitly_disabled_render="$tmp_dir/explicitly-disabled.yaml"
-string_disabled_render="$tmp_dir/string-disabled.yaml"
 enabled_render="$tmp_dir/enabled.yaml"
-string_enabled_render="$tmp_dir/string-enabled.yaml"
 legacy_render="$tmp_dir/legacy.yaml"
 legacy_chart="$tmp_dir/karpenter"
 standalone_crd_render="$tmp_dir/standalone-crds.yaml"
@@ -56,14 +54,17 @@ run_helm /dev/null lint charts/karpenter-crd
 run_helm "$disabled_render" template karpenter charts/karpenter --namespace karpenter
 run_helm "$explicitly_disabled_render" template karpenter charts/karpenter --namespace karpenter \
     --set settings.featureGates.capacityBuffer=false
-run_helm "$string_disabled_render" template karpenter charts/karpenter --namespace karpenter \
-    --set-string settings.featureGates.capacityBuffer=false
 run_helm "$enabled_render" template karpenter charts/karpenter --namespace karpenter \
     --set settings.featureGates.capacityBuffer=true
-run_helm "$string_enabled_render" template karpenter charts/karpenter --namespace karpenter \
-    --set-string settings.featureGates.capacityBuffer=true
 cp -LR charts/karpenter "$legacy_chart"
-yq eval -i 'del(.settings.featureGates.capacityBuffer)' "$legacy_chart/values.yaml"
+yq eval -i 'del(
+    .settings.featureGates.capacityBuffer,
+    .settings.featureGates.reservedCapacity,
+    .settings.featureGates.spotToSpotConsolidation,
+    .settings.featureGates.nodeRepair,
+    .settings.featureGates.nodeOverlay,
+    .settings.featureGates.staticCapacity
+)' "$legacy_chart/values.yaml"
 run_helm "$legacy_render" template karpenter "$legacy_chart" --namespace karpenter
 
 # Render both supported CRD delivery paths.
@@ -83,12 +84,8 @@ feature_gates() {
     echo "expected CapacityBuffer=false when the chart setting is explicitly disabled"
     exit 1
 }
-[[ "$(feature_gates "$string_disabled_render")" == *"CapacityBuffer=false"* ]] || {
-    echo "expected CapacityBuffer=false when Helm values contain the string false"
-    exit 1
-}
-[[ "$(feature_gates "$legacy_render")" == *"CapacityBuffer=false"* ]] || {
-    echo "expected CapacityBuffer=false when legacy values omit the chart setting"
+[[ "$(feature_gates "$legacy_render")" == "CapacityBuffer=false,ReservedCapacity=false,SpotToSpotConsolidation=false,NodeRepair=false,NodeOverlay=false,StaticCapacity=false" ]] || {
+    echo "expected all feature gates to default to false when legacy values omit the chart settings"
     exit 1
 }
 [[ "$(feature_gates "$enabled_render")" == *"CapacityBuffer=true"* ]] || {
@@ -101,24 +98,18 @@ core_role_json() {
 }
 
 disabled_rules="$(core_role_json "$disabled_render")"
-string_disabled_rules="$(core_role_json "$string_disabled_render")"
 enabled_rules="$(core_role_json "$enabled_render")"
-string_enabled_rules="$(core_role_json "$string_enabled_render")"
 
 # Disabled values must not broaden the controller role; enabled values must
 # grant the exact read/status permissions used by core.
 jq -e 'all(.rules[]; (.apiGroups | index("autoscaling.x-k8s.io")) == null and (.resources | index("podtemplates")) == null)' \
     <<<"$disabled_rules" >/dev/null
-jq -e 'all(.rules[]; (.apiGroups | index("autoscaling.x-k8s.io")) == null and (.resources | index("podtemplates")) == null)' \
-    <<<"$string_disabled_rules" >/dev/null
 jq -e 'any(.rules[]; .apiGroups == ["autoscaling.x-k8s.io"] and .resources == ["capacitybuffers"] and .verbs == ["get", "list", "watch"])' \
     <<<"$enabled_rules" >/dev/null
 jq -e 'any(.rules[]; .apiGroups == ["autoscaling.x-k8s.io"] and .resources == ["capacitybuffers/status"] and .verbs == ["update", "patch"])' \
     <<<"$enabled_rules" >/dev/null
 jq -e 'any(.rules[]; .apiGroups == [""] and .resources == ["podtemplates"] and .verbs == ["get", "list", "watch"])' \
     <<<"$enabled_rules" >/dev/null
-jq -e 'any(.rules[]; .apiGroups == ["autoscaling.x-k8s.io"] and .resources == ["capacitybuffers"] and .verbs == ["get", "list", "watch"])' \
-    <<<"$string_enabled_rules" >/dev/null
 
 for render in "$standalone_crd_render" "$main_crd_render"; do
     count="$(yq eval-all -o=json 'select(.kind == "CustomResourceDefinition" and .metadata.name == "capacitybuffers.autoscaling.x-k8s.io")' "$render" | jq -s length)"
