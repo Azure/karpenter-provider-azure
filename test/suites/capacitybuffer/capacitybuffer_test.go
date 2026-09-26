@@ -93,7 +93,7 @@ var _ = Describe("CapacityBuffer", func() {
 	})
 
 	// Upstream correspondence: "should update buffer status when PodTemplate is updated".
-	It("should update buffer status when its PodTemplate changes", func() {
+	It("should update buffer status when PodTemplate is updated", func() {
 		env.ExpectCreated(nodeClass, nodePool)
 		podTemplate := newPodTemplate("updated-template", "500m", "256Mi")
 		buffer := newPodTemplateBuffer("updated-template", podTemplate.Name, 1)
@@ -114,7 +114,7 @@ var _ = Describe("CapacityBuffer", func() {
 		EventuallyExpectCapacityBufferProvisioned(env, env.Client, buffer)
 	})
 
-	// Upstream correspondence: both consumer/refill regressions and real-pod coexistence.
+	// Upstream correspondence: consumer use of existing buffer capacity and refill after consumption.
 	// Azure adaptation: pin a known SKU and prove the consumer uses the original node before refill.
 	It("should let a real consumer use buffered capacity and refill the buffer", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -165,7 +165,8 @@ var _ = Describe("CapacityBuffer", func() {
 		}).Should(Succeed())
 	})
 
-	// Upstream correspondence: scalableRef percentage, fixed replicas, and deployment resize.
+	// Upstream correspondence: scalableRef percentage and Deployment resize.
+	// Also exercises replicas and limits alongside percentage, not the upstream fixed-replicas-only case.
 	It("should recompute scalableRef percentage, fixed replicas, and limits in both directions", func() {
 		env.ExpectCreated(nodeClass, nodePool)
 		deployment := test.Deployment(test.DeploymentOptions{
@@ -208,7 +209,7 @@ var _ = Describe("CapacityBuffer", func() {
 	})
 
 	// Upstream correspondence: "should recover when scalable ref is created after buffer".
-	It("should recover when a referenced Deployment is created after the buffer", func() {
+	It("should recover when scalable ref is created after buffer", func() {
 		env.ExpectCreated(nodeClass, nodePool)
 		buffer := test.CapacityBuffer(autoscalingv1beta1.CapacityBuffer{
 			ObjectMeta: metav1.ObjectMeta{Name: "late-scalable-ref"},
@@ -245,7 +246,7 @@ var _ = Describe("CapacityBuffer", func() {
 	})
 
 	// Upstream correspondence: "should grow buffer replicas when limits are increased".
-	It("should grow a limits-only buffer when its limits increase", func() {
+	It("should grow buffer replicas when limits are increased", func() {
 		env.ExpectCreated(nodeClass, nodePool)
 		podTemplate := newPodTemplate("limits-template", "1", "256Mi")
 		buffer := test.CapacityBuffer(autoscalingv1beta1.CapacityBuffer{
@@ -360,8 +361,8 @@ var _ = Describe("CapacityBuffer", func() {
 		}
 	})
 
-	// Upstream correspondence: "should respect pod anti-affinity ... using scalableRef".
-	It("should preserve Deployment labels and anti-affinity for scalableRef virtual pods", func() {
+	// Upstream correspondence: "should respect pod anti-affinity between virtual buffer pods using scalableRef".
+	It("should respect pod anti-affinity between virtual buffer pods using scalableRef", func() {
 		env.ExpectCreated(nodeClass, nodePool)
 		deployment := test.Deployment(test.DeploymentOptions{
 			ObjectMeta: metav1.ObjectMeta{Name: "scalable-anti-affinity"},
@@ -555,7 +556,7 @@ var _ = Describe("CapacityBuffer", func() {
 	})
 
 	// Upstream correspondence: "should refill buffer after node expiry".
-	It("should replace expired capacity while preserving the buffer", func() {
+	It("should refill buffer after node expiry", func() {
 		nodePool.Spec.Template.Spec.ExpireAfter = karpv1.MustParseNillableDuration("2m")
 		env.ExpectCreated(nodeClass, nodePool)
 		podTemplate := newPodTemplate("expiration-template", "1", "512Mi")
@@ -642,7 +643,7 @@ var _ = Describe("CapacityBuffer", func() {
 
 	// Upstream correspondence: "should not leak nodes on rapid buffer create and delete".
 	// Pending with the other deletion-path regressions until kubernetes-sigs/karpenter#3258 is fixed.
-	PIt("should not leak nodes after rapid buffer create and delete", func() {
+	PIt("should not leak nodes on rapid buffer create and delete", func() {
 		nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmpty
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 		env.ExpectCreated(nodeClass, nodePool)
