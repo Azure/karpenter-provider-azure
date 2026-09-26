@@ -96,12 +96,15 @@ verify: tidy download ## Verify code. Includes dependencies, linting, formatting
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
+	# Copy pinned core CRDs and make the local copies writable
 	cp -f $(addprefix $(KARPENTER_CORE_DIR)/pkg/apis/crds/,$(KARPENTER_CORE_CRDS)) pkg/apis/crds
 	chmod u+w $(addprefix pkg/apis/crds/,$(KARPENTER_CORE_CRDS))
+	# Apply provider-specific CRD changes before packaging them
 	hack/validation/kubelet.sh
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
 	hack/mutation/kubectl_get_ux.sh
+	# Package the adjusted CRDs, then validate CapacityBuffer chart delivery
 	cp -f $(addprefix pkg/apis/crds/,$(SUPPORTED_CRDS)) charts/karpenter-crd/templates
 	chmod u+w $(addprefix charts/karpenter-crd/templates/,$(SUPPORTED_CRDS))
 	hack/validation/capacitybuffer.sh
