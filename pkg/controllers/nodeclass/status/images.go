@@ -132,6 +132,8 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if reqImgVer != "" && !validatePinning(reqImgVer, reqK8sVer, nodeClass) {
 		return reconcile.Result{RequeueAfter: requeueTime}, nil
 	}
+
+	// Unpinning occurs when no requested image version is specified and the current image is pinned.
 	unpinning := reqImgVer == "" && nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason == nodeImageVersionPinnedReason
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
