@@ -389,7 +389,7 @@ func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.
 	imageFound := false
 
 	for _, used := range nodeClass.Status.ObservedVersions.RecentlyUsedVersions {
-		if lo.FromPtr(used.ImageVersion) != reqImageVersion {
+		if lo.FromPtr(used.NodeImageIDSuffix) != reqImageVersion {
 			continue
 		}
 

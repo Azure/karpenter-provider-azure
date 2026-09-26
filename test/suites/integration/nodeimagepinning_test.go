@@ -128,7 +128,7 @@ var _ = Describe("Node image pinning", func() {
 		nodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 			{
 				KubernetesVersion: lo.ToPtr(currentKubernetesVersion),
-				ImageVersion:      lo.ToPtr(previousNodeImageVersion),
+				NodeImageIDSuffix: lo.ToPtr(previousNodeImageVersion),
 			},
 		}
 		Expect(env.Client.Status().Patch(env.Context, nodeClass, client.MergeFrom(stored))).To(Succeed())
@@ -136,7 +136,7 @@ var _ = Describe("Node image pinning", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
 			g.Expect(lo.ContainsBy(nodeClass.Status.ObservedVersions.RecentlyUsedVersions, func(version v1beta1.RecentlyUsedVersion) bool {
-				return lo.FromPtr(version.KubernetesVersion) == currentKubernetesVersion && lo.FromPtr(version.ImageVersion) == previousNodeImageVersion
+				return lo.FromPtr(version.KubernetesVersion) == currentKubernetesVersion && lo.FromPtr(version.NodeImageIDSuffix) == previousNodeImageVersion
 			})).To(BeTrue())
 		}).Should(Succeed())
 
