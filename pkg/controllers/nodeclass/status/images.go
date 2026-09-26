@@ -140,7 +140,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-
 	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
