@@ -206,6 +206,8 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
 	}
 	nodeClass.Status.ObservedVersions.LatestImageVersion = &latestImageVersion
+
+	// Set the ImagesReady condition based on whether the image version is pinned or not.
 	if reqImgVer != "" {
 		nodeClass.StatusConditions().SetTrueWithReason(v1beta1.ConditionTypeImagesReady, nodeImageVersionPinnedReason, "Node image version is pinned")
 	} else {
