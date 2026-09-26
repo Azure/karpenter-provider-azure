@@ -201,7 +201,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
 		logger.Info("new available images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
 	}
-
 	nodeClass.Status.Images = goalImages
 	if nodeClass.Status.ObservedVersions == nil {
 		nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
