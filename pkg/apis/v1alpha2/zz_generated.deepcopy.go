@@ -588,8 +588,8 @@ func (in *RecentlyUsedVersion) DeepCopyInto(out *RecentlyUsedVersion) {
 		in, out := &in.TimeUsed, &out.TimeUsed
 		*out = (*in).DeepCopy()
 	}
-	if in.ImageVersion != nil {
-		in, out := &in.ImageVersion, &out.ImageVersion
+	if in.NodeImageIDSuffix != nil {
+		in, out := &in.NodeImageIDSuffix, &out.NodeImageIDSuffix
 		*out = new(string)
 		**out = **in
 	}
