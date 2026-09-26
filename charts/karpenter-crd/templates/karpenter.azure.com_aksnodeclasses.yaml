@@ -1100,9 +1100,10 @@ spec:
                   observedVersions contains observed version metadata and previously effective
                   Kubernetes and node image version pairs.
                 properties:
-                  controlPlaneKubernetesVersion:
-                    description: controlPlaneKubernetesVersion is the latest observed
-                      control plane version.
+                  currentControlPlaneKubernetesVersion:
+                    description: |-
+                      currentControlPlaneKubernetesVersion is the current Kubernetes version of the control plane.
+                      It can differ from status.kubernetesVersion when spec.versions.kubernetesVersion is pinned.
                     type: string
                   latestImageVersion:
                     description: latestImageVersion is the latest node image version
@@ -2220,9 +2221,10 @@ spec:
                   observedVersions contains observed version metadata and previously effective
                   Kubernetes and node image version pairs.
                 properties:
-                  controlPlaneKubernetesVersion:
-                    description: controlPlaneKubernetesVersion is the latest observed
-                      control plane version.
+                  currentControlPlaneKubernetesVersion:
+                    description: |-
+                      currentControlPlaneKubernetesVersion is the current Kubernetes version of the control plane.
+                      It can differ from status.kubernetesVersion when spec.versions.kubernetesVersion is pinned.
                     type: string
                   latestImageVersion:
                     description: latestImageVersion is the latest node image version
