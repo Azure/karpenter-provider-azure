@@ -89,6 +89,10 @@ var _ = Describe("CapacityBuffer", func() {
 
 		EventuallyExpectCapacityBufferReady(env, env.Client, buffer)
 		EventuallyExpectCapacityBufferReplicas(env, env.Client, buffer, 1)
+		// First provisioning after the BeforeSuite controller restart can stall on the
+		// post-startup instance type refresh. Wait for the NodeClaim, a prerequisite of
+		// Provisioned=True, with the default timeout before the shorter upstream wait.
+		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
 		EventuallyExpectCapacityBufferProvisioned(env, env.Client, buffer)
 		env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
 		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
