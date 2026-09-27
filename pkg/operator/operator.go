@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -58,6 +60,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/allocationstrategy"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/capacityrecommendation"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/machinecache"
@@ -103,6 +106,12 @@ type Operator struct {
 	LoadBalancerProvider      *loadbalancer.Provider
 	QuotaProvider             *quota.DefaultProvider
 	AZClient                  *azclient.AZClient
+
+	// SubscriptionID and Location identify the Azure scope this operator manages.
+	SubscriptionID string
+	Location       string
+	// Cloud is the resolved Azure cloud, which not every feature is available in.
+	Cloud cloud.Configuration
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -192,7 +201,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
-	quotaProvider := quota.NewProvider(azClient.UsageClient, azConfig.Location)
+	quotaProvider := quota.NewProvider(azClient.UsageClient, azClient.QuotaCategoryVMFamilyMappingClient, azConfig.Location)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
@@ -237,7 +246,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	allocationStrategyProvider := allocationstrategy.NewProvider()
+	capacityRecommendationProvider := capacityrecommendation.NewProvider(
+		azClient.SKUMixPlacementClient,
+		cache.New(cache.NoExpiration, azurecache.DefaultCleanupInterval),
+		azConfig.Location,
+	)
+	allocationStrategyProvider := allocationstrategy.NewProvider(
+		capacityRecommendationProvider,
+		options.FromContext(ctx).ComputeRecommendationMode,
+	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,
@@ -293,6 +310,9 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		LoadBalancerProvider:         loadBalancerProvider,
 		QuotaProvider:                quotaProvider,
 		AZClient:                     azClient,
+		SubscriptionID:               azConfig.SubscriptionID,
+		Location:                     azConfig.Location,
+		Cloud:                        env.Cloud,
 	}
 }
 

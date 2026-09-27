@@ -49,6 +49,7 @@ const (
 	NodeFSInodesFree                     = "nodefs.inodesFree"
 	PIDAvailable                         = "pid.available"
 	HardEvictionNodeFSAvailable          = "10%"
+	hardEvictionNodeFSAvailablePercent   = int64(10)
 	HardEvictionNodeFSInodesFree         = "5%"
 	HardEvictionPIDAvailable             = "2000"
 	SoftEvictionNodeFSAvailable          = "12%"
@@ -58,7 +59,6 @@ const (
 	SoftEvictionNodeFSInodesGracePeriod  = 2 * time.Minute
 	SoftEvictionMaxPodGracePeriodSeconds = int32(60)
 	KubeReservedPIDs                     = "1000"
-	SystemReservedPIDs                   = "1000"
 )
 
 // hardenedKubeReservedMemoryMiB returns the hardened kube-reserved memory in MiB:

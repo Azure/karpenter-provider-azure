@@ -147,6 +147,15 @@ func TestGetCredentialProviderURL(t *testing.T) {
 	}
 }
 
+func TestBaseKubeletFlagsHardEviction(t *testing.T) {
+	g := NewWithT(t)
+	g.Expect(strings.Split(getBaseKubeletFlags()["--eviction-hard"], ",")).To(ConsistOf(
+		"memory.available<100Mi",
+		"nodefs.available<10%",
+		"nodefs.inodesFree<5%",
+	))
+}
+
 func TestKubeletConfigMap(t *testing.T) {
 	kubeletConfiguration := KubeletConfiguration{
 		KubeletConfiguration: v1beta1.KubeletConfiguration{

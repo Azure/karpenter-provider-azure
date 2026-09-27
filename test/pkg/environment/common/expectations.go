@@ -18,6 +18,7 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -308,6 +309,30 @@ func (env *Environment) EventuallyExpectBound(pods ...*corev1.Pod) {
 func (env *Environment) EventuallyExpectHealthy(pods ...*corev1.Pod) {
 	GinkgoHelper()
 	env.EventuallyExpectHealthyWithTimeout(-1, pods...)
+}
+
+// EventuallyGetPodLogs waits for the pod to be running or succeeded and returns its logs.
+func (env *Environment) EventuallyGetPodLogs(pod *corev1.Pod) string {
+	GinkgoHelper()
+	var logs string
+	Eventually(func(g Gomega) {
+		var currentPod corev1.Pod
+		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(pod), &currentPod)).To(Succeed())
+		g.Expect(currentPod.Status.Phase).To(Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)))
+
+		stream, err := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+			Container: pod.Spec.Containers[0].Name,
+		}).Stream(env.Context)
+		g.Expect(err).To(Succeed())
+		defer stream.Close()
+
+		buffer := new(bytes.Buffer)
+		_, err = io.Copy(buffer, stream)
+		g.Expect(err).To(Succeed())
+		logs = buffer.String()
+		g.Expect(logs).ToNot(BeEmpty())
+	}).WithTimeout(3 * time.Minute).Should(Succeed())
+	return logs
 }
 
 func (env *Environment) EventuallyExpectTerminating(pods ...*corev1.Pod) {
@@ -782,6 +807,18 @@ func (env *Environment) EventuallyExpectRegisteredNodeClaimCountWithSelector(com
 			fmt.Sprintf("expected %d nodeclaims, had %d (%v)", count, len(nodeClaimList.Items), NodeClaimNames(lo.ToSlicePtr(nodeClaimList.Items))))
 	}).Should(Succeed())
 	return lo.ToSlicePtr(nodeClaimList.Items)
+}
+
+// ExpectLiveNodeClaimsForNodePool returns the non-terminating NodeClaims in the current test
+// that belong to the NodePool. It performs one list operation so callers can compose it within
+// a larger Eventually assertion without nesting retry loops.
+func (env *Environment) ExpectLiveNodeClaimsForNodePool(ctx context.Context, g Gomega, nodePool *karpv1.NodePool) []*karpv1.NodeClaim {
+	GinkgoHelper()
+	nodeClaimList := &karpv1.NodeClaimList{}
+	g.Expect(env.Client.List(ctx, nodeClaimList, client.HasLabels{test.DiscoveryLabel}, client.MatchingLabels{karpv1.NodePoolLabelKey: nodePool.Name})).To(Succeed())
+	return lo.FilterMap(nodeClaimList.Items, func(nc karpv1.NodeClaim, _ int) (*karpv1.NodeClaim, bool) {
+		return &nc, nc.DeletionTimestamp.IsZero()
+	})
 }
 
 func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {

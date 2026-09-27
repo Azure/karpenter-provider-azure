@@ -17,7 +17,7 @@ on:
         default: "aksscriptless"
       k8s_version:
         type: string
-        description: "the kubernetes version to use (e.g., 1.30). If empty, uses AKS default."
+        description: "the kubernetes version to use (e.g., 1.31). If empty, uses AKS default."
       azure_vm_size:
         type: string
         description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
@@ -36,6 +36,7 @@ on:
         options:
           - ACR
           - BYOK
+          - CapacityReservation
           - Chaos
           - Consolidation
           - Drift
@@ -70,13 +71,13 @@ on:
         description: "Kubernetes version ('default' = AKS default)"
         options:
           - "default"
-          - "1.30"
           - "1.31"
           - "1.32"
           - "1.33"
           - "1.34"
           - "1.35"
           - "1.36"
+          - "1.37"
       provision_mode:
         type: choice
         description: "Karpenter provisioning mode"
@@ -84,7 +85,7 @@ on:
         options:
           - aksscriptless
           - aksmachineapi
-          - aksmachineapiheaderbatch
+          # - aksmachineapiheaderbatch # Removed currently as only aksmanagedap can do batch anyway
       azure_vm_size:
         type: string
         description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
@@ -218,7 +219,7 @@ jobs:
           location: ${{ inputs.location }}
           k8s_version: ${{ inputs.k8s_version }}
           provision_mode: ${{ inputs.provision_mode }}
-          identity_type: ${{ inputs.suite == 'Machine' && 'UserAssigned' || 'SystemAssigned' }}
+          identity_type: ${{ (inputs.suite == 'Machine' || (inputs.suite == 'CapacityReservation' && (inputs.provision_mode == 'aksmachineapi' || inputs.provision_mode == 'aksmachineapiheaderbatch'))) && 'UserAssigned' || 'SystemAssigned' }}
           azure_vm_size: ${{ inputs.azure_vm_size }}
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
