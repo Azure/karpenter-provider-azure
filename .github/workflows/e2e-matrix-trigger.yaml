@@ -15,7 +15,7 @@ on:
         options:
           - aksscriptless
           - aksmachineapi
-          - aksmachineapiheaderbatch
+          # - aksmachineapiheaderbatch # Removed currently as only aksmanagedap can do batch anyway
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"

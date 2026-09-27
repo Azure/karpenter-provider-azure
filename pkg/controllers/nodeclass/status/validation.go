@@ -34,6 +34,7 @@ import (
 
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	FIPSRequired                 = "FIPSRequired"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -70,6 +71,9 @@ func NewValidationReconciler(
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
+	if !validateFIPS(ctx, nodeClass) {
+		return reconcile.Result{}, nil
+	}
 
 	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
 	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
@@ -123,6 +127,18 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+	if options.FromContext(ctx).EnableFIPS && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			FIPSRequired,
+			"AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level",
+		)
+		return false
+	}
+	return true
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {

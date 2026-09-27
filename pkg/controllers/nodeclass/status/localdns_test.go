@@ -130,7 +130,7 @@ func TestPreferred_UbuntuFIPS_Enabled(t *testing.T) {
 	nc.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 	nc.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
 	setKVReady(nc, hiK8s)
-	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "cilium", "azure")
+	r := NewLocalDNSReconciler(fake.NewClientset(), newDynFake(), "", "azure")
 	mustReconcile(t, r, nc)
 	expectState(t, nc, v1beta1.LocalDNSStateEnabled)
 }

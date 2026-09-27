@@ -154,7 +154,7 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 		return nil, fmt.Errorf("failed to get zone for AKS machine %q: %w", lo.FromPtr(aksMachine.Name), err)
 	}
 
-	return BuildNodeClaimFromAKSMachineTemplate(
+	nodeClaim, err := BuildNodeClaimFromAKSMachineTemplate(
 		ctx,
 		aksMachine,
 		offerings.GetInstanceTypeFromVMSize(lo.FromPtr(aksMachine.Properties.Hardware.VMSize), possibleInstanceTypes),
@@ -166,6 +166,13 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 		lo.FromPtr(aksMachine.Properties.NodeImageVersion), // Empty: not fatal, no need to check
 		lo.FromPtr(aksMachine.Properties.Status.CreationTimestamp),
 	)
+	if err != nil {
+		return nil, err
+	}
+	if aksMachine.Properties.Status.VMState != nil {
+		nodeClaim.Annotations[v1beta1.AnnotationAKSMachineVMState] = string(*aksMachine.Properties.Status.VMState)
+	}
+	return nodeClaim, nil
 }
 
 // May return apimachinery.NotFoundError if NodePool is not found.

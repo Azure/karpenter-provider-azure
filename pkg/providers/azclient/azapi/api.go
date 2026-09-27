@@ -67,3 +67,11 @@ type SubnetsAPI interface {
 type DiskEncryptionSetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
 }
+
+type CapacityReservationGroupsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, capacityReservationGroupName string, options *armcompute.CapacityReservationGroupsClientGetOptions) (armcompute.CapacityReservationGroupsClientGetResponse, error)
+}
+
+type CapacityReservationsAPI interface {
+	NewListByCapacityReservationGroupPager(resourceGroupName string, capacityReservationGroupName string, options *armcompute.CapacityReservationsClientListByCapacityReservationGroupOptions) *runtime.Pager[armcompute.CapacityReservationsClientListByCapacityReservationGroupResponse]
+}
