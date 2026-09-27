@@ -43,6 +43,7 @@ func TestCapacityBuffer(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
+		// Managed controllers must already have CapacityBuffer enabled when this suite is selected.
 		if env.InClusterController {
 			enableCapacityBuffer()
 		}
@@ -83,6 +84,18 @@ func enableCapacityBuffer() {
 
 	capacityBufferConfigured = true
 	env.ExpectSettingsOverridden(withCapacityBufferEnabled(originalSettings))
+	expectCapacityBufferEnabled()
+}
+
+func expectCapacityBufferEnabled() {
+	GinkgoHelper()
+	for _, setting := range env.ExpectSettings() {
+		if setting.Name == "FEATURE_GATES" {
+			Expect(setting.Value).To(MatchRegexp(`(?i)(^|,)CapacityBuffer=true(,|$)`))
+			return
+		}
+	}
+	Fail("expected FEATURE_GATES in the controller environment")
 }
 
 func restoreCapacityBufferConfiguration() {

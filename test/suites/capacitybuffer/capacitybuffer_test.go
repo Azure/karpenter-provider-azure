@@ -51,15 +51,6 @@ const (
 // direct replicas, Azure-specific adaptations, and additional provider coverage.
 var _ = Describe("CapacityBuffer", func() {
 	BeforeEach(func() {
-		if !env.InClusterController {
-			Skip("CapacityBuffer tests require the controller to be running in-cluster")
-		}
-		featureGates, found := lo.Find(env.ExpectSettings(), func(envVar corev1.EnvVar) bool {
-			return envVar.Name == "FEATURE_GATES"
-		})
-		Expect(found).To(BeTrue(), "expected FEATURE_GATES in the controller environment")
-		Expect(featureGates.Value).To(MatchRegexp(`(?i)(^|,)CapacityBuffer=true(,|$)`))
-
 		nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("Never")
 	})
