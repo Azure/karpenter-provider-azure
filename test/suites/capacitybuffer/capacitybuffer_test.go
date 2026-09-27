@@ -43,7 +43,19 @@ import (
 const (
 	bufferTemplateName = "capacity-buffer-template"
 	testInstanceType   = "Standard_D2s_v5"
+	isolationTaintKey  = "karpenter.azure.com/capacitybuffer-e2e"
 )
+
+// isolationTaint keeps system workloads (e.g. metrics-server, coredns) whose
+// system-pool affinity is only preferred off test nodes, so node emptiness and
+// consolidation assertions only depend on the pods each spec creates.
+var isolationTaint = corev1.Taint{Key: isolationTaintKey, Effect: corev1.TaintEffectNoSchedule}
+
+var isolationToleration = corev1.Toleration{
+	Key:      isolationTaintKey,
+	Operator: corev1.TolerationOpExists,
+	Effect:   corev1.TaintEffectNoSchedule,
+}
 
 // This suite mirrors the relevant behavioral contract from
 // sigs.k8s.io/karpenter/test/suites/regression/capacitybuffer_test.go so it can
@@ -53,6 +65,7 @@ var _ = Describe("CapacityBuffer", func() {
 	BeforeEach(func() {
 		nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("Never")
+		nodePool.Spec.Template.Spec.Taints = append(nodePool.Spec.Template.Spec.Taints, isolationTaint)
 	})
 
 	// Upstream correspondence: "should provision capacity when a buffer with podTemplateRef is applied".
@@ -128,7 +141,8 @@ var _ = Describe("CapacityBuffer", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "buffer-consumer"},
 			Replicas:   1,
 			PodOptions: test.PodOptions{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "buffer-consumer"}},
+				ObjectMeta:  metav1.ObjectMeta{Labels: map[string]string{"app": "buffer-consumer"}},
+				Tolerations: []corev1.Toleration{isolationToleration},
 				NodeSelector: map[string]string{
 					karpv1.NodePoolLabelKey: nodePool.Name,
 				},
@@ -164,7 +178,8 @@ var _ = Describe("CapacityBuffer", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "scalable-buffer-workload"},
 			Replicas:   5,
 			PodOptions: test.PodOptions{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "scalable-buffer-workload"}},
+				ObjectMeta:  metav1.ObjectMeta{Labels: map[string]string{"app": "scalable-buffer-workload"}},
+				Tolerations: []corev1.Toleration{isolationToleration},
 				ResourceRequirements: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -221,7 +236,8 @@ var _ = Describe("CapacityBuffer", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "late-scalable-ref"},
 			Replicas:   0,
 			PodOptions: test.PodOptions{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "late-scalable-ref"}},
+				ObjectMeta:  metav1.ObjectMeta{Labels: map[string]string{"app": "late-scalable-ref"}},
+				Tolerations: []corev1.Toleration{isolationToleration},
 				ResourceRequirements: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -359,7 +375,8 @@ var _ = Describe("CapacityBuffer", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "scalable-anti-affinity"},
 			Replicas:   1,
 			PodOptions: test.PodOptions{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "scalable-anti-affinity"}},
+				ObjectMeta:  metav1.ObjectMeta{Labels: map[string]string{"app": "scalable-anti-affinity"}},
+				Tolerations: []corev1.Toleration{isolationToleration},
 				ResourceRequirements: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -581,6 +598,7 @@ var _ = Describe("CapacityBuffer", func() {
 	It("should provision heterogeneous buffers independently", func() {
 		largeNodePool := nodePool
 		smallNodePool := env.DefaultNodePool(nodeClass)
+		smallNodePool.Spec.Template.Spec.Taints = append(smallNodePool.Spec.Template.Spec.Taints, isolationTaint)
 		largeNodePool.Spec.Template.Labels = lo.Assign(largeNodePool.Spec.Template.Labels, map[string]string{
 			"capacity-buffer-test/shape": "large",
 		})
@@ -732,6 +750,7 @@ func newPodTemplate(name, cpu, memory string) *corev1.PodTemplate {
 					},
 				}},
 				NodeSelector: map[string]string{corev1.LabelOSStable: string(corev1.Linux)},
+				Tolerations:  []corev1.Toleration{isolationToleration},
 			},
 		},
 	}
