@@ -65,7 +65,8 @@ var _ = Describe("Node image pinning", func() {
 			g.Expect(kubernetesVersion).ToNot(BeEmpty())
 			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
 			g.Expect(nodeClass.Status.ObservedVersions).ToNot(BeNil())
-			g.Expect(nodeClass.Status.ObservedVersions.LatestImageVersion).ToNot(BeEmpty())
+			g.Expect(nodeClass.Status.ObservedVersions.LatestImageVersion).ToNot(BeNil())
+			g.Expect(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)).ToNot(Equal(""))
 		}).Should(Succeed())
 
 		currentKubernetesVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
@@ -116,7 +117,8 @@ var _ = Describe("Node image pinning", func() {
 			g.Expect(kubernetesVersion).ToNot(BeEmpty())
 			g.Expect(nodeClass.GetImages()).ToNot(BeEmpty())
 			g.Expect(nodeClass.Status.ObservedVersions).ToNot(BeNil())
-			g.Expect(nodeClass.Status.ObservedVersions.LatestImageVersion).ToNot(BeEmpty())
+			g.Expect(nodeClass.Status.ObservedVersions.LatestImageVersion).ToNot(BeNil())
+			g.Expect(lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)).ToNot(Equal(""))
 		}).Should(Succeed())
 
 		currentKubernetesVersion := lo.FromPtr(nodeClass.Status.KubernetesVersion)
