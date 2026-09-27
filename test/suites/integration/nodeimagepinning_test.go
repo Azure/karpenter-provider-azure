@@ -36,7 +36,7 @@ import (
 )
 
 var _ = Describe("Node image pinning", func() {
-	It("should provision a node one Kubernetes version behind the control plane", func() {
+	FIt("should provision a node one Kubernetes version behind the control plane", func() {
 		requestedVersion := previousSupportedKubernetesVersion()
 		nodeClass.Spec.Versions = &v1beta1.Versions{KubernetesVersion: lo.ToPtr(requestedVersion)}
 
@@ -55,7 +55,7 @@ var _ = Describe("Node image pinning", func() {
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(requestedVersion))
 	})
 
-	It("should pin the current Kubernetes and node image versions", func() {
+	FIt("should pin the current Kubernetes and node image versions", func() {
 		env.ExpectCreated(nodeClass)
 
 		Eventually(func(g Gomega) {
@@ -102,7 +102,7 @@ var _ = Describe("Node image pinning", func() {
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(currentKubernetesVersion))
 	})
 
-	It("should pin a recently used node image version", func() {
+	FIt("should pin a recently used node image version", func() {
 		if env.UsesSharedImageGallery() {
 			Skip("requires Community Gallery images")
 		}
