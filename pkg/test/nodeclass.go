@@ -60,7 +60,7 @@ type AKSNodeClassOption func(*v1beta1.AKSNodeClass)
 // WithName sets the Name field of the AKSNodeClass.
 func WithName(name string) AKSNodeClassOption {
 	return func(nodeClass *v1beta1.AKSNodeClass) {
-		nodeClass.ObjectMeta.Name = name
+		nodeClass.Name = name
 	}
 }
 
@@ -108,14 +108,19 @@ func WithMergedSpec(spec v1beta1.AKSNodeClassSpec) AKSNodeClassOption {
 // WithVersionBasedDefaults applies default values to the AKSNodeClass based on the provided Kubernetes version.
 // For now, the version is ignored, but we can use it in the future.
 func WithVersionBasedDefaults(kubernetesVersion *version.Version) AKSNodeClassOption {
+	imageFamily := v1beta1.Ubuntu2204ImageFamily
+
+	if kubernetesVersion != nil && kubernetesVersion.AtLeast(version.MustParse("1.34.0")) {
+		imageFamily = v1beta1.Ubuntu2404ImageFamily
+	}
+
 	return func(nodeClass *v1beta1.AKSNodeClass) {
-		// Currently, we are not using the Kubernetes version to set any defaults.
-		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+		nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 	}
 }
 
-// withAll is a wrapper used internally to combine multiple AKSNodeClassOption functions into a single option.
-func withAll(options ...AKSNodeClassOption) AKSNodeClassOption {
+// WithAll is a wrapper used internally to combine multiple AKSNodeClassOption functions into a single option.
+func WithAll(options ...AKSNodeClassOption) AKSNodeClassOption {
 	return func(nodeClass *v1beta1.AKSNodeClass) {
 		for _, option := range options {
 			option(nodeClass)
