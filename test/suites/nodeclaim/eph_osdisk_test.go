@@ -50,6 +50,7 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
 		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
 	})
+
 	It("should provision VM with SKU that does not support ephemeral OS disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
@@ -64,6 +65,7 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 	})
+
 	It("should provision VM with SKU that does not support ephemeral OS disk, even if OS disk fits on cache disk", func() {
 		test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
@@ -86,5 +88,44 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		vm := env.GetVM(pods[0].Spec.NodeName)
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+	})
+
+	It("should use a managed OS disk when osDiskType is Managed, even on a SKU that supports ephemeral", func() {
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{"50"},
+		})
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		vm := env.GetVM(pods[0].Spec.NodeName)
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
+	})
+
+	It("should fall back to a managed OS disk on a SKU whose ephemeral disk is smaller than osDiskSizeGB", func() {
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+			Operator: corev1.NodeSelectorOpLt,
+			Values:   []string{"128"},
+		})
+
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1})
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		pods := env.EventuallyExpectHealthyDeployment(deployment)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		vm := env.GetVM(pods[0].Spec.NodeName)
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
 	})
 })

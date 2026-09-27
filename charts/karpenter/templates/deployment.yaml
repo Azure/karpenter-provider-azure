@@ -179,6 +179,10 @@ spec:
             - name: DISABLE_CLUSTER_STATE_OBSERVABILITY
               value: "{{ . }}"
           {{- end }}
+          {{- with .Values.settings.computeRecommendationMode }}
+            - name: COMPUTE_RECOMMENDATION_MODE
+              value: "{{ . }}"
+          {{- end }}
           {{- with .Values.controller.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

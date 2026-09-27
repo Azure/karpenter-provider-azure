@@ -464,7 +464,8 @@ Contact: Bartosz Paliswiat, Yash Khandelwal
 
 Sample request (zonal)
 
-```json
+```bash
+cat > /tmp/skuMixPlacement.json <<'EOF'
 {
   "zones": ["1", "2", "3"],
   "capacityProfile": {
@@ -492,8 +493,9 @@ Sample request (zonal)
     ]
   }
 }
+EOF
 
-$ az rest --method post --uri "https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Compute/locations/westus2/skuMixPlacementScores/recommendations/generate?api-version=2026-05-05-preview" --body @/tmp/skuMixPlacement.json
+$ az rest --method post --headers "Content-Type=application/json" --uri "https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Compute/locations/westus2/skuMixPlacementScores/recommendations/generate?api-version=2026-05-05-preview" --body @/tmp/skuMixPlacement.json
 ```
 
 Sample response
@@ -520,9 +522,10 @@ Sample response
 
 Sample request (regional):
 
-```json
+```bash
+cat > /tmp/skuMixPlacement.json <<'EOF'
 {
-  "zones": [], // No zones
+  "zones": [],
   "capacityProfile": {
     "capacity": 5,
     "capacityType": "VM",
@@ -548,9 +551,9 @@ Sample request (regional):
     ]
   }
 }
+EOF
 
-
-$ az rest --method post --uri "https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Compute/locations/westus2/skuMixPlacementScores/recommendations/generate?api-version=2026-05-05-preview" --body @/tmp/skuMixPlacement.json
+$ az rest --method post --headers "Content-Type=application/json" --uri "https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Compute/locations/westus2/skuMixPlacementScores/recommendations/generate?api-version=2026-05-05-preview" --body @/tmp/skuMixPlacement.json
 ```
 
 Sample response:

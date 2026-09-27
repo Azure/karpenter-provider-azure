@@ -236,6 +236,13 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 		{"different node image", func(p *armcontainerservice.MachineProperties) {
 			p.NodeImageVersion = lo.ToPtr("AKSUbuntu-2404gen2containerd-2025.03.01")
 		}},
+		{"different capacity reservation group", func(p *armcontainerservice.MachineProperties) {
+			p.CapacityReservation = &armcontainerservice.CapacityReservation{
+				CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+					ID: lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"),
+				},
+			}
+		}},
 	}
 
 	for _, tt := range tests {

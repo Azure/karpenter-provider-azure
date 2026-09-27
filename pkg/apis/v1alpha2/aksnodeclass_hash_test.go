@@ -70,6 +70,7 @@ var _ = Describe("Hash", func() {
 
 		// Static fields, expect changed hash from base
 		Entry("VNETSubnetID", "13971920214979852468", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("OSDiskType", "10944184826674581697", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskType: lo.ToPtr(v1alpha2.OSDiskTypeManaged)}}),
 		Entry("OSDiskSizeGB", "7816855636861645563", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", "15616969746300892810", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", "33638514539106194", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
@@ -92,6 +93,7 @@ var _ = Describe("Hash", func() {
 		Expect(hash).ToNot(Equal(updatedHash))
 	},
 		Entry("VNETSubnetID", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("OSDiskType", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskType: lo.ToPtr(v1alpha2.OSDiskTypeManaged)}}),
 		Entry("OSDiskSizeGB", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
@@ -114,6 +116,21 @@ var _ = Describe("Hash", func() {
 			Spec: nodeClass.Spec,
 		}
 		Expect(nodeClass.Hash()).To(Equal(otherNodeClass.Hash()))
+	})
+	// See the v1beta1 equivalent: the OCIContainer default must be hash-neutral so the field can
+	// carry a server-side default without bumping AKSNodeClassHashVersion.
+	It("should not change hash when workloadRuntime is explicitly set to the OCIContainer default", func() {
+		Expect(nodeClass.Spec.WorkloadRuntime).To(BeNil())
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1alpha2.WorkloadRuntimeOCIContainer)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+	})
+	It("should change hash when workloadRuntime is KataVmIsolation", func() {
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1alpha2.WorkloadRuntimeKataVMIsolation)
+		Expect(nodeClass.Hash()).ToNot(Equal(hash))
 	})
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.

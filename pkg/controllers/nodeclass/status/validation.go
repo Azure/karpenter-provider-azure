@@ -24,13 +24,17 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
 	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	FIPSRequired                 = "FIPSRequired"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -42,6 +46,12 @@ const (
 	ValidationFailureRequeueInterval = 1 * time.Minute
 	// DiskEncryptionSetRBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
 	DiskEncryptionSetRBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
+	// KataPodSandboxingUnsupportedProvisionMode is the condition reason set when a NodeClass requests a
+	// Kata workloadRuntime but the provision mode cannot provision the Kata host stack.
+	KataPodSandboxingUnsupportedProvisionMode = "KataPodSandboxingUnsupportedProvisionMode"
+	// KataRequiresAzureLinux3 is the condition reason set when the Kubernetes version resolves
+	// imageFamily AzureLinux to Azure Linux 2, which does not publish a Kata image.
+	KataRequiresAzureLinux3 = "KataRequiresAzureLinux3"
 )
 
 type ValidationReconciler struct {
@@ -61,6 +71,37 @@ func NewValidationReconciler(
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
+	if !validateFIPS(ctx, nodeClass) {
+		return reconcile.Result{}, nil
+	}
+
+	// A NodeClass requesting a Kata (Pod Sandboxing) workloadRuntime can only provision on a provision
+	// mode that can express the workload runtime. Surface the gap as a validation failure so the user
+	// gets fast feedback on the NodeClass (and Karpenter core won't create doomed NodeClaims) instead of
+	// silently-pending pods and churning launch failures. The provisioning paths keep their own guards
+	// as defense-in-depth.
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			KataPodSandboxingUnsupportedProvisionMode,
+			fmt.Sprintf("workloadRuntime %q is not supported with provision-mode %q", nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode),
+		)
+		return reconcile.Result{}, nil
+	}
+	if nodeClass.IsKataEnabled() && lo.FromPtr(nodeClass.Spec.ImageFamily) == v1beta1.AzureLinuxImageFamily {
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
+		}
+		if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				KataRequiresAzureLinux3,
+				fmt.Sprintf("workloadRuntime KataVmIsolation requires Azure Linux 3 and Kubernetes 1.32 or newer; Kubernetes version %s resolves imageFamily AzureLinux to Azure Linux 2", kubernetesVersion),
+			)
+			return reconcile.Result{}, nil
+		}
+	}
 
 	// Check BYOK RBAC if DES ID is configured
 	if r.parsedDiskEncryptionSetID != nil {
@@ -86,6 +127,18 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+	if options.FromContext(ctx).EnableFIPS && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			FIPSRequired,
+			"AKSNodeClass spec.fipsMode must be set to FIPS because FIPS is enabled at the cluster level",
+		)
+		return false
+	}
+	return true
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
