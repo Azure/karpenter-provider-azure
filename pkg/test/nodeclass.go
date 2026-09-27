@@ -21,14 +21,12 @@ import (
 	"fmt"
 	"sort"
 
-	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/version"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -50,81 +48,6 @@ func AKSNodeClass(options ...AKSNodeClassOption) *v1beta1.AKSNodeClass {
 		ObjectMeta: coretest.ObjectMeta(result.ObjectMeta),
 		Spec:       result.Spec,
 		Status:     result.Status,
-	}
-}
-
-// AKSNodeClassOption is a function that applies modifications to an AKSNodeClass,
-// allowing easy configuration of new instances in tests.
-type AKSNodeClassOption func(*v1beta1.AKSNodeClass)
-
-// WithName sets the Name field of the AKSNodeClass.
-func WithName(name string) AKSNodeClassOption {
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		nodeClass.Name = name
-	}
-}
-
-// WithOSDiskSizeGB sets the OSDiskSizeGB field of the AKSNodeClass.
-func WithOSDiskSizeGB(size int32) AKSNodeClassOption {
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr(size)
-	}
-}
-
-// WithImageFamily sets the ImageFamily field of the AKSNodeClass.
-func WithImageFamily(imageFamily string) AKSNodeClassOption {
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-	}
-}
-
-// WithTags sets the Tags field of the AKSNodeClass.
-// tags is a sequence of key-value pairs representing the tags to be applied to the AKSNodeClass.
-func WithTags(pairs ...string) AKSNodeClassOption {
-	if len(pairs)%2 != 0 {
-		panic("WithTags requires an even number of arguments representing key-value pairs")
-	}
-
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		tags := map[string]string{}
-		for i := 0; i < len(pairs); i += 2 {
-			tags[pairs[i]] = pairs[i+1]
-		}
-
-		nodeClass.Spec.Tags = tags
-	}
-}
-
-// WithMergedSpec merges the provided spec into the AKSNodeClass, overriding existing fields.
-// Non-zero fields in the provided spec will overwrite the corresponding fields in the AKSNodeClass.
-func WithMergedSpec(spec v1beta1.AKSNodeClassSpec) AKSNodeClassOption {
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		if err := mergo.Merge(&nodeClass.Spec, spec, mergo.WithOverride); err != nil {
-			panic(fmt.Sprintf("Failed to merge spec: %s", err))
-		}
-	}
-}
-
-// WithVersionBasedDefaults applies default values to the AKSNodeClass based on the provided Kubernetes version.
-// For now, the version is ignored, but we can use it in the future.
-func WithVersionBasedDefaults(kubernetesVersion *version.Version) AKSNodeClassOption {
-	imageFamily := v1beta1.Ubuntu2204ImageFamily
-
-	if kubernetesVersion != nil && kubernetesVersion.AtLeast(version.MustParse("1.34.0")) {
-		imageFamily = v1beta1.Ubuntu2404ImageFamily
-	}
-
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-	}
-}
-
-// WithAll is a wrapper used internally to combine multiple AKSNodeClassOption functions into a single option.
-func WithAll(options ...AKSNodeClassOption) AKSNodeClassOption {
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		for _, option := range options {
-			option(nodeClass)
-		}
 	}
 }
 
