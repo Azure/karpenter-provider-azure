@@ -180,7 +180,7 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 	// provide the last verified pair.
 	if newSuffix != oldSuffix || newK8sVer != oldK8sVer {
 		if newNodeClass.Status.ObservedVersions == nil {
-			newNodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{}
+			newNodeClass.Status.ObservedVersions = &v1beta1.ObservedVersions{}
 		}
 
 		now := metav1.Now()

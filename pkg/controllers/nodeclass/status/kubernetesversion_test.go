@@ -132,7 +132,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 			It("should allow rollback to a recently used Kubernetes version and current image pair", func() {
 				nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
 				nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{
+				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersions{
 					RecentlyUsedVersions: []v1beta1.RecentlyUsedVersion{
 						{
 							KubernetesVersion: lo.ToPtr(oldK8sVersion),

@@ -135,7 +135,7 @@ The `versions` wrapper keeps the v1 surface narrow and leaves a natural home for
 +    KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 +}
 +
-+type ObservedVersionsStatus struct {
++type ObservedVersions struct {
 +    // currentControlPlaneKubernetesVersion is the current Kubernetes version of the control plane.
 +    // +optional
 +    CurrentControlPlaneKubernetesVersion *string `json:"currentControlPlaneKubernetesVersion,omitempty"`
@@ -157,7 +157,7 @@ type AKSNodeClassStatus struct {
 +    // observedVersions contains observed version metadata and previously effective
 +    // Kubernetes and node image version pairs.
 +    // +optional
-+    ObservedVersions *ObservedVersionsStatus `json:"observedVersions,omitempty"`
++    ObservedVersions *ObservedVersions `json:"observedVersions,omitempty"`
 }
 ```
 

@@ -227,7 +227,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
 				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
 
-				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{
+				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersions{
 					CurrentControlPlaneKubernetesVersion: lo.ToPtr(testK8sVersion),
 					LatestImageVersion:                   lo.ToPtr(newCIGImageVersion),
 				}
