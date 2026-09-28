@@ -123,8 +123,8 @@ func TestSnapshotRecentlyUsed(t *testing.T) {
 			snapshot := newNodeClass.Status.ObservedVersions.RecentlyUsedVersions[0]
 			g.Expect(snapshot.KubernetesVersion).ToNot(BeNil())
 			g.Expect(*snapshot.KubernetesVersion).To(Equal(test.oldKubernetesVersion))
-			g.Expect(snapshot.NodeImageIDSuffix).ToNot(BeNil())
-			g.Expect(*snapshot.NodeImageIDSuffix).To(Equal(test.oldImageVersion))
+			g.Expect(snapshot.NodeImageVersion).ToNot(BeNil())
+			g.Expect(*snapshot.NodeImageVersion).To(Equal(test.oldImageVersion))
 		})
 	}
 }

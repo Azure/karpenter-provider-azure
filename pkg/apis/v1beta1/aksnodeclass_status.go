@@ -110,9 +110,9 @@ type RecentlyUsedVersion struct {
 	// timeUsed is when this image version was last effective.
 	// +optional
 	TimeUsed *metav1.Time `json:"timeUsed,omitempty"`
-	// nodeImageIDSuffix is the version suffix from the node image ID.
+	// nodeImageVersion is the version suffix from the node image ID.
 	// +required
-	NodeImageIDSuffix *string `json:"nodeImageIDSuffix,omitempty"`
+	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
 	// kubernetesVersion is the Kubernetes version paired with the image version.
 	// +required
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`

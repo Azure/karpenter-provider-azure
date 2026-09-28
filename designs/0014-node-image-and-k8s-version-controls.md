@@ -127,9 +127,9 @@ The `versions` wrapper keeps the v1 surface narrow and leaves a natural home for
 +    // timeUsed is when this image version was last effective.
 +    // +optional
 +    TimeUsed *metav1.Time `json:"timeUsed,omitempty"`
-+    // nodeImageIDSuffix is the version suffix from the node image ID.
++    // nodeImageVersion is the version suffix from the node image ID.
 +    // +required
-+    NodeImageIDSuffix *string `json:"nodeImageIDSuffix,omitempty"`
++    NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
 +    // kubernetesVersion is the Kubernetes version paired with the image version.
 +    // +required
 +    KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
@@ -214,7 +214,7 @@ Valid values are only:
 
 1. the current effective image version from `status.images[]`
 2. the latest resolved image version from `status.observedVersions.latestImageVersion`
-3. a previously effective version from `status.observedVersions.recentlyUsedVersions[*].nodeImageIDSuffix`
+3. a previously effective version from `status.observedVersions.recentlyUsedVersions[*].nodeImageVersion`
 
 `nodeImageVersion` is only valid when `spec.versions.kubernetesVersion` is also set. Anything else is invalid.
 
@@ -239,7 +239,7 @@ In both cases, automatic image roll-forward pauses until the customer changes or
 
 ### Rollback behavior
 
-If `spec.versions.nodeImageVersion` matches an entry in `status.observedVersions.recentlyUsedVersions[*].nodeImageIDSuffix`, the request is a rollback request.
+If `spec.versions.nodeImageVersion` matches an entry in `status.observedVersions.recentlyUsedVersions[*].nodeImageVersion`, the request is a rollback request.
 
 Rollback is allowed only when the selected historical entry is **rollback-compatible**.
 

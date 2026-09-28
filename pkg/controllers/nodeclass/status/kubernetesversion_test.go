@@ -136,7 +136,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 					RecentlyUsedVersions: []v1beta1.RecentlyUsedVersion{
 						{
 							KubernetesVersion: lo.ToPtr(oldK8sVersion),
-							NodeImageIDSuffix: lo.ToPtr(oldcigImageVersion),
+							NodeImageVersion:  lo.ToPtr(oldcigImageVersion),
 						},
 					},
 				}

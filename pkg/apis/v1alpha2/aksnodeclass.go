@@ -186,7 +186,7 @@ type Versions struct {
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 	// nodeImageVersion is the node image ID suffix to use for the NodeClass.
 	// It must match the suffix of a currently resolved image in status.images,
-	// status.observedVersions.latestImageVersion, or a nodeImageIDSuffix in status.observedVersions.recentlyUsedVersions.
+	// status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
 	// When set, kubernetesVersion must also be set. A recently used image version must be paired
 	// with its recorded Kubernetes version.
 	// If omitted, the latest compatible image is selected automatically, subject to maintenance windows.

@@ -411,7 +411,7 @@ func findRecentlyUsedPair(reqK8sVersion, reqImageVersion string, nodeClass *v1be
 	}
 
 	for _, used := range nodeClass.Status.ObservedVersions.RecentlyUsedVersions {
-		if lo.FromPtr(used.NodeImageIDSuffix) != reqImageVersion {
+		if lo.FromPtr(used.NodeImageVersion) != reqImageVersion {
 			continue
 		}
 

@@ -323,7 +323,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			It("should roll back to a recently used image version outside the maintenance window", func() {
 				nodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 					{
-						NodeImageIDSuffix: lo.ToPtr(rollbackImageVersion),
+						NodeImageVersion:  lo.ToPtr(rollbackImageVersion),
 						KubernetesVersion: lo.ToPtr(testK8sVersion),
 					},
 				}
@@ -341,7 +341,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			It("should reject a rollback image paired with a different Kubernetes version", func() {
 				nodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 					{
-						NodeImageIDSuffix: lo.ToPtr(rollbackImageVersion),
+						NodeImageVersion:  lo.ToPtr(rollbackImageVersion),
 						KubernetesVersion: lo.ToPtr(oldK8sVersion),
 					},
 				}
