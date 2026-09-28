@@ -128,6 +128,20 @@ var _ = Describe("CloudProvider", func() {
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
+			It("preserves standard provisioning when SecurityPatch has no compatible captured image", func() {
+				testOptions.NodeOSUpgradeChannel = consts.NodeOSUpgradeChannelSecurityPatch
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+				claims := &karpv1.NodeClaimList{}
+				Expect(env.Client.List(ctx, claims)).To(Succeed())
+				Expect(claims.Items).ToNot(BeEmpty())
+				for _, claim := range claims.Items {
+					Expect(claim.Annotations["karpenter.azure.com/image-selection"]).To(Equal("StandardImageFallback"))
+					Expect(imagefamily.IsSecurityPatchVersion(claim.Status.ImageID)).To(BeFalse())
+				}
+			})
 
 			// Ported from VM test: "should use shared image gallery images when options are set to UseSIG"
 			It("should use shared image gallery images", func() {
