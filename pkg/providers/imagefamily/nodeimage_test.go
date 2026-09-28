@@ -574,7 +574,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 	})
 
 	Context("Caching tests", func() {
-		It("should refresh cached SIG images when the image catalog changes", func() {
+		It("should isolate standard and SecurityPatch discovery caches", func() {
 			standardCtx := test.Options(test.OptionsFields{
 				UseSIG:               lo.ToPtr(true),
 				ProvisionMode:        lo.ToPtr("aksmachineapi"),
@@ -586,7 +586,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(standardImages).ToNot(BeEmpty())
 
-			nodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+			nodeImageVersionsAPI.SecurityPatchImages = []*armcontainerservice.NodeImageVersion{
 				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
 				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
 				{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2arm64containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
@@ -597,9 +597,12 @@ var _ = Describe("NodeImageProvider tests", func() {
 				NodeOSUpgradeChannel: lo.ToPtr("SecurityPatch"),
 			}).ToContext(ctx)
 
-			securityPatchImages, err := nodeImageProvider.List(securityPatchCtx, nodeClass)
+			securityPatchImages, err := nodeImageProvider.List(imagefamily.WithSecurityPatchCatalog(securityPatchCtx), nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(securityPatchImages).ToNot(Equal(standardImages))
+			baseline, err := nodeImageProvider.List(securityPatchCtx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(baseline).To(Equal(standardImages))
 			for _, image := range securityPatchImages {
 				Expect(image.ID).To(ContainSubstring("202606.08.1-2026.06.13"))
 			}

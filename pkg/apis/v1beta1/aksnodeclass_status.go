@@ -30,6 +30,8 @@ const (
 	ConditionTypeSubnetsReady           = "SubnetsReady"
 	ConditionTypeValidationSucceeded    = "ValidationSucceeded"
 	ConditionTypeLocalDNSReady          = "LocalDNSReady"
+	// Informational only; fallback must not make the NodeClass unready.
+	ConditionTypeSecurityPatchCoverage = "SecurityPatchCoverage"
 	// ConditionTypeCapacityReservationGroupReady is only a dependent of the Ready
 	// condition when spec.capacityReservation.groupID is set.
 	ConditionTypeCapacityReservationGroupReady = "CapacityReservationGroupReady"
@@ -145,6 +147,11 @@ type AKSNodeClassStatus struct {
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	Images []NodeImage `json:"images,omitempty"`
+	// securityPatchImages are preferred captured images for new nodes only.
+	// images remains the standard-image baseline for fallback and image maintenance.
+	// +optional
+	// +listType=atomic
+	SecurityPatchImages []NodeImage `json:"securityPatchImages,omitempty"`
 	// kubernetesVersion contains the current kubernetes version which should be
 	// used for nodes provisioned for the NodeClass
 	// +optional

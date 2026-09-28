@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -148,6 +150,12 @@ func (c *CloudProvider) isImageVersionDrifted(
 	nodeClaim *karpv1.NodeClaim,
 	nodeClass *v1beta1.AKSNodeClass,
 ) (cloudprovider.DriftReason, error) {
+	// SecurityPatch is a new-node provisioning preference, not an instruction to
+	// replace existing patched nodes when coverage changes or fallback activates.
+	// Other drift reasons (spec, Kubernetes version, etc.) are still evaluated.
+	if imagefamily.IsSecurityPatchVersion(nodeClaim.Status.ImageID) {
+		return "", nil
+	}
 	logger := log.FromContext(ctx)
 	nodeImages, err := nodeClass.GetImages()
 	// Note: this differs from AWS, as they don't check for status readiness during Drift.

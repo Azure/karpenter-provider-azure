@@ -26,6 +26,8 @@ import (
 )
 
 type NodeImageVersionsAPI struct {
+	SecurityPatchImages []*armcontainerservice.NodeImageVersion
+	SecurityPatchError  error
 	// OverrideNodeImageVersions allows tests to override the default static data
 	// When nil, the default NodeImageVersions slice is used
 	OverrideNodeImageVersions []*armcontainerservice.NodeImageVersion
@@ -440,11 +442,16 @@ var (
 )
 
 func (n *NodeImageVersionsAPI) Reset() {
+	n.SecurityPatchImages = nil
+	n.SecurityPatchError = nil
 	n.OverrideNodeImageVersions = nil
 	n.Error = nil
 }
 
-func (n *NodeImageVersionsAPI) List(_ context.Context, _ string) ([]*armcontainerservice.NodeImageVersion, error) {
+func (n *NodeImageVersionsAPI) List(ctx context.Context, _ string) ([]*armcontainerservice.NodeImageVersion, error) {
+	if imagefamily.IsSecurityPatchCatalog(ctx) {
+		return imagefamily.FilteredNodeImages(n.SecurityPatchImages), n.SecurityPatchError
+	}
 	// Error takes precedence over other fake data
 	if n.Error != nil {
 		return nil, n.Error

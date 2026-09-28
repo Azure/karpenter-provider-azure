@@ -192,6 +192,13 @@ func (in *AKSNodeClassStatus) DeepCopyInto(out *AKSNodeClassStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.SecurityPatchImages != nil {
+		in, out := &in.SecurityPatchImages, &out.SecurityPatchImages
+		*out = make([]NodeImage, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.KubernetesVersion != nil {
 		in, out := &in.KubernetesVersion, &out.KubernetesVersion
 		*out = new(string)

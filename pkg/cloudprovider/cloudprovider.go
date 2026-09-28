@@ -51,6 +51,7 @@ import (
 	cloudproviderevents "github.com/Azure/karpenter-provider-azure/pkg/cloudprovider/events"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -158,11 +159,20 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err = c.validateNodeClass(ctx, nodeClass); err != nil {
 		return nil, err
 	}
+	// Persist the rejected-captured-image decision on the claim so retries and
+	// controller restarts do not repeatedly submit the same unusable selection.
+	if nodeClaim.Annotations["karpenter.azure.com/securitypatch-fallback"] == "ImageUnavailable" {
+		nodeClass = nodeClass.DeepCopy()
+		nodeClass.Status.SecurityPatchImages = nil
+	}
 
 	// Note: This filters out any instance types which we're out of capacity for
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
+	}
+	if options.FromContext(ctx).IsSecurityPatchChannel() {
+		instanceTypes = compatibleImageInstanceTypes(nodeClass, instanceTypes)
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
@@ -170,7 +180,12 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	// Choose provider based on provision mode
 	if options.FromContext(ctx).IsAKSMachineAPIMode() {
-		return c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+		created, err := c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+		if err == nil && created.Annotations["karpenter.azure.com/image-selection"] == "StandardImageFallback" {
+			securityPatchFallbacks.Inc()
+			c.recorder.Publish(cloudproviderevents.SecurityPatchFallback(nodeClaim))
+		}
+		return created, err
 	}
 
 	return c.createVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
@@ -213,6 +228,15 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	// Begin the creation of the instance
 	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
+		var imageError *offerings.HandlableError
+		if options.FromContext(ctx).IsSecurityPatchChannel() && stderrors.As(err, &imageError) && imageError.Code == "SecurityVHDNotFound" && len(nodeClass.Status.SecurityPatchImages) > 0 {
+			stored := nodeClaim.DeepCopy()
+			nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{"karpenter.azure.com/securitypatch-fallback": "ImageUnavailable"})
+			if patchErr := c.kubeClient.Patch(ctx, nodeClaim, client.MergeFrom(stored)); patchErr != nil {
+				return nil, fmt.Errorf("recording explicit standard-image retry: %w", patchErr)
+			}
+			log.FromContext(ctx).Error(err, "captured image rejected; next attempt will explicitly select a compatible standard image")
+		}
 		return nil, toCreateError(err, "creating AKS machine failed")
 	}
 
@@ -486,7 +510,17 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 	if err != nil {
 		return nil, err
 	}
+	if options.FromContext(ctx).IsSecurityPatchChannel() {
+		instanceTypes = compatibleImageInstanceTypes(nodeClass, instanceTypes)
+	}
 	return instanceTypes, nil
+}
+
+func compatibleImageInstanceTypes(nodeClass *v1beta1.AKSNodeClass, instanceTypes []*cloudprovider.InstanceType) []*cloudprovider.InstanceType {
+	return lo.Filter(instanceTypes, func(instanceType *cloudprovider.InstanceType, _ int) bool {
+		_, err := imagefamily.ResolveImageForInstanceType(nodeClass, instanceType)
+		return err == nil
+	})
 }
 
 // Delete deletes the underlying node
@@ -756,6 +790,14 @@ func toCreateError(err error, wrapMsg string) error {
 }
 
 func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) error {
+	if options.FromContext(ctx).IsSecurityPatchChannel() {
+		selection := "SecurityPatch"
+		if !imagefamily.IsSecurityPatchVersion(nodeClaim.Status.ImageID) {
+			selection = "StandardImageFallback"
+		}
+		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{"karpenter.azure.com/image-selection": selection})
+		log.FromContext(ctx).Info("selected image for new node", "imageSelection", selection, "imageID", nodeClaim.Status.ImageID, "nodeClass", nodeClass.Name)
+	}
 	// Additional annotations
 	// ASSUMPTION: this is not needed in other places that the core also wants NodeClaim (e.g., Get, List).
 	// As of the time of writing, AWS is doing something similar.

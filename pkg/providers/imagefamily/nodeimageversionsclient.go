@@ -31,6 +31,43 @@ type NodeImageVersionsClient struct {
 	client *armcontainerservice.Client
 }
 
+type securityPatchCatalogKey struct{}
+
+// WithSecurityPatchCatalog selects captured SecurityPatch images for this request only.
+func WithSecurityPatchCatalog(ctx context.Context) context.Context {
+	return context.WithValue(ctx, securityPatchCatalogKey{}, true)
+}
+
+func IsSecurityPatchCatalog(ctx context.Context) bool {
+	value, _ := ctx.Value(securityPatchCatalogKey{}).(bool)
+	return value
+}
+
+// IsSecurityPatchVersion recognizes the composite version on logical NIVs and image IDs.
+func IsSecurityPatchVersion(image string) bool {
+	parts := strings.Split(image[strings.LastIndex(image, "/")+1:], "-")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, version := range parts[len(parts)-2:] {
+		segments := strings.Split(version, ".")
+		if len(segments) != 3 {
+			return false
+		}
+		for _, segment := range segments {
+			if segment == "" {
+				return false
+			}
+			for _, digit := range segment {
+				if digit < '0' || digit > '9' {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 func NewNodeImageVersionsClient(subscriptionID string, cred azcore.TokenCredential, opts *arm.ClientOptions) (*NodeImageVersionsClient, error) {
 	client, err := armcontainerservice.NewClient(subscriptionID, cred, opts)
 	if err != nil {

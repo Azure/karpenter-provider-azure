@@ -19,6 +19,8 @@ package azclient
 import (
 	"net/http"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
@@ -33,7 +35,9 @@ var _ policy.Policy = &securityPatchOnlyPolicy{}
 type securityPatchOnlyPolicy struct{}
 
 func (p *securityPatchOnlyPolicy) Do(req *policy.Request) (*http.Response, error) {
-	req.Raw().Header.Set(securityPatchOnlyHeader, "true")
-	req.Raw().Header.Set(capturedImagesOnlyHeader, "true")
+	if imagefamily.IsSecurityPatchCatalog(req.Raw().Context()) {
+		req.Raw().Header.Set(securityPatchOnlyHeader, "true")
+		req.Raw().Header.Set(capturedImagesOnlyHeader, "true")
+	}
 	return req.Next()
 }

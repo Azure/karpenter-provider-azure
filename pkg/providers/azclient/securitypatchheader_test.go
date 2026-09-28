@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	. "github.com/onsi/gomega"
@@ -39,7 +41,7 @@ func (c *captureHeaderPolicy) Do(req *policy.Request) (*http.Response, error) {
 
 func TestSecurityPatchOnlyPolicy_SetsHeader(t *testing.T) {
 	g := NewWithT(t)
-	req, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://management.azure.com/nodeImageVersions")
+	req, err := runtime.NewRequest(imagefamily.WithSecurityPatchCatalog(t.Context()), http.MethodGet, "https://management.azure.com/nodeImageVersions")
 	g.Expect(err).ToNot(HaveOccurred())
 
 	var seen string
@@ -66,6 +68,7 @@ func TestNoSecurityPatchOnlyPolicy_HeaderAbsent(t *testing.T) {
 	var seen string
 	pipeline := runtime.NewPipeline("test", "v1.0.0", runtime.PipelineOptions{
 		PerCall: []policy.Policy{
+			&securityPatchOnlyPolicy{},
 			&captureHeaderPolicy{header: securityPatchOnlyHeader, out: &seen},
 		},
 	}, nil)

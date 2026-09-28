@@ -94,7 +94,7 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	key, err := p.cacheKey(
 		supportedImages,
 		kubernetesVersion,
-		options.FromContext(ctx).IsSecurityPatchChannel(),
+		IsSecurityPatchCatalog(ctx),
 	)
 	if err != nil {
 		return []NodeImage{}, err
@@ -117,9 +117,19 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 			return []NodeImage{}, err
 		}
 	}
-	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
+	expiration := cache.DefaultExpiration
+	if IsSecurityPatchCatalog(ctx) {
+		expiration = 5 * time.Minute
+	}
+	p.nodeImagesCache.Set(key, nodeImages, expiration)
 
 	return nodeImages, nil
+}
+
+// ListSecurityPatch is separate from standard discovery so its availability never
+// removes the standard candidates used for fallback and existing-node maintenance.
+func (p *provider) ListSecurityPatch(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	return p.List(WithSecurityPatchCatalog(ctx), nodeClass)
 }
 
 func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
@@ -132,7 +142,7 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 	for _, supportedImage := range supportedImages {
 		var nextImage *armcontainerservice.NodeImageVersion
 		for _, retrievedLatestImage := range retrievedLatestImages {
-			if supportedImage.ImageDefinition == lo.FromPtr(retrievedLatestImage.SKU) {
+			if supportedImage.GalleryName == lo.FromPtr(retrievedLatestImage.OS) && supportedImage.ImageDefinition == lo.FromPtr(retrievedLatestImage.SKU) {
 				nextImage = retrievedLatestImage
 				break
 			}

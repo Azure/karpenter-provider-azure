@@ -348,12 +348,17 @@ func defaultUbuntu(fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVer
 
 // ResolveNodeImageFromNodeClass resolves Distro and image ID for the given node class and instance type. Images may vary due to architecture, accelerator, etc
 func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error) {
+	return ResolveImageForInstanceType(nodeClass, instanceType)
+}
+
+// ResolveImageForInstanceType uses the same preference order in scheduling and launch.
+func ResolveImageForInstanceType(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error) {
 	// ASSUMPTION: nodeImages in a NodeClass are always sorted by priority order.
 	nodeImages, err := nodeClass.GetImages()
 	if err != nil {
 		return "", err
 	}
-	for _, availableImage := range nodeImages {
+	for _, availableImage := range append(append([]v1beta1.NodeImage{}, nodeClass.Status.SecurityPatchImages...), nodeImages...) {
 		if err := instanceType.Requirements.Compatible(
 			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
 			v1beta1.AllowUndefinedWellKnownAndRestrictedLabels,

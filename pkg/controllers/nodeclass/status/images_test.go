@@ -220,6 +220,29 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		})
 
 		Context("image catalog transitions", func() {
+			It("keeps standard images ready when captured discovery fails", func() {
+				testCtx := test.Options(test.OptionsFields{ProvisionMode: lo.ToPtr("aksmachineapi"), UseSIG: lo.ToPtr(true), NodeOSUpgradeChannel: lo.ToPtr("SecurityPatch")}).ToContext(ctx)
+				azureEnv.NodeImageVersionsAPI.SecurityPatchError = fmt.Errorf("catalog unavailable")
+				_, err := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface).Reconcile(testCtx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.Status.Images).ToNot(BeEmpty())
+				Expect(nodeClass.Status.SecurityPatchImages).To(BeEmpty())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()).To(BeTrue())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSecurityPatchCoverage).Reason).To(Equal("CatalogUnavailable"))
+			})
+
+			It("reports partial captured coverage without dropping standard capacity", func() {
+				testCtx := test.Options(test.OptionsFields{ProvisionMode: lo.ToPtr("aksmachineapi"), UseSIG: lo.ToPtr(true), NodeOSUpgradeChannel: lo.ToPtr("SecurityPatch")}).ToContext(ctx)
+				azureEnv.NodeImageVersionsAPI.SecurityPatchImages = []*armcontainerservice.NodeImageVersion{
+					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
+				}
+				_, err := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface).Reconcile(testCtx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.Status.Images).To(HaveLen(3))
+				Expect(nodeClass.Status.SecurityPatchImages).To(HaveLen(1))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()).To(BeTrue())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSecurityPatchCoverage).Reason).To(Equal("StandardImageFallback"))
+			})
 			It("refreshes persisted SecurityPatch images when switching to NodeImage", func() {
 				testCtx := test.Options(test.OptionsFields{
 					ProvisionMode:        lo.ToPtr("aksmachineapi"),
@@ -238,24 +261,25 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				}
 			})
 
-			It("refreshes persisted NodeImage images when switching to SecurityPatch", func() {
+			It("retains standard baseline and separately discovers SecurityPatch for new nodes", func() {
 				testCtx := test.Options(test.OptionsFields{
 					ProvisionMode:        lo.ToPtr("aksmachineapi"),
 					UseSIG:               lo.ToPtr(true),
 					NodeOSUpgradeChannel: lo.ToPtr("SecurityPatch"),
 				}).ToContext(ctx)
 				imageReconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
-				azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = []*armcontainerservice.NodeImageVersion{
+				azureEnv.NodeImageVersionsAPI.SecurityPatchImages = []*armcontainerservice.NodeImageVersion{
 					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
 					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
 					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2204gen2arm64containerd"), Version: lo.ToPtr("202606.08.1-2026.06.13")},
 				}
-				before := append([]v1beta1.NodeImage(nil), nodeClass.Status.Images...)
-
 				_, err := imageReconciler.Reconcile(testCtx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(nodeClass.Status.Images).ToNot(Equal(before))
 				for _, image := range nodeClass.Status.Images {
+					Expect(image.ID).ToNot(ContainSubstring("202606.08.1-2026.06.13"))
+				}
+				Expect(nodeClass.Status.SecurityPatchImages).To(HaveLen(3))
+				for _, image := range nodeClass.Status.SecurityPatchImages {
 					Expect(image.ID).To(ContainSubstring("202606.08.1-2026.06.13"))
 				}
 			})
