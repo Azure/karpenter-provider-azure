@@ -42,7 +42,6 @@ import (
 
 const (
 	bufferTemplateName = "capacity-buffer-template"
-	testInstanceType   = "Standard_D2s_v5"
 	isolationTaintKey  = "karpenter.azure.com/capacitybuffer-e2e"
 )
 
@@ -123,12 +122,12 @@ var _ = Describe("CapacityBuffer", func() {
 	})
 
 	// Upstream correspondence: consumer use of existing buffer capacity and refill after consumption.
-	// Azure adaptation: pin a known SKU and prove the consumer uses the original node before refill.
+	// Azure adaptation: constrain capacity to 2 vCPUs and prove the consumer uses the original node before refill.
 	It("should let a real consumer use buffered capacity and refill the buffer", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      corev1.LabelInstanceTypeStable,
+			Key:      v1beta1.LabelSKUCPU,
 			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{testInstanceType},
+			Values:   []string{"2"},
 		})
 		env.ExpectCreated(nodeClass, nodePool)
 
@@ -461,12 +460,12 @@ var _ = Describe("CapacityBuffer", func() {
 	})
 
 	// Upstream correspondence: "should scale buffer down when replicas are reduced".
-	// Azure adaptation: pin an instance type and use anti-affinity to make initial headroom deterministic.
+	// Azure adaptation: constrain capacity to 2 vCPUs and use anti-affinity to make initial headroom deterministic.
 	It("should reduce provisioned headroom when replicas decrease", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			Key:      corev1.LabelInstanceTypeStable,
+			Key:      v1beta1.LabelSKUCPU,
 			Operator: corev1.NodeSelectorOpIn,
-			Values:   []string{testInstanceType},
+			Values:   []string{"2"},
 		})
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 		env.ExpectCreated(nodeClass, nodePool)
