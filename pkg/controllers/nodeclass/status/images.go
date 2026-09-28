@@ -373,10 +373,10 @@ func validatePinning(reqImgVer, reqK8sVer string, nodeClass *v1beta1.AKSNodeClas
 		latestImgVer = lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)
 	}
 
-	// We already check that the Kubernetes version matches the current version before considering the pinning valid,
-	// so we only need to check if the requested image version matches the current or latest image version.
+	// We already check that the Kubernetes version matches the current version before considering the pinning to current or latest image version valid,
+	// so we just need to check the Kubernetes version ready state.
 	if reqImgVer == currentImgVer || reqImgVer == latestImgVer {
-		return true
+		return nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue()
 	}
 
 	return validateRollback(reqK8sVer, reqImgVer, nodeClass)
