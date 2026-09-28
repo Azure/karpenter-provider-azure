@@ -66,9 +66,10 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 		Complete(reconcile.AsReconciler(m.GetClient(), r))
 }
 
-// The kubernetes version reconciler will detect reasons to bump the kubernetes version:
-//  1. Newly created AKSNodeClass, will select the version discovered from the API server
-//  2. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
+// The kubernetes version reconciler will determine the kubernetes version:
+//  1. If a kubernetes version is requested, pin to that version
+//  2. Newly created AKSNodeClass, will select the version discovered from the API server
+//  3. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
 //     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the Images readiness.
 //
 //nolint:gocyclo // Keep pinned and automatic Kubernetes version status ownership in this reconciler.
@@ -88,7 +89,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 	goalK8sVersion := controlPlaneVersion
 	if reqImgVer, reqK8sVer := requestedVersions(nodeClass); reqK8sVer != "" {
-		// Handles case 0: requested Kubernetes version is pinned
+		// Handles case 1: requested Kubernetes version is pinned
 		valid, err := r.validatePinnedK8sVersion(ctx, nodeClass, reqK8sVer, reqImgVer, goalK8sVersion)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -98,7 +99,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		}
 		goalK8sVersion = reqK8sVer
 	} else if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == nil || *nodeClass.Status.KubernetesVersion == "" {
-		// Handles case 1: init, update kubernetes status to API server version found
+		// Handles case 2: init, update kubernetes status to API server version found
 		logger.V(1).Info("init kubernetes version", "goalKubernetesVersion", goalK8sVersion)
 	} else {
 		// Check if there is an upgrade
@@ -110,7 +111,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("parsing current kubernetes version, %w", err)
 		}
-		// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
+		// Handles case 3: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
 			logger.V(1).Info("kubernetes upgrade detected", "currentKubernetesVersion", currentK8sVersion.String(), "discoveredKubernetesVersion", newK8sVersion.String())
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
