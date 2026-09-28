@@ -391,17 +391,9 @@ func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.
 		return false
 	}
 
-	imageFound := false
-
-	for _, used := range nodeClass.Status.ObservedVersions.RecentlyUsedVersions {
-		if lo.FromPtr(used.NodeImageIDSuffix) != reqImageVersion {
-			continue
-		}
-
-		imageFound = true
-		if lo.FromPtr(used.KubernetesVersion) == reqK8sVersion {
-			return true
-		}
+	imageFound, pairFound := findRecentlyUsedPair(reqK8sVersion, reqImageVersion, nodeClass)
+	if pairFound {
+		return true
 	}
 
 	if imageFound {
@@ -412,6 +404,26 @@ func validateRollback(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.
 
 	return false
 }
+
+func findRecentlyUsedPair(reqK8sVersion, reqImageVersion string, nodeClass *v1beta1.AKSNodeClass) (imageFound, pairFound bool) {
+	if nodeClass.Status.ObservedVersions == nil {
+		return false, false
+	}
+
+	for _, used := range nodeClass.Status.ObservedVersions.RecentlyUsedVersions {
+		if lo.FromPtr(used.NodeImageIDSuffix) != reqImageVersion {
+			continue
+		}
+
+		imageFound = true
+		if lo.FromPtr(used.KubernetesVersion) == reqK8sVersion {
+			return true, true
+		}
+	}
+
+	return imageFound, false
+}
+
 func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.NodeImage, error) {
 	if newSuffix == "" || strings.Contains(newSuffix, "/") {
 		return nil, fmt.Errorf("invalid image version suffix %q", newSuffix)

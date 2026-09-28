@@ -129,6 +129,30 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
 			})
 
+			It("should allow rollback to a recently used Kubernetes version and current image pair", func() {
+				nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+				nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
+				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersionsStatus{
+					RecentlyUsedVersions: []v1beta1.RecentlyUsedVersion{
+						{
+							KubernetesVersion: lo.ToPtr(oldK8sVersion),
+							NodeImageIDSuffix: lo.ToPtr(oldcigImageVersion),
+						},
+					},
+				}
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(oldK8sVersion),
+					NodeImageVersion:  lo.ToPtr(oldcigImageVersion),
+				}
+
+				_, err := k8sReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nodeClass.Status.KubernetesVersion).To(Equal(lo.ToPtr(oldK8sVersion)))
+				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason).To(Equal("KubernetesPinning"))
+			})
+
 			It("should reject an invalid version format", func() {
 				nodeClass.Spec.Versions = &v1beta1.Versions{
 					KubernetesVersion: lo.ToPtr("invalid"),

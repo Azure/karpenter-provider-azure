@@ -169,10 +169,8 @@ func (r *KubernetesVersionReconciler) validatePinnedK8sVersion(ctx context.Conte
 	return true, nil
 }
 
-// We consider the pinning valid if the requested image version matches either the current or latest image version,
-// and the requested Kubernetes version matches the current Kubernetes version. For these two cases, the requested Kubernetes version
-// must match the current Kubernetes version or be a valid rollback, otherwise the pinning is considered invalid because we cannot
-// determine if the requested image and Kubernetes version combination is valid.
+// Validate the pin if it is equal to current or latest image version. Unless the requested Kubernetes version and image version pair has been recently used,
+// changing the Kubernetes version while pinning to the current or latest image version is considered invalid.
 func validateCurrentOrLatestImagePin(nodeClass *v1beta1.AKSNodeClass, currentK8sVersion, reqK8sVer, reqImgVer string) bool {
 	currentImageVersion := ""
 	if len(nodeClass.Status.Images) > 0 {
@@ -181,16 +179,20 @@ func validateCurrentOrLatestImagePin(nodeClass *v1beta1.AKSNodeClass, currentK8s
 	latestImageVersion := lo.FromPtr(nodeClass.Status.ObservedVersions.LatestImageVersion)
 
 	kubernetesVersionChanging := currentK8sVersion != "" && currentK8sVersion != reqK8sVer
-	pinningCurrentOrLatestImage := reqImgVer != "" &&
-		(reqImgVer == currentImageVersion || reqImgVer == latestImageVersion)
+	pinningCurrentOrLatestImage := reqImgVer != "" && (reqImgVer == currentImageVersion || reqImgVer == latestImageVersion)
 
 	if kubernetesVersionChanging && pinningCurrentOrLatestImage {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeKubernetesVersionReady,
-			"KubernetesVersionImagePinIncompatible",
-			"cannot change Kubernetes version while pinning to the current or latest node image version",
-		)
-		return false
+
+		// Check if the requested Kubernetes version and image version pair has been recently used
+		_, pairFound := findRecentlyUsedPair(reqK8sVer, reqImgVer, nodeClass)
+		if !pairFound {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeKubernetesVersionReady,
+				"KubernetesVersionImagePinIncompatible",
+				"cannot change Kubernetes version while pinning to the current or latest node image version",
+			)
+			return false
+		}
 	}
 
 	return true
