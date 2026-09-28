@@ -17,31 +17,95 @@ limitations under the License.
 package status
 
 import (
+	"testing"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
 
-	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Recently Used Versions", func() {
-	DescribeTable("snapshots the previous effective pair",
-		func(oldKubernetesVersion, newKubernetesVersion, oldImageVersion, newImageVersion string, oldImagesReady, newImagesReady, expectSnapshot bool) {
+func TestSnapshotRecentlyUsed(t *testing.T) {
+	tests := []struct {
+		name                 string
+		oldKubernetesVersion string
+		newKubernetesVersion string
+		oldImageVersion      string
+		newImageVersion      string
+		oldImagesReady       bool
+		newImagesReady       bool
+		expectSnapshot       bool
+	}{
+		{
+			name:                 "when the image changes",
+			oldKubernetesVersion: "1.31.0",
+			newKubernetesVersion: "1.31.0",
+			oldImageVersion:      "202601.01.0",
+			newImageVersion:      "202602.01.0",
+			oldImagesReady:       true,
+			newImagesReady:       true,
+			expectSnapshot:       true,
+		},
+		{
+			name:                 "when the Kubernetes version changes",
+			oldKubernetesVersion: "1.31.0",
+			newKubernetesVersion: "1.32.0",
+			oldImageVersion:      "202601.01.0",
+			newImageVersion:      "202601.01.0",
+			oldImagesReady:       true,
+			newImagesReady:       true,
+			expectSnapshot:       true,
+		},
+		{
+			name:                 "when the effective pair does not change",
+			oldKubernetesVersion: "1.31.0",
+			newKubernetesVersion: "1.31.0",
+			oldImageVersion:      "202601.01.0",
+			newImageVersion:      "202601.01.0",
+			oldImagesReady:       true,
+			newImagesReady:       true,
+			expectSnapshot:       false,
+		},
+		{
+			name:                 "when the previous images were not ready",
+			oldKubernetesVersion: "1.31.0",
+			newKubernetesVersion: "1.32.0",
+			oldImageVersion:      "202601.01.0",
+			newImageVersion:      "202601.01.0",
+			oldImagesReady:       false,
+			newImagesReady:       true,
+			expectSnapshot:       false,
+		},
+		{
+			name:                 "when the new images are not ready",
+			oldKubernetesVersion: "1.31.0",
+			newKubernetesVersion: "1.32.0",
+			oldImageVersion:      "202601.01.0",
+			newImageVersion:      "202601.01.0",
+			oldImagesReady:       true,
+			newImagesReady:       false,
+			expectSnapshot:       true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
 			oldNodeClass := &v1beta1.AKSNodeClass{
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: lo.ToPtr(oldKubernetesVersion),
-					Images:            []v1beta1.NodeImage{{ID: "/gallery/image/versions/" + oldImageVersion}},
+					KubernetesVersion: lo.ToPtr(test.oldKubernetesVersion),
+					Images:            []v1beta1.NodeImage{{ID: "/gallery/image/versions/" + test.oldImageVersion}},
 				},
 			}
 			oldNodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
-			if oldImagesReady {
+			if test.oldImagesReady {
 				oldNodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 			}
 
 			newNodeClass := oldNodeClass.DeepCopy()
-			newNodeClass.Status.KubernetesVersion = lo.ToPtr(newKubernetesVersion)
-			newNodeClass.Status.Images[0].ID = "/gallery/image/versions/" + newImageVersion
-			if newImagesReady {
+			newNodeClass.Status.KubernetesVersion = lo.ToPtr(test.newKubernetesVersion)
+			newNodeClass.Status.Images[0].ID = "/gallery/image/versions/" + test.newImageVersion
+			if test.newImagesReady {
 				newNodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 			} else {
 				newNodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotReady", "images are not ready")
@@ -49,18 +113,18 @@ var _ = Describe("Recently Used Versions", func() {
 
 			snapshotRecentlyUsed(oldNodeClass, newNodeClass)
 
-			if !expectSnapshot {
-				Expect(newNodeClass.Status.ObservedVersions).To(BeNil())
+			if !test.expectSnapshot {
+				g.Expect(newNodeClass.Status.ObservedVersions).To(BeNil())
 				return
 			}
-			Expect(newNodeClass.Status.ObservedVersions.RecentlyUsedVersions).To(HaveLen(1))
-			Expect(newNodeClass.Status.ObservedVersions.RecentlyUsedVersions[0].KubernetesVersion).To(Equal(lo.ToPtr(oldKubernetesVersion)))
-			Expect(newNodeClass.Status.ObservedVersions.RecentlyUsedVersions[0].NodeImageIDSuffix).To(Equal(lo.ToPtr(oldImageVersion)))
-		},
-		Entry("when the image changes", "1.31.0", "1.31.0", "202601.01.0", "202602.01.0", true, true, true),
-		Entry("when the Kubernetes version changes", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", true, true, true),
-		Entry("when the effective pair does not change", "1.31.0", "1.31.0", "202601.01.0", "202601.01.0", true, true, false),
-		Entry("when the previous images were not ready", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", false, true, false),
-		Entry("when the new images are not ready", "1.31.0", "1.32.0", "202601.01.0", "202601.01.0", true, false, true),
-	)
-})
+
+			g.Expect(newNodeClass.Status.ObservedVersions).ToNot(BeNil())
+			g.Expect(newNodeClass.Status.ObservedVersions.RecentlyUsedVersions).To(HaveLen(1))
+			snapshot := newNodeClass.Status.ObservedVersions.RecentlyUsedVersions[0]
+			g.Expect(snapshot.KubernetesVersion).ToNot(BeNil())
+			g.Expect(*snapshot.KubernetesVersion).To(Equal(test.oldKubernetesVersion))
+			g.Expect(snapshot.NodeImageIDSuffix).ToNot(BeNil())
+			g.Expect(*snapshot.NodeImageIDSuffix).To(Equal(test.oldImageVersion))
+		})
+	}
+}
