@@ -600,13 +600,17 @@ func (env *Environment) eventuallyExpectScaleDown() {
 
 func (env *Environment) EventuallyExpectNotFound(objects ...client.Object) {
 	GinkgoHelper()
+	env.EventuallyExpectNotFoundWithTimeout(-1, objects...)
+}
 
+func (env *Environment) EventuallyExpectNotFoundWithTimeout(timeout time.Duration, objects ...client.Object) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		for _, object := range objects {
 			err := env.Client.Get(env, client.ObjectKeyFromObject(object), object)
 			g.Expect(errors.IsNotFound(err)).To(BeTrue())
 		}
-	}).Should(Succeed())
+	}).WithTimeout(timeout).Should(Succeed())
 }
 
 func (env *Environment) ExpectCreatedNodeCount(comparator string, count int) []*corev1.Node {
