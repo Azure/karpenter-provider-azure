@@ -822,7 +822,7 @@ spec:
                     description: |-
                       nodeImageVersion is the node image ID suffix to use for the NodeClass.
                       It must match the suffix of a currently resolved image in status.images,
-                      status.observedVersions.latestImageVersion, or a nodeImageIDSuffix in status.observedVersions.recentlyUsedVersions.
+                      status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
                       When set, kubernetesVersion must also be set. A recently used image version must be paired
                       with its recorded Kubernetes version.
                       If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
@@ -1121,8 +1121,8 @@ spec:
                           description: kubernetesVersion is the Kubernetes version
                             paired with the image version.
                           type: string
-                        nodeImageIDSuffix:
-                          description: nodeImageIDSuffix is the version suffix from
+                        nodeImageVersion:
+                          description: nodeImageVersion is the version suffix from
                             the node image ID.
                           type: string
                         timeUsed:
@@ -1132,7 +1132,7 @@ spec:
                           type: string
                       required:
                       - kubernetesVersion
-                      - nodeImageIDSuffix
+                      - nodeImageVersion
                       type: object
                     type: array
                     x-kubernetes-list-type: atomic
@@ -1943,7 +1943,7 @@ spec:
                     description: |-
                       nodeImageVersion is the node image ID suffix to use for the NodeClass.
                       It must match the suffix of a currently resolved image in status.images,
-                      status.observedVersions.latestImageVersion, or a nodeImageIDSuffix in status.observedVersions.recentlyUsedVersions.
+                      status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
                       When set, kubernetesVersion must also be set. A recently used image version must be paired
                       with its recorded Kubernetes version.
                       If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
@@ -2242,8 +2242,8 @@ spec:
                           description: kubernetesVersion is the Kubernetes version
                             paired with the image version.
                           type: string
-                        nodeImageIDSuffix:
-                          description: nodeImageIDSuffix is the version suffix from
+                        nodeImageVersion:
+                          description: nodeImageVersion is the version suffix from
                             the node image ID.
                           type: string
                         timeUsed:
@@ -2253,7 +2253,7 @@ spec:
                           type: string
                       required:
                       - kubernetesVersion
-                      - nodeImageIDSuffix
+                      - nodeImageVersion
                       type: object
                     type: array
                     x-kubernetes-list-type: atomic

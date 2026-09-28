@@ -188,7 +188,7 @@ func snapshotRecentlyUsed(oldNodeClass, newNodeClass *v1beta1.AKSNodeClass) {
 		newNodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
 			{
 				NodeImageVersion:  &oldSuffix,
-				TimeUsed:         &now,
+				TimeUsed:          &now,
 				KubernetesVersion: oldNodeClass.Status.KubernetesVersion,
 			},
 		}
