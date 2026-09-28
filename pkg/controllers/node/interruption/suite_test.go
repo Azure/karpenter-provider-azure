@@ -29,7 +29,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/node/health"
@@ -353,6 +355,68 @@ var _ = Describe("Spot Interruption", func() {
 		ExpectFinalizersRemoved(ctx, env.Client, claim)
 		ExpectObjectReconciled(ctx, env.Client, controller, node)
 		Expect(tracked.deletes).To(Equal(1))
+	})
+
+	It("retries a missing claim through the registered NodeClaim watch when its provider ID appears", func() {
+		// Persist the notice before starting the manager so there is only one initial Node event.
+		ExpectApplied(ctx, env.Client, pool, node)
+		originalNode := ExpectExists(ctx, env.Client, node)
+		managerCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		mgr, err := controllerruntime.NewManager(env.Config, controllerruntime.Options{
+			Scheme: env.Scheme,
+			Metrics: server.Options{
+				BindAddress: "0",
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(coretest.NodeProviderIDFieldIndexer(managerCtx)(mgr.GetCache())).To(Succeed())
+		Expect(coretest.NodeClaimProviderIDFieldIndexer(managerCtx)(mgr.GetCache())).To(Succeed())
+		registeredController := interruption.NewController(mgr.GetClient(), provider, recorder, env.Clock)
+		Expect(registeredController.Register(managerCtx, mgr)).To(Succeed())
+		managerDone := make(chan error, 1)
+		go func() {
+			managerDone <- mgr.Start(managerCtx)
+		}()
+		defer func() {
+			cancel()
+			Eventually(managerDone, 10*time.Second).Should(Receive(Succeed()))
+		}()
+		syncCtx, cancelSync := context.WithTimeout(managerCtx, 10*time.Second)
+		defer cancelSync()
+		Expect(mgr.GetCache().WaitForCacheSync(syncCtx)).To(BeTrue())
+		Eventually(func() int {
+			return recorder.Calls("SpotInterruptionMissingNodeClaim")
+		}, 10*time.Second).Should(Equal(1))
+
+		// A newly created claim has no provider ID until its status is updated.
+		claim.Status.ProviderID = ""
+		ExpectApplied(ctx, env.Client, claim)
+		claim = ExpectExists(ctx, env.Client, claim)
+		Eventually(func(g Gomega) {
+			cached := &karpv1.NodeClaim{}
+			g.Expect(mgr.GetClient().Get(ctx, client.ObjectKeyFromObject(claim), cached)).To(Succeed())
+			g.Expect(cached.ResourceVersion).To(Equal(claim.ResourceVersion))
+		}, 10*time.Second).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(recorder.Calls("SpotInterruptionMissingNodeClaim")).To(Equal(1))
+			g.Expect(recorder.Calls("SpotInterrupted")).To(BeZero())
+			stored := &karpv1.NodeClaim{}
+			g.Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(claim), stored)).To(Succeed())
+			g.Expect(stored.Annotations).ToNot(HaveKey(karpv1.NodeClaimTerminationTimestampAnnotationKey))
+			g.Expect(stored.DeletionTimestamp.IsZero()).To(BeTrue())
+		}, time.Second).Should(Succeed())
+
+		claim.Status.ProviderID = node.Spec.ProviderID
+		Expect(env.Client.Status().Update(ctx, claim)).To(Succeed())
+		Eventually(func(g Gomega) {
+			stored := &karpv1.NodeClaim{}
+			g.Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(claim), stored)).To(Succeed())
+			g.Expect(stored.Annotations).To(HaveKeyWithValue(karpv1.NodeClaimTerminationTimestampAnnotationKey, deadline.Format(time.RFC3339)))
+			g.Expect(stored.DeletionTimestamp.IsZero()).To(BeFalse())
+			g.Expect(recorder.Calls("SpotInterrupted")).To(Equal(1))
+		}, 10*time.Second).Should(Succeed())
+		Expect(ExpectExists(ctx, env.Client, node)).To(Equal(originalNode))
 	})
 
 	It("refuses ambiguous claims", func() {
