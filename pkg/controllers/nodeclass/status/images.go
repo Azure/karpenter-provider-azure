@@ -166,10 +166,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	var pinningShouldUpdate bool
 	if reqImgVer != "" {
 		var valid bool
-		goalImages, pinningShouldUpdate, valid = applyImagePinning(nodeClass, goalImages, reqImgVer)
+		goalImages, valid = applyImagePinning(nodeClass, goalImages, reqImgVer)
 		if !valid {
 			return reconcile.Result{RequeueAfter: requeueTime}, nil
 		}
+
+		// Update if the current image is not pinned to the requested version.
+		pinningShouldUpdate = len(nodeClass.Status.Images) == 0 || parseVersion(nodeClass.Status.Images[0].ID) != reqImgVer
 	}
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
@@ -430,17 +433,16 @@ func replaceSuffixes(images []v1beta1.NodeImage, newSuffix string) ([]v1beta1.No
 	return updated, nil
 }
 
-func applyImagePinning(nodeClass *v1beta1.AKSNodeClass, defaultImages []v1beta1.NodeImage, reqImgVer string) ([]v1beta1.NodeImage, bool, bool) {
+func applyImagePinning(nodeClass *v1beta1.AKSNodeClass, defaultImages []v1beta1.NodeImage, reqImgVer string) ([]v1beta1.NodeImage, bool) {
 	if reqImgVer == "" {
-		return defaultImages, false, true
+		return defaultImages, true
 	}
 
 	pinnedImages, err := replaceSuffixes(defaultImages, reqImgVer)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "RequestedNodeImageVersionUnavailable", fmt.Sprintf("replacing image suffixes: %v", err))
-		return nil, false, false
+		return nil, false
 	}
 
-	alreadySet := len(nodeClass.Status.Images) > 0 && parseVersion(nodeClass.Status.Images[0].ID) == reqImgVer
-	return pinnedImages, !alreadySet, true
+	return pinnedImages, true
 }
