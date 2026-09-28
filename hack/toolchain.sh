@@ -70,7 +70,7 @@ tools() {
     go-install controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
     go-install cosign github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
-    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.8.0
     go-install ginkgo github.com/onsi/ginkgo/v2/ginkgo@latest
     go-install actionlint github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go-install goveralls github.com/mattn/goveralls@v0.0.12
