@@ -513,6 +513,9 @@ var _ = Describe("CapacityBuffer", func() {
 
 	// Azure-specific restart coverage for in-memory virtual-pod and empty-protection state.
 	It("should reconstruct virtual-pod and empty-node protection after a controller restart", func() {
+		if !env.InClusterController {
+			Skip("requires restarting the in-cluster Karpenter controller")
+		}
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 		env.ExpectCreated(nodeClass, nodePool)
 
