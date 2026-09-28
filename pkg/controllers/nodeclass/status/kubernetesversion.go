@@ -182,7 +182,6 @@ func validateCurrentOrLatestImagePin(nodeClass *v1beta1.AKSNodeClass, currentK8s
 	pinningCurrentOrLatestImage := reqImgVer != "" && (reqImgVer == currentImageVersion || reqImgVer == latestImageVersion)
 
 	if kubernetesVersionChanging && pinningCurrentOrLatestImage {
-
 		// Check if the requested Kubernetes version and image version pair has been recently used
 		_, pairFound := findRecentlyUsedPair(reqK8sVer, reqImgVer, nodeClass)
 		if !pairFound {
