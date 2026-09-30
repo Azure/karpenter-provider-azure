@@ -36,6 +36,15 @@ import (
 
 func TestSkipIfNotWindowsCapable(t *testing.T) {
 	RegisterFailHandler(Fail)
+	type observation struct {
+		name                   string
+		report                 SpecReport
+		managedClusterGets     int
+		wantSkipReason         string
+		wantManagedClusterGets int
+	}
+	var observations []observation
+	caseCount := 0
 	tests := []struct {
 		name                   string
 		networkDataplane       string
@@ -66,7 +75,9 @@ func TestSkipIfNotWindowsCapable(t *testing.T) {
 	for _, mode := range []string{consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch} {
 		for _, poolName := range []string{"mpool", "aksmanagedap"} {
 			for _, tt := range tests {
-				It(mode+"/"+poolName+"/"+tt.name, func() {
+				name := mode + "/" + poolName + "/" + tt.name
+				caseCount++
+				It(name, func() {
 					properties := &containerservice.ManagedClusterProperties{}
 					if tt.hasWindowsProfile {
 						properties.WindowsProfile = &containerservice.ManagedClusterWindowsProfile{}
@@ -98,17 +109,16 @@ func TestSkipIfNotWindowsCapable(t *testing.T) {
 						managedClusterClient: managedClusterClient,
 					}
 
-					// Cleanup runs even when the helper skips, so assert the actual spec state
-					// and reason rather than mistaking Ginkgo's shared Skip/Fail panic for a skip.
+					// Failed cleanup assertions do not fail an already-skipped Ginkgo spec.
+					// Collect results here and assert with testing.T after RunSpecs instead.
 					DeferCleanup(func() {
-						report := CurrentSpecReport()
-						if tt.wantSkipReason == "" {
-							Expect(report.State).To(Equal(types.SpecStatePassed))
-						} else {
-							Expect(report.State).To(Equal(types.SpecStateSkipped))
-							Expect(report.Failure.Message).To(Equal(tt.wantSkipReason))
-						}
-						Expect(managedClusterGets).To(Equal(tt.wantManagedClusterGets))
+						observations = append(observations, observation{
+							name:                   name,
+							report:                 CurrentSpecReport(),
+							managedClusterGets:     managedClusterGets,
+							wantSkipReason:         tt.wantSkipReason,
+							wantManagedClusterGets: tt.wantManagedClusterGets,
+						})
 					})
 					env.SkipIfNotWindowsCapable()
 				})
@@ -116,4 +126,17 @@ func TestSkipIfNotWindowsCapable(t *testing.T) {
 		}
 	}
 	RunSpecs(t, "Windows capability")
+	NewWithT(t).Expect(observations).To(HaveLen(caseCount))
+	for _, observed := range observations {
+		t.Run(observed.name, func(t *testing.T) {
+			g := NewWithT(t)
+			wantState := types.SpecStatePassed
+			if observed.wantSkipReason != "" {
+				wantState = types.SpecStateSkipped
+			}
+			g.Expect(observed.report.State).To(Equal(wantState))
+			g.Expect(observed.report.Failure.Message).To(Equal(observed.wantSkipReason))
+			g.Expect(observed.managedClusterGets).To(Equal(observed.wantManagedClusterGets))
+		})
+	}
 }
