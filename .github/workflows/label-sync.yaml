@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -21,6 +21,9 @@ jobs:
             aquasecurity.github.io:443
             azure.archive.ubuntu.com:80
             esm.ubuntu.com:443
+            aka.ms:443
+            download.visualstudio.microsoft.com:443
+            download.microsoft.com:443
             github.com:443
             packages.microsoft.com:443
             proxy.golang.org:443

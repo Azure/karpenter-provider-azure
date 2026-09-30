@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -82,6 +83,10 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
+			// Written onto nodes by the Elastic SAN CSI driver (Azure Container Storage), which the E2E
+			// cluster does not install, so a pod selecting on it would never become Ready here. Its
+			// normalization is covered by the acceptance tests in pkg/providers/instancetype.
+			zones.LabelAzureElasticSANCSIZone,
 		)
 
 		if !env.UsesSharedImageGallery() {
@@ -180,7 +185,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				// Deprecated Labels
 				corev1.LabelFailureDomainBetaRegion: env.Region,
 				corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
-				"topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
+				zones.LabelAzureDiskCSIZone:         fmt.Sprintf("%s-1", env.Region),
 				"beta.kubernetes.io/arch":           "amd64",
 				"beta.kubernetes.io/os":             "linux",
 			}
@@ -265,6 +270,28 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				NodePreferences:  requirements,
 				NodeRequirements: requirements,
 			}})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.EventuallyExpectHealthyDeployment(deployment)
+			env.ExpectCreatedNodeCount("==", 1)
+		})
+
+		It("should support Kata VM isolation label for instance type selection", func() {
+			selectors.Insert(v1beta1.AKSLabelKataVMIsolation)
+			if !env.IsMachineModeOrNPS() {
+				Skip("Kata Pod Sandboxing is not supported on the aksscriptless provision mode")
+			}
+
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+			deployment := test.Deployment(
+				test.DeploymentOptions{
+					Replicas: 1,
+					PodOptions: test.PodOptions{
+						NodeSelector: map[string]string{
+							corev1.LabelInstanceTypeStable:  "Standard_D4s_v5",
+							v1beta1.AKSLabelKataVMIsolation: "true",
+						},
+					}})
 			env.ExpectCreated(nodeClass, nodePool, deployment)
 			env.EventuallyExpectHealthyDeployment(deployment)
 			env.ExpectCreatedNodeCount("==", 1)

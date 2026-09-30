@@ -98,6 +98,7 @@ type Options struct {
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
 	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 	DiskEncryptionSetID        string            `json:"diskEncryptionSetId,omitempty"`
+	EnableFIPS                 bool              `json:"enableFIPS,omitempty"`
 
 	// If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE is already an AKS Machine API mode, as it will behave as if this option is set to true.
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
@@ -107,7 +108,7 @@ type Options struct {
 	ProviderBatchMaxDuration  time.Duration `json:"providerBatchMaxDuration,omitempty"`  // Maximum duration for provider batch accumulation (default 5s). Only used on provision mode aksmachineapiheaderbatch.
 	ProviderBatchMaxSize      int           `json:"providerBatchMaxSize,omitempty"`      // Maximum number of machines per provider batch (default 50, AKS API limit). Only used on provision mode aksmachineapiheaderbatch.
 
-	ComputeRecommendationMode string `json:"computeRecommendationMode,omitempty"` // Controls compute recommendation API behavior: "disabled" (default), "log-only", or "enabled".
+	ComputeRecommendationMode string `json:"computeRecommendationMode,omitempty"` // Controls compute recommendation API behavior: "disabled", "log-only" (default), or "enabled".
 
 	// computed options; do not set.
 	ParsedDiskEncryptionSetID *arm.ResourceID `json:"-"`
@@ -137,12 +138,13 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
+	fs.BoolVar(&o.EnableFIPS, "enable-fips", env.WithDefaultBool("ENABLE_FIPS", false), "If set to true, AKSNodeClasses must explicitly enable FIPS mode. This setting mirrors the AKS cluster-level FIPS configuration.")
 	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with an AKS Machine API provision mode will be managed even with other provision modes. This option does not have any effect when already on an AKS Machine API mode.")
 	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with AKS machine API provision modes. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE is an AKS machine API mode.")
 	fs.DurationVar(&o.ProviderBatchIdleDuration, "provider-batch-idle-duration", env.WithDefaultDuration("PROVIDER_BATCH_IDLE_DURATION", time.Second), "Idle duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
 	fs.DurationVar(&o.ProviderBatchMaxDuration, "provider-batch-max-duration", env.WithDefaultDuration("PROVIDER_BATCH_MAX_DURATION", 5*time.Second), "Maximum duration for provider batch accumulation. Use Go duration format such as `1s`. Only used on provision mode aksmachineapiheaderbatch.")
 	fs.IntVar(&o.ProviderBatchMaxSize, "provider-batch-max-size", env.WithDefaultInt("PROVIDER_BATCH_MAX_SIZE", consts.AKSMachineAPIHeaderBatchMaxSize), fmt.Sprintf("Maximum number of machines per provider batch (AKS API limit is %d). Only used on provision mode aksmachineapiheaderbatch.", consts.AKSMachineAPIHeaderBatchMaxSize))
-	fs.StringVar(&o.ComputeRecommendationMode, "compute-recommendation-mode", env.WithDefaultString("COMPUTE_RECOMMENDATION_MODE", consts.ComputeRecommendationModeDisabled), "Controls compute recommendation API behavior: 'disabled' (no API calls), 'log-only' (call and log only), or 'enabled' (use for allocation).")
+	fs.StringVar(&o.ComputeRecommendationMode, "compute-recommendation-mode", env.WithDefaultString("COMPUTE_RECOMMENDATION_MODE", consts.ComputeRecommendationModeLog), "Controls compute recommendation API behavior: 'disabled' (no API calls), 'log-only' (call and log only), or 'enabled' (use for allocation).")
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {

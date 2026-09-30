@@ -32,6 +32,20 @@ var (
 	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
+type OSDiskType string
+
+var (
+	OSDiskTypeManaged = OSDiskType("Managed")
+)
+
+// +kubebuilder:validation:Enum:={OCIContainer,KataVmIsolation}
+type WorkloadRuntime string
+
+const (
+	WorkloadRuntimeOCIContainer    WorkloadRuntime = "OCIContainer"
+	WorkloadRuntimeKataVMIsolation WorkloadRuntime = "KataVmIsolation"
+)
+
 // ArtifactStreaming configures artifact streaming for provisioned nodes.
 // Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 type ArtifactStreaming struct {
@@ -41,18 +55,44 @@ type ArtifactStreaming struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// CapacityReservationConfiguration configures the Capacity Reservation Group
+// that instances provisioned by this NodeClass target.
+type CapacityReservationConfiguration struct {
+	// groupID is the ARM resource ID of the Capacity Reservation Group.
+	// The group must be in the same subscription and region as the cluster, and
+	// must be of the Targeted reservation type. When set, every instance from
+	// this NodeClass targets the reservation group. Azure may allocate instances beyond the
+	// reserved quantity, in which case the excess is ordinary On-Demand capacity
+	// that is not covered by the capacity reservation SLA.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Compute\/capacityReservationGroups\/[^\/]+$`
+	// +required
+	GroupID *string `json:"groupID,omitempty"`
+}
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2404') : true"
-// +kubebuilder:validation:XValidation:message="TrustedLaunch is required for FIPS support with Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && (self.imageFamily != 'Ubuntu2204' || (has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))))) : true"
 // +kubebuilder:validation:XValidation:message="TrustedLaunch with FIPSMode FIPS is only supported for Ubuntu and Ubuntu2204",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' && has(self.security) && has(self.security.trustedLaunch) && ((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot)) ? (!has(self.imageFamily) || self.imageFamily == 'Ubuntu' || self.imageFamily == 'Ubuntu2204') : true"
 // +kubebuilder:validation:XValidation:message="kubelet.failSwapOn must be set to false when linuxOSConfig.swapFileSize is specified",rule="!has(self.linuxOSConfig) || !has(self.linuxOSConfig.swapFileSize) || (has(self.kubelet) && has(self.kubelet.failSwapOn) && self.kubelet.failSwapOn == false)"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
+// +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with TrustedLaunch",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))) : true"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// capacityReservation configures the Capacity Reservation Group that instances
+	// provisioned by this NodeClass target.
+	// +optional
+	CapacityReservation *CapacityReservationConfiguration `json:"capacityReservation,omitempty"`
+	// osDiskType is the type of disk to use for the OS.
+	// If unspecified, an ephemeral OS disk is used when the VM size supports an ephemeral OS disk
+	// of at least osDiskSizeGB, falling back to a managed disk otherwise. Managed always uses a managed disk.
+	// +kubebuilder:validation:Enum:={Managed}
+	// +optional
+	OSDiskType *OSDiskType `json:"osDiskType,omitempty"`
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +default=128
 	// +kubebuilder:validation:Minimum=30
@@ -67,10 +107,25 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
+	// versions controls the Kubernetes and node image versions for the NodeClass.
+	// If omitted, both versions follow their automatic defaults.
+	// +optional
+	Versions *Versions `json:"versions,omitempty" hash:"ignore"` // Version changes are handled through resolved status and intentionally excluded from the NodeClass hash.
 	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
+	// workloadRuntime determines the additional workload runtime a node can run.
+	// OCIContainer (the default) runs standard OCI containers only.
+	// KataVmIsolation enables AKS Pod Sandboxing alongside standard containers,
+	// so pods with runtimeClassName: kata-vm-isolation
+	// run in lightweight VMs while other pods on the same node keep running as normal containers.
+	// Pod Sandboxing requires imageFamily: AzureLinux, is incompatible with fipsMode: FIPS and Trusted Launch, and
+	// requires a nested-virtualization-capable VM size.
+	// See https://learn.microsoft.com/azure/aks/use-pod-sandboxing for more details.
+	// +default="OCIContainer"
+	// +optional
+	WorkloadRuntime *WorkloadRuntime `json:"workloadRuntime,omitempty"`
 	// tags to be applied on Azure resources like instances.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
@@ -118,6 +173,25 @@ type AKSNodeClassSpec struct {
 	// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration
 	// +optional
 	LinuxOSConfig *LinuxOSConfiguration `json:"linuxOSConfig,omitempty"`
+}
+
+// Versions controls the Kubernetes and node image versions used by the NodeClass.
+// If omitted, nodes follow the observed control plane version and automatic latest node image selection.
+// +kubebuilder:validation:XValidation:message="kubernetesVersion must be set when nodeImageVersion is set",rule="!has(self.nodeImageVersion) || has(self.kubernetesVersion)"
+type Versions struct {
+	// kubernetesVersion is the Kubernetes version to use for nodes provisioned for the NodeClass.
+	// If omitted, the observed control plane version is used.
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
+	// +optional
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+	// nodeImageVersion is the node image ID suffix to use for the NodeClass.
+	// It must match the suffix of a currently resolved image in status.images,
+	// status.observedVersions.latestImageVersion, or a nodeImageVersion in status.observedVersions.recentlyUsedVersions.
+	// When set, kubernetesVersion must also be set. A recently used image version must be paired
+	// with its recorded Kubernetes version.
+	// If omitted, the latest compatible image is selected automatically, subject to maintenance windows.
+	// +optional
+	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
 }
 
 // TrustedLaunch configures Trusted Launch security features for provisioned nodes.
@@ -669,6 +743,7 @@ type SysctlConfiguration struct {
 // +kubebuilder:printcolumn:name="ImageFamily",type=string,JSONPath=".spec.imageFamily",priority=1
 // +kubebuilder:subresource:status
 // +kubebuilder:deprecatedversion:warning="use v1beta1.AKSNodeClass instead"
+// +kubebuilder:unservedversion
 type AKSNodeClass struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is standard object metadata.
@@ -693,7 +768,13 @@ type AKSNodeClass struct {
 const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
-	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
+	spec := in.Spec
+	// See the v1beta1 Hash: OCIContainer must hash identically to the field being absent, so the
+	// server-side default cannot change the hash of an existing AKSNodeClass.
+	if lo.FromPtr(spec.WorkloadRuntime) == WorkloadRuntimeOCIContainer {
+		spec.WorkloadRuntime = nil
+	}
+	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
 		SlicesAsSets:    true,
 		IgnoreZeroValue: true,
 		ZeroNil:         true,
@@ -715,6 +796,15 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// GetCapacityReservationGroupID returns the configured Capacity Reservation
+// Group ARM resource ID, or an empty string when none is configured.
+func (in *AKSNodeClass) GetCapacityReservationGroupID() string {
+	if in.Spec.CapacityReservation == nil {
+		return ""
+	}
+	return lo.FromPtr(in.Spec.CapacityReservation.GroupID)
 }
 
 func (in *AKSNodeClass) IsVTPMEnabled() bool {

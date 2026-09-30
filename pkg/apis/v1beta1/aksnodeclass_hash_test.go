@@ -70,6 +70,8 @@ var _ = Describe("Hash", func() {
 
 		// Static fields, expect changed hash from base
 		Entry("VNETSubnetID", "13971920214979852468", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("WorkloadRuntime", "13352508654154828139", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{WorkloadRuntime: lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)}}),
+		Entry("OSDiskType", "10944184826674581697", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskType: lo.ToPtr(v1beta1.OSDiskTypeManaged)}}),
 		Entry("OSDiskSizeGB", "7816855636861645563", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", "15616969746300892810", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", "33638514539106194", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
@@ -89,10 +91,12 @@ var _ = Describe("Hash", func() {
 		Expect(hash).ToNot(Equal(updatedHash))
 	},
 		Entry("VNETSubnetID", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("OSDiskType", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskType: lo.ToPtr(v1beta1.OSDiskTypeManaged)}}),
 		Entry("OSDiskSizeGB", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: lo.ToPtr("none")}}}),
 		Entry("MaxPods", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("CapacityReservation", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")}}}),
 		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
 		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
@@ -112,11 +116,34 @@ var _ = Describe("Hash", func() {
 		updatedHash := nodeClass.Hash()
 		Expect(hash).To(Equal(updatedHash))
 	})
+	It("should not change hash when capacity reservation group ID casing changes", func() {
+		nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/crg")}
+		hash := nodeClass.Hash()
+		nodeClass.Spec.CapacityReservation.GroupID = lo.ToPtr("/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/RG/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/CRG")
+		Expect(nodeClass.Hash()).To(Equal(hash))
+	})
 	It("should expect two AKSNodeClasses with the same spec to have the same hash", func() {
 		otherNodeClass := &v1beta1.AKSNodeClass{
 			Spec: nodeClass.Spec,
 		}
 		Expect(nodeClass.Hash()).To(Equal(otherNodeClass.Hash()))
+	})
+	// workloadRuntime OCIContainer is the default and means "no additional runtime", so it must hash
+	// the same as the field being absent. This is what lets the field carry a server-side default
+	// without bumping AKSNodeClassHashVersion: the default landing on an existing AKSNodeClass, or a
+	// user explicitly writing it, must not drift nodes. Kata must still drift them.
+	It("should not change hash when workloadRuntime is explicitly set to the OCIContainer default", func() {
+		Expect(nodeClass.Spec.WorkloadRuntime).To(BeNil())
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+	})
+	It("should change hash when workloadRuntime is KataVmIsolation", func() {
+		hash := nodeClass.Hash()
+
+		nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+		Expect(nodeClass.Hash()).ToNot(Equal(hash))
 	})
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
