@@ -181,20 +181,30 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	})
 
 	It("should update Images and its readiness on AKSNodeClass", func() {
-		nodeClass.Status.Images = getExpectedTestCommunityImages(*nodeClass.Status.KubernetesVersion, oldcigImageVersion)
+		k8sVersion := ""
+		if nodeClass.Status.KubernetesVersion != nil {
+			k8sVersion = *nodeClass.Status.KubernetesVersion
+		}
+
+		nodeClass.Status.Images = getExpectedTestCommunityImages(k8sVersion, oldcigImageVersion)
 		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 		ExpectApplied(ctx, env.Client, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(*nodeClass.Status.KubernetesVersion, oldcigImageVersion)))
+		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(k8sVersion, oldcigImageVersion)))
 		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
+		k8sVersion = ""
+		if nodeClass.Status.KubernetesVersion != nil {
+			k8sVersion = *nodeClass.Status.KubernetesVersion
+		}
+
 		Expect(len(nodeClass.Status.Images)).To(Equal(3))
-		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(*nodeClass.Status.KubernetesVersion, newCIGImageVersion)))
+		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(k8sVersion, newCIGImageVersion)))
 		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 	})
 
@@ -325,7 +335,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("NodeImageVersionInvalid"))
-				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(testK8sVersion, oldcigImageVersion)))
 			})
 
 			It("should reject a malformed image version", func() {
@@ -342,7 +352,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("RequestedNodeImageVersionUnavailable"))
-				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(testK8sVersion, oldcigImageVersion)))
 			})
 
 			It("should roll back to a recently used image version outside the maintenance window", func() {
@@ -381,7 +391,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("RollbackTargetKubernetesVersionMismatch"))
-				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(testK8sVersion, oldcigImageVersion)))
 			})
 
 		})
