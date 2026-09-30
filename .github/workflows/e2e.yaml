@@ -227,8 +227,9 @@ jobs:
           provision_mode: ${{ inputs.suite == 'Windows' && 'aksmachineapi' || inputs.provision_mode }}
           identity_type: ${{ inputs.suite == 'Machine' && 'UserAssigned' || 'SystemAssigned' }}
           azure_vm_size: ${{ inputs.azure_vm_size }}
-          # Windows needs a dedicated (non-Cilium) cluster and a machines pool name <= 6 chars.
-          windows: ${{ inputs.suite == 'Windows' }}
+          # Windows contexts in Drift and Consolidation need the dedicated non-Cilium cluster,
+          # but scriptless runs retain the default Linux-only topology and skip those contexts.
+          windows: ${{ inputs.suite == 'Windows' || ((inputs.suite == 'Drift' || inputs.suite == 'Consolidation') && (inputs.provision_mode == 'aksmachineapi' || inputs.provision_mode == 'aksmachineapiheaderbatch')) }}
           aks_machines_pool_name: ${{ inputs.suite == 'Windows' && 'winmp' || 'mpool' }}
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter

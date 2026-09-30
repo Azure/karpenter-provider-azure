@@ -298,11 +298,14 @@ func (env *Environment) SkipIfNotWindowsCapable() {
 		Skip(fmt.Sprintf("Windows machines require the reserved aksmanagedap pool or a custom machines pool name <= 6 chars; got %q (%d chars)",
 			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
 	}
-	// The AKS RP sources Windows node admin credentials from the cluster's windowsProfile, so a
-	// cluster created without one cannot provision Windows at all. The E2E matrix only builds a
-	// Windows-capable cluster for the Windows suite, so any other suite carrying a Windows case
-	// must skip here rather than fail late in the Machine create.
 	managedCluster := env.ExpectGetManagedCluster()
+	// Windows nodes do not support the Cilium dataplane configured on the cluster.
+	if managedCluster.Properties != nil && managedCluster.Properties.NetworkProfile != nil &&
+		lo.FromPtr(managedCluster.Properties.NetworkProfile.NetworkDataplane) == containerservice.NetworkDataplaneCilium {
+		Skip("Windows node provisioning is not supported with the Cilium dataplane")
+	}
+	// The cluster's windowsProfile provides the Windows node admin credentials, so suites
+	// carrying Windows cases must skip here if it is absent rather than fail during Machine create.
 	if managedCluster.Properties == nil || managedCluster.Properties.WindowsProfile == nil {
 		Skip("cluster has no windowsProfile; Windows nodes require a Windows-capable cluster")
 	}
