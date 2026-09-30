@@ -14,14 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package capacityrecommendation
+package localdns_test
 
 import (
-	"context"
+	"testing"
 
-	armrecommender "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armrecommender"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-type SKUMixPlacementScoresAPI interface {
-	Post(ctx context.Context, location string, skuMixPlacementRequest armrecommender.SKUMixPlacementRequest, options *armrecommender.SKUMixPlacementScoresClientPostOptions) (armrecommender.SKUMixPlacementScoresClientPostResponse, error)
+func TestLocalDNS(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "LocalDNS")
 }

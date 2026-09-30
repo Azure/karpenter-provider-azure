@@ -18,6 +18,7 @@ package labels_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -246,12 +247,29 @@ func TestIsKubeletLabel(t *testing.T) {
 	}
 }
 
+// skuRequirements builds the subset of instance type requirements that the
+// LocalDNS VM size floor is read from, matching what the instance type provider
+// stamps on every instance type (raw skewer vCPU count and memory in MiB).
+func skuRequirements(vcpu, memoryMiB int64) scheduling.Requirements {
+	return scheduling.NewRequirements(
+		scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpu)),
+		scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint(memoryMiB)),
+	)
+}
+
+// localDNSCapableSKU clears the floor (4 vCPU / 16 GiB, i.e. Standard_D4s_v3).
+func localDNSCapableSKU() scheduling.Requirements { return skuRequirements(4, 16384) }
+
+// localDNSTooSmallSKU is below the floor (2 vCPU, i.e. Standard_D2s_v3).
+func localDNSTooSmallSKU() scheduling.Requirements { return skuRequirements(2, 8192) }
+
 func TestLocalDNSLabels(t *testing.T) {
 	testCases := []struct {
 		name              string
 		localDNS          *v1beta1.LocalDNS
 		localDNSState     *v1beta1.LocalDNSState
 		kubernetesVersion string
+		skuRequirements   scheduling.Requirements
 		expectedLabel     string
 	}{
 		{
@@ -322,6 +340,56 @@ func TestLocalDNSLabels(t *testing.T) {
 			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
 		},
+		// Per-node resolution. Under Preferred the NodeClass-wide verdict is
+		// necessary but not sufficient: the node's own VM size has to clear the
+		// LocalDNS floor. This is what "Preferred" means in AKS -- a node too
+		// small for LocalDNS runs without it rather than not being provisioned.
+		{
+			name: "Preferred + Enabled, SKU below the floor -> disabled on this node",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModePreferred,
+			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateEnabled),
+			kubernetesVersion: "1.37.0",
+			skuRequirements:   localDNSTooSmallSKU(),
+			expectedLabel:     "disabled",
+		},
+		{
+			name: "Preferred + Enabled, SKU clears the floor -> enabled on this node",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModePreferred,
+			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateEnabled),
+			kubernetesVersion: "1.37.0",
+			skuRequirements:   localDNSCapableSKU(),
+			expectedLabel:     "enabled",
+		},
+		{
+			// Required filters sub-floor SKUs out of the candidate list entirely,
+			// so this combination is unreachable in practice. Pinned anyway: if
+			// the filter ever regresses, the node must still be labeled honestly
+			// rather than claiming LocalDNS it cannot run.
+			name: "Required, SKU below the floor -> disabled on this node",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateEnabled),
+			kubernetesVersion: "1.37.0",
+			skuRequirements:   localDNSTooSmallSKU(),
+			expectedLabel:     "disabled",
+		},
+		{
+			// An instance type carrying neither requirement cannot be shown to
+			// clear the floor, so LocalDNS-off is the answer.
+			name: "Enabled but SKU size unknown -> disabled on this node",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModePreferred,
+			},
+			localDNSState:     lo.ToPtr(v1beta1.LocalDNSStateEnabled),
+			kubernetesVersion: "1.37.0",
+			skuRequirements:   scheduling.NewRequirements(),
+			expectedLabel:     "disabled",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -354,7 +422,15 @@ func TestLocalDNSLabels(t *testing.T) {
 				nodeClass.Status.LocalDNSState = tc.localDNSState
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass, "amd64")
+			// Cases that only exercise the NodeClass-level verdict leave
+			// skuRequirements unset; give them a SKU that clears the floor so the
+			// per-node check is a no-op and the NodeClass verdict is what's asserted.
+			reqs := tc.skuRequirements
+			if reqs == nil {
+				reqs = localDNSCapableSKU()
+			}
+
+			labelMap, err := labels.Get(ctx, nodeClass, "amd64", reqs)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(labelMap[labels.AKSLocalDNSStateLabelKey]).To(Equal(tc.expectedLabel))
 		})
@@ -384,7 +460,7 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 		},
 	}
 
-	labelMap, err := labels.Get(ctx, nodeClass, "amd64")
+	labelMap, err := labels.Get(ctx, nodeClass, "amd64", localDNSCapableSKU())
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
 }
@@ -396,6 +472,7 @@ func TestLabelsGet(t *testing.T) {
 		kubernetesVersion string
 		arch              string
 		artifactStreaming *v1beta1.ArtifactStreaming
+		workloadRuntime   *v1beta1.WorkloadRuntime
 		expectedLabels    map[string]string
 		unexpectedLabels  []string
 	}{
@@ -487,6 +564,32 @@ func TestLabelsGet(t *testing.T) {
 				v1beta1.AKSLabelOSSKUEffective: "AzureLinux3",
 			},
 		},
+		// KATA label test cases
+		{
+			name:              "KataVmIsolation stamps the Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			workloadRuntime:   lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation),
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelKataVMIsolation: "true",
+			},
+		},
+		{
+			name:              "OCIContainer stamps no Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			workloadRuntime:   lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer),
+			unexpectedLabels:  []string{v1beta1.AKSLabelKataVMIsolation},
+		},
+		{
+			name:              "Unset workloadRuntime stamps no Kata label",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			arch:              "amd64",
+			unexpectedLabels:  []string{v1beta1.AKSLabelKataVMIsolation},
+		},
 		// Artifact streaming label cases
 		{
 			name:              "AMD64 with nil artifact streaming (default) should NOT have label",
@@ -555,6 +658,7 @@ func TestLabelsGet(t *testing.T) {
 				Spec: v1beta1.AKSNodeClassSpec{
 					ImageFamily:       &imageFamily,
 					ArtifactStreaming: tc.artifactStreaming,
+					WorkloadRuntime:   tc.workloadRuntime,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
 					KubernetesVersion: lo.ToPtr(tc.kubernetesVersion),
@@ -567,7 +671,7 @@ func TestLabelsGet(t *testing.T) {
 				},
 			}
 
-			labelMap, err := labels.Get(ctx, nodeClass, tc.arch)
+			labelMap, err := labels.Get(ctx, nodeClass, tc.arch, localDNSCapableSKU())
 			g.Expect(err).ToNot(HaveOccurred())
 			for key, expectedValue := range tc.expectedLabels {
 				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)

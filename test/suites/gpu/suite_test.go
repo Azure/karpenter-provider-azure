@@ -226,7 +226,7 @@ func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
 					Containers: []corev1.Container{
 						{
 							Name:  "nvidia-device-plugin-ctr",
-							Image: "nvcr.io/nvidia/k8s-device-plugin:v0.14.1",
+							Image: "nvcr.io/nvidia/k8s-device-plugin:v0.20.0",
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: lo.ToPtr(false),
 								Capabilities: &corev1.Capabilities{

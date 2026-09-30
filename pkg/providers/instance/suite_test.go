@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
@@ -93,7 +94,7 @@ func TestAzure(t *testing.T) {
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 	RunSpecs(t, "Provider/Azure")
 }
 
@@ -674,6 +675,52 @@ var _ = Describe("VMInstanceProvider", func() {
 		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, "00000000")
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
+	})
+
+	Context("OSDiskType", func() {
+		// Standard_D64s_v3 has 1600GB of CacheDisk space, plenty for the default 128GB OS disk
+		const ephemeralCapableVMSize = "Standard_D64s_v3"
+		// Standard_D2s_v3 has 53GB of CacheDisk space and a 16GB temp disk, too small for the default 128GB OS disk
+		const ephemeralTooSmallVMSize = "Standard_D2s_v3"
+
+		expectVMForVMSize := func(vmSize string) *armcompute.VirtualMachine {
+			GinkgoHelper()
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{vmSize},
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			return &createInput.VM
+		}
+
+		It("should use an ephemeral disk when unspecified and the instance type has enough space", func() {
+			vm := expectVMForVMSize(ephemeralCapableVMSize)
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
+		})
+
+		It("should fall back to a managed disk when unspecified and the instance type doesn't have enough ephemeral space", func() {
+			vm := expectVMForVMSize(ephemeralTooSmallVMSize)
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		})
+
+		It("should use a managed disk when Managed, even if the instance type has enough ephemeral space", func() {
+			nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+
+			vm := expectVMForVMSize(ephemeralCapableVMSize)
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		})
 	})
 
 	Context("Update", func() {

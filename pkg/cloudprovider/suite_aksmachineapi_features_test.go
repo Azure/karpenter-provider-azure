@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -34,6 +35,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/state/virtualpods"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
@@ -41,6 +43,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -60,15 +63,16 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin)
+			statusController = status.NewController(env.Client, azureEnv.SubscriptionID, fake.Region, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, env.KubernetesInterface, azureEnv.DynamicInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID, options.FromContext(ctx).NetworkPolicy, options.FromContext(ctx).NetworkPlugin,
+				azureEnv.CapacityReservationGroupsAPI, azureEnv.CapacityReservationsAPI, azureEnv.InstanceTypesProvider, azureEnv.UnavailableOfferingsCache)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client))
-			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client))
+			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
+			coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, recorder, cloudProviderNonZonal, clusterNonZonal, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -81,6 +85,46 @@ var _ = Describe("CloudProvider", func() {
 			azureEnv.Reset(ctx)
 			azureEnvNonZonal.Reset(ctx)
 		})
+
+		runCapacityBufferTests(func(expectedCalls int) {
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(expectedCalls))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+		})
+
+		It("should pass the capacity reservation group through the Machine template", func() {
+			groupID := "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"
+			nodeClass.Spec.CapacityReservation = &v1beta1.CapacityReservationConfiguration{
+				GroupID: lo.ToPtr(groupID),
+			}
+			nodeClass.Status.CapacityReservationGroup = &v1beta1.CapacityReservationGroup{
+				ID:       groupID,
+				Location: fake.Region,
+				Zones:    []string{"1"},
+				CapacityReservations: []v1beta1.CapacityReservation{{
+					ID:                groupID + "/capacityReservations/standard-d2-v3",
+					Name:              "standard-d2-v3",
+					VMSize:            "Standard_D2_v3",
+					Zones:             []string{"1"},
+					ProvisioningState: lo.ToPtr(v1beta1.CapacityReservationProvisioningStateSucceeded),
+				}},
+			}
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(HaveLen(1))
+
+			promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(promise.Wait()).To(Succeed())
+
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			profile := createInput.AKSMachine.Properties.CapacityReservation
+			Expect(profile).ToNot(BeNil())
+			Expect(profile.CapacityReservationGroup).ToNot(BeNil())
+			Expect(lo.FromPtr(profile.CapacityReservationGroup.ID)).To(Equal(groupID))
+		})
+
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
@@ -322,7 +366,7 @@ var _ = Describe("CloudProvider", func() {
 				test.ApplyDefaultStatus(nodeClass, env, aksTestOptions.UseSIG)
 				aksCloudProvider := New(aksAzureEnv.InstanceTypesProvider, aksAzureEnv.VMInstanceProvider, aksAzureEnv.AKSMachineProvider, recorder, env.Client, aksAzureEnv.ImageProvider, aksAzureEnv.InstanceTypeStore)
 				aksCluster := state.NewCluster(fakeClock, env.Client, aksCloudProvider)
-				aksProv := provisioning.NewProvisioner(env.Client, recorder, aksCloudProvider, aksCluster, fakeClock, deviceallocation.NewController(env.Client))
+				aksProv := provisioning.NewProvisioner(env.Client, recorder, aksCloudProvider, aksCluster, fakeClock, deviceallocation.NewController(env.Client), virtualpods.NewVirtualPodCache(env.Client))
 
 				ExpectApplied(aksCtx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
@@ -488,6 +532,27 @@ var _ = Describe("CloudProvider", func() {
 				Expect(aksMachine.Properties.OperatingSystem.OSDiskSizeGB).ToNot(BeNil())
 				Expect(*aksMachine.Properties.OperatingSystem.OSDiskSizeGB).To(Equal(int32(128))) // Default size
 			})
+
+			It("should not use ephemeral disk if OSDiskType is Managed, even when there is enough space", func() {
+				nodeClass.Spec.OSDiskType = lo.ToPtr(v1beta1.OSDiskTypeManaged)
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"}, // Has large cache disk space
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())
+				Expect(aksMachine.Properties.OperatingSystem.OSDiskType).ToNot(BeNil())
+				Expect(*aksMachine.Properties.OperatingSystem.OSDiskType).To(Equal(armcontainerservice.OSDiskTypeManaged))
+			})
 		})
 
 		Context("Create - Additional Configurations", func() {
@@ -643,6 +708,65 @@ var _ = Describe("CloudProvider", func() {
 				// Verify user-specified tags are ignored for Karpenter-managed keys
 				Expect(*aksMachine.Properties.Tags["karpenter.sh_nodepool"]).ToNot(Equal("my-override-nodepool"))
 				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).ToNot(Equal("my-override-cluster"))
+			})
+		})
+
+		// Fake-Azure coverage for the Kata (Pod Sandboxing) workloadRuntime on the AKS Machine API path.
+		// This asserts the wire payload Karpenter sends and the labels it projects onto the Node; it does
+		// not (and cannot, against a fake) verify what AKS does with the enum. The real end-to-end
+		// coverage lives in test/suites/integration/kata_test.go.
+		Context("Create - WorkloadRuntime (Kata Pod Sandboxing)", func() {
+			BeforeEach(func() {
+				kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
+				if !imagefamily.UseAzureLinux3(kubernetesVersion) {
+					Skip("Kata requires Azure Linux 3")
+				}
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nodeClass.Spec.WorkloadRuntime = lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation)
+				// Re-reconcile so the Kata image variant lands in the NodeClass status.
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+			})
+
+			It("should provision a Kata node with the label and the WorkloadRuntime enum set", func() {
+				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"}})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.Kubernetes.WorkloadRuntime).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.WorkloadRuntime)).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
+				// The kubernetes.azure.com Kata label is not sent to AKS, like every other AKS-managed label.
+				Expect(aksMachine.Properties.Kubernetes.NodeLabels).ToNot(HaveKey(v1beta1.AKSLabelKataVMIsolation))
+			})
+
+			// Mirrors what the RuntimeClass admission controller produces for a pod that sets
+			// `runtimeClassName: kata-vm-isolation`: the node selector and the 600Mi pod overhead. The
+			// RuntimeClass object is created so the apiserver's overhead validation passes.
+			It("should scale up for a post-admission RuntimeClass pod", func() {
+				ExpectApplied(ctx, env.Client, &nodev1.RuntimeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: "kata-vm-isolation"},
+					Handler:    "kata",
+					Overhead:   &nodev1.Overhead{PodFixed: v1.ResourceList{v1.ResourceMemory: resource.MustParse("600Mi")}},
+					Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"}},
+				})
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1beta1.AKSLabelKataVMIsolation: "true"},
+					Overhead:     v1.ResourceList{v1.ResourceMemory: resource.MustParse("600Mi")},
+				})
+				pod.Spec.RuntimeClassName = lo.ToPtr("kata-vm-isolation")
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelKataVMIsolation, "true"))
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				aksMachine := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine
+				Expect(aksMachine.Properties.Kubernetes.WorkloadRuntime).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Kubernetes.WorkloadRuntime)).To(Equal(armcontainerservice.WorkloadRuntimeKataVMIsolation))
 			})
 		})
 
@@ -1131,10 +1255,15 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeDisabled))
 			})
 
-			It("should rewrite Preferred to Required on the wire when Status.LocalDNSState=Enabled", func() {
+			It("should rewrite Preferred to Required on the wire when Status.LocalDNSState=Enabled and the VM size clears the LocalDNS floor", func() {
 				// Preferred is never sent downstream — Karpenter is the only kube-aware
-				// resolver, so ResolvedLocalDNSForWire rewrites Mode to the terminal
-				// value implied by Status.LocalDNSState. Enabled => Required.
+				// resolver, so localdns.ResolveForWire rewrites Mode to the terminal
+				// value implied by Status.LocalDNSState and the node's own VM size.
+				// Enabled + a SKU above the floor => Required.
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D4s_v3"}})
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 					Mode:             v1beta1.LocalDNSModePreferred,
 					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
@@ -1156,6 +1285,38 @@ var _ = Describe("CloudProvider", func() {
 				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeRequired))
 			})
 
+			It("should rewrite Preferred to Disabled on the wire when the VM size is below the LocalDNS floor", func() {
+				// The other half of Preferred: a NodePool pinned to a sub-floor SKU
+				// still provisions — the SKU is not filtered out — and the Machine goes
+				// out with LocalDNS off. This is what "Preferred" means in AKS: the VM
+				// SKU capacity check leaves LocalDNS disabled rather than blocking the
+				// pool.
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2s_v3"}})
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode:             v1beta1.LocalDNSModePreferred,
+					VnetDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationVnetDNS),
+					KubeDNSOverrides: validLocalDNSOverridePair(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+				}
+				nodeClass.Status.LocalDNSState = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(lo.FromPtr(aksMachine.Properties.Hardware.VMSize)).To(Equal("Standard_D2s_v3"))
+				Expect(aksMachine.Properties.LocalDNSProfile).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.LocalDNSProfile.Mode)).To(Equal(armcontainerservice.LocalDNSModeDisabled))
+			})
+
 			It("should rewrite Preferred to Disabled on the wire when Status.LocalDNSState is unset", func() {
 				// Defense-in-depth: if Status hasn't been resolved yet, never pass
 				// Preferred downstream — the downstream resolver cannot see cluster
@@ -1170,7 +1331,7 @@ var _ = Describe("CloudProvider", func() {
 				// The status sub-reconciler resolves Preferred to Enabled in this
 				// test env (no cluster conflicts). Wipe LocalDNSState back to nil
 				// via a status Patch to drive the "Status not yet resolved"
-				// branch of ResolvedLocalDNSForWire. Re-fetch first because the
+				// branch of localdns.ResolveForWire. Re-fetch first because the
 				// reconcile bumped the resource version.
 				Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
 				stored := nodeClass.DeepCopy()

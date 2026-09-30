@@ -44,6 +44,10 @@ type VirtualMachinesAPI interface {
 	BeginDelete(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientBeginDeleteOptions) (*runtime.Poller[armcompute.VirtualMachinesClientDeleteResponse], error)
 }
 
+type AKSManagedClustersAPI interface {
+	ListKubernetesVersions(ctx context.Context, location string, options *armcontainerservice.ManagedClustersClientListKubernetesVersionsOptions) (armcontainerservice.ManagedClustersClientListKubernetesVersionsResponse, error)
+}
+
 type AzureResourceGraphAPI interface {
 	Resources(ctx context.Context, query armresourcegraph.QueryRequest, options *armresourcegraph.ClientResourcesOptions) (armresourcegraph.ClientResourcesResponse, error)
 }
@@ -66,4 +70,12 @@ type SubnetsAPI interface {
 
 type DiskEncryptionSetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
+}
+
+type CapacityReservationGroupsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, capacityReservationGroupName string, options *armcompute.CapacityReservationGroupsClientGetOptions) (armcompute.CapacityReservationGroupsClientGetResponse, error)
+}
+
+type CapacityReservationsAPI interface {
+	NewListByCapacityReservationGroupPager(resourceGroupName string, capacityReservationGroupName string, options *armcompute.CapacityReservationsClientListByCapacityReservationGroupOptions) *runtime.Pager[armcompute.CapacityReservationsClientListByCapacityReservationGroupResponse]
 }

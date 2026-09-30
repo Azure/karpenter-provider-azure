@@ -19,12 +19,22 @@ package azure
 import (
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 )
+
+func (env *Environment) ExpectMachineByID(machineID string) containerservice.Machine {
+	GinkgoHelper()
+	resourceID, err := arm.ParseResourceID(machineID)
+	Expect(err).ToNot(HaveOccurred(), "failed to parse AKS Machine resource ID %s", machineID)
+	response, err := env.machinesClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, env.MachineAgentPoolName, resourceID.Name, nil)
+	Expect(err).ToNot(HaveOccurred(), "failed to get AKS Machine %s", resourceID.Name)
+	return response.Machine
+}
 
 func (env *Environment) ExpectListMachines() []*containerservice.Machine {
 	GinkgoHelper()

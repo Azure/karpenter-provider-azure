@@ -24,6 +24,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/quota"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
@@ -33,7 +34,7 @@ func Test_Update_PopulatesUsageData(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	usageAPI, quotaProvider := newTestProvider(t)
+	usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
 
 	usageAPI.Usages.Append(
 		&armcompute.Usage{
@@ -57,13 +58,15 @@ func Test_Update_PopulatesUsageData(t *testing.T) {
 	g.Expect(found).To(BeTrue())
 	g.Expect(*usage.CurrentValue).To(Equal(int32(10)))
 	g.Expect(*usage.Limit).To(Equal(int64(100)))
+	// Shouldn't call the category API if general purpose isn't in the usages response
+	g.Expect(quotaCategoryVMFamilyMappingAPI.Calls()).To(BeZero())
 }
 
 func Test_GetTotalRegionalUsage_ReturnsCoresUsage(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	usageAPI, quotaProvider := newTestProvider(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
 
 	usageAPI.Usages.Append(
 		&armcompute.Usage{
@@ -87,7 +90,7 @@ func Test_GetUsage_ReturnsFalseForUnknownFamily(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	_, quotaProvider := newTestProvider(t)
+	_, _, quotaProvider := newTestProvider(t)
 
 	err := quotaProvider.Update(ctx)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -100,7 +103,7 @@ func Test_GetTotalRegionalUsage_ReturnsFalseWhenEmpty(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	_, quotaProvider := newTestProvider(t)
+	_, _, quotaProvider := newTestProvider(t)
 
 	err := quotaProvider.Update(ctx)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -113,7 +116,7 @@ func Test_Update_PreservesCachedDataOnFailure(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	usageAPI, quotaProvider := newTestProvider(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
 
 	usageAPI.Usages.Append(
 		&armcompute.Usage{
@@ -145,21 +148,16 @@ func Test_Update_PreservesCachedDataOnFailure(t *testing.T) {
 	g.Expect(*usage.CurrentValue).To(Equal(int32(50)))
 }
 
-func newTestProvider(t *testing.T) (*fake.UsageAPI, *quota.DefaultProvider) {
-	t.Helper()
-	usageAPI := &fake.UsageAPI{}
-	return usageAPI, quota.NewProvider(usageAPI, fake.Region)
-}
-
 func Test_HasQuotaFor(t *testing.T) {
 	t.Parallel()
 	sku := fake.MakeSKU("Standard_D4s_v3") // 4 vCPUs, standardDSv3Family
 
 	tests := []struct {
-		name     string
-		usages   []*armcompute.Usage
-		update   bool // whether to call Update before checking
-		expected bool
+		name                    string
+		usages                  []*armcompute.Usage
+		quotaCategoryVMFamilies []*armcomputelimit.VMFamily
+		update                  bool // whether to call Update before checking
+		expected                bool
 	}{
 		{
 			name: "allows when enough quota",
@@ -227,6 +225,30 @@ func Test_HasQuotaFor(t *testing.T) {
 			update:   true,
 			expected: true,
 		},
+		{
+			name: "blocks when category is exhausted even if family has quota",
+			usages: []*armcompute.Usage{
+				newUsage(sku.GetFamilyName(), 0),
+				newUsage(quota.GeneralPurposeCategory, 98),
+			},
+			quotaCategoryVMFamilies: []*armcomputelimit.VMFamily{
+				newVMFamily(sku.GetFamilyName()),
+			},
+			update:   true,
+			expected: false,
+		},
+		{
+			name: "allows when category has quota even if family is exhausted",
+			usages: []*armcompute.Usage{
+				newUsage(sku.GetFamilyName(), 100),
+				newUsage(quota.GeneralPurposeCategory, 0),
+			},
+			quotaCategoryVMFamilies: []*armcomputelimit.VMFamily{
+				newVMFamily(sku.GetFamilyName()),
+			},
+			update:   true,
+			expected: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -234,10 +256,13 @@ func Test_HasQuotaFor(t *testing.T) {
 			t.Parallel()
 			ctx := TestContextWithLogger(t)
 			g := NewWithT(t)
-			usageAPI, quotaProvider := newTestProvider(t)
+			usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
 
 			if len(tc.usages) > 0 {
 				usageAPI.Usages.Append(tc.usages...)
+			}
+			if len(tc.quotaCategoryVMFamilies) > 0 {
+				quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(tc.quotaCategoryVMFamilies...)
 			}
 			if tc.update {
 				lo.Must0(quotaProvider.Update(ctx))
@@ -248,41 +273,129 @@ func Test_HasQuotaFor(t *testing.T) {
 	}
 }
 
-func Test_SeqNum_IncrementsOnlyWhenDataChanges(t *testing.T) {
+func Test_GetUsage_ReturnsMappedCategoryUsage(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	usageAPI, quotaProvider := newTestProvider(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
 
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(0)))
+	usageAPI.Usages.Append(
+		newUsage(sku.GetFamilyName(), 0),
+		newUsage(quota.GeneralPurposeCategory, 98),
+	)
+	quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(newVMFamily(sku.GetFamilyName()))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
 
-	// First update with empty data → changes from initial state
-	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+	found, usage := quotaProvider.GetUsage(sku.GetFamilyName())
+	g.Expect(found).To(BeTrue())
+	g.Expect(lo.FromPtr(usage.CurrentValue)).To(Equal(int32(98)))
+}
 
-	// Second update with same empty data → no change, seqNum stays
-	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+func Test_Update_PreservesAtomicSnapshotWhenVMFamiliesFail(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
 
-	// Third update with new data → changes, seqNum increments
-	usageAPI.Usages.Append(&armcompute.Usage{
-		Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
-		CurrentValue: lo.ToPtr[int32](10),
-		Limit:        lo.ToPtr[int64](100),
+	usageAPI.Usages.Append(
+		newUsage(sku.GetFamilyName(), 0),
+		newUsage(quota.GeneralPurposeCategory, 98),
+	)
+	quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(newVMFamily(sku.GetFamilyName()))
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+
+	usageAPI.Usages.Append(newUsage(quota.GeneralPurposeCategory, 0))
+	quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(newVMFamily("standardBSFamily"))
+	quotaCategoryVMFamilyMappingAPI.PageSize = 1
+	quotaCategoryVMFamilyMappingAPI.ErrorPage = 1
+	quotaCategoryVMFamilyMappingAPI.Error = fmt.Errorf("simulated quota category VM family mapping API failure")
+	g.Expect(quotaProvider.Update(ctx)).To(MatchError(ContainSubstring("simulated quota category VM family mapping API failure")))
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeFalse())
+}
+
+func Test_HasQuotaFor_IgnoresCategoryMappingInFailedProvisioningState(t *testing.T) {
+	t.Parallel()
+	ctx := TestContextWithLogger(t)
+	g := NewWithT(t)
+	sku := fake.MakeSKU("Standard_D4s_v3")
+	usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
+
+	usageAPI.Usages.Append(
+		newUsage(sku.GetFamilyName(), 0),
+		newUsage(quota.GeneralPurposeCategory, 100),
+	)
+	family := newVMFamily(sku.GetFamilyName())
+	family.Properties.ProvisioningState = lo.ToPtr(armcomputelimit.ResourceProvisioningStateFailed)
+	quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(family)
+
+	g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+	g.Expect(quotaProvider.HasQuotaFor(ctx, sku)).To(BeTrue())
+}
+
+func Test_SeqNum_IncrementsOnlyWhenDataChanges(t *testing.T) {
+	t.Parallel()
+	t.Run("usage changes", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		usageAPI, _, quotaProvider := newTestProvider(t)
+
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(0)))
+
+		// First update with empty data → changes from initial state
+		lo.Must0(quotaProvider.Update(ctx))
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+
+		// Second update with same empty data → no change, seqNum stays
+		lo.Must0(quotaProvider.Update(ctx))
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+
+		// Third update with new data → changes, seqNum increments
+		usageAPI.Usages.Append(&armcompute.Usage{
+			Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
+			CurrentValue: lo.ToPtr[int32](10),
+			Limit:        lo.ToPtr[int64](100),
+		})
+		lo.Must0(quotaProvider.Update(ctx))
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+
+		// Fourth update with same data → no change, seqNum stays
+		lo.Must0(quotaProvider.Update(ctx))
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
 	})
-	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
 
-	// Fourth update with same data → no change, seqNum stays
-	lo.Must0(quotaProvider.Update(ctx))
-	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+	t.Run("mapping changes", func(t *testing.T) {
+		t.Parallel()
+		ctx := TestContextWithLogger(t)
+		g := NewWithT(t)
+		sku := fake.MakeSKU("Standard_D4s_v3")
+		usageAPI, quotaCategoryVMFamilyMappingAPI, quotaProvider := newTestProvider(t)
+
+		usageAPI.Usages.Append(
+			newUsage(sku.GetFamilyName(), 0),
+			newUsage(quota.GeneralPurposeCategory, 0),
+		)
+		quotaCategoryVMFamilyMappingAPI.VMFamilies.Append(newVMFamily(sku.GetFamilyName()))
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(1)))
+
+		quotaCategoryVMFamilyMappingAPI.VMFamilies.Reset()
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+
+		g.Expect(quotaProvider.Update(ctx)).To(Succeed())
+		g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(2)))
+	})
 }
 
 func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
 	t.Parallel()
 	ctx := TestContextWithLogger(t)
 	g := NewWithT(t)
-	usageAPI, quotaProvider := newTestProvider(t)
+	usageAPI, _, quotaProvider := newTestProvider(t)
 
 	usageAPI.Usages.Append(&armcompute.Usage{
 		Name:         &armcompute.UsageName{Value: lo.ToPtr("standardDSv3Family")},
@@ -302,4 +415,29 @@ func Test_Reset_InvalidatesQuotaDataAndSubsequentRecovery(t *testing.T) {
 
 	lo.Must0(quotaProvider.Update(ctx))
 	g.Expect(quotaProvider.SeqNum()).To(Equal(uint64(3)))
+}
+
+func newTestProvider(t *testing.T) (*fake.UsageAPI, *fake.QuotaCategoryVMFamilyMappingAPI, *quota.DefaultProvider) {
+	t.Helper()
+	usageAPI := &fake.UsageAPI{}
+	quotaCategoryVMFamilyMappingAPI := &fake.QuotaCategoryVMFamilyMappingAPI{}
+	return usageAPI, quotaCategoryVMFamilyMappingAPI, quota.NewProvider(usageAPI, quotaCategoryVMFamilyMappingAPI, fake.Region)
+}
+
+func newUsage(name string, current int32) *armcompute.Usage {
+	return &armcompute.Usage{
+		Name:         &armcompute.UsageName{Value: lo.ToPtr(name)},
+		CurrentValue: lo.ToPtr(current),
+		Limit:        lo.ToPtr[int64](100),
+	}
+}
+
+func newVMFamily(name string) *armcomputelimit.VMFamily {
+	return &armcomputelimit.VMFamily{
+		Name: lo.ToPtr(name),
+		Properties: &armcomputelimit.VMFamilyProperties{
+			Category:          lo.ToPtr(quota.GeneralPurposeCategory),
+			ProvisioningState: lo.ToPtr(armcomputelimit.ResourceProvisioningStateSucceeded),
+		},
+	}
 }

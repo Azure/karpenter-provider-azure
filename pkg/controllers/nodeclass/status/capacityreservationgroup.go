@@ -1,0 +1,332 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package status
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"slices"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/samber/lo"
+	"k8s.io/apimachinery/pkg/api/equality"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
+)
+
+const (
+	CapacityReservationGroupUnreadyReasonIDInvalid = "CapacityReservationGroupIDInvalid"
+	CapacityReservationGroupUnreadyReasonNotFound  = "CapacityReservationGroupNotFound"
+	// CapacityReservationGroupUnreadyReasonAccessDenied is expected when the Karpenter
+	// identity has not been granted access to the group's scope. Note that this only
+	// covers read access; permission to associate an instance with the group cannot be
+	// verified until launch.
+	CapacityReservationGroupUnreadyReasonAccessDenied         = "CapacityReservationGroupAccessDenied"
+	CapacityReservationGroupUnreadyReasonRegionMismatch       = "CapacityReservationGroupRegionMismatch"
+	CapacityReservationGroupUnreadyReasonSubscriptionMismatch = "CapacityReservationGroupSubscriptionMismatch"
+	CapacityReservationGroupUnreadyReasonUnsupportedType      = "CapacityReservationGroupUnsupportedReservationType"
+	CapacityReservationGroupUnreadyReasonNoReservations       = "CapacityReservationGroupNoReservations"
+	// CapacityReservationGroupUnreadyReasonNoEligibleReservations means the group has
+	// members but none is provisioned, so none can back an offering yet.
+	CapacityReservationGroupUnreadyReasonNoEligibleReservations = "CapacityReservationGroupNoEligibleReservations"
+	// CapacityReservationGroupUnreadyReasonNoCompatibleReservations means every eligible
+	// member reserves something this NodeClass cannot use: a size absent from the region,
+	// or one its own filters exclude.
+	CapacityReservationGroupUnreadyReasonNoCompatibleReservations = "CapacityReservationGroupNoCompatibleReservations"
+	CapacityReservationGroupUnreadyReasonUnsupportedCloud         = "CapacityReservationGroupUnsupportedCloud"
+	CapacityReservationGroupUnreadyReasonUnknownError             = "CapacityReservationGroupUnknownError"
+)
+
+const (
+	capacityReservationGroupReconcilerName = "nodeclass.capacityreservationgroup"
+	capacityReservationGroupResourceType   = "capacityReservationGroups"
+
+	// unreadyRequeueInterval retries states that a user action can clear at once, rather
+	// than leaving the NodeClass unready for a full healthy revalidation period.
+	unreadyRequeueInterval = time.Minute
+)
+
+// instanceTypeLister is the projection side of the CRG feature, narrowed to what
+// readiness needs. Reusing it keeps a single definition of which SKUs a NodeClass can
+// actually use, rather than a second copy that can drift.
+type instanceTypeLister interface {
+	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+}
+
+type capacityReservationGroupOfferingsInvalidator interface {
+	InvalidateCapacityReservationGroup(string)
+}
+
+// CapacityReservationGroupReconciler resolves spec.capacityReservation.groupID into
+// status.capacityReservationGroup: the group's placement and the member reservations
+// that can back offerings. It deliberately resolves only the static shape of the
+// group. Utilization is volatile and must not become a per-node guarantee.
+type CapacityReservationGroupReconciler struct {
+	groupsClient         azapi.CapacityReservationGroupsAPI
+	reservationsClient   azapi.CapacityReservationsAPI
+	instanceTypes        instanceTypeLister
+	unavailableOfferings capacityReservationGroupOfferingsInvalidator
+	subscriptionID       string
+	location             string
+	unsupportedCloud     atomic.Bool
+}
+
+func NewCapacityReservationGroupReconciler(
+	subscriptionID string,
+	location string,
+	groupsClient azapi.CapacityReservationGroupsAPI,
+	reservationsClient azapi.CapacityReservationsAPI,
+	instanceTypes instanceTypeLister,
+	unavailableOfferings capacityReservationGroupOfferingsInvalidator,
+) *CapacityReservationGroupReconciler {
+	return &CapacityReservationGroupReconciler{
+		groupsClient:         groupsClient,
+		reservationsClient:   reservationsClient,
+		instanceTypes:        instanceTypes,
+		unavailableOfferings: unavailableOfferings,
+		subscriptionID:       subscriptionID,
+		location:             location,
+	}
+}
+
+//nolint:gocyclo
+func (r *CapacityReservationGroupReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	if nodeClass.Spec.CapacityReservation == nil {
+		nodeClass.Status.CapacityReservationGroup = nil
+		// StatusConditions only includes this condition as a Ready dependency while
+		// capacityReservation is configured. Clear the stale persisted condition.
+		_ = nodeClass.StatusConditions().Clear(v1beta1.ConditionTypeCapacityReservationGroupReady)
+		return reconcile.Result{}, nil
+	}
+
+	crgID := nodeClass.GetCapacityReservationGroupID()
+	logger := log.FromContext(ctx).WithName(capacityReservationGroupReconcilerName).WithValues("capacityReservationGroupID", crgID)
+
+	resourceID, err := arm.ParseResourceID(crgID)
+	if err != nil || !strings.EqualFold(resourceID.ResourceType.Type, capacityReservationGroupResourceType) {
+		logger.Error(err, "failed to parse capacityReservation.groupID")
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonIDInvalid,
+			fmt.Sprintf("Failed to parse capacityReservation.groupID %s", crgID))
+		return reconcile.Result{}, nil
+	}
+
+	// ARM returns resource IDs with inconsistent casing, so every comparison against
+	// an ID or one of its segments is case-insensitive.
+	if !strings.EqualFold(resourceID.SubscriptionID, r.subscriptionID) {
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonSubscriptionMismatch,
+			fmt.Sprintf("capacityReservation.groupID must be in subscription %s", r.subscriptionID))
+		return reconcile.Result{}, nil
+	}
+	if r.unsupportedCloud.Load() {
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedCloud,
+			"capacity reservation groups are not supported by this cloud")
+		return reconcile.Result{}, nil
+	}
+
+	group, err := r.groupsClient.Get(ctx, resourceID.ResourceGroupName, resourceID.Name, nil)
+	if err != nil {
+		if azErr := sdkerrors.IsResponseError(err); azErr != nil {
+			if strings.EqualFold(azErr.ErrorCode, "InvalidResourceType") || strings.EqualFold(azErr.ErrorCode, "NoRegisteredProviderFound") {
+				r.unsupportedCloud.Store(true)
+				r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedCloud,
+					"capacity reservation groups are not supported by this cloud")
+				return reconcile.Result{}, nil
+			}
+			switch azErr.StatusCode {
+			case http.StatusNotFound:
+				r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNotFound,
+					fmt.Sprintf("resource not found: %s", crgID))
+				return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
+			case http.StatusForbidden, http.StatusUnauthorized:
+				r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonAccessDenied,
+					fmt.Sprintf("access denied reading capacity reservation group: %s", crgID))
+				return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
+			}
+		}
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnknownError,
+			fmt.Sprintf("unknown error getting capacity reservation group: %s", err.Error()))
+		logger.Error(err, "getting capacity reservation group failed during reconciliation with unknown error")
+		return reconcile.Result{}, err
+	}
+
+	if !strings.EqualFold(lo.FromPtr(group.Location), r.location) {
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonRegionMismatch,
+			fmt.Sprintf("capacity reservation group is in region %s, expected %s", lo.FromPtr(group.Location), r.location))
+		return reconcile.Result{}, nil
+	}
+
+	// Azure omits reservationType for Targeted groups, so only an explicit
+	// non-Targeted value is a rejection.
+	if group.Properties != nil && group.Properties.ReservationType != nil &&
+		*group.Properties.ReservationType != armcompute.ReservationTypeTargeted {
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnsupportedType,
+			fmt.Sprintf("capacity reservation group has unsupported reservation type %s, only Targeted is supported",
+				*group.Properties.ReservationType))
+		return reconcile.Result{}, nil
+	}
+
+	reservations, err := r.listReservations(ctx, resourceID.ResourceGroupName, resourceID.Name)
+	if err != nil {
+		if azErr := sdkerrors.IsResponseError(err); azErr != nil &&
+			(azErr.StatusCode == http.StatusForbidden || azErr.StatusCode == http.StatusUnauthorized) {
+			r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonAccessDenied,
+				fmt.Sprintf("access denied listing capacity reservations in group: %s", crgID))
+			return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
+		}
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonUnknownError,
+			fmt.Sprintf("unknown error listing capacity reservations: %s", err.Error()))
+		logger.Error(err, "listing capacity reservations failed during reconciliation with unknown error")
+		return reconcile.Result{}, err
+	}
+
+	// A group with no members can never back an offering. AKS associates a node pool
+	// with a warning in this case; we fail closed instead.
+	if len(reservations) == 0 {
+		r.setFalse(nodeClass, CapacityReservationGroupUnreadyReasonNoReservations,
+			fmt.Sprintf("capacity reservation group has no capacity reservations: %s", crgID))
+		// Short interval, not the healthy one: a group is commonly listed empty while the
+		// operator is still populating it, and ARM can briefly list a fresh member as absent.
+		return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
+	}
+
+	// Recorded before eligibility is judged: when nothing can back an offering, the member
+	// names and their states are exactly what the operator needs to see, and a NodePool has
+	// been authored against each of them.
+	resolvedGroup := &v1beta1.CapacityReservationGroup{
+		// Falling back to the requested ID keeps a required field populated; it is the same
+		// group, and ARM may echo it with different casing.
+		ID:                   lo.CoalesceOrEmpty(lo.FromPtr(group.ID), crgID),
+		Location:             lo.FromPtr(group.Location),
+		Zones:                sortedNonNilStrings(group.Zones),
+		CapacityReservations: reservations,
+	}
+	if previous := nodeClass.Status.CapacityReservationGroup; previous != nil &&
+		strings.EqualFold(previous.ID, resolvedGroup.ID) &&
+		!equality.Semantic.DeepEqual(previous, resolvedGroup) {
+		r.unavailableOfferings.InvalidateCapacityReservationGroup(crgID)
+	}
+	nodeClass.Status.CapacityReservationGroup = resolvedGroup
+
+	// Members that are not yet provisioned back no offerings, so a group made up entirely
+	// of them would otherwise report Ready and project nothing, which reaches the user as
+	// unschedulable pods rather than as a NodeClass problem.
+	if !lo.SomeBy(reservations, func(cr v1beta1.CapacityReservation) bool { return cr.IsEligible() }) {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
+			CapacityReservationGroupUnreadyReasonNoEligibleReservations,
+			fmt.Sprintf("no capacity reservation in group is provisioned: %s", crgID))
+		return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
+	}
+
+	// Being provisioned is not the same as being usable: a member can reserve a size this
+	// region does not offer, or one this NodeClass filters out. Rather than restate those
+	// rules here and let the two copies drift, ask the projection itself what it would
+	// produce for the status about to be written. List does not read the Ready condition,
+	// so this is not recursive, and it warms the cache key the launch path uses next.
+	instanceTypes, err := r.instanceTypes.List(ctx, nodeClass)
+	if err != nil {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
+			CapacityReservationGroupUnreadyReasonUnknownError,
+			fmt.Sprintf("unknown error listing instance types for capacity reservation group: %s", err.Error()))
+		return reconcile.Result{}, fmt.Errorf("listing instance types for capacity reservation group %s: %w", crgID, err)
+	}
+	if len(instanceTypes) == 0 {
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady,
+			CapacityReservationGroupUnreadyReasonNoCompatibleReservations,
+			fmt.Sprintf("no capacity reservation in group reserves a VM size this NodeClass can use: %s", crgID))
+		return reconcile.Result{RequeueAfter: unreadyRequeueInterval}, nil
+	}
+
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeCapacityReservationGroupReady)
+
+	// Periodically revalidate: members and quantities are user-managed and can change
+	// without any change to the NodeClass.
+	return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
+}
+
+func (r *CapacityReservationGroupReconciler) listReservations(ctx context.Context, resourceGroupName, groupName string) ([]v1beta1.CapacityReservation, error) {
+	var reservations []v1beta1.CapacityReservation
+	pager := r.reservationsClient.NewListByCapacityReservationGroupPager(resourceGroupName, groupName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, cr := range page.Value {
+			if reservation, ok := capacityReservationFromARM(cr); ok {
+				reservations = append(reservations, reservation)
+			}
+		}
+	}
+	slices.SortFunc(reservations, func(a, b v1beta1.CapacityReservation) int {
+		return strings.Compare(a.ID, b.ID)
+	})
+	return reservations, nil
+}
+
+// capacityReservationFromARM converts one member into the shape status records, reporting
+// false for a member that cannot be represented. A member missing a value the status
+// schema requires is skipped rather than written empty, which the API server would reject,
+// taking the whole status update with it.
+func capacityReservationFromARM(cr *armcompute.CapacityReservation) (v1beta1.CapacityReservation, bool) {
+	if cr == nil || cr.SKU == nil || lo.FromPtr(cr.SKU.Name) == "" ||
+		lo.FromPtr(cr.ID) == "" || lo.FromPtr(cr.Name) == "" {
+		return v1beta1.CapacityReservation{}, false
+	}
+	// Copied rather than aliased so status does not retain a pointer into the ARM response.
+	var quantity *int64
+	if cr.SKU.Capacity != nil {
+		quantity = lo.ToPtr(*cr.SKU.Capacity)
+	}
+	var provisioningState *string
+	if cr.Properties != nil && lo.FromPtr(cr.Properties.ProvisioningState) != "" {
+		provisioningState = cr.Properties.ProvisioningState
+	}
+	return v1beta1.CapacityReservation{
+		ID:                lo.FromPtr(cr.ID),
+		Name:              lo.FromPtr(cr.Name),
+		VMSize:            lo.FromPtr(cr.SKU.Name),
+		Zones:             sortedNonNilStrings(cr.Zones),
+		Quantity:          quantity,
+		ProvisioningState: provisioningState,
+	}, true
+}
+
+func sortedNonNilStrings(values []*string) []string {
+	result := lo.FilterMap(values, func(value *string, _ int) (string, bool) {
+		return lo.FromPtr(value), value != nil
+	})
+	slices.Sort(result)
+	return result
+}
+
+func (r *CapacityReservationGroupReconciler) setFalse(nodeClass *v1beta1.AKSNodeClass, reason, message string) {
+	if nodeClass.Status.CapacityReservationGroup != nil {
+		r.unavailableOfferings.InvalidateCapacityReservationGroup(nodeClass.GetCapacityReservationGroupID())
+	}
+	nodeClass.Status.CapacityReservationGroup = nil
+	nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeCapacityReservationGroupReady, reason, message)
+}
