@@ -33,8 +33,8 @@ inputs:
     description: "the azure vm size to use for the e2e test (set to empty string to allow AKS to default)"
     required: false
     default: ""
-  windows:
-    description: "When 'true', create a dedicated Windows-capable cluster (Azure CNI overlay + windowsProfile) instead of the default Cilium cluster"
+  windows_ready:
+    description: "When 'true', create a cluster that can host Windows nodes: Azure CNI overlay networking (Windows does not support the Cilium dataplane) plus a windowsProfile, instead of the default Cilium cluster"
     required: false
     default: "false"
   aks_machines_pool_name:
@@ -60,7 +60,7 @@ runs:
         PROVISION_MODE: ${{ inputs.provision_mode }}
         AKS_MACHINES_POOL_NAME: ${{ inputs.aks_machines_pool_name }}
       run: |
-        if [ "${{ inputs.windows }}" = "true" ]; then
+        if [ "${{ inputs.windows_ready }}" = "true" ]; then
           echo "Creating dedicated Windows-capable cluster (Azure CNI overlay + windowsProfile)"
           # Generate a throwaway Windows admin password for this ephemeral cluster (meets Windows
           # complexity: upper, lower, digit, special). Mask it so it never appears in logs. The RP

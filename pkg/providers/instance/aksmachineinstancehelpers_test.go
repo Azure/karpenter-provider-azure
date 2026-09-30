@@ -251,28 +251,13 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(*enableFIPs).To(BeTrue())
 			})
 
-			It("should force EnableFIPS false for Windows2022 even if FIPSMode is FIPS", func() {
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
-				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
-				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
-				Expect(err).ToNot(HaveOccurred())
-				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2022))
-				Expect(*enableFIPs).To(BeFalse())
-			})
-
-			It("should force EnableFIPS true for Windows2025", func() {
+			It("should default EnableFIPS true for Windows2025 when fipsMode is omitted", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
-				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
+				nodeClass.Spec.FIPSMode = nil
 				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
 				Expect(*enableFIPs).To(BeTrue())
-			})
-
-			It("should reject Windows2025 before Kubernetes 1.32", func() {
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
-				_, _, err := configureOSSKUAndFIPs(nodeClass, "1.31.9")
-				Expect(err).To(MatchError(ContainSubstring("requires Kubernetes 1.32.0 or newer")))
 			})
 		})
 

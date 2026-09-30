@@ -25,6 +25,7 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
@@ -305,13 +306,13 @@ func (env *Environment) SkipIfNotWindowsCapable() {
 			env.MachineAgentPoolName, len(env.MachineAgentPoolName)))
 	}
 	// The AKS RP sources Windows node admin credentials from the cluster's windowsProfile, so a
-	// cluster created without one cannot provision Windows at all. The E2E matrix only builds a
-	// Windows-capable cluster for the Windows suite, so any other suite carrying a Windows case
-	// must skip here rather than fail late in the Machine create.
+	// cluster without one cannot provision Windows at all. Fail rather than skip: the E2E workflow
+	// is expected to have created a Windows-capable cluster for any suite that reaches this point,
+	// so a missing windowsProfile is a misconfiguration that should be surfaced, not hidden.
 	managedCluster := env.ExpectGetManagedCluster()
-	if managedCluster.Properties == nil || managedCluster.Properties.WindowsProfile == nil {
-		Skip("cluster has no windowsProfile; Windows nodes require a Windows-capable cluster")
-	}
+	Expect(managedCluster.Properties).ToNot(BeNil())
+	Expect(managedCluster.Properties.WindowsProfile).ToNot(BeNil(),
+		"cluster has no windowsProfile; the E2E workflow must create a Windows-capable cluster for suites running Windows contexts")
 }
 
 // WindowsPauseImage is a minimal Windows container image suitable for E2E workloads.
