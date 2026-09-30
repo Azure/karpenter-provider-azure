@@ -45,29 +45,71 @@ func TestSkipIfNotWindowsCapable(t *testing.T) {
 	}
 	var observations []observation
 	caseCount := 0
+	ciliumProfile := &containerservice.NetworkProfile{NetworkDataplane: new(containerservice.NetworkDataplaneCilium)}
+	azureProfile := &containerservice.NetworkProfile{NetworkDataplane: new(containerservice.NetworkDataplaneAzure)}
 	tests := []struct {
 		name                   string
-		networkDataplane       string
+		envNetworkDataplane    string
+		networkProfile         *containerservice.NetworkProfile
 		hasWindowsProfile      bool
+		omitClusterProperties  bool
 		wantSkipReason         string
 		wantManagedClusterGets int
 	}{
 		{
-			name:                   "Cilium skips even with a Windows profile",
-			networkDataplane:       common.NetworkDataplaneCilium,
+			name:                   "MC Cilium skips even with a Windows profile",
+			envNetworkDataplane:    common.NetworkDataplaneCilium,
+			networkProfile:         ciliumProfile,
 			hasWindowsProfile:      true,
 			wantSkipReason:         "Windows node provisioning is not supported with the Cilium dataplane",
-			wantManagedClusterGets: 0,
+			wantManagedClusterGets: 1,
 		},
 		{
-			name:                   "Azure dataplane with a Windows profile runs",
-			networkDataplane:       common.NetworkDataplaneAzure,
+			name:                   "MC Cilium skips even when env says Azure",
+			envNetworkDataplane:    common.NetworkDataplaneAzure,
+			networkProfile:         ciliumProfile,
+			hasWindowsProfile:      true,
+			wantSkipReason:         "Windows node provisioning is not supported with the Cilium dataplane",
+			wantManagedClusterGets: 1,
+		},
+		{
+			name:                   "MC Azure runs even when env says Cilium",
+			envNetworkDataplane:    common.NetworkDataplaneCilium,
+			networkProfile:         azureProfile,
 			hasWindowsProfile:      true,
 			wantManagedClusterGets: 1,
 		},
 		{
-			name:                   "Azure dataplane without a Windows profile skips",
-			networkDataplane:       common.NetworkDataplaneAzure,
+			name:                   "MC Azure with a Windows profile runs",
+			envNetworkDataplane:    common.NetworkDataplaneAzure,
+			networkProfile:         azureProfile,
+			hasWindowsProfile:      true,
+			wantManagedClusterGets: 1,
+		},
+		{
+			name:                   "MC Azure without a Windows profile skips",
+			envNetworkDataplane:    common.NetworkDataplaneAzure,
+			networkProfile:         azureProfile,
+			wantSkipReason:         "cluster has no windowsProfile; Windows nodes require a Windows-capable cluster",
+			wantManagedClusterGets: 1,
+		},
+		{
+			name:                   "nil MC network profile does not fall back to env Cilium",
+			envNetworkDataplane:    common.NetworkDataplaneCilium,
+			hasWindowsProfile:      true,
+			wantManagedClusterGets: 1,
+		},
+		{
+			name:                   "nil MC dataplane does not fall back to env Cilium",
+			envNetworkDataplane:    common.NetworkDataplaneCilium,
+			networkProfile:         &containerservice.NetworkProfile{},
+			hasWindowsProfile:      true,
+			wantManagedClusterGets: 1,
+		},
+		{
+			name:                   "nil MC properties skips without panicking",
+			envNetworkDataplane:    common.NetworkDataplaneAzure,
+			omitClusterProperties:  true,
 			wantSkipReason:         "cluster has no windowsProfile; Windows nodes require a Windows-capable cluster",
 			wantManagedClusterGets: 1,
 		},
@@ -78,9 +120,12 @@ func TestSkipIfNotWindowsCapable(t *testing.T) {
 				name := mode + "/" + poolName + "/" + tt.name
 				caseCount++
 				It(name, func() {
-					properties := &containerservice.ManagedClusterProperties{}
+					properties := &containerservice.ManagedClusterProperties{NetworkProfile: tt.networkProfile}
 					if tt.hasWindowsProfile {
 						properties.WindowsProfile = &containerservice.ManagedClusterWindowsProfile{}
+					}
+					if tt.omitClusterProperties {
+						properties = nil
 					}
 					managedClusterGets := 0
 					server := &containerservicefake.ManagedClustersServer{
@@ -100,7 +145,7 @@ func TestSkipIfNotWindowsCapable(t *testing.T) {
 						Environment: &common.Environment{
 							Context:             context.Background(),
 							InClusterController: poolName != "aksmanagedap",
-							NetworkDataplane:    tt.networkDataplane,
+							NetworkDataplane:    tt.envNetworkDataplane,
 						},
 						ProvisionMode:        mode,
 						MachineAgentPoolName: poolName,
