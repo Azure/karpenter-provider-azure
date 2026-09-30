@@ -29,12 +29,12 @@ runs:
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
       run: make toolchain
-    # Install trivy v0.69.3 with SHA256 verification (pinned binary, no apt repo trust)
+    # Install trivy v0.74.0 with SHA256 verification (pinned binary, no apt repo trust)
     - shell: bash
       run: |
-        if ! command -v trivy &> /dev/null; then
-          TRIVY_VERSION="0.69.3"
-          TRIVY_SHA256="a484057aafde31089cf2558ca0f79a4bc835125a5ee6834183a5bcf0735af358"
+        TRIVY_VERSION="0.74.0"
+        TRIVY_SHA256="cf1e32ec8d4d8823e023096a28cadb14f5b5123ce03f201fb633c5b76aa712dd"
+        if ! command -v trivy &> /dev/null || [[ "$(trivy --version | head -n 1)" != "Version: ${TRIVY_VERSION}" ]]; then
           wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
           echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
           sudo dpkg -i /tmp/trivy.deb

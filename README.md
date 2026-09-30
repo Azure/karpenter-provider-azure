@@ -20,6 +20,7 @@ Table of contents:
   - [Create NodePool](#create-nodepool)
   - [Scale up deployment](#scale-up-deployment)
   - [Scale down deployment](#scale-down-deployment)
+  - [Maintain spare capacity](#maintain-spare-capacity)
   - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
 - [Cleanup (self-hosted)](#cleanup-self-hosted)
   - [Delete the cluster](#delete-the-cluster)
@@ -344,6 +345,10 @@ Now, delete the deployment. After a short amount of time, Karpenter should termi
 kubectl delete deployment inflate
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
+
+### Maintain spare capacity
+
+The alpha CapacityBuffer feature can maintain schedulable headroom for workload spikes. It is disabled by default for self-hosted installations and has explicit cost, ownership, and workload-shape limits. See the [CapacityBuffer guide](docs/capacity-buffer.md) and [bounded example](examples/v1/capacity-buffer.yaml).
 
 ### Delete Karpenter nodes manually
 
