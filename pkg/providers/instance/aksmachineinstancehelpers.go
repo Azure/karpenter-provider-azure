@@ -310,6 +310,10 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 	}
 	family := *nodeClass.Spec.ImageFamily
 
+	// enableFIPS is the effective FIPS setting from the NodeClass. IsFIPSEnabled() already
+	// encodes that Windows2025 is FIPS-on in AKS even when fipsMode is omitted, and CRD validation
+	// rejects the unsupported combinations (FIPS on Windows2022, non-FIPS on Windows2025), so this
+	// defaults from the NodeClass rather than overriding what the user asked for.
 	enableFIPS := nodeClass.IsFIPSEnabled()
 
 	var ossku armcontainerservice.OSSKU
@@ -322,13 +326,8 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 		ossku = armcontainerservice.OSSKUAzureLinux
 	case v1beta1.Windows2022ImageFamily:
 		ossku = armcontainerservice.OSSKUWindows2022
-		enableFIPS = false
 	case v1beta1.Windows2025ImageFamily:
-		if !imagefamily.SupportsWindows2025(orchestratorVersion) {
-			return nil, nil, fmt.Errorf("Windows2025 requires Kubernetes 1.32.0 or newer, got %q", orchestratorVersion)
-		}
 		ossku = armcontainerservice.OSSKUWindows2025
-		enableFIPS = true
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
