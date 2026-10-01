@@ -30,6 +30,14 @@ assert_equals \
     '${{ env.K8S_VERSION }}' \
     "install-deps k8sVersion input"
 assert_equals \
+    "$(yq eval '.jobs.ci.steps[] | select(.run // "" | contains("make ci-non-test")) | .run' "$workflow")" \
+    "make ci-non-test" \
+    "make ci-non-test step run command"
+assert_equals \
+    "$(yq eval '.jobs.ci.steps[] | select(.run // "" | contains("make ci-non-test")) | .env.K8S_VERSION' "$workflow")" \
+    "null" \
+    "make ci-non-test step K8S_VERSION override"
+assert_equals \
     "$(yq eval '.inputs.k8sVersion.default' "$install_deps_action")" \
     "$expected_version" \
     "install-deps default Kubernetes version"
