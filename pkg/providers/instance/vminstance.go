@@ -615,7 +615,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
-	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSSDEnabled)
+	setVMPropertiesAdditionalCapabilities(vm.Properties, opts.UltraSSDEnabled, opts.LaunchTemplate.EnableFIPS1403Encryption)
 	setVMPropertiesCapacityReservation(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
@@ -702,12 +702,15 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 	}
 }
 
-func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSSDEnabled bool) {
+func setVMPropertiesAdditionalCapabilities(vmProperties *armcompute.VirtualMachineProperties, ultraSSDEnabled, fips1403EncryptionEnabled bool) {
+	if (ultraSSDEnabled || fips1403EncryptionEnabled) && vmProperties.AdditionalCapabilities == nil {
+		vmProperties.AdditionalCapabilities = &armcompute.AdditionalCapabilities{}
+	}
 	if ultraSSDEnabled {
-		if vmProperties.AdditionalCapabilities == nil {
-			vmProperties.AdditionalCapabilities = &armcompute.AdditionalCapabilities{}
-		}
 		vmProperties.AdditionalCapabilities.UltraSSDEnabled = &ultraSSDEnabled
+	}
+	if fips1403EncryptionEnabled {
+		vmProperties.AdditionalCapabilities.EnableFips1403Encryption = &fips1403EncryptionEnabled
 	}
 }
 

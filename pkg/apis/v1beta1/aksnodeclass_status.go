@@ -22,6 +22,7 @@ import (
 
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -104,6 +105,35 @@ type CapacityReservationGroup struct {
 	CapacityReservations []CapacityReservation `json:"capacityReservations,omitempty"`
 }
 
+// RecentlyUsedVersion contains a previously effective node image version and the Kubernetes version it was paired with.
+type RecentlyUsedVersion struct {
+	// timeUsed is when this image version was last effective.
+	// +optional
+	TimeUsed *metav1.Time `json:"timeUsed,omitempty"`
+	// nodeImageVersion is the version suffix from the node image ID.
+	// +required
+	NodeImageVersion *string `json:"nodeImageVersion,omitempty"`
+	// kubernetesVersion is the Kubernetes version paired with the image version.
+	// +required
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
+}
+
+// ObservedVersions contains version metadata used to default and validate spec.versions.
+// The effective Kubernetes version and images are reported through status.kubernetesVersion and status.images.
+type ObservedVersions struct {
+	// currentControlPlaneKubernetesVersion is the current Kubernetes version of the control plane.
+	// It can differ from status.kubernetesVersion when spec.versions.kubernetesVersion is pinned.
+	// +optional
+	CurrentControlPlaneKubernetesVersion *string `json:"currentControlPlaneKubernetesVersion,omitempty"`
+	// latestImageVersion is the latest node image version resolved from the gallery.
+	// +optional
+	LatestImageVersion *string `json:"latestImageVersion,omitempty"`
+	// recentlyUsedVersions contains previously effective node image versions.
+	// +optional
+	// +listType=atomic
+	RecentlyUsedVersions []RecentlyUsedVersion `json:"recentlyUsedVersions,omitempty"`
+}
+
 // LocalDNSState is the resolved enable/disable decision for LocalDNS on the
 // NodeClass. It represents the current LocalDNS enablement state at the
 // moment, derived from Spec.LocalDNS.Mode and cluster conditions:
@@ -145,6 +175,10 @@ type AKSNodeClassStatus struct {
 	// +optional
 	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	Images []NodeImage `json:"images,omitempty"`
+	// observedVersions contains observed version metadata and previously effective
+	// Kubernetes and node image version pairs.
+	// +optional
+	ObservedVersions *ObservedVersions `json:"observedVersions,omitempty"`
 	// kubernetesVersion contains the current kubernetes version which should be
 	// used for nodes provisioned for the NodeClass
 	// +optional

@@ -44,6 +44,10 @@ type VirtualMachinesAPI interface {
 	BeginDelete(ctx context.Context, resourceGroupName string, vmName string, options *armcompute.VirtualMachinesClientBeginDeleteOptions) (*runtime.Poller[armcompute.VirtualMachinesClientDeleteResponse], error)
 }
 
+type AKSManagedClustersAPI interface {
+	ListKubernetesVersions(ctx context.Context, location string, options *armcontainerservice.ManagedClustersClientListKubernetesVersionsOptions) (armcontainerservice.ManagedClustersClientListKubernetesVersionsResponse, error)
+}
+
 type AzureResourceGraphAPI interface {
 	Resources(ctx context.Context, query armresourcegraph.QueryRequest, options *armresourcegraph.ClientResourcesOptions) (armresourcegraph.ClientResourcesResponse, error)
 }
