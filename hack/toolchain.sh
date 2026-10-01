@@ -8,7 +8,6 @@ SETUP_ENVTEST_VERSION="v0.22.3"
 SETUP_ENVTEST_URL="${SETUP_ENVTEST_URL:-}"
 SETUP_ENVTEST_SHA256="${SETUP_ENVTEST_SHA256:-}"
 SKIP_INSTALLED="${SKIP_INSTALLED:-false}"
-FORCE_INSTALL="${FORCE_INSTALL:-false}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
@@ -84,10 +83,6 @@ should-skip() {
         return "${validation_status}"
     fi
 
-    if [[ "${FORCE_INSTALL}" == true ]]; then
-        echo "[INF] Installing $1 because FORCE_INSTALL=true"
-        return 1
-    fi
     if [[ "${SKIP_INSTALLED}" != true ]]; then
         echo "[INF] Installing $1 because SKIP_INSTALLED is not true"
         return 1

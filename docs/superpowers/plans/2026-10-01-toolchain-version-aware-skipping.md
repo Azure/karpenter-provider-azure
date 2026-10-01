@@ -4,14 +4,14 @@
 
 **Goal:** Make cached toolchain installs self-heal when a required executable is missing or at the wrong version, without adding a separate envtest repair subsystem.
 
-**Architecture:** Extend `hack/toolchain.sh` with one policy-aware `should-skip` API and a smaller policy-free command/version predicate. Go tools and Trivy use the same decision, while envtest treats `kube-apiserver`, `kubectl`, and `etcd` as one bundle and refreshes all three when any check fails. CI always runs the toolchain: cache misses force installation and cache hits validate before skipping.
+**Architecture:** Extend `hack/toolchain.sh` with one policy-aware `should-skip` API and a smaller policy-free command/version predicate. Go tools and Trivy use the same decision, while envtest treats `kube-apiserver`, `kubectl`, and `etcd` as one bundle and refreshes all three when any check fails. CI always runs the toolchain: cache misses disable skipping and cache hits validate before skipping.
 
 **Tech Stack:** Bash, GNU command-line tools, `setup-envtest`, Make, GitHub Actions YAML, `shellcheck`, `actionlint`.
 
 ## Global constraints
 
-- `FORCE_INSTALL=true` always requires installation.
-- Without force, `SKIP_INSTALLED=true` skips only an executable that passes its configured version check.
+- `SKIP_INSTALLED=false` requires installation.
+- `SKIP_INSTALLED=true` skips only an executable that passes its configured version check.
 - Tools without a safe, meaningful `version` or `--version` command remain presence-only.
 - `should-skip` accepts only `<command>` or `<command> <version|--version> <expected-text> [version-arg]`.
 - `go-install` accepts only `<app> <reference>` or `<app> <version|--version> <expected-text> <reference>`.
@@ -114,28 +114,26 @@ test_should_skip_policy_and_versions() {
     export VERSION_ARGS_LOG
     make_version_tool "${tool}" "Version: v0.19.0"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 0 should-skip "${tool}" --version v0.19.0
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 1 should-skip "${tool}" --version v0.18.0
-    SKIP_INSTALLED=true FORCE_INSTALL=true \
+    SKIP_INSTALLED=false \
         assert_status 1 should-skip "${tool}" --version v0.19.0
-    SKIP_INSTALLED=false FORCE_INSTALL=false \
-        assert_status 1 should-skip "${tool}" --version v0.19.0
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 0 should-skip "${tool}"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 0 should-skip "${tool}" version v0.19.0 --client=true
     assert_contains "${args_log}" "version --client=true"
 
     make_version_tool "${tool}" "Version: v0.19.0" 1
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 1 should-skip "${tool}" --version v0.19.0
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 2 should-skip "${tool}" -version v0.19.0
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 2 should-skip "${tool}" --version
 }
 
@@ -156,13 +154,12 @@ one-argument `should-skip` cannot satisfy the new version-aware assertions.
 
 - [ ] **Step 3: Make `toolchain.sh` source-safe and implement the helper contract**
 
-At the top of `hack/toolchain.sh`, add the force default and retain test-overridable destinations:
+At the top of `hack/toolchain.sh`, retain test-overridable destinations:
 
 ```bash
 K8S_VERSION="${K8S_VERSION:-1.34.x}"
 KUBEBUILDER_ASSETS="${KUBEBUILDER_ASSETS:-/usr/local/kubebuilder/bin}"
 SKIP_INSTALLED="${SKIP_INSTALLED:-false}"
-FORCE_INSTALL="${FORCE_INSTALL:-false}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
@@ -228,10 +225,6 @@ should-skip() {
         return "${validation_status}"
     fi
 
-    if [[ "${FORCE_INSTALL}" == true ]]; then
-        echo "[INF] Installing $1 because FORCE_INSTALL=true"
-        return 1
-    fi
     if [[ "${SKIP_INSTALLED}" != true ]]; then
         echo "[INF] Installing $1 because SKIP_INSTALLED is not true"
         return 1
@@ -358,11 +351,11 @@ test_go_install_forms() {
     make_version_tool "${current}" "current-tool v1.2.3"
     : >"${GO_CALL_LOG}"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         go-install current-tool --version v1.2.3 example.com/current@v1.2.3
     [[ ! -s "${GO_CALL_LOG}" ]] || fail "matching tool should not be installed"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         go-install missing-tool example.com/missing@v1.0.0
     assert_contains "${GO_CALL_LOG}" "install example.com/missing@v1.0.0"
 
@@ -583,7 +576,6 @@ test_envtest_refreshes_the_complete_bundle() {
     SETUP_ENVTEST_CALL_LOG="${calls}"
     VERSION_ARGS_LOG="${root}/version-args.log"
     SKIP_INSTALLED=true
-    FORCE_INSTALL=false
     export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
 
     _ensure_envtest_assets
@@ -617,7 +609,6 @@ test_envtest_keeps_a_healthy_bundle() {
     SETUP_ENVTEST_CALL_LOG="${calls}"
     VERSION_ARGS_LOG="${root}/version-args.log"
     SKIP_INSTALLED=true
-    FORCE_INSTALL=false
     export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
 
     _ensure_envtest_assets
@@ -647,7 +638,6 @@ test_missing_etcd_refreshes_every_link() {
     SETUP_ENVTEST_CALL_LOG="${root}/calls.log"
     VERSION_ARGS_LOG="${root}/version-args.log"
     SKIP_INSTALLED=true
-    FORCE_INSTALL=false
     export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
 
     _ensure_envtest_assets
@@ -678,7 +668,6 @@ test_rejects_an_incomplete_resolved_bundle() {
     SETUP_ENVTEST_CALL_LOG="${root}/calls.log"
     VERSION_ARGS_LOG="${root}/version-args.log"
     SKIP_INSTALLED=true
-    FORCE_INSTALL=false
     export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
 
     assert_status 1 _ensure_envtest_assets
@@ -700,7 +689,6 @@ test_rejects_a_wrong_version_after_refresh() {
     SETUP_ENVTEST_CALL_LOG="${root}/calls.log"
     VERSION_ARGS_LOG="${root}/version-args.log"
     SKIP_INSTALLED=true
-    FORCE_INSTALL=false
     export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
 
     assert_status 1 _ensure_envtest_assets
@@ -729,7 +717,6 @@ test_kubebuilder_always_downloads_setup_envtest() {
     SETUP_ENVTEST_CALL_LOG="${root}/calls.log"
     VERSION_ARGS_LOG="${root}/version-args.log"
     SKIP_INSTALLED=true
-    FORCE_INSTALL=false
     export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_FIXTURE
     export SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
 
@@ -1012,8 +999,7 @@ with:
     - shell: bash
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
-        SKIP_INSTALLED: "true"
-        FORCE_INSTALL: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
+        SKIP_INSTALLED: ${{ steps.cache-toolchain.outputs.cache-hit == 'true' }}
       run: make toolchain
 ```
 

@@ -15,7 +15,6 @@ on every CI job, and reinstall only tools that are missing or stale.
 
 - Make `SKIP_INSTALLED=true` mean "skip this tool when the required version is already installed".
 - Preserve presence-only skipping for tools that do not expose a safe, meaningful version command.
-- Add `FORCE_INSTALL=true` as an explicit unconditional-install override.
 - Apply the same policy to Go tools, Trivy, and the envtest binaries.
 - Repair the complete envtest bundle when any required binary is missing or stale.
 - Keep the change in the existing toolchain script rather than adding a separate repair subsystem.
@@ -53,24 +52,23 @@ install` manages rather than a same-named binary elsewhere on `PATH`.
 
 The decision order is:
 
-1. When `FORCE_INSTALL=true`, return "installation required".
-2. When `SKIP_INSTALLED` is not `true`, return "installation required". This preserves the current
+1. When `SKIP_INSTALLED` is not `true`, return "installation required". This preserves the current
    default behaviour.
-3. Require the command to be a regular executable file. A searchable directory must not satisfy a
+2. Require the command to be a regular executable file. A searchable directory must not satisfy a
    presence-only check.
-4. For a version-aware call, run the requested `version` or `--version` command, append the optional
+3. For a version-aware call, run the requested `version` or `--version` command, append the optional
    fourth argument when present, and capture combined standard output and standard error.
-5. Skip only when the version command succeeds and its output contains `expected-text` as a fixed
+4. Skip only when the version command succeeds and its output contains `expected-text` as a fixed
    string.
-6. For a presence-only call, skip once the executable exists.
+5. For a presence-only call, skip once the executable exists.
 
 The helper returns distinct statuses for "skip", "install required", and invalid usage. Callers
 must propagate invalid usage rather than treating it as a cache miss. Accepted version verbs and
 argument counts are validated explicitly.
 
 The version-execution and fixed-string matching logic should live in a small internal predicate.
-`should-skip` adds the `FORCE_INSTALL` and `SKIP_INSTALLED` policy around that predicate. This lets
-the envtest installer verify newly installed binaries even when `FORCE_INSTALL=true`.
+`should-skip` adds the `SKIP_INSTALLED` policy around that predicate. The envtest installer uses the
+internal predicate to verify newly installed binaries without applying skip policy.
 
 ### `go-install`
 
@@ -158,11 +156,10 @@ The install-deps composite action keeps caching `/usr/local/kubebuilder/bin` and
 Replace the cache-miss-only toolchain step with one unconditional step:
 
 - Set `K8S_VERSION` from the action input.
-- Set `SKIP_INSTALLED=true`.
-- Set `FORCE_INSTALL=true` when the cache did not hit, and `false` when it did.
+- Set `SKIP_INSTALLED=true` when the cache hit, and `false` when it did not.
 - Run `make toolchain`.
 
-On a cache miss, the explicit force flag installs everything. On a healthy cache hit, version-aware
+On a cache miss, disabled skipping installs everything. On a healthy cache hit, version-aware
 checks skip matching tools. On a stale or partial cache hit, only the affected Go tools are
 reinstalled, while any envtest failure refreshes the complete bundle.
 
@@ -186,7 +183,6 @@ installation.
 
 The test uses temporary executable stubs and test-specific paths. It covers:
 
-- `FORCE_INSTALL` overriding every skip.
 - `SKIP_INSTALLED=false` preserving unconditional installation.
 - Presence-only skipping.
 - Matching and mismatching `version` and `--version` output.

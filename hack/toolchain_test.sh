@@ -108,28 +108,26 @@ test_should_skip_policy_and_versions() {
     export VERSION_ARGS_LOG
     make_version_tool "${tool}" "Version: v0.19.0"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 0 should-skip "${tool}" --version v0.19.0
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 1 should-skip "${tool}" --version v0.18.0
-    SKIP_INSTALLED=true FORCE_INSTALL=true \
+    SKIP_INSTALLED=false \
         assert_status 1 should-skip "${tool}" --version v0.19.0
-    SKIP_INSTALLED=false FORCE_INSTALL=false \
-        assert_status 1 should-skip "${tool}" --version v0.19.0
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 0 should-skip "${tool}"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 0 should-skip "${tool}" version v0.19.0 --client=true
     assert_contains "${args_log}" "version --client=true"
 
     make_version_tool "${tool}" "Version: v0.19.0" 1
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 1 should-skip "${tool}" --version v0.19.0
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 2 should-skip "${tool}" -version v0.19.0
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         assert_status 2 should-skip "${tool}" --version
 }
 
@@ -141,11 +139,11 @@ test_go_install_forms() {
     make_version_tool "${current}" "current-tool v1.2.3"
     : >"${GO_CALL_LOG}"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         go-install current-tool --version v1.2.3 example.com/current@v1.2.3
     [[ ! -s "${GO_CALL_LOG}" ]] || fail "matching tool should not be installed"
 
-    SKIP_INSTALLED=true FORCE_INSTALL=false \
+    SKIP_INSTALLED=true \
         go-install missing-tool example.com/missing@v1.0.0
     assert_contains "${GO_CALL_LOG}" "install example.com/missing@v1.0.0"
 
@@ -188,7 +186,6 @@ configure_envtest() {
     SETUP_ENVTEST_CALL_LOG="${root}/calls.log"
     VERSION_ARGS_LOG="${root}/version-args.log"
     SKIP_INSTALLED=true
-    FORCE_INSTALL=false
     export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
 }
 

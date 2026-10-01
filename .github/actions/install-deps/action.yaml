@@ -27,8 +27,7 @@ runs:
     - shell: bash
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
-        SKIP_INSTALLED: "true"
-        FORCE_INSTALL: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
+        SKIP_INSTALLED: ${{ steps.cache-toolchain.outputs.cache-hit == 'true' }}
       run: make toolchain
     # Install trivy v0.74.0 with SHA256 verification (pinned binary, no apt repo trust)
     - shell: bash
