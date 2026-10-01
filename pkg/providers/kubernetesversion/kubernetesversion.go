@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/patrickmn/go-cache"
+	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
@@ -93,6 +94,9 @@ func (p *kubernetesVersionProvider) IsSupported(
 		for patchVersion := range version.PatchVersions {
 			supportedVersions[patchVersion] = struct{}{}
 		}
+	}
+	if p.cm.HasChanged("supported-kubernetes-versions", supportedVersions) {
+		log.FromContext(ctx).V(1).Info("discovered supported kubernetes versions", "supportedVersions", lo.Keys(supportedVersions))
 	}
 	p.kubernetesVersionCache.SetDefault(supportedKubernetesVersionsCacheKey, supportedVersions)
 
