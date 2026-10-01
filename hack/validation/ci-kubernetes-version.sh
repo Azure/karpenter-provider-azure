@@ -23,6 +23,8 @@ assert_equals \
     "$(yq eval '.jobs.ci.env.K8S_VERSION' "$workflow")" \
     "$expected_version" \
     "non-test CI job K8S_VERSION"
+# The GitHub Actions expression must remain literal for comparison.
+# shellcheck disable=SC2016
 assert_equals \
     "$(yq eval '.jobs.ci.steps[] | select(.uses == "./.github/actions/install-deps") | .with.k8sVersion' "$workflow")" \
     '${{ env.K8S_VERSION }}' \
