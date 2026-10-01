@@ -3,6 +3,9 @@ set -euo pipefail
 
 K8S_VERSION="${K8S_VERSION:-1.34.x}"
 KUBEBUILDER_ASSETS="${KUBEBUILDER_ASSETS:-/usr/local/kubebuilder/bin}"
+SETUP_ENVTEST_BIN="${SETUP_ENVTEST_BIN:-/usr/local/bin/setup-envtest}"
+SETUP_ENVTEST_VERSION="v0.22.3"
+SETUP_ENVTEST_URL="${SETUP_ENVTEST_URL:-}"
 SKIP_INSTALLED="${SKIP_INSTALLED:-false}"
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
 
@@ -194,26 +197,95 @@ tools() {
     rm .custom-gcl.yml
 }
 
+_expected_kubernetes_version() {
+    printf 'v%s\n' "${K8S_VERSION%.x}"
+}
+
+_envtest_assets_are_current() {
+    local expected
+    expected="$(_expected_kubernetes_version)"
+    should-skip "${KUBEBUILDER_ASSETS}/kube-apiserver" --version "${expected}" &&
+        should-skip "${KUBEBUILDER_ASSETS}/kubectl" version "${expected}" --client=true &&
+        should-skip "${KUBEBUILDER_ASSETS}/etcd"
+}
+
+_verify_envtest_assets() {
+    local expected
+    expected="$(_expected_kubernetes_version)"
+    _command_is_current "${KUBEBUILDER_ASSETS}/kube-apiserver" --version "${expected}" &&
+        _command_is_current "${KUBEBUILDER_ASSETS}/kubectl" version "${expected}" --client=true &&
+        _command_is_current "${KUBEBUILDER_ASSETS}/etcd"
+}
+
+_install_setup_envtest() {
+    local arch
+    local os
+    local url
+    local download
+    arch=$(go env GOARCH)
+    os=$(go env GOOS)
+    url="${SETUP_ENVTEST_URL:-https://github.com/kubernetes-sigs/controller-runtime/releases/download/${SETUP_ENVTEST_VERSION}/setup-envtest-${os}-${arch}}"
+    download="$(mktemp)"
+
+    if ! curl -fsSL "${url}" --output "${download}"; then
+        rm -f "${download}"
+        return 1
+    fi
+    if ! sudo install -m 0755 "${download}" "${SETUP_ENVTEST_BIN}"; then
+        rm -f "${download}"
+        return 1
+    fi
+    rm -f "${download}"
+}
+
+_link_envtest_assets() {
+    local asset_dir="$1"
+    local binary
+    if [[ -z "${asset_dir}" || "${asset_dir}" != /* || "${asset_dir}" == "/" || ! -d "${asset_dir}" ]]; then
+        echo "[ERR] setup-envtest returned invalid asset directory '${asset_dir:-<empty>}'" >&2
+        return 1
+    fi
+
+    for binary in kube-apiserver kubectl etcd; do
+        if [[ ! -x "${asset_dir}/${binary}" ]]; then
+            echo "[ERR] envtest asset is missing or not executable: ${asset_dir}/${binary}" >&2
+            return 1
+        fi
+    done
+    for binary in kube-apiserver kubectl etcd; do
+        ln -sfn "${asset_dir}/${binary}" "${KUBEBUILDER_ASSETS}/${binary}"
+    done
+}
+
+_resolve_envtest_assets() {
+    local arch
+    local asset_dir
+    arch="$(go env GOARCH)"
+    asset_dir="$("${SETUP_ENVTEST_BIN}" use --force -p path "${K8S_VERSION}" \
+        --arch="${arch}" \
+        --bin-dir="${KUBEBUILDER_ASSETS}")"
+    _link_envtest_assets "${asset_dir}"
+}
+
+_ensure_envtest_assets() {
+    if _envtest_assets_are_current; then
+        return
+    fi
+
+    echo "[INF] Refreshing the complete envtest bundle for Kubernetes ${K8S_VERSION}"
+    _resolve_envtest_assets
+    if ! _verify_envtest_assets; then
+        echo "[ERR] envtest bundle does not match Kubernetes ${K8S_VERSION}" >&2
+        return 1
+    fi
+}
+
 kubebuilder() {
     echo "[INF] Setting up kubebuilder binaries for Kubernetes ${K8S_VERSION}"
     sudo mkdir -p "${KUBEBUILDER_ASSETS}"
     sudo chown "${USER}" "${KUBEBUILDER_ASSETS}"
-    arch=$(go env GOARCH)
-    os=$(go env GOOS)
-    sudo curl -sL "https://github.com/kubernetes-sigs/controller-runtime/releases/download/v0.22.3/setup-envtest-${os}-${arch}" --output /usr/local/bin/setup-envtest
-    sudo chmod +x /usr/local/bin/setup-envtest
-
-    ln -sf "$(setup-envtest use -p path "${K8S_VERSION}" --arch="${arch}" --bin-dir="${KUBEBUILDER_ASSETS}")"/* "${KUBEBUILDER_ASSETS}"
-    find "$KUBEBUILDER_ASSETS"
-
-    # Install latest binaries for 1.25.x (contains CEL fix)
-    if [[ "${K8S_VERSION}" = "1.25.x" ]] && [[ "$OSTYPE" == "linux"* ]]; then
-        for binary in 'kube-apiserver' 'kubectl'; do
-            rm "${KUBEBUILDER_ASSETS}/${binary}"
-            wget -P "${KUBEBUILDER_ASSETS}" https://dl.k8s.io/v1.25.16/bin/linux/"${arch}"/"${binary}"
-            chmod +x "${KUBEBUILDER_ASSETS}/${binary}"
-        done
-    fi
+    _install_setup_envtest
+    _ensure_envtest_assets
 }
 
 gettrivy() {

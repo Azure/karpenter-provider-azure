@@ -59,6 +59,33 @@ else
 fi
 EOF
 chmod +x "${FAKE_BIN}/go"
+
+cat >"${FAKE_BIN}/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --output)
+            output="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+cp "${SETUP_ENVTEST_FIXTURE}" "${output}"
+EOF
+chmod +x "${FAKE_BIN}/curl"
+
+cat >"${FAKE_BIN}/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exec "$@"
+EOF
+chmod +x "${FAKE_BIN}/sudo"
+
 export REAL_GO FAKE_GOPATH="${TEST_ROOT}/gopath" GO_CALL_LOG
 PATH="${FAKE_BIN}:${PATH}"
 export PATH
@@ -125,7 +152,154 @@ test_ginkgo_version_resolution() {
         fail "expected Ginkgo version v2.33.0"
 }
 
+make_asset_dir() {
+    local path="$1"
+    local kubernetes_version="$2"
+    make_version_tool "${path}/kube-apiserver" "Kubernetes v${kubernetes_version}"
+    make_version_tool "${path}/kubectl" "Client Version: v${kubernetes_version}"
+    make_version_tool "${path}/etcd" "etcd Version: 3.6.4"
+}
+
+make_setup_envtest() {
+    local path="$1"
+    local asset_dir="$2"
+    cat >"${path}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$*" >>"\${SETUP_ENVTEST_CALL_LOG}"
+printf '%s\n' "${asset_dir}"
+EOF
+    chmod +x "${path}"
+}
+
+configure_envtest() {
+    local root="$1"
+    local assets="$2"
+    local setup_envtest="$3"
+    K8S_VERSION=1.32.x
+    KUBEBUILDER_ASSETS="${assets}"
+    SETUP_ENVTEST_BIN="${setup_envtest}"
+    SETUP_ENVTEST_CALL_LOG="${root}/calls.log"
+    VERSION_ARGS_LOG="${root}/version-args.log"
+    SKIP_INSTALLED=true
+    FORCE_INSTALL=false
+    export K8S_VERSION KUBEBUILDER_ASSETS SETUP_ENVTEST_BIN SETUP_ENVTEST_CALL_LOG VERSION_ARGS_LOG
+}
+
+test_envtest_refreshes_the_complete_bundle() {
+    local root="${TEST_ROOT}/envtest-refresh"
+    local assets="${root}/assets"
+    local resolved="${root}/resolved"
+    local setup_envtest="${root}/setup-envtest"
+    mkdir -p "${assets}" "${resolved}"
+    make_asset_dir "${assets}" "1.34.1"
+    make_asset_dir "${resolved}" "1.32.4"
+    make_version_tool "${assets}/kubectl" "Client Version: v1.31.9"
+    make_setup_envtest "${setup_envtest}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${setup_envtest}"
+
+    _ensure_envtest_assets
+    [[ "$(readlink "${assets}/kube-apiserver")" == "${resolved}/kube-apiserver" ]] ||
+        fail "expected kube-apiserver link to refresh"
+    [[ "$(readlink "${assets}/kubectl")" == "${resolved}/kubectl" ]] ||
+        fail "expected kubectl link to refresh"
+    [[ "$(readlink "${assets}/etcd")" == "${resolved}/etcd" ]] ||
+        fail "expected etcd link to refresh"
+    assert_contains "${SETUP_ENVTEST_CALL_LOG}" "use --force -p path 1.32.x"
+}
+
+test_envtest_keeps_a_healthy_bundle() {
+    local root="${TEST_ROOT}/envtest-healthy"
+    local assets="${root}/assets"
+    local resolved="${root}/resolved"
+    local setup_envtest="${root}/setup-envtest"
+    mkdir -p "${assets}" "${resolved}"
+    make_asset_dir "${assets}" "1.32.4"
+    make_asset_dir "${resolved}" "1.32.5"
+    make_setup_envtest "${setup_envtest}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${setup_envtest}"
+
+    _ensure_envtest_assets
+    [[ ! -e "${SETUP_ENVTEST_CALL_LOG}" || ! -s "${SETUP_ENVTEST_CALL_LOG}" ]] ||
+        fail "healthy assets should not call setup-envtest use"
+    assert_contains "${VERSION_ARGS_LOG}" "version --client=true"
+}
+
+test_missing_etcd_refreshes_every_link() {
+    local root="${TEST_ROOT}/envtest-missing-etcd"
+    local assets="${root}/assets"
+    local resolved="${root}/resolved"
+    local setup_envtest="${root}/setup-envtest"
+    mkdir -p "${assets}" "${resolved}"
+    make_asset_dir "${assets}" "1.32.4"
+    make_asset_dir "${resolved}" "1.32.5"
+    rm "${assets}/etcd"
+    make_setup_envtest "${setup_envtest}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${setup_envtest}"
+
+    _ensure_envtest_assets
+    for binary in kube-apiserver kubectl etcd; do
+        [[ "$(readlink "${assets}/${binary}")" == "${resolved}/${binary}" ]] ||
+            fail "expected ${binary} to refresh with the bundle"
+    done
+}
+
+test_rejects_an_incomplete_resolved_bundle() {
+    local root="${TEST_ROOT}/envtest-incomplete"
+    local assets="${root}/assets"
+    local resolved="${root}/resolved"
+    local setup_envtest="${root}/setup-envtest"
+    mkdir -p "${assets}" "${resolved}"
+    make_asset_dir "${assets}" "1.31.9"
+    make_asset_dir "${resolved}" "1.32.4"
+    rm "${resolved}/kubectl"
+    make_setup_envtest "${setup_envtest}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${setup_envtest}"
+
+    assert_status 1 _ensure_envtest_assets
+}
+
+test_rejects_a_wrong_version_after_refresh() {
+    local root="${TEST_ROOT}/envtest-wrong-version"
+    local assets="${root}/assets"
+    local resolved="${root}/resolved"
+    local setup_envtest="${root}/setup-envtest"
+    mkdir -p "${assets}" "${resolved}"
+    make_asset_dir "${assets}" "1.31.8"
+    make_asset_dir "${resolved}" "1.31.9"
+    make_setup_envtest "${setup_envtest}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${setup_envtest}"
+
+    assert_status 1 _ensure_envtest_assets
+}
+
+test_kubebuilder_always_downloads_setup_envtest() {
+    local root="${TEST_ROOT}/kubebuilder-helper"
+    local assets="${root}/assets"
+    local resolved="${root}/resolved"
+    local fixture="${root}/setup-envtest-fixture"
+    local installed="${root}/bin/setup-envtest"
+    mkdir -p "${assets}" "${resolved}" "$(dirname "${installed}")"
+    make_asset_dir "${assets}" "1.32.4"
+    make_asset_dir "${resolved}" "1.32.5"
+    make_setup_envtest "${fixture}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${installed}"
+    SETUP_ENVTEST_FIXTURE="${fixture}"
+    export SETUP_ENVTEST_FIXTURE
+
+    kubebuilder
+    [[ -x "${installed}" ]] || fail "expected setup-envtest to be downloaded"
+    [[ ! -e "${SETUP_ENVTEST_CALL_LOG}" || ! -s "${SETUP_ENVTEST_CALL_LOG}" ]] ||
+        fail "healthy assets should not be resolved again"
+}
+
 test_should_skip_policy_and_versions
 test_go_install_forms
 test_ginkgo_version_resolution
+test_envtest_refreshes_the_complete_bundle
+test_envtest_keeps_a_healthy_bundle
+test_missing_etcd_refreshes_every_link
+test_rejects_an_incomplete_resolved_bundle
+test_rejects_a_wrong_version_after_refresh
+test_kubebuilder_always_downloads_setup_envtest
 echo "PASS: toolchain helper tests"
