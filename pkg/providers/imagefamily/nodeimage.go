@@ -94,7 +94,6 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	key, err := p.cacheKey(
 		supportedImages,
 		kubernetesVersion,
-		IsSecurityPatchCatalog(ctx),
 	)
 	if err != nil {
 		return []NodeImage{}, err
@@ -117,19 +116,9 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 			return []NodeImage{}, err
 		}
 	}
-	expiration := cache.DefaultExpiration
-	if IsSecurityPatchCatalog(ctx) {
-		expiration = 5 * time.Minute
-	}
-	p.nodeImagesCache.Set(key, nodeImages, expiration)
+	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
 
 	return nodeImages, nil
-}
-
-// ListSecurityPatch is separate from standard discovery so its availability never
-// removes the standard candidates used for fallback and existing-node maintenance.
-func (p *provider) ListSecurityPatch(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
-	return p.List(WithSecurityPatchCatalog(ctx), nodeClass)
 }
 
 func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
@@ -142,7 +131,7 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 	for _, supportedImage := range supportedImages {
 		var nextImage *armcontainerservice.NodeImageVersion
 		for _, retrievedLatestImage := range retrievedLatestImages {
-			if supportedImage.GalleryName == lo.FromPtr(retrievedLatestImage.OS) && supportedImage.ImageDefinition == lo.FromPtr(retrievedLatestImage.SKU) {
+			if supportedImage.ImageDefinition == lo.FromPtr(retrievedLatestImage.SKU) {
 				nextImage = retrievedLatestImage
 				break
 			}
@@ -177,13 +166,12 @@ func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultIma
 	return nodeImages, nil
 }
 
-func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string, securityPatch bool) (string, error) {
+func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string) (string, error) {
 	// Note: the kubernetes version is part of the cache key here, because we bump images on kubernetes upgrade meaning
 	// we want to ensure if there is a kubernetes change we'll get fresh images if there are any.
 	hash, err := hashstructure.Hash([]interface{}{
 		supportedImages,
 		k8sVersion,
-		securityPatch,
 	}, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	if err != nil {
 		return "", err

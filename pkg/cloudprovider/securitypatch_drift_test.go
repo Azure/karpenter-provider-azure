@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
@@ -40,8 +41,8 @@ func TestSecurityPatchPreferenceDoesNotMigrateExistingStandardNode(t *testing.T)
 	nodeClass := &v1beta1.AKSNodeClass{}
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	nodeClass.Status.Images = []v1beta1.NodeImage{{ID: claim.Status.ImageID}}
-	nodeClass.Status.SecurityPatchImages = []v1beta1.NodeImage{{ID: "/images/2404gen2containerd/versions/202609.01.0-2026.09.15"}}
-	reason, err := (&CloudProvider{}).isImageVersionDrifted(context.Background(), claim, nodeClass)
+	ctx := options.ToContext(context.Background(), &options.Options{NodeOSUpgradeChannel: "SecurityPatch"})
+	reason, err := (&CloudProvider{}).isImageVersionDrifted(ctx, claim, nodeClass)
 	if err != nil || reason != "" {
 		t.Fatalf("unexpected migration drift: %s, %v", reason, err)
 	}

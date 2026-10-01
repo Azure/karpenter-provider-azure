@@ -127,35 +127,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-	goalImages := toStatusImages(nodeImages)
-	r.reconcileSecurityPatch(ctx, nodeClass, goalImages)
-
-	// Standard-image maintenance remains independent of the new-node preference.
-	shouldUpdate := imageVersionsUnready(nodeClass) || imageCatalogChanged(false, nodeClass.Status.Images)
-	if !shouldUpdate {
-		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
-		}
-	}
-	if !shouldUpdate {
-		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
-	}
-	if len(goalImages) == 0 && len(nodeClass.Status.SecurityPatchImages) == 0 {
-		nodeClass.Status.Images = nil
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "No compatible standard or captured SecurityPatch images")
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-	}
-	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: true}) {
-		logger.Info("new available standard images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
-	}
-	nodeClass.Status.Images = goalImages
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-}
-
-func toStatusImages(nodeImages []imagefamily.NodeImage) []v1beta1.NodeImage {
-	return lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
+	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
 		})
@@ -172,64 +144,39 @@ func toStatusImages(nodeImages []imagefamily.NodeImage) []v1beta1.NodeImage {
 			Requirements: reqs,
 		}
 	})
-}
 
-func (r *NodeImageReconciler) reconcileSecurityPatch(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, standard []v1beta1.NodeImage) {
-	previous := nodeClass.Status.SecurityPatchImages
-	previousCoverage := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSecurityPatchCoverage)
-	nodeClass.Status.SecurityPatchImages = nil
-	if !options.FromContext(ctx).IsSecurityPatchChannel() {
-		if err := nodeClass.StatusConditions().Clear(v1beta1.ConditionTypeSecurityPatchCoverage); err != nil {
-			log.FromContext(ctx).Error(err, "clearing SecurityPatch coverage condition")
-		}
-		return
-	}
-	provider, ok := r.nodeImageProvider.(interface {
-		ListSecurityPatch(context.Context, *v1beta1.AKSNodeClass) ([]imagefamily.NodeImage, error)
-	})
-	if !ok {
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeSecurityPatchCoverage, "CatalogUnavailable", "Using standard images: captured image discovery unavailable")
-		return
-	}
-	images, err := provider.ListSecurityPatch(ctx, nodeClass)
-	if err != nil {
-		// Retain last-known-good candidates only for the same NodeClass generation
-		// and definitions that are still compatible with the resolved standard family.
-		if previousCoverage != nil && previousCoverage.ObservedGeneration == nodeClass.Generation {
-			nodeClass.Status.SecurityPatchImages = compatiblePreviousImages(previous, standard)
-		}
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeSecurityPatchCoverage, "CatalogUnavailable", "Captured discovery failed; using last-known compatible candidates with standard fallback")
-		log.FromContext(ctx).Error(err, "SecurityPatch catalog unavailable; standard-image fallback remains enabled")
-		return
-	}
-	nodeClass.Status.SecurityPatchImages = toStatusImages(images)
-	setSecurityPatchCoverage(nodeClass, standard)
-}
-
-func setSecurityPatchCoverage(nodeClass *v1beta1.AKSNodeClass, standard []v1beta1.NodeImage) {
-	covered := map[string]bool{}
-	for _, image := range nodeClass.Status.SecurityPatchImages {
-		covered[trimVersionSuffix(image.ID)] = true
-	}
-	missing := []string{}
-	for _, image := range standard {
-		if !covered[trimVersionSuffix(image.ID)] {
-			missing = append(missing, trimVersionSuffix(image.ID))
+	// Scenario A: Check if we should do a full update to latest before processing any partial update
+	//
+	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
+	// for initialization, based off an underlying customer operation, or a different update we're
+	// dependant upon which would have already been preformed within its required maintenance Window.
+	shouldUpdate := imageVersionsUnready(nodeClass)
+	if !shouldUpdate {
+		// Case 4: Check if the maintenance window is open
+		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
 		}
 	}
-	if len(nodeClass.Status.SecurityPatchImages) == 0 || len(missing) > 0 {
-		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeSecurityPatchCoverage, "StandardImageFallback", fmt.Sprintf("Captured images unavailable for some definitions; standard images remain eligible: %v", missing))
-		return
+	if !shouldUpdate {
+		// Scenario B: Calculate any partial update based on image selectors, or newly supports SKUs
+		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
 	}
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSecurityPatchCoverage)
-}
 
-func compatiblePreviousImages(previous, standard []v1beta1.NodeImage) []v1beta1.NodeImage {
-	bases := mapImageBasesToImages(standard)
-	return lo.Filter(previous, func(image v1beta1.NodeImage, _ int) bool {
-		_, compatible := bases[trimVersionSuffix(image.ID)]
-		return compatible
-	})
+	if len(goalImages) == 0 {
+		nodeClass.Status.Images = nil
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
+		logger.Info("no available node images")
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+
+	// We care about the ordering of the slices here, as it translates to priority during selection, so not treating them as sets
+	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
+		logger.Info("new available images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
+	}
+	nodeClass.Status.Images = goalImages
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
 // Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
@@ -237,55 +184,6 @@ func compatiblePreviousImages(previous, standard []v1beta1.NodeImage) []v1beta1.
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
 func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 	return !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()
-}
-
-// imageCatalogChanged reports whether persisted images came from a different node image catalog
-// than the one configured for this controller process. AKSNodeClass status survives a controller
-// restart, so a valid SecurityPatch <-> NodeImage channel transition must force a full refresh even
-// when the node OS maintenance window is closed. Security-patch versions are composite
-// "<baseVersion>-<securityPatchDate>" values; standard node image versions have no patch-date suffix.
-func imageCatalogChanged(wantSecurityPatch bool, images []v1beta1.NodeImage) bool {
-	if len(images) == 0 {
-		return false
-	}
-	for _, image := range images {
-		if isSecurityPatchImageID(image.ID) != wantSecurityPatch {
-			return true
-		}
-	}
-	return false
-}
-
-// isSecurityPatchImageID reports whether an image ID uses the composite
-// "<baseVersion>-<securityPatchDate>" version format returned by the SecurityPatch catalog.
-func isSecurityPatchImageID(imageID string) bool {
-	parts := strings.Split(imageID, "/")
-	if len(parts) < 2 || parts[len(parts)-2] != "versions" {
-		return false
-	}
-	base, patchDate, found := strings.Cut(parts[len(parts)-1], "-")
-	if !found {
-		return false
-	}
-	return isNumericDotVersion(base) && isNumericDotVersion(patchDate)
-}
-
-// isNumericDotVersion reports whether every dot-separated segment is a non-empty decimal number.
-func isNumericDotVersion(version string) bool {
-	if version == "" {
-		return false
-	}
-	for _, segment := range strings.Split(version, ".") {
-		if segment == "" {
-			return false
-		}
-		for _, char := range segment {
-			if char < '0' || char > '9' {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 // Handles case 4: check if the maintenance window is open

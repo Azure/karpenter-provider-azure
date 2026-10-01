@@ -30,12 +30,12 @@ const (
 	NodeClassResolutionReason = "NodeClassResolutionError"
 )
 
-func SecurityPatchFallback(nodeClaim *v1.NodeClaim) events.Event {
+func SecurityPatchFallback(nodeClaim *v1.NodeClaim, reason string) events.Event {
 	return events.Event{
 		InvolvedObject: nodeClaim,
 		Type:           corev1.EventTypeWarning,
 		Reason:         "SecurityPatchFallback",
-		Message:        "Provisioned a compatible standard image because a usable captured SecurityPatch image was unavailable",
+		Message:        fmt.Sprintf("Selected a compatible standard image for this Machine create: %s", reason),
 		DedupeValues:   []string{string(nodeClaim.UID)},
 	}
 }

@@ -5,13 +5,17 @@ discovery and a Machine API provisioning mode, the controller prefers compatible
 captured SecurityPatch images for **new nodes**. This is a best-effort preference,
 not a guarantee that every new node uses a security-patched image.
 
-For each eligible VM type, Karpenter first looks for a compatible captured image,
-then uses the compatible standard image when captured coverage is unavailable.
+Scheduling and standard image discovery remain unchanged. After choosing a VM type
+and building its standard Machine template, Karpenter looks for a captured image
+with the same OS and image definition. It keeps the standard NIV if none is available.
 Fallback preserves the requested image family, FIPS, Trusted Launch, Kata runtime,
 architecture and generation. It does not change those requirements to manufacture
 a match. If neither catalog has a compatible image, capacity remains unavailable.
 
-The standard and captured catalogs are queried separately. SecurityPatch discovery
+The standard and captured catalogs are queried separately. Each new Machine create
+performs an optional captured lookup, bounded to five seconds including queue time
+and paging, with at most four concurrent lookups per provider. Results are not cached
+across requests. SecurityPatch discovery
 requests opt into `CapturedImagesOnly: true`; existing callers requesting the full
 SecurityPatch catalog can still discover abstract live-patching targets. A captured
 image may also represent a patch that does not require a reboot: these properties
@@ -31,13 +35,12 @@ work and would not by itself provide images for initial scale-out.
 
 ## Operator-visible fallback
 
-- `status.images` is the standard-image baseline.
-- `status.securityPatchImages` contains preferred captured images for new nodes.
-- `SecurityPatchCoverage` is informational and is not a prerequisite for Ready.
-  `StandardImageFallback` indicates missing captured definitions;
-  `CatalogUnavailable` indicates a discovery error.
+- `status.images` remains the standard-image baseline. No new NodeClass API field
+  or background coverage condition is introduced.
 - New NodeClaims record `karpenter.azure.com/image-selection` as `SecurityPatch`
-  or `StandardImageFallback`. Successful fallback creates emit a
+  or `StandardImageFallback`. `karpenter.azure.com/image-selection-reason` distinguishes
+  `NoCompatibleCapturedImage`, `CatalogUnavailable`, `ImageUnavailable` and recovery
+  of an `ExistingMachine`. Successful fallback create completions emit a
   `SecurityPatchFallback` event and increment `karpenter_securitypatch_standard_fallback_total`.
 - If the service rejects a captured version with `SecurityVHDNotFound`, the claim
   records `karpenter.azure.com/securitypatch-fallback=ImageUnavailable` and retries
@@ -53,9 +56,11 @@ kubectl describe pod <name> -n <namespace>
 kubectl describe nodeclaim <name>
 ```
 
-Captured discovery is refreshed on a five-minute cache interval. A temporary
-discovery error retains compatible last-known candidates for the same NodeClass
-generation while leaving standard fallback available. API errors, regional image
+The existing standard-image cache is unchanged. Captured discovery failure or timeout
+uses the already-selected standard image; parent cancellation aborts the attempt.
+An existing Machine is reused before looking up another image. Unknown Machine state
+or ambiguous PUT transport failures must not cause image switching or deletion of
+a potentially accepted Machine. API errors, regional image
 replication, SKU availability and quota can still prevent provisioning; fallback
 does not hide unrelated failures.
 
@@ -93,6 +98,5 @@ in every region.
 Deploy service support for captured discovery and exact SecurityPatch Machine
 resolution before enabling the controller preference. The service must continue
 accepting explicitly selected standard NIVs on SecurityPatch NAP clusters.
-Deploy the updated status schema before the controller; otherwise the API server
-can discard the preferred-image field. The controller and service must report the
+No status-schema rollout is required. The controller and service must report the
 actual selected version, never substitute an image invisibly.
