@@ -93,6 +93,7 @@ coverage:
 
 verify: tidy download ## Verify code. Includes dependencies, linting, formatting, etc
 	SKIP_INSTALLED=true make toolchain
+	hack/validation/ci-kubernetes-version.sh
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
