@@ -99,6 +99,16 @@ should-skip() {
     return 1
 }
 
+# go-install installs a Go tool unless should-skip confirms it is already suitable.
+#
+# Presence-only form:
+#   go-install <app> <reference>
+#
+# Version-aware form:
+#   go-install <app> <version|--version> <expected-text> <reference>
+#
+# <app> is the binary name under TOOL_DEST, <expected-text> must appear in the
+# version command output, and <reference> is the package passed to go install.
 go-install() {
     local app
     local reference
