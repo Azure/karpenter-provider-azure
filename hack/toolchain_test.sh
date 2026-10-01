@@ -82,6 +82,12 @@ chmod +x "${FAKE_BIN}/curl"
 cat >"${FAKE_BIN}/sudo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "${SUDO_CALL_LOG:-}" ]]; then
+    printf '%s\n' "$*" >>"${SUDO_CALL_LOG}"
+fi
+if [[ "${FAIL_ON_SUDO:-false}" == true ]]; then
+    exit 99
+fi
 exec "$@"
 EOF
 chmod +x "${FAKE_BIN}/sudo"
@@ -285,12 +291,16 @@ test_kubebuilder_always_downloads_setup_envtest() {
     make_setup_envtest "${fixture}" "${resolved}"
     configure_envtest "${root}" "${assets}" "${installed}"
     SETUP_ENVTEST_FIXTURE="${fixture}"
-    export SETUP_ENVTEST_FIXTURE
+    SUDO_CALL_LOG="${root}/sudo-calls.log"
+    FAIL_ON_SUDO=true
+    export SETUP_ENVTEST_FIXTURE SUDO_CALL_LOG FAIL_ON_SUDO
 
     kubebuilder
     [[ -x "${installed}" ]] || fail "expected setup-envtest to be downloaded"
     [[ ! -e "${SETUP_ENVTEST_CALL_LOG}" || ! -s "${SETUP_ENVTEST_CALL_LOG}" ]] ||
         fail "healthy assets should not be resolved again"
+    [[ ! -e "${SUDO_CALL_LOG}" || ! -s "${SUDO_CALL_LOG}" ]] ||
+        fail "writable envtest paths should not require sudo"
 }
 
 test_should_skip_policy_and_versions

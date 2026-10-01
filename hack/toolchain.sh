@@ -3,7 +3,7 @@ set -euo pipefail
 
 K8S_VERSION="${K8S_VERSION:-1.34.x}"
 KUBEBUILDER_ASSETS="${KUBEBUILDER_ASSETS:-/usr/local/kubebuilder/bin}"
-SETUP_ENVTEST_BIN="${SETUP_ENVTEST_BIN:-/usr/local/bin/setup-envtest}"
+SETUP_ENVTEST_BIN="${SETUP_ENVTEST_BIN:-${KUBEBUILDER_ASSETS}/setup-envtest}"
 SETUP_ENVTEST_VERSION="v0.22.3"
 SETUP_ENVTEST_URL="${SETUP_ENVTEST_URL:-}"
 SKIP_INSTALLED="${SKIP_INSTALLED:-false}"
@@ -217,23 +217,47 @@ _verify_envtest_assets() {
         _command_is_current "${KUBEBUILDER_ASSETS}/etcd"
 }
 
+_ensure_directory() {
+    local path="$1"
+    if ! mkdir -p "${path}" 2>/dev/null; then
+        sudo mkdir -p "${path}"
+    fi
+}
+
+_ensure_writable_directory() {
+    local path="$1"
+    _ensure_directory "${path}"
+    if [[ ! -w "${path}" ]]; then
+        sudo chown "${USER}" "${path}"
+    fi
+}
+
 _install_setup_envtest() {
     local arch
     local os
     local url
     local download
+    local destination_dir
     arch=$(go env GOARCH)
     os=$(go env GOOS)
     url="${SETUP_ENVTEST_URL:-https://github.com/kubernetes-sigs/controller-runtime/releases/download/${SETUP_ENVTEST_VERSION}/setup-envtest-${os}-${arch}}"
     download="$(mktemp)"
+    destination_dir="$(dirname "${SETUP_ENVTEST_BIN}")"
 
     if ! curl -fsSL "${url}" --output "${download}"; then
         rm -f "${download}"
         return 1
     fi
-    if ! sudo install -m 0755 "${download}" "${SETUP_ENVTEST_BIN}"; then
+    _ensure_directory "${destination_dir}"
+    local install_status=0
+    if [[ -w "${destination_dir}" ]]; then
+        install -m 0755 "${download}" "${SETUP_ENVTEST_BIN}" || install_status=$?
+    else
+        sudo install -m 0755 "${download}" "${SETUP_ENVTEST_BIN}" || install_status=$?
+    fi
+    if [[ "${install_status}" -ne 0 ]]; then
         rm -f "${download}"
-        return 1
+        return "${install_status}"
     fi
     rm -f "${download}"
 }
@@ -282,8 +306,7 @@ _ensure_envtest_assets() {
 
 kubebuilder() {
     echo "[INF] Setting up kubebuilder binaries for Kubernetes ${K8S_VERSION}"
-    sudo mkdir -p "${KUBEBUILDER_ASSETS}"
-    sudo chown "${USER}" "${KUBEBUILDER_ASSETS}"
+    _ensure_writable_directory "${KUBEBUILDER_ASSETS}"
     _install_setup_envtest
     _ensure_envtest_assets
 }
