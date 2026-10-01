@@ -78,22 +78,27 @@ func WithMergedSpec(spec v1beta1.AKSNodeClassSpec) AKSNodeClassOption {
 }
 
 // WithVersionBasedDefaults applies default values to the AKSNodeClass based on the provided Kubernetes version.
-// For now, the version is ignored, but we can use it in the future.
+// kubernetesVersion is used to determine which default values should be applied.
 func WithVersionBasedDefaults(kubernetesVersion *version.Version) AKSNodeClassOption {
-	imageFamily := v1beta1.Ubuntu2204ImageFamily
-
-	// Apply defaults that apply from 1.34.0 onwards
+	// Image family default switches to Ubuntu 24.04 for Kubernetes versions 1.34.0 and above.
+	imageFamilyOption := WithImageFamily(v1beta1.Ubuntu2204ImageFamily)
 	if kubernetesVersion != nil && kubernetesVersion.AtLeast(version.MustParse("1.34.0")) {
-		imageFamily = v1beta1.Ubuntu2404ImageFamily
+		imageFamilyOption = WithImageFamily(v1beta1.Ubuntu2404ImageFamily)
 	}
 
-	return func(nodeClass *v1beta1.AKSNodeClass) {
-		nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-	}
+	// Combine all version-based default options into a single option.
+	return WithAll(
+		imageFamilyOption,
+	)
 }
 
 // WithAll is a wrapper used to combine multiple AKSNodeClassOption functions into a single option.
 func WithAll(options ...AKSNodeClassOption) AKSNodeClassOption {
+	// Short circuit if there's only one option.
+	if len(options) == 1 {
+		return options[0]
+	}
+
 	return func(nodeClass *v1beta1.AKSNodeClass) {
 		for _, option := range options {
 			option(nodeClass)
