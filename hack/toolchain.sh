@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-K8S_VERSION="${K8S_VERSION:="1.34.x"}"
-KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
+K8S_VERSION="${K8S_VERSION:-1.34.x}"
+KUBEBUILDER_ASSETS="${KUBEBUILDER_ASSETS:-/usr/local/kubebuilder/bin}"
+SKIP_INSTALLED="${SKIP_INSTALLED:-false}"
+FORCE_INSTALL="${FORCE_INSTALL:-false}"
 
-# Default SKIP_INSTALLED to false if not set
-SKIP_INSTALLED="${SKIP_INSTALLED:=false}"
-
-# Find the path where this script is found
-SCRIPT_DIR=$(dirname "$(realpath "$0")")
-
-# Define go install will put things
-TOOL_DEST="$(go env GOPATH)/bin"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOL_DEST="${TOOL_DEST:-$(go env GOPATH)/bin}"
 
 if [ "$SKIP_INSTALLED" == true ]; then
     echo "[INF] Skipping tools already installed."
 fi
-
-# This is where go install will put things
-TOOL_DEST="$(go env GOPATH)/bin"
 
 main() {
     crosscompilers
@@ -27,31 +20,115 @@ main() {
     gettrivy
 }
 
-# should-skip is a helper function to determine if installation of a tool should be skipped
-# $1 is the expected command
-should-skip() {
-    if [ "$SKIP_INSTALLED" == true ] && [ -f "$TOOL_DEST/$1" ]; then
-        # We can skip installation
-        return 0
+_validate_version_check_args() {
+    if [[ "$#" -eq 1 ]]; then
+        return
     fi
-
-    # Installation is needed
-    return 1
+    if [[ "$#" -ne 3 && "$#" -ne 4 ]]; then
+        echo "[ERR] usage: should-skip <command> [version|--version <expected-text> [version-arg]]" >&2
+        return 2
+    fi
+    case "$2" in
+        version | --version) ;;
+        *)
+            echo "[ERR] unsupported version command '$2'; expected version or --version" >&2
+            return 2
+            ;;
+    esac
 }
 
-# go-install is a helper function to install go tools
-# $1 is the expected command
-# $2 is the go install path
-go-install() {
-    # Check to see if we need to install
-    if should-skip "$1"; then
-        # Silently skip, to avoid console debris
-        # echo "[INF] $1 is already installed, skipping."
+_resolve_command() {
+    local command_name="$1"
+    if [[ "${command_name}" == */* ]]; then
+        [[ -x "${command_name}" ]] || return 1
+        printf '%s\n' "${command_name}"
+        return
+    fi
+    command -v "${command_name}" 2>/dev/null
+}
+
+_command_is_current() {
+    local validation_status=0
+    _validate_version_check_args "$@" || validation_status=$?
+    if [[ "${validation_status}" -ne 0 ]]; then
+        return "${validation_status}"
+    fi
+
+    local command_path
+    command_path="$(_resolve_command "$1")" || return 1
+    if [[ "$#" -eq 1 ]]; then
         return
     fi
 
-    echo "[INF] Installing $1"
-    go install "$2"
+    local output
+    if [[ "$#" -eq 4 ]]; then
+        output="$("${command_path}" "$2" "$4" 2>&1)" || return 1
+    else
+        output="$("${command_path}" "$2" 2>&1)" || return 1
+    fi
+    grep -Fq -- "$3" <<<"${output}"
+}
+
+should-skip() {
+    local validation_status=0
+    _validate_version_check_args "$@" || validation_status=$?
+    if [[ "${validation_status}" -ne 0 ]]; then
+        return "${validation_status}"
+    fi
+
+    if [[ "${FORCE_INSTALL}" == true ]]; then
+        echo "[INF] Installing $1 because FORCE_INSTALL=true"
+        return 1
+    fi
+    if [[ "${SKIP_INSTALLED}" != true ]]; then
+        echo "[INF] Installing $1 because SKIP_INSTALLED is not true"
+        return 1
+    fi
+    if _command_is_current "$@"; then
+        return
+    fi
+
+    if [[ "$#" -eq 1 ]]; then
+        echo "[INF] Installing $1 because it is missing"
+    else
+        echo "[INF] Installing $1 because the installed version does not contain '$3'"
+    fi
+    return 1
+}
+
+go-install() {
+    local app
+    local reference
+    local -a check
+    case "$#" in
+        2)
+            app="$1"
+            reference="$2"
+            check=("${TOOL_DEST}/${app}")
+            ;;
+        4)
+            app="$1"
+            reference="$4"
+            check=("${TOOL_DEST}/${app}" "$2" "$3")
+            ;;
+        *)
+            echo "[ERR] usage: go-install <app> [version|--version <expected-text>] <reference>" >&2
+            return 2
+            ;;
+    esac
+
+    local skip_status=0
+    if should-skip "${check[@]}"; then
+        return
+    else
+        skip_status=$?
+    fi
+    if [[ "${skip_status}" -ne 1 ]]; then
+        return "${skip_status}"
+    fi
+
+    echo "[INF] Installing ${app}"
+    go install "${reference}"
 }
 
 crosscompilers() {
@@ -109,9 +186,9 @@ kubebuilder() {
     # Install latest binaries for 1.25.x (contains CEL fix)
     if [[ "${K8S_VERSION}" = "1.25.x" ]] && [[ "$OSTYPE" == "linux"* ]]; then
         for binary in 'kube-apiserver' 'kubectl'; do
-            rm $KUBEBUILDER_ASSETS/$binary
-            wget -P $KUBEBUILDER_ASSETS https://dl.k8s.io/v1.25.16/bin/linux/"${arch}"/${binary}
-            chmod +x $KUBEBUILDER_ASSETS/$binary
+            rm "${KUBEBUILDER_ASSETS}/${binary}"
+            wget -P "${KUBEBUILDER_ASSETS}" https://dl.k8s.io/v1.25.16/bin/linux/"${arch}"/"${binary}"
+            chmod +x "${KUBEBUILDER_ASSETS}/${binary}"
         done
     fi
 }
@@ -127,4 +204,6 @@ gettrivy() {
     fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
