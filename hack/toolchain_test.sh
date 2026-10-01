@@ -41,6 +41,28 @@ EOF
     chmod +x "${path}"
 }
 
+REAL_GO="$(command -v go)"
+FAKE_BIN="${TEST_ROOT}/bin"
+GO_CALL_LOG="${TEST_ROOT}/go-calls.log"
+mkdir -p "${FAKE_BIN}"
+cat >"${FAKE_BIN}/go" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "env" && "${2:-}" == "GOPATH" ]]; then
+    printf '%s\n' "${FAKE_GOPATH}"
+elif [[ "${1:-}" == "-C" && "${3:-}" == "list" ]]; then
+    printf '%s\n' "v2.33.0"
+elif [[ "${1:-}" == "install" ]]; then
+    printf '%s\n' "$*" >>"${GO_CALL_LOG}"
+else
+    exec "${REAL_GO}" "$@"
+fi
+EOF
+chmod +x "${FAKE_BIN}/go"
+export REAL_GO FAKE_GOPATH="${TEST_ROOT}/gopath" GO_CALL_LOG
+PATH="${FAKE_BIN}:${PATH}"
+export PATH
+
 # shellcheck source=hack/toolchain.sh
 source "${SUBJECT}"
 
@@ -78,5 +100,32 @@ test_should_skip_policy_and_versions() {
         assert_status 2 should-skip "${tool}" --version
 }
 
+test_go_install_forms() {
+    local current="${TOOL_DEST}/current-tool"
+    local missing="${TOOL_DEST}/missing-tool"
+    VERSION_ARGS_LOG="${TEST_ROOT}/go-version-args.log"
+    export VERSION_ARGS_LOG
+    make_version_tool "${current}" "current-tool v1.2.3"
+    : >"${GO_CALL_LOG}"
+
+    SKIP_INSTALLED=true FORCE_INSTALL=false \
+        go-install current-tool --version v1.2.3 example.com/current@v1.2.3
+    [[ ! -s "${GO_CALL_LOG}" ]] || fail "matching tool should not be installed"
+
+    SKIP_INSTALLED=true FORCE_INSTALL=false \
+        go-install missing-tool example.com/missing@v1.0.0
+    assert_contains "${GO_CALL_LOG}" "install example.com/missing@v1.0.0"
+
+    assert_status 2 go-install invalid --version v1.0.0
+    rm -f "${missing}"
+}
+
+test_ginkgo_version_resolution() {
+    [[ "$(_ginkgo_version)" == "v2.33.0" ]] ||
+        fail "expected Ginkgo version v2.33.0"
+}
+
 test_should_skip_policy_and_versions
+test_go_install_forms
+test_ginkgo_version_resolution
 echo "PASS: toolchain helper tests"

@@ -7,6 +7,7 @@ SKIP_INSTALLED="${SKIP_INSTALLED:-false}"
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 TOOL_DEST="${TOOL_DEST:-$(go env GOPATH)/bin}"
 
 if [ "$SKIP_INSTALLED" == true ]; then
@@ -139,20 +140,34 @@ crosscompilers() {
     fi
 }
 
+_ginkgo_version() {
+    local version
+    version="$(GOWORK=off go -C "${REPO_ROOT}" list -m -f '{{ .Version }}' github.com/onsi/ginkgo/v2)" ||
+        return 1
+    if [[ -z "${version}" || "${version}" != v* ]]; then
+        echo "[ERR] invalid Ginkgo module version '${version:-<empty>}'" >&2
+        return 1
+    fi
+    printf '%s\n' "${version}"
+}
+
 tools() {
-    go-install go-licenses github.com/google/go-licenses/v2@3e084b0caf710f7bfead967567539214f598c0a2 // v2.0.1
-    go-install ko github.com/google/ko@v0.17.1
-    go-install yq github.com/mikefarah/yq/v4@v4.45.1
+    local ginkgo_version
+    ginkgo_version="$(_ginkgo_version)"
+
+    go-install go-licenses github.com/google/go-licenses/v2@3e084b0caf710f7bfead967567539214f598c0a2 # v2.0.1
+    go-install ko version v0.17.1 github.com/google/ko@v0.17.1
+    go-install yq --version v4.45.1 github.com/mikefarah/yq/v4@v4.45.1
     go-install helm-docs github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
-    go-install controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
-    go-install cosign github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
+    go-install controller-gen --version v0.19.0 sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
+    go-install cosign version v2.4.1 github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
-    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.1.4
-    go-install ginkgo github.com/onsi/ginkgo/v2/ginkgo@latest
-    go-install actionlint github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+    go-install govulncheck --version v1.1.4 golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    go-install ginkgo version "${ginkgo_version#v}" "github.com/onsi/ginkgo/v2/ginkgo@${ginkgo_version}"
+    go-install actionlint --version v1.7.7 github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go-install goveralls github.com/mattn/goveralls@v0.0.12
-    go-install crane github.com/google/go-containerregistry/cmd/crane@v0.20.2
-    go-install swagger github.com/go-swagger/go-swagger/cmd/swagger@v0.33.1
+    go-install crane version v0.20.2 github.com/google/go-containerregistry/cmd/crane@v0.20.2
+    go-install swagger version v0.33.1 github.com/go-swagger/go-swagger/cmd/swagger@v0.33.1
     go-install aks-node-viewer github.com/Azure/aks-node-viewer/cmd/aks-node-viewer@latest
     go-install pprof github.com/google/pprof@latest
 
@@ -160,15 +175,23 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+    go-install golangci-lint --version 2.12.2 github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 
     # Install our custom modules in golangci-lint
-    if ! should-skip "golangci-lint-custom"; then
-        echo "[INF] Installing golangci-lint custom modules"
-        TOOL_DEST=$TOOL_DEST envsubst < "$SCRIPT_DIR/custom-gcl.template.yml" > .custom-gcl.yml
-        "$TOOL_DEST/golangci-lint" custom -v
-        rm .custom-gcl.yml
+    local custom_status=0
+    if should-skip "${TOOL_DEST}/golangci-lint-custom" --version v2.12.2-custom; then
+        return
+    else
+        custom_status=$?
     fi
+    if [[ "${custom_status}" -ne 1 ]]; then
+        return "${custom_status}"
+    fi
+
+    echo "[INF] Installing golangci-lint custom modules"
+    TOOL_DEST="${TOOL_DEST}" envsubst <"${SCRIPT_DIR}/custom-gcl.template.yml" >.custom-gcl.yml
+    "${TOOL_DEST}/golangci-lint" custom -v
+    rm .custom-gcl.yml
 }
 
 kubebuilder() {
@@ -194,14 +217,23 @@ kubebuilder() {
 }
 
 gettrivy() {
-    TRIVY_VERSION="0.74.0"
-    TRIVY_SHA256="cf1e32ec8d4d8823e023096a28cadb14f5b5123ce03f201fb633c5b76aa712dd"
-    if ! command -v trivy &> /dev/null || [[ "$(trivy --version | head -n 1)" != "Version: ${TRIVY_VERSION}" ]]; then
-        wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
-        echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
-        sudo dpkg -i /tmp/trivy.deb
-        rm /tmp/trivy.deb
+    local version="0.74.0"
+    local sha256="cf1e32ec8d4d8823e023096a28cadb14f5b5123ce03f201fb633c5b76aa712dd"
+    local skip_status=0
+    if should-skip trivy --version "${version}"; then
+        return
+    else
+        skip_status=$?
     fi
+    if [[ "${skip_status}" -ne 1 ]]; then
+        return "${skip_status}"
+    fi
+
+    wget -qO /tmp/trivy.deb \
+        "https://github.com/aquasecurity/trivy/releases/download/v${version}/trivy_${version}_Linux-64bit.deb"
+    echo "${sha256}  /tmp/trivy.deb" | sha256sum --check --strict
+    sudo dpkg -i /tmp/trivy.deb
+    rm /tmp/trivy.deb
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
