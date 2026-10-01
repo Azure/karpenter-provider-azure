@@ -56,7 +56,8 @@ The decision order is:
 1. When `FORCE_INSTALL=true`, return "installation required".
 2. When `SKIP_INSTALLED` is not `true`, return "installation required". This preserves the current
    default behaviour.
-3. Require the command to exist and be executable.
+3. Require the command to be a regular executable file. A searchable directory must not satisfy a
+   presence-only check.
 4. For a version-aware call, run the requested `version` or `--version` command, append the optional
    fourth argument when present, and capture combined standard output and standard error.
 5. Skip only when the version command succeeds and its output contains `expected-text` as a fixed
@@ -122,19 +123,22 @@ Keep presence-only checks for:
 
 The `kubebuilder` function continues to own envtest installation.
 
-1. Always download the pinned `setup-envtest` helper before evaluating the bundle. This avoids
-   trusting a stale helper without adding another special-case version policy.
+1. Always download the pinned `setup-envtest` helper before evaluating the bundle. Verify it
+   against the SHA-256 digest published in the GitHub release metadata before replacing the
+   existing helper.
 2. Derive the expected Kubernetes version text from `K8S_VERSION` by removing a trailing `.x` and
    adding the `v` prefix. For example, `1.32.x` expects `v1.32` in client and server output.
 3. Use `should-skip` for each top-level binary:
    - `kube-apiserver --version` must contain the expected Kubernetes version.
    - `kubectl version --client=true` must contain the expected Kubernetes version.
-   - `etcd` must exist and be executable. Its version is selected by the envtest bundle and is not
-     the Kubernetes version.
-4. Skip bundle installation only when all three checks pass.
+   - `etcd` must be a regular executable file. Its version is selected by the envtest bundle and is
+     not the Kubernetes version.
+4. Resolve each top-level binary to its canonical path. Skip bundle installation only when all
+   three checks pass and all three binaries share one canonical parent directory.
 5. If any check fails, call `setup-envtest use --force -p path` for the requested selector.
-6. Validate the returned asset directory, require all three source binaries to be executable, and
-   refresh all three top-level links explicitly. Do not use a wildcard link.
+6. Validate the returned asset directory, require all three source binaries to be regular
+   executable files, remove any corrupt destination entry, and refresh all three top-level links
+   explicitly. Do not use a wildcard link.
 7. Verify the linked binaries with the internal presence/version predicate before returning. A
    failed post-install check fails the toolchain instead of leaving a success-shaped broken cache.
 
@@ -172,6 +176,7 @@ reinstalled, while any envtest failure refreshes the complete bundle.
 - Successful skips stay quiet to avoid adding noise to every CI job.
 - Temporary downloads are promoted only after a successful transfer; existing destinations are not
   deliberately removed before a replacement is available.
+- A `setup-envtest` checksum mismatch fails before installation and preserves the existing helper.
 
 ## Test design
 
@@ -191,8 +196,11 @@ The test uses temporary executable stubs and test-specific paths. It covers:
 - Both accepted `go-install` forms.
 - A healthy envtest bundle skipping resolution.
 - Any one missing or mismatched envtest binary causing all three links to refresh.
+- A directory-shaped cache entry causing all three links to refresh.
+- Individually valid binaries from different canonical directories causing one-bundle refresh.
 - Rejecting an incomplete resolved bundle.
 - Rejecting a post-install Kubernetes version mismatch.
+- Rejecting a `setup-envtest` checksum mismatch without replacing the existing helper.
 - Ginkgo using the module version from `go.mod`.
 
 Run the focused shell test first, then `make verify`. `actionlint`, already part of `make verify`,

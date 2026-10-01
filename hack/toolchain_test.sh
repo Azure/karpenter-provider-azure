@@ -250,6 +250,50 @@ test_missing_etcd_refreshes_every_link() {
     done
 }
 
+test_directory_shaped_etcd_refreshes_every_link() {
+    local root="${TEST_ROOT}/envtest-directory-etcd"
+    local assets="${root}/assets"
+    local resolved="${root}/resolved"
+    local setup_envtest="${root}/setup-envtest"
+    mkdir -p "${assets}" "${resolved}"
+    make_asset_dir "${assets}" "1.32.4"
+    make_asset_dir "${resolved}" "1.32.5"
+    rm "${assets}/etcd"
+    mkdir "${assets}/etcd"
+    make_setup_envtest "${setup_envtest}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${setup_envtest}"
+
+    _ensure_envtest_assets
+    for binary in kube-apiserver kubectl etcd; do
+        [[ "$(readlink "${assets}/${binary}")" == "${resolved}/${binary}" ]] ||
+            fail "expected directory-shaped ${binary} cache entry to refresh with the bundle"
+    done
+}
+
+test_mixed_envtest_bundle_refreshes_every_link() {
+    local root="${TEST_ROOT}/envtest-mixed-bundle"
+    local assets="${root}/assets"
+    local bundle_a="${root}/bundle-a"
+    local bundle_b="${root}/bundle-b"
+    local resolved="${root}/resolved"
+    local setup_envtest="${root}/setup-envtest"
+    mkdir -p "${assets}" "${bundle_a}" "${bundle_b}" "${resolved}"
+    make_asset_dir "${bundle_a}" "1.32.4"
+    make_asset_dir "${bundle_b}" "1.32.4"
+    make_asset_dir "${resolved}" "1.32.5"
+    ln -s "${bundle_a}/kube-apiserver" "${assets}/kube-apiserver"
+    ln -s "${bundle_a}/kubectl" "${assets}/kubectl"
+    ln -s "${bundle_b}/etcd" "${assets}/etcd"
+    make_setup_envtest "${setup_envtest}" "${resolved}"
+    configure_envtest "${root}" "${assets}" "${setup_envtest}"
+
+    _ensure_envtest_assets
+    for binary in kube-apiserver kubectl etcd; do
+        [[ "$(readlink "${assets}/${binary}")" == "${resolved}/${binary}" ]] ||
+            fail "expected mixed ${binary} link to refresh with one bundle"
+    done
+}
+
 test_rejects_an_incomplete_resolved_bundle() {
     local root="${TEST_ROOT}/envtest-incomplete"
     local assets="${root}/assets"
@@ -291,9 +335,10 @@ test_kubebuilder_always_downloads_setup_envtest() {
     make_setup_envtest "${fixture}" "${resolved}"
     configure_envtest "${root}" "${assets}" "${installed}"
     SETUP_ENVTEST_FIXTURE="${fixture}"
+    SETUP_ENVTEST_SHA256="$(sha256sum "${fixture}" | awk '{print $1}')"
     SUDO_CALL_LOG="${root}/sudo-calls.log"
     FAIL_ON_SUDO=true
-    export SETUP_ENVTEST_FIXTURE SUDO_CALL_LOG FAIL_ON_SUDO
+    export SETUP_ENVTEST_FIXTURE SETUP_ENVTEST_SHA256 SUDO_CALL_LOG FAIL_ON_SUDO
 
     kubebuilder
     [[ -x "${installed}" ]] || fail "expected setup-envtest to be downloaded"
@@ -303,13 +348,42 @@ test_kubebuilder_always_downloads_setup_envtest() {
         fail "writable envtest paths should not require sudo"
 }
 
+test_setup_envtest_digest_mismatch_preserves_existing_helper() {
+    local root="${TEST_ROOT}/setup-envtest-digest"
+    local fixture="${root}/setup-envtest-fixture"
+    local installed="${root}/bin/setup-envtest"
+    mkdir -p "$(dirname "${installed}")"
+    cat >"${installed}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' original
+EOF
+    chmod +x "${installed}"
+    cat >"${fixture}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' replacement
+EOF
+    chmod +x "${fixture}"
+
+    SETUP_ENVTEST_BIN="${installed}"
+    SETUP_ENVTEST_FIXTURE="${fixture}"
+    SETUP_ENVTEST_SHA256="0000000000000000000000000000000000000000000000000000000000000000"
+    export SETUP_ENVTEST_BIN SETUP_ENVTEST_FIXTURE SETUP_ENVTEST_SHA256
+
+    assert_status 1 _install_setup_envtest
+    [[ "$("${installed}")" == "original" ]] ||
+        fail "digest mismatch replaced the existing setup-envtest helper"
+}
+
 test_should_skip_policy_and_versions
 test_go_install_forms
 test_ginkgo_version_resolution
 test_envtest_refreshes_the_complete_bundle
 test_envtest_keeps_a_healthy_bundle
 test_missing_etcd_refreshes_every_link
+test_directory_shaped_etcd_refreshes_every_link
+test_mixed_envtest_bundle_refreshes_every_link
 test_rejects_an_incomplete_resolved_bundle
 test_rejects_a_wrong_version_after_refresh
 test_kubebuilder_always_downloads_setup_envtest
+test_setup_envtest_digest_mismatch_preserves_existing_helper
 echo "PASS: toolchain helper tests"

@@ -740,7 +740,17 @@ test_kubebuilder_always_downloads_setup_envtest() {
 }
 ```
 
-Invoke all five envtest tests before the final PASS message.
+Also add and invoke:
+
+- `test_directory_shaped_etcd_refreshes_every_link`, which replaces `assets/etcd` with a directory
+  and requires all three links to move to the resolved bundle.
+- `test_mixed_envtest_bundle_refreshes_every_link`, which points the Kubernetes binaries and
+  `etcd` at different canonical directories and requires one-bundle refresh.
+- `test_setup_envtest_digest_mismatch_preserves_existing_helper`, which supplies an invalid
+  `SETUP_ENVTEST_SHA256`, expects `_install_setup_envtest` to fail, and executes the existing
+  helper to prove it was not replaced.
+
+Invoke all envtest tests before the final PASS message.
 
 Call these tests before the final PASS message.
 
@@ -759,9 +769,10 @@ Expected: non-zero exit with `_resolve_envtest_assets: command not found`.
 Add these globals near the other defaults:
 
 ```bash
-SETUP_ENVTEST_BIN="${SETUP_ENVTEST_BIN:-/usr/local/bin/setup-envtest}"
+SETUP_ENVTEST_BIN="${SETUP_ENVTEST_BIN:-${KUBEBUILDER_ASSETS}/setup-envtest}"
 SETUP_ENVTEST_VERSION="v0.22.3"
 SETUP_ENVTEST_URL="${SETUP_ENVTEST_URL:-}"
+SETUP_ENVTEST_SHA256="${SETUP_ENVTEST_SHA256:-}"
 ```
 
 Implement:
@@ -771,12 +782,29 @@ _expected_kubernetes_version() {
     printf 'v%s\n' "${K8S_VERSION%.x}"
 }
 
+_envtest_assets_share_directory() {
+    local binary
+    local common_directory=""
+    local resolved
+    local resolved_directory
+    for binary in kube-apiserver kubectl etcd; do
+        resolved="$(realpath "${KUBEBUILDER_ASSETS}/${binary}")" || return 1
+        resolved_directory="$(dirname "${resolved}")"
+        if [[ -z "${common_directory}" ]]; then
+            common_directory="${resolved_directory}"
+        elif [[ "${resolved_directory}" != "${common_directory}" ]]; then
+            return 1
+        fi
+    done
+}
+
 _envtest_assets_are_current() {
     local expected
     expected="$(_expected_kubernetes_version)"
     should-skip "${KUBEBUILDER_ASSETS}/kube-apiserver" --version "${expected}" &&
         should-skip "${KUBEBUILDER_ASSETS}/kubectl" version "${expected}" --client=true &&
-        should-skip "${KUBEBUILDER_ASSETS}/etcd"
+        should-skip "${KUBEBUILDER_ASSETS}/etcd" &&
+        _envtest_assets_share_directory
 }
 
 _verify_envtest_assets() {
@@ -784,7 +812,38 @@ _verify_envtest_assets() {
     expected="$(_expected_kubernetes_version)"
     _command_is_current "${KUBEBUILDER_ASSETS}/kube-apiserver" --version "${expected}" &&
         _command_is_current "${KUBEBUILDER_ASSETS}/kubectl" version "${expected}" --client=true &&
-        _command_is_current "${KUBEBUILDER_ASSETS}/etcd"
+        _command_is_current "${KUBEBUILDER_ASSETS}/etcd" &&
+        _envtest_assets_share_directory
+}
+
+_ensure_directory() {
+    local path="$1"
+    if ! mkdir -p "${path}" 2>/dev/null; then
+        sudo mkdir -p "${path}"
+    fi
+}
+
+_ensure_writable_directory() {
+    local path="$1"
+    _ensure_directory "${path}"
+    if [[ ! -w "${path}" ]]; then
+        sudo chown "${USER}" "${path}"
+    fi
+}
+
+_setup_envtest_sha256() {
+    case "$1-$2" in
+        darwin-amd64) printf '%s\n' "390aad0f8fce155b0df483775bebd813ac0bd1dc11ee458147f3ae4d1e2178b9" ;;
+        darwin-arm64) printf '%s\n' "415b69c6bebad2353045eccc376b9407058aa38a3e9720b5af0232af396e62f7" ;;
+        linux-amd64) printf '%s\n' "a1776d9b6266a05d1b18fc13a0788a3d2a4a44265f19eb81f5d80223ccb6262f" ;;
+        linux-arm64) printf '%s\n' "f773d4c9191101c7bd714e0ebf1e0fa4a98a6548e098554ee1db379d5e84b0bb" ;;
+        linux-ppc64le) printf '%s\n' "e50ed61d2776f62db4c8f148cd75c4750c6c928adc32426a9b65d2c1201b0064" ;;
+        linux-s390x) printf '%s\n' "39222e69f6ca7313f21a17ba55607980da23af98fcb0ecb4c56b1bc7d3d66257" ;;
+        *)
+            echo "[ERR] no setup-envtest checksum for $1/$2" >&2
+            return 1
+            ;;
+    esac
 }
 
 _install_setup_envtest() {
@@ -792,18 +851,33 @@ _install_setup_envtest() {
     local os
     local url
     local download
+    local destination_dir
+    local expected_sha256
     arch="$(go env GOARCH)"
     os="$(go env GOOS)"
     url="${SETUP_ENVTEST_URL:-https://github.com/kubernetes-sigs/controller-runtime/releases/download/${SETUP_ENVTEST_VERSION}/setup-envtest-${os}-${arch}}"
+    expected_sha256="${SETUP_ENVTEST_SHA256:-$(_setup_envtest_sha256 "${os}" "${arch}")}"
     download="$(mktemp)"
+    destination_dir="$(dirname "${SETUP_ENVTEST_BIN}")"
 
     if ! curl -fsSL "${url}" --output "${download}"; then
         rm -f "${download}"
         return 1
     fi
-    if ! sudo install -m 0755 "${download}" "${SETUP_ENVTEST_BIN}"; then
+    if ! printf '%s  %s\n' "${expected_sha256}" "${download}" | sha256sum --check --strict; then
         rm -f "${download}"
         return 1
+    fi
+    _ensure_directory "${destination_dir}"
+    local install_status=0
+    if [[ -w "${destination_dir}" ]]; then
+        install -m 0755 "${download}" "${SETUP_ENVTEST_BIN}" || install_status=$?
+    else
+        sudo install -m 0755 "${download}" "${SETUP_ENVTEST_BIN}" || install_status=$?
+    fi
+    if [[ "${install_status}" -ne 0 ]]; then
+        rm -f "${download}"
+        return "${install_status}"
     fi
     rm -f "${download}"
 }
@@ -815,15 +889,25 @@ _link_envtest_assets() {
         echo "[ERR] setup-envtest returned invalid asset directory '${asset_dir:-<empty>}'" >&2
         return 1
     fi
+    if [[ -z "${KUBEBUILDER_ASSETS}" || "${KUBEBUILDER_ASSETS}" == "/" ]]; then
+        echo "[ERR] invalid kubebuilder asset destination '${KUBEBUILDER_ASSETS:-<empty>}'" >&2
+        return 1
+    fi
 
     for binary in kube-apiserver kubectl etcd; do
-        if [[ ! -x "${asset_dir}/${binary}" ]]; then
+        if [[ ! -f "${asset_dir}/${binary}" || ! -x "${asset_dir}/${binary}" ]]; then
             echo "[ERR] envtest asset is missing or not executable: ${asset_dir}/${binary}" >&2
             return 1
         fi
     done
     for binary in kube-apiserver kubectl etcd; do
-        ln -sfn "${asset_dir}/${binary}" "${KUBEBUILDER_ASSETS}/${binary}"
+        local destination="${KUBEBUILDER_ASSETS}/${binary}"
+        if [[ -d "${destination}" && ! -L "${destination}" ]]; then
+            rm -rf -- "${destination}"
+        else
+            rm -f -- "${destination}"
+        fi
+        ln -s "${asset_dir}/${binary}" "${destination}"
     done
 }
 
@@ -858,8 +942,7 @@ Replace the existing function, including the 1.25.16 block, with:
 ```bash
 kubebuilder() {
     echo "[INF] Setting up kubebuilder binaries for Kubernetes ${K8S_VERSION}"
-    sudo mkdir -p "${KUBEBUILDER_ASSETS}"
-    sudo chown "${USER}" "${KUBEBUILDER_ASSETS}"
+    _ensure_writable_directory "${KUBEBUILDER_ASSETS}"
     _install_setup_envtest
     _ensure_envtest_assets
 }
