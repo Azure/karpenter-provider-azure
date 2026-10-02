@@ -128,6 +128,40 @@ var _ = Describe("CloudProvider", func() {
 		// Mostly ported from VM test: "ImageReference" and "ImageProvider + Image Family"
 		// Note: AKS Machine API does not support Community Image Gallery (CIG)
 		Context("Create - ImageReference and ImageProvider + Image Family", func() {
+			It("selects captured images only at Machine creation without changing NodeClass images", func() {
+				testOptions.NodeOSUpgradeChannel = consts.NodeOSUpgradeChannelSecurityPatch
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{"Standard_D2_v5"}})
+				azureEnv.NodeImageVersionsAPI.SecurityPatchImages = []*armcontainerservice.NodeImageVersion{
+					{OS: lo.ToPtr("AKSUbuntu"), SKU: lo.ToPtr("2404gen2containerd"), Version: lo.ToPtr("202608.26.0-2026.09.25")},
+				}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+				create := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				Expect(lo.FromPtr(create.AKSMachine.Properties.NodeImageVersion)).To(Equal("AKSUbuntu-2404gen2containerd-202608.26.0-2026.09.25"))
+				updated := &v1beta1.AKSNodeClass{}
+				Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), updated)).To(Succeed())
+				for _, image := range updated.Status.Images {
+					Expect(imagefamily.IsSecurityPatchVersion(image.ID)).To(BeFalse())
+				}
+			})
+			It("preserves standard provisioning when SecurityPatch has no compatible captured image", func() {
+				testOptions.NodeOSUpgradeChannel = consts.NodeOSUpgradeChannelSecurityPatch
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+				claims := &karpv1.NodeClaimList{}
+				Expect(env.Client.List(ctx, claims)).To(Succeed())
+				Expect(claims.Items).ToNot(BeEmpty())
+				for _, claim := range claims.Items {
+					Expect(claim.Annotations["karpenter.azure.com/image-selection"]).To(Equal("StandardImageFallback"))
+					Expect(imagefamily.IsSecurityPatchVersion(claim.Status.ImageID)).To(BeFalse())
+				}
+			})
 
 			// Ported from VM test: "should use shared image gallery images when options are set to UseSIG"
 			It("should use shared image gallery images", func() {

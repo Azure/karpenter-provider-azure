@@ -70,6 +70,8 @@ and the separate `VM_MEMORY_OVERHEAD_PERCENT` safety margin remain unchanged.
 
 ## Known limitations
 
+For managed NAP SecurityPatch provisioning, see [image compatibility and standard-image fallback](docs/securitypatch-image-compatibility.md).
+
 The following AKS features are not supported:
 * Windows nodes.
 * Kubenet and Calico.

@@ -30,6 +30,16 @@ const (
 	NodeClassResolutionReason = "NodeClassResolutionError"
 )
 
+func SecurityPatchFallback(nodeClaim *v1.NodeClaim, reason string) events.Event {
+	return events.Event{
+		InvolvedObject: nodeClaim,
+		Type:           corev1.EventTypeWarning,
+		Reason:         "SecurityPatchFallback",
+		Message:        fmt.Sprintf("Selected a compatible standard image for this Machine create: %s", reason),
+		DedupeValues:   []string{string(nodeClaim.UID)},
+	}
+}
+
 func NodePoolFailedToResolveNodeClass(nodePool *v1.NodePool) events.Event {
 	return events.Event{
 		InvolvedObject: nodePool,
