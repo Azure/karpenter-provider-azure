@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"sort"
 
-	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/version"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -39,35 +39,21 @@ const (
 	DefaultSIGImageVersion = "202410.09.0"
 )
 
-func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
-	options := v1beta1.AKSNodeClass{}
-	for _, override := range overrides {
-		if err := mergo.Merge(&options, override, mergo.WithOverride); err != nil {
-			panic(fmt.Sprintf("Failed to merge settings: %s", err))
-		}
+func AKSNodeClass(options ...AKSNodeClassOption) *v1beta1.AKSNodeClass {
+	result := v1beta1.AKSNodeClass{}
+	for _, applyOption := range options {
+		applyOption(&result)
 	}
-	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
-	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
-	if options.Spec.OSDiskSizeGB == nil {
-		options.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
-	}
-	if options.Spec.ImageFamily == nil {
-		options.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-	}
+
 	return &v1beta1.AKSNodeClass{
-		ObjectMeta: coretest.ObjectMeta(options.ObjectMeta),
-		Spec:       options.Spec,
-		Status:     options.Status,
+		ObjectMeta: coretest.ObjectMeta(result.ObjectMeta),
+		Spec:       result.Spec,
+		Status:     result.Status,
 	}
 }
 
 // TODO: Pass in test.Options if we want to use more options within this func
 func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environment, useSIG bool) {
-	if useSIG {
-		ApplySIGImages(nodeClass)
-	} else {
-		ApplyCIGImages(nodeClass)
-	}
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
@@ -77,6 +63,12 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+
+	if useSIG {
+		ApplySIGImages(nodeClass)
+	} else {
+		ApplyCIGImages(nodeClass)
+	}
 
 	conditions := []opstatus.Condition{}
 	for _, condition := range nodeClass.GetConditions() {
@@ -92,10 +84,35 @@ func ApplyCIGImages(nodeClass *v1beta1.AKSNodeClass) {
 	ApplyCIGImagesWithVersion(nodeClass, DefaultCIGImageVersion)
 }
 
-func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion string) {
+// ApplyCIGImagesWithVersion applies the expected CIG images to the given AKSNodeClass using the specified image version.
+// nodeClass is the AKSNodeClass to which the expected CIG images will be applied.
+// cigImageVersion is the version of the CIG images to apply.
+func ApplyCIGImagesWithVersion(
+	nodeClass *v1beta1.AKSNodeClass,
+	cigImageVersion string,
+) {
+	var kubernetesVersion *version.Version
+	if nodeClass.Status.KubernetesVersion != nil {
+		kubernetesVersion = version.MustParseSemantic(*nodeClass.Status.KubernetesVersion)
+	}
+
+	galleryURL := "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"
+	gen1 := imagefamily.Ubuntu2204Gen1ImageDefinition
+	gen2 := imagefamily.Ubuntu2204Gen2ImageDefinition
+	arm := imagefamily.Ubuntu2204Gen2ArmImageDefinition
+
+	// From Kubernetes version 1.34, default to Ubuntu 2404
+	v134 := version.MustParse("1.34.0")
+	if kubernetesVersion != nil && kubernetesVersion.AtLeast(v134) {
+		// Logic for Ubuntu 2404 images can be added here
+		gen1 = imagefamily.Ubuntu2404Gen1ImageDefinition
+		gen2 = imagefamily.Ubuntu2404Gen2ImageDefinition
+		arm = imagefamily.Ubuntu2404Gen2ArmImageDefinition
+	}
+
 	nodeClass.Status.Images = []v1beta1.NodeImage{
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", cigImageVersion),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, gen2, cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -110,7 +127,7 @@ func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion 
 			},
 		},
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204containerd/versions/%s", cigImageVersion),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, gen1, cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -125,7 +142,7 @@ func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion 
 			},
 		},
 		{
-			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2arm64containerd/versions/%s", cigImageVersion),
+			ID: imagefamily.BuildImageIDCIG(galleryURL, arm, cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
 					Key:      corev1.LabelArchStable,
@@ -142,11 +159,16 @@ func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion 
 	}
 }
 
+// ApplySIGImages applies the expected SIG images to the given AKSNodeClass based on the provided Kubernetes version.
+// nodeClass is the AKSNodeClass to which the expected SIG images will be applied.
 func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {
 	ApplySIGImagesWithVersion(nodeClass, DefaultSIGImageVersion)
 }
 
-func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion string) {
+func ApplySIGImagesWithVersion(
+	nodeClass *v1beta1.AKSNodeClass,
+	sigImageVersion string,
+) {
 	var kubernetesVersion string
 	if nodeClass.Status.KubernetesVersion != nil {
 		kubernetesVersion = *nodeClass.Status.KubernetesVersion

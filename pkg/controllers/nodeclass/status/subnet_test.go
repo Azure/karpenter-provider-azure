@@ -42,7 +42,7 @@ var _ = Describe("SubnetStatus", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 
 	BeforeEach(func() {
-		nodeClass = test.AKSNodeClass()
+		nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	})
 
 	It("should mark nodeclass as ready when subnet exists and has capacity", func() {

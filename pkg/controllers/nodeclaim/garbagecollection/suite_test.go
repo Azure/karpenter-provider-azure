@@ -109,7 +109,7 @@ var _ = AfterSuite(func() {
 })
 
 var _ = BeforeEach(func() {
-	nodeClass = test.AKSNodeClass()
+	nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 	nodePool = coretest.NodePool(karpv1.NodePool{
