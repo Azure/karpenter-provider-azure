@@ -248,7 +248,7 @@ func deepCopyMap[K comparable, V copyable[V]](m map[K]V) map[K]V {
 }
 
 func deepCopySlice[T copyable[T]](s []T) []T {
-	var ret []T
+	ret := make([]T, 0, len(s))
 	for _, elem := range s {
 		ret = append(ret, elem.DeepCopy())
 	}
