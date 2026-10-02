@@ -40,7 +40,10 @@ import (
 const (
 	oldcigImageVersion   = "202410.09.0"
 	newCIGImageVersion   = "202501.02.0"
+	oldSIGImageVersion   = "202410.09.0"
+	newSIGImageVersion   = "202608.26.0"
 	rollbackImageVersion = "202409.03.0"
+	sigSubscriptionID    = "10945678-1234-1234-1234-123456789012"
 )
 
 func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
@@ -91,6 +94,13 @@ func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
 			},
 		},
 	}
+}
+
+func getExpectedTestSIGImages(version string) []v1beta1.NodeImage {
+	nodeClass := test.AKSNodeClass()
+	nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+	test.ApplySIGImagesWithVersion(nodeClass, version)
+	return nodeClass.Status.Images
 }
 
 func getClosedMWConfigMap() *corev1.ConfigMap {
@@ -457,6 +467,253 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 		})
 	})
+
+	Context("NodeImageReconciler direct tests with SIG", func() {
+		BeforeEach(func() {
+			ctx = test.Options(test.OptionsFields{
+				UseSIG:            lo.ToPtr(true),
+				SIGSubscriptionID: lo.ToPtr(sigSubscriptionID),
+			}).ToContext(ctx)
+
+			nodeClass.Status.KubernetesVersion = lo.ToPtr(testK8sVersion)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+			nodeClass.Status.Images = getExpectedTestSIGImages(oldSIGImageVersion)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		})
+
+		When("versions are requested", func() {
+			var imageReconciler *status.NodeImageReconciler
+
+			BeforeEach(func() {
+				os.Setenv("SYSTEM_NAMESPACE", "kube-system")
+				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
+
+				nodeClass.Status.ObservedVersions = &v1beta1.ObservedVersions{
+					CurrentControlPlaneKubernetesVersion: lo.ToPtr(testK8sVersion),
+					LatestImageVersion:                   lo.ToPtr(newSIGImageVersion),
+				}
+			})
+
+			It("should bypass the maintenance window when images are not ready", func() {
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesVersionChanged", "Kubernetes version changed")
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+			})
+
+			It("should recover after an invalid image version is corrected", func() {
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "NodeImageVersionInvalid", "invalid image version")
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(newSIGImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+			})
+
+			It("should replace image suffixes with the requested version outside the maintenance window", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(oldSIGImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, oldSIGImageVersion)
+			})
+
+			It("should immediately return to the latest image when the pin is removed", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(oldSIGImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason).To(Equal("NodeImageVersionPinned"))
+
+				nodeClass.Spec.Versions.NodeImageVersion = nil
+				_, err = imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).Reason).NotTo(Equal("NodeImageVersionPinned"))
+			})
+
+			It("should reject an image version that was not found in status", func() {
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr("not-found"),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("NodeImageVersionInvalid"))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestSIGImages(oldSIGImageVersion)))
+			})
+
+			It("should reject a malformed image version", func() {
+				malformedImageVersion := "invalid/version"
+				nodeClass.Status.ObservedVersions.LatestImageVersion = &malformedImageVersion
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(malformedImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("RequestedNodeImageVersionUnavailable"))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestSIGImages(oldSIGImageVersion)))
+			})
+
+			It("should roll back to a recently used image version outside the maintenance window", func() {
+				nodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+					{
+						NodeImageVersion:  lo.ToPtr(rollbackImageVersion),
+						KubernetesVersion: lo.ToPtr(testK8sVersion),
+					},
+				}
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(rollbackImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, rollbackImageVersion)
+			})
+
+			It("should reject a rollback image paired with a different Kubernetes version", func() {
+				nodeClass.Status.ObservedVersions.RecentlyUsedVersions = []v1beta1.RecentlyUsedVersion{
+					{
+						NodeImageVersion:  lo.ToPtr(rollbackImageVersion),
+						KubernetesVersion: lo.ToPtr(oldK8sVersion),
+					},
+				}
+				nodeClass.Spec.Versions = &v1beta1.Versions{
+					KubernetesVersion: lo.ToPtr(testK8sVersion),
+					NodeImageVersion:  lo.ToPtr(rollbackImageVersion),
+				}
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal("RollbackTargetKubernetesVersionMismatch"))
+				Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestSIGImages(oldSIGImageVersion)))
+			})
+		})
+
+		When("SYSTEM_NAMESPACE is set", func() {
+			var imageReconciler *status.NodeImageReconciler
+
+			BeforeEach(func() {
+				os.Setenv("SYSTEM_NAMESPACE", "kube-system")
+				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+			})
+
+			It("Should update NodeImages when ConfigMap is missing (fail open)", func() {
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+			})
+
+			It("Should not update NodeImages when maintenance window is not open", func() {
+				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, oldSIGImageVersion)
+			})
+
+			It("Should update NodeImages when ConfigMap is empty (maintenance window undefined)", func() {
+				ExpectApplied(ctx, env.Client, getEmptyMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+			})
+
+			It("Should update NodeImages when ConfigMap has keys with empty string values (fail open)", func() {
+				ExpectApplied(ctx, env.Client, getEmptyValuesMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+			})
+
+			It("Should update NodeImages when maintenance window is open", func() {
+				ExpectApplied(ctx, env.Client, getOpenMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+			})
+
+			It("Should error when ConfigMap is malformed (missing endtime)", func() {
+				configMap := getOpenMWConfigMap()
+				delete(configMap.Data, "aksManagedNodeOSUpgradeSchedule-end")
+				ExpectApplied(ctx, env.Client, configMap)
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unexpected state, with incomplete maintenance window data for channel aksManagedNodeOSUpgradeSchedule"))
+
+				ExpectReadyWithSIGImages(nodeClass, oldSIGImageVersion)
+			})
+
+			It("Should error when ConfigMap is malformed (invalid timestamp)", func() {
+				configMap := getOpenMWConfigMap()
+				configMap.Data["aksManagedNodeOSUpgradeSchedule-end"] = "invalid-timestamp"
+				ExpectApplied(ctx, env.Client, configMap)
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("error parsing maintenance window end time for channel aksManagedNodeOSUpgradeSchedule"))
+
+				ExpectReadyWithSIGImages(nodeClass, oldSIGImageVersion)
+			})
+		})
+
+		When("SYSTEM_NAMESPACE is not set", func() {
+			var imageReconciler *status.NodeImageReconciler
+
+			BeforeEach(func() {
+				os.Unsetenv("SYSTEM_NAMESPACE")
+				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+			})
+
+			It("Should update NodeImages (fail open)", func() {
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithSIGImages(nodeClass, newSIGImageVersion)
+			})
+		})
+	})
 })
 
 func ExpectReadyWithCIGImages(nodeClass *v1beta1.AKSNodeClass, version string) {
@@ -464,5 +721,12 @@ func ExpectReadyWithCIGImages(nodeClass *v1beta1.AKSNodeClass, version string) {
 
 	Expect(len(nodeClass.Status.Images)).To(Equal(3))
 	Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(version)))
+	Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
+}
+
+func ExpectReadyWithSIGImages(nodeClass *v1beta1.AKSNodeClass, version string) {
+	GinkgoHelper()
+
+	Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestSIGImages(version)))
 	Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 }
