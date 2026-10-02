@@ -10,6 +10,8 @@ jobs:
   ci:
     runs-on: karpenter-ci-1es-pool
     env:
+      # Keep the default version aligned with hack/toolchain.sh and
+      # .github/actions/install-deps/action.yaml.
       K8S_VERSION: "1.34.x"
     steps:
     - name: Harden Runner
