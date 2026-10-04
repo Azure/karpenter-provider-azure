@@ -167,6 +167,30 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Versions", func() {
+		DescribeTable("should require kubernetesVersion when nodeImageVersion is set", func(kubernetesVersion, nodeImageVersion *string, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					Versions: &v1alpha2.Versions{
+						KubernetesVersion: kubernetesVersion,
+						NodeImageVersion:  nodeImageVersion,
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("should accept omitted versions", nil, nil, true),
+			Entry("should accept kubernetesVersion without nodeImageVersion", lo.ToPtr("1.31.0"), nil, true),
+			Entry("should reject nodeImageVersion without kubernetesVersion", nil, lo.ToPtr("202501.01.0"), false),
+			Entry("should accept nodeImageVersion with kubernetesVersion", lo.ToPtr("1.31.0"), lo.ToPtr("202501.01.0"), true),
+		)
+	})
+
 	Context("OSDiskType", func() {
 		It("should accept Managed OSDiskType", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
