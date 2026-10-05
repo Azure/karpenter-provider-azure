@@ -172,7 +172,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if options.FromContext(ctx).IsAKSMachineAPIMode() {
 		created, err := c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 		if err == nil && created.Annotations["karpenter.azure.com/image-selection"] == "StandardImageFallback" {
-			securityPatchFallbacks.Inc()
 			c.recorder.Publish(cloudproviderevents.SecurityPatchFallback(nodeClaim, created.Annotations["karpenter.azure.com/image-selection-reason"]))
 		}
 		return created, err

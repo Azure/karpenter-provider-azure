@@ -41,7 +41,7 @@ work and would not by itself provide images for initial scale-out.
   or `StandardImageFallback`. `karpenter.azure.com/image-selection-reason` distinguishes
   `NoCompatibleCapturedImage`, `CatalogUnavailable`, `ImageUnavailable` and recovery
   of an `ExistingMachine`. Successful fallback create completions emit a
-  `SecurityPatchFallback` event and increment `karpenter_securitypatch_standard_fallback_total`.
+  `SecurityPatchFallback` event. Structured logs record the selected NIV and reason.
 - If the service rejects a captured version with `SecurityVHDNotFound`, the claim
   records `karpenter.azure.com/securitypatch-fallback=ImageUnavailable` and retries
   with an explicitly selected standard image. Other create errors are not silently
