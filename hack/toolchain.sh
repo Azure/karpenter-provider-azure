@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Keep the default version aligned with .github/actions/install-deps/action.yaml
+# and jobs.ci.env.K8S_VERSION in .github/workflows/ci.yml.
 K8S_VERSION="${K8S_VERSION:="1.34.x"}"
 KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 
@@ -83,7 +85,7 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
     # Install our custom modules in golangci-lint
     if ! should-skip "golangci-lint-custom"; then
