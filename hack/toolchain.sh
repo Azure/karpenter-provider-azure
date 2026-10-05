@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Keep the default version aligned with .github/actions/install-deps/action.yaml
+# and jobs.ci.env.K8S_VERSION in .github/workflows/ci.yml.
 K8S_VERSION="${K8S_VERSION:-1.34.x}"
 KUBEBUILDER_ASSETS="${KUBEBUILDER_ASSETS:-/usr/local/kubebuilder/bin}"
 SETUP_ENVTEST_BIN="${SETUP_ENVTEST_BIN:-${KUBEBUILDER_ASSETS}/setup-envtest}"
