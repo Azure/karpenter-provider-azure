@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 )
@@ -157,7 +158,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeInitializationTaints: nodeInitializationTaints,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
-				// WorkloadRuntime:          nil,
+				WorkloadRuntime:          configureWorkloadRuntime(nodeClass),
 				ArtifactStreamingProfile: configureArtifactStreamingProfile(nodeClass, instanceType),
 			},
 
@@ -170,10 +171,23 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			},
 			Priority: priority,
 
-			Tags:            tags,
-			LocalDNSProfile: configureLocalDNSProfile(nodeClass),
+			Tags:                tags,
+			LocalDNSProfile:     configureLocalDNSProfile(nodeClass, instanceType),
+			CapacityReservation: configureCapacityReservation(nodeClass),
 		},
 	}, nil
+}
+
+func configureCapacityReservation(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.CapacityReservation {
+	groupID := nodeClass.GetCapacityReservationGroupID()
+	if groupID == "" {
+		return nil
+	}
+	return &armcontainerservice.CapacityReservation{
+		CapacityReservationGroup: &armcontainerservice.CapacityReservationGroup{
+			ID: lo.ToPtr(groupID),
+		},
+	}
 }
 
 func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.GPUProfile {
@@ -210,6 +224,16 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	return gpuProfile
 }
 
+// configureWorkloadRuntime maps a Kata workloadRuntime to the AKS machine API enum.
+// It returns nil for the default OCIContainer case (the AKS machine API defaults to
+// OCIContainer), so non-Kata NodeClasses keep their existing wire payload.
+func configureWorkloadRuntime(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.WorkloadRuntime {
+	if nodeClass.IsKataEnabled() {
+		return lo.ToPtr(armcontainerservice.WorkloadRuntimeKataVMIsolation)
+	}
+	return nil
+}
+
 func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.AgentPoolArtifactStreamingProfile {
 	arch := instanceType.Requirements.Get(v1.LabelArchStable).Values()[0]
 	if nodeClass.IsArtifactStreamingEnabled(arch) {
@@ -220,14 +244,16 @@ func configureArtifactStreamingProfile(nodeClass *v1beta1.AKSNodeClass, instance
 	return nil
 }
 
-func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.LocalDNSProfile {
-	// Use the wire-resolved spec so Karpenter's Preferred-mode decision
-	// (recorded on the AKSNodeClass via Status.LocalDNSState) is honored
-	// end-to-end downstream. This guarantees a deterministic and consistent
-	// LocalDNS decision across Machines spawned from the same NodeClass:
-	// Preferred is never sent downstream, so it can never be re-interpreted.
-	// See AKSNodeClass.ResolvedLocalDNSForWire for the full rationale.
-	spec := nodeClass.ResolvedLocalDNSForWire()
+func configureLocalDNSProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.LocalDNSProfile {
+	// Resolve the wire Mode against this Machine's VM size. Preferred is never
+	// sent downstream: the aks-rp API would re-interpret it against the single VM
+	// size of an agent pool, which is not the shape Karpenter provisions in, so
+	// Karpenter resolves it here and sends the concrete Required/Disabled it
+	// decided on. Passing the instance type is what makes Preferred mean what it
+	// means in AKS -- LocalDNS on nodes whose SKU can carry it, off on the ones
+	// that cannot, rather than one verdict for every Machine off the NodeClass.
+	// See localdns.ResolveForWire for the full rationale.
+	spec := localdns.ResolveForWire(nodeClass, instanceType.Requirements)
 	if spec == nil {
 		return nil
 	}

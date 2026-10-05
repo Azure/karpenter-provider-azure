@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -91,6 +92,34 @@ var _ = Describe("CEL/Validation", func() {
 			},
 		}
 	})
+	Context("CapacityReservation", func() {
+		DescribeTable("Should only accept a valid CapacityReservation GroupID", func(crgID string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					CapacityReservation: &v1beta1.CapacityReservationConfiguration{GroupID: lo.ToPtr(crgID)},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid CapacityReservation GroupID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg", true),
+			// ARM returns resource IDs with inconsistent casing, so the pattern must be case-insensitive.
+			Entry("uppercase segments", "/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/RGNAME/PROVIDERS/MICROSOFT.COMPUTE/CAPACITYRESERVATIONGROUPS/CRG", true),
+			Entry("mixed-case resource group and group name", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/MyResourceGroup/providers/Microsoft.Compute/capacityReservationGroups/MyGroup", true),
+			Entry("resource group with parentheses", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/contains.(parentheses)/providers/Microsoft.Compute/capacityReservationGroups/crg", true),
+			Entry("wrong provider namespace", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Network/capacityReservationGroups/crg", false),
+			Entry("wrong resource type", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/diskEncryptionSets/des", false),
+			Entry("child capacity reservation rather than the group", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg/capacityReservations/cr", false),
+			Entry("missing resourceGroups segment", "/subscriptions/12345678-1234-1234-1234-123456789012/rgname/providers/Microsoft.Compute/capacityReservationGroups/crg", false),
+			Entry("resource group ending with a dot", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/ends.with.dot./providers/Microsoft.Compute/capacityReservationGroups/crg", false),
+			Entry("not a resource ID", "crg", false),
+			Entry("empty group ID", "", false),
+		)
+	})
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {
 			nodeClass := &v1beta1.AKSNodeClass{
@@ -132,6 +161,65 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					ImageFamily: &invalidImageFamily,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("Versions", func() {
+		DescribeTable("should require kubernetesVersion when nodeImageVersion is set", func(kubernetesVersion, nodeImageVersion *string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Versions: &v1beta1.Versions{
+						KubernetesVersion: kubernetesVersion,
+						NodeImageVersion:  nodeImageVersion,
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("should accept omitted versions", nil, nil, true),
+			Entry("should accept kubernetesVersion without nodeImageVersion", lo.ToPtr("1.31.0"), nil, true),
+			Entry("should reject nodeImageVersion without kubernetesVersion", nil, lo.ToPtr("202501.01.0"), false),
+			Entry("should accept nodeImageVersion with kubernetesVersion", lo.ToPtr("1.31.0"), lo.ToPtr("202501.01.0"), true),
+		)
+	})
+
+	Context("OSDiskType", func() {
+		It("should accept Managed OSDiskType", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: lo.ToPtr(v1beta1.OSDiskTypeManaged),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept omitted OSDiskType", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// OSDiskType is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			Expect(nodeClass.Spec.OSDiskType).To(BeNil())
+		})
+
+		It("should reject invalid OSDiskType", func() {
+			invalidOSDiskType := v1beta1.OSDiskType("asdf")
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: &invalidOSDiskType,
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
@@ -706,7 +794,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2204ImageFamily, nil, false, true),
 			Entry("Ubuntu2204 when TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2204ImageFamily, nil, true, true),
 			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, true, true),
-			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, false, false),
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, false, true),
 			Entry("Ubuntu2404 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2404ImageFamily, &v1beta1.FIPSModeDisabled, false, true),
 			Entry("Ubuntu2404 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2404ImageFamily, nil, false, true),
 			Entry("Ubuntu2404 when TrustedLaunch is enabled should succeed", v1beta1.Ubuntu2404ImageFamily, nil, true, true),
@@ -723,6 +811,83 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1beta1.FIPSModeFIPS, false, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when TrustedLaunch is enabled should succeed", "", nil, true, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS and TrustedLaunch is enabled should succeed", "", &v1beta1.FIPSModeFIPS, true, true),
+		)
+	})
+
+	Context("WorkloadRuntime and ImageFamily", func() {
+		DescribeTable("should only accept valid WorkloadRuntime and ImageFamily combinations", func(imageFamily string, workloadRuntime *v1beta1.WorkloadRuntime, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			// allows for leaving imageFamily unset, which currently defaults to Ubuntu
+			if imageFamily != "" {
+				nodeClass.Spec.ImageFamily = &imageFamily
+			}
+			nodeClass.Spec.WorkloadRuntime = workloadRuntime
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("unset WorkloadRuntime with Ubuntu should succeed", v1beta1.UbuntuImageFamily, nil, true),
+			Entry("unset WorkloadRuntime with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, nil, true),
+			Entry("OCIContainer with Ubuntu should succeed", v1beta1.UbuntuImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+			Entry("OCIContainer with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+			Entry("KataVmIsolation with AzureLinux should succeed", v1beta1.AzureLinuxImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("KataVmIsolation with Ubuntu should fail", v1beta1.UbuntuImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("KataVmIsolation with Ubuntu2204 should fail", v1beta1.Ubuntu2204ImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("KataVmIsolation with Ubuntu2404 should fail", v1beta1.Ubuntu2404ImageFamily, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("KataVmIsolation with unspecified ImageFamily (defaults to Ubuntu) should fail", "", lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+		)
+
+		DescribeTable("should reject KataVmIsolation combined with FIPS", func(fipsMode *v1beta1.FIPSMode, workloadRuntime *v1beta1.WorkloadRuntime, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:        fipsMode,
+					WorkloadRuntime: workloadRuntime,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			// Kata is not FIPS compliant, so the combination has no satisfiable image and is rejected
+			// at admission rather than surfacing later as ImagesNotFound.
+			Entry("FIPS with KataVmIsolation should fail", lo.ToPtr(v1beta1.FIPSModeFIPS), lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("Disabled FIPS with KataVmIsolation should succeed", lo.ToPtr(v1beta1.FIPSModeDisabled), lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("unset FIPS with KataVmIsolation should succeed", nil, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("FIPS with OCIContainer should succeed", lo.ToPtr(v1beta1.FIPSModeFIPS), lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
+			Entry("FIPS with unset workloadRuntime should succeed", lo.ToPtr(v1beta1.FIPSModeFIPS), nil, true),
+		)
+
+		DescribeTable("should reject KataVmIsolation combined with TrustedLaunch", func(trustedLaunch *v1beta1.TrustedLaunch, workloadRuntime *v1beta1.WorkloadRuntime, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily:     lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					WorkloadRuntime: workloadRuntime,
+				},
+			}
+			if trustedLaunch != nil {
+				nodeClass.Spec.Security = &v1beta1.Security{TrustedLaunch: trustedLaunch}
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("vTPM with KataVmIsolation should fail", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("Secure Boot with KataVmIsolation should fail", &v1beta1.TrustedLaunch{SecureBoot: lo.ToPtr(true)}, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), false),
+			Entry("disabled TrustedLaunch with KataVmIsolation should succeed", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(false), SecureBoot: lo.ToPtr(false)}, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("unset TrustedLaunch with KataVmIsolation should succeed", nil, lo.ToPtr(v1beta1.WorkloadRuntimeKataVMIsolation), true),
+			Entry("vTPM with OCIContainer should succeed", &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)}, lo.ToPtr(v1beta1.WorkloadRuntimeOCIContainer), true),
 		)
 	})
 
@@ -874,6 +1039,7 @@ var _ = Describe("CEL/Validation", func() {
 			v1beta1.AKSLabelPriority,
 			v1beta1.AKSLabelOSSKU,
 			v1beta1.AKSLabelFIPSEnabled,
+			v1beta1.AKSLabelKataVMIsolation,
 			v1beta1.LabelUltraSSD,
 		)
 		expectKnownValueValidationError := func(err error, key string) {
@@ -995,6 +1161,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("AKS OS SKU Ubuntu", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUUbuntu, v1beta1.Ubuntu2204ImageFamily),
 			Entry("AKS OS SKU AzureLinux", v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureLinux, "AzureLinux3"),
 			Entry("AKS FIPS enabled", v1beta1.AKSLabelFIPSEnabled, "true", "false"),
+			Entry("AKS Kata VM isolation", v1beta1.AKSLabelKataVMIsolation, "true", "false"),
 			Entry("UltraSSD", v1beta1.LabelUltraSSD, "true", "maybe"),
 		)
 		It("should not allow internal labels", func() {

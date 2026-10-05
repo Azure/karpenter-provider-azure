@@ -64,7 +64,7 @@ func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
 func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
 	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersionsSnapshotData)
 
-	expectedVersion := "202512.18.0"
+	expectedVersion := "202608.26.0"
 	found := false
 
 	for _, val := range filteredNodeImages {
@@ -88,7 +88,7 @@ func TestFilteredNodeImageVersionsFromProviderList(t *testing.T) {
 	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "")
 	g.Expect(err).To(BeNil())
 
-	expectedVersion := "202512.18.0"
+	expectedVersion := "202608.26.0"
 	found := false
 
 	for _, val := range filteredNodeImages {

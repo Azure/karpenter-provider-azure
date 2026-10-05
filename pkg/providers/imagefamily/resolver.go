@@ -19,8 +19,10 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -35,6 +37,7 @@ import (
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/localdns"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -85,6 +88,7 @@ type ImageFamily interface {
 		storageProfile string,
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
 		fipsMode *v1beta1.FIPSMode,
+		workloadRuntime *v1beta1.WorkloadRuntime,
 		localDNS *v1beta1.LocalDNS,
 		artifactStreaming *v1beta1.ArtifactStreaming,
 		linuxOSConfig *v1beta1.LinuxOSConfiguration,
@@ -96,7 +100,10 @@ type ImageFamily interface {
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
 	// If fipsMode is FIPSModeFIPS or trustedLaunch is enabled, only matching feature-specific images will be returned.
-	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool) []types.DefaultImageOutput
+	// If kataEnabled is true, only the AKS Pod Sandboxing (Kata) image variant is
+	// returned (AzureLinux 3 only; other families return no images, as Kata is enforced to
+	// AzureLinux by AKSNodeClass CEL validation).
+	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
@@ -125,6 +132,15 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
+	// The aksscriptless path builds node custom data locally and has no way to install the Kata host
+	// stack, so fail loudly rather than silently provisioning a standard OCI runtime. The
+	// bootstrappingclient path sends the runtime to the RP (see provisionclientbootstrap.go) and the
+	// AKS machine API path sets it on the machine object, so both are fine.
+	if nodeClass.IsKataEnabled() && !options.FromContext(ctx).SupportsWorkloadRuntime() {
+		return nil, fmt.Errorf("workloadRuntime %q is not supported with provision-mode %q",
+			nodeClass.GetWorkloadRuntime(), options.FromContext(ctx).ProvisionMode)
+	}
+
 	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), kubernetesVersion, staticParameters)
 	imageID, err := r.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {
@@ -139,7 +155,7 @@ func (r *defaultResolver) Resolve(
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	useSIG := options.FromContext(ctx).UseSIG
-	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG, nodeClass.IsTrustedLaunchEnabled())
+	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +194,8 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
-			nodeClass.ResolvedLocalDNSForWire(),
+			nodeClass.Spec.WorkloadRuntime,
+			localdns.ResolveForWire(nodeClass, instanceType.Requirements),
 			nodeClass.Spec.ArtifactStreaming,
 			nodeClass.Spec.LinuxOSConfig,
 			vtpmEnabled,
@@ -190,9 +207,10 @@ func (r *defaultResolver) Resolve(
 
 		// TODO: We could potentially use the instance type to do defaulting like
 		// traditional AKS, so putting this here along with the other settings
-		StorageProfileSizeGB: lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
-		ImageID:              imageID,
-		IsWindows:            false, // TODO(Windows)
+		StorageProfileSizeGB:     lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
+		ImageID:                  imageID,
+		EnableFIPS1403Encryption: requiresFIPS1403Encryption(imageDistro),
+		IsWindows:                false, // TODO(Windows)
 	}
 
 	return template, nil
@@ -204,18 +222,34 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 		return "", nil, err
 	}
 
-	_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
-
 	if instancetype.UseEphemeralDisk(sku, nodeClass) {
+		_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
 		return consts.StorageProfileEphemeral, placement, nil
 	}
-	return consts.StorageProfileManagedDisks, placement, nil
+	return consts.StorageProfileManagedDisks, nil, nil
 }
 
-func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool, trustedLaunch bool) (string, error) {
+// Ubuntu 22.04 FIPS images require Compute's FIPS 140-3 encryption for
+// guest-agent certificates and protected extension settings. This applies
+// to all currently supported variants: Gen1, Gen2, and Trusted Launch Gen2.
+// Use the resolved distro so generic Ubuntu and explicit Ubuntu2204 receive
+// the same behavior.
+//
+// Revisit this mapping when adding image families or FIPS image variants;
+// FIPS mode alone does not imply this capability is required.
+func requiresFIPS1403Encryption(distro string) bool {
+	switch distro {
+	case "aks-ubuntu-fips-containerd-22.04", "aks-ubuntu-fips-containerd-22.04-gen2", "aks-ubuntu-fips-containerd-22.04-tl-gen2":
+		return true
+	default:
+		return false
+	}
+}
+
+func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool, trustedLaunch bool, kataEnabled bool) (string, error) {
 	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
-	for _, defaultImage := range imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch) {
+	for _, defaultImage := range imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch, kataEnabled) {
 		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
 			return defaultImage.Distro, nil
 		}
@@ -238,14 +272,43 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
-	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	kubeletConfig.EvictionHard = map[string]string{
+		instancetype.MemoryAvailable:  instanceType.Overhead.EvictionThreshold.Memory().String(),
+		instancetype.NodeFSAvailable:  instancetype.HardEvictionNodeFSAvailable,
+		instancetype.NodeFSInodesFree: instancetype.HardEvictionNodeFSInodesFree,
+	}
+
+	opts := options.FromContext(ctx)
+	enableNodeHardening := opts.ShouldUseNodeHardening()
+	if enableNodeHardening {
+		totalMemoryMiB := lo.Must(strconv.ParseInt(instanceType.Requirements.Get(v1beta1.LabelSKUMemory).Any(), 10, 64))
+		softEvictionThreshold := instancetype.SoftEvictionThreshold(totalMemoryMiB)
+		kubeletConfig.EvictionSoft = map[string]string{
+			instancetype.MemoryAvailable:  softEvictionThreshold.Memory().String(),
+			instancetype.NodeFSAvailable:  instancetype.SoftEvictionNodeFSAvailable,
+			instancetype.NodeFSInodesFree: instancetype.SoftEvictionNodeFSInodesFree,
+		}
+		kubeletConfig.EvictionSoftGracePeriod = map[string]metav1.Duration{
+			instancetype.MemoryAvailable:  {Duration: instancetype.SoftEvictionMemoryGracePeriod},
+			instancetype.NodeFSAvailable:  {Duration: instancetype.SoftEvictionNodeFSGracePeriod},
+			instancetype.NodeFSInodesFree: {Duration: instancetype.SoftEvictionNodeFSInodesGracePeriod},
+		}
+		kubeletConfig.EvictionMaxPodGracePeriod = lo.ToPtr(instancetype.SoftEvictionMaxPodGracePeriodSeconds)
+
+		// Signal node hardening to AgentBaker, which owns the reserved-cgroup paths.
+		// Mirrors nodeAllocatableEnforcementHardened in the AKS RP.
+		kubeletConfig.EnforceNodeAllocatable = []string{"pods", "kube-reserved", "system-reserved"}
+	} else {
+		kubeletConfig.KubeReserved["pid"] = instancetype.KubeReservedPIDs
+		kubeletConfig.EvictionHard[instancetype.PIDAvailable] = instancetype.HardEvictionPIDAvailable
+	}
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool) []types.DefaultImageOutput {
+func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool, trustedLaunch bool, kataEnabled bool) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
 	imageFamily := GetImageFamily(familyName, fipsMode, trustedLaunch, kubernetesVersion, nil)
-	return imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch)
+	return imageFamily.DefaultImages(useSIG, fipsMode, trustedLaunch, kataEnabled)
 }
 
 func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
@@ -268,7 +331,7 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 
 func defaultUbuntu(fipsMode *v1beta1.FIPSMode, trustedLaunch bool, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
-		if trustedLaunch {
+		if UseUbuntu2204FIPS(kubernetesVersion, trustedLaunch) {
 			return &Ubuntu2204{Options: parameters}
 		}
 		return &Ubuntu2004{Options: parameters}

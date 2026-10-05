@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-K8S_VERSION="${K8S_VERSION:="1.29.x"}"
+# Keep the default version aligned with .github/actions/install-deps/action.yaml
+# and jobs.ci.env.K8S_VERSION in .github/workflows/ci.yml.
+K8S_VERSION="${K8S_VERSION:="1.34.x"}"
 KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 
 # Default SKIP_INSTALLED to false if not set
@@ -83,7 +85,7 @@ tools() {
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
 
-    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
     # Install our custom modules in golangci-lint
     if ! should-skip "golangci-lint-custom"; then
@@ -117,9 +119,9 @@ kubebuilder() {
 }
 
 gettrivy() {
-    if ! command -v trivy &> /dev/null; then
-        TRIVY_VERSION="0.69.3"
-        TRIVY_SHA256="a484057aafde31089cf2558ca0f79a4bc835125a5ee6834183a5bcf0735af358"
+    TRIVY_VERSION="0.74.0"
+    TRIVY_SHA256="cf1e32ec8d4d8823e023096a28cadb14f5b5123ce03f201fb633c5b76aa712dd"
+    if ! command -v trivy &> /dev/null || [[ "$(trivy --version | head -n 1)" != "Version: ${TRIVY_VERSION}" ]]; then
         wget -qO /tmp/trivy.deb "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb"
         echo "${TRIVY_SHA256}  /tmp/trivy.deb" | sha256sum --check --strict
         sudo dpkg -i /tmp/trivy.deb
