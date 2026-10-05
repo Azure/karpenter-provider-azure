@@ -594,6 +594,82 @@ func runSharedAKSMachineAPITests() {
 }
 
 var _ = Describe("CloudProvider", func() {
+	for _, mode := range []string{consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch} {
+		Context("Post-acceptance cleanup "+mode, func() {
+			BeforeEach(func() {
+				testOptions = test.Options(test.OptionsFields{ProvisionMode: lo.ToPtr(mode), UseSIG: lo.ToPtr(true)})
+				testOptions.NodeOSUpgradeChannel = consts.NodeOSUpgradeChannelSecurityPatch
+				ctx = options.ToContext(coreoptions.ToContext(ctx, coretest.Options()), testOptions)
+				azureEnv = test.NewEnvironment(ctx, env)
+				test.ApplyDefaultStatus(nodeClass, env, true)
+			})
+			AfterEach(func() { azureEnv.Reset(ctx) })
+
+			DescribeTable("classifies read failures without deleting potentially accepted Machines", func(response string, failed, reuse bool) {
+				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				if reuse {
+					promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(promise.Wait()).To(Succeed())
+					azureEnv.AKSMachineCache.InvalidateAll()
+				}
+				var originalImage string
+				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.SetCustomTransformer(func(input *fake.AKSMachineGetInput) error {
+					id := fake.MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
+					machine, exists := azureEnv.AKSDataStorage.AKSMachines.Load(id)
+					if !exists {
+						return nil // Let the initial lookup reach the PUT.
+					}
+					originalImage = lo.FromPtr(machine.Properties.NodeImageVersion)
+					if response == "404" {
+						return fake.AKSMachineAPIErrorFromAKSMachineNotFound
+					}
+					if response == "503" {
+						return &azcore.ResponseError{StatusCode: 503, ErrorCode: "ServiceUnavailable"}
+					}
+					props := *machine.Properties
+					props.ProvisioningState = lo.ToPtr(consts.ProvisioningStateCreating)
+					if failed {
+						props.ProvisioningState = lo.ToPtr(consts.ProvisioningStateFailed)
+					}
+					if response == "hardware" {
+						props.Hardware = nil
+					} else {
+						props.Status = nil
+					}
+					machine.Properties = &props
+					azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Output.Set(&armcontainerservice.MachinesClientGetResponse{Machine: machine})
+					return nil
+				})
+				_, err = azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+				Expect(err).To(HaveOccurred())
+				if failed {
+					Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
+					return
+				}
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(BeZero())
+				// A readable but incomplete existing Machine must also be preserved
+				// on reuse. Repeated 404s are outside this per-attempt safeguard.
+				if response == "hardware" || response == "status" {
+					azureEnv.AKSMachineCache.InvalidateAll()
+					_, err = azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+					Expect(err).To(HaveOccurred())
+				}
+				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Reset()
+				azureEnv.AKSMachineCache.InvalidateAll()
+				promise, err := azureEnv.AKSMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(promise.Wait()).To(Succeed())
+				Expect(promise.AKSMachineNodeImageVersion).To(Equal(originalImage))
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(BeZero())
+			}, Entry("GET 404", "404", false, false), Entry("GET 503", "503", false, false),
+				Entry("creating with nil hardware", "hardware", false, false), Entry("creating with nil status", "status", false, false),
+				Entry("failed with nil hardware", "hardware", true, false), Entry("failed with nil status", "status", true, false),
+				Entry("reusing failed with nil hardware", "hardware", true, true), Entry("reusing failed with nil status", "status", true, true))
+		})
+	}
 	Context("ProvisionMode = AKSMachineAPIHeaderBatch, ManageExistingAKSMachines = false", func() {
 		BeforeEach(func() {
 			testOptions = test.Options(test.OptionsFields{

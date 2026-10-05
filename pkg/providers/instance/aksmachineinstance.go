@@ -687,7 +687,7 @@ func (p *DefaultAKSMachineProvider) handleMachineBeginCreateError(ctx context.Co
 
 func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
 	// Reconstruct properties from existing AKS machine instance.
-	if err := validateRetrievedAKSMachineBasicProperties(existingAKSMachine); err != nil {
+	if err := validateMachineForCreate(existingAKSMachine); err != nil {
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
 	}
 	if err := validateExistingAKSMachineCapacityReservation(existingAKSMachine, nodeClass); err != nil {
@@ -768,9 +768,9 @@ func validateExistingAKSMachineCapacityReservation(machine *armcontainerservice.
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, capacityReservationGroupID string) (*armcontainerservice.Machine, error) {
 	gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
+		return nil, &preserveMachineError{fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)}
 	}
-	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
+	if err := validateMachineForCreate(gotAKSMachine); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
 	if lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == consts.ProvisioningStateFailed {
@@ -782,4 +782,17 @@ func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningE
 		return nil, p.handleMachineProvisioningError(ctx, "get once after begin creation", aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, gotAKSMachine.Properties.Status.ProvisioningError)
 	}
 	return gotAKSMachine, nil
+}
+
+// validateMachineForCreate preserves incomplete responses unless the Machine is
+// confirmed failed. Both errors stop field extraction; only terminal failures
+// are eligible for BeginCreate's cleanup.
+func validateMachineForCreate(machine *armcontainerservice.Machine) error {
+	if err := validateRetrievedAKSMachineBasicProperties(machine); err != nil {
+		if machine.Properties != nil && lo.FromPtr(machine.Properties.ProvisioningState) == consts.ProvisioningStateFailed {
+			return err
+		}
+		return &preserveMachineError{err}
+	}
+	return nil
 }
