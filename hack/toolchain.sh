@@ -73,7 +73,8 @@ _command_is_current() {
     else
         output="$("${command_path}" "$2" 2>&1)" || return 1
     fi
-    grep -Fq -- "$3" <<<"${output}"
+    # -F matches fixed text, -q suppresses output, and -w requires word boundaries.
+    grep -Fqw -- "$3" <<<"${output}"
 }
 
 should-skip() {

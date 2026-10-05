@@ -121,6 +121,14 @@ test_should_skip_policy_and_versions() {
         assert_status 0 should-skip "${tool}" version v0.19.0 --client=true
     assert_contains "${args_log}" "version --client=true"
 
+    make_version_tool "${tool}" "Version: v0.19.00"
+    SKIP_INSTALLED=true \
+        assert_status 1 should-skip "${tool}" --version v0.19.0
+
+    make_version_tool "${tool}" "Version: v0.190.1"
+    SKIP_INSTALLED=true \
+        assert_status 1 should-skip "${tool}" --version v0.19
+
     make_version_tool "${tool}" "Version: v0.19.0" 1
     SKIP_INSTALLED=true \
         assert_status 1 should-skip "${tool}" --version v0.19.0
