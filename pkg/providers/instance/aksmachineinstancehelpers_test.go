@@ -234,6 +234,33 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			})
 		})
 
+		Context("Windows Image Families", func() {
+			It("should configure Windows2022", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2022ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2022))
+				Expect(*enableFIPs).To(BeFalse())
+			})
+
+			It("should configure Windows2025", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
+				Expect(*enableFIPs).To(BeTrue())
+			})
+
+			It("should default EnableFIPS true for Windows2025 when fipsMode is omitted", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				nodeClass.Spec.FIPSMode = nil
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUWindows2025))
+				Expect(*enableFIPs).To(BeTrue())
+			})
+		})
+
 		Context("Error Cases", func() {
 			It("should return error when ImageFamily is nil", func() {
 				nodeClass.Spec.ImageFamily = nil
@@ -255,6 +282,31 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(enableFIPs).ToNot(BeNil())
 				Expect(*enableFIPs).To(BeFalse())
 			})
+		})
+
+	})
+
+	Context("configureOSType", func() {
+		It("should return Linux for Linux image families", func() {
+			for _, fam := range []string{
+				v1beta1.UbuntuImageFamily,
+				v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AzureLinuxImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeLinux), "family %s", fam)
+			}
+		})
+
+		It("should return Windows for Windows image families", func() {
+			for _, fam := range []string{
+				v1beta1.Windows2022ImageFamily,
+				v1beta1.Windows2025ImageFamily,
+			} {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(fam)
+				Expect(*configureOSType(nodeClass)).To(Equal(armcontainerservice.OSTypeWindows), "family %s", fam)
+			}
 		})
 	})
 
