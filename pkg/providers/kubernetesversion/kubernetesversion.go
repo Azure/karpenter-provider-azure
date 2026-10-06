@@ -18,6 +18,7 @@ package kubernetesversion
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
@@ -96,7 +97,9 @@ func (p *kubernetesVersionProvider) IsSupported(
 		}
 	}
 	if p.cm.HasChanged("supported-kubernetes-versions", supportedVersions) {
-		log.FromContext(ctx).V(1).Info("discovered supported kubernetes versions", "supportedVersions", lo.Keys(supportedVersions))
+		supportedVersionKeys := lo.Keys(supportedVersions)
+		sort.Strings(supportedVersionKeys)
+		log.FromContext(ctx).V(1).Info("discovered supported kubernetes versions", "supportedVersions", supportedVersionKeys)
 	}
 	p.kubernetesVersionCache.SetDefault(supportedKubernetesVersionsCacheKey, supportedVersions)
 
