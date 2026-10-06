@@ -323,6 +323,12 @@ func waitForInstancePromise(ctx context.Context, promise instance.Promise) error
 	return promise.Wait(waitCtx)
 }
 
+func cleanupInstancePromise(ctx context.Context, promise instance.Promise) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), instancePromiseTimeout)
+	defer cancel()
+	return promise.Cleanup(cleanupCtx)
+}
+
 func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, waitErr error) {
 	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, waitErr))
 
@@ -331,7 +337,7 @@ func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, inst
 		log.FromContext(ctx).Error(waitErr, "failed launching nodeclaim")
 	}
 
-	cleanUpError := instancePromise.Cleanup(ctx)
+	cleanUpError := cleanupInstancePromise(ctx, instancePromise)
 	if cleanUpError != nil {
 		// Fallback to garbage collection to clean up the instance, if it survived.
 		if cloudprovider.IgnoreNodeClaimNotFoundError(cleanUpError) != nil {

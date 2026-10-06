@@ -31,10 +31,14 @@ import (
 )
 
 type testInstancePromise struct {
-	waitFunc func(context.Context) error
+	waitFunc    func(context.Context) error
+	cleanupFunc func(context.Context) error
 }
 
-func (p *testInstancePromise) Cleanup(context.Context) error {
+func (p *testInstancePromise) Cleanup(ctx context.Context) error {
+	if p.cleanupFunc != nil {
+		return p.cleanupFunc(ctx)
+	}
 	return nil
 }
 
@@ -60,6 +64,27 @@ func TestWaitForInstancePromiseAddsDeadline(t *testing.T) {
 	}
 
 	g.Expect(waitForInstancePromise(t.Context(), promise)).To(Succeed())
+}
+
+func TestCleanupInstancePromiseUsesBoundedUsableContext(t *testing.T) {
+	g := NewWithT(t)
+	start := time.Now()
+	contextKey := struct{}{}
+	parentCtx, cancel := context.WithCancel(context.WithValue(t.Context(), contextKey, "value"))
+	cancel()
+	promise := &testInstancePromise{
+		cleanupFunc: func(ctx context.Context) error {
+			g.Expect(ctx.Err()).To(BeNil())
+			g.Expect(ctx.Value(contextKey)).To(Equal("value"))
+			deadline, ok := ctx.Deadline()
+			g.Expect(ok).To(BeTrue())
+			g.Expect(deadline).To(BeTemporally(">=", start.Add(instancePromiseTimeout-time.Second)))
+			g.Expect(deadline).To(BeTemporally("<=", start.Add(instancePromiseTimeout+time.Second)))
+			return nil
+		},
+	}
+
+	g.Expect(cleanupInstancePromise(parentCtx, promise)).To(Succeed())
 }
 
 func TestGenerateNodeClaimName(t *testing.T) {
