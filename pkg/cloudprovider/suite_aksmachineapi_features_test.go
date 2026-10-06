@@ -46,6 +46,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -158,7 +159,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(env.Client.List(ctx, claims)).To(Succeed())
 				Expect(claims.Items).ToNot(BeEmpty())
 				for _, claim := range claims.Items {
-					Expect(claim.Annotations["karpenter.azure.com/image-selection"]).To(Equal("StandardImageFallback"))
+					Expect(claim.Annotations["karpenter.azure.com/image-selection"]).To(Equal(instance.ImageSelectionStandardFallback))
 					Expect(imagefamily.IsSecurityPatchVersion(claim.Status.ImageID)).To(BeFalse())
 				}
 			})

@@ -45,12 +45,12 @@ func TestCreationTimeSecurityPatchSelection(t *testing.T) {
 		forced       string
 		want, reason string
 	}{
-		{name: "exact definition and newest patch", images: []*armcontainerservice.NodeImageVersion{image("2404containerd", "202609.23.0-2026.09.30"), image("2404gen2containerd", "202609.23.0-2026.09.25"), image("2404gen2containerd", "202608.01.0-2026.09.26")}, want: "AKSUbuntu-2404gen2containerd-202608.01.0-2026.09.26", reason: "SecurityPatch"},
-		{name: "missing definition", images: []*armcontainerservice.NodeImageVersion{image("2404containerd", "202609.23.0-2026.09.30")}, want: standard, reason: "NoCompatibleCapturedImage"},
-		{name: "empty catalog", want: standard, reason: "NoCompatibleCapturedImage"},
-		{name: "ignore standard response from old server", images: []*armcontainerservice.NodeImageVersion{image("2404gen2containerd", "202609.23.0")}, want: standard, reason: "NoCompatibleCapturedImage"},
-		{name: "failed discovery", err: errors.New("unavailable"), want: standard, reason: "CatalogUnavailable"},
-		{name: "previous explicit rejection", forced: "ImageUnavailable", want: standard, reason: "ImageUnavailable"},
+		{name: "exact definition and newest patch", images: []*armcontainerservice.NodeImageVersion{image("2404containerd", "202609.23.0-2026.09.30"), image("2404gen2containerd", "202609.23.0-2026.09.25"), image("2404gen2containerd", "202608.01.0-2026.09.26")}, want: "AKSUbuntu-2404gen2containerd-202608.01.0-2026.09.26", reason: ImageSelectionSecurityPatch},
+		{name: "missing definition", images: []*armcontainerservice.NodeImageVersion{image("2404containerd", "202609.23.0-2026.09.30")}, want: standard, reason: ImageSelectionReasonNoCompatibleCapturedImage},
+		{name: "empty catalog", want: standard, reason: ImageSelectionReasonNoCompatibleCapturedImage},
+		{name: "ignore standard response from old server", images: []*armcontainerservice.NodeImageVersion{image("2404gen2containerd", "202609.23.0")}, want: standard, reason: ImageSelectionReasonNoCompatibleCapturedImage},
+		{name: "failed discovery", err: errors.New("unavailable"), want: standard, reason: ImageSelectionReasonCatalogUnavailable},
+		{name: "previous explicit rejection", forced: ImageSelectionReasonImageUnavailable, want: standard, reason: ImageSelectionReasonImageUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -102,12 +102,26 @@ func TestCapturedLookupTimeoutFallsBackWithoutCancellingCreate(t *testing.T) {
 		return nil, ctx.Err()
 	})}}
 	ctx := context.Background()
-	got, reason, err := p.selectSecurityPatchImage(ctx, "AKSUbuntu-2404gen2containerd-202609.23.0", "")
-	if err != nil || reason != "CatalogUnavailable" || got != "AKSUbuntu-2404gen2containerd-202609.23.0" || ctx.Err() != nil {
+	got, reason, err := p.selectSecurityPatchImageWithTimeout(ctx, "AKSUbuntu-2404gen2containerd-202609.23.0", "", 10*time.Millisecond)
+	if err != nil || reason != ImageSelectionReasonCatalogUnavailable || got != "AKSUbuntu-2404gen2containerd-202609.23.0" || ctx.Err() != nil {
 		t.Fatalf("unexpected timeout behavior: %s %s %v", got, reason, err)
 	}
 	if len(p.securityPatchLookups) != 0 {
 		t.Fatal("lookup slot leaked")
+	}
+}
+
+func TestQueuedCapturedLookupTimeoutFallsBack(t *testing.T) {
+	p := &DefaultAKSMachineProvider{securityPatchLookups: make(chan struct{}, 1)}
+	p.securityPatchLookups <- struct{}{}
+	ctx := context.Background()
+	standard := "AKSUbuntu-2404gen2containerd-202609.23.0"
+	got, reason, err := p.selectSecurityPatchImageWithTimeout(ctx, standard, "", 10*time.Millisecond)
+	if err != nil || got != standard || reason != ImageSelectionReasonCatalogUnavailable || ctx.Err() != nil {
+		t.Fatalf("unexpected queued timeout: %s %s %v", got, reason, err)
+	}
+	if len(p.securityPatchLookups) != 1 {
+		t.Fatal("queued timeout released another lookup's slot")
 	}
 }
 
@@ -121,8 +135,11 @@ func TestOnlyCapturedExplicitRejectionQualifiesForFallback(t *testing.T) {
 		{"AKSUbuntu-2404gen2containerd-202609.23.0-2026.09.25", "AuthorizationFailed", false},
 	} {
 		machine := &armcontainerservice.Machine{Properties: &armcontainerservice.MachineProperties{NodeImageVersion: lo.ToPtr(tc.version)}}
-		if got := rejectedSecurityPatchImage(machine, &offerings.HandlableError{Code: tc.code}); got != tc.want {
+		if got := rejectedSecurityPatchImage(true, machine, &offerings.HandlableError{Code: tc.code}); got != tc.want {
 			t.Fatalf("%s %s: %v", tc.version, tc.code, got)
+		}
+		if rejectedSecurityPatchImage(false, machine, &offerings.HandlableError{Code: tc.code}) {
+			t.Fatal("image fallback must not apply outside the SecurityPatch channel")
 		}
 	}
 }

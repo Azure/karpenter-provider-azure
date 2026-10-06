@@ -58,8 +58,10 @@ kubectl describe nodeclaim <name>
 
 The existing standard-image cache is unchanged. Captured discovery failure or timeout
 uses the already-selected standard image; parent cancellation aborts the attempt.
-An existing Machine is reused before looking up another image. A failed post-create
-GET or incomplete non-failed response does not trigger deletion in that attempt.
+An existing Machine is reused before looking up another image. On the active
+SecurityPatch channel, a failed post-create GET or incomplete non-failed response
+does not trigger deletion in that attempt. Other channels retain their existing
+cleanup behavior, even if a claim carries an old SecurityPatch fallback annotation.
 Acceptance is not persisted across attempts: if a subsequent lookup returns 404,
 the existing create flow can select an image and submit another PUT. API errors, regional image
 replication, SKU availability and quota can still prevent provisioning; fallback

@@ -171,7 +171,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	// Choose provider based on provision mode
 	if options.FromContext(ctx).IsAKSMachineAPIMode() {
 		created, err := c.createAKSMachineInstance(ctx, nodeClass, nodeClaim, instanceTypes)
-		if err == nil && created.Annotations["karpenter.azure.com/image-selection"] == "StandardImageFallback" {
+		if err == nil && created.Annotations["karpenter.azure.com/image-selection"] == instance.ImageSelectionStandardFallback {
 			c.recorder.Publish(cloudproviderevents.SecurityPatchFallback(nodeClaim, created.Annotations["karpenter.azure.com/image-selection-reason"]))
 		}
 		return created, err
@@ -218,9 +218,9 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		var rejected *instance.SecurityPatchImageRejected
-		if stderrors.As(err, &rejected) {
+		if options.FromContext(ctx).IsSecurityPatchChannel() && stderrors.As(err, &rejected) {
 			stored := nodeClaim.DeepCopy()
-			nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{instance.SecurityPatchFallbackAnnotation: "ImageUnavailable"})
+			nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{instance.SecurityPatchFallbackAnnotation: instance.ImageSelectionReasonImageUnavailable})
 			if patchErr := c.kubeClient.Patch(ctx, nodeClaim, client.MergeFrom(stored)); patchErr != nil {
 				return nil, fmt.Errorf("recording explicit standard-image retry: %w", patchErr)
 			}
@@ -263,7 +263,7 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	if options.FromContext(ctx).IsSecurityPatchChannel() {
 		reason := aksMachinePromise.ImageSelectionReason
 		if reason == "" {
-			reason = "ExistingMachine"
+			reason = instance.ImageSelectionReasonExistingMachine
 		}
 		newNodeClaim.Annotations["karpenter.azure.com/image-selection-reason"] = reason
 	}
@@ -776,9 +776,9 @@ func toCreateError(err error, wrapMsg string) error {
 
 func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) error {
 	if options.FromContext(ctx).IsSecurityPatchChannel() {
-		selection := "SecurityPatch"
+		selection := instance.ImageSelectionSecurityPatch
 		if !imagefamily.IsSecurityPatchVersion(nodeClaim.Status.ImageID) {
-			selection = "StandardImageFallback"
+			selection = instance.ImageSelectionStandardFallback
 		}
 		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{"karpenter.azure.com/image-selection": selection})
 		log.FromContext(ctx).Info("selected image for new node", "imageSelection", selection, "imageID", nodeClaim.Status.ImageID, "nodeClass", nodeClass.Name)

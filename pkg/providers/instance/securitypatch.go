@@ -33,6 +33,16 @@ import (
 
 const SecurityPatchFallbackAnnotation = "karpenter.azure.com/securitypatch-fallback"
 
+// Image selection values are persisted in NodeClaim annotations and surfaced in events.
+const (
+	ImageSelectionSecurityPatch                   = "SecurityPatch"
+	ImageSelectionStandardFallback                = "StandardImageFallback"
+	ImageSelectionReasonImageUnavailable          = "ImageUnavailable"
+	ImageSelectionReasonCatalogUnavailable        = "CatalogUnavailable"
+	ImageSelectionReasonNoCompatibleCapturedImage = "NoCompatibleCapturedImage"
+	ImageSelectionReasonExistingMachine           = "ExistingMachine"
+)
+
 // SecurityPatchImageRejected is emitted only for an explicit rejection by the
 // initial PUT, never for an ambiguous transport error or an accepted LRO failure.
 type SecurityPatchImageRejected struct{ Err error }
@@ -46,8 +56,8 @@ func (e *SecurityPatchImageRejected) Error() string {
 }
 func (e *SecurityPatchImageRejected) Unwrap() error { return e.Err }
 
-func rejectedSecurityPatchImage(machine *armcontainerservice.Machine, err *offerings.HandlableError) bool {
-	return err.Code == "SecurityVHDNotFound" && imagefamily.IsSecurityPatchVersion(lo.FromPtr(machine.Properties.NodeImageVersion))
+func rejectedSecurityPatchImage(securityPatch bool, machine *armcontainerservice.Machine, err *offerings.HandlableError) bool {
+	return securityPatch && err.Code == "SecurityVHDNotFound" && imagefamily.IsSecurityPatchVersion(lo.FromPtr(machine.Properties.NodeImageVersion))
 }
 
 func (p *DefaultAKSMachineProvider) classifyCreateRequestError(ctx context.Context, template *armcontainerservice.Machine, name string, instanceType *corecloudprovider.InstanceType, zone, capacityType, reservationGroupID string, err error) error {
@@ -56,7 +66,7 @@ func (p *DefaultAKSMachineProvider) classifyCreateRequestError(ctx context.Conte
 		return &preserveMachineError{err}
 	}
 	if he := offerings.ErrorToHandlableError(err); he != nil {
-		if rejectedSecurityPatchImage(template, he) {
+		if rejectedSecurityPatchImage(options.FromContext(ctx).IsSecurityPatchChannel(), template, he) {
 			return &SecurityPatchImageRejected{Err: he}
 		}
 		return p.handleMachineBeginCreateError(ctx, name, instanceType, zone, capacityType, reservationGroupID, he)
@@ -69,13 +79,17 @@ func (p *DefaultAKSMachineProvider) classifyCreateRequestError(ctx context.Conte
 // The budget includes waiting for a lookup slot and every catalog page. No result
 // is retained across create calls. The parent context still controls the PUT.
 func (p *DefaultAKSMachineProvider) selectSecurityPatchImage(ctx context.Context, standardNIV, forcedFallback string) (string, string, error) {
+	return p.selectSecurityPatchImageWithTimeout(ctx, standardNIV, forcedFallback, 5*time.Second)
+}
+
+func (p *DefaultAKSMachineProvider) selectSecurityPatchImageWithTimeout(ctx context.Context, standardNIV, forcedFallback string, timeout time.Duration) (string, string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", "", err
 	}
-	if forcedFallback == "ImageUnavailable" {
+	if forcedFallback == ImageSelectionReasonImageUnavailable {
 		return standardNIV, forcedFallback, nil
 	}
-	lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	lookupCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	select {
 	case p.securityPatchLookups <- struct{}{}:
@@ -84,7 +98,7 @@ func (p *DefaultAKSMachineProvider) selectSecurityPatchImage(ctx context.Context
 		if err := ctx.Err(); err != nil {
 			return "", "", err
 		}
-		return standardNIV, "CatalogUnavailable", nil
+		return standardNIV, ImageSelectionReasonCatalogUnavailable, nil
 	}
 	versions, err := p.azClient.NodeImageVersionsClient.List(imagefamily.WithSecurityPatchCatalog(lookupCtx), p.aksMachinesPoolLocation)
 	if parentErr := ctx.Err(); parentErr != nil {
@@ -92,13 +106,13 @@ func (p *DefaultAKSMachineProvider) selectSecurityPatchImage(ctx context.Context
 	}
 	if err != nil || lookupCtx.Err() != nil {
 		log.FromContext(ctx).Info("captured image discovery unavailable; preserving standard selection", "error", err, "standardNIV", standardNIV)
-		return standardNIV, "CatalogUnavailable", nil
+		return standardNIV, ImageSelectionReasonCatalogUnavailable, nil
 	}
 	selected := selectCapturedVersion(standardNIV, versions)
 	if selected == "" {
-		return standardNIV, "NoCompatibleCapturedImage", nil
+		return standardNIV, ImageSelectionReasonNoCompatibleCapturedImage, nil
 	}
-	return selected, "SecurityPatch", nil
+	return selected, ImageSelectionSecurityPatch, nil
 }
 
 func selectCapturedVersion(standardNIV string, versions []*armcontainerservice.NodeImageVersion) string {

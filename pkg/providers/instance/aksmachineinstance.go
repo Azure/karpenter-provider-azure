@@ -447,7 +447,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, nodeClaim, instanceTypes, existingAKSMachine)
 	} else if !machineUtils.IsAKSMachineOrMachinesPoolNotFound(err) {
-		if options.FromContext(ctx).IsSecurityPatchChannel() || nodeClaim.Annotations[SecurityPatchFallbackAnnotation] != "" {
+		if options.FromContext(ctx).IsSecurityPatchChannel() {
 			return nil, &preserveMachineError{fmt.Errorf("checking existing Machine before selecting its image: %w", err)}
 		}
 		// Not fatal. Will fall back to normal creation.
@@ -523,7 +523,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachineBatch(
 		return nil, fmt.Errorf("failed to begin create AKS machine %q, unhandled error: %w", aksMachineName, err)
 	}
 	if handlableError != nil {
-		if rejectedSecurityPatchImage(aksMachineTemplate, handlableError) {
+		if rejectedSecurityPatchImage(options.FromContext(ctx).IsSecurityPatchChannel(), aksMachineTemplate, handlableError) {
 			return nil, &SecurityPatchImageRejected{Err: handlableError}
 		}
 		return nil, p.handleMachineBeginCreateError(ctx, aksMachineName, instanceType, zone, capacityType, capacityReservationGroupID, handlableError)
@@ -687,7 +687,7 @@ func (p *DefaultAKSMachineProvider) handleMachineBeginCreateError(ctx context.Co
 
 func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
 	// Reconstruct properties from existing AKS machine instance.
-	if err := validateMachineForCreate(existingAKSMachine); err != nil {
+	if err := validateMachineForCreate(existingAKSMachine, options.FromContext(ctx).IsSecurityPatchChannel()); err != nil {
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
 	}
 	if err := validateExistingAKSMachineCapacityReservation(existingAKSMachine, nodeClass); err != nil {
@@ -768,9 +768,12 @@ func validateExistingAKSMachineCapacityReservation(machine *armcontainerservice.
 func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningError(ctx context.Context, aksMachineName string, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, capacityReservationGroupID string) (*armcontainerservice.Machine, error) {
 	gotAKSMachine, err := p.machineCache.GetWithFallback(ctx, aksMachineName, false)
 	if err != nil {
-		return nil, &preserveMachineError{fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)}
+		if options.FromContext(ctx).IsSecurityPatchChannel() {
+			err = &preserveMachineError{err}
+		}
+		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
-	if err := validateMachineForCreate(gotAKSMachine); err != nil {
+	if err := validateMachineForCreate(gotAKSMachine, options.FromContext(ctx).IsSecurityPatchChannel()); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
 	if lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == consts.ProvisioningStateFailed {
@@ -784,12 +787,11 @@ func (p *DefaultAKSMachineProvider) getCreatedMachineAndHandleEarlyProvisioningE
 	return gotAKSMachine, nil
 }
 
-// validateMachineForCreate preserves incomplete responses unless the Machine is
-// confirmed failed. Both errors stop field extraction; only terminal failures
-// are eligible for BeginCreate's cleanup.
-func validateMachineForCreate(machine *armcontainerservice.Machine) error {
+// validateMachineForCreate preserves incomplete responses only on SecurityPatch,
+// unless the Machine is confirmed failed. Both errors stop field extraction.
+func validateMachineForCreate(machine *armcontainerservice.Machine, securityPatch bool) error {
 	if err := validateRetrievedAKSMachineBasicProperties(machine); err != nil {
-		if machine.Properties != nil && lo.FromPtr(machine.Properties.ProvisioningState) == consts.ProvisioningStateFailed {
+		if !securityPatch || (machine.Properties != nil && lo.FromPtr(machine.Properties.ProvisioningState) == consts.ProvisioningStateFailed) {
 			return err
 		}
 		return &preserveMachineError{err}
