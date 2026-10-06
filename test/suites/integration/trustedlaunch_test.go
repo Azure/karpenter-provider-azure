@@ -21,6 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
@@ -30,6 +31,31 @@ import (
 )
 
 var _ = Describe("Trusted Launch", func() {
+	It("should automatically enable vTPM and Secure Boot for AzureContainerLinux", func() {
+		if !env.IsAKSMachineAPIMode() || env.InClusterController {
+			Skip("AzureContainerLinux requires Machine API provisioning with managed SIG access")
+		}
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureContainerLinuxImageFamily)
+		nodeClass.Spec.Security = nil
+
+		deployment := coretest.Deployment(coretest.DeploymentOptions{Replicas: 1})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		env.EventuallyExpectHealthyDeployment(deployment)
+		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
+		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.AKSLabelOSSKU, v1beta1.OSSKUAzureContainerLinux))
+
+		vm := env.GetVM(node.Name)
+		Expect(vm.Properties).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+		Expect(strings.ToLower(utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference))).To(ContainSubstring("/images/aclgen2"))
+		Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.SecurityType).To(Equal(lo.ToPtr(armcompute.SecurityTypesTrustedLaunch)))
+		Expect(vm.Properties.SecurityProfile.UefiSettings).ToNot(BeNil())
+		Expect(vm.Properties.SecurityProfile.UefiSettings.VTpmEnabled).To(Equal(lo.ToPtr(true)))
+		Expect(vm.Properties.SecurityProfile.UefiSettings.SecureBootEnabled).To(Equal(lo.ToPtr(true)))
+	})
+
 	It("should enable vTPM and Secure Boot when explicitly enabled for Ubuntu", func() {
 		enabled := true
 		imageFamily := v1beta1.UbuntuImageFamily

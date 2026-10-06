@@ -33,8 +33,10 @@ import (
 )
 
 const (
-	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
-	FIPSRequired                 = "FIPSRequired"
+	DiskEncryptionSetRBACMissing      = "DiskEncryptionSetRBACMissing"
+	FIPSRequired                      = "FIPSRequired"
+	IncompatibleProvisionMode         = "IncompatibleProvisionMode"
+	SIGRequiredForAzureContainerLinux = "SIGRequiredForAzureContainerLinux"
 	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
 	// See this PR comment for considerations:
 	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
@@ -71,7 +73,7 @@ func NewValidationReconciler(
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
-	if !validateFIPS(ctx, nodeClass) {
+	if !validateImageFamilyConfiguration(ctx, nodeClass) {
 		return reconcile.Result{}, nil
 	}
 
@@ -127,6 +129,35 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
+}
+
+func validateImageFamilyConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+	if !validateFIPS(ctx, nodeClass) {
+		return false
+	}
+	if reason := incompatibleACLConfiguration(ctx, nodeClass); reason != "" {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			reason,
+			"AzureContainerLinux requires an AKS Machine API provision mode and shared image gallery access (UseSIG=true)",
+		)
+		return false
+	}
+	return true
+}
+
+func incompatibleACLConfiguration(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) string {
+	if lo.FromPtr(nodeClass.Spec.ImageFamily) != v1beta1.AzureContainerLinuxImageFamily {
+		return ""
+	}
+	opts := options.FromContext(ctx)
+	if !opts.IsAKSMachineAPIMode() {
+		return IncompatibleProvisionMode
+	}
+	if !opts.UseSIG {
+		return SIGRequiredForAzureContainerLinux
+	}
+	return ""
 }
 
 func validateFIPS(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
