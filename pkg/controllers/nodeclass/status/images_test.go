@@ -152,12 +152,15 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 
 	BeforeEach(func() {
-		var cigImageVersionTest = newCIGImageVersion
-		azureEnv.CommunityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeClass = test.AKSNodeClass()
 	})
 
 	Context("with CIG", func() {
+		BeforeEach(func() {
+			cigImageVersionTest := newCIGImageVersion
+			azureEnv.CommunityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
+		})
+
 		It("should init Images and its readiness on AKSNodeClass", func() {
 			ExpectApplied(ctx, env.Client, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
