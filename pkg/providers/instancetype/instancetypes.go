@@ -348,7 +348,7 @@ func capacityReservationZones(params *instanceTypeParameters) map[string]sets.Se
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
 func (p *DefaultProvider) createOfferings(ctx context.Context, sku *skewer.SKU, offeringZones sets.Set[string], capacityReservationGroupID string) cloudprovider.Offerings {
 	offerings := make([]*cloudprovider.Offering, 0, 2*len(offeringZones))
-  
+
 	// Availability is tracked separately per group, so a shortage of unreserved capacity
 	// does not suppress the reserved offering that exists to survive exactly that.
 	capacityReserved := capacityReservationGroupID != ""
