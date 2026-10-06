@@ -67,6 +67,52 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Consolidation", Ordered, func() {
+	Context("Windows", func() {
+		var windowsNodeClass *v1beta1.AKSNodeClass
+		var windowsNodePool *karpv1.NodePool
+
+		BeforeEach(func() {
+			env.SkipIfNotWindowsCapable()
+			windowsNodeClass = env.WindowsNodeClass(v1beta1.Windows2022ImageFamily)
+			windowsNodePool = env.WindowsNodePool(windowsNodeClass)
+		})
+
+		// Windows is an OS dimension on the existing consolidation behavior: a node whose only pod
+		// blocks disruption must be left alone, and the same node must be reclaimed once the
+		// workload is gone. This is the "not disrupted outside of expectations" guard for Windows.
+		It("should not consolidate a Windows node while its pod blocks disruption, then consolidate once empty", func() {
+			windowsNodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized
+			windowsNodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
+
+			dep := env.WindowsDeployment(coretest.DeploymentOptions{
+				Replicas: 1,
+				PodOptions: coretest.PodOptions{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels:      map[string]string{"app": "windows-consolidation"},
+						Annotations: map[string]string{karpv1.DoNotDisruptAnnotationKey: "true"},
+					},
+					TerminationGracePeriodSeconds: lo.ToPtr[int64](0),
+				},
+			})
+			selector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
+
+			env.ExpectCreated(dep, windowsNodeClass, windowsNodePool)
+
+			// Windows nodes take noticeably longer to provision and pull images than Linux.
+			env.EventuallyExpectHealthyPodCountWithTimeout(25*time.Minute, selector, 1)
+			env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
+			node := env.ExpectCreatedNodeCount("==", 1)[0]
+			Expect(node.Labels).To(HaveKeyWithValue(corev1.LabelOSStable, string(corev1.Windows)))
+
+			// The do-not-disrupt pod must hold consolidation off.
+			env.ConsistentlyExpectNoDisruptions(1, 2*time.Minute)
+
+			// Once the workload is gone the Windows node is empty and must be consolidated away.
+			env.ExpectDeleted(dep)
+			env.EventuallyExpectNotFound(node)
+		})
+	})
+
 	Context("LastPodEventTime", func() {
 		var nodePool *karpv1.NodePool
 		BeforeEach(func() {

@@ -47,6 +47,8 @@ const (
 	sigImageVersion = "202608.26.0"
 	// Azure Linux V2 node images are frozen at their final release, 202512.06.0.
 	azureLinuxV2SIGImageVersion = "202512.06.0"
+	// Windows2025 node images in the fake node-image API.
+	windows2025SIGImageVersion = "26100.33296.260812"
 )
 
 func renderExpectedCIGNodeImages(
@@ -73,6 +75,15 @@ func renderExpectedSIGNodeImages(
 	if _, ok := fam.(*imagefamily.AzureLinux); ok {
 		version = azureLinuxV2SIGImageVersion
 	}
+	return renderExpectedSIGNodeImagesWithVersion(fam, fips, version, trustedLaunch)
+}
+
+func renderExpectedSIGNodeImagesWithVersion(
+	fam imagefamily.ImageFamily,
+	fips *v1beta1.FIPSMode,
+	version string,
+	trustedLaunch bool,
+) []imagefamily.NodeImage {
 	defaultImages := fam.DefaultImages(true, fips, trustedLaunch, false)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
@@ -316,6 +327,15 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
+			It("should match expected images for Windows2025", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.32.0")
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				expectedImages := renderExpectedSIGNodeImagesWithVersion(&imagefamily.Windows2025{}, nodeClass.Spec.FIPSMode, windows2025SIGImageVersion, false)
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
 		})
 
 		// current behavior for not setting FIPSMode is effectively setting it to Disabled
@@ -357,6 +377,35 @@ var _ = Describe("NodeImageProvider tests", func() {
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled())
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
+			It("should not return Windows2025 images before Kubernetes 1.32", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.31.9")
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(foundImages).To(BeEmpty())
+			})
+
+			It("should return Windows2025 images on Kubernetes 1.32 and newer", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.32.0")
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				expectedImages := renderExpectedSIGNodeImagesWithVersion(&imagefamily.Windows2025{}, nil, windows2025SIGImageVersion, false)
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
+			It("should return the Windows2025 Trusted Launch image when requested", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Windows2025ImageFamily)
+				nodeClass.Status.KubernetesVersion = lo.ToPtr("1.32.0")
+				nodeClass.Spec.Security = &v1beta1.Security{
+					TrustedLaunch: &v1beta1.TrustedLaunch{VTPM: lo.ToPtr(true)},
+				}
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				expectedImages := renderExpectedSIGNodeImagesWithVersion(&imagefamily.Windows2025{}, nil, windows2025SIGImageVersion, true)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
