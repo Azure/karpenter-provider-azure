@@ -133,6 +133,8 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayloa
 		Key:          key,
 	}
 
+	var fullBatch *Batch[RequestPayload, ResponsePayload]
+
 	b.mu.Lock()
 
 	batch, exists := b.pendingBatches[req.Key]
@@ -144,10 +146,22 @@ func (b *Batcher[RequestPayload, ResponsePayload]) Enqueue(payload RequestPayloa
 			Requests: make([]*BatchedRequest[RequestPayload, ResponsePayload], 0, b.opts.MaxBatchSize),
 		}
 		b.pendingBatches[req.Key] = batch
+	} else if len(batch.Requests) >= b.opts.MaxBatchSize {
+		fullBatch = batch
+		batch = &Batch[RequestPayload, ResponsePayload]{
+			ID:       uuid.New().String(),
+			Key:      req.Key,
+			Requests: make([]*BatchedRequest[RequestPayload, ResponsePayload], 0, b.opts.MaxBatchSize),
+		}
+		b.pendingBatches[req.Key] = batch
 	}
 	batch.Requests = append(batch.Requests, req)
 
 	b.mu.Unlock()
+
+	if fullBatch != nil {
+		b.executeBatchAsync(uuid.New().String(), fullBatch)
+	}
 
 	// Alert the background loop (e.g., start timer, check execution conditions)
 	// Non-blocking signal (buffer=1 coalesces multiple enqueues)
@@ -185,12 +199,16 @@ func (b *Batcher[RequestPayload, ResponsePayload]) run() {
 			// This is tolerable because requests typically arrive in bursts from the provisioner.
 			// Suggestion: if needed, we could add per-batch-key timers for more precise control, but it adds complexity.
 
+			b.mu.Lock()
+			batchCount := len(b.pendingBatches)
+			b.mu.Unlock()
+
 			// TODO: use metrics instead?
 			log.FromContext(b.ctx).V(2).Info("batcher iteration finishing wait, ready to execute batches",
 				"batcherIterationID", batcherIterationID,
 				"waitStartTime", waitStartTime,
 				"waitDuration", time.Since(waitStartTime),
-				"batchCount", len(b.pendingBatches))
+				"batchCount", batchCount)
 			b.executeBatches(batcherIterationID)
 		}
 	}
@@ -263,31 +281,35 @@ func (b *Batcher[RequestPayload, ResponsePayload]) executeBatches(batcherIterati
 
 	// Dispatch batches in parallel, as they are independent (different keys).
 	for _, batch := range batches {
-		// TODO: use metrics instead?
-		log.FromContext(b.ctx).V(2).Info("begin executing batch",
-			"batcherIterationID", batcherIterationID,
-			"ID", batch.ID,
-			"key", batch.Key,
-			"size", len(batch.Requests))
-		go func(batch *Batch[RequestPayload, ResponsePayload]) {
-			defer func() {
-				if r := recover(); r != nil {
-					log.FromContext(b.ctx).Error(fmt.Errorf("%v", r), "panic in batch executor, distributing error to callers")
-					err := fmt.Errorf("batch execution panicked: %v", r)
-					for _, req := range batch.Requests {
-						// Non-blocking: if executeBatch already wrote a response before
-						// panicking, the buffer is full — skip to avoid goroutine leak.
-						select {
-						case req.ResponseChan <- &Response[ResponsePayload]{Err: err}:
-						default:
-						}
+		b.executeBatchAsync(batcherIterationID, batch)
+	}
+}
+
+func (b *Batcher[RequestPayload, ResponsePayload]) executeBatchAsync(batcherIterationID string, batch *Batch[RequestPayload, ResponsePayload]) {
+	// TODO: use metrics instead?
+	log.FromContext(b.ctx).V(2).Info("begin executing batch",
+		"batcherIterationID", batcherIterationID,
+		"ID", batch.ID,
+		"key", batch.Key,
+		"size", len(batch.Requests))
+	go func(batch *Batch[RequestPayload, ResponsePayload]) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.FromContext(b.ctx).Error(fmt.Errorf("%v", r), "panic in batch executor, distributing error to callers")
+				err := fmt.Errorf("batch execution panicked: %v", r)
+				for _, req := range batch.Requests {
+					// Non-blocking: if executeBatch already wrote a response before
+					// panicking, the buffer is full — skip to avoid goroutine leak.
+					select {
+					case req.ResponseChan <- &Response[ResponsePayload]{Err: err}:
+					default:
 					}
 				}
-			}()
+			}
+		}()
 
-			b.executeBatch(b.ctx, batch)
-		}(batch)
-	}
+		b.executeBatch(b.ctx, batch)
+	}(batch)
 }
 
 // drain fails all in-flight requests with a shutdown error.
