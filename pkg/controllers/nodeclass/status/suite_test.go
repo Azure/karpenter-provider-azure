@@ -76,7 +76,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	nodeClass = test.AKSNodeClass()
+	nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	azureEnv.Reset(ctx)
 
 	testK8sVersion = lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()

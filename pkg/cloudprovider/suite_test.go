@@ -92,7 +92,11 @@ func TestCloudProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(coretest.NodeProviderIDFieldIndexer(ctx)))
+	env = coretest.NewEnvironment(
+		coretest.WithCRDs(apis.CRDs...),
+		coretest.WithCRDs(v1alpha1.CRDs...),
+		coretest.WithFieldIndexers(coretest.NodeProviderIDFieldIndexer(ctx)))
+
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx, stop = context.WithCancel(ctx)
 	fakeClock = clock.NewFakeClock(time.Now())
@@ -105,7 +109,7 @@ var _ = AfterSuite(func() {
 })
 
 var _ = BeforeEach(func() {
-	nodeClass = test.AKSNodeClass()
+	nodeClass = test.AKSNodeClass(test.WithVersionBasedDefaults(env.Version))
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
