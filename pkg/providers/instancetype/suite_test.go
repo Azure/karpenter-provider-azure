@@ -59,6 +59,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/computelimit/armcomputelimit"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
 
@@ -2015,7 +2016,7 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("LoadBalancer", func() {
 			resourceGroup := "test-resourceGroup"
 
-			It("should include loadbalancer backend pools the allocated VMs", func() {
+			It("should include loadbalancer backend pools on the allocated VMs", func() {
 				standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
 				internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
 
@@ -2039,6 +2040,50 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(lo.FromPtr(backendPools[1].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
 				Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 			})
+
+			allBackendPoolIDs := []string{
+				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes",
+				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool",
+				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes",
+			}
+			outboundBackendPoolIDs := []string{
+				"/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool",
+			}
+
+			DescribeTable("should filter inbound loadbalancer backend pools using CCM exclusion label semantics", func(labelValue string, expectedBackendPoolIDs []string) {
+				standardLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.SLBName, true)
+				internalLB := test.MakeStandardLoadBalancer(resourceGroup, loadbalancer.InternalSLBName, false)
+
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(standardLB.ID), standardLB)
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(internalLB.ID), internalLB)
+				nodePool.Spec.Template.Labels = map[string]string{
+					v1.LabelNodeExcludeBalancers: labelValue,
+				}
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				iface := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+
+				Expect(iface.Properties.IPConfigurations).ToNot(BeEmpty())
+				Expect(lo.FromPtr(iface.Properties.IPConfigurations[0].Properties.Primary)).To(Equal(true))
+
+				backendPools := iface.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools
+				backendPoolIDs := lo.Map(backendPools, func(pool *armnetwork.BackendAddressPool, _ int) string {
+					return lo.FromPtr(pool.ID)
+				})
+				Expect(backendPoolIDs).To(Equal(expectedBackendPoolIDs))
+			},
+				Entry("when true", "true", outboundBackendPoolIDs),
+				Entry("when using a true alias", "TRUE", outboundBackendPoolIDs),
+				Entry("when empty", "", outboundBackendPoolIDs),
+				Entry("when invalid", "invalid", outboundBackendPoolIDs),
+				Entry("when false", "false", allBackendPoolIDs),
+				Entry("when using a false alias", "0", allBackendPoolIDs),
+			)
 		})
 
 		Context("Zone-aware provisioning", func() {
