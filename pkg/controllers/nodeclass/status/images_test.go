@@ -178,7 +178,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		Context("with "+testCase.name, func() {
 			BeforeEach(func() {
 				if testCase.useSIG {
