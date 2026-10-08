@@ -19,6 +19,7 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -160,7 +161,7 @@ func (r *defaultResolver) Resolve(
 	}
 
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
-	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
+	allTaints := slices.Concat(generalTaints, startupTaints)
 
 	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(
 		ctx,
@@ -313,6 +314,10 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, trustedLaunc
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.Windows2022ImageFamily:
+		return &Windows2022{Options: parameters}
+	case v1beta1.Windows2025ImageFamily:
+		return &Windows2025{Options: parameters}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:

@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -64,13 +65,9 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 
 	// NodeImageVersion
 	// E.g., "AKSUbuntu-2204gen2containerd-2023.11.15"
-	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	nodeImageVersionPtr, err := p.configureNodeImageVersion(nodeClass, instanceType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
-	}
-	nodeImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(vmImageID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert VM image ID to NodeImageVersion: %w", err)
+		return nil, fmt.Errorf("failed to resolve node image version: %w", err)
 	}
 
 	// GPUProfile
@@ -117,7 +114,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		// hashing by design. See batch_field_registry.go for the full field classification.
 		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
-			NodeImageVersion: lo.ToPtr(nodeImageVersion),
+			NodeImageVersion: nodeImageVersionPtr,
 			Network: &armcontainerservice.MachineNetworkProperties{
 				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
 				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
@@ -133,21 +130,16 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				UltraSsdEnabled: lo.ToPtr(ultraSSD),
 			},
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
-				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
+				OSType:       configureOSType(nodeClass),
 				OSSKU:        osSku,
 				OSDiskSizeGB: osDiskSizeGB,
 				OSDiskType:   osDiskType,
 				EnableFIPS:   enableFIPS,
-				LinuxProfile: func() *armcontainerservice.MachineOSProfileLinuxProfile {
-					linuxOSConfig := configureLinuxOSConfig(nodeClass)
-					if linuxOSConfig == nil {
-						return nil
-					}
-					return &armcontainerservice.MachineOSProfileLinuxProfile{
-						LinuxOSConfig: linuxOSConfig,
-					}
-				}(),
-				// WindowsProfile: nil,
+				LinuxProfile: configureLinuxProfile(nodeClass),
+				// WindowsProfile is optional. Windows admin credentials are sourced
+				// server-side by the AKS RP from the ManagedCluster's WindowsProfile, so
+				// Karpenter does not need to populate it. TODO(Windows): expose advanced
+				// AgentPoolWindowsProfile settings (e.g. DisableOutboundNat) if needed.
 			},
 
 			Kubernetes: &armcontainerservice.MachineKubernetesProfile{
@@ -203,9 +195,25 @@ func configureGPUProfile(instanceType *corecloudprovider.InstanceType, nodeClass
 	if nodeClass.IsGPUDriverInstallationEnabled() {
 		driverSetting = armcontainerservice.GPUDriverInstall
 	}
-	return &armcontainerservice.GPUProfile{
+	gpuProfile := &armcontainerservice.GPUProfile{
 		Driver: lo.ToPtr(driverSetting),
 	}
+	// Managed GPU experience: AKS installs additional components (DCGM metrics,
+	// NVIDIA device plugin) on top of the driver. It is NVIDIA-only and requires
+	// driver installation. Only emit Nvidia settings when the user explicitly
+	// opts in via gpu.nvidia.managementMode=Managed; leaving Nvidia nil keeps the
+	// request unmanaged, which is the non-breaking default (RP treats nil as
+	// Unmanaged). The SKU/driver guards avoid sending Managed for SKUs the RP
+	// would reject (e.g. AMD GPUs or driver=None), which the API-level CEL rule
+	// and instance-type filtering already prevent, but we re-check defensively.
+	if nodeClass.IsManagedGPUEnabled() &&
+		utils.IsNvidiaEnabledSKU(instanceType.Name) &&
+		nodeClass.IsGPUDriverInstallationEnabled() {
+		gpuProfile.Nvidia = &armcontainerservice.NvidiaGPUProfile{
+			ManagementMode: lo.ToPtr(armcontainerservice.ManagementModeManaged),
+		}
+	}
+	return gpuProfile
 }
 
 // configureWorkloadRuntime maps a Kata workloadRuntime to the AKS machine API enum.
@@ -324,25 +332,35 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 	if nodeClass.Spec.ImageFamily == nil {
 		return nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
 	}
+	family := *nodeClass.Spec.ImageFamily
+
+	// enableFIPS is the effective FIPS setting from the NodeClass. IsFIPSEnabled() already
+	// encodes that Windows2025 is FIPS-on in AKS even when fipsMode is omitted, and CRD validation
+	// rejects the unsupported combinations (FIPS on Windows2022, non-FIPS on Windows2025), so this
+	// defaults from the NodeClass rather than overriding what the user asked for.
+	enableFIPS := nodeClass.IsFIPSEnabled()
 
 	var ossku armcontainerservice.OSSKU
-	enableFIPS := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
-
-	switch *nodeClass.Spec.ImageFamily {
+	switch family {
 	case v1beta1.Ubuntu2204ImageFamily:
 		ossku = armcontainerservice.OSSKUUbuntu2204
 	case v1beta1.Ubuntu2404ImageFamily:
 		ossku = armcontainerservice.OSSKUUbuntu2404
 	case v1beta1.AzureLinuxImageFamily:
 		ossku = armcontainerservice.OSSKUAzureLinux
+	case v1beta1.Windows2022ImageFamily:
+		ossku = armcontainerservice.OSSKUWindows2022
+	case v1beta1.Windows2025ImageFamily:
+		ossku = armcontainerservice.OSSKUWindows2025
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
-		if enableFIPS {
+		switch {
+		case enableFIPS:
 			ossku = armcontainerservice.OSSKUUbuntu
-		} else if imagefamily.UseUbuntu2404(orchestratorVersion) {
+		case imagefamily.UseUbuntu2404(orchestratorVersion):
 			ossku = armcontainerservice.OSSKUUbuntu2404
-		} else {
+		default:
 			ossku = armcontainerservice.OSSKUUbuntu2204
 		}
 	}
@@ -350,9 +368,51 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 	return lo.ToPtr(ossku), lo.ToPtr(enableFIPS), nil
 }
 
+// configureOSType returns the AKS Machine OSType (Linux or Windows) for the NodeClass's
+// image family. Windows families map to OSTypeWindows; everything else to OSTypeLinux.
+func configureOSType(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.OSType {
+	if v1beta1.IsWindowsImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+		return lo.ToPtr(armcontainerservice.OSTypeWindows)
+	}
+	return lo.ToPtr(armcontainerservice.OSTypeLinux)
+}
+
+// configureNodeImageVersion resolves the AKS Machine API NodeImageVersion for the NodeClass.
+//
+// The resolved image definition carries the Hyper-V generation (for example
+// windows-2022-containerd-gen2 versus windows-2022-containerd), so pinning it here is what selects
+// the generation. The RP takes this value verbatim for PutMachine instead of resolving an image
+// from OSSKU.
+func (p *DefaultAKSMachineProvider) configureNodeImageVersion(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*string, error) {
+	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
+	}
+	nodeImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(vmImageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert VM image ID to NodeImageVersion: %w", err)
+	}
+	return lo.ToPtr(nodeImageVersion), nil
+}
+
+// configureLinuxProfile builds the Machine LinuxProfile. It returns nil for Windows nodes
+// (not applicable) and when no Linux OS config is set.
+func configureLinuxProfile(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.MachineOSProfileLinuxProfile {
+	if v1beta1.IsWindowsImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+		return nil
+	}
+	linuxOSConfig := configureLinuxOSConfig(nodeClass)
+	if linuxOSConfig == nil {
+		return nil
+	}
+	return &armcontainerservice.MachineOSProfileLinuxProfile{
+		LinuxOSConfig: linuxOSConfig,
+	}
+}
+
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
-	allTaints := lo.Flatten([][]v1.Taint{generalTaints, startupTaints})
+	allTaints := slices.Concat(generalTaints, startupTaints)
 	allTaintsStr := lo.Map(allTaints, func(taint v1.Taint, _ int) string { return taint.ToString() })
 	// Deduplicate (original behavior used sets.NewString for deduplication)
 	allTaintsStr = lo.Uniq(allTaintsStr)
