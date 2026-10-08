@@ -109,6 +109,10 @@ type AKSNodeClassSpec struct {
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
 	// imageFamily is the image family that instances use.
+	// Windows node support for the Windows2022 and Windows2025 image families is in preview and
+	// isn't meant for production. Support is best effort, and changes to APIs or behavior may result
+	// in unstable clusters or downtime. For details, see
+	// https://learn.microsoft.com/azure/aks/support-policies#preview-features-or-feature-flags.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux,Windows2022,Windows2025}
 	// +optional
