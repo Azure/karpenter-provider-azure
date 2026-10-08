@@ -8,6 +8,7 @@ These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
 
+- [Node public IP support for direct Internet ingress](./0016-node-public-ip-ingress.md)
 - [Ultra SSD support](./0013-ultra-ssd-support.md)
 
 ## Completed
