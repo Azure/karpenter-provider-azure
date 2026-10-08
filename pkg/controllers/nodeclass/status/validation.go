@@ -24,6 +24,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient/azapi"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -55,6 +56,12 @@ const (
 	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
 	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
 	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
+	// WindowsUnsupportedNetworkDataplane is the condition reason set when a Windows NodeClass is
+	// configured on a cluster that uses an unsupported network dataplane.
+	WindowsUnsupportedNetworkDataplane = "WindowsUnsupportedNetworkDataplane"
+	// WindowsUnsupportedProvisionMode is the condition reason set when a Windows NodeClass is
+	// configured on a cluster that does not provision through the AKS Machine API.
+	WindowsUnsupportedProvisionMode = "WindowsUnsupportedProvisionMode"
 )
 
 type ValidationReconciler struct {
@@ -75,6 +82,9 @@ func NewValidationReconciler(
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	if !validateFIPS(ctx, nodeClass) {
+		return reconcile.Result{}, nil
+	}
+	if !validateWindowsCompatibility(ctx, nodeClass) {
 		return reconcile.Result{}, nil
 	}
 	if !validateProvisionMode(ctx, nodeClass) {
@@ -150,6 +160,31 @@ func validateProvisionMode(ctx context.Context, nodeClass *v1beta1.AKSNodeClass)
 			v1beta1.ConditionTypeValidationSucceeded,
 			ManagedGPUUnsupportedProvisionMode,
 			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), opts.ProvisionMode),
+		)
+		return false
+	}
+	return true
+}
+
+func validateWindowsCompatibility(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) bool {
+	imageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
+	if !v1beta1.IsWindowsImageFamily(imageFamily) {
+		return true
+	}
+	providerOptions := options.FromContext(ctx)
+	if providerOptions.NetworkDataplane == consts.NetworkDataplaneCilium {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			WindowsUnsupportedNetworkDataplane,
+			fmt.Sprintf("imageFamily %q is not supported with network-dataplane %q", imageFamily, providerOptions.NetworkDataplane),
+		)
+		return false
+	}
+	if !providerOptions.IsAKSMachineAPIMode() {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			WindowsUnsupportedProvisionMode,
+			fmt.Sprintf("imageFamily %q is not supported with provision-mode %q; Windows requires an AKS Machine API provision mode", imageFamily, providerOptions.ProvisionMode),
 		)
 		return false
 	}
